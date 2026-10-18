@@ -16,10 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history for the "Last updated" dates
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 10
+          package_json_file: docs/package.json # pnpm version from "packageManager"
 
       - uses: actions/setup-node@v7
         with:
@@ -29,15 +31,19 @@ jobs:
 
       - working-directory: docs
         run: |
-          pnpm install
+          pnpm install --frozen-lockfile
 
       - working-directory: docs
         run: |
           pnpm build
 
+      - working-directory: docs
+        run: |
+          pnpm linkcheck
+
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: docs/.vitepress/dist/
+          path: docs/dist/
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

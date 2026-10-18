@@ -81,8 +81,8 @@
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `label` | `string` | `""` | 变体标签。 |
-| `platform` | `string` | `""` | 目标平台（[.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)）。为空时匹配全部，支持 glob。 |
-| `dependencies` | `object` | `{}` | 包 ID 到 [semver 范围](https://github.com/maxhauser/semver#ranges) 的映射。 |
+| `platform` | `string` | `""` | 目标平台（[.NET RID](https://learn.microsoft.com/zh-cn/dotnet/core/rid-catalog)）。为空时匹配全部，支持 glob。 |
+| `dependencies` | `object` | `{}` | 包 ID 到 [semver 范围](https://github.com/WalkerCodeRanger/semver#version-ranges) 的映射。 |
 | `assets` | `array` | `[]` | 资源定义。见 [Asset](#asset)。 |
 | `preserve_files` | `string[]` | `[]` | 卸载时保留文件的 glob 模式。模式按相对于工作目录的路径匹配，并回退到文件名匹配。 |
 | `remove_files` | `string[]` | `[]` | 卸载时额外删除文件的 glob 模式。模式按相对于工作目录的路径匹配；以 `/` 结尾的模式匹配目录。 |

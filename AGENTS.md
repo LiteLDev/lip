@@ -49,6 +49,7 @@ For any non-trivial task:
 - Always use `pnpm` for JavaScript package management and script execution in this repo.
 - Use `dotnet` as the default build, test, and formatting tool for the main codebase.
 - After code changes, run `dotnet format --verify-no-changes` and `dotnet test` when feasible.
-- If you change `docs/` content or VitePress config, run the docs build from `docs/` with `pnpm`.
+- If you change `docs/` content or the docs site config (`docs/docs.config.ts`), run `pnpm build` and `pnpm linkcheck` from `docs/`.
+- Do not edit the vendored kit in `docs/kit/`; change levimc-kit upstream and re-vendor it, keeping the local kit patches listed in `MEMORY.md` until they are upstreamed.
 - Before any requested commit, save relevant updates to `MEMORY.md`.
 - For any requested commit, write a detailed commit body with the session goal, tasks, key rationale, findings, and results.

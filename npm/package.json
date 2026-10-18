@@ -3,13 +3,13 @@
   "version": "0.0.0-dev",
   "license": "GPL-3.0-only",
   "description": "A general package installer",
-  "homepage": "https://github.com/futrime/lip",
+  "homepage": "https://github.com/LiteLDev/lip",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/futrime/lip.git"
+    "url": "git+https://github.com/LiteLDev/lip.git"
   },
   "bugs": {
-    "url": "https://github.com/futrime/lip/issues"
+    "url": "https://github.com/LiteLDev/lip/issues"
   },
   "bin": {
     "lip": "lip.js",

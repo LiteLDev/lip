@@ -239,8 +239,8 @@ jobs:
           GH_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
 
       - run: |
-          $arm64Url = "https://github.com/futrime/lip/releases/download/v${{ needs.get-version.outputs.version }}/lip-${{ needs.get-version.outputs.version }}-win-arm64.zip"
-          $x64Url = "https://github.com/futrime/lip/releases/download/v${{ needs.get-version.outputs.version }}/lip-${{ needs.get-version.outputs.version }}-win-x64.zip"
+          $arm64Url = "https://github.com/LiteLDev/lip/releases/download/v${{ needs.get-version.outputs.version }}/lip-${{ needs.get-version.outputs.version }}-win-arm64.zip"
+          $x64Url = "https://github.com/LiteLDev/lip/releases/download/v${{ needs.get-version.outputs.version }}/lip-${{ needs.get-version.outputs.version }}-win-x64.zip"
 
           curl -JLO https://aka.ms/wingetcreate/latest
           .\wingetcreate.exe update futrime.lip `

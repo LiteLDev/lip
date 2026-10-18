@@ -28,4 +28,4 @@ winget install futrime.lip
 
 ## Windows 安装包
 
-从 [Releases 页面](https://github.com/futrime/lip/releases/latest) 下载最新的 `lip-<version>-<runtime>-setup.exe` 并运行。
+从 [Releases 页面](https://github.com/LiteLDev/lip/releases/latest) 下载最新的 `lip-<version>-<runtime>-setup.exe` 并运行。

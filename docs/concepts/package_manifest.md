@@ -81,8 +81,8 @@ A variant defines platform-specific or labeled package configurations. When reso
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `label` | `string` | `""` | Variant label. |
-| `platform` | `string` | `""` | Target platform ([.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)). Empty matches all. Supports glob matching. |
-| `dependencies` | `object` | `{}` | Map of package ID to [semver range](https://github.com/maxhauser/semver#ranges). |
+| `platform` | `string` | `""` | Target platform ([.NET RID](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog)). Empty matches all. Supports glob matching. |
+| `dependencies` | `object` | `{}` | Map of package ID to [semver range](https://github.com/WalkerCodeRanger/semver#version-ranges). |
 | `assets` | `array` | `[]` | Asset definitions. See [Asset](#asset). |
 | `preserve_files` | `string[]` | `[]` | Glob patterns for files to preserve during uninstall. Patterns are matched against paths relative to the working directory, falling back to the bare file name. |
 | `remove_files` | `string[]` | `[]` | Glob patterns for additional files to remove during uninstall. Patterns are matched against paths relative to the working directory; a pattern ending with `/` matches a directory. |
