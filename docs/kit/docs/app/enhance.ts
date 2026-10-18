@@ -99,6 +99,8 @@ export function useContentEnhancements(ref: RefObject<HTMLElement | null>, key: 
       if (!id) return;
       const el = document.getElementById(id);
       if (!el || !root.contains(el)) return;
+      // a hash naming a tab (#__tabbed_1_2) selects it
+      if (el.getAttribute('role') === 'tab' && el.closest('[data-kit-tabs]')) selectTab(el);
       for (let p: HTMLElement | null = el; p && p !== root; p = p.parentElement) {
         if (p instanceof HTMLDetailsElement) p.open = true;
         if (p.getAttribute('role') === 'tabpanel' && p.hidden) {
@@ -114,7 +116,7 @@ export function useContentEnhancements(ref: RefObject<HTMLElement | null>, key: 
     const syncScrollable = () => {
       for (const w of tableWraps) {
         if (w.scrollWidth > w.clientWidth + 1) w.tabIndex = 0;
-        else w.removeAttribute('tabindex');
+        else if (w !== document.activeElement) w.removeAttribute('tabindex'); // never pull focus from under the user
       }
     };
     syncScrollable();
