@@ -50,6 +50,6 @@ For any non-trivial task:
 - Use `dotnet` as the default build, test, and formatting tool for the main codebase.
 - After code changes, run `dotnet format --verify-no-changes` and `dotnet test` when feasible.
 - If you change `docs/` content or the docs site config (`docs/docs.config.ts`), run `pnpm build` and `pnpm linkcheck` from `docs/`.
-- Do not edit the vendored kit in `docs/kit/`; change levimc-kit upstream and re-vendor it, keeping the local kit patches listed in `MEMORY.md` until they are upstreamed.
+- Do not edit `docs/kit/`: it is levimc-kit, fetched from levimc.org by `pnpm install` (git-ignored; `pnpm kit` refreshes it). Change the kit in LiteLDev/levimc.org (`kit/`); this site picks it up with its next build.
 - Before any requested commit, save relevant updates to `MEMORY.md`.
 - For any requested commit, write a detailed commit body with the session goal, tasks, key rationale, findings, and results.

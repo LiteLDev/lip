@@ -136,3 +136,6 @@ vite.config.ts.timestamp-*
 
 # levimc-kit build cache (SSR bundle, build warnings)
 .kit/
+
+# levimc-kit, fetched from levimc.org by the package install (scripts/fetch-kit.mjs)
+/kit/
