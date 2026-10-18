@@ -28,4 +28,4 @@ winget install futrime.lip
 
 ## Windows setup
 
-Download the latest `lip-<version>-<runtime>-setup.exe` from the [Releases page](https://github.com/futrime/lip/releases/latest) and run it.
+Download the latest `lip-<version>-<runtime>-setup.exe` from the [Releases page](https://github.com/LiteLDev/lip/releases/latest) and run it.

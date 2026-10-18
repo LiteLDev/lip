@@ -8,7 +8,7 @@ Check out [the documentation](https://docs.levimc.org/lip/) for more information
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/futrime/lip/issues/new/choose) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/LiteLDev/lip/issues/new/choose) or submit PRs.
 
 **lip** follows the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) Code of Conduct.
 
@@ -16,7 +16,7 @@ Feel free to dive in! [Open an issue](https://github.com/futrime/lip/issues/new/
 
 This project exists thanks to all the people who contribute.
 
-![Contributors](https://contrib.rocks/image?repo=futrime/lip)
+![Contributors](https://contrib.rocks/image?repo=LiteLDev/lip)
 
 ## License
 
