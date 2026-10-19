@@ -243,7 +243,7 @@ jobs:
           $x64Url = "https://github.com/LiteLDev/lip/releases/download/v${{ needs.get-version.outputs.version }}/lip-${{ needs.get-version.outputs.version }}-win-x64.zip"
 
           curl -JLO https://aka.ms/wingetcreate/latest
-          .\wingetcreate.exe update futrime.lip `
+          .\wingetcreate.exe update levimc.lip `
             --submit `
             --urls "$arm64Url" "$x64Url" `
             --version "${{ needs.get-version.outputs.version }}" 

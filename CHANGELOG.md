@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Renamed the npm package from `@futrime/lip` to `@levimc/lip` and the winget package ID from `futrime.lip` to `levimc.lip`.
+
 ## [0.34.9] - 2026-10-08
 
 ### Changed
@@ -823,6 +829,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#282]: https://github.com/futrime/lip/issues/282
 [#347]: https://github.com/futrime/lip/issues/347
 
+[Unreleased]: https://github.com/LiteLDev/lip/compare/v0.34.9...HEAD
 [0.34.9]: https://github.com/futrime/lip/compare/v0.34.8...v0.34.9
 [0.34.8]: https://github.com/futrime/lip/compare/v0.34.7...v0.34.8
 [0.34.7]: https://github.com/futrime/lip/compare/v0.34.6...v0.34.7

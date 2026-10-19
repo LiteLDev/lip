@@ -12,7 +12,7 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 **No.** Running `lip install <package>` installs the package into your workspace and updates the lockfile (`tooth_lock.json`) to track the state, but it **does not** modify your `tooth.json` manifest. You must manually add dependencies to `tooth.json` if you want them to be permanent parts of your project's requirements.
 
 ### How do I upgrade lip itself?
-Reinstall `lip` using the same method you used originally, such as `npm install -g @futrime/lip`, `winget upgrade futrime.lip`, or the latest Windows `setup.exe` from the GitHub releases page. There is no built-in `lip self-update` command yet.
+Reinstall `lip` using the same method you used originally, such as `npm install -g @levimc/lip`, `winget upgrade levimc.lip`, or the latest Windows `setup.exe` from the GitHub releases page. There is no built-in `lip self-update` command yet. If you installed `lip` from the old `@futrime/lip` npm package or the `futrime.lip` winget package, uninstall it first and then install `@levimc/lip` or `levimc.lip`.
 
 ### Does lip support private repositories?
 Yes, lip can install packages from private Git repositories using your system's Git credentials (e.g., SSH keys or Credential Manager). It relies on the local Git environment for authentication.
