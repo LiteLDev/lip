@@ -12,7 +12,7 @@
 **不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新锁文件（`tooth_lock.json`）来记录状态，但**不会**修改你的 `tooth.json` 清单。如果你希望依赖长期保留在项目要求中，需要手动把它加入 `tooth.json`。
 
 ### 如何升级 lip 自身？
-使用你最初的安装方式重新安装 `lip`，例如 `npm install -g @futrime/lip`、`winget upgrade futrime.lip`，或从 GitHub Releases 页面下载最新的 Windows `setup.exe`。目前还没有内置的 `lip self-update` 命令。
+使用你最初的安装方式重新安装 `lip`，例如 `npm install -g @levimc/lip`、`winget upgrade levimc.lip`，或从 GitHub Releases 页面下载最新的 Windows `setup.exe`。目前还没有内置的 `lip self-update` 命令。如果你是通过旧的 `@futrime/lip` npm 包或 `futrime.lip` winget 包安装的 `lip`，请先卸载，再安装 `@levimc/lip` 或 `levimc.lip`。
 
 ### lip 支持私有仓库吗？
 支持。lip 可以通过你系统中的 Git 凭据（如 SSH key 或 Credential Manager）从私有 Git 仓库安装包。认证由本地 Git 环境负责。

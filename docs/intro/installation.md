@@ -7,7 +7,7 @@
 The default installation method for all platforms is npm:
 
 ```shell
-npm install -g @futrime/lip
+npm install -g @levimc/lip
 ```
 
 This installs both `lip` and `lipd` and works on Windows, Linux, and macOS.
@@ -15,16 +15,24 @@ This installs both `lip` and `lipd` and works on Windows, Linux, and macOS.
 If you only want to run `lip` without installing it globally, you can also use `npx`:
 
 ```shell
-npx @futrime/lip --help
+npx @levimc/lip --help
 ```
 
 This is useful for trying `lip` or running one-off commands.
 
+::: tip
+This package was previously published as `@futrime/lip`. If you installed it under the old name, uninstall it first with `npm uninstall -g @futrime/lip`.
+:::
+
 ## winget
 
 ```shell
-winget install futrime.lip
+winget install levimc.lip
 ```
+
+::: tip
+This package was previously published as `futrime.lip`. If you installed it under the old ID, uninstall it first with `winget uninstall futrime.lip`.
+:::
 
 ## Windows setup
 
