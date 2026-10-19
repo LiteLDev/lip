@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MessagePack" Version="2.5.303" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />
