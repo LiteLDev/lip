@@ -1,5 +1,7 @@
 # lip
 
+<img src="docs/logo.png" alt="" width="128" align="right">
+
 A general package installer
 
 ## Usage
