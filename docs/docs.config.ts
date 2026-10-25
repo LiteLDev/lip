@@ -20,6 +20,8 @@ export default defineDocsConfig({
     locales: [
       { code: 'root', label: 'English', lang: 'en', prefix: '' },
       { code: 'zh', label: '简体中文', lang: 'zh-CN', prefix: 'zh/' },
+      // Traditional Chinese, generated from the zh pages (levimc-kit convertFrom)
+      { code: 'zh-Hant', label: '繁體中文', lang: 'zh-Hant', prefix: 'zh-Hant/', convertFrom: 'zh' },
     ],
   },
   // Existing URLs are /lip/<page>.html (VitePress without cleanUrls); keep them.
