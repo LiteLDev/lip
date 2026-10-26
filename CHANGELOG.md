@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Renamed the npm package from `@futrime/lip` to `@levimc/lip` and the winget package ID from `futrime.lip` to `levimc.lip`.
 - Packages fetched via git are now cloned shallowly (`--depth 1`).
+- Package versions and contents are now resolved purely from git tags (`v<semver>`) of `https://<package path>.git`.
+
+### Removed
+
+- Go module proxy (goproxy) and lipr as package sources and version registries. Versions that were only available through a goproxy cache (e.g., deleted tags) or lipr can no longer be resolved.
+- The `go_module_proxy` configuration key. Existing `liprc.json` files containing it still load; the key is ignored and dropped on the next save.
 
 ### Fixed
 

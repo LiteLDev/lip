@@ -11,4 +11,4 @@ Represents the current state of the workspace, tracking which packages are insta
 ## Configuration
 
 Manages global configuration settings for the `lip` tool itself, such as proxies and default behaviors.
-- **Properties**: Key-value pairs for configuration options (e.g., `github_proxy`, `go_module_proxy`).
+- **Properties**: Key-value pairs for configuration options (e.g., `github_proxy`).

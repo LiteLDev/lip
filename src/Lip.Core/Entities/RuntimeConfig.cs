@@ -41,10 +41,6 @@ public record RuntimeConfig {
   [JsonPropertyName("github_proxy")]
   public Url? GithubProxy { get; init; }
 
-  [JsonConverter(typeof(UrlJsonConverter))]
-  [JsonPropertyName("go_module_proxy")]
-  public Url GoModuleProxy { get; init; } = Url.Parse("https://proxy.golang.org");
-
   public IDictionary<string, dynamic?> AsDictionary() {
     return GetType()
         .GetProperties()

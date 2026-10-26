@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Flurl;
 using Lip.Core.Entities;
 using Semver;
@@ -12,7 +13,6 @@ public class RuntimeConfigTests {
     Assert.Equal(3, config.FormatVersion);
     Assert.Equal("289f771f-2c9a-4d73-9f3f-8492495a924d", config.FormatUuid);
     Assert.Null(config.GithubProxy);
-    Assert.Equal("https://proxy.golang.org", config.GoModuleProxy.ToString());
   }
 
   [Fact]
@@ -28,8 +28,7 @@ public class RuntimeConfigTests {
   [Fact]
   public void AsDictionary_ReturnsOnlyEditableProperties() {
     RuntimeConfig config = new() {
-      GithubProxy = new Url("https://proxy.example.com"),
-      GoModuleProxy = new Url("https://custom.proxy.io")
+      GithubProxy = new Url("https://proxy.example.com")
     };
 
     IDictionary<string, dynamic?> dict = config.AsDictionary();
@@ -37,7 +36,7 @@ public class RuntimeConfigTests {
     Assert.False(dict.ContainsKey("format_version"));
     Assert.False(dict.ContainsKey("format_uuid"));
     Assert.True(dict.ContainsKey("github_proxy"));
-    Assert.True(dict.ContainsKey("go_module_proxy"));
+    Assert.False(dict.ContainsKey("go_module_proxy"));
   }
 
   [Fact]
@@ -45,10 +44,34 @@ public class RuntimeConfigTests {
     RuntimeConfig config = new();
     Url newProxy = new("https://new.proxy.io");
 
-    RuntimeConfig newConfig = config.With("go_module_proxy", newProxy);
+    RuntimeConfig newConfig = config.With("github_proxy", newProxy);
 
     Assert.NotSame(config, newConfig);
-    Assert.Equal(newProxy, newConfig.GoModuleProxy);
+    Assert.Equal(newProxy, newConfig.GithubProxy);
+  }
+
+  [Fact]
+  public void With_RemovedGoModuleProxyKey_ThrowsKeyNotFoundException() {
+    RuntimeConfig config = new();
+
+    Assert.Throws<KeyNotFoundException>(() => config.With("go_module_proxy", "https://proxy.golang.org"));
+  }
+
+  [Fact]
+  public void Deserialize_LegacyGoModuleProxyKey_IsIgnored() {
+    string json = """
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "github_proxy": "https://proxy.example.com",
+          "go_module_proxy": "https://goproxy.cn"
+        }
+        """;
+
+    RuntimeConfig config = JsonSerializer.Deserialize<RuntimeConfig>(json)!;
+
+    Assert.Equal("https://proxy.example.com", config.GithubProxy?.ToString());
+    Assert.DoesNotContain("go_module_proxy", JsonSerializer.Serialize(config));
   }
 
   [Fact]

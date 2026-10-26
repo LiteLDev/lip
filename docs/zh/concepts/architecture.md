@@ -11,4 +11,4 @@
 ## 配置
 
 用于管理 `lip` 工具本身的全局配置（如代理和默认行为）。
-- **Properties**：配置项键值对（例如 `github_proxy`、`go_module_proxy`）。
+- **Properties**：配置项键值对（例如 `github_proxy`）。
