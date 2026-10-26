@@ -72,7 +72,7 @@
 | `name` | `string` | `""` | 显示名称。 |
 | `description` | `string` | `""` | 简短描述。 |
 | `tags` | `string[]` | `[]` | 标签。每个标签必须匹配 `^[a-z0-9-]+(:[a-z0-9-]+)?$`。 |
-| `avatar_url` | `string` | `null` | 头像图片 URL。 |
+| `avatar_url` | `string` | `""` | 头像图片 URL。 |
 
 ### Variant
 
@@ -80,7 +80,7 @@
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `label` | `string` | `""` | 变体标签。 |
+| `label` | `string` | `""` | 变体标签。必须匹配 `^([a-z0-9_]+(/[a-z0-9_]+)?)?$`（小写字母、数字和 `_`，可含一个 `/`）；空标签即默认变体。 |
 | `platform` | `string` | `""` | 目标平台（[.NET RID](https://learn.microsoft.com/zh-cn/dotnet/core/rid-catalog)）。为空时匹配全部，支持 glob。 |
 | `dependencies` | `object` | `{}` | 包 ID 到 [semver 范围](https://github.com/WalkerCodeRanger/semver#version-ranges) 的映射。 |
 | `assets` | `array` | `[]` | 资源定义。见 [Asset](#asset)。 |

@@ -2,15 +2,15 @@
 
 管理配置项。
 
-配置保存在 `liprc.json`：Windows 为 `%APPDATA%/lip/liprc.json`，Linux/macOS 为 `$XDG_CONFIG_HOME/lip/liprc.json`。可用键请参见[配置参考](../configuration.md)。
+配置保存在 `liprc.json`：Windows 为 `%APPDATA%\lip\liprc.json`，Linux/macOS 为 `$XDG_CONFIG_HOME/lip/liprc.json`。可用键请参见[配置参考](../configuration.md)。
 
 ## lip config get
 
 ```shell
-lip config get <KEY>
+lip config get <KEY> [--json]
 ```
 
-获取并显示指定配置键的值。
+获取并显示指定配置键的值。使用 `--json` 时只输出值本身，而不是表格。
 
 ## lip config set
 
@@ -23,10 +23,10 @@ lip config set <KEY> <VALUE>
 ## lip config list
 
 ```shell
-lip config list
+lip config list [--json]
 ```
 
-列出所有配置键及其值。
+列出所有配置键及其值。使用 `--json` 时以 JSON 对象输出。
 
 ## lip config delete
 

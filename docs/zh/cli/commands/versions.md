@@ -7,8 +7,20 @@
 ## 概要
 
 ```sh
-lip versions <package>
+lip versions <PACKAGE> [options]
 ```
+
+## 参数
+
+| 参数 | 说明 |
+| --- | --- |
+| `<PACKAGE>` | 要查看版本的包，格式为 `<path>`（例如 `github.com/user/repo`）。 |
+
+## 选项
+
+| 选项 | 说明 |
+| --- | --- |
+| `--json` | 以 JSON 格式输出。 |
 
 ## 示例
 

@@ -13,7 +13,7 @@ lip config list
 查看某个键的值：
 
 ```sh
-lip config get <key>
+lip config get <KEY>
 ```
 
 示例：
@@ -26,7 +26,7 @@ lip config get github_proxy
 设置配置值：
 
 ```sh
-lip config set <key> <value>
+lip config set <KEY> <VALUE>
 ```
 
 ### 常见配置
@@ -35,7 +35,7 @@ lip config set <key> <value>
 
 示例：
 ```sh
-lip config set github_proxy https://ghproxy.com
+lip config set github_proxy https://mirror.ghproxy.com/
 ```
 
 ## 删除配置
@@ -43,5 +43,5 @@ lip config set github_proxy https://ghproxy.com
 移除某项配置并恢复默认值（如果有）：
 
 ```sh
-lip config delete <key>
+lip config delete <KEY>
 ```

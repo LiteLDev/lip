@@ -3,7 +3,7 @@
   "version": "0.0.0-dev",
   "license": "GPL-3.0-only",
   "description": "A general package installer",
-  "homepage": "https://github.com/LiteLDev/lip",
+  "homepage": "https://docs.levimc.org/lip/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LiteLDev/lip.git"

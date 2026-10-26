@@ -14,7 +14,7 @@ To start tracking packages, initialize a new project manifest. Run the following
 lip init
 ```
 
-This command creates a `tooth.json` file in the current directory. This file acts as a manifest, storing metadata about your project and its dependencies.
+This command creates a `tooth.json` file in the current directory (overwriting any existing one). This file acts as a manifest, storing metadata about your project and its dependencies.
 
 ## Installing Packages
 
@@ -26,8 +26,8 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 
 `lip` supports installing from various sources, including Git repositories. When you install a package:
 - It is downloaded to the local cache.
-- It is added to your `tooth.json` manifest.
 - Its dependencies are resolved and installed.
+- It is recorded in the lockfile (`tooth_lock.json`). Your `tooth.json` is not modified.
 
 ## Listing Installed Packages
 
@@ -67,7 +67,7 @@ Alternatively, running `install` with a specific version will also update or dow
 
 ## Uninstalling Packages
 
-To remove a package from your project and `tooth.json`:
+To remove a package and the files it installed from your project:
 
 ```shell
 lip uninstall github.com/LiteLDev/LeviLamina

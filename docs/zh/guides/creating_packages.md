@@ -10,18 +10,22 @@
 lip init
 ```
 
-该命令会：
-1. 检查是否已存在 `tooth.json`。
-2. 若不存在，则在当前目录创建一个基础 `tooth.json`。
+该命令会在当前目录创建一个基础 `tooth.json`。若该目录已存在 `tooth.json`，它会被覆盖。
 
-生成的 `tooth.json` 大致如下：
+生成的 `tooth.json` 如下：
 
 ```json
 {
   "format_version": 3,
   "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
   "tooth": "github.com/user/repo",
-  "version": "0.1.0",
+  "version": "0.0.0",
+  "info": {
+    "name": "",
+    "description": "",
+    "tags": [],
+    "avatar_url": ""
+  },
   "variants": []
 }
 ```
@@ -34,7 +38,7 @@ lip init
 
 - `format_version`：当前为 `3`。
 - `format_uuid`：必须为 `"289f771f-2c9a-4d73-9f3f-8492495a924d"`。
-- `tooth`：包的唯一标识。
+- `tooth`：包路径，必须是合法的 [Go module path](https://go.dev/ref/mod#module-path)，例如 `github.com/user/repo`。
 - `version`：合法的语义化版本。
 
 示例：
@@ -43,7 +47,7 @@ lip init
 {
   "format_version": 3,
   "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-  "tooth": "my-package",
+  "tooth": "github.com/user/my-package",
   "version": "1.0.0",
   "info": {
     "description": "My awesome package"

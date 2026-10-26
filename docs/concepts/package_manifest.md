@@ -72,7 +72,7 @@ The package manifest file `tooth.json` defines a lip package.
 | `name` | `string` | `""` | Display name. |
 | `description` | `string` | `""` | Short description. |
 | `tags` | `string[]` | `[]` | Tags. Each tag must match `^[a-z0-9-]+(:[a-z0-9-]+)?$`. |
-| `avatar_url` | `string` | `null` | Avatar image URL. |
+| `avatar_url` | `string` | `""` | Avatar image URL. |
 
 ### Variant
 
@@ -80,7 +80,7 @@ A variant defines platform-specific or labeled package configurations. When reso
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `label` | `string` | `""` | Variant label. |
+| `label` | `string` | `""` | Variant label. Must match `^([a-z0-9_]+(/[a-z0-9_]+)?)?$` (lowercase letters, digits, and `_`, optionally one `/`); the empty label is the default variant. |
 | `platform` | `string` | `""` | Target platform ([.NET RID](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog)). Empty matches all. Supports glob matching. |
 | `dependencies` | `object` | `{}` | Map of package ID to [semver range](https://github.com/WalkerCodeRanger/semver#version-ranges). |
 | `assets` | `array` | `[]` | Asset definitions. See [Asset](#asset). |

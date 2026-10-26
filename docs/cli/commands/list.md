@@ -5,8 +5,14 @@ List installed packages.
 ## Synopsis
 
 ```shell
-lip list
+lip list [options]
 ```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--json` | Output as JSON. |
 
 ## Description
 

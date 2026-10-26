@@ -6,11 +6,20 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 
 | Option | Description |
 | :--- | :--- |
-| `--verbose` | Enable verbose logging. |
-| `--json` | Output results in JSON format. |
+| `-h, --help` | Show help for `lip` or for a command (e.g. `lip install --help`). |
+| `--version` | Print the version of `lip`. |
 
-## Common Commands
+Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md), [`list`](commands/list.md), and [`versions`](commands/versions.md).
 
--   `lip install`: Install a package.
--   `lip list`: List installed packages.
--   `lip init`: Initialize a new project.
+## Commands
+
+-   [`lip cache clean`](commands/cache_clean.md): Clean the local cache.
+-   [`lip config`](commands/config.md): Get, set, list, and delete configuration values.
+-   [`lip init`](commands/init.md): Initialize a new project.
+-   [`lip install`](commands/install.md): Install packages.
+-   [`lip list`](commands/list.md): List installed packages.
+-   [`lip migrate`](commands/migrate.md): Migrate a package manifest to the current format version.
+-   [`lip uninstall`](commands/uninstall.md): Uninstall packages.
+-   [`lip update`](commands/update.md): Update packages.
+-   [`lip versions`](commands/versions.md): Show available versions for a package.
+-   [`lip view`](commands/view.md): Show the manifest of a package.

@@ -2,7 +2,7 @@
   "openrpc": "1.2.6",
   "info": {
     "title": "lip Daemon JSON-RPC API",
-    "description": "API for interacting with the lip package manager daemon.",
+    "description": "API for interacting with the lip package installer daemon.",
     "version": "3.0.0"
   },
   "methods": [

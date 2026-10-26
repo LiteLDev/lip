@@ -7,7 +7,7 @@ lip provides flexible ways to install dependencies.
 To install a package by its name or ID:
 
 ```sh
-lip install <package-name>
+lip install <PACKAGES>
 ```
 
 Example:
@@ -15,7 +15,7 @@ Example:
 lip install github.com/user/repo
 ```
 
-This adds the package to `tooth.json` and installs it into your workspace.
+This installs the package into your workspace and records it in the lockfile (`tooth_lock.json`). It does not modify `tooth.json`.
 
 ## Specifying Versions
 

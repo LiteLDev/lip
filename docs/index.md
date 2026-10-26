@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "lip"
   text: "A general package installer"
-  tagline: Install packages from any Git repository
+  tagline: Install packages from public Git repositories
   actions:
     - theme: brand
       text: Getting Started
