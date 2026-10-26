@@ -159,7 +159,8 @@ public class GitTreeSource(
       await _cacheService.GetOrCreateFile(GetCacheKey(objectId), _ => throw new CacheMissException());
 
       return true;
-    } catch (CacheMissException) {
+    }
+    catch (CacheMissException) {
       return false;
     }
   }
