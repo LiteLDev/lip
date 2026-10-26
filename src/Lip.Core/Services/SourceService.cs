@@ -1,10 +1,8 @@
 using System.IO.Abstractions;
 using Flurl;
-using Golang.Org.X.Mod;
 using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 using Lip.Core.Sources;
-using Semver;
 
 namespace Lip.Core.Services;
 
@@ -20,8 +18,7 @@ public class SourceService(
     IGitRunner gitRunner,
     IUserInteraction userInteraction,
     ICacheService cacheService,
-    Url? githubProxy,
-    Url goModuleProxy) : ISourceService {
+    Url? githubProxy) : ISourceService {
   private readonly IFileDownloader _fileDownloader = fileDownloader;
   private readonly IGitRunner _gitRunner = gitRunner;
   private readonly IUserInteraction _userInteraction = userInteraction;
@@ -29,7 +26,6 @@ public class SourceService(
   private readonly ICacheService _cacheService = cacheService;
 
   private readonly Url? _githubProxy = githubProxy;
-  private readonly Url _goModuleProxy = goModuleProxy;
 
   public async Task<ISource> Get(LocalPackageSpec localPackageSpec) {
     if (!localPackageSpec.ArchiveFile.Exists) {
@@ -40,22 +36,7 @@ public class SourceService(
   }
 
   public async Task<ISource> Get(PackageSpec packageSpec) {
-    List<Exception> exceptions = [];
-
-    foreach (Func<Task<ISource>> sourceFunc in new Func<Task<ISource>>[]
-    {
-            () => GetPackageViaGoModuleProxy(packageSpec),
-            () => GetPackageViaGit(packageSpec),
-    }) {
-      try {
-        return await sourceFunc();
-      }
-      catch (Exception ex) {
-        exceptions.Add(ex);
-      }
-    }
-
-    throw new AggregateException($"Failed to retrieve package '{packageSpec}' from all sources.", exceptions);
+    return await GetPackageViaGit(packageSpec);
   }
 
   public async Task<ISource> Get(RemotePackageSpec remotePackageSpec) {
@@ -132,24 +113,5 @@ public class SourceService(
     });
 
     return new DirectorySource(repoDir);
-  }
-
-  private async Task<ISource> GetPackageViaGoModuleProxy(PackageSpec packageSpec) {
-    SemVersion version = (packageSpec.Version.Major >= 2)
-        ? packageSpec.Version.WithMetadata("incompatible")
-        : packageSpec.Version;
-
-    Url archiveUrl = _goModuleProxy
-        .Clone()
-        .AppendPathSegments(
-        Module.EscapePath(packageSpec.Id.Path).Item1,
-        "@v",
-        Module.EscapeVersion(Module.CanonicalVersion($"v{version}")).Item1 + ".zip");
-
-    IFileInfo archiveFile = await _cacheService.GetOrCreateFile(archiveUrl, async cacheFile => {
-      await _fileDownloader.DownloadFile(archiveUrl, cacheFile);
-    });
-
-    return new GoModuleArchiveSource(archiveFile);
   }
 }

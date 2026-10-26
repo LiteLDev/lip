@@ -16,7 +16,8 @@ The file is created automatically with default values when lip first runs.
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `github_proxy` | `string?` | `null` | Proxy URL for GitHub requests and downloads. |
-| `go_module_proxy` | `string` | `"https://goproxy.io"` | Go module proxy URL for package resolution. |
+
+Packages are resolved and downloaded directly from their git repositories, so no package registry or module proxy needs to be configured. The former `go_module_proxy` key has been removed; if it is still present in an existing `liprc.json`, it is ignored and dropped the next time the file is saved.
 
 ## Management
 

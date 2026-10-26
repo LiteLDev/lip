@@ -16,7 +16,8 @@ lip 将配置存储在 `liprc.json` 中。
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `github_proxy` | `string?` | `null` | GitHub 请求与下载的代理 URL。 |
-| `go_module_proxy` | `string` | `"https://goproxy.io"` | 用于包解析的 Go module 代理 URL。 |
+
+包直接从其 git 仓库解析和下载，无需配置任何包注册表或模块代理。原有的 `go_module_proxy` 配置键已被移除；若现有 `liprc.json` 中仍包含该键，它会被忽略，并在下次保存文件时被删除。
 
 ## 管理方式
 

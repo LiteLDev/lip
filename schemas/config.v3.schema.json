@@ -12,9 +12,6 @@
     },
     "github_proxy": {
       "type": "string"
-    },
-    "go_module_proxy": {
-      "type": "string"
     }
   },
   "required": [

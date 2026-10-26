@@ -32,7 +32,6 @@ lip config set <key> <value>
 ### 常见配置
 
 - `github_proxy`：GitHub 请求使用的代理 URL。
-- `go_module_proxy`：Go module 代理 URL（默认：`https://goproxy.io`）。
 
 示例：
 ```sh

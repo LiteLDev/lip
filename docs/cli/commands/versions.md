@@ -2,6 +2,8 @@
 
 Shows available versions for a package.
 
+Versions are read from the git tags of the package repository (`https://<package path>.git`). Only tags of the form `v<semver>` (e.g., `v1.2.3`) are listed.
+
 ## Synopsis
 
 ```sh
