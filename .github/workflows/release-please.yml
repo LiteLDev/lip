@@ -1,0 +1,45 @@
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, without the leading v (e.g. 1.2.3)
+        required: true
+
+concurrency:
+  group: release-please
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - id: release-pr
+        uses: googleapis/release-please-action@v5
+        with:
+          skip-github-release: true
+          release-as: ${{ inputs.version }}
+
+      - if: steps.release-pr.outputs.pr
+        run: |
+          gh pr merge "${{ fromJSON(steps.release-pr.outputs.pr).number }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --squash
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          skip-github-pull-request: true
+
+      - if: steps.release.outputs.release_created
+        run: |
+          gh workflow run release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            -f tag="${{ steps.release.outputs.tag_name }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
