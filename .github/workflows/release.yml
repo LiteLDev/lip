@@ -219,11 +219,11 @@ jobs:
           version='${{ needs.get-version.outputs.version }}'
           tag="${version#*-}"
           tag="${tag%%.*}"
-          npm publish .tmp/npm --tag "$tag"
+          npm stage publish .tmp/npm --tag "$tag"
 
       - if: ${{ !contains(needs.get-version.outputs.version, '-') }}
         run: |
-          npm publish .tmp/npm
+          npm stage publish .tmp/npm
 
   publish-winget:
     needs:
