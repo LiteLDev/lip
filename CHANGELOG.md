@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Renamed the npm package from `@futrime/lip` to `@levimc/lip` and the winget package ID from `futrime.lip` to `levimc.lip`.
+- Packages fetched via git are now cloned shallowly (`--depth 1`).
+
+### Fixed
+
+- `file` placements of packages fetched via git not matching on Windows.
+- `.git` contents being exposed as package files when packages are fetched via git.
 
 ## [0.34.9] - 2026-10-08
 

@@ -128,7 +128,7 @@ public class SourceService(
     IDirectoryInfo repoDir = await _cacheService.GetOrCreateDirectory(keyUrl, async cacheDir => {
       await _userInteraction.PrintInfo($"Cloning git repository from '{repoUrl}'...");
 
-      await _gitRunner.Clone(repoUrl, cacheDir.FullName, branch: @ref);
+      await _gitRunner.Clone(repoUrl, cacheDir.FullName, branch: @ref, depth: 1);
     });
 
     return new DirectorySource(repoDir);

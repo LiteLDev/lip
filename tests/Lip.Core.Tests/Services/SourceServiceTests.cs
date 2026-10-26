@@ -92,6 +92,33 @@ public class SourceServiceTests {
   }
 
   [Fact]
+  public async Task Get_PackageSpec_ViaGit_ClonesTagShallowly() {
+    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", string.Empty), new SemVersion(1, 2, 3));
+    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
+    string cacheRepo = Path.Combine(root, "cache", "repo");
+    MockFileSystem mockFs = new();
+    mockFs.AddDirectory(cacheRepo);
+    IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
+
+    _mockCacheService.Setup(c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()))
+        .ThrowsAsync(new Exception("Go Proxy failed"));
+
+    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
+        .Returns(async (string _, Func<IDirectoryInfo, Task> createFunc) => {
+          await createFunc(mockDir);
+          return mockDir;
+        });
+
+    await _service.Get(pkgSpec);
+
+    _mockGitRunner.Verify(g => g.Clone(
+        "https://github.com/test/repo.git",
+        mockDir.FullName,
+        "v1.2.3",
+        1), Times.Once);
+  }
+
+  [Fact]
   public async Task Get_PackageSpec_GitFails_GoModuleProxySucceeds_ReturnsGoModuleArchiveSource() {
     PackageSpec pkgSpec = new(new PackageId("example.com/test/pkg", string.Empty), new SemVersion(1, 0, 0));
     string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
