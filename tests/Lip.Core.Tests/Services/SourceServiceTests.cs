@@ -27,8 +27,7 @@ public class SourceServiceTests {
         _mockGitRunner.Object,
         _mockUserInteraction.Object,
         _mockCacheService.Object,
-        githubProxy: null,
-        goModuleProxy: new Url("https://proxy.golang.org"));
+        githubProxy: null);
   }
 
   [Fact]
@@ -59,16 +58,37 @@ public class SourceServiceTests {
   }
 
   [Fact]
-  public async Task Get_PackageSpec_AllSourcesFail_ThrowsAggregateException() {
+  public async Task Get_PackageSpec_GitFails_Throws() {
     PackageSpec pkgSpec = new(new PackageId("example.com/pkg", string.Empty), new SemVersion(1, 0, 0));
 
     _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
         .ThrowsAsync(new Exception("Cache failed"));
 
-    _mockCacheService.Setup(c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()))
-        .ThrowsAsync(new Exception("Cache file failed"));
+    Exception ex = await Assert.ThrowsAnyAsync<Exception>(() => _service.Get(pkgSpec));
 
-    await Assert.ThrowsAsync<AggregateException>(() => _service.Get(pkgSpec));
+    Assert.Equal("Cache failed", ex.Message);
+  }
+
+  [Fact]
+  public async Task Get_PackageSpec_DoesNotDownloadFiles() {
+    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", string.Empty), new SemVersion(1, 0, 0));
+    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
+    string cacheRepo = Path.Combine(root, "cache", "repo");
+    MockFileSystem mockFs = new();
+    mockFs.AddDirectory(cacheRepo);
+    IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
+
+    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
+        .ReturnsAsync(mockDir);
+
+    await _service.Get(pkgSpec);
+
+    _mockCacheService.Verify(
+        c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()),
+        Times.Never);
+    _mockFileDownloader.Verify(
+        d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()),
+        Times.Never);
   }
 
   [Fact]
@@ -79,9 +99,6 @@ public class SourceServiceTests {
     MockFileSystem mockFs = new();
     mockFs.AddDirectory(cacheRepo);
     IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
-
-    _mockCacheService.Setup(c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()))
-        .ThrowsAsync(new Exception("Go Proxy failed"));
 
     _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
         .ReturnsAsync(mockDir);
@@ -100,9 +117,6 @@ public class SourceServiceTests {
     mockFs.AddDirectory(cacheRepo);
     IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
 
-    _mockCacheService.Setup(c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()))
-        .ThrowsAsync(new Exception("Go Proxy failed"));
-
     _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
         .Returns(async (string _, Func<IDirectoryInfo, Task> createFunc) => {
           await createFunc(mockDir);
@@ -119,34 +133,13 @@ public class SourceServiceTests {
   }
 
   [Fact]
-  public async Task Get_PackageSpec_GitFails_GoModuleProxySucceeds_ReturnsGoModuleArchiveSource() {
-    PackageSpec pkgSpec = new(new PackageId("example.com/test/pkg", string.Empty), new SemVersion(1, 0, 0));
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string pkgPath = Path.Combine(root, "cache", "pkg.zip");
-    MockFileSystem mockFs = new();
-    mockFs.AddFile(pkgPath, new MockFileData("content"));
-    IFileInfo mockFile = mockFs.FileInfo.New(pkgPath);
-
-    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
-        .ThrowsAsync(new Exception("Git failed"));
-
-    _mockCacheService.Setup(c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()))
-        .ReturnsAsync(mockFile);
-
-    ISource result = await _service.Get(pkgSpec);
-
-    Assert.IsType<GoModuleArchiveSource>(result);
-  }
-
-  [Fact]
   public async Task Get_PackageSpec_WithGithubProxy_UsesProxy() {
     SourceService serviceWithProxy = new(
         _mockFileDownloader.Object,
         _mockGitRunner.Object,
         _mockUserInteraction.Object,
         _mockCacheService.Object,
-        githubProxy: new Url("https://ghproxy.com"),
-        goModuleProxy: new Url("https://proxy.golang.org"));
+        githubProxy: new Url("https://ghproxy.com"));
 
     PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", string.Empty), new SemVersion(1, 0, 0));
     string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
@@ -155,35 +148,12 @@ public class SourceServiceTests {
     mockFs.AddDirectory(cacheRepo);
     IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
 
-    _mockCacheService.Setup(c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()))
-        .ThrowsAsync(new Exception("Go Proxy failed"));
-
     _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.Is<string>(k => k.Contains("ghproxy.com")), It.IsAny<Func<IDirectoryInfo, Task>>()))
         .ReturnsAsync(mockDir);
 
     ISource result = await serviceWithProxy.Get(pkgSpec);
 
     Assert.IsType<DirectorySource>(result);
-  }
-
-  [Fact]
-  public async Task Get_PackageSpec_MajorVersion2_AddsIncompatibleMetadata() {
-    PackageSpec pkgSpec = new(new PackageId("example.com/test/pkg", string.Empty), new SemVersion(2, 0, 0));
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string pkgPath = Path.Combine(root, "cache", "pkg.zip");
-    MockFileSystem mockFs = new();
-    mockFs.AddFile(pkgPath, new MockFileData("content"));
-    IFileInfo mockFile = mockFs.FileInfo.New(pkgPath);
-
-    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
-        .ThrowsAsync(new Exception("Git failed"));
-
-    _mockCacheService.Setup(c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()))
-        .ReturnsAsync(mockFile);
-
-    ISource result = await _service.Get(pkgSpec);
-
-    Assert.IsType<GoModuleArchiveSource>(result);
   }
 
   [Fact]
@@ -243,8 +213,7 @@ public class SourceServiceTests {
         _mockGitRunner.Object,
         _mockUserInteraction.Object,
         _mockCacheService.Object,
-        githubProxy: new Url("https://github.bibk.top"),
-        goModuleProxy: new Url("https://proxy.golang.org"));
+        githubProxy: new Url("https://github.bibk.top"));
 
     string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
     string filePath = Path.Combine(root, "cache", "file.zip");
@@ -292,8 +261,7 @@ public class SourceServiceTests {
         _mockGitRunner.Object,
         _mockUserInteraction.Object,
         _mockCacheService.Object,
-        githubProxy: new Url("https://github.bibk.top"),
-        goModuleProxy: new Url("https://proxy.golang.org"));
+        githubProxy: new Url("https://github.bibk.top"));
 
     string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
     string filePath = Path.Combine(root, "cache", "file.zip");

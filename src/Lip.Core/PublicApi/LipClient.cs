@@ -52,7 +52,6 @@ public class LipClient(
     CacheService cacheService = new(fileSystem, userInteraction);
     FileDownloader fileDownloader = new(userInteraction);
     Url? githubProxy = await configService.Get<Url?>("github_proxy");
-    Url goModuleProxy = await configService.Get<Url>("go_module_proxy");
     GitRunner gitRunner = new();
 
     CommandRunner commandRunner = new();
@@ -61,8 +60,7 @@ public class LipClient(
         gitRunner,
         userInteraction,
         cacheService,
-        githubProxy,
-        goModuleProxy);
+        githubProxy);
     WorkspaceService workspaceService = new(fileSystem, userInteraction);
 
     PackageInstaller packageInstaller = new(
@@ -73,11 +71,7 @@ public class LipClient(
         workspaceService);
     CompositePackageRegistry packageRegistry = new([
       [new WorkspaceServicePackageRegistry(workspaceService)],
-      [
-        new GoModuleProxyPackageRegistry(goModuleProxy),
-        new LiprPackageRegistry(),
-        new GitPackageRegistry(gitRunner, githubProxy),
-      ],
+      [new GitPackageRegistry(gitRunner, githubProxy)],
       [new SourceServicePackageRegistry(sourceService)],
     ]);
 

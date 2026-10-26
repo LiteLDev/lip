@@ -32,7 +32,6 @@ lip config set <key> <value>
 ### Common Settings
 
 -   `github_proxy`: A URL to use as a proxy for GitHub requests.
--   `go_module_proxy`: A URL for a Go module proxy (default: `https://goproxy.io`).
 
 Example:
 ```sh
