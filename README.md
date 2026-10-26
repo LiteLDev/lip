@@ -22,4 +22,4 @@ This project exists thanks to all the people who contribute.
 
 ## License
 
-GPL-3.0-only © 2023-2026 Zijian Zhang
+GPL-3.0-only © 2023-2026 LeviMC

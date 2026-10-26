@@ -7,14 +7,14 @@ The package argument can be a full package spec (e.g., `github.com/user/repo@1.0
 ## Synopsis
 
 ```sh
-lip view <package>
+lip view <PACKAGE>
 ```
 
 ## Arguments
 
 | Argument | Description |
 | --- | --- |
-| `<package>` | The package to view, specified as `<path>@<version>` or just `<path>`. |
+| `<PACKAGE>` | The package to view, specified as `<path>@<version>` or just `<path>`. |
 
 ## Examples
 
@@ -32,4 +32,4 @@ lip view github.com/user/repo
 
 ## Description
 
-Fetches the package manifest from the registry and displays it as JSON.
+Reads the package manifest (`tooth.json` at the version's tag in the package's git repository) and displays it as JSON.

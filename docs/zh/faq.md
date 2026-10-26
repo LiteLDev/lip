@@ -23,4 +23,4 @@
 ### lip 会把安装的包放在哪里？
 lip 会根据 `tooth.json` 中的规则，将包文件**直接安装到你的工作区**。与某些包管理器不同，它不会默认把依赖隔离到单独目录，除非清单中明确指定。
 
-全局缓存位于系统本地应用数据目录（例如 Windows 的 `%LOCALAPPDATA%\\lip\\cache`，Linux 的 `~/.local/share/lip/cache`）。
+全局缓存位于系统本地应用数据目录（例如 Windows 的 `%LOCALAPPDATA%\lip\cache`，Linux 的 `~/.local/share/lip/cache`）。

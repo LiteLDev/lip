@@ -18,7 +18,7 @@ This will start the JSON-RPC server, listening on `stdin` and writing responses 
 
 -   **Protocol**: [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
 -   **Transport**: Standard Input/Output (stdio)
--   **Encoding**: UTF-8 (lines separated by `\n` or purely streaming JSON objects)
+-   **Framing**: Each message is a UTF-8 JSON body preceded by a `Content-Length: <bytes>` header and a blank line (`\r\n\r\n`), as in the Language Server Protocol
 
 ::: tip
 It is recommended to use a JSON-RPC library for your programming language to handle message framing and parsing reliably.
@@ -36,4 +36,4 @@ Common notifications include:
 -   `PrintError`
 -   `ReportProgress`
 
-See the [OpenRPC Specification](/daemon/json_rpc_spec) for rigorous definitions of these methods.
+See the [OpenRPC Specification](json_rpc_spec.md) for rigorous definitions of these methods.

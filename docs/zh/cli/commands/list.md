@@ -5,8 +5,14 @@
 ## 概要
 
 ```shell
-lip list
+lip list [options]
 ```
+
+## 选项
+
+| 选项 | 说明 |
+| --- | --- |
+| `--json` | 以 JSON 格式输出。 |
 
 ## 说明
 

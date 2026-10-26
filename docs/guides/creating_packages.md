@@ -10,18 +10,22 @@ The easiest way to start a new project is using the `lip init` command.
 lip init
 ```
 
-This command will:
-1.  Check for an existing `tooth.json` file.
-2.  If none exists, it will create a basic `tooth.json` file in your current directory.
+This command creates a basic `tooth.json` file in your current directory. If a `tooth.json` already exists there, it is overwritten.
 
-The generated `tooth.json` will look something like this:
+The generated `tooth.json` looks like this:
 
 ```json
 {
   "format_version": 3,
   "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
   "tooth": "github.com/user/repo",
-  "version": "0.1.0",
+  "version": "0.0.0",
+  "info": {
+    "name": "",
+    "description": "",
+    "tags": [],
+    "avatar_url": ""
+  },
   "variants": []
 }
 ```
@@ -34,7 +38,7 @@ You can also create a `tooth.json` file manually. Ensure you include the require
 
 -   `format_version`: Currently `3`.
 -   `format_uuid`: Must be `"289f771f-2c9a-4d73-9f3f-8492495a924d"`.
--   `tooth`: The unique identifier for your package.
+-   `tooth`: The package path. Must be a valid [Go module path](https://go.dev/ref/mod#module-path), such as `github.com/user/repo`.
 -   `version`: A valid semantic version.
 
 Example:
@@ -43,7 +47,7 @@ Example:
 {
   "format_version": 3,
   "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-  "tooth": "my-package",
+  "tooth": "github.com/user/my-package",
   "version": "1.0.0",
   "info": {
     "description": "My awesome package"

@@ -7,11 +7,11 @@ As lip evolves, the format of `tooth.json` may change. The `lip migrate` command
 To migrate an old `tooth.json` file to the current format version (v3), use the `migrate` command.
 
 ```sh
-lip migrate <input-file> <output-file>
+lip migrate <FILE> <OUTPUT>
 ```
 
--   `<input-file>`: The path to your existing `tooth.json` (or similarly named file) that is in an older format.
--   `<output-file>`: The path where the new, migrated manifest should be verified.
+-   `<FILE>`: The path to your existing `tooth.json` (or similarly named file) that is in an older format.
+-   `<OUTPUT>`: The path where the new, migrated manifest is written.
 
 ### Example
 

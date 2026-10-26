@@ -7,7 +7,7 @@ lip 提供了灵活的依赖安装方式。
 按名称或 ID 安装包：
 
 ```sh
-lip install <package-name>
+lip install <PACKAGES>
 ```
 
 示例：
@@ -15,7 +15,7 @@ lip install <package-name>
 lip install github.com/user/repo
 ```
 
-这会把包加入 `tooth.json` 并安装到工作区。
+这会把包安装到工作区，并记录到锁文件（`tooth_lock.json`）中，但不会修改 `tooth.json`。
 
 ## 指定版本
 

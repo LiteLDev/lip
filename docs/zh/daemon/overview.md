@@ -18,7 +18,7 @@ lipd run
 
 - **协议**：[JSON-RPC 2.0](https://www.jsonrpc.org/specification)
 - **传输**：标准输入/输出（stdio）
-- **编码**：UTF-8（以 `\n` 分隔行，或纯流式 JSON 对象）
+- **消息帧**：每条消息是 UTF-8 编码的 JSON 正文，前面带有 `Content-Length: <字节数>` 头和一个空行（`\r\n\r\n`），与 Language Server Protocol 相同
 
 ::: tip
 建议使用你所选语言的 JSON-RPC 库，以可靠处理消息封装与解析。
@@ -36,4 +36,4 @@ lipd run
 - `PrintError`
 - `ReportProgress`
 
-严谨定义请参见 [OpenRPC 规范](/zh/daemon/json_rpc_spec)。
+严谨定义请参见 [OpenRPC 规范](json_rpc_spec.md)。

@@ -17,7 +17,7 @@ The file is created automatically with default values when lip first runs.
 | --- | --- | --- | --- |
 | `github_proxy` | `string?` | `null` | Proxy URL for GitHub requests and downloads (git requests and release assets). If a proxied request fails, lip retries it against `github.com` directly. |
 
-Packages are resolved and downloaded directly from their git repositories, so no package registry or module proxy needs to be configured. The former `go_module_proxy` key has been removed; if it is still present in an existing `liprc.json`, it is ignored and dropped the next time the file is saved.
+Packages are resolved and downloaded directly from their git repositories, so no package registry or module proxy needs to be configured.
 
 ## Management
 

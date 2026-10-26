@@ -7,8 +7,20 @@ Versions are read from the git tags of the package repository (`https://<package
 ## Synopsis
 
 ```sh
-lip versions <package>
+lip versions <PACKAGE> [options]
 ```
+
+## Arguments
+
+| Argument | Description |
+| --- | --- |
+| `<PACKAGE>` | The package to show versions for, specified as `<path>` (e.g. `github.com/user/repo`). |
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--json` | Output as JSON. |
 
 ## Examples
 

@@ -7,11 +7,11 @@
 将旧版 `tooth.json` 迁移到当前格式（v3）：
 
 ```sh
-lip migrate <input-file> <output-file>
+lip migrate <FILE> <OUTPUT>
 ```
 
-- `<input-file>`：旧格式 `tooth.json`（或同类文件）路径。
-- `<output-file>`：迁移后新清单输出路径。
+- `<FILE>`：旧格式 `tooth.json`（或同类文件）路径。
+- `<OUTPUT>`：迁移后新清单的写入路径。
 
 ### 示例
 

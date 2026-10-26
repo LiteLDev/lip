@@ -31,14 +31,14 @@ The manifest at a tag identifies the package's contents, but not its identity: i
 
 ## Manifest Validation
 
-lip uses JSON Schema to validate `tooth.json` files. The schema is defined in `schemas/tooth.v3.schema.json`.
+The `tooth.json` format is described by JSON Schemas in the repository's `schemas/` directory: `manifest.schema.json` for the current format (version 3), and `manifest.v1.schema.json` and `manifest.v2.schema.json` for the older formats. The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
 
--   **Validation**: When loading a manifest, lip checks it against this schema to ensure all required fields are present and have the correct types.
--   **Versioning**: The `format_version` field in `tooth.json` corresponds to the schema version. lip checks this version to know how to interpret the file. If the version is older than supported, you may need to run `lip migrate`.
+-   **Validation**: When loading a manifest, lip parses it into its typed model and rejects invalid values, such as a `tooth` that is not a valid Go module path, an invalid `version`, tag, or variant label, or a wrong `format_uuid`.
+-   **Versioning**: lip reads the `format_version` field to know how to interpret the file. Manifests in format version 1 or 2 are converted to version 3 in memory when they are read; run `lip migrate` to rewrite such a file in the current format.
 
 ## Workspace State
 
-lip maintains the state of your installed packages in a local database (currently JSON-based) within the `.lip` directory. This tracks:
+lip maintains the state of your installed packages in the lockfile `tooth_lock.json` in the workspace root (see [Lockfiles](../concepts/lockfiles.md)). This tracks:
 -   Which packages are explicitly requested versus implicit dependencies.
 -   The exact versions installed.
 -   Metadata about where and how files were placed.

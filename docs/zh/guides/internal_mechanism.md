@@ -31,14 +31,14 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 ## 清单校验
 
-lip 使用 JSON Schema 校验 `tooth.json`，schema 位于 `schemas/tooth.v3.schema.json`。
+`tooth.json` 的格式由仓库 `schemas/` 目录中的 JSON Schema 描述：当前格式（版本 3）为 `manifest.schema.json`，旧格式为 `manifest.v1.schema.json` 和 `manifest.v2.schema.json`。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
 
-- **校验**：加载清单时，lip 会按 schema 检查必填字段和类型是否正确。
-- **版本**：`tooth.json` 中的 `format_version` 对应 schema 版本。lip 通过该值判断如何解释文件。若版本过旧，可能需要运行 `lip migrate`。
+- **校验**：加载清单时，lip 会将其解析为类型化模型，并拒绝无效值，例如不是合法 Go module path 的 `tooth`、无效的 `version`、标签或变体标签，以及错误的 `format_uuid`。
+- **版本**：lip 通过 `format_version` 字段判断如何解释文件。格式版本为 1 或 2 的清单会在读取时于内存中转换为版本 3；如需将文件改写为当前格式，请运行 `lip migrate`。
 
 ## 工作区状态
 
-lip 会在 `.lip` 目录下使用本地数据库（当前为 JSON）维护已安装包状态，记录：
+lip 在工作区根目录的锁文件 `tooth_lock.json` 中维护已安装包状态（参见[锁文件](../concepts/lockfiles.md)），记录：
 - 用户显式请求的包与隐式依赖；
 - 精确安装版本；
 - 文件放置位置与方式等元数据。

@@ -14,7 +14,7 @@
 lip init
 ```
 
-该命令会在当前目录创建 `tooth.json` 文件。这个文件是清单（manifest），用于保存项目及其依赖的元数据。
+该命令会在当前目录创建 `tooth.json` 文件（若已存在则覆盖）。这个文件是清单（manifest），用于保存项目及其依赖的元数据。
 
 ## 安装包
 
@@ -26,8 +26,8 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 
 `lip` 支持从多种来源安装（包括 Git 仓库）。安装时会：
 - 下载到本地缓存；
-- 加入你的 `tooth.json` 清单；
-- 解析并安装其依赖。
+- 解析并安装其依赖；
+- 记录到锁文件（`tooth_lock.json`）中。你的 `tooth.json` 不会被修改。
 
 ## 查看已安装包
 
@@ -67,7 +67,7 @@ lip update github.com/LiteLDev/LeviLamina
 
 ## 卸载包
 
-从项目和 `tooth.json` 中移除包：
+从项目中移除包及其安装的文件：
 
 ```shell
 lip uninstall github.com/LiteLDev/LeviLamina
