@@ -82,46 +82,25 @@ public class PackageInstaller(
         _ => throw new UnreachableException(),
       };
 
-      foreach (string key in assetSource.Keys) {
-        List<IFileInfo> targetLocations = [];
-        foreach (PackageManifestAssetPlacement placement in asset.Placements) {
-          switch (placement.Type) {
-            case PackageManifestAssetPlacement.PlacementType.File:
-              if (placement.Src == key) {
-                targetLocations.Add(_fileSystem.FileInfo.New(placement.Dst));
-              } else if (Glob.Parse(placement.Src).IsMatch(key)) {
-                string targetPath = Path.Combine(
-                    placement.Dst,
-                    Path.GetFileName(key));
-                targetLocations.Add(_fileSystem.FileInfo.New(targetPath));
-              }
+      // Match placements first, so lazy sources only download the files that are placed.
+      IReadOnlyList<(string Key, string TargetPath)> matches = PlacementMatcher.Match(
+          assetSource.Keys,
+          asset.Placements);
 
-              break;
+      if (matches.Count == 0) {
+        continue;
+      }
 
-            case PackageManifestAssetPlacement.PlacementType.Directory:
-              // Keep compatibility with older versions of the manifest where src could be empty.
-              if (Path.GetRelativePath(string.IsNullOrEmpty(placement.Src) ? "." : placement.Src, key) is string relativePath
-                  && !relativePath.StartsWith("..")) {
-                string targetPath = Path.Combine(
-                    placement.Dst,
-                    relativePath);
-                targetLocations.Add(_fileSystem.FileInfo.New(targetPath));
-              }
+      await assetSource.Prefetch(matches.Select(m => m.Key).Distinct());
 
-              break;
+      foreach ((string key, string targetPath) in matches) {
+        IFileInfo targetLocation = _fileSystem.FileInfo.New(targetPath);
 
-            default:
-              throw new UnreachableException();
-          }
-        }
+        using Stream sourceStream = await assetSource.OpenRead(key);
+        using Stream targetStream = _fileSystem.CreateFileWithDirectory(targetLocation.FullName);
+        await sourceStream.CopyToAsync(targetStream);
 
-        foreach (IFileInfo targetLocation in targetLocations) {
-          using Stream sourceStream = await assetSource.OpenRead(key);
-          using Stream targetStream = _fileSystem.CreateFileWithDirectory(targetLocation.FullName);
-          await sourceStream.CopyToAsync(targetStream);
-
-          placedFiles.Add(targetLocation);
-        }
+        placedFiles.Add(targetLocation);
       }
     }
 

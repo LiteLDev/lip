@@ -229,6 +229,140 @@ public class PackageInstallerTests {
   }
 
   [Fact]
+  public async Task InstallPackage_PrefetchesAndCopiesOnlyMatchedKeys() {
+    // Arrange
+    PackageId pkgId = new("github.com/test/pkg", "");
+    PackageSpec pkgSpec = new(pkgId, new SemVersion(1, 0, 0));
+
+    _mockWorkspaceService.Setup(w => w.GetInstalledPackages(IWorkspaceService.PackageScope.All))
+        .ReturnsAsync([]);
+
+    string manifestJson = """
+            {
+                "format_version": 3,
+                "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+                "tooth": "github.com/test/pkg",
+                "version": "1.0.0",
+                "variants": [
+                    {
+                        "assets": [
+                            {
+                                "type": "self",
+                                "placements": [
+                                    { "type": "file", "src": "bin/*.dll", "dest": "plugins/p" },
+                                    { "type": "file", "src": "bin/a.dll", "dest": "plugins/copy/a.dll" },
+                                    { "type": "dir", "src": "res", "dest": "plugins/p/res" }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+            """;
+
+    Mock<ISource> mockSource = new();
+    mockSource.Setup(p => p.OpenRead("tooth.json"))
+        .ReturnsAsync(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(manifestJson)));
+    mockSource.Setup(p => p.Keys).Returns(
+        ["tooth.json", "README.md", "bin/a.dll", "bin/b.pdb", "res/cfg/x.json", "src/main.cpp"]);
+    mockSource.Setup(p => p.OpenRead("bin/a.dll"))
+        .ReturnsAsync(() => new MemoryStream("dll"u8.ToArray()));
+    mockSource.Setup(p => p.OpenRead("res/cfg/x.json"))
+        .ReturnsAsync(() => new MemoryStream("json"u8.ToArray()));
+
+    List<List<string>> prefetchCalls = [];
+    mockSource.Setup(p => p.Prefetch(It.IsAny<IEnumerable<string>>()))
+        .Callback<IEnumerable<string>>(keys => prefetchCalls.Add([.. keys]))
+        .Returns(Task.CompletedTask);
+
+    List<IFileInfo>? placedFiles = null;
+    _mockWorkspaceService.Setup(w => w.AddInstalledPackage(
+            pkgSpec,
+            It.IsAny<PackageManifest>(),
+            It.IsAny<IEnumerable<IFileInfo>>(),
+            false))
+        .Callback<PackageSpec, PackageManifest, IEnumerable<IFileInfo>, bool>(
+            (_, _, files, _) => placedFiles = [.. files])
+        .Returns(Task.CompletedTask);
+
+    PackageArtifact artifact = new(pkgSpec, mockSource.Object);
+
+    // Act
+    await _installer.InstallPackage(artifact, false, false, false);
+
+    // Assert
+    List<string> prefetched = Assert.Single(prefetchCalls);
+    Assert.Equal(["bin/a.dll", "res/cfg/x.json"], prefetched);
+
+    mockSource.VerifyGet(p => p.Keys, Times.Once);
+    mockSource.Verify(p => p.OpenRead("bin/a.dll"), Times.Exactly(2));
+    mockSource.Verify(p => p.OpenRead("res/cfg/x.json"), Times.Once);
+    mockSource.Verify(p => p.OpenRead("README.md"), Times.Never);
+    mockSource.Verify(p => p.OpenRead("src/main.cpp"), Times.Never);
+
+    string[] expectedFiles = [
+      Path.Combine("plugins", "p", "a.dll"),
+      Path.Combine("plugins", "copy", "a.dll"),
+      Path.Combine("plugins", "p", "res", "cfg", "x.json"),
+    ];
+    Assert.Equal(
+        expectedFiles.Select(f => _mockFileSystem.Path.GetFullPath(f)),
+        placedFiles!.Select(f => f.FullName));
+    Assert.Equal("dll", _mockFileSystem.File.ReadAllText(expectedFiles[0]));
+    Assert.Equal("dll", _mockFileSystem.File.ReadAllText(expectedFiles[1]));
+    Assert.Equal("json", _mockFileSystem.File.ReadAllText(expectedFiles[2]));
+  }
+
+  [Fact]
+  public async Task InstallPackage_NoMatchedKeys_DoesNotPrefetch() {
+    // Arrange
+    PackageId pkgId = new("github.com/test/pkg", "");
+    PackageSpec pkgSpec = new(pkgId, new SemVersion(1, 0, 0));
+
+    _mockWorkspaceService.Setup(w => w.GetInstalledPackages(IWorkspaceService.PackageScope.All))
+        .ReturnsAsync([]);
+
+    string manifestJson = """
+            {
+                "format_version": 3,
+                "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+                "tooth": "github.com/test/pkg",
+                "version": "1.0.0",
+                "variants": [
+                    {
+                        "assets": [
+                            {
+                                "type": "self",
+                                "placements": [
+                                    { "type": "file", "src": "missing.dll", "dest": "plugins/missing.dll" }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+            """;
+
+    Mock<ISource> mockSource = new();
+    mockSource.Setup(p => p.OpenRead("tooth.json"))
+        .ReturnsAsync(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(manifestJson)));
+    mockSource.Setup(p => p.Keys).Returns(["tooth.json"]);
+
+    PackageArtifact artifact = new(pkgSpec, mockSource.Object);
+
+    // Act
+    await _installer.InstallPackage(artifact, false, false, false);
+
+    // Assert
+    mockSource.Verify(p => p.Prefetch(It.IsAny<IEnumerable<string>>()), Times.Never);
+    _mockWorkspaceService.Verify(w => w.AddInstalledPackage(
+        pkgSpec,
+        It.IsAny<PackageManifest>(),
+        It.Is<IEnumerable<IFileInfo>>(files => !files.Any()),
+        false), Times.Once);
+  }
+
+  [Fact]
   public async Task UninstallPackage_RemovesFiles() {
     // Arrange
     PackageId pkgId = new("github.com/test/pkg", "");
