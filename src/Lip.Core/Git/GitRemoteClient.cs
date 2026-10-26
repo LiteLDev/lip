@@ -90,7 +90,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
         pack = null;
       }
       return entries;
-    } finally {
+    }
+    finally {
       pack?.Dispose();
     }
   }
@@ -182,7 +183,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     Dictionary<string, string?> capabilities;
     try {
       capabilities = await ReadCapabilities(reader, repoUrl);
-    } finally {
+    }
+    finally {
       Interlocked.Add(ref _bytesReceived, reader.BytesRead);
     }
 
@@ -262,7 +264,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
       await PostCommand(remote, request.ToArray(), reader => ReadPackfile(reader, file));
       file.Position = 0;
       return GitPackFile.Open(file);
-    } catch {
+    }
+    catch {
       await file.DisposeAsync();
       throw;
     }
@@ -340,7 +343,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     PktLineReader reader = new(stream);
     try {
       await handle(reader);
-    } finally {
+    }
+    finally {
       Interlocked.Add(ref _bytesReceived, reader.BytesRead);
     }
   }

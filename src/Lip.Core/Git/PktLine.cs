@@ -69,7 +69,8 @@ public sealed class PktLineReader(Stream stream) {
 
     try {
       await _stream.ReadExactlyAsync(_buffer.AsMemory(0, length - 4));
-    } catch (EndOfStreamException ex) {
+    }
+    catch (EndOfStreamException ex) {
       throw new GitProtocolException("Unexpected end of stream in pkt-line payload.", ex);
     }
     BytesRead += length - 4;

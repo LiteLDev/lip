@@ -37,7 +37,8 @@ public sealed class GitPackFile : IDisposable {
     try {
       pack.Scan();
       return pack;
-    } catch {
+    }
+    catch {
       pack.Dispose();
       throw;
     }
