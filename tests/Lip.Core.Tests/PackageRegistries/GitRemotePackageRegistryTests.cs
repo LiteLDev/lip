@@ -39,9 +39,9 @@ public class GitRemotePackageRegistryTests {
   private static void SetupManifest(Mock<IGitRemoteClient> mock, string commit, string blobOid, string version) {
     mock.Setup(c => c.ListTree(It.Is<Url>(u => u.ToString() == _repoUrl), commit))
         .ReturnsAsync([
-            new GitTreeEntry("README.md", 0x81A4, "readme"),
-            new GitTreeEntry("sub/tooth.json", 0x81A4, "nested"),
-            new GitTreeEntry("tooth.json", 0x81A4, blobOid),
+            new GitTreeEntry("README.md", 100644, "readme"),
+            new GitTreeEntry("sub/tooth.json", 100644, "nested"),
+            new GitTreeEntry("tooth.json", 100644, blobOid),
         ]);
     mock.Setup(c => c.FetchBlobs(
             It.Is<Url>(u => u.ToString() == _repoUrl),
@@ -221,7 +221,7 @@ public class GitRemotePackageRegistryTests {
     // Arrange
     Mock<IGitRemoteClient> client = CreateClient(Tag("v1.0.0", "c1"));
     client.Setup(c => c.ListTree(It.IsAny<Url>(), "c1"))
-        .ReturnsAsync([new GitTreeEntry("sub/tooth.json", 0x81A4, "nested")]);
+        .ReturnsAsync([new GitTreeEntry("sub/tooth.json", 100644, "nested")]);
     GitRemotePackageRegistry registry = new(client.Object);
 
     // Act & Assert
@@ -233,11 +233,45 @@ public class GitRemotePackageRegistryTests {
   }
 
   [Fact]
+  public async Task GetPackageManifest_SameCommitTwice_FetchesOnce() {
+    // Arrange
+    Mock<IGitRemoteClient> client = CreateClient(Tag("v1.0.0", "c1"));
+    SetupManifest(client, "c1", "blob1", "1.0.0");
+    GitRemotePackageRegistry registry = new(client.Object);
+    PackageSpec spec = new(_packageId, SemVersion.Parse("1.0.0"));
+
+    // Act
+    PackageManifest first = await registry.GetPackageManifest(spec);
+    PackageManifest second = await registry.GetPackageManifest(spec with { Id = _packageId with { Variant = "client" } });
+
+    // Assert
+    Assert.Same(first, second);
+    client.Verify(c => c.FetchBlobs(
+        It.IsAny<Url>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task GetAvailableVersions_GithubPathsDifferingInCase_ShareOneLookup() {
+    // Arrange
+    Mock<IGitRemoteClient> client = new();
+    client.Setup(c => c.ListRefs(It.IsAny<Url>(), It.IsAny<IEnumerable<string>>()))
+        .ReturnsAsync([Tag("v1.0.0")]);
+    GitRemotePackageRegistry registry = new(client.Object);
+
+    // Act
+    await registry.GetAvailableVersions(new PackageId("github.com/Test/Pkg", ""));
+    await registry.GetAvailableVersions(new PackageId("github.com/test/pkg", ""));
+
+    // Assert
+    client.Verify(c => c.ListRefs(It.IsAny<Url>(), It.IsAny<IEnumerable<string>>()), Times.Once);
+  }
+
+  [Fact]
   public async Task GetPackageManifest_SymlinkToothJson_Throws() {
     // Arrange
     Mock<IGitRemoteClient> client = CreateClient(Tag("v1.0.0", "c1"));
     client.Setup(c => c.ListTree(It.IsAny<Url>(), "c1"))
-        .ReturnsAsync([new GitTreeEntry("tooth.json", 0xA000, "link")]);
+        .ReturnsAsync([new GitTreeEntry("tooth.json", 120000, "link")]);
     GitRemotePackageRegistry registry = new(client.Object);
 
     // Act & Assert

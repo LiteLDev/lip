@@ -4,9 +4,7 @@ This guide will help you get started with `lip`, covering basic usage for managi
 
 ## Prerequisites
 
-Before proceeding, ensure that:
-1. You have [installed lip](installation.md).
-2. `git` is installed and available in your terminal.
+Before proceeding, ensure that you have [installed lip](installation.md). lip does not require `git` to be installed.
 
 ## Initializing a Project
 

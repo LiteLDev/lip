@@ -10,7 +10,7 @@ using Spectre.Console.Cli;
 
 ConsoleUserInteraction userInteraction = new();
 
-LipClient lipClient = await LipClient.Create(userInteraction);
+using LipClient lipClient = await LipClient.Create(userInteraction);
 
 ServiceCollection services = new();
 

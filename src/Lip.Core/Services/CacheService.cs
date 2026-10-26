@@ -11,6 +11,9 @@ public interface ICacheService {
   Task<IFileInfo> GetOrCreateFile(
       string key,
       Func<IFileInfo, Task> factory);
+
+  /// Returns the cached file for the key, or null if it is not cached. Never creates anything.
+  Task<IFileInfo?> TryGetFile(string key);
 }
 
 public class CacheService(IFileSystem fileSystem, IUserInteraction userInteraction) : ICacheService {
@@ -91,9 +94,7 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
   }
 
   public async Task<IFileInfo> GetOrCreateFile(string key, Func<IFileInfo, Task> factory) {
-    string safeKey = Uri.EscapeDataString(key);
-
-    IFileInfo cacheFile = _fileSystem.FileInfo.New(Path.Join(_cacheDirectory.FullName, safeKey));
+    IFileInfo cacheFile = GetCacheFile(key);
 
     if (cacheFile.Exists) {
       await _userInteraction.PrintInfo($"Cache hit for key '{key}'.");
@@ -122,5 +123,17 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
     cacheFile.Refresh();
 
     return cacheFile;
+  }
+
+  public Task<IFileInfo?> TryGetFile(string key) {
+    IFileInfo cacheFile = GetCacheFile(key);
+
+    return Task.FromResult(cacheFile.Exists ? cacheFile : null);
+  }
+
+  private IFileInfo GetCacheFile(string key) {
+    string safeKey = Uri.EscapeDataString(key);
+
+    return _fileSystem.FileInfo.New(Path.Join(_cacheDirectory.FullName, safeKey));
   }
 }

@@ -2,7 +2,9 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Flurl;
 using Lip.Core.Entities;
+using Lip.Core.Git;
 using Lip.Core.Infrastructure;
+using Lip.Core.PackageRegistries;
 using Lip.Core.Services;
 using Lip.Core.Sources;
 using Moq;
@@ -11,20 +13,24 @@ using Semver;
 namespace Lip.Core.Tests.Services;
 
 public class SourceServiceTests {
-  private readonly Mock<IGitRunner> _mockGitRunner;
+  private const string _tagObjectId = "1111111111111111111111111111111111111111";
+  private const string _commitObjectId = "2222222222222222222222222222222222222222";
+
+  private readonly Mock<IGitRemoteClient> _mockGitRemoteClient;
   private readonly Mock<IUserInteraction> _mockUserInteraction;
   private readonly Mock<ICacheService> _mockCacheService;
   private readonly Mock<IFileDownloader> _mockFileDownloader;
   private readonly SourceService _service;
 
   public SourceServiceTests() {
-    _mockGitRunner = new Mock<IGitRunner>();
+    _mockGitRemoteClient = new Mock<IGitRemoteClient>();
     _mockUserInteraction = new Mock<IUserInteraction>();
     _mockCacheService = new Mock<ICacheService>();
     _mockFileDownloader = new Mock<IFileDownloader>();
     _service = new SourceService(
         _mockFileDownloader.Object,
-        _mockGitRunner.Object,
+        _mockGitRemoteClient.Object,
+        new GitRemotePackageRegistry(_mockGitRemoteClient.Object),
         _mockUserInteraction.Object,
         _mockCacheService.Object,
         githubProxy: null);
@@ -58,102 +64,44 @@ public class SourceServiceTests {
   }
 
   [Fact]
-  public async Task Get_PackageSpec_GitFails_Throws() {
+  public async Task Get_PackageSpec_TagMissing_Throws() {
     PackageSpec pkgSpec = new(new PackageId("example.com/pkg", string.Empty), new SemVersion(1, 0, 0));
 
-    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
-        .ThrowsAsync(new Exception("Cache failed"));
+    _mockGitRemoteClient.Setup(c => c.ListRefs(It.IsAny<Url>(), It.IsAny<IEnumerable<string>>()))
+        .ReturnsAsync([new GitRemoteRef("refs/tags/v0.9.0", _commitObjectId, null)]);
 
-    Exception ex = await Assert.ThrowsAnyAsync<Exception>(() => _service.Get(pkgSpec));
+    await Assert.ThrowsAsync<InvalidOperationException>(() => _service.Get(pkgSpec));
 
-    Assert.Equal("Cache failed", ex.Message);
+    _mockGitRemoteClient.Verify(
+        c => c.ListTree(It.IsAny<Url>(), It.IsAny<string>()), Times.Never);
   }
 
   [Fact]
-  public async Task Get_PackageSpec_DoesNotDownloadFiles() {
-    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", string.Empty), new SemVersion(1, 0, 0));
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string cacheRepo = Path.Combine(root, "cache", "repo");
-    MockFileSystem mockFs = new();
-    mockFs.AddDirectory(cacheRepo);
-    IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
+  public async Task Get_PackageSpec_ReturnsGitTreeSourceAtPeeledCommitWithoutDownloadingFiles() {
+    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", "client"), new SemVersion(1, 2, 3));
 
-    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
-        .ReturnsAsync(mockDir);
+    _mockGitRemoteClient.Setup(c => c.ListRefs(
+            It.Is<Url>(u => u.ToString() == "https://github.com/test/repo.git"),
+            It.IsAny<IEnumerable<string>>()))
+        .ReturnsAsync([new GitRemoteRef("refs/tags/v1.2.3", _tagObjectId, _commitObjectId)]);
+    _mockGitRemoteClient.Setup(c => c.ListTree(
+            It.Is<Url>(u => u.ToString() == "https://github.com/test/repo.git"),
+            _commitObjectId))
+        .ReturnsAsync([
+          new GitTreeEntry("tooth.json", 100644, _tagObjectId),
+          new GitTreeEntry("bin/a.dll", 100644, _commitObjectId),
+        ]);
 
-    await _service.Get(pkgSpec);
+    ISource result = await _service.Get(pkgSpec);
 
-    _mockCacheService.Verify(
-        c => c.GetOrCreateFile(It.IsAny<string>(), It.IsAny<Func<IFileInfo, Task>>()),
+    GitTreeSource source = Assert.IsType<GitTreeSource>(result);
+    Assert.Equal(["tooth.json", "bin/a.dll"], source.Keys);
+    _mockGitRemoteClient.Verify(c => c.FetchBlobs(
+        It.IsAny<Url>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()),
         Times.Never);
     _mockFileDownloader.Verify(
         d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()),
         Times.Never);
-  }
-
-  [Fact]
-  public async Task Get_PackageSpec_GitSucceeds_ReturnsDirectorySource() {
-    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", string.Empty), new SemVersion(1, 0, 0));
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string cacheRepo = Path.Combine(root, "cache", "repo");
-    MockFileSystem mockFs = new();
-    mockFs.AddDirectory(cacheRepo);
-    IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
-
-    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
-        .ReturnsAsync(mockDir);
-
-    ISource result = await _service.Get(pkgSpec);
-
-    Assert.IsType<DirectorySource>(result);
-  }
-
-  [Fact]
-  public async Task Get_PackageSpec_ViaGit_ClonesTagShallowly() {
-    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", string.Empty), new SemVersion(1, 2, 3));
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string cacheRepo = Path.Combine(root, "cache", "repo");
-    MockFileSystem mockFs = new();
-    mockFs.AddDirectory(cacheRepo);
-    IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
-
-    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.IsAny<string>(), It.IsAny<Func<IDirectoryInfo, Task>>()))
-        .Returns(async (string _, Func<IDirectoryInfo, Task> createFunc) => {
-          await createFunc(mockDir);
-          return mockDir;
-        });
-
-    await _service.Get(pkgSpec);
-
-    _mockGitRunner.Verify(g => g.Clone(
-        "https://github.com/test/repo.git",
-        mockDir.FullName,
-        "v1.2.3",
-        1), Times.Once);
-  }
-
-  [Fact]
-  public async Task Get_PackageSpec_WithGithubProxy_UsesProxy() {
-    SourceService serviceWithProxy = new(
-        _mockFileDownloader.Object,
-        _mockGitRunner.Object,
-        _mockUserInteraction.Object,
-        _mockCacheService.Object,
-        githubProxy: new Url("https://ghproxy.com"));
-
-    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", string.Empty), new SemVersion(1, 0, 0));
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string cacheRepo = Path.Combine(root, "cache", "repo");
-    MockFileSystem mockFs = new();
-    mockFs.AddDirectory(cacheRepo);
-    IDirectoryInfo mockDir = mockFs.DirectoryInfo.New(cacheRepo);
-
-    _mockCacheService.Setup(c => c.GetOrCreateDirectory(It.Is<string>(k => k.Contains("ghproxy.com")), It.IsAny<Func<IDirectoryInfo, Task>>()))
-        .ReturnsAsync(mockDir);
-
-    ISource result = await serviceWithProxy.Get(pkgSpec);
-
-    Assert.IsType<DirectorySource>(result);
   }
 
   [Fact]
@@ -210,7 +158,8 @@ public class SourceServiceTests {
   public async Task Get_Url_GithubProxyConfigured_ProxyFails_FallsBackToOriginalUrl() {
     SourceService serviceWithProxy = new(
         _mockFileDownloader.Object,
-        _mockGitRunner.Object,
+        _mockGitRemoteClient.Object,
+        new GitRemotePackageRegistry(_mockGitRemoteClient.Object),
         _mockUserInteraction.Object,
         _mockCacheService.Object,
         githubProxy: new Url("https://github.bibk.top"));
@@ -258,7 +207,8 @@ public class SourceServiceTests {
   public async Task Get_Url_WithProxyAndNonGithubUrl_DoesNotRewriteUrl() {
     SourceService serviceWithProxy = new(
         _mockFileDownloader.Object,
-        _mockGitRunner.Object,
+        _mockGitRemoteClient.Object,
+        new GitRemotePackageRegistry(_mockGitRemoteClient.Object),
         _mockUserInteraction.Object,
         _mockCacheService.Object,
         githubProxy: new Url("https://github.bibk.top"));

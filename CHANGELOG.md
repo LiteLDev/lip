@@ -10,11 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Renamed the npm package from `@futrime/lip` to `@levimc/lip` and the winget package ID from `futrime.lip` to `levimc.lip`.
-- Packages fetched via git are now cloned shallowly (`--depth 1`).
 - Package versions and contents are now resolved purely from git tags (`v<semver>`) of `https://<package path>.git`.
+- lip now talks to git repositories with a built-in git smart-HTTP (protocol v2) client and no longer requires the `git` command-line tool. Resolving a version fetches only the commit's trees and `tooth.json`; installing downloads only the files selected by the manifest's placements. Downloaded files are cached by git object id.
+- With `github_proxy` set, git requests for `github.com` repositories fall back to `github.com` directly when the proxy fails.
+- Renamed or transferred GitHub repositories are followed through redirects, and `github.com` package paths are matched case-insensitively when looking up repositories.
+- A package whose `tooth.json` declares a different `tooth` path or `version` than the requested path and tag is installed under the requested path and version, with a warning, instead of failing.
+- Private repositories are no longer supported, since git credential helpers are not used anymore.
 
 ### Removed
 
+- The dependency on the `git` command-line tool.
 - Go module proxy (goproxy) and lipr as package sources and version registries. Versions that were only available through a goproxy cache (e.g., deleted tags) or lipr can no longer be resolved.
 - The `go_module_proxy` configuration key. Existing `liprc.json` files containing it still load; the key is ignored and dropped on the next save.
 

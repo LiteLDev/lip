@@ -55,4 +55,31 @@ public class CompositeSourceTests {
     // Act & Assert
     await Assert.ThrowsAsync<ArgumentException>(() => provider.OpenRead("missing"));
   }
+
+  [Fact]
+  public async Task Prefetch_ForwardsEachKeyToFirstProviderServingIt() {
+    // Arrange
+    Mock<ISource> mockProvider1 = new();
+    mockProvider1.Setup(p => p.Keys).Returns(["file1.txt", "common.txt"]);
+    mockProvider1.Setup(p => p.Prefetch(It.IsAny<IEnumerable<string>>())).Returns(Task.CompletedTask);
+
+    Mock<ISource> mockProvider2 = new();
+    mockProvider2.Setup(p => p.Keys).Returns(["file2.txt", "common.txt"]);
+    mockProvider2.Setup(p => p.Prefetch(It.IsAny<IEnumerable<string>>())).Returns(Task.CompletedTask);
+
+    Mock<ISource> mockProvider3 = new();
+    mockProvider3.Setup(p => p.Keys).Returns(["file3.txt"]);
+
+    CompositeSource provider = new([mockProvider1.Object, mockProvider2.Object, mockProvider3.Object]);
+
+    // Act
+    await provider.Prefetch(["common.txt", "file2.txt", "file1.txt", "missing.txt"]);
+
+    // Assert
+    mockProvider1.Verify(p => p.Prefetch(It.Is<IEnumerable<string>>(
+        k => k.Order().SequenceEqual(new[] { "common.txt", "file1.txt" }))), Times.Once);
+    mockProvider2.Verify(p => p.Prefetch(It.Is<IEnumerable<string>>(
+        k => k.SequenceEqual(new[] { "file2.txt" }))), Times.Once);
+    mockProvider3.Verify(p => p.Prefetch(It.IsAny<IEnumerable<string>>()), Times.Never);
+  }
 }

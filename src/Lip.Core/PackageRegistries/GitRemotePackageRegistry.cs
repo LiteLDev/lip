@@ -26,7 +26,11 @@ public class GitRemotePackageRegistry(IGitRemoteClient gitRemoteClient) : IPacka
 
   private readonly IGitRemoteClient _gitRemoteClient = gitRemoteClient;
 
-  private readonly ConcurrentDictionary<string, Task<IReadOnlyDictionary<SemVersion, GitRemoteRef>>> _tagCache = new();
+  private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyDictionary<SemVersion, GitRemoteRef>>>> _tagCache = new();
+
+  // Manifests by repository and commit. The dependency solver asks for the same manifests many
+  // times while backtracking, and a commit's content never changes.
+  private readonly ConcurrentDictionary<string, Lazy<Task<PackageManifest>>> _manifestCache = new();
 
   public async Task<IOrderedEnumerable<SemVersion>> GetAvailableVersions(PackageId packageId) {
     IReadOnlyDictionary<SemVersion, GitRemoteRef> tags = await GetVersionTags(packageId);
@@ -38,15 +42,29 @@ public class GitRemotePackageRegistry(IGitRemoteClient gitRemoteClient) : IPacka
     Url repoUrl = GetRepoUrl(packageSpec.Id);
     string commit = await ResolveCommit(packageSpec);
 
+    string key = $"{GitRemoteClient.GetRepoKey(repoUrl)}@{commit}";
+    Lazy<Task<PackageManifest>> lazy = _manifestCache.GetOrAdd(
+        key, _ => new(() => FetchManifest(packageSpec, repoUrl, commit)));
+
+    try {
+      return await lazy.Value;
+    }
+    catch {
+      _manifestCache.TryRemove(new(key, lazy));
+      throw;
+    }
+  }
+
+  private async Task<PackageManifest> FetchManifest(PackageSpec packageSpec, Url repoUrl, string commit) {
     IReadOnlyList<GitTreeEntry> tree = await _gitRemoteClient.ListTree(repoUrl, commit);
     GitTreeEntry manifestEntry = tree.FirstOrDefault(entry => entry.Path == "tooth.json")
         ?? throw new InvalidOperationException(
             $"Package {packageSpec} has no tooth.json at the root of commit {commit}.");
 
     // Only regular files (0100644 / 0100755); e.g. a symlink blob holds its target path, not JSON.
-    if ((manifestEntry.Mode & 0xF000) != 0x8000) {
+    if (!manifestEntry.IsRegularFile) {
       throw new InvalidOperationException(
-          $"tooth.json of package {packageSpec} is not a regular file (mode {Convert.ToString(manifestEntry.Mode, 8)}).");
+          $"tooth.json of package {packageSpec} is not a regular file (mode {manifestEntry.Mode}).");
     }
 
     PackageManifest? manifest = null;
@@ -107,17 +125,19 @@ public class GitRemotePackageRegistry(IGitRemoteClient gitRemoteClient) : IPacka
   }
 
   private async Task<IReadOnlyDictionary<SemVersion, GitRemoteRef>> GetVersionTags(PackageId packageId) {
-    // Variants share a repository, so cache by path only.
-    string key = packageId.Path;
+    // Variants share a repository, so cache by repository only (see GitRemoteClient.GetRepoKey).
+    // Lazy makes concurrent callers share one request.
+    string key = GitRemoteClient.GetRepoKey(GetRepoUrl(packageId));
 
-    Task<IReadOnlyDictionary<SemVersion, GitRemoteRef>> task = _tagCache.GetOrAdd(key, _ => ListVersionTags(packageId));
+    Lazy<Task<IReadOnlyDictionary<SemVersion, GitRemoteRef>>> lazy = _tagCache.GetOrAdd(
+        key, _ => new(() => ListVersionTags(packageId)));
 
     try {
-      return await task;
+      return await lazy.Value;
     }
     catch {
       // Do not keep failures (e.g. network errors) cached so that later calls can retry.
-      _tagCache.TryRemove(new(key, task));
+      _tagCache.TryRemove(new(key, lazy));
       throw;
     }
   }

@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Flurl;
 using Lip.Core.Entities;
+using Lip.Core.Git;
 using Lip.Core.Infrastructure;
 using Lip.Core.Migration.PackageManifests;
 using Lip.Core.PackageRegistries;
@@ -32,7 +33,7 @@ public class LipClient(
     IConfigService configService,
     IInstallService installService,
     IPackageRegistry packageRegistry,
-    IWorkspaceService workspaceService) : ILipClient {
+    IWorkspaceService workspaceService) : ILipClient, IDisposable {
   private static readonly JsonSerializerOptions _jsonSerializerOptions = new() {
     WriteIndented = true
   };
@@ -44,6 +45,9 @@ public class LipClient(
   private readonly IPackageRegistry _packageRegistry = packageRegistry;
   private readonly IWorkspaceService _workspaceService = workspaceService;
 
+  // Resources created by Create() and owned by this client.
+  private readonly List<IDisposable> _ownedResources = [];
+
   public static async Task<LipClient> Create(IUserInteraction userInteraction, IFileSystem? fileSystem = null) {
     fileSystem ??= new FileSystem();
 
@@ -52,12 +56,14 @@ public class LipClient(
     CacheService cacheService = new(fileSystem, userInteraction);
     FileDownloader fileDownloader = new(userInteraction);
     Url? githubProxy = await configService.Get<Url?>("github_proxy");
-    GitRunner gitRunner = new();
+    GitRemoteClient gitRemoteClient = new(githubProxy);
+    GitRemotePackageRegistry gitRemotePackageRegistry = new(gitRemoteClient);
 
     CommandRunner commandRunner = new();
     SourceService sourceService = new(
         fileDownloader,
-        gitRunner,
+        gitRemoteClient,
+        gitRemotePackageRegistry,
         userInteraction,
         cacheService,
         githubProxy);
@@ -71,8 +77,7 @@ public class LipClient(
         workspaceService);
     CompositePackageRegistry packageRegistry = new([
       [new WorkspaceServicePackageRegistry(workspaceService)],
-      [new GitPackageRegistry(gitRunner, githubProxy)],
-      [new SourceServicePackageRegistry(sourceService)],
+      [gitRemotePackageRegistry],
     ]);
 
     InstallService installService = new(
@@ -82,13 +87,26 @@ public class LipClient(
         sourceService,
         workspaceService);
 
-    return new LipClient(
+    LipClient lipClient = new(
         fileSystem,
         cacheService,
         configService,
         installService,
         packageRegistry,
         workspaceService);
+    lipClient._ownedResources.Add(gitRemoteClient);
+
+    return lipClient;
+  }
+
+  // Implemented explicitly so that RPC hosts exposing the client's public methods (Lip.Daemon)
+  // do not expose Dispose.
+  void IDisposable.Dispose() {
+    foreach (IDisposable resource in _ownedResources) {
+      resource.Dispose();
+    }
+    _ownedResources.Clear();
+    GC.SuppressFinalize(this);
   }
 
   public async Task CacheClean() {
