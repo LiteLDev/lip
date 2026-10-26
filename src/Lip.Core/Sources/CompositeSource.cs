@@ -16,4 +16,21 @@ public class CompositeSource(IEnumerable<ISource> providers) : ISource {
 
     throw new ArgumentException($"Key not found: {key}", nameof(key));
   }
+
+  /// Forwards each key to the provider OpenRead would read it from (the first one serving it).
+  public async Task Prefetch(IEnumerable<string> keys) {
+    HashSet<string> remaining = [.. keys];
+
+    foreach (ISource provider in _providers) {
+      if (remaining.Count == 0) {
+        return;
+      }
+
+      List<string> served = [.. provider.Keys.Where(remaining.Remove)];
+
+      if (served.Count > 0) {
+        await provider.Prefetch(served);
+      }
+    }
+  }
 }

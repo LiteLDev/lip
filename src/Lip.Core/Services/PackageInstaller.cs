@@ -5,6 +5,7 @@ using Flurl;
 using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 using Lip.Core.Sources;
+using Semver;
 
 namespace Lip.Core.Services;
 
@@ -58,6 +59,25 @@ public class PackageInstaller(
 
     using Stream manifestStream = await packageArtifact.Source.OpenRead("tooth.json");
     PackageManifest manifest = await PackageManifest.FromStream(manifestStream);
+
+    // The requested path and the tag's version identify the package, even if the manifest
+    // declares something else (e.g. a renamed or transferred repository, or a stale version).
+    PackageSpec spec = packageArtifact.Spec;
+    if (manifest.Path != spec.Id.Path || manifest.Version != spec.Version) {
+      // Differences in case or build metadata alone are not worth a warning.
+      if (!string.Equals(manifest.Path, spec.Id.Path, StringComparison.OrdinalIgnoreCase)
+          || SemVersion.PrecedenceComparer.Compare(manifest.Version, spec.Version) != 0) {
+        await _userInteraction.PrintWarning(
+            $"Manifest of package {spec.Id} version {spec.Version} declares '{manifest.Path}' version "
+            + $"{manifest.Version}; using the requested package path and version.");
+      }
+
+      manifest = manifest with {
+        Path = spec.Id.Path,
+        Version = spec.Version,
+      };
+    }
+
     PackageManifestVariant variant = manifest.GetVariant(packageArtifact.Spec.Id.Variant);
 
     // Step 1: Run pre-install scripts.

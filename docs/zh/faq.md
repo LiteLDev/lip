@@ -14,8 +14,11 @@
 ### 如何升级 lip 自身？
 使用你最初的安装方式重新安装 `lip`，例如 `npm install -g @levimc/lip`、`winget upgrade levimc.lip`，或从 GitHub Releases 页面下载最新的 Windows `setup.exe`。目前还没有内置的 `lip self-update` 命令。如果你是通过旧的 `@futrime/lip` npm 包或 `futrime.lip` winget 包安装的 `lip`，请先卸载，再安装 `@levimc/lip` 或 `levimc.lip`。
 
+### lip 需要安装 git 吗？
+不需要。lip 使用内置客户端通过 HTTPS 访问 git 仓库，无需安装 `git` 命令行工具。详见[内部机制](guides/internal_mechanism.md#包解析)。
+
 ### lip 支持私有仓库吗？
-支持。lip 可以通过你系统中的 Git 凭据（如 SSH key 或 Credential Manager）从私有 Git 仓库安装包。认证由本地 Git 环境负责。
+目前不支持。lip 通过 HTTPS 匿名获取包，不使用 `git` 命令行工具或其凭据管理器，因此只能从公开仓库安装。
 
 ### lip 会把安装的包放在哪里？
 lip 会根据 `tooth.json` 中的规则，将包文件**直接安装到你的工作区**。与某些包管理器不同，它不会默认把依赖隔离到单独目录，除非清单中明确指定。

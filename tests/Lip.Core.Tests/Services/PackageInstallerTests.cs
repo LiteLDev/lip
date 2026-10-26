@@ -114,6 +114,40 @@ public class PackageInstallerTests {
   }
 
   [Fact]
+  public async Task InstallPackage_ManifestDeclaresOtherPathAndVersion_UsesRequestedIdentity() {
+    // Arrange
+    PackageSpec pkgSpec = new(new PackageId("github.com/Old/Name", ""), new SemVersion(1, 2, 0));
+
+    _mockWorkspaceService.Setup(w => w.GetInstalledPackages(IWorkspaceService.PackageScope.All))
+        .ReturnsAsync([]);
+
+    string manifestJson = """
+            {
+                "format_version": 3,
+                "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+                "tooth": "github.com/New/Name",
+                "version": "1.1.0",
+                "variants": [ { "assets": [] } ]
+            }
+            """;
+    Mock<ISource> mockSource = new();
+    mockSource.Setup(p => p.OpenRead("tooth.json"))
+        .ReturnsAsync(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(manifestJson)));
+    mockSource.Setup(p => p.Keys).Returns(["tooth.json"]);
+
+    // Act
+    await _installer.InstallPackage(new(pkgSpec, mockSource.Object), false, true, false);
+
+    // Assert
+    _mockWorkspaceService.Verify(w => w.AddInstalledPackage(
+        pkgSpec,
+        It.Is<PackageManifest>(m => m.Path == "github.com/Old/Name" && m.Version == new SemVersion(1, 2, 0)),
+        It.IsAny<IEnumerable<IFileInfo>>(),
+        true), Times.Once);
+    _userInteraction.Verify(u => u.PrintWarning(It.Is<string>(s => s.Contains("github.com/New/Name"))), Times.Once);
+  }
+
+  [Fact]
   public async Task InstallPackage_RunsScripts() {
     // Arrange
     PackageId pkgId = new("github.com/test/pkg", "");

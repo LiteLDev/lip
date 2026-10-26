@@ -4,9 +4,7 @@
 
 ## 前置条件
 
-开始前请确保：
-1. 你已[安装 lip](installation.md)。
-2. 终端中已安装并可使用 `git`。
+开始前请确保你已[安装 lip](installation.md)。lip 不需要安装 `git`。
 
 ## 初始化项目
 

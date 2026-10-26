@@ -21,10 +21,16 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
 
   private const int MaxWantsPerRequest = 256;
   private const int MaxRetainedPacks = 8;
+  private const int MaxCachedTrees = 64;
+  private const int MaxTransientRetries = 2;
   private const string GitProtocolHeader = "version=2";
 
   private readonly Url? _githubProxy = githubProxy;
   private readonly ConcurrentDictionary<string, RemoteInfo> _remotes = new();
+  private readonly ConcurrentDictionary<string, byte> _proxyFailedRepos = new();
+  private readonly Lock _treesLock = new();
+  private readonly Dictionary<string, Lazy<Task<IReadOnlyList<GitTreeEntry>>>> _trees = [];
+  private readonly Queue<string> _treeOrder = new();
   private readonly Lock _retainedPackLock = new();
   private readonly List<(string Key, GitPackFile Pack)> _retainedPacks = [];
   private long _bytesReceived;
@@ -34,7 +40,6 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
 
   public async Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
     List<string> prefixes = [.. refPrefixes];
-    RemoteInfo remote = await Discover(RewriteUrl(repoUrl));
 
     PktLineWriter request = new PktLineWriter()
         .WriteLine("command=ls-refs")
@@ -44,21 +49,27 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
       request.WriteLine($"ref-prefix {prefix}");
     }
     request.WriteFlush();
+    byte[] body = request.ToArray();
 
-    List<GitRemoteRef> refs = [];
-    await PostCommand(remote, request.ToArray(), async reader => {
-      while (true) {
-        PktLineType type = await reader.Read();
-        if (type is PktLineType.Flush) {
-          return;
+    List<GitRemoteRef> refs = await WithProxyFallback(repoUrl, async url => {
+      RemoteInfo remote = await Discover(url);
+
+      List<GitRemoteRef> result = [];
+      await PostCommand(remote, body, async reader => {
+        while (true) {
+          PktLineType type = await reader.Read();
+          if (type is PktLineType.Flush) {
+            return;
+          }
+          if (type is not PktLineType.Data) {
+            throw new GitProtocolException($"Unexpected {type} in ls-refs response.");
+          }
+          string line = reader.PayloadText;
+          ThrowIfError(line);
+          result.Add(ParseRef(line));
         }
-        if (type is not PktLineType.Data) {
-          throw new GitProtocolException($"Unexpected {type} in ls-refs response.");
-        }
-        string line = reader.PayloadText;
-        ThrowIfError(line);
-        refs.Add(ParseRef(line));
-      }
+      });
+      return result;
     });
 
     // ref-prefix is only a hint to the server, so filter again.
@@ -69,30 +80,34 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
 
   public async Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {
     string objectId = NormalizeObjectId(commitish);
-    Url url = RewriteUrl(repoUrl);
-    RemoteInfo remote = await Discover(url);
 
-    GitPackFile? pack = await FetchPack(
-        remote, [objectId], deepen: remote.SupportsShallow, filterBlobs: remote.SupportsFilter);
-    try {
-      Dictionary<string, GitObject> objects = [];
-      foreach (GitObject obj in pack.ReadObjects()) {
-        if (obj.Type != GitObjectType.Blob) {
-          objects[obj.ObjectId] = obj;
+    // Object ids are immutable, so a listed tree can be reused for the client's lifetime. Lazy
+    // makes concurrent callers share one fetch; the oldest trees are evicted to bound memory
+    // when many versions are inspected (e.g. during dependency solving).
+    string key = $"{GetRepoKey(repoUrl)}@{objectId}";
+    Lazy<Task<IReadOnlyList<GitTreeEntry>>> lazy;
+    lock (_treesLock) {
+      if (!_trees.TryGetValue(key, out lazy!)) {
+        lazy = new(() => FetchTree(repoUrl, objectId));
+        _trees[key] = lazy;
+        _treeOrder.Enqueue(key);
+        while (_treeOrder.Count > MaxCachedTrees) {
+          _trees.Remove(_treeOrder.Dequeue());
         }
       }
-
-      List<GitTreeEntry> entries = WalkTree(objects, objectId);
-
-      if (!remote.SupportsFilter) {
-        // The pack holds every blob of the tree; keep it for FetchBlobs.
-        RetainPack(url.ToString(), pack);
-        pack = null;
-      }
-      return entries;
     }
-    finally {
-      pack?.Dispose();
+
+    try {
+      return await lazy.Value;
+    }
+    catch {
+      // Do not keep failures cached, so a later call can retry.
+      lock (_treesLock) {
+        if (_trees.TryGetValue(key, out Lazy<Task<IReadOnlyList<GitTreeEntry>>>? current) && current == lazy) {
+          _trees.Remove(key);
+        }
+      }
+      throw;
     }
   }
 
@@ -105,30 +120,25 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
       return;
     }
 
-    Url url = RewriteUrl(repoUrl);
-    await FetchBlobsFromRetainedPack(url.ToString(), remaining, onBlob);
+    await FetchBlobsFromRetainedPack(GetRepoKey(repoUrl), remaining, onBlob);
     if (remaining.Count == 0) {
       return;
     }
 
-    RemoteInfo remote = await Discover(url);
+    List<Exception> errors = [];
     foreach (string[] batch in remaining.ToList().Chunk(MaxWantsPerRequest)) {
-      using GitPackFile pack = await FetchPack(remote, batch, deepen: false, filterBlobs: false);
-      foreach (GitObject obj in pack.ReadObjects()) {
-        if (!remaining.Remove(obj.ObjectId)) {
-          continue;
-        }
-        if (obj.Type != GitObjectType.Blob) {
-          throw new GitProtocolException($"Object {obj.ObjectId} is a {obj.Type}, not a blob.");
-        }
-        using MemoryStream stream = new(obj.Content, writable: false);
-        await onBlob(obj.ObjectId, stream);
+      if (await FetchBlobBatch(repoUrl, batch, remaining, onBlob) is Exception error) {
+        errors.Add(error);
       }
     }
 
-    if (remaining.Count > 0) {
-      throw new GitProtocolException(
-          $"Remote {url} did not send {remaining.Count} requested blob(s), e.g. {remaining.First()}.");
+    if (errors.Count == 1) {
+      throw errors[0];
+    }
+    if (errors.Count > 1) {
+      throw errors.All(e => e is GitProtocolException)
+          ? new GitProtocolException(string.Join(" ", errors.Select(e => e.Message)))
+          : new AggregateException($"Failed to fetch blobs from {repoUrl}.", errors);
     }
   }
 
@@ -142,18 +152,176 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     GC.SuppressFinalize(this);
   }
 
-  private Url RewriteUrl(Url repoUrl) {
-    if (_githubProxy is not null
-        && string.Equals(repoUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase)) {
-      return _githubProxy
-          .Clone()
-          .AppendPathSegments(repoUrl.PathSegments);
+  /// Fetches one batch of blobs, trying the GitHub proxy first (if any) and then the original
+  /// URL. A pack is fully downloaded before any callback runs, and a later attempt only asks for
+  /// the blobs still missing, so no callback is ever invoked twice for the same blob. Returns the
+  /// error if some blobs could not be fetched, or null.
+  private async Task<Exception?> FetchBlobBatch(
+      Url repoUrl,
+      string[] batch,
+      HashSet<string> remaining,
+      Func<string, Stream, Task> onBlob) {
+    List<Exception> errors = [];
+
+    foreach ((Url url, bool isProxy) in GetCandidateUrls(repoUrl)) {
+      string[] wanted = [.. batch.Where(remaining.Contains)];
+
+      GitPackFile pack;
+      try {
+        pack = await WithRetry(async () =>
+            await FetchPack(await Discover(url), wanted, deepen: false, filterBlobs: false));
+      }
+      catch (Exception ex) {
+        errors.Add(ex);
+        MarkProxyFailed(repoUrl, isProxy);
+        continue;
+      }
+
+      using (pack) {
+        foreach (GitObject obj in pack.ReadObjects()) {
+          if (!remaining.Remove(obj.ObjectId)) {
+            continue;
+          }
+          if (obj.Type != GitObjectType.Blob) {
+            throw new GitProtocolException($"Object {obj.ObjectId} is a {obj.Type}, not a blob.");
+          }
+          using MemoryStream stream = new(obj.Content, writable: false);
+          await onBlob(obj.ObjectId, stream);
+        }
+      }
+
+      string[] missing = [.. batch.Where(remaining.Contains)];
+      if (missing.Length == 0) {
+        return null;
+      }
+      errors.Add(new GitProtocolException(
+          $"Remote {url} did not send {missing.Length} requested blob(s), e.g. {missing[0]}."));
+      MarkProxyFailed(repoUrl, isProxy);
     }
-    return repoUrl;
+
+    return errors.Count == 1
+        ? errors[0]
+        : new AggregateException($"Failed to fetch blobs from {repoUrl}.", errors);
+  }
+
+  private async Task<IReadOnlyList<GitTreeEntry>> FetchTree(Url repoUrl, string objectId) {
+    return await WithProxyFallback(repoUrl, async url => {
+      RemoteInfo remote = await Discover(url);
+      GitPackFile? pack = await FetchPack(
+          remote, [objectId], deepen: remote.SupportsShallow, filterBlobs: remote.SupportsFilter);
+      try {
+        Dictionary<string, GitObject> objects = [];
+        foreach (GitObject obj in pack.ReadObjects()) {
+          if (obj.Type != GitObjectType.Blob) {
+            objects[obj.ObjectId] = obj;
+          }
+        }
+
+        // Inside the fallback, so an incomplete pack from the proxy is retried directly.
+        List<GitTreeEntry> entries = WalkTree(objects, objectId);
+
+        if (!remote.SupportsFilter) {
+          // The pack holds every blob of the tree; keep it for FetchBlobs.
+          RetainPack(GetRepoKey(repoUrl), pack);
+          pack = null;
+        }
+        return (IReadOnlyList<GitTreeEntry>)entries;
+      }
+      finally {
+        pack?.Dispose();
+      }
+    });
+  }
+
+  /// Runs an operation against the GitHub proxy (if configured and applicable) and falls back to
+  /// the original URL when the proxied attempt fails. Each attempt is retried on transient
+  /// network errors. A repository whose proxied attempt failed goes directly to the original URL
+  /// for the rest of the client's lifetime.
+  private async Task<T> WithProxyFallback<T>(Url repoUrl, Func<Url, Task<T>> operation) {
+    List<Exception> errors = [];
+
+    foreach ((Url url, bool isProxy) in GetCandidateUrls(repoUrl)) {
+      try {
+        return await WithRetry(() => operation(url));
+      }
+      catch (Exception ex) {
+        errors.Add(ex);
+        MarkProxyFailed(repoUrl, isProxy);
+      }
+    }
+
+    throw errors.Count == 1
+        ? errors[0]
+        : new AggregateException(
+            $"Git request for {repoUrl} failed both via the GitHub proxy and directly.", errors);
+  }
+
+  /// The URLs to try for a repository: the GitHub proxy (unless not applicable or failed before),
+  /// then the original URL.
+  private IEnumerable<(Url Url, bool IsProxy)> GetCandidateUrls(Url repoUrl) {
+    Url? proxied = RewriteUrl(repoUrl);
+    if (proxied is not null && !_proxyFailedRepos.ContainsKey(GetRepoKey(repoUrl))) {
+      yield return (proxied, true);
+    }
+    yield return (repoUrl, false);
+  }
+
+  private void MarkProxyFailed(Url repoUrl, bool isProxy) {
+    if (isProxy) {
+      _proxyFailedRepos.TryAdd(GetRepoKey(repoUrl), 0);
+    }
+  }
+
+  private static async Task<T> WithRetry<T>(Func<Task<T>> operation) {
+    for (int attempt = 0; ; attempt++) {
+      try {
+        return await operation();
+      }
+      catch (Exception ex) when (attempt < MaxTransientRetries && IsTransient(ex)) {
+        await Task.Delay(TimeSpan.FromMilliseconds(500 * (attempt + 1)));
+      }
+    }
+  }
+
+  /// Network failures without a response, server errors and rate limiting are worth retrying.
+  private static bool IsTransient(Exception ex) {
+    return ex switch {
+      FlurlHttpTimeoutException => true,
+      FlurlHttpException flurl => flurl.StatusCode is null or >= 500 or 429,
+      HttpRequestException http => http.StatusCode is null or >= System.Net.HttpStatusCode.InternalServerError
+          or System.Net.HttpStatusCode.TooManyRequests,
+      IOException => true,
+      _ => false,
+    };
+  }
+
+  /// Returns the proxied URL of a github.com repository, or null if no proxy applies.
+  private Url? RewriteUrl(Url repoUrl) {
+    if (_githubProxy is null
+        || !string.Equals(repoUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase)) {
+      return null;
+    }
+
+    Url proxied = _githubProxy
+        .Clone()
+        .AppendPathSegments(repoUrl.PathSegments);
+    return proxied.ToString() == repoUrl.ToString() ? null : proxied;
+  }
+
+  /// Identifies a repository for caches. GitHub resolves owner and repository names
+  /// case-insensitively and the ".git" suffix is optional there, so github.com URLs are
+  /// lower-cased and stripped of it; other URLs are kept as they are.
+  public static string GetRepoKey(Url repoUrl) {
+    string key = repoUrl.ToString().TrimEnd('/');
+    if (!string.Equals(repoUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase)) {
+      return key;
+    }
+    key = key.ToLowerInvariant();
+    return key.EndsWith(".git", StringComparison.Ordinal) ? key[..^4] : key;
   }
 
   private async Task<RemoteInfo> Discover(Url repoUrl) {
-    string key = repoUrl.ToString();
+    string key = GetRepoKey(repoUrl);
     if (_remotes.TryGetValue(key, out RemoteInfo? cached)) {
       return cached;
     }
@@ -450,7 +618,10 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
 
   private static void EnsureSuccess(IFlurlResponse response, Url url) {
     if (response.StatusCode is < 200 or >= 300) {
-      throw new HttpRequestException($"Git request to {url} failed: HTTP {response.StatusCode}");
+      throw new HttpRequestException(
+          $"Git request to {url} failed: HTTP {response.StatusCode}",
+          inner: null,
+          (System.Net.HttpStatusCode)response.StatusCode);
     }
   }
 

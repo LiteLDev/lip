@@ -14,8 +14,11 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 ### How do I upgrade lip itself?
 Reinstall `lip` using the same method you used originally, such as `npm install -g @levimc/lip`, `winget upgrade levimc.lip`, or the latest Windows `setup.exe` from the GitHub releases page. There is no built-in `lip self-update` command yet. If you installed `lip` from the old `@futrime/lip` npm package or the `futrime.lip` winget package, uninstall it first and then install `@levimc/lip` or `levimc.lip`.
 
+### Does lip require git?
+No. lip talks to git repositories over HTTPS with its own built-in client, so the `git` command-line tool does not need to be installed. See [Internal Mechanism](guides/internal_mechanism.md#package-resolution).
+
 ### Does lip support private repositories?
-Yes, lip can install packages from private Git repositories using your system's Git credentials (e.g., SSH keys or Credential Manager). It relies on the local Git environment for authentication.
+Not currently. lip fetches packages anonymously over HTTPS and does not use the `git` command-line tool or its credential helpers, so only public repositories can be installed from.
 
 ### Where does lip store installed packages?
 lip installs package files **directly into your workspace** based on the rules defined in `tooth.json`. Unlike some package managers, it does not isolate dependencies in a separate folder unless the package manifest explicitly specifies those locations.

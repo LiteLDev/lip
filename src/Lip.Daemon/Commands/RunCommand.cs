@@ -17,7 +17,7 @@ public class RunCommand : AsyncCommand<RunCommand.Settings> {
 
     RpcUserInteraction userInteraction = new(clientProxy);
 
-    LipClient client = await LipClient.Create(userInteraction);
+    using LipClient client = await LipClient.Create(userInteraction);
 
     rpc.AddLocalRpcTarget(client);
 

@@ -97,4 +97,36 @@ public class CacheServiceTests {
     // Assert - directory should be deleted
     Assert.False(mockFileSystem.Directory.Exists(cachePath));
   }
+
+  [Fact]
+  public async Task TryGetFile_Missing_ReturnsNullWithoutCreatingAnything() {
+    // Arrange
+    MockFileSystem mockFileSystem = new();
+    CacheService service = new(mockFileSystem, new Mock<IUserInteraction>().Object);
+
+    // Act
+    IFileInfo? result = await service.TryGetFile("git-blob:abc");
+
+    // Assert
+    Assert.Null(result);
+    Assert.False(mockFileSystem.Directory.Exists(GetCachePath()));
+  }
+
+  [Fact]
+  public async Task TryGetFile_Cached_ReturnsFile() {
+    // Arrange
+    string key = "git-blob:abc";
+    string path = Path.Combine(GetCachePath(), Uri.EscapeDataString(key));
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData> {
+      { path, new MockFileData("content") },
+    });
+    CacheService service = new(mockFileSystem, new Mock<IUserInteraction>().Object);
+
+    // Act
+    IFileInfo? result = await service.TryGetFile(key);
+
+    // Assert
+    Assert.NotNull(result);
+    Assert.Equal(path, result.FullName);
+  }
 }

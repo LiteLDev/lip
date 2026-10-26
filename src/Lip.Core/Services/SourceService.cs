@@ -1,7 +1,9 @@
 using System.IO.Abstractions;
 using Flurl;
 using Lip.Core.Entities;
+using Lip.Core.Git;
 using Lip.Core.Infrastructure;
+using Lip.Core.PackageRegistries;
 using Lip.Core.Sources;
 
 namespace Lip.Core.Services;
@@ -15,12 +17,14 @@ public interface ISourceService {
 
 public class SourceService(
     IFileDownloader fileDownloader,
-    IGitRunner gitRunner,
+    IGitRemoteClient gitRemoteClient,
+    GitRemotePackageRegistry gitRemotePackageRegistry,
     IUserInteraction userInteraction,
     ICacheService cacheService,
     Url? githubProxy) : ISourceService {
   private readonly IFileDownloader _fileDownloader = fileDownloader;
-  private readonly IGitRunner _gitRunner = gitRunner;
+  private readonly IGitRemoteClient _gitRemoteClient = gitRemoteClient;
+  private readonly GitRemotePackageRegistry _gitRemotePackageRegistry = gitRemotePackageRegistry;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   private readonly ICacheService _cacheService = cacheService;
@@ -91,27 +95,15 @@ public class SourceService(
     return [proxyUrl, url];
   }
 
+  /// Returns a lazy source over the tree of the commit the package version is tagged at. Only
+  /// the tree is listed here; file contents are fetched on demand (see GitTreeSource).
   private async Task<ISource> GetPackageViaGit(PackageSpec packageSpec) {
-    Url repoUrl = Url.Parse($"https://{packageSpec.Id.Path}.git");
+    Url repoUrl = GitRemotePackageRegistry.GetRepoUrl(packageSpec.Id);
+    string commit = await _gitRemotePackageRegistry.ResolveCommit(packageSpec);
 
-    if (_githubProxy is not null && repoUrl.Host == "github.com") {
-      repoUrl = _githubProxy
-          .Clone()
-          .AppendPathSegments(repoUrl.PathSegments);
-    }
+    await _userInteraction.PrintInfo(
+        $"Listing files of {packageSpec.Id.Path}@{packageSpec.Version} (commit {commit[..Math.Min(12, commit.Length)]})...");
 
-    string @ref = $"v{packageSpec.Version}";
-
-    Url keyUrl = repoUrl.Clone();
-    keyUrl.Scheme = $"git+{keyUrl.Scheme}";
-    keyUrl.Fragment = @ref;
-
-    IDirectoryInfo repoDir = await _cacheService.GetOrCreateDirectory(keyUrl, async cacheDir => {
-      await _userInteraction.PrintInfo($"Cloning git repository from '{repoUrl}'...");
-
-      await _gitRunner.Clone(repoUrl, cacheDir.FullName, branch: @ref, depth: 1);
-    });
-
-    return new DirectorySource(repoDir);
+    return await GitTreeSource.Create(_gitRemoteClient, _cacheService, repoUrl, commit);
   }
 }

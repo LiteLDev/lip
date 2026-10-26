@@ -148,27 +148,15 @@ public class GitTreeSource(
     string prefix = _subdirectory == "" ? "" : _subdirectory + "/";
 
     return tree
-        .Where(e => IsRegularFile(e.Mode) && e.Path.StartsWith(prefix, StringComparison.Ordinal))
+        .Where(e => e.IsRegularFile && e.Path.StartsWith(prefix, StringComparison.Ordinal))
         .ToDictionary(e => e.Path[prefix.Length..], e => e.ObjectId);
   }
 
-  // Probes the cache without downloading: the factory only runs on a miss, and throwing from it
-  // makes the cache discard the empty temporary file. ICacheService has no existence check.
   private async Task<bool> IsCached(string objectId) {
-    try {
-      await _cacheService.GetOrCreateFile(GetCacheKey(objectId), _ => throw new CacheMissException());
-
-      return true;
-    }
-    catch (CacheMissException) {
-      return false;
-    }
+    return await _cacheService.TryGetFile(GetCacheKey(objectId)) is not null;
   }
 
   private static string GetCacheKey(string objectId) => $"git-blob:{objectId}";
-
-  // Accepts modes both as octal digits read in decimal (100644) and as their numeric value (0o100644).
-  private static bool IsRegularFile(int mode) => mode is 100644 or 100755 or 100664 or 33188 or 33261 or 33204;
 
   private static string NormalizeSubdirectory(string subdirectory) {
     string[] segments = [.. subdirectory.Replace('\\', '/').Split('/').Where(s => s is not ("" or "."))];
@@ -206,6 +194,4 @@ public class GitTreeSource(
       throw new InvalidDataException($"Blob content hash {actual} does not match object id {objectId}.");
     }
   }
-
-  private class CacheMissException : Exception;
 }

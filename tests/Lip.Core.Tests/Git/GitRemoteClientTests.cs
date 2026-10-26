@@ -85,6 +85,117 @@ public class GitRemoteClientTests {
   }
 
   [Fact]
+  public async Task ListRefs_GithubProxyFails_FallsBackToGithubAndSkipsProxyAfterwards() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("https://proxy.example.com/*").RespondWith("not found", 404);
+    httpTest.ForCallsTo("https://github.com/*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("https://github.com/*/git-upload-pack").RespondWith(() => Content(PackBuilder.PktLines(
+        "0123456789abcdef0123456789abcdef01234567 refs/tags/v1.0.0", "FLUSH")));
+    GitRemoteClient client = new(new Url("https://proxy.example.com/gh"));
+    Url repoUrl = new("https://github.com/LiteLDev/LeviLamina.git");
+
+    IReadOnlyList<GitRemoteRef> first = await client.ListRefs(repoUrl, ["refs/tags/v"]);
+    IReadOnlyList<GitRemoteRef> second = await client.ListRefs(repoUrl, ["refs/tags/v"]);
+
+    Assert.Equal("refs/tags/v1.0.0", Assert.Single(first).Name);
+    Assert.Equal(first, second);
+    httpTest.ShouldHaveCalled("https://proxy.example.com/*").Times(1);
+    httpTest.ShouldHaveCalled("https://github.com/LiteLDev/LeviLamina.git/git-upload-pack").Times(2);
+  }
+
+  [Fact]
+  public async Task ListRefs_GithubProxyAndGithubFail_ThrowsAggregateWithBothErrors() {
+    using HttpTest httpTest = new();
+    httpTest.RespondWith("not found", 404);
+    GitRemoteClient client = new(new Url("https://proxy.example.com/gh"));
+
+    AggregateException ex = await Assert.ThrowsAsync<AggregateException>(() =>
+        client.ListRefs(new Url("https://github.com/LiteLDev/LeviLamina.git"), []));
+
+    Assert.Equal(2, ex.InnerExceptions.Count);
+  }
+
+  [Fact]
+  public async Task FetchBlobs_GithubProxySendsIncompletePack_FetchesMissingBlobsDirectly() {
+    (byte[] withoutBlobs, _, Dictionary<string, string> blobIds) = CreateRepositoryPack(includeBlobs: false);
+    (byte[] withBlobs, _, _) = CreateRepositoryPack(includeBlobs: true);
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("https://proxy.example.com/*/git-upload-pack")
+        .RespondWith(() => Content(PackBuilder.FetchResponse(withoutBlobs)));
+    httpTest.ForCallsTo("https://github.com/*/git-upload-pack")
+        .RespondWith(() => Content(PackBuilder.FetchResponse(withBlobs)));
+    GitRemoteClient client = new(new Url("https://proxy.example.com/gh"));
+
+    List<string> received = [];
+    await client.FetchBlobs(
+        new Url("https://github.com/owner/repo.git"),
+        [blobIds["tooth.json"], blobIds["README.md"]],
+        (objectId, _) => {
+          received.Add(objectId);
+          return Task.CompletedTask;
+        });
+
+    Assert.Equal(new[] { blobIds["README.md"], blobIds["tooth.json"] }.Order(), received.Order());
+    httpTest.ShouldHaveCalled("https://github.com/owner/repo.git/git-upload-pack").Times(1);
+  }
+
+  [Fact]
+  public async Task ListRefs_TransientServerError_Retries() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*")
+        .RespondWith("bad gateway", 502)
+        .RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("*/git-upload-pack").RespondWith(() => Content(PackBuilder.PktLines("FLUSH")));
+    GitRemoteClient client = new(githubProxy: null);
+
+    await client.ListRefs(new Url(RepoUrl), []);
+
+    httpTest.ShouldHaveCalled($"{RepoUrl}/info/refs*").Times(2);
+  }
+
+  [Fact]
+  public async Task ListRefs_NotFound_DoesNotRetry() {
+    using HttpTest httpTest = new();
+    httpTest.RespondWith("not found", 404);
+    GitRemoteClient client = new(githubProxy: null);
+
+    await Assert.ThrowsAsync<HttpRequestException>(() => client.ListRefs(new Url(RepoUrl), []));
+
+    httpTest.ShouldHaveCalled($"{RepoUrl}/info/refs*").Times(1);
+  }
+
+  [Fact]
+  public async Task ListRefs_RedirectedRepository_PostsToRedirectTarget() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("https://github.com/Old/Name.git/info/refs*")
+        .RespondWith("", 301, new { Location = "https://github.com/New/Name.git/info/refs?service=git-upload-pack" });
+    httpTest.ForCallsTo("https://github.com/New/Name.git/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("*/git-upload-pack").RespondWith(() => Content(PackBuilder.PktLines("FLUSH")));
+    GitRemoteClient client = new(githubProxy: null);
+
+    await client.ListRefs(new Url("https://github.com/Old/Name.git"), []);
+
+    httpTest.ShouldHaveCalled("https://github.com/New/Name.git/git-upload-pack");
+    httpTest.ShouldNotHaveCalled("https://github.com/Old/Name.git/git-upload-pack");
+  }
+
+  [Fact]
+  public async Task ListTree_SameCommitTwice_FetchesOnceAcrossGithubCaseVariants() {
+    (byte[] pack, string tagId, _) = CreateRepositoryPack(includeBlobs: false);
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("*/git-upload-pack").RespondWith(() => Content(PackBuilder.FetchResponse(pack)));
+    GitRemoteClient client = new(githubProxy: null);
+
+    IReadOnlyList<GitTreeEntry> first = await client.ListTree(new Url("https://github.com/Owner/Repo.git"), tagId);
+    IReadOnlyList<GitTreeEntry> second = await client.ListTree(new Url("https://github.com/owner/repo"), tagId);
+
+    Assert.Same(first, second);
+    httpTest.ShouldHaveCalled("*/git-upload-pack").Times(1);
+  }
+
+  [Fact]
   public async Task ListTree_WithFilter_ReturnsBlobEntriesThroughAnnotatedTag() {
     // Arrange
     (byte[] pack, string tagId, Dictionary<string, string> blobIds) = CreateRepositoryPack(includeBlobs: false);
