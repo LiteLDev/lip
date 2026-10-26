@@ -33,6 +33,7 @@ public class CorpusTests {
   private static readonly Dictionary<string, string> _knownUpstreamBreakage = new() {
     ["github.com/spygamingog/Animated-Mojang-Android#client@1.0.0"] =
         "tooth.json at the tag uses the unsupported asset type 'levipack'",
+    ["github.com/Kashifro/LL-ModMenu#client@1.0.0"] = "tag v1.0.0 was deleted upstream",
   };
 
   private static readonly Lazy<ConcurrentDictionary<string, Task<string?>>> _results = new(StartAll);

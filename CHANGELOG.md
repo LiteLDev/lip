@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-26
+
 ### Changed
 
 - Renamed the npm package from `@futrime/lip` to `@levimc/lip` and the winget package ID from `futrime.lip` to `levimc.lip`.
@@ -846,7 +848,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#282]: https://github.com/futrime/lip/issues/282
 [#347]: https://github.com/futrime/lip/issues/347
 
-[Unreleased]: https://github.com/LiteLDev/lip/compare/v0.34.9...HEAD
+[Unreleased]: https://github.com/LiteLDev/lip/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/LiteLDev/lip/compare/v0.34.9...v0.35.0
 [0.34.9]: https://github.com/futrime/lip/compare/v0.34.8...v0.34.9
 [0.34.8]: https://github.com/futrime/lip/compare/v0.34.7...v0.34.8
 [0.34.7]: https://github.com/futrime/lip/compare/v0.34.6...v0.34.7
