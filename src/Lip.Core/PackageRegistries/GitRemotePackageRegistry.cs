@@ -114,7 +114,8 @@ public class GitRemotePackageRegistry(IGitRemoteClient gitRemoteClient) : IPacka
 
     try {
       return await task;
-    } catch {
+    }
+    catch {
       // Do not keep failures (e.g. network errors) cached so that later calls can retry.
       _tagCache.TryRemove(new(key, task));
       throw;
