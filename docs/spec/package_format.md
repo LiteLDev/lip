@@ -268,7 +268,7 @@ For each installed package, lip must record the following in the workspace lock:
 
 When reinstalling from the lock, lip must take the final archive recorded in the lock directly and verify its identifier; it must not go through the resolution chain again. In particular a package from a pinned spec ref is reinstalled at the recorded commit, wherever its branch or tag points now.
 
-**Updating** an explicitly installed package requests the first ref of its chain again: an unpinned spec ref takes its newest version, a `branch:` takes the current head, a `tag:` the commit the tag points to now, and a `rev:` the same commit; a url or local file is read again. The package is replaced when the result differs in identity, version, archive key or archive identifier.
+**Updating** an explicitly installed package requests the first ref of its chain again: an unpinned spec ref takes its newest version, a `branch:` takes the current head, a `tag:` the commit the tag points to now, and a `rev:` the same commit; a url is requested again (lip may serve it from its download cache, so the content behind a URL should not change), and a local file is read again. The package is replaced when the result differs in identity, version, archive key or archive identifier.
 
 ## 9. tooth.json Compatibility
 

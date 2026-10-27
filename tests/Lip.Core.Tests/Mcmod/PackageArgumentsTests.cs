@@ -36,6 +36,7 @@ public class PackageArgumentsTests {
   [InlineData("github.com/LiteLDev/LeviLamina@branch:main", GitRefKind.Branch, "main", "")]
   [InlineData("github.com/a/b#client@branch:feat/x#1", GitRefKind.Branch, "feat/x#1", "client")]
   [InlineData("github.com/a/b@tag:release-2024", GitRefKind.Tag, "release-2024", "")]
+  [InlineData("github.com/a/b@tag:build.zip", GitRefKind.Tag, "build.zip", "")]
   [InlineData("github.com/a/b@rev:" + _commit, GitRefKind.Rev, _commit, "")]
   public void Parse_GitRef_ReturnsPinnedSpecRequest(
       string argument, GitRefKind kind, string name, string variant) {
@@ -124,5 +125,6 @@ public class PackageArgumentsTests {
     Assert.Throws<ArgumentException>(() => Parse(argument));
   }
 
-  private PackageRequest Parse(string argument) => PackageArguments.Parse(argument, _ws.Fs);
+  private PackageRequest Parse(string argument) =>
+      PackageArguments.Parse(argument, _ws.Root, _ws.Fs);
 }

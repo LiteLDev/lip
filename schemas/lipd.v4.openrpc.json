@@ -270,7 +270,7 @@
     },
     {
       "name": "Update",
-      "description": "Updates packages to the given or newest version, or the commit a git ref names now; with an empty list, every explicitly installed package, requested again by the ref it was installed from (a branch follows its head, a tag is resolved again, a rev stays, a URL or local file is read again).",
+      "description": "Updates packages to the given or newest version, or the commit a git ref names now; with an empty list, every explicitly installed package, requested again by the ref it was installed from (a branch follows its head, a tag is resolved again, a rev stays, a URL is requested again but served from the download cache, a local file is read again).",
       "params": [
         {
           "name": "packages",

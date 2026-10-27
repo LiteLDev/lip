@@ -17,6 +17,13 @@ namespace Lip.Core.Mcmod.Resolution;
 /// looked up directly: the requirement's spec refs are resolved for exactly that version. This
 /// equals the full enumeration except for a routing document without a version key at a tag
 /// whose version differs from the routed package's, and for a package renamed between versions.
+///
+/// A member resolved from a pinned spec ref stands in for the versions of that spec (spec §6),
+/// but pinned candidates are never offered to an unpinned requirement: when an unpinned
+/// requirement is decided before a pinned one for the same spec (both install edges, the
+/// unpinned one first in the agenda), the search does not find the set in which the pinned
+/// package satisfies both. Requests come before every install edge and installed packages are
+/// members from the start, so requesting or having installed the pinned package avoids this.
 public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultMaxSteps)
     : IGraphSolver {
   /// The default maximum number of candidates the search examines before giving up.

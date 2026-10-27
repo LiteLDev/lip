@@ -16,11 +16,12 @@ namespace Lip.Core.Mcmod;
 /// downloaded once; the lock records their SHA-256, which is verified when they are reopened.
 /// ZIP archives nested in another archive are not cached: they are read into memory from their
 /// parent archive, which is reopened (or re-resolved through the recorded chain) to get them back.
-/// Local ZIP files (file refs of user requests) are read where they are, not cached; reopening
-/// one from the lock verifies its SHA-256. git archives are lazy GitTreeSources: only the tree is
-/// listed, blobs are fetched on demand. A git ref (branch, tag) is resolved with ls-refs; a rev
-/// must be a full commit id, since an abbreviated one cannot be resolved without fetching the
-/// history. tooth.json assets (OpenAsset) are downloaded into the same cache as url archives.
+/// Local ZIP files (file refs of user requests) are read into memory where they are, not cached;
+/// reopening one from the lock verifies its SHA-256. git archives are lazy GitTreeSources: only
+/// the tree is listed, blobs are fetched on demand. A git ref (branch, tag) is resolved with
+/// ls-refs; a rev must be a full commit id, since an abbreviated one cannot be resolved without
+/// fetching the history. tooth.json assets (OpenAsset) are downloaded into the same cache as url
+/// archives.
 public class ArchiveProvider(
     IGitRemoteClient gitRemoteClient,
     ICacheService cacheService,
@@ -288,25 +289,31 @@ public class ArchiveProvider(
 
   /// Opens a local ZIP file (a file ref of a user request), identified by its content.
   private ArchiveHandle OpenFile(string key, string url, string path) {
-    IFileInfo file = _fileSystem.FileInfo.New(path);
-    if (!file.Exists) {
+    if (!_fileSystem.File.Exists(path)) {
       throw new ArchiveUnavailableException(_fileSystem.Directory.Exists(path)
           ? $"{key}: {path} is a directory; lip installs a local package only from a .mcmod or "
               + ".zip file."
           : $"{key}: {path} does not exist.");
     }
 
-    string sha256;
+    // Read once, so that the files installed are exactly the bytes validated and hashed, even if
+    // the file changes meanwhile.
+    byte[] content;
     try {
-      ZipValidator.Validate(file, key);
-      using Stream stream = file.OpenRead();
-      sha256 = Convert.ToHexStringLower(SHA256.HashData(stream));
+      content = _fileSystem.File.ReadAllBytes(path);
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException($"{key}: cannot read {path}: {ex.Message}", ex);
     }
 
-    return new ArchiveHandle(key, new ZipSource(file), new ZipArchiveIdentity(sha256, url));
+    using (MemoryStream stream = new(content, writable: false)) {
+      ZipValidator.Validate(stream, key);
+    }
+
+    return new ArchiveHandle(
+        key,
+        new ZipSource(content),
+        new ZipArchiveIdentity(Convert.ToHexStringLower(SHA256.HashData(content)), url));
   }
 
   private async Task<ArchiveHandle> OpenGit(string key, GitArchiveIdentity identity) {

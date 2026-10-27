@@ -67,7 +67,7 @@ public class McmodService(
 
   public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
     Workspace workspace = await OpenWorkspace(options);
-    List<(string Argument, PackageRequest Request)> requests = ParseRequests(workspace, packages);
+    List<(string Argument, PackageRequest Request)> requests = ParseRequests(packages);
 
     if (options.NoDependencies) {
       await InstallWithoutDependencies(workspace, requests, options);
@@ -94,7 +94,7 @@ public class McmodService(
 
     List<LockedPackage> targets = [];
     foreach (string package in packages) {
-      List<LockedPackage> matched = MatchInstalled(workspace.Lock, package);
+      List<LockedPackage> matched = MatchInstalled(workspace, package);
       if (matched.Count == 0) {
         throw new InvalidOperationException($"Package '{package}' is not installed.");
       }
@@ -160,24 +160,30 @@ public class McmodService(
     if (packages.Count == 0) {
       // Every explicitly installed package, requested again by the ref it was installed from: a
       // spec ref at its newest version, a branch at its head, a tag where it points now, a rev
-      // as it is, and a URL or local file with its current content.
+      // as it is, a URL as cached and a local file with its current content.
       requests = [];
       foreach (IGrouping<string, LockedPackage> group in workspace.Lock.Packages
           .Where(p => p.Explicit && p.Chain.Count > 0)
           .GroupBy(p => Fold(p.Identity))) {
         LockedPackage package = group.First();
         Ref reference = Ref.Parse(package.Chain[0].Ref, allowFile: true);
-        if (reference.Kind == RefKind.File && !_fs.File.Exists(reference.LocalPath)) {
-          await _ui.PrintWarning(
-              $"Keeping package '{package.Identity}' as it is: {reference.LocalPath}, which it "
-              + "was installed from, does not exist any more.");
+        string? reason = reference.Kind switch {
+          RefKind.File when !_fs.File.Exists(reference.LocalPath) =>
+              $"{reference.LocalPath}, which it was installed from, does not exist any more",
+          // Written by development builds that installed from paths in the workspace.
+          RefKind.Relative => $"it was installed from {reference}, which is not a package lip "
+              + "can request; install it from a .mcmod file to update it",
+          _ => null,
+        };
+        if (reason is not null) {
+          await _ui.PrintWarning($"Keeping package '{package.Identity}' as it is: {reason}.");
           continue;
         }
 
         requests.Add((package.Identity, new PackageRequest(reference, null)));
       }
     } else {
-      requests = ParseRequests(workspace, packages);
+      requests = ParseRequests(packages);
     }
 
     List<string> identities = await RequestedIdentities(workspace, requests);
@@ -219,7 +225,8 @@ public class McmodService(
   /// to: for a spec ref, its newest version, the given one, or the commit its git ref resolves
   /// to; otherwise the archive of the URL or local file.
   public async Task<string> View(string package) {
-    PackageRequest request = PackageArguments.Parse(package, _fs);
+    PackageRequest request = PackageArguments.Parse(
+        package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
 
     ArchiveHandle archive;
     if (request.Ref is { Kind: RefKind.Spec, GitRef: GitRef gitRef }) {
@@ -301,12 +308,11 @@ public class McmodService(
 
   private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
 
-  private List<(string, PackageRequest)> ParseRequests(
-      Workspace workspace, IReadOnlyList<string> packages) {
-    List<(string, PackageRequest)> requests = [
-      .. packages.Select(p => (p, PackageArguments.Parse(p, _fs))),
-    ];
-    return requests;
+  /// Parses package arguments; local paths are relative to the workspace root, which is the
+  /// current directory of lip.
+  private List<(string, PackageRequest)> ParseRequests(IReadOnlyList<string> packages) {
+    string root = _fs.Path.GetFullPath(_workspaceRoot());
+    return [.. packages.Select(p => (p, PackageArguments.Parse(p, root, _fs)))];
   }
 
   /// The identity of the first candidate of every request: the package the request names. Fails
@@ -714,9 +720,12 @@ public class McmodService(
     }
 
     Ref reference = Ref.Parse(package.Chain[0].Ref, allowFile: true);
-    if (reference.GitRef?.Kind == GitRefKind.Branch && package.Chain[0].Commit is string commit) {
-      // The branch may have moved on; the locked package came from the recorded commit.
-      reference = reference.WithGitRef(GitRef.Rev(commit));
+    if (reference.GitRef is { Kind: not GitRefKind.Rev }
+        && GitRef.TryParse($"rev:{package.Chain[0].Commit}", out GitRef? rev, out _)) {
+      // The branch or tag may have moved; the locked package came from the recorded commit.
+      // Only nested ZIP archives of manifest.json packages are re-resolved, so losing the tag
+      // version of a "v" + SemVer tag (which only tooth.json packages take over) changes nothing.
+      reference = reference.WithGitRef(rev);
     }
 
     SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
@@ -739,13 +748,19 @@ public class McmodService(
 
   /// Matches an uninstall argument: an identity (ignoring ASCII case), or the first ref of the
   /// chain as written at install time (e.g. "github.com/owner/repo#variant" for tooth
-  /// packages); a ref without a variant matches every variant, and one without a git ref every
-  /// git ref.
-  private static List<LockedPackage> MatchInstalled(LockFile lockFile, string argument) {
+  /// packages, or the path of the local file it was installed from); a ref without a variant
+  /// matches every variant, and one without a git ref every git ref.
+  private List<LockedPackage> MatchInstalled(Workspace workspace, string argument) {
+    LockFile lockFile = workspace.Lock;
     List<LockedPackage> byIdentity = [
       .. lockFile.Packages.Where(p => SameIdentity(p.Identity, argument)),
     ];
-    if (byIdentity.Count > 0 || !Ref.TryParse(argument, out Ref? wanted, out _)) {
+    if (byIdentity.Count > 0) {
+      return byIdentity;
+    }
+
+    Ref? wanted = PackageArguments.LocalFileRef(argument, workspace.Root, _fs);
+    if (wanted is null && !Ref.TryParse(argument, allowFile: true, out wanted, out _)) {
       return byIdentity;
     }
 

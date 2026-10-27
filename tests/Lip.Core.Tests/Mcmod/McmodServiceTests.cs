@@ -284,6 +284,26 @@ public class McmodServiceTests {
     Assert.Equal("v2", _ws.Fs.File.ReadAllText(_ws.Path("mods/Zipped/Zipped.dll")));
   }
 
+  [Theory]
+  [InlineData("./x.mcmod")]
+  [InlineData("x.mcmod")]
+  public async Task Uninstall_ByLocalPath_RemovesPackageInstalledFromIt(string argument) {
+    // Arrange
+    string path = _ws.AddZip("x.mcmod", new() {
+      ["manifest.json"] = WorkspaceHarness.Concrete("Zipped", "1.0.0", "native"),
+      ["Zipped.dll"] = "v1",
+    });
+    await _ws.Service.Install([path], s_options);
+    _ws.Fs.File.Delete(path);
+
+    // Act
+    await _ws.Service.Uninstall([argument], s_options);
+
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("mods/Zipped/Zipped.dll"));
+  }
+
   [Fact]
   public async Task Update_LocalFileGone_KeepsPackageAndWarns() {
     // Arrange
