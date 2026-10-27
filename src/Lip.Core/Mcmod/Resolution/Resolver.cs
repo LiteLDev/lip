@@ -10,7 +10,6 @@ namespace Lip.Core.Mcmod.Resolution;
 ///
 /// One instance caches archives, spec version lists and documents by archive key, so a ref
 /// reached on several paths (or resolved again by the graph solver) is fetched and read once.
-/// PlatformUnknownException is not "no candidate": it propagates to the caller.
 ///
 /// A tooth.json at a tag that declares another version than the tag is a candidate with the tag
 /// version, as in lip v3; onWarning is told once per archive.
@@ -258,13 +257,11 @@ public class Resolver(
       .. document.Artifacts
           .Select((artifact, index) => (artifact, index))
           .Where(a => a.artifact.Variant == variant)
-          // The rid is checked first so that an unknown platform only fails when it decides.
-          .Where(a => a.artifact.Rids?.Contains(walk.Environment.Rid) ?? true)
           .Where(a => a.artifact.Matches(walk.Environment)),
     ];
     if (matching.Count == 0) {
       walk.Report(refPath, $"no artifact for variant \"{variant}\" matches the environment "
-          + $"({walk.Environment.Platform?.ToSpecString() ?? "unknown platform"}, "
+          + $"({walk.Environment.Platform.ToSpecString()}, "
           + $"{walk.Environment.Rid})");
       yield break;
     }
@@ -322,7 +319,7 @@ public class Resolver(
     }
 
     if (document.Platform != PackagePlatform.Universal) {
-      McmodPlatform platform = walk.Environment.RequirePlatform();
+      McmodPlatform platform = walk.Environment.Platform;
       bool matches = document.Platform == PackagePlatform.Server
           ? platform == McmodPlatform.Server
           : platform == McmodPlatform.Client;

@@ -142,22 +142,6 @@
           }
         },
         {
-          "name": "platform",
-          "description": "The game platform, \"server\" or \"client\". When null, it comes from the lock or the executables in the workspace.",
-          "required": false,
-          "schema": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "server",
-              "client",
-              null
-            ]
-          }
-        },
-        {
           "name": "rid",
           "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
           "required": false,
@@ -266,22 +250,6 @@
           }
         },
         {
-          "name": "platform",
-          "description": "The game platform, \"server\" or \"client\". When null, it comes from the lock or the executables in the workspace.",
-          "required": false,
-          "schema": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "server",
-              "client",
-              null
-            ]
-          }
-        },
-        {
           "name": "rid",
           "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
           "required": false,
@@ -326,22 +294,6 @@
           "description": "If true, ignores scripts.",
           "schema": {
             "type": "boolean"
-          }
-        },
-        {
-          "name": "platform",
-          "description": "The game platform, \"server\" or \"client\". When null, it comes from the lock or the executables in the workspace.",
-          "required": false,
-          "schema": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "server",
-              "client",
-              null
-            ]
           }
         },
         {

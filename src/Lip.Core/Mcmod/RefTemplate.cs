@@ -15,8 +15,7 @@ public static partial class RefTemplate {
       .FirstOrDefault(p => !_known.Contains(p[2..^2]));
 
   /// Expands a template and parses it as a ref. Throws FormatException when a referenced
-  /// document key is missing or the result is not a valid ref, and PlatformUnknownException
-  /// when {{platform}} is used without a known platform.
+  /// document key is missing or the result is not a valid ref.
   public static Ref Expand(string template, RoutingDocument document, LipEnvironment environment) {
     string expanded = PlaceholderRegex().Replace(template, m => m.Value[2..^2] switch {
       "name" => document.Name
@@ -24,7 +23,7 @@ public static partial class RefTemplate {
       "version" => document.Version?.ToString()
           ?? throw new FormatException(
               $"'{template}' uses {{{{version}}}} but the document has no version."),
-      "platform" => environment.RequirePlatform().ToSpecString(),
+      "platform" => environment.Platform.ToSpecString(),
       "rid" => environment.Rid,
       _ => throw new FormatException($"Unknown placeholder {m.Value} in '{template}'."),
     });

@@ -15,7 +15,6 @@ public class ResolverTests {
 
   private static readonly LipEnvironment _server = new(McmodPlatform.Server, "win-x64");
   private static readonly LipEnvironment _client = new(McmodPlatform.Client, "win-x64");
-  private static readonly LipEnvironment _unknownPlatform = new(null, "win-x64");
 
   private readonly FakeArchives _archives = new();
   private readonly Mock<IToothCompat> _toothCompat = new();
@@ -126,71 +125,6 @@ public class ResolverTests {
     Assert.Empty(result.Candidates);
     string diagnostic = Assert.Single(result.Diagnostics);
     Assert.StartsWith("github.com/LiteLDev/LegacyMoney@v0.22.0: no artifact", diagnostic);
-  }
-
-  [Fact]
-  public async Task Resolve_PlatformUnknownAndArtifactWritesPlatform_Throws() {
-    // Arrange
-    AddLegacyMoney();
-
-    // Act & Assert
-    await Assert.ThrowsAsync<PlatformUnknownException>(() => CreateResolver()
-        .Resolve(Ref.Parse(_legacyMoney), Workspace, null, _unknownPlatform));
-  }
-
-  [Fact]
-  public async Task Resolve_PlatformUnknownAndPlatformTemplate_Throws() {
-    // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod",
-        Routing(Art("https://example.com/{{platform}}.mcmod")));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<PlatformUnknownException>(() => CreateResolver()
-        .Resolve(Ref.Parse("https://example.com/r.mcmod"), Workspace, null, _unknownPlatform));
-  }
-
-  [Fact]
-  public async Task Resolve_PlatformUnknownAndConcreteNotUniversal_Throws() {
-    // Arrange
-    _archives.AddUrl("https://example.com/a.mcmod", Concrete("A", "1.0.0", PackagePlatform.Server));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<PlatformUnknownException>(() => CreateResolver()
-        .Resolve(Ref.Parse("https://example.com/a.mcmod"), Workspace, null, _unknownPlatform));
-  }
-
-  [Fact]
-  public async Task Resolve_PlatformUnknownAndConcreteUniversal_ProducesCandidate() {
-    // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod", Routing(Art("https://example.com/a.mcmod")));
-    _archives.AddUrl("https://example.com/a.mcmod", Concrete("A", "1.0.0"));
-
-    // Act
-    ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse("https://example.com/r.mcmod"), Workspace, null, _unknownPlatform);
-
-    // Assert
-    Assert.Single(result.Candidates);
-  }
-
-  [Fact]
-  public async Task Resolve_PlatformUnknownAndRidRulesOutPlatformArtifact_ProducesCandidate() {
-    // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod", Routing(
-        new Artifact {
-          Platforms = [McmodPlatform.Server],
-          Rids = ["linux-x64"],
-          Refs = ["https://example.com/linux.mcmod"],
-        },
-        Art("https://example.com/a.mcmod")));
-    _archives.AddUrl("https://example.com/a.mcmod", Concrete("A", "1.0.0"));
-
-    // Act
-    ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse("https://example.com/r.mcmod"), Workspace, null, _unknownPlatform);
-
-    // Assert
-    Assert.Equal(1, Assert.Single(result.Candidates).Chain[0].ArtifactIndex);
   }
 
   [Fact]

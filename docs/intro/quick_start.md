@@ -18,7 +18,7 @@ This command creates a `manifest.json` file in the current directory (it fails i
 
 ## Installing Packages
 
-Run lip in the root directory of your server or client (the workspace). To install a package, use the `install` command followed by the package path. You can specify a version using the `@` symbol.
+Run lip in the root directory of your server (the workspace). To install a package, use the `install` command followed by the package path. You can specify a version using the `@` symbol.
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina@1.0.0
@@ -29,7 +29,7 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 - Its dependencies are resolved and installed.
 - It is recorded in the lockfile (`lip_lock.json`). Your `manifest.json` is not modified.
 
-lip detects a server or a client from `bedrock_server.exe`, `bedrock_server_mod.exe` or `Minecraft.Windows.exe` in the workspace. In an empty directory, pass `--platform server` or `--platform client` if lip asks for it.
+lip manages server workspaces only. Client mods are managed by launchers such as LeviLauncher.
 
 ## Listing Installed Packages
 

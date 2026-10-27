@@ -33,13 +33,12 @@ lip install <PACKAGES> [options]
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
 | `--ignore-scripts` | 跳过执行 `preInstall` 和 `postInstall` 脚本（`tooth.json` 包为 `pre_install`、`install` 和 `post_install`）。 |
 | `--no-dependencies` | 跳过安装依赖。 |
-| `--platform <PLATFORM>` | 工作区的平台：`server` 或 `client`。参见[环境](../../concepts/package_manifest.md#环境)。 |
 | `--rid <RID>` | 工作区的 .NET RID，例如 `win-x64`。 |
 
 ## 示例
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina
-lip install github.com/LiteLDev/LegacyMoney@0.22.0 --platform server
+lip install github.com/LiteLDev/LegacyMoney@0.22.0 --rid win-x64
 lip install ./LegacyMoney-server-win-x64.mcmod
 ```

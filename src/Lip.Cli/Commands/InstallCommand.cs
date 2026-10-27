@@ -33,7 +33,6 @@ public class InstallCommand(ILipClient lipClient, IUserInteraction userInteracti
         settings.DryRun,
         settings.IgnoreScripts,
         settings.NoDependencies,
-        settings.Platform,
         settings.Rid);
     await _userInteraction.PrintSuccess("Packages installed successfully.");
     return 0;

@@ -26,7 +26,6 @@ public interface ILipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? platform = null,
       string? rid = null);
   Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List();
   Task Migrate(string file, string output);
@@ -35,13 +34,11 @@ public interface ILipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? platform = null,
       string? rid = null);
   Task Update(
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
-      string? platform = null,
       string? rid = null);
   Task<IEnumerable<string>> Versions(string package);
   Task<string> View(string package);
@@ -86,7 +83,6 @@ public class LipClient(
     McmodService mcmodService = new(
         fileSystem,
         userInteraction,
-        new EnvironmentDetector(fileSystem),
         new LockStore(fileSystem),
         archiveProvider,
         new ArchiveReader(documentParser),
@@ -164,10 +160,9 @@ public class LipClient(
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? platform = null,
       string? rid = null) {
     await _mcmodService.Install(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, platform, rid));
+        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid));
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependencies.
@@ -204,10 +199,9 @@ public class LipClient(
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? platform = null,
       string? rid = null) {
     await _mcmodService.Uninstall(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, platform, rid));
+        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid));
   }
 
   /// Updates the given packages to the requested (or newest) version; without packages, every
@@ -216,10 +210,9 @@ public class LipClient(
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
-      string? platform = null,
       string? rid = null) {
     await _mcmodService.Update(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies: false, platform, rid));
+        [.. packages], Options(dryRun, ignoreScripts, noDependencies: false, rid));
   }
 
   public async Task<IEnumerable<string>> Versions(string package) {
@@ -231,20 +224,8 @@ public class LipClient(
   }
 
   private static OperationOptions Options(
-      bool dryRun, bool ignoreScripts, bool noDependencies, string? platform, string? rid) {
-    McmodPlatform? parsedPlatform = null;
-    if (!string.IsNullOrEmpty(platform)) {
-      parsedPlatform = McmodPlatformExtensions.TryParse(platform, out McmodPlatform p)
-          ? p
-          : throw new ArgumentException(
-              $"Invalid platform '{platform}', expected 'server' or 'client'.", nameof(platform));
-    }
-
+      bool dryRun, bool ignoreScripts, bool noDependencies, string? rid) {
     return new OperationOptions(
-        dryRun,
-        ignoreScripts,
-        noDependencies,
-        parsedPlatform,
-        string.IsNullOrEmpty(rid) ? null : rid);
+        dryRun, ignoreScripts, noDependencies, string.IsNullOrEmpty(rid) ? null : rid);
   }
 }

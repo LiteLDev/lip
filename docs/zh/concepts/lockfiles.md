@@ -34,7 +34,7 @@
 
 * **`formatVersion`**：锁文件格式版本号（当前为 `4`）。
 * **`formatUuid`**：用于确保文件类型正确的唯一标识。
-* **`platform`**：`"server"`、`"client"`，未知时为 `null`。
+* **`platform`**：工作区的平台。lip 写入 `"server"`；从 `tooth_lock.json` 迁移而来的锁在 lip 保存之前为 `null`。
 * **`rid`**：工作区的 [.NET RID](https://learn.microsoft.com/zh-cn/dotnet/core/rid-catalog)。
 * **`packages`**：已安装的包，按安装顺序排列。
 

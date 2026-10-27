@@ -34,7 +34,7 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
 
 *   **`formatVersion`**: The version of the lockfile format (currently `4`).
 *   **`formatUuid`**: A unique identifier ensuring the file type is correct.
-*   **`platform`**: `"server"`, `"client"`, or `null` while it is unknown.
+*   **`platform`**: The platform of the workspace. lip writes `"server"`; it is `null` in a lock migrated from `tooth_lock.json` until lip saves it.
 *   **`rid`**: The [.NET RID](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog) of the workspace.
 *   **`packages`**: The installed packages, in install order.
 

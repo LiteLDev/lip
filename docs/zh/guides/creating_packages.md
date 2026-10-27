@@ -34,7 +34,7 @@ lip init
 
 ## mod
 
-mod 是 `type` 不为 `"files"` 的具体包。lip 会把整个归档写入服务端的 `plugins/<name>/` 或客户端的 `mods/<name>/`。
+mod 是 `type` 不为 `"files"` 的具体包。整个归档会写入服务端的 `plugins/<name>/`（由 lip 安装）或客户端的 `mods/<name>/`（由 LeviLauncher 等启动器安装）。
 
 带 `refs` 的依赖由 lip 安装；LeviLamina 仍照常读取 `name` 和 `version`。只应由 lip 安装的包（例如 LeviLamina 本身）请写在 `installDependencies` 中：
 

@@ -1,21 +1,21 @@
 using System.IO.Abstractions;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
+using Lip.Core.Mcmod.Lock;
 using Lip.Core.Mcmod.Resolution;
 using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Options shared by the workspace operations. Platform and Rid override the environment
-/// (spec §5.1).
+/// Options shared by the workspace operations. Rid overrides the environment rid (spec §5.1).
 public record OperationOptions(
     bool DryRun = false,
     bool IgnoreScripts = false,
     bool NoDependencies = false,
-    McmodPlatform? Platform = null,
     string? Rid = null);
 
 /// One entry of the workspace lock, as listed to the user.
@@ -42,7 +42,6 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 public class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
-    IEnvironmentDetector environmentDetector,
     ILockStore lockStore,
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
@@ -53,7 +52,6 @@ public class McmodService(
     Func<string>? workspaceRoot = null) {
   private readonly IFileSystem _fs = fileSystem;
   private readonly IUserInteraction _ui = userInteraction;
-  private readonly IEnvironmentDetector _environmentDetector = environmentDetector;
   private readonly ILockStore _lockStore = lockStore;
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
@@ -244,8 +242,7 @@ public class McmodService(
   private async Task<Workspace> OpenWorkspace(OperationOptions options) {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LockFile lockFile = await _lockStore.Load(root);
-    LipEnvironment environment = _environmentDetector.Detect(
-        root, options.Platform, options.Rid, lockFile);
+    LipEnvironment environment = DetermineEnvironment(lockFile, options.Rid);
     Resolver resolver = new(_archiveProvider, _archiveReader, _toothCompat, Warn);
     return new Workspace(
         root,
@@ -254,6 +251,26 @@ public class McmodService(
         _archiveProvider.OpenWorkspace(root),
         resolver,
         _createSolver(resolver));
+  }
+
+  /// The environment of the workspace (spec §5.1). lip manages server workspaces only, so the
+  /// platform is always server; client workspaces are left to launchers implementing the same
+  /// spec. The rid is explicit, then the lock, then the RID lip itself runs on.
+  private static LipEnvironment DetermineEnvironment(LockFile lockFile, string? explicitRid) {
+    string server = McmodPlatform.Server.ToSpecString();
+    if (lockFile.Platform is { } platform && platform != server) {
+      throw new InvalidOperationException(
+          $"The lock records the platform \"{platform}\", but lip manages server workspaces only."
+          + " Client workspaces are managed by launchers such as LeviLauncher.");
+    }
+
+    if (lockFile.Rid == "") {
+      throw new LockFormatException("The lock records an empty rid.");
+    }
+
+    return new LipEnvironment(
+        McmodPlatform.Server,
+        explicitRid ?? lockFile.Rid ?? RuntimeInformation.RuntimeIdentifier);
   }
 
   private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
@@ -562,7 +579,7 @@ public class McmodService(
   /// The lock with the given packages and the environment, once known (spec §8).
   private static LockFile LockWith(Workspace workspace, List<LockedPackage> packages) {
     return workspace.Lock with {
-      Platform = workspace.Environment.Platform?.ToSpecString() ?? workspace.Lock.Platform,
+      Platform = workspace.Environment.Platform.ToSpecString(),
       Rid = workspace.Environment.Rid,
       Packages = [.. packages],
     };

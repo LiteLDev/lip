@@ -46,20 +46,13 @@ lip install ./path/to/package/
 lip install https://example.com/package.mcmod
 ```
 
-## 选择平台
+## 仅限服务端工作区
 
-lip 根据工作区中的可执行文件判断它是服务端还是客户端（参见[环境](../concepts/package_manifest.md#环境)）。在空目录中，请在第一次安装时告诉 lip：
-
-```sh
-lip install --platform server github.com/user/repo
-```
-
-之后平台会记录在锁文件中。
+lip 管理服务端工作区：mod 安装到 `plugins/<name>/`（参见[环境](../concepts/package_manifest.md#环境)）。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
 
 ## 命令参数
 
 - `-n, --dry-run`：仅模拟安装，不做实际更改，可用于预览结果。
 - `--no-dependencies`：仅安装指定包，忽略其依赖。
 - `--ignore-scripts`：跳过执行包中定义的 `preInstall` 和 `postInstall` 脚本。
-- `--platform <server|client>`：设置工作区的平台。
 - `--rid <RID>`：设置工作区的 .NET RID，例如 `win-x64`。

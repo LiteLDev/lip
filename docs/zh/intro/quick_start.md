@@ -18,7 +18,7 @@ lip init
 
 ## 安装包
 
-在服务端或客户端的根目录（即工作区）中运行 lip。使用 `install` 命令并跟上包路径即可安装包，也可用 `@` 指定版本。
+在服务端的根目录（即工作区）中运行 lip。使用 `install` 命令并跟上包路径即可安装包，也可用 `@` 指定版本。
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina@1.0.0
@@ -29,7 +29,7 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 - 解析并安装其依赖；
 - 记录到锁文件（`lip_lock.json`）中。你的 `manifest.json` 不会被修改。
 
-lip 根据工作区中的 `bedrock_server.exe`、`bedrock_server_mod.exe` 或 `Minecraft.Windows.exe` 识别服务端或客户端。在空目录中，若 lip 提示需要平台，请传入 `--platform server` 或 `--platform client`。
+lip 只管理服务端工作区。客户端 mod 由 LeviLauncher 等启动器管理。
 
 ## 查看已安装包
 
