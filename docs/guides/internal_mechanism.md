@@ -21,10 +21,11 @@ The Daemon (`lipd`) communicates via **JSON-RPC over stdio**, allowing tools to 
 2.  **Environment**: Determine the platform and RID (see [Environment](../concepts/package_manifest.md#environment)).
 3.  **Resolver**: Turn every ref into a sequence of candidate concrete packages, following routing documents.
 4.  **Graph solver**: Choose one candidate per request and per install edge, so that every identity appears once and no `conflicts` entry is violated.
-5.  **Installers**: Uninstall the packages that leave the set, in reverse install order, then install the packages that enter it, dependencies first. A `tooth.json` package has been converted to a format 4 file package while resolving (see [Legacy: tooth.json](../concepts/package_manifest.md#legacy-tooth-json)), so the same installer handles every package. Before the first package is installed or uninstalled, lip makes `plugins` a link to `mods` (see [Installing Dependencies](installing_dependencies.md#server-workspaces-only)). Files placed under `plugins/` are written under `mods/` and recorded there.
-6.  **Lock**: Save the lock after every package installed or uninstalled.
+5.  **Plan**: Plan uninstalling the packages that leave the set, in reverse install order, then installing the packages that enter it, dependencies first, each against the workspace as the steps before it leave it. Planning downloads every file to be written and checks everything that can fail: file ownership, `preserveFiles`, paths, placement sources and the `plugins`/`mods` layout. A `tooth.json` package has been converted to a format 4 file package while resolving (see [Legacy: tooth.json](../concepts/package_manifest.md#legacy-tooth-json)), so the same installer handles every package.
+6.  **Apply**: Make `plugins` a link to `mods` if needed (see [Installing Dependencies](installing_dependencies.md#server-workspaces-only)), then run the planned scripts and file changes. Files placed under `plugins/` are written under `mods/` and recorded there.
+7.  **Lock**: Save the lock once, after every step has succeeded.
 
-If anything fails while resolving or solving, the workspace is not modified.
+Operations are all or nothing (spec §7, "Atomicity"). If anything fails before step 6, the workspace is not modified. If a step fails while applying (a file cannot be written, a script exits with a non-zero code, or you press Ctrl+C), lip undoes every change of the operation, including the layout, and leaves the lock as it was. What scripts did cannot be undone: a failing `postInstall` or `preUninstall` script still fails the operation and undoes lip's file changes, but not the effects of the scripts that already ran.
 
 ## Package Resolution
 
@@ -68,7 +69,10 @@ lip maintains the state of your installed packages in a lockfile kept outside th
 -   The files each package owns.
 -   The platform and RID of the workspace.
 
-Files written to make an operation atomic are hidden and sit next to their target: the lock is first written to `.<name>.tmp` beside it, and a file that an installer overwrites is first renamed to `.<name>.bak` (or `.<name>.bak1`, `.<name>.bak2`, … if that name is taken) in the same directory, which is deleted once the package is installed or restored if installing fails. On Windows these files also get the hidden attribute.
+Files written to make an operation atomic are hidden and sit next to their target: the lock is first written to `.<name>.tmp` beside it and then renamed over it, and a file that an operation overwrites or deletes is first renamed to `.<name>.bak` (or `.<name>.bak1`, `.<name>.bak2`, … if that name is taken) in the same directory. The backups are deleted once the lock is saved, or renamed back if the operation fails. Directories that an uninstallation empties are deleted at the same time. On Windows these files also get the hidden attribute.
+
+-   **Journal**: While an operation changes the workspace, lip records every change, before making it, in `<hash>.journal` next to the lock. If lip is killed, the next `lip install`, `uninstall` or `update` of the workspace reads the journal first: it undoes the interrupted operation (restoring the backups) and reports it, or, if the operation had already reached the point of saving its lock, finishes it by deleting the backups. A dry run only reports the journal.
+-   **One operation at a time**: An operation holds `<hash>.lock` next to the lock open exclusively (deleted when it ends). A second `lip install`, `uninstall` or `update` of the same workspace fails at once with "Another lip process is changing the workspace"; run it again when the first one has finished.
 
 ## Deviations from the Specification
 

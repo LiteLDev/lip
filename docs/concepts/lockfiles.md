@@ -29,7 +29,7 @@ The lockfile serves several critical purposes in `lip`:
 4.  **Dependency Graph**: It distinguishes between packages explicitly installed by the user and those installed implicitly as dependencies. This allows `lip uninstall` to also remove dependencies that no explicitly installed package needs any more (unless `--no-dependencies` is given), and `lip list` to show the two groups separately.
 5.  **Environment**: It records the platform and RID of the workspace once they are known, so later commands use the same [environment](package_manifest.md#environment).
 
-The lockfile is saved after every package that is installed or uninstalled, so it matches the workspace even if a later step fails.
+The lockfile is saved once, after every package of an operation has been installed or uninstalled. If the operation fails, lip undoes its changes to the workspace and the lockfile stays as it was, so the two always match (see [Internal Mechanism](../guides/internal_mechanism.md#pipeline)).
 
 ## Structure
 

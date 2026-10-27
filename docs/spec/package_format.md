@@ -2,7 +2,7 @@
 
 This specification only **adds** keys on top of the LeviLamina `manifest.json` specification; it does not change or remove the meaning of any of its keys.
 LeviLamina ignores the keys added by this specification. "must / must not / may" correspond to MUST / MUST NOT / MAY of RFC 2119.
-In every case this specification calls a "failure", lip must abort the current operation and must not modify the workspace.
+In every case this specification calls a "failure", lip must abort the current operation and must not modify the workspace: a failure detected after the operation started to change the workspace undoes its changes (§7, "Atomicity"; what commands did is the exception).
 
 ## 1. Terms
 
@@ -252,9 +252,18 @@ Steps to uninstall P:
 - When `plugins` is a link to anywhere else, it is a failure.
 - When `plugins` is a regular directory, move its entries into `mods`, then delete `plugins` and create the link. When any entry has a namesake in `mods`, it is a failure before any entry is moved.
 
-When establishing the layout fails, the workspace must be left unchanged.
+When establishing the layout fails, the workspace must be left unchanged. Establishing the layout is part of the operation: when a later step of the operation fails, it is undone too.
 
 **Commands**: each command is run by the platform shell (`cmd /c` on Windows, `sh -c` on other platforms), with the workspace root as working directory. When any command exits with a non-zero code, it is a failure.
+
+**Atomicity**: an operation (install, uninstall or update, together with every dependency it installs, replaces or removes) succeeds or fails as a whole.
+
+1. **Plan first**: before changing the workspace, lip must do everything that can fail without changing it: resolving, solving, fetching every archive the operation installs, establishing which files every installation and uninstallation writes, keeps and deletes, and checking every failure condition of this section, including the server layout. Each step is planned against the workspace as the steps before it leave it (for example, an update installs the new version into the workspace the uninstallation of the old version leaves). A failure while planning leaves the workspace and the lock unchanged.
+2. **Then apply**: when a step fails while it is applied (a file cannot be written or deleted, a command exits with a non-zero code, the user cancels the operation), lip must undo every change the operation made to the workspace, in reverse order: delete the files it created, restore the files it overwrote or deleted, and restore the directories and the server layout. The lock must not change. lip writes the lock last, once every step has succeeded.
+3. **Commands are not undone**: lip cannot undo what a command did. A failing command (`preInstall`, `postInstall`, `preUninstall` or `postUninstall`) fails the operation like any other step, and lip undoes its own changes, including those made before earlier commands of the operation ran; the commands that already ran are neither run again nor reversed. Commands should therefore be safe to run again, and should not assume that the files of the operation stay in place.
+4. The paths that uninstallation steps 2–4 delete are determined while planning, before any command runs: files a command creates are not deleted by `removeFiles`.
+5. **Interruption**: when lip is interrupted while applying an operation (for example, the process is killed), the next operation on the workspace must first complete the interrupted operation if its lock had been written, and undo it otherwise.
+6. **Concurrency**: two operations must not apply to the same workspace at the same time.
 
 ## 8. Lock
 
