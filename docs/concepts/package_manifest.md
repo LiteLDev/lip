@@ -3,6 +3,7 @@
 A lip package is described by a `manifest.json` at the root of its archive. It is the
 `manifest.json` of LeviLamina, extended with the keys of lip package format version 4.
 LeviLamina ignores the keys lip adds, and lip never changes the meaning of a LeviLamina key.
+The normative definition is the [package format specification](../spec/package_format.md).
 
 The format is described by the JSON Schema
 [`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json).
