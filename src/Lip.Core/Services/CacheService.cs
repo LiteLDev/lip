@@ -79,7 +79,7 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
 
       _fileSystem.Directory.Move(tempDir.FullName, cacheDir.FullName);
     }
-    catch (IOException) when (cacheDir.Exists) {
+    catch (IOException) when (_fileSystem.Directory.Exists(cacheDir.FullName)) {
       // Another process has already created the cache directory, so we can ignore this exception.
     }
     finally {
@@ -113,7 +113,7 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
 
       _fileSystem.File.Move(tempFile.FullName, cacheFile.FullName);
     }
-    catch (IOException) when (cacheFile.Exists) {
+    catch (IOException) when (_fileSystem.File.Exists(cacheFile.FullName)) {
       // Another process has already created the cache file, so we can ignore this exception.
     }
     finally {

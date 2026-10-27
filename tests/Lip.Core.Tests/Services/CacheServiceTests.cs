@@ -81,6 +81,51 @@ public class CacheServiceTests {
   }
 
   [Fact]
+  public async Task GetOrCreateFile_CreatedConcurrently_ReturnsExistingFile() {
+    // Arrange
+    string cachePath = GetCachePath();
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>(), cachePath);
+    var mockUserInteraction = new Mock<IUserInteraction>();
+    CacheService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    IFileInfo result = await service.GetOrCreateFile("test-key", async file => {
+      mockFileSystem.File.WriteAllText(file.FullName, "second");
+      // Another writer stores the same key before this one moves its file into place.
+      await service.GetOrCreateFile("test-key", other => {
+        mockFileSystem.File.WriteAllText(other.FullName, "first");
+        return Task.CompletedTask;
+      });
+    });
+
+    // Assert
+    Assert.Equal("first", mockFileSystem.File.ReadAllText(result.FullName));
+  }
+
+  [Fact]
+  public async Task GetOrCreateDirectory_CreatedConcurrently_ReturnsExistingDirectory() {
+    // Arrange
+    string cachePath = GetCachePath();
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>(), cachePath);
+    var mockUserInteraction = new Mock<IUserInteraction>();
+    CacheService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    IDirectoryInfo result = await service.GetOrCreateDirectory("test-key", async dir => {
+      mockFileSystem.Directory.CreateDirectory(dir.FullName);
+      // Another writer stores the same key before this one moves its directory into place.
+      await service.GetOrCreateDirectory("test-key", other => {
+        mockFileSystem.Directory.CreateDirectory(other.FullName);
+        mockFileSystem.File.WriteAllText(Path.Combine(other.FullName, "first.txt"), "");
+        return Task.CompletedTask;
+      });
+    });
+
+    // Assert
+    Assert.True(mockFileSystem.File.Exists(Path.Combine(result.FullName, "first.txt")));
+  }
+
+  [Fact]
   public async Task Clean_DeletesCacheDirectory() {
     // Arrange
     string cachePath = GetCachePath();
