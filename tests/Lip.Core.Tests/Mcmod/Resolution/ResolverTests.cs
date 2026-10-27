@@ -609,7 +609,9 @@ public class ResolverTests {
 
     // Act
     Candidate first = await CreateResolver()
-        .ResolveLazy(Ref.Parse("github.com/user/pkg"), Workspace, null, _server)
+        .ResolveLazy(
+            Ref.Parse("github.com/user/pkg"), Workspace, null, _server,
+            cancellationToken: TestContext.Current.CancellationToken)
         .FirstAsync(TestContext.Current.CancellationToken);
 
     // Assert
