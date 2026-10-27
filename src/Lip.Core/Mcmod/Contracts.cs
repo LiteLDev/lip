@@ -1,0 +1,160 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Lip.Core.Mcmod;
+
+/// Thrown when a manifest.json is not a valid document (spec §4).
+public class ManifestFormatException(string message, Exception? inner = null)
+    : FormatException(message, inner);
+
+/// Parses a root manifest.json (spec §4).
+public interface IDocumentParser {
+  /// Parses UTF-8 bytes into a RoutingDocument or ConcreteDocument. Throws
+  /// ManifestFormatException when the document is invalid.
+  public ManifestDocument Parse(byte[] utf8Json);
+}
+
+/// tooth.json compatibility (spec §9).
+public interface IToothCompat {
+  /// Selects the v3 variant for a ref variant and environment (spec §9.1, §9.2). Returns null
+  /// when no variant applies. The version range is checked by the resolver.
+  public IPackage? Select(ToothArchiveDocument document, string variant, LipEnvironment environment);
+}
+
+/// Reads the root document of an archive: tooth.json if present, else manifest.json (spec §2.4).
+public interface IArchiveReader {
+  /// Throws ArchiveUnavailableException when the archive has neither file or the document is
+  /// invalid.
+  public Task<ArchiveDocument> Read(ArchiveHandle archive);
+}
+
+public record ChainHop(Ref Ref, int? ArtifactIndex);
+
+/// A concrete package produced by Resolve, with the archive it lives in and the chain that led
+/// to it (spec §8).
+public record Candidate(IPackage Package, ArchiveHandle Archive, IReadOnlyList<ChainHop> Chain);
+
+/// Diagnostics explain every path that produced no candidate.
+public record ResolveResult(IReadOnlyList<Candidate> Candidates, IReadOnlyList<string> Diagnostics);
+
+/// Resolve(ref, base, range) (spec §5.2).
+public interface IResolver {
+  public Task<ResolveResult> Resolve(
+      Ref reference,
+      ArchiveHandle baseArchive,
+      IVersionConstraint? range,
+      LipEnvironment environment,
+      bool toothClientCompat = false);
+}
+
+/// One (ref, range) of an operation's request (spec §6). Base is the workspace root archive
+/// for user requests.
+public record PackageRequest(Ref Ref, IVersionConstraint? Range, ArchiveHandle Base);
+
+/// Thrown when no package set satisfies the request (spec §6).
+public class DependencyResolutionException(string message, IReadOnlyList<string> diagnostics)
+    : Exception(message) {
+  public IReadOnlyList<string> Diagnostics { get; } = diagnostics;
+}
+
+/// Finds the package set S (spec §6).
+public interface IGraphSolver {
+  /// Pinned candidates (installed packages to keep) are members of S as they are; their install
+  /// edges must be satisfied too. Returns S in install order (spec §7: dependencies first,
+  /// cycles ordered by lowercase identity). Throws DependencyResolutionException.
+  public Task<IReadOnlyList<Candidate>> Solve(
+      IReadOnlyList<PackageRequest> requests,
+      IReadOnlyList<Candidate> pinned,
+      LipEnvironment environment);
+}
+
+public record InstallContext(
+    string WorkspaceRoot,
+    LipEnvironment Environment,
+    LockFile Lock,
+    bool DryRun,
+    bool IgnoreScripts);
+
+/// Installs and uninstalls one package kind (spec §7).
+public interface IMcmodInstaller {
+  public bool CanHandle(string kind);
+
+  /// Installs the package and returns the files it now owns (workspace-relative, '/'-separated).
+  /// Fails without touching the workspace when a file is owned by another locked package.
+  public Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context);
+
+  public Task Uninstall(LockedPackage package, InstallContext context);
+}
+
+/// Determines the environment (spec §5.1).
+public interface IEnvironmentDetector {
+  public LipEnvironment Detect(
+      string workspaceRoot,
+      McmodPlatform? explicitPlatform,
+      string? explicitRid,
+      LockFile lockFile);
+}
+
+/// Reads and writes the workspace lock (spec §8).
+public interface ILockStore {
+  /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json. Throws when the
+  /// lock exists but cannot be read.
+  public Task<LockFile> Load(string workspaceRoot);
+
+  public Task Save(string workspaceRoot, LockFile lockFile);
+}
+
+public record LockFile {
+  [JsonPropertyName("formatVersion")]
+  public int FormatVersion { get; init; } = ManifestFormat.Version;
+
+  [JsonPropertyName("formatUuid")]
+  public string FormatUuid { get; init; } = ManifestFormat.Uuid;
+
+  /// "server" or "client"; null until known.
+  [JsonPropertyName("platform")]
+  public string? Platform { get; init; }
+
+  [JsonPropertyName("rid")]
+  public string? Rid { get; init; }
+
+  [JsonPropertyName("packages")]
+  public List<LockedPackage> Packages { get; init; } = [];
+}
+
+public record LockedHop(
+    [property: JsonPropertyName("ref")] string Ref,
+    [property: JsonPropertyName("artifact")] int? Artifact);
+
+public record LockedPackage {
+  [JsonPropertyName("name")]
+  public required string Identity { get; init; }
+
+  [JsonPropertyName("version")]
+  public required string Version { get; init; }
+
+  /// "mcmod" or "tooth" (IPackage.Kind).
+  [JsonPropertyName("kind")]
+  public required string Kind { get; init; }
+
+  /// Whether the user asked for the package (as opposed to a dependency).
+  [JsonPropertyName("explicit")]
+  public required bool Explicit { get; init; }
+
+  [JsonPropertyName("chain")]
+  public required List<LockedHop> Chain { get; init; }
+
+  [JsonPropertyName("archiveKey")]
+  public required string ArchiveKey { get; init; }
+
+  /// Null for packages migrated from a v3 lock: reinstalling them re-resolves the tag.
+  [JsonPropertyName("archive")]
+  public ArchiveIdentity? Archive { get; init; }
+
+  /// Owned files, workspace-relative and '/'-separated.
+  [JsonPropertyName("files")]
+  public List<string> Files { get; init; } = [];
+
+  [JsonPropertyName("manifest")]
+  public required JsonElement Manifest { get; init; }
+}
