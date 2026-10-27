@@ -1,51 +1,22 @@
 using System.IO.Abstractions;
 using Flurl;
-using Lip.Core.Entities;
-using Lip.Core.Git;
 using Lip.Core.Infrastructure;
-using Lip.Core.PackageRegistries;
 using Lip.Core.Sources;
 
 namespace Lip.Core.Services;
 
+/// Downloads the URL assets of tooth.json packages (spec §9) into the cache.
 public interface ISourceService {
-  Task<ISource> Get(LocalPackageSpec localPackageSpec);
-  Task<ISource> Get(PackageSpec packageSpec);
-  Task<ISource> Get(RemotePackageSpec remotePackageSpec);
   Task<ISource> Get(Url url, bool isArchive);
 }
 
 public class SourceService(
     IFileDownloader fileDownloader,
-    IGitRemoteClient gitRemoteClient,
-    GitRemotePackageRegistry gitRemotePackageRegistry,
-    IUserInteraction userInteraction,
     ICacheService cacheService,
     Url? githubProxy) : ISourceService {
   private readonly IFileDownloader _fileDownloader = fileDownloader;
-  private readonly IGitRemoteClient _gitRemoteClient = gitRemoteClient;
-  private readonly GitRemotePackageRegistry _gitRemotePackageRegistry = gitRemotePackageRegistry;
-  private readonly IUserInteraction _userInteraction = userInteraction;
-
   private readonly ICacheService _cacheService = cacheService;
-
   private readonly Url? _githubProxy = githubProxy;
-
-  public async Task<ISource> Get(LocalPackageSpec localPackageSpec) {
-    if (!localPackageSpec.ArchiveFile.Exists) {
-      throw new FileNotFoundException($"The specified local package file does not exist: {localPackageSpec.ArchiveFile.FullName}");
-    }
-
-    return new ArchiveSource(localPackageSpec.ArchiveFile);
-  }
-
-  public async Task<ISource> Get(PackageSpec packageSpec) {
-    return await GetPackageViaGit(packageSpec);
-  }
-
-  public async Task<ISource> Get(RemotePackageSpec remotePackageSpec) {
-    return await Get(remotePackageSpec.ArchiveUrl, isArchive: true);
-  }
 
   public async Task<ISource> Get(Url url, bool isArchive) {
     IEnumerable<Url> downloadUrls = GetDownloadUrls(url);
@@ -93,17 +64,5 @@ public class SourceService(
     }
 
     return [proxyUrl, url];
-  }
-
-  /// Returns a lazy source over the tree of the commit the package version is tagged at. Only
-  /// the tree is listed here; file contents are fetched on demand (see GitTreeSource).
-  private async Task<ISource> GetPackageViaGit(PackageSpec packageSpec) {
-    Url repoUrl = GitRemotePackageRegistry.GetRepoUrl(packageSpec.Id);
-    string commit = await _gitRemotePackageRegistry.ResolveCommit(packageSpec);
-
-    await _userInteraction.PrintInfo(
-        $"Listing files of {packageSpec.Id.Path}@{packageSpec.Version} (commit {commit[..Math.Min(12, commit.Length)]})...");
-
-    return await GitTreeSource.Create(_gitRemoteClient, _cacheService, repoUrl, commit);
   }
 }

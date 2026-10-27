@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Lip.Core.Entities;
 
+/// The v3 lock (tooth_lock.json), read only to migrate it (see LockStore).
 public record WorkspaceState {
   private const int _currentFormatVersion = 3;
   private const string _currentFormatUuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";

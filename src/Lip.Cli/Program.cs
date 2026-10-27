@@ -71,7 +71,7 @@ app.Configure(config => {
   });
 
   config.AddCommand<InitCommand>("init")
-      .WithDescription("Initializes a new project");
+      .WithDescription("Creates a manifest.json for a new package");
 
   config.AddCommand<InstallCommand>("install")
       .WithDescription("Installs packages");
@@ -80,7 +80,7 @@ app.Configure(config => {
       .WithDescription("Lists installed packages");
 
   config.AddCommand<MigrateCommand>("migrate")
-      .WithDescription("Migrates a package manifest");
+      .WithDescription("Converts a tooth.json into a manifest.json");
 
   config.AddCommand<UninstallCommand>("uninstall")
       .WithDescription("Uninstalls packages");
