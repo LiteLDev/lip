@@ -31,6 +31,7 @@ If anything fails while resolving or solving, the workspace is not modified.
 lip does not use a central package registry or module proxy. A package path such as `github.com/user/repo` maps directly to the git repository `https://github.com/user/repo.git`, which lip talks to with its own built-in client for the git smart-HTTP protocol (version 2). **The `git` command-line tool is not required** and is never run.
 
 -   **Versions**: lip lists the repository's tags with `ls-refs` (only `refs/tags/v*` is requested). The available versions are the tags named exactly `v<SemVer 2.0.0>` (e.g., `v1.2.3`); other tags, including lenient ones such as `v1.2` or `v01.2.3`, are ignored. Annotated tags are peeled to the commit they point to.
+-   **Git refs**: A package path with a git ref has one candidate. `@branch:<name>` and `@tag:<name>` are resolved with `ls-refs` for exactly `refs/heads/<name>` or `refs/tags/<name>` (annotated tags peeled), once per command; `@rev:<commit>` needs no request, and the commit is fetched by its id. Abbreviated commit ids are rejected: resolving one would need the whole history, which lip never downloads.
 -   **Lazy candidates**: Candidates of a package path are produced newest tag first, and only on demand, so lip opens only the tags the solver actually needs.
 -   **Documents**: To read the `manifest.json` (or `tooth.json`) of a version, lip fetches only the trees of the tagged commit (a shallow, partial fetch with `filter blob:none`, so no file contents are transferred) and then downloads that one file. Resolving dependencies therefore costs a few kilobytes per version, regardless of the repository's size.
 -   **Routing**: A routing document selects an artifact by variant and environment and resolves its refs in order. A chain longer than 8 hops, or one that visits the same archive and variant twice, yields no candidate.
@@ -42,7 +43,7 @@ lip does not use a central package registry or module proxy. A package path such
 
 A version can only be installed if its tag still exists in the repository. Only public repositories reachable over HTTPS are supported.
 
-A `manifest.json` at a tag that has a `version` must declare the tag's version. A legacy `tooth.json` at a tag that declares another version is installed with the tag version, and lip prints a warning.
+A `manifest.json` at a tag that has a `version` must declare the tag's version. A legacy `tooth.json` at a tag that declares another version is installed with the tag version, and lip prints a warning. At a branch, a commit, or a tag not named `v<SemVer>` given by a git ref, there is no tag version: the document's own `version` is used.
 
 ## Solving
 

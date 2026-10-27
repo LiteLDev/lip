@@ -31,6 +31,7 @@ Daemon（`lipd`）通过 **stdio 上的 JSON-RPC** 通信，使工具无需为�
 lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo` 这样的包路径直接对应 git 仓库 `https://github.com/user/repo.git`，lip 通过内置的 git smart-HTTP 协议（第 2 版）客户端与其通信。**无需安装 `git` 命令行工具**，lip 也从不调用它。
 
 - **版本**：lip 通过 `ls-refs` 列出仓库标签（只请求 `refs/tags/v*`）。可用版本即名称恰为 `v<SemVer 2.0.0>` 的标签（例如 `v1.2.3`）；其他标签，包括 `v1.2` 或 `v01.2.3` 这类宽松写法，都会被忽略。附注标签会被解析到其指向的提交。
+- **git 引用**：带 git 引用的包路径只有一个候选。`@branch:<name>` 和 `@tag:<name>` 通过 `ls-refs` 恰好请求 `refs/heads/<name>` 或 `refs/tags/<name>` 来解析（附注标签会被解析到其提交），每条命令只解析一次；`@rev:<commit>` 无需请求，提交按其 ID 获取。不接受缩写的提交 ID：解析缩写需要仓库的全部历史，而 lip 从不下载全部历史。
 - **惰性候选**：包路径的候选从最新标签开始按需产出，因此 lip 只会打开求解器实际需要的标签。
 - **文档**：读取某个版本的 `manifest.json`（或 `tooth.json`）时，lip 只获取该标签提交的树对象（使用 `filter blob:none` 的浅层部分获取，不传输任何文件内容），然后只下载这一个文件。因此无论仓库多大，解析依赖时每个版本只需几 KB 流量。
 - **路由**：路由文档按 variant 和环境选出一个条目，并按顺序解析其 refs。超过 8 跳的链，或两次经过同一归档和 variant 的链，不产出候选。
@@ -42,7 +43,7 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 只有当某个版本的标签仍存在于仓库中时，该版本才能被安装。目前只支持可通过 HTTPS 访问的公开仓库。
 
-标签处带有 `version` 的 `manifest.json` 必须声明该标签的版本。标签处的旧 `tooth.json` 若声明了其他版本，则按标签版本安装，lip 会给出警告。
+标签处带有 `version` 的 `manifest.json` 必须声明该标签的版本。标签处的旧 `tooth.json` 若声明了其他版本，则按标签版本安装，lip 会给出警告。git 引用所给的分支、提交或名称不是 `v<SemVer>` 的标签没有标签版本：使用文档自身的 `version`。
 
 ## 求解
 

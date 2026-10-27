@@ -21,7 +21,10 @@ The lock no longer lives in the workspace: lip keeps it in its per-user data dir
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same `manifest.json` packages.
 
 ### Why is a tag of my repository not a version?
-Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) version, such as `v1.2.3`, are versions. Tags such as `v1.2` or `1.2.3` are ignored.
+Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) version, such as `v1.2.3`, are versions. Tags such as `v1.2` or `1.2.3` are ignored. You can still install any tag, branch or commit with a git ref, e.g. `lip install github.com/user/repo@tag:1.2.3` or `@branch:main`; the package's version is then the `version` its `manifest.json` (or `tooth.json`) declares. See [Git refs](cli/commands/install.md#git-refs).
+
+### How do I install a package from my disk?
+Pack it into a `.mcmod` (or `.zip`) file with `manifest.json` at its root and run `lip install ./package.mcmod`. lip does not install from a plain directory. The lock records the file's path and SHA-256: uninstalling needs nothing, and `lip update` reads the file again.
 
 ### How do I upgrade lip itself?
 Reinstall `lip` using the same method you used originally, such as `npm install -g @levimc/lip`, `winget upgrade levimc.lip`, or the latest Windows `setup.exe` from the GitHub releases page. There is no built-in `lip self-update` command yet. If you installed `lip` from the old `@futrime/lip` npm package or the `futrime.lip` winget package, uninstall it first and then install `@levimc/lip` or `levimc.lip`.

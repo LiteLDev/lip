@@ -27,16 +27,28 @@ lip install github.com/user/repo@1.0.0
 
 To select a variant, append `#<variant>` to the path, e.g. `github.com/user/repo#lua@1.0.0`.
 
+## Installing a Branch, Tag or Commit
+
+To try unreleased changes, install the head of a branch, any tag, or a commit:
+
+```sh
+lip install github.com/LiteLDev/LeviLamina@branch:main
+lip install github.com/user/repo@tag:nightly
+lip install github.com/user/repo@rev:0123456789abcdef0123456789abcdef01234567
+```
+
+The lock records the commit, so the workspace stays on it until `lip update`, which follows a branch to its new head. See [Git refs](../cli/commands/install.md#git-refs).
+
 ## Installing from Local Files
 
-You can install a package directly from a local `.mcmod` file or directory:
+You can install a package directly from a local `.mcmod` or `.zip` file, by a path relative to the current directory or an absolute path:
 
 ```sh
 lip install ./path/to/package.mcmod
-lip install ./path/to/package/
+lip install C:\Downloads\package.zip
 ```
 
-This is useful for testing packages before publishing.
+This is useful for testing packages before publishing. A local directory cannot be installed; pack it into an `.mcmod` file (a ZIP archive with `manifest.json` at its root) first.
 
 ## Installing from Remote URLs
 

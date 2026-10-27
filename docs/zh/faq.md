@@ -21,7 +21,10 @@
 不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的 `manifest.json` 包。
 
 ### 为什么我仓库的某个标签不是版本？
-只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。
+只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。不过，仍可用 git 引用安装任意标签、分支或提交，例如 `lip install github.com/user/repo@tag:1.2.3` 或 `@branch:main`；此时包的版本是其 `manifest.json`（或 `tooth.json`）声明的 `version`。参见 [git 引用](cli/commands/install.md#git-引用)。
+
+### 如何安装磁盘上的包？
+把它打包为根目录含 `manifest.json` 的 `.mcmod`（或 `.zip`）文件，然后运行 `lip install ./package.mcmod`。lip 不从普通目录安装。锁会记录该文件的路径和 SHA-256：卸载不需要它，`lip update` 会重新读取该文件。
 
 ### 如何升级 lip 自身？
 使用你最初的安装方式重新安装 `lip`，例如 `npm install -g @levimc/lip`、`winget upgrade levimc.lip`，或从 GitHub Releases 页面下载最新的 Windows `setup.exe`。目前还没有内置的 `lip self-update` 命令。如果你是通过旧的 `@futrime/lip` npm 包或 `futrime.lip` winget 包安装的 `lip`，请先卸载，再安装 `@levimc/lip` 或 `levimc.lip`。

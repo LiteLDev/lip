@@ -13,10 +13,13 @@ The older `tooth.json` format is still read, see [Legacy: tooth.json](#legacy-to
 
 A package lives in an **archive**, a file tree with `manifest.json` at its root:
 
-- a **git archive**: the commit of a version tag of a git repository;
+- a **git archive**: a commit of a git repository, usually the commit of a version tag;
 - a **ZIP archive**: a ZIP file. A ZIP archive with the `.mcmod` extension is called an
   **mcmod**. Whether a file is a ZIP archive depends only on its content, not its extension;
-- a **directory archive**: a local directory.
+- a **directory archive**: a directory inside another archive (a relative ref ending with `/`).
+
+A local directory on its own is not an archive: to install a package from your disk, pack it
+into an `.mcmod` file.
 
 `manifest.json` must be strict UTF-8 JSON (no comments) with an object at the top level.
 
@@ -72,7 +75,8 @@ ASCII case.
 
 ## Refs
 
-A ref points to an archive. It has the form `target[#variant]`:
+A ref points to an archive. It has the form `target[#variant]`, and a spec target may be
+followed by a git ref: `spec[#variant][@git-ref]`.
 
 | Target | Example | Points to |
 | --- | --- | --- |
@@ -80,12 +84,17 @@ A ref points to an archive. It has the form `target[#variant]`:
 | Relative file | `./LegacyMoney.mcmod` | A ZIP file inside the archive of the current document. |
 | URL | `https://example.com/pkg.mcmod` | A ZIP archive downloaded over HTTPS (redirects are followed). |
 | Spec | `github.com/LiteLDev/LeviLamina` | The git repository `https://<spec>.git`. |
+| Spec with a git ref | `github.com/LiteLDev/LeviLamina@branch:main` | One commit of that repository. |
 
 - A relative target starts with `./`, must not contain empty, `.` or `..` segments or `\`.
 - A spec must be a valid [Go module path](https://go.dev/ref/mod#module-path). Its versions are
   the tags named exactly `v<version>`, where `<version>` is a
   [SemVer 2.0.0](https://semver.org/) version (e.g. `v1.2.3`). Other tags, such as `v1.2`, are
   ignored.
+- A git ref pins a spec to one commit instead of its versions: `@branch:<branch>` (the head of
+  the branch), `@tag:<tag>` (any tag, e.g. `@tag:nightly`) or `@rev:<commit>` (a full
+  40-digit commit id). It comes after the variant: `github.com/LiteLDev/LegacyScriptEngine#lua@branch:develop`.
+  Only spec refs may have one.
 - Other schemes, such as `http:` and `file:`, are not allowed.
 - The variant must match `^[a-z0-9_]+(/[a-z0-9_]+)?$`. A ref without `#` has the variant `""`.
 
@@ -173,6 +182,24 @@ and its `version` is in the requested range.
 Version ranges use the syntax of LeviLamina's `ll::data::VersionRequirement`, for example
 `^1.2.0`, `~1.2`, `>=1.0.0 <2.0.0`, `1.x` or `>=1.0.0 || =0.9.0`. A bare full version without
 an operator, such as `1.2.3`, is rejected; write `=1.2.3`.
+
+To depend on a branch, a tag or a commit rather than on released versions, put a git ref on the
+spec in `refs`; `version` stays a version range, since LeviLamina reads it too:
+
+```json
+{
+  "name": "LeviLamina",
+  "version": ">=1.5.0",
+  "refs": ["github.com/LiteLDev/LeviLamina@branch:main"]
+}
+```
+
+The package at the commit the git ref names must declare a `version` in the range, otherwise the
+dependency cannot be satisfied. In the other direction, a package installed from a git ref
+(as a dependency or by [`lip install`](../cli/commands/install.md#git-refs)) also satisfies a
+dependency whose ref is the same spec and variant without a git ref, when its version is in that
+dependency's range; so a workspace can run a development build of a library that released mods
+depend on.
 
 ### Placement
 

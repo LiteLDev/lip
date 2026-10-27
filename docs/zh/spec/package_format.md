@@ -9,7 +9,7 @@ LeviLamina 忽略本规范新增的键。"必须 / 禁止 / 可以"分别对应 
 - **归档**：一棵文件树，有三种形式：
   - **ZIP 归档**：一个 ZIP 文件，以 `.mcmod` 为扩展名时称 mcmod。
   - **git 归档**：某个 commit 的树。
-  - **目录归档**：一个本地目录。
+  - **目录归档**：另一个归档内的一个目录（以 `/` 结尾的 relative ref，见 §3）。
 - **文档**：归档根部的 `manifest.json`。必须是 UTF-8 编码的严格 JSON（RFC 8259，不允许注释），顶层必须是对象。
 - **路由文档**：含 `artifacts` 键的文档。
 - **具体文档**：不含 `artifacts` 键的文档。根部是具体文档的归档称为**具体包**。
@@ -27,12 +27,15 @@ LeviLamina 忽略本规范新增的键。"必须 / 禁止 / 可以"分别对应 
 ## 3. 引用（ref）
 
 ```
-ref     = target [ "#" variant ]          ; 在第一个 "#" 处切分
+ref     = target [ "#" variant ]                    ; relative 与 url target
+        / spec [ "#" variant ] [ "@" git-ref ]      ; spec target
 variant = 匹配 ^[a-z0-9_]+(/[a-z0-9_]+)?$
 target  = relative / url / spec
+git-ref = "branch:" name / "tag:" name / "rev:" commit
+commit  = 40 位十六进制数字（不区分大小写）
 ```
 
-不带 `#` 的 ref，其 variant 为 `""`。带 `#` 但后面为空的 ref 无效。
+relative 与 url ref 在第一个 `#` 处切分。spec ref 先在第一个 `@` 处切分，其后的全部内容为 git-ref，其前的部分再在第一个 `#` 处切分。不带 `#` 的 ref，其 variant 为 `""`。带 `#` 但后面为空的 ref 无效。
 
 | target 形式 | 判定 | 指向 |
 |---|---|---|
@@ -48,6 +51,12 @@ target  = relative / url / spec
 **spec 的规则：**
 - 只有名为 `v<SemVer 2.0.0>` 的 tag 才是该包的版本，其余 tag 一律忽略。
 - 某个版本的归档，是该 tag 所指 commit 的 git 归档。
+
+**git-ref 的规则**（把 spec ref **固定**到一个 commit，而不是其各个版本）：
+- `branch:<name>` 指 `refs/heads/<name>` 所指的 commit；`tag:<name>` 指 `refs/tags/<name>` 所指的 commit（附注 tag 解析到其 commit），tag 名不限；`rev:<commit>` 指该 commit 本身。`<name>` 必须是合法的 git ref 名称（`git check-ref-format`）：非空，不含控制字符、空格、`~`、`^`、`:`、`?`、`*`、`[`、`\`、`..` 或 `@{`，不为 `@`，不以 `/` 开头或结尾，不以 `.` 结尾，不含 `//`，且以 `/` 分隔的各段都不以 `.` 开头、不以 `.lock` 结尾。
+- 缩写的 commit id 无效：解析它需要仓库的历史。
+- spec ref 中的 `@` 后面不是合法的 git-ref 时，ref 无效；尤其是 `@` 之后永远不写版本号（版本由 `range` 约束，见 §5.2）。
+- 只有 spec ref 可以带 git-ref：含 `@branch:`、`@tag:` 或 `@rev:` 的 relative 或 url ref 无效。
 
 文档中禁止出现其他 scheme，包括 `http:`、`file:` 等。
 
@@ -124,6 +133,7 @@ target  = relative / url / spec
 ### 4.3 来自 tag 的文档
 
 当文档位于某个 spec 版本的 git 归档根部，并且含有 `version` 键时，`version` 必须等于该 tag 的版本。
+固定的 spec ref（§3）的归档，只有当其 git-ref 为 `tag:v<SemVer 2.0.0>` 时才有 tag 版本；位于 branch、rev 或其他 tag 时没有 tag 版本，使用文档自身的 `version`。
 
 ### 4.4 格式标记
 
@@ -154,6 +164,7 @@ Resolve 产出一个**有序的具体包候选序列**。下文中"无候选"指
    - relative：在 `base` 内按 §3 取得。
    - url：下载取得。
    - spec：取所有满足 `range` 的 tag 版本，按 SemVer 优先级从高到低排列；优先级相同时，tag 名字典序大者在前。对每个版本的归档依次执行第 2–4 步，把各自产出的候选按此顺序拼接。
+   - 固定的 spec：把 git-ref 解析为一个 commit（§3），每次操作只解析一次，使同一个 branch 在整个操作中指向同一个 commit；对该 commit 的 git 归档执行第 2–4 步。仓库中没有该 branch 或 tag、或没有该 commit 时，无候选。`range` 不用于选择归档，但在第 4 步中仍然适用。
    - 取不到归档，或归档无效（§2）时，无候选。
 2. **读取文档。** 文档无效时，无候选。
 3. **若是路由文档：**
@@ -174,17 +185,18 @@ Resolve 产出一个**有序的具体包候选序列**。下文中"无候选"指
 |---|---|
 | url | 去掉 fragment 后的 URL |
 | spec | `spec@version` |
+| 固定的 spec | `spec@rev:<commit>`，commit 为 git-ref 解析到的小写 commit id |
 | relative | `base 的归档键` + `!` + 路径 |
-| 工作区根（见 §6） | 工作区根的绝对路径 |
+| 本地文件（仅请求，见 §6） | 其绝对 `file:` URI（RFC 8089） |
 
 身份始终取最终具体包的 `name`，与链经过的路由文档无关。
 
 ## 6. 依赖图
 
-一次操作的**请求**是若干 `(ref, range)` 对。请求中的 relative ref 以工作区根目录（作为目录归档）为 base。
+一次操作的**请求**是用户给出的若干 `(ref, range)` 对。请求不位于任何归档内，因此没有 `base`：请求中的 relative ref 无候选。除 §3 的 target 外，请求的 target 还可以是**本地文件**：本地文件系统上的一个 ZIP 归档，以其绝对路径指定，后面可跟 `#` variant。它按 url target 的方式解析，只是其归档从该文件读取而不是下载。本地目录不是归档，不能作为请求。本地文件永远不出现在文档中。
 lip 必须为请求求出一个具体包集合 S，满足下列全部条件；求不出时失败。
 
-1. 每个请求都被 S 中的某个包满足：该包是对这个请求执行 Resolve 所得的候选之一。
+1. 每个请求都被 S 中的某个包满足：该包是对这个请求执行 Resolve 所得的候选之一（或代替其中之一，见下文）。
 2. 对 S 中每个包的每个**安装边**，S 中都有一个包满足它。安装边是：
    - 含 `refs` 的 `dependencies` 条目；
    - 所有 `installDependencies` 条目。
@@ -192,8 +204,10 @@ lip 必须为请求求出一个具体包集合 S，满足下列全部条件；�
    不带格式标记的文档没有安装边（§4.4）。
 
    满足一条安装边，意味着同时满足：
-   - 该包是 Resolve(r, 条目所在包的归档, 条目的 `version`) 所得的候选之一，其中 r 是该条目 `refs` 中的某个 ref；
+   - 该包是 Resolve(r, 条目所在包的归档, 条目的 `version`) 所得的候选之一，其中 r 是该条目 `refs` 中的某个 ref，或代替其中之一（见下文）；
    - 条目写了 `name` 时，该包的身份等于该 `name`。
+
+   **固定的包代替版本**：解析链以固定的 spec ref `s#v@g` 开头的包，可以代替未固定的 spec ref `s#v`（spec 相同，比较时不区分 ASCII 大小写；variant 相同）的候选，前提是其版本满足该处的 `range`。固定的 ref 只由其自身的候选满足：来自 `s@branch:a` 的包不满足 `s@branch:b`，来自 tag 版本的包也不满足 `s@branch:a`。因此依赖的 `range` 约束的是固定 commit 处声明的 `version`：版本不在范围内的固定包不满足该依赖。
 3. S 中任意两个包身份不同。
 4. 对 S 中每个包的每个 `conflicts` 条目，S 中不存在身份等于该条目 `name`、且版本满足该条目 `version` 的包。
 
@@ -248,17 +262,19 @@ lip 必须为请求求出一个具体包集合 S，满足下列全部条件；�
 
 - 身份与 `version`；
 - 环境；
-- 解析链：每一跳的 ref，以及在该跳选中的 Artifact 下标；
-- 最终归档的标识：ZIP 归档记录其 SHA-256，git 归档记录 commit id 与路径；
+- 解析链：每一跳的 ref（包括其 git-ref，如有），在该跳选中的 Artifact 下标，以及 spec 跳的归档所在的 commit；
+- 最终归档的标识：ZIP 归档记录其 SHA-256（以及读取它的 URL 或本地文件），git 归档记录 commit id 与路径；
 - 该包所有的文件列表（工作区相对路径，`plugins/` 下的文件记为 `mods/` 形式，见 §7）。
 
-按锁重装时，lip 必须直接取用锁中记录的最终归档，并校验其标识，不得重新走解析链。
+按锁重装时，lip 必须直接取用锁中记录的最终归档，并校验其标识，不得重新走解析链。尤其是，来自固定 spec ref 的包按记录的 commit 重装，无论其 branch 或 tag 现在指向哪里。
+
+**更新**一个显式安装的包时，重新请求其解析链的第一个 ref：未固定的 spec ref 取最新版本，`branch:` 取当前的头，`tag:` 取该 tag 现在所指的 commit，`rev:` 取同一个 commit；url 或本地文件重新读取。结果在身份、版本、归档键或归档标识上有任何不同时，替换该包。
 
 ## 9. tooth.json 兼容
 
 归档根部存在 `tooth.json` 时，lip 忽略 `manifest.json`，按下列映射把 tooth.json 转换为一个具体包。此后该包与其他具体包一样参与解析、安装、卸载与锁定（§5–§8）。tooth.json 格式 1 与 2 先按 tooth.json 规范的定义迁移为格式 3（包括其中的模板替换）；下列映射定义在格式 3 上。
 
-1. **身份与版本**：身份为 `tooth` 的值，版本为 `version` 的值。在 spec 版本的归档中，改用该 tag 的版本，且 §4.3 不适用；二者不同时 lip 应当给出警告。
+1. **身份与版本**：身份为 `tooth` 的值，版本为 `version` 的值。在 spec 版本的归档中（包括固定的 `tag:v<SemVer 2.0.0>` 的归档，见 §4.3），改用该 tag 的版本，且 §4.3 不适用；二者不同时 lip 应当给出警告。位于 branch、rev 或其他 tag 时，使用 `version` 的值。
 2. **变体选择**（取代 §5.2 第 4 步）：ref 的 variant 即 v3 的 label，但 variant 为 `""`、环境 `platform` 为 `"client"`、并且存在 label 为 `client` 的变体时，表示 `client`。label 等于它、且 `platform` 为空、等于环境 `rid` 或作为 glob 匹配环境 `rid` 的各变体按顺序合并：其 `dependencies`、`assets`、`preserve_files`、`remove_files` 依次拼接，每个脚本钩子取自唯一具有它的变体。没有变体匹配时无候选；两个被合并的变体声明了相同的依赖键或相同的脚本钩子时为失败。结果是一个文件包（`"type": "files"`、`"platform": "universal"`、没有 `rid`）；其版本满足 `range` 时为唯一候选，否则无候选。
 3. **依赖**：每个依赖 `"<path>[#label]": range` 成为一条安装边，其 refs 只有 `<path>[#label]`，没有 `name`，range 按 v3 的语义解释。该 ref 指向的归档采用 `manifest.json` 且 label 为 `client` 时，variant 视为 `""`。
 4. **资源（assets）**：变体的第 i 个资源（从 0 计数）挂载在包归档的目录 `i` 下。`self` 资源即 tooth.json 所在的归档本身。`zip`、`tar`、`tgz` 资源是从其 `urls` 中第一个可以下载的地址下载的归档，格式按内容判定，§2.1 不适用。`uncompressed` 资源是按同样方式下载的单个文件，挂载为文件 `i`。

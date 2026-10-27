@@ -65,13 +65,19 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
 *   **`explicit`**:
     *   `true`: The package was explicitly installed by the user (e.g., `lip install <package>`).
     *   `false`: The package was installed implicitly as a dependency of another package.
-*   **`chain`**: How the package was resolved: the `ref` of every hop, and the index of the routing `artifact` chosen at that hop (`null` when the hop was not a routing document).
-*   **`archiveKey`**: The key of the final archive, e.g. `github.com/user/repo@1.0.0`.
+*   **`chain`**: How the package was resolved: one entry per hop, with
+    *   `ref`: the ref of the hop as it was resolved, e.g. `github.com/user/repo`, `github.com/user/repo@branch:main` for a [git ref](../cli/commands/install.md#git-refs), an `https://` URL, `./sub/` inside the previous archive, or the `file:///` URI of a local file given to `lip install`;
+    *   `artifact`: the index of the routing `artifact` chosen at that hop (`null` when the hop was not a routing document);
+    *   `commit` (only for package paths): the commit the hop's repository was at: the commit of the version tag, or the commit the git ref resolved to. Locks written by earlier versions have none.
+
+    The first hop is what [`lip update`](../cli/commands/update.md) requests again: a branch is followed to its new head, a tag is resolved again, a rev stays.
+*   **`archiveKey`**: The key of the final archive, e.g. `github.com/user/repo@1.0.0`, or `github.com/user/repo@rev:<commit>` for a package path with a git ref.
 *   **`archive`**: The identity of the final archive:
-    *   `{ "kind": "zip", "sha256": ..., "url": ... }`: a ZIP archive. `url` is `null` for a ZIP file nested in another archive; `path` is set when the package is a directory inside the ZIP file.
+    *   `{ "kind": "zip", "sha256": ..., "url": ... }`: a ZIP archive. `url` is the `https://` URL it was downloaded from, the `file:///` URI of a local file, or `null` for a ZIP file nested in another archive; `path` is set when the package is a directory inside the ZIP file.
     *   `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`: a commit of a git repository; `path` is `""` for the repository root.
-    *   `{ "kind": "directory", "path": ... }`: a local directory.
     *   `null`: an entry migrated from `tooth_lock.json`.
+
+    When lip needs the files of an installed package again, it opens this archive and checks its identity: a git archive is fetched at the recorded commit (even if it came from a branch that has moved on), and a downloaded or local ZIP file must still have the recorded SHA-256. Uninstalling needs neither.
 *   **`files`**: The files the package owns, relative to the workspace root and `/`-separated. Since `plugins` is a link to `mods` on a server, a file under `plugins/` is recorded under `mods/`; lip rewrites `plugins/` paths in locks written by earlier versions when it loads them.
 *   **`manifest`**: The package's document (`manifest.json`, or `tooth.json` for `tooth` packages, which lip converts to format 4 again when it needs the package), so lip does not have to fetch it again.
 

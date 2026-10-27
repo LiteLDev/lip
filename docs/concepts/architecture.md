@@ -16,9 +16,9 @@ Manages global configuration settings for the `lip` tool itself, such as proxies
 ## Package Sources
 
 A package is a `manifest.json` (or a legacy `tooth.json`) at the root of an archive. See [Package Manifest](package_manifest.md).
-- **git repositories**: A package path such as `github.com/user/repo` is the git repository `https://github.com/user/repo.git`, read with lip's built-in git smart-HTTP (protocol version 2) client; the `git` command-line tool is not required. There is no central registry: the versions are the repository's `v<semver>` tags.
+- **git repositories**: A package path such as `github.com/user/repo` is the git repository `https://github.com/user/repo.git`, read with lip's built-in git smart-HTTP (protocol version 2) client; the `git` command-line tool is not required. There is no central registry: the versions are the repository's `v<semver>` tags, and a git ref (`@branch:`, `@tag:`, `@rev:`) picks one commit instead.
 - **ZIP archives**: `.mcmod` files and other ZIP files, downloaded over HTTPS or found inside another archive.
-- **Directories**: Local directories, including directories inside an archive.
+- **Local files**: `.mcmod` and other ZIP files given to `lip install` by path. A local directory is not a package source; directories inside an archive are reached by relative refs.
 - **Cache**: Stores downloaded git objects by object id (`git-<id>`), so they are shared across versions and packages, and HTTP(S) downloads by the SHA-256 of their URL (`http-<hash>`).
 
 See [Internal Mechanism](../guides/internal_mechanism.md#package-resolution) for details.

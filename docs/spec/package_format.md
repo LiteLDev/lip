@@ -9,7 +9,7 @@ In every case this specification calls a "failure", lip must abort the current o
 - **Archive**: a file tree, in one of three forms:
   - **ZIP archive**: a ZIP file; called an mcmod when its extension is `.mcmod`.
   - **git archive**: the tree of a commit.
-  - **directory archive**: a local directory.
+  - **directory archive**: a directory inside another archive (a relative ref ending with `/`, §3).
 - **Document**: the `manifest.json` at the root of an archive. It must be strict JSON (RFC 8259, no comments) encoded in UTF-8, and its top level must be an object.
 - **Routing document**: a document with the `artifacts` key.
 - **Concrete document**: a document without the `artifacts` key. An archive whose root is a concrete document is called a **concrete package**.
@@ -27,12 +27,15 @@ In every case this specification calls a "failure", lip must abort the current o
 ## 3. Refs
 
 ```
-ref     = target [ "#" variant ]          ; split at the first "#"
+ref     = target [ "#" variant ]                    ; relative and url targets
+        / spec [ "#" variant ] [ "@" git-ref ]      ; spec targets
 variant = matches ^[a-z0-9_]+(/[a-z0-9_]+)?$
 target  = relative / url / spec
+git-ref = "branch:" name / "tag:" name / "rev:" commit
+commit  = 40 hexadecimal digits (case-insensitive)
 ```
 
-A ref without `#` has the variant `""`. A ref with `#` followed by nothing is invalid.
+A relative or url ref is split at the first `#`. A spec ref is first split at the first `@`, everything after which is the git ref, and the part before it is split at the first `#`. A ref without `#` has the variant `""`. A ref with `#` followed by nothing is invalid.
 
 | Target form | Recognized by | Points to |
 |---|---|---|
@@ -48,6 +51,12 @@ A ref without `#` has the variant `""`. A ref with `#` followed by nothing is in
 **Rules for spec:**
 - Only tags named `v<SemVer 2.0.0>` are versions of the package; all other tags are ignored.
 - The archive of a version is the git archive of the commit the tag points to.
+
+**Rules for git-ref** (a spec ref **pinned** to one commit instead of its versions):
+- `branch:<name>` names the commit `refs/heads/<name>` points to; `tag:<name>` names the commit `refs/tags/<name>` points to (an annotated tag is peeled to its commit), for any tag name; `rev:<commit>` names that commit. `<name>` must be a valid git ref name component sequence (`git check-ref-format`): non-empty, without control characters, space, `~`, `^`, `:`, `?`, `*`, `[`, `\`, `..` or `@{`, not `@`, not starting or ending with `/`, not ending with `.`, without `//`, and without a `/`-separated component starting with `.` or ending with `.lock`.
+- An abbreviated commit id is invalid: resolving one would require the history of the repository.
+- When `@` in a spec ref is not followed by a valid git-ref, the ref is invalid; in particular a version is never written after `@` (versions are constrained by `range`, §5.2).
+- Only spec refs may have a git-ref: a relative or url ref containing `@branch:`, `@tag:` or `@rev:` is invalid.
 
 Other schemes, including `http:`, `file:` and so on, must not appear in a document.
 
@@ -124,6 +133,7 @@ Other keys in a routing document are not used in resolution. A routing document 
 ### 4.3 Documents from Tags
 
 When a document is at the root of the git archive of a spec version and has the `version` key, `version` must equal the version of that tag.
+The archive of a pinned spec ref (§3) has a tag version only when its git-ref is `tag:v<SemVer 2.0.0>`; at a branch, a rev or any other tag there is no tag version, and the document's own `version` is used.
 
 ### 4.4 Format Markers
 
@@ -154,6 +164,7 @@ Resolve produces an **ordered sequence of concrete package candidates**. Below, 
    - relative: obtained inside `base` according to §3.
    - url: obtained by downloading.
    - spec: take all tag versions satisfying `range`, ordered by SemVer precedence from highest to lowest; at equal precedence, the lexicographically greater tag name comes first. Run steps 2–4 on the archive of each version in turn, and concatenate the candidates each produces in that order.
+   - pinned spec: resolve the git-ref to a commit (§3) once per operation, so that one branch names one commit throughout, and run steps 2–4 on the git archive of that commit. When the repository has no such branch or tag, or no such commit, there is no candidate. `range` is not used to select the archive; it still applies in step 4.
    - When the archive cannot be obtained, or is invalid (§2), there is no candidate.
 2. **Read the document.** When the document is invalid, there is no candidate.
 3. **If it is a routing document:**
@@ -174,17 +185,18 @@ Resolve produces an **ordered sequence of concrete package candidates**. Below, 
 |---|---|
 | url | The URL without its fragment |
 | spec | `spec@version` |
+| pinned spec | `spec@rev:<commit>`, with the commit the git-ref resolved to in lowercase |
 | relative | `archive key of base` + `!` + path |
-| Workspace root (see §6) | The absolute path of the workspace root |
+| local file (requests only, see §6) | Its absolute `file:` URI (RFC 8089) |
 
 The identity is always the `name` of the final concrete package, regardless of the routing documents the chain passes through.
 
 ## 6. Dependency Graph
 
-The **requests** of an operation are a number of `(ref, range)` pairs. Relative refs in requests use the workspace root directory (as a directory archive) as base.
+The **requests** of an operation are a number of `(ref, range)` pairs given by the user. Requests are inside no archive, so they have no `base`: a relative ref in a request has no candidate. Besides the targets of §3, the target of a request may be a **local file**: a ZIP archive on the local file system, named by its absolute path, which may be followed by `#` variant. It is resolved like a url target whose archive is read from that file instead of downloaded. A local directory is not an archive and cannot be requested. Local files never appear in documents.
 lip must find, for the requests, a set S of concrete packages satisfying all of the following conditions; when it cannot, it is a failure.
 
-1. Every request is satisfied by some package in S: that package is one of the candidates obtained by running Resolve on the request.
+1. Every request is satisfied by some package in S: that package is one of the candidates obtained by running Resolve on the request (or stands in for one, see below).
 2. For each **install edge** of each package in S, some package in S satisfies it. The install edges are:
    - `dependencies` entries with `refs`;
    - all `installDependencies` entries.
@@ -192,8 +204,10 @@ lip must find, for the requests, a set S of concrete packages satisfying all of 
    A document without the format markers has no install edges (§4.4).
 
    Satisfying an install edge means both:
-   - the package is one of the candidates obtained by Resolve(r, the archive of the package holding the entry, the entry's `version`), where r is one of the refs in the entry's `refs`;
+   - the package is one of the candidates obtained by Resolve(r, the archive of the package holding the entry, the entry's `version`), where r is one of the refs in the entry's `refs`, or stands in for one (see below);
    - when the entry writes `name`, the identity of the package equals that `name`.
+
+   **Pinned packages stand in for versions**: a package whose chain starts with a pinned spec ref `s#v@g` stands in for the candidates of an unpinned spec ref `s#v` (same spec, compared ignoring ASCII case, and same variant) whose `range` its version satisfies. A pinned ref is satisfied only by its own candidates: a package from `s@branch:a` does not satisfy `s@branch:b`, and a package from a tag version does not satisfy `s@branch:a`. Thus a dependency's `range` constrains the `version` declared at the pinned commit: a pinned package whose version is outside the range does not satisfy the dependency.
 3. No two packages in S have the same identity.
 4. For each `conflicts` entry of each package in S, S contains no package whose identity equals the entry's `name` and whose version satisfies the entry's `version`.
 
@@ -248,17 +262,19 @@ For each installed package, lip must record the following in the workspace lock:
 
 - the identity and `version`;
 - the environment;
-- the resolution chain: the ref of each hop, and the index of the Artifact selected at that hop;
-- the identifier of the final archive: the SHA-256 for a ZIP archive, the commit id and path for a git archive;
+- the resolution chain: the ref of each hop (including its git-ref, if any), the index of the Artifact selected at that hop, and for a spec hop the commit its archive was at;
+- the identifier of the final archive: the SHA-256 (and the URL or local file it was read from) for a ZIP archive, the commit id and path for a git archive;
 - the list of files owned by the package (workspace-relative paths; files under `plugins/` are recorded in the `mods/` form, see §7).
 
-When reinstalling from the lock, lip must take the final archive recorded in the lock directly and verify its identifier; it must not go through the resolution chain again.
+When reinstalling from the lock, lip must take the final archive recorded in the lock directly and verify its identifier; it must not go through the resolution chain again. In particular a package from a pinned spec ref is reinstalled at the recorded commit, wherever its branch or tag points now.
+
+**Updating** an explicitly installed package requests the first ref of its chain again: an unpinned spec ref takes its newest version, a `branch:` takes the current head, a `tag:` the commit the tag points to now, and a `rev:` the same commit; a url or local file is read again. The package is replaced when the result differs in identity, version, archive key or archive identifier.
 
 ## 9. tooth.json Compatibility
 
 When `tooth.json` exists at the root of an archive, lip ignores `manifest.json` and converts the tooth.json into a concrete package by the mapping below. From then on the package is resolved, installed, uninstalled and locked like any other concrete package (§5–§8). tooth.json formats 1 and 2 are first migrated to format 3 as the tooth.json specifications define (including their template substitution); the mapping is defined on format 3.
 
-1. **Identity and version**: the identity is the value of `tooth`, and the version the value of `version`. In the archive of a spec version, the version of the tag is used instead and §4.3 does not apply; lip should warn when the two differ.
+1. **Identity and version**: the identity is the value of `tooth`, and the version the value of `version`. In the archive of a spec version (including that of a pinned `tag:v<SemVer 2.0.0>`, §4.3), the version of the tag is used instead and §4.3 does not apply; lip should warn when the two differ. At a branch, a rev or another tag, the value of `version` is used.
 2. **Variant selection** (in place of step 4 of §5.2): the variant of the ref is a v3 label, except that `""` means `client` when the environment `platform` is `"client"` and a variant labeled `client` exists. The variants with that label whose `platform` is empty, equals the environment `rid` or matches it as a glob are merged in order: their `dependencies`, `assets`, `preserve_files` and `remove_files` are concatenated, and each script hook is taken from the one variant that has it. When no variant matches, there is no candidate; when two merged variants declare the same dependency key or the same script hook, it is a failure. The result is a file package (`"type": "files"`, `"platform": "universal"`, no `rid`); when its version satisfies `range`, it is the single candidate, otherwise there is no candidate.
 3. **Dependencies**: each dependency `"<path>[#label]": range` becomes an install edge with the single ref `<path>[#label]`, without `name`, whose range has the v3 semantics. When the archive the ref points to uses `manifest.json` and the label is `client`, the variant is treated as `""`.
 4. **Assets**: asset i of the variant (counting from 0) is mounted at the directory `i` of the package's archive. A `self` asset is the archive of the tooth.json itself. A `zip`, `tar` or `tgz` asset is an archive downloaded from the first of its `urls` that can be downloaded; its format is detected from its content and §2.1 does not apply. An `uncompressed` asset is a single file downloaded the same way, mounted as the file `i`.

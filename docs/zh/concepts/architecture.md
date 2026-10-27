@@ -16,9 +16,9 @@
 ## 包来源
 
 包是位于某个归档根部的 `manifest.json`（或旧格式的 `tooth.json`）。参见[包清单](package_manifest.md)。
-- **git 仓库**：像 `github.com/user/repo` 这样的包路径即 git 仓库 `https://github.com/user/repo.git`，lip 使用内置的 git smart-HTTP（协议第 2 版）客户端读取；无需安装 `git` 命令行工具。不存在中心化注册表：版本即仓库的 `v<semver>` 标签。
+- **git 仓库**：像 `github.com/user/repo` 这样的包路径即 git 仓库 `https://github.com/user/repo.git`，lip 使用内置的 git smart-HTTP（协议第 2 版）客户端读取；无需安装 `git` 命令行工具。不存在中心化注册表：版本即仓库的 `v<semver>` 标签，git 引用（`@branch:`、`@tag:`、`@rev:`）则改为选取一个提交。
 - **ZIP 归档**：`.mcmod` 文件和其他 ZIP 文件，通过 HTTPS 下载，或位于另一个归档之内。
-- **目录**：本地目录，包括归档内的目录。
+- **本地文件**：通过路径传给 `lip install` 的 `.mcmod` 及其他 ZIP 文件。本地目录不是包来源；归档内的目录通过相对引用访问。
 - **缓存**：git 对象按对象 ID 存储（`git-<id>`），在不同版本和不同包之间共享；HTTP(S) 下载内容按其 URL 的 SHA-256 存储（`http-<hash>`）。
 
 详见[内部机制](../guides/internal_mechanism.md#包解析)。

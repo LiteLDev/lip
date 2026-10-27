@@ -27,16 +27,28 @@ lip install github.com/user/repo@1.0.0
 
 如需选择变体，请在路径后追加 `#<variant>`，例如 `github.com/user/repo#lua@1.0.0`。
 
+## 安装分支、标签或提交
+
+如需试用尚未发布的改动，可安装分支的头、任意标签或某个提交：
+
+```sh
+lip install github.com/LiteLDev/LeviLamina@branch:main
+lip install github.com/user/repo@tag:nightly
+lip install github.com/user/repo@rev:0123456789abcdef0123456789abcdef01234567
+```
+
+锁会记录该提交，因此在 `lip update` 之前工作区始终保持该提交；`lip update` 会跟随分支到新的头。参见 [git 引用](../cli/commands/install.md#git-引用)。
+
 ## 从本地文件安装
 
-可直接从本地 `.mcmod` 文件或目录安装：
+可直接从本地 `.mcmod` 或 `.zip` 文件安装，使用相对于当前目录的路径或绝对路径：
 
 ```sh
 lip install ./path/to/package.mcmod
-lip install ./path/to/package/
+lip install C:\Downloads\package.zip
 ```
 
-这对发布前测试包很有用。
+这对发布前测试包很有用。本地目录不能安装；请先把它打包为 `.mcmod` 文件（根目录含 `manifest.json` 的 ZIP 归档）。
 
 ## 从远程 URL 安装
 

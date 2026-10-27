@@ -65,13 +65,19 @@
 * **`explicit`**：
   * `true`：用户显式安装（如 `lip install <package>`）。
   * `false`：作为其他包依赖被隐式安装。
-* **`chain`**：包的解析链：每一跳的 `ref`，以及在该跳选中的路由条目下标 `artifact`（该跳不是路由文档时为 `null`）。
-* **`archiveKey`**：最终归档的键，例如 `github.com/user/repo@1.0.0`。
+* **`chain`**：包的解析链，每一跳一项，包含：
+  * `ref`：该跳解析时的 ref，例如 `github.com/user/repo`、[git 引用](../cli/commands/install.md#git-引用)形式的 `github.com/user/repo@branch:main`、`https://` URL、上一归档内的 `./sub/`，或传给 `lip install` 的本地文件的 `file:///` URI；
+  * `artifact`：在该跳选中的路由条目下标（该跳不是路由文档时为 `null`）；
+  * `commit`（仅包路径）：该跳仓库所在的提交：版本标签的提交，或 git 引用解析到的提交。早期版本写下的锁中没有此项。
+
+  [`lip update`](../cli/commands/update.md) 会重新请求第一跳：分支跟随到新的头，标签重新解析，rev 保持不变。
+* **`archiveKey`**：最终归档的键，例如 `github.com/user/repo@1.0.0`；带 git 引用的包路径为 `github.com/user/repo@rev:<commit>`。
 * **`archive`**：最终归档的标识：
-  * `{ "kind": "zip", "sha256": ..., "url": ... }`：ZIP 归档。嵌套在其他归档中的 ZIP 文件，其 `url` 为 `null`；包是 ZIP 文件内的一个目录时，会设置 `path`。
+  * `{ "kind": "zip", "sha256": ..., "url": ... }`：ZIP 归档。`url` 是下载它的 `https://` URL、本地文件的 `file:///` URI，或对嵌套在其他归档中的 ZIP 文件为 `null`；包是 ZIP 文件内的一个目录时，会设置 `path`。
   * `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`：git 仓库的一个提交；仓库根目录的 `path` 为 `""`。
-  * `{ "kind": "directory", "path": ... }`：本地目录。
   * `null`：从 `tooth_lock.json` 迁移而来的条目。
+
+  lip 再次需要已安装包的文件时，会打开该归档并校验其标识：git 归档按记录的提交获取（即使它来自一个已经前进的分支），下载的或本地的 ZIP 文件必须仍具有记录的 SHA-256。卸载则两者都不需要。
 * **`files`**：该包拥有的文件，相对于工作区根目录，以 `/` 分隔。服务端的 `plugins` 是指向 `mods` 的链接，因此 `plugins/` 下的文件记为 `mods/` 下的路径；早期版本写下的锁中的 `plugins/` 路径会在加载时被改写。
 * **`manifest`**：包的文档（`manifest.json`；`tooth` 包为 `tooth.json`，lip 需要该包时会再次把它转换为第 4 版），这样 lip 无需再次获取。
 
