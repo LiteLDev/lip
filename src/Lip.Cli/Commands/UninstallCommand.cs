@@ -11,7 +11,7 @@ public class UninstallCommand(ILipClient lipClient, IUserInteraction userInterac
 
   public class Settings : EnvironmentSettings {
     [CommandArgument(0, "<PACKAGES>")]
-    [Description("The packages to uninstall: a package name, or the path[#variant] it was installed from")]
+    [Description("The packages to uninstall: a package name, or the path[[#variant]] it was installed from")]
     public required string[] Packages { get; init; }
 
     [CommandOption("-n|--dry-run")]
