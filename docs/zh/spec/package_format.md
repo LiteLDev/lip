@@ -77,7 +77,7 @@ target  = relative / url / spec
 | `refs` | ref[] | 是 | 非空，按顺序为备选 |
 
 <span v-pre>**模板**：`refs` 中的字符串可以包含 `{{name}}`、`{{version}}`、`{{platform}}`、`{{rid}}`，替换规则如下：</span>
-- <span v-pre>`{{name}}`、`{{version}}` 取本文档同名键的值；本文档缺少该键时失败。</span>
+- <span v-pre>`{{name}}`、`{{version}}` 取本文档同名键的值；本文档缺少该键时，该 ref 不产出候选（见 §5.2），不中止整个操作。</span>
 - <span v-pre>`{{platform}}`、`{{rid}}` 取当前环境的值。</span>
 - 先替换模板，再按 §3 解析 ref。
 - <span v-pre>出现其他任何 `{{`…`}}` 时，文档无效。</span>

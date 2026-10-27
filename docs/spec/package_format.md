@@ -77,7 +77,7 @@ Other keys in a routing document are not used in resolution. A routing document 
 | `refs` | ref[] | Yes | Non-empty; alternatives in order |
 
 <span v-pre>**Templates**: strings in `refs` may contain `{{name}}`, `{{version}}`, `{{platform}}` and `{{rid}}`, substituted as follows:</span>
-- <span v-pre>`{{name}}` and `{{version}}` take the value of the key of the same name in this document; it is a failure if this document lacks that key.</span>
+- <span v-pre>`{{name}}` and `{{version}}` take the value of the key of the same name in this document; if this document lacks that key, the ref produces no candidates (see §5.2) instead of failing the whole operation.</span>
 - <span v-pre>`{{platform}}` and `{{rid}}` take the value of the current environment.</span>
 - Templates are substituted first, then the ref is parsed according to §3.
 - <span v-pre>When any other `{{`…`}}` appears, the document is invalid.</span>
