@@ -2,7 +2,7 @@
 
 lip 包由其归档根部的 `manifest.json` 描述。它就是 LeviLamina 的 `manifest.json`，
 再加上 lip 包格式第 4 版新增的键。LeviLamina 会忽略 lip 新增的键，lip 也不会改变任何
-LeviLamina 键的含义。
+LeviLamina 键的含义。规范性定义见[包格式规范](../spec/package_format.md)。
 
 该格式由 JSON Schema
 [`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json)

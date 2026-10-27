@@ -69,7 +69,7 @@ lip maintains the state of your installed packages in the lockfile `lip_lock.jso
 
 ## Deviations from the Specification
 
-lip implements the lip package specification (format version 4) with these deliberate differences:
+lip implements the [lip package specification](../spec/package_format.md) (format version 4) with these deliberate differences:
 
 1.  **Server only**: lip does not determine the platform from the workspace (spec §5.1); it always uses `server`. Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
 2.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
