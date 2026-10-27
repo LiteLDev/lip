@@ -60,8 +60,13 @@ public record PackageManifest {
     return PackageManifestMigration.Migrate(jsonDocument);
   }
 
-  public PackageManifestVariant GetVariant(string label) {
-    string platform = RuntimeInformation.RuntimeIdentifier;
+  public PackageManifestVariant GetVariant(string label) =>
+      GetVariant(label, RuntimeInformation.RuntimeIdentifier);
+
+  /// Merges every variant with the given label whose platform matches the runtime identifier
+  /// (exactly or as a glob). Throws KeyNotFoundException when no variant matches.
+  public PackageManifestVariant GetVariant(string label, string rid) {
+    string platform = rid;
 
     List<PackageManifestVariant> matchingVariants = [];
     foreach (PackageManifestVariant variant in Variants) {
