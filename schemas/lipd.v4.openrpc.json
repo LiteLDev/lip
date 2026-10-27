@@ -3,7 +3,7 @@
   "info": {
     "title": "lip Daemon JSON-RPC API",
     "description": "API for interacting with the lip package installer daemon.",
-    "version": "3.0.0"
+    "version": "4.0.0"
   },
   "methods": [
     {
@@ -97,7 +97,7 @@
     },
     {
       "name": "Init",
-      "description": "Initializes a new package manifest in the current directory.",
+      "description": "Writes a format 4 manifest.json (a concrete native mod named after the current directory). Fails if manifest.json exists.",
       "params": [],
       "result": {
         "name": "result",
@@ -108,7 +108,7 @@
     },
     {
       "name": "Install",
-      "description": "Installs packages.",
+      "description": "Installs packages: path[#variant][@version], ./dir/, ./file.mcmod, a local path or an https:// URL.",
       "params": [
         {
           "name": "packages",
@@ -140,6 +140,33 @@
           "schema": {
             "type": "boolean"
           }
+        },
+        {
+          "name": "platform",
+          "description": "The game platform, \"server\" or \"client\". When null, it comes from the lock or the executables in the workspace.",
+          "required": false,
+          "schema": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "server",
+              "client",
+              null
+            ]
+          }
+        },
+        {
+          "name": "rid",
+          "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
+          "required": false,
+          "schema": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       ],
       "result": {
@@ -151,11 +178,11 @@
     },
     {
       "name": "List",
-      "description": "Lists installed packages.",
+      "description": "Lists installed packages from lip_lock.json.",
       "params": [],
       "result": {
         "name": "packages",
-        "description": "Tuple containing explicit and implicit installed package specs as strings.",
+        "description": "Explicitly installed packages and dependencies, each as \"name@version\".",
         "schema": {
           "type": "array",
           "items": [
@@ -179,18 +206,18 @@
     },
     {
       "name": "Migrate",
-      "description": "Migrates a package manifest.",
+      "description": "Converts a tooth.json (format 1-3) into a format 4 manifest.json.",
       "params": [
         {
           "name": "file",
-          "description": "Path to the input file.",
+          "description": "Path to the tooth.json to convert.",
           "schema": {
             "type": "string"
           }
         },
         {
           "name": "output",
-          "description": "Path to the output file.",
+          "description": "Path to the manifest.json to write.",
           "schema": {
             "type": "string"
           }
@@ -205,7 +232,7 @@
     },
     {
       "name": "Uninstall",
-      "description": "Uninstalls packages.",
+      "description": "Uninstalls packages, given by name or by the path[#variant] they were installed from.",
       "params": [
         {
           "name": "packages",
@@ -237,6 +264,33 @@
           "schema": {
             "type": "boolean"
           }
+        },
+        {
+          "name": "platform",
+          "description": "The game platform, \"server\" or \"client\". When null, it comes from the lock or the executables in the workspace.",
+          "required": false,
+          "schema": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "server",
+              "client",
+              null
+            ]
+          }
+        },
+        {
+          "name": "rid",
+          "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
+          "required": false,
+          "schema": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       ],
       "result": {
@@ -248,7 +302,7 @@
     },
     {
       "name": "Update",
-      "description": "Updates packages.",
+      "description": "Updates packages to the given or newest version; with an empty list, every explicitly installed package.",
       "params": [
         {
           "name": "packages",
@@ -273,6 +327,33 @@
           "schema": {
             "type": "boolean"
           }
+        },
+        {
+          "name": "platform",
+          "description": "The game platform, \"server\" or \"client\". When null, it comes from the lock or the executables in the workspace.",
+          "required": false,
+          "schema": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "server",
+              "client",
+              null
+            ]
+          }
+        },
+        {
+          "name": "rid",
+          "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
+          "required": false,
+          "schema": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       ],
       "result": {
@@ -284,7 +365,7 @@
     },
     {
       "name": "Versions",
-      "description": "Shows available versions for a package.",
+      "description": "Lists the v<SemVer> tag versions of a package path, lowest first.",
       "params": [
         {
           "name": "package",
@@ -306,7 +387,7 @@
     },
     {
       "name": "View",
-      "description": "Views package details.",
+      "description": "Returns the root document (tooth.json or manifest.json) of the archive a package argument points to.",
       "params": [
         {
           "name": "package",

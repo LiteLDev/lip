@@ -5,8 +5,8 @@
 ## Workspace State
 
 Represents the current state of the workspace, tracking which packages are installed and how.
-- **Packages**: A collection of installed packages.
-- **Manifest**: The Manifest File of the current project (if applicable).
+- **Packages**: The installed packages, recorded in the [lockfile](lockfiles.md) `lip_lock.json`.
+- **Environment**: The platform (`server` or `client`) and the .NET RID of the workspace. See [Environment](package_manifest.md#environment).
 
 ## Configuration
 
@@ -15,9 +15,10 @@ Manages global configuration settings for the `lip` tool itself, such as proxies
 
 ## Package Sources
 
-Packages are resolved and downloaded directly from their git repositories over HTTPS, using lip's built-in git smart-HTTP (protocol version 2) client; the `git` command-line tool is not required.
-- **Versions and manifests**: There is no central registry; the package's own repository is queried. Its versions are its `v<semver>` tags, and `tooth.json` is read at a tag without downloading any other file.
-- **Sources**: Expose the file list of a tagged commit and download file contents lazily, only for the files that the manifest's placements select.
-- **Cache**: Stores downloaded files by git object id, so they are shared across versions and packages.
+A package is a `manifest.json` (or a legacy `tooth.json`) at the root of an archive. See [Package Manifest](package_manifest.md).
+- **git repositories**: A package path such as `github.com/user/repo` is the git repository `https://github.com/user/repo.git`, read with lip's built-in git smart-HTTP (protocol version 2) client; the `git` command-line tool is not required. There is no central registry: the versions are the repository's `v<semver>` tags.
+- **ZIP archives**: `.mcmod` files and other ZIP files, downloaded over HTTPS or found inside another archive.
+- **Directories**: Local directories, including directories inside an archive.
+- **Cache**: Stores downloaded git objects by object id and ZIP archives by SHA-256, so they are shared across versions and packages.
 
 See [Internal Mechanism](../guides/internal_mechanism.md#package-resolution) for details.

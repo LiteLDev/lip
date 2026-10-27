@@ -11,14 +11,16 @@
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`list`](commands/list.md) 和 [`versions`](commands/versions.md)。
 
+[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--platform server|client` 和 `--rid <RID>`，用于设置工作区的[环境](../concepts/package_manifest.md#环境)。
+
 ## 命令
 
 - [`lip cache clean`](commands/cache_clean.md)：清理本地缓存。
 - [`lip config`](commands/config.md)：获取、设置、列出和删除配置项。
-- [`lip init`](commands/init.md)：初始化新项目。
+- [`lip init`](commands/init.md)：为新项目创建 `manifest.json`。
 - [`lip install`](commands/install.md)：安装包。
 - [`lip list`](commands/list.md)：列出已安装包。
-- [`lip migrate`](commands/migrate.md)：将包清单迁移到当前格式版本。
+- [`lip migrate`](commands/migrate.md)：将 `tooth.json` 转换为 `manifest.json`。
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。
 - [`lip versions`](commands/versions.md)：显示某个包的可用版本。

@@ -5,11 +5,26 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 
 **Note**: The standard `lip` CLI runs independently and **does not** use the daemon. This ensures the CLI remains simple and has zero startup overhead for standard operations.
 
-### What is `tooth.json`?
-`tooth.json` is the manifest file for a lip package. It defines the package's metadata (name, version, description), its dependencies, and how it should be installed on different platforms. Think of it like `package.json` for Node.js or `Cargo.toml` for Rust.
+### What is `manifest.json`?
+`manifest.json` is the manifest of a lip package. It is the manifest of a LeviLamina mod, extended with what lip needs: where to find the package's dependencies, which build to install on which platform, and how to place files. See [Package Manifest](concepts/package_manifest.md).
 
-### Does `lip install` update `tooth.json`?
-**No.** Running `lip install <package>` installs the package into your workspace and updates the lockfile (`tooth_lock.json`) to track the state, but it **does not** modify your `tooth.json` manifest. You must manually add dependencies to `tooth.json` if you want them to be permanent parts of your project's requirements.
+### Can I still install `tooth.json` packages?
+**Yes.** lip still reads `tooth.json` (format versions 1 to 3), so existing packages keep working. lip no longer writes `tooth.json`; use [`lip migrate`](cli/commands/migrate.md) to convert your package to `manifest.json`.
+
+### Does `lip install` update `manifest.json`?
+**No.** Running `lip install <package>` installs the package into your workspace and updates the lockfile (`lip_lock.json`) to track the state, but it **does not** modify your `manifest.json`. You must manually add dependencies to `manifest.json` if you want them to be permanent parts of your package's requirements.
+
+### What happened to `tooth_lock.json`?
+It was replaced by `lip_lock.json`. lip migrates an existing `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it. See [Lockfiles](concepts/lockfiles.md#legacy-tooth-lock-json).
+
+### Do I need `--platform`?
+Usually not. lip detects a server from `bedrock_server.exe` or `bedrock_server_mod.exe` and a client from `Minecraft.Windows.exe` in the workspace root, and the platform is recorded in the lockfile once known. You need `--platform server` or `--platform client` when installing into a directory that has none of them yet, for example before the game itself is installed.
+
+### Why does lip say the platform is unknown?
+A package needs the platform (for example, a mod is installed to `plugins/` on a server but `mods/` on a client), and lip could not detect it: the workspace root has no `bedrock_server.exe`, `bedrock_server_mod.exe` or `Minecraft.Windows.exe`, and the lockfile records none. Pass `--platform server` or `--platform client` once; it is then recorded in the lockfile.
+
+### Why is a tag of my repository not a version?
+Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) version, such as `v1.2.3`, are versions. Tags such as `v1.2` or `1.2.3` are ignored.
 
 ### How do I upgrade lip itself?
 Reinstall `lip` using the same method you used originally, such as `npm install -g @levimc/lip`, `winget upgrade levimc.lip`, or the latest Windows `setup.exe` from the GitHub releases page. There is no built-in `lip self-update` command yet. If you installed `lip` from the old `@futrime/lip` npm package or the `futrime.lip` winget package, uninstall it first and then install `@levimc/lip` or `levimc.lip`.
@@ -21,6 +36,6 @@ No. lip talks to git repositories over HTTPS with its own built-in client, so th
 Not currently. lip fetches packages anonymously over HTTPS and does not use the `git` command-line tool or its credential helpers, so only public repositories can be installed from.
 
 ### Where does lip store installed packages?
-lip installs package files **directly into your workspace** based on the rules defined in `tooth.json`. Unlike some package managers, it does not isolate dependencies in a separate folder unless the package manifest explicitly specifies those locations.
+lip installs package files **directly into your workspace**. A mod is installed to `plugins/<name>/` on a server or `mods/<name>/` on a client; a file package places its files where its `manifest.json` says.
 
 The global cache is stored in your system's local application data directory (e.g., `%LOCALAPPDATA%\lip\cache` on Windows, or `~/.local/share/lip/cache` on Linux).

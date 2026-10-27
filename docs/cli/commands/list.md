@@ -16,9 +16,9 @@ lip list [options]
 
 ## Description
 
-Displays installed packages in two groups:
+Reads the [lockfile](../../concepts/lockfiles.md) `lip_lock.json` (or a legacy `tooth_lock.json`) and displays the installed packages as `<name>@<version>` in two groups:
 
 - **User-Requested** — Packages explicitly installed by the user.
 - **Dependencies** — Packages installed as dependencies.
 
-Packages are topologically sorted by their dependency relationships.
+Packages are listed in install order, dependencies first. The name is the package's identity: the `name` of its `manifest.json`, or the `tooth` path of a `tooth.json` package.
