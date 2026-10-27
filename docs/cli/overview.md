@@ -20,7 +20,7 @@ Some commands accept `--json` to print their result as JSON: [`config get`](comm
 -   [`lip init`](commands/init.md): Create a `manifest.json` for a new project.
 -   [`lip install`](commands/install.md): Install packages.
 -   [`lip list`](commands/list.md): List installed packages.
--   [`lip migrate`](commands/migrate.md): Convert a `tooth.json` to a `manifest.json`.
+-   [`lip migrate`](commands/migrate.md): Migrate the package repository in the current directory from `tooth.json` to `manifest.json`.
 -   [`lip uninstall`](commands/uninstall.md): Uninstall packages.
 -   [`lip update`](commands/update.md): Update packages.
 -   [`lip versions`](commands/versions.md): Show available versions for a package.
