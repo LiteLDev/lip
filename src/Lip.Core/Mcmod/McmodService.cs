@@ -335,8 +335,7 @@ public class McmodService(
           $"Finished an interrupted lip operation that had completed{started}: deleted the"
           + " backups it left.");
       if (result.Errors.Count > 0) {
-        await _ui.PrintWarning(
-            $"Some backups could not be deleted; the next operation tries again:{errors}");
+        await _ui.PrintWarning($"Some of them could not be deleted:{errors}");
       }
 
       return;
@@ -732,8 +731,7 @@ public class McmodService(
     }
 
     foreach (string error in transaction.Complete()) {
-      await _ui.PrintWarning(
-          $"{error} (the next install, uninstall or update of this workspace tries again)");
+      await _ui.PrintWarning(error);
     }
   }
 

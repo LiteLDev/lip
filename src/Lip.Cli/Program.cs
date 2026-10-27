@@ -2,6 +2,7 @@
 using Lip.Cli;
 using Lip.Cli.Commands;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod.Install;
 using Lip.Core.PublicApi;
 using Microsoft.Extensions.DependencyInjection;
 using Semver;
@@ -95,11 +96,12 @@ app.Configure(config => {
       .WithDescription("Shows available versions for a package");
 });
 
-// The first Ctrl+C cancels the command, which undoes the changes it started to make to the
-// workspace; a second one ends lip at once (the next operation then undoes them).
+// Ctrl+C while an operation changes a workspace cancels it, which undoes its changes. Otherwise,
+// and on a second Ctrl+C, lip ends at once: nothing is changed yet, or the next operation on the
+// workspace undoes the changes (see WorkspaceTransaction).
 using CancellationTokenSource cancellation = new();
 Console.CancelKeyPress += (_, e) => {
-  if (cancellation.IsCancellationRequested) {
+  if (!WorkspaceTransaction.AnyOpen || cancellation.IsCancellationRequested) {
     return;
   }
 

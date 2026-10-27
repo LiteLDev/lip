@@ -7,8 +7,8 @@ namespace Lip.Core.Mcmod.Install;
 /// planned steps write and delete and with the layout the operation establishes first.
 ///
 /// Paths are absolute. Before the layout is made right, an entry of a plugins directory is
-/// still there rather than in mods: the view reads mods/&lt;name&gt; from plugins/&lt;name&gt; then,
-/// and shows plugins as the link it will become.
+/// still there rather than in mods: the view reads mods/&lt;name&gt; from
+/// plugins/&lt;name&gt; then, and shows plugins as the link it will become.
 public sealed class WorkspaceView {
   private readonly IFileSystem _fs;
   private readonly string? _mods;
@@ -16,6 +16,13 @@ public sealed class WorkspaceView {
   private readonly bool _pluginsMergesIntoMods;
   private readonly Dictionary<string, bool> _files = new(WorkspaceLayout.PathComparer);
   private readonly Dictionary<string, bool> _directories = new(WorkspaceLayout.PathComparer);
+
+  // The paths of _files and _directories by parent directory.
+  private readonly Dictionary<string, HashSet<string>> _changed = new(WorkspaceLayout.PathComparer);
+
+  // The entries of directories as they are now, by physical path; the workspace does not
+  // change while an operation is planned.
+  private readonly Dictionary<string, List<Entry>> _listings = new(WorkspaceLayout.PathComparer);
 
   /// The workspace as it is, with the layout the plan establishes (none when null).
   public WorkspaceView(IFileSystem fileSystem, WorkspaceLayout.LayoutPlan? layout = null) {
@@ -28,7 +35,7 @@ public sealed class WorkspaceView {
     _plugins = Trim(layout.Plugins);
     _pluginsMergesIntoMods = layout.PluginsIsDirectory;
     if (layout.CreateMods || layout.RenamePluginsToMods) {
-      _directories[_mods] = true;
+      SetDirectory(_mods, true);
     }
   }
 
@@ -52,16 +59,9 @@ public sealed class WorkspaceView {
     directory = Trim(directory);
     Dictionary<string, Entry> entries = new(WorkspaceLayout.PathComparer);
     void AddReal(string physical) {
-      if (!_fs.Directory.Exists(physical)) {
-        return;
-      }
-
-      foreach (IFileSystemInfo info in _fs.DirectoryInfo.New(physical).EnumerateFileSystemInfos()) {
-        string path = _fs.Path.Join(directory, info.Name);
-        entries[path] = new Entry(
-            path,
-            info is IDirectoryInfo,
-            info.Attributes.HasFlag(FileAttributes.ReparsePoint));
+      foreach (Entry entry in Listing(physical)) {
+        string path = _fs.Path.Join(directory, _fs.Path.GetFileName(entry.FullName));
+        entries[path] = entry with { FullName = path };
       }
     }
 
@@ -79,19 +79,17 @@ public sealed class WorkspaceView {
       entries[_plugins!] = new Entry(_plugins!, true, true);
     }
 
-    foreach ((string path, bool exists) in _directories) {
-      if (Same(_fs.Path.GetDirectoryName(path), directory)) {
-        if (exists) {
+    foreach (string path in _changed.GetValueOrDefault(directory) ?? []) {
+      if (_directories.TryGetValue(path, out bool directoryExists)) {
+        if (directoryExists) {
           entries.TryAdd(path, new Entry(path, true, false));
         } else {
           entries.Remove(path);
         }
       }
-    }
 
-    foreach ((string path, bool exists) in _files) {
-      if (Same(_fs.Path.GetDirectoryName(path), directory)) {
-        if (exists) {
+      if (_files.TryGetValue(path, out bool fileExists)) {
+        if (fileExists) {
           entries[path] = new Entry(path, false, false);
         } else {
           entries.Remove(path);
@@ -107,22 +105,59 @@ public sealed class WorkspaceView {
   /// A planned write: the file exists, and so do its ancestors.
   public void AddFile(string path) {
     path = Trim(path);
-    _files[path] = true;
+    SetFile(path, true);
     for (string? directory = _fs.Path.GetDirectoryName(path);
         directory is not null && !DirectoryExists(directory);
         directory = _fs.Path.GetDirectoryName(directory)) {
-      _directories[directory] = true;
+      SetDirectory(directory, true);
     }
   }
 
   /// A planned deletion of a file.
-  public void DeleteFile(string path) => _files[Trim(path)] = false;
+  public void DeleteFile(string path) => SetFile(Trim(path), false);
 
   /// A planned deletion of an empty directory.
-  public void DeleteDirectory(string path) => _directories[Trim(path)] = false;
+  public void DeleteDirectory(string path) => SetDirectory(Trim(path), false);
 
-  /// Where a path is now: mods/&lt;name&gt;/... is still plugins/&lt;name&gt;/... while plugins is a
-  /// directory whose entries move into mods.
+  private void SetFile(string path, bool exists) {
+    _files[path] = exists;
+    AddChanged(path);
+  }
+
+  private void SetDirectory(string path, bool exists) {
+    _directories[path] = exists;
+    AddChanged(path);
+  }
+
+  private void AddChanged(string path) {
+    if (_fs.Path.GetDirectoryName(path) is not string parent) {
+      return;
+    }
+
+    if (!_changed.TryGetValue(parent, out HashSet<string>? children)) {
+      children = new(WorkspaceLayout.PathComparer);
+      _changed[parent] = children;
+    }
+
+    children.Add(path);
+  }
+
+  private List<Entry> Listing(string physical) {
+    if (!_listings.TryGetValue(physical, out List<Entry>? listing)) {
+      listing = !_fs.Directory.Exists(physical) ? [] : [
+        .. _fs.DirectoryInfo.New(physical).EnumerateFileSystemInfos().Select(info => new Entry(
+            info.FullName,
+            info is IDirectoryInfo,
+            info.Attributes.HasFlag(FileAttributes.ReparsePoint))),
+      ];
+      _listings[physical] = listing;
+    }
+
+    return listing;
+  }
+
+  /// Where a path is now: mods/&lt;name&gt;/... is still plugins/&lt;name&gt;/... while
+  /// plugins is a directory whose entries move into mods.
   private string Physical(string path) {
     if (!_pluginsMergesIntoMods || !path.StartsWith(_mods! + _fs.Path.DirectorySeparatorChar,
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase

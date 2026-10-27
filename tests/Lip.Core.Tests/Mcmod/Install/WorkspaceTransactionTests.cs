@@ -208,6 +208,49 @@ public class WorkspaceTransactionTests {
   }
 
   [Fact]
+  public async Task Rollback_AfterCommit_UndoesChangesAndUncommitsJournal() {
+    // Arrange: committed, then the lock cannot be moved into place.
+    SortedDictionary<string, string> before = Snapshot();
+    using WorkspaceTransaction transaction = new(_fs, _journal);
+    await Change(transaction);
+    transaction.Commit();
+
+    // Act
+    IReadOnlyList<string> errors = transaction.Rollback();
+
+    // Assert
+    Assert.Empty(errors);
+    Assert.Equal(before, Snapshot());
+    Assert.False(_fs.File.Exists(_journal));
+  }
+
+  [Fact]
+  public async Task WriteFile_JournalOfAnotherOperationExists_ThrowsAndKeepsThatJournal() {
+    // Arrange
+    _fs.AddFile(_journal, new MockFileData("{\"op\":\"Commit\",\"path\":\"\"}\n"));
+    SortedDictionary<string, string> before = Snapshot();
+    using WorkspaceTransaction transaction = new(_fs, _journal);
+    using MemoryStream content = new("new"u8.ToArray());
+
+    // Act
+    await Assert.ThrowsAsync<IOException>(() => transaction.WriteFile(
+        Full("created.txt"), content, TestContext.Current.CancellationToken));
+    transaction.Rollback();
+
+    // Assert
+    Assert.Equal(before, Snapshot());
+    Assert.Equal("{\"op\":\"Commit\",\"path\":\"\"}\n", _fs.File.ReadAllText(_journal));
+  }
+
+  [Fact]
+  public void AnyOpen_WhileATransactionIsOpen_IsTrue() {
+    // Act & Assert
+    using (new WorkspaceTransaction(_fs)) {
+      Assert.True(WorkspaceTransaction.AnyOpen);
+    }
+  }
+
+  [Fact]
   public void Recover_NoJournal_ReturnsNull() {
     Assert.Null(WorkspaceTransaction.Recover(_fs, _journal, () => { }, () => { }));
   }

@@ -11,9 +11,9 @@ namespace Lip.Core.Mcmod.Install;
 ///
 /// - A created directory or file is recorded, and deleted again on rollback.
 /// - A file that is replaced or deleted is first renamed to a hidden backup next to it
-///   (".&lt;name&gt;.bak", or ".&lt;name&gt;.bak1", ... when that name is taken): a cheap rename on the
-///   same volume. Rollback renames it back; commit deletes it. On Windows backups also get the
-///   hidden attribute.
+///   (".&lt;name&gt;.bak", or ".&lt;name&gt;.bak1", ... when that name is taken): a cheap
+///   rename on the same volume. Rollback renames it back; commit deletes it. On Windows backups
+///   also get the hidden attribute.
 /// - A directory that empties is deleted only at commit, since backups are still in it.
 /// - Moves, directory removals and directory links (the workspace layout) are recorded and undone
 ///   too.
@@ -23,12 +23,15 @@ namespace Lip.Core.Mcmod.Install;
 /// changes of a process that was killed (Recover). Commit appends a "commit" line; from then on
 /// recovery finishes the operation (deleting the backups) instead of undoing it.
 public sealed class WorkspaceTransaction : IDisposable {
+  private static int s_open;
+
   private readonly IFileSystem _fs;
   private readonly string? _journalPath;
   private readonly HashSet<string> _reserved;
   private readonly List<JournalEntry> _entries = [];
   private Stream? _journal;
   private bool _committed;
+  private bool _disposed;
 
   /// reserved: paths that backups must never take, such as the files the operation writes.
   public WorkspaceTransaction(
@@ -36,10 +39,12 @@ public sealed class WorkspaceTransaction : IDisposable {
     _fs = fileSystem;
     _journalPath = journalPath;
     _reserved = new(reserved ?? [], WorkspaceLayout.PathComparer);
+    Interlocked.Increment(ref s_open);
   }
 
-  /// Whether the transaction changed anything.
-  public bool IsEmpty => _entries.Count == 0;
+  /// Whether a transaction of this process is open, i.e. an operation is changing a workspace:
+  /// ending the process now leaves changes for the next operation to undo.
+  public static bool AnyOpen => Volatile.Read(ref s_open) > 0;
 
   #region Changes
 
@@ -132,24 +137,41 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   /// After Commit: deletes the backups and the directories to delete at commit, then the
-  /// journal. Best effort; returns what could not be done, in which case the journal is kept so
-  /// that the next operation tries again.
+  /// journal. Best effort; returns what could not be done. A backup that cannot be deleted is
+  /// left (hidden, and named in the error) rather than kept in the journal, so that it does not
+  /// hold up the next operation.
   public IReadOnlyList<string> Complete() {
     if (!_committed) {
       throw new InvalidOperationException("The transaction is not committed.");
     }
 
-    List<JournalEntry> left = Finish(_fs, _entries, out List<string> errors);
-    CloseJournal(left, committed: true);
+    Finish(_fs, _entries, out List<string> errors);
+    CloseJournal([], committed: true, errors);
     _entries.Clear();
     return errors;
   }
 
   /// Undoes every change in reverse order. Best effort; returns what could not be undone, in
-  /// which case the journal keeps those changes so that the next operation tries again.
+  /// which case the journal keeps those changes so that the next operation tries again. Also
+  /// undoes a committed transaction whose result could not be made durable: the journal loses
+  /// its "commit" line first, so that recovery undoes it too.
   public IReadOnlyList<string> Rollback() {
-    List<JournalEntry> left = Undo(_fs, _entries, out List<string> errors);
-    CloseJournal(left, committed: false);
+    List<string> errors = [];
+    if (_committed && _journal is not null) {
+      try {
+        _journal.Dispose();
+        _journal = null;
+        WriteJournal(_fs, _journalPath!, _entries, committed: false);
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        // Undoing is still right; only recovery after a crash during it would finish instead.
+        errors.Add($"cannot update the journal {_journalPath}: {ex.Message}");
+      }
+    }
+
+    List<JournalEntry> left = Undo(_fs, _entries, replay: false, out List<string> undoErrors);
+    errors.AddRange(undoErrors);
+    CloseJournal(left, committed: false, errors);
     _entries.Clear();
     _committed = false;
     return errors;
@@ -160,6 +182,10 @@ public sealed class WorkspaceTransaction : IDisposable {
   public void Dispose() {
     _journal?.Dispose();
     _journal = null;
+    if (!_disposed) {
+      _disposed = true;
+      Interlocked.Decrement(ref s_open);
+    }
   }
 
   #endregion
@@ -173,6 +199,12 @@ public sealed class WorkspaceTransaction : IDisposable {
 
     if (_journalPath is not null) {
       if (_journal is null) {
+        if (_entries.Count > 0) {
+          throw new InvalidOperationException("The journal is closed.");
+        }
+
+        // CreateNew: the journal of an interrupted operation is recovered before a new
+        // operation starts, and never overwritten.
         _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(_journalPath)!);
         _journal = _fs.FileStream.New(
             _journalPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
@@ -192,23 +224,29 @@ public sealed class WorkspaceTransaction : IDisposable {
     _journal.Flush();
   }
 
-  /// Deletes the journal when nothing is left, else replaces it with what is left.
-  private void CloseJournal(List<JournalEntry> left, bool committed) {
+  /// Deletes the journal this transaction wrote when nothing is left, else replaces it with what
+  /// is left. Adds a failure to errors rather than throwing: the journal only matters after a
+  /// crash, and recovering from an outdated one changes nothing that is already right.
+  private void CloseJournal(List<JournalEntry> left, bool committed, List<string> errors) {
+    bool written = _journal is not null || _entries.Count > 0;
     _journal?.Dispose();
     _journal = null;
-    if (_journalPath is null) {
+    if (_journalPath is null || !written) {
       return;
     }
 
-    if (left.Count == 0) {
-      if (_fs.File.Exists(_journalPath)) {
-        _fs.File.Delete(_journalPath);
+    try {
+      if (left.Count == 0) {
+        if (_fs.File.Exists(_journalPath)) {
+          _fs.File.Delete(_journalPath);
+        }
+      } else {
+        WriteJournal(_fs, _journalPath, left, committed);
       }
-
-      return;
     }
-
-    WriteJournal(_fs, _journalPath, left, committed);
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      errors.Add($"cannot update the journal {_journalPath}: {ex.Message}");
+    }
   }
 
   private static void WriteJournal(
@@ -239,8 +277,9 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// Finishes or undoes the operation a journal left behind by an interrupted process, then
   /// deletes the journal; returns null when there is no journal. commitLock makes the
   /// operation's result durable for a committed operation (it must do nothing when that was
-  /// already done); discardLock throws that result away for an uncommitted one. When something
-  /// cannot be done, the journal keeps it and the result lists the errors.
+  /// already done); discardLock throws that result away for an uncommitted one. The result
+  /// lists what could not be done: a change that cannot be undone stays in the journal for the
+  /// next attempt, a backup that cannot be deleted is left.
   public static RecoveryResult? Recover(
       IFileSystem fs, string journalPath, Action commitLock, Action discardLock) {
     if (!fs.File.Exists(journalPath)) {
@@ -280,10 +319,11 @@ public sealed class WorkspaceTransaction : IDisposable {
     List<JournalEntry> left;
     if (committed) {
       commitLock();
-      left = Finish(fs, entries, out errors);
+      Finish(fs, entries, out errors);
+      left = [];
     } else {
       discardLock();
-      left = Undo(fs, entries, out errors);
+      left = Undo(fs, entries, replay: true, out errors);
     }
 
     if (left.Count == 0) {
@@ -296,19 +336,27 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   /// Undoes the entries in reverse order; returns those that could not be undone, in order.
-  /// Every undo checks the state first, so undoing an entry twice, or one whose change was never
-  /// made (the process was killed right after recording it), does nothing.
+  /// Every undo checks the state first, so undoing an entry whose change was never made (the
+  /// process was killed right after recording it) does nothing. With replay, the entries may
+  /// have been undone before (a journal left by a process killed while undoing it).
   private static List<JournalEntry> Undo(
-      IFileSystem fs, List<JournalEntry> entries, out List<string> errors) {
+      IFileSystem fs, List<JournalEntry> entries, bool replay, out List<string> errors) {
     errors = [];
     List<JournalEntry> left = [];
+    Dictionary<string, int> firstBackup = new(WorkspaceLayout.PathComparer);
+    for (int i = 0; i < entries.Count; i++) {
+      if (entries[i].Op == JournalOp.Backup) {
+        firstBackup.TryAdd(entries[i].Path, i);
+      }
+    }
+
     for (int i = entries.Count - 1; i >= 0; i--) {
       JournalEntry entry = entries[i];
-      // A file created where an earlier change backed one up: once the backup is gone, the
-      // original is back at the path (undone before), and the file is not to be deleted.
-      if (entry.Op == JournalOp.CreateFile && entries.Take(i).Any(
-          e => e.Op == JournalOp.Backup && WorkspaceLayout.PathComparer.Equals(e.Path, entry.Path)
-              && !fs.File.Exists(e.To!))) {
+      // A file created where an earlier change backed one up: once that backup is gone, the
+      // original is back at the path (undone before), and it is not to be deleted.
+      if (replay && entry.Op == JournalOp.CreateFile
+          && firstBackup.TryGetValue(entry.Path, out int backup) && backup < i
+          && !fs.File.Exists(entries[backup].To!)) {
         continue;
       }
 
@@ -388,11 +436,10 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   /// Deletes the backups, then the directories to delete at commit that are empty, deepest
-  /// first; returns the entries that could not be done.
-  private static List<JournalEntry> Finish(
+  /// first. Best effort: what is left behind is harmless.
+  private static void Finish(
       IFileSystem fs, List<JournalEntry> entries, out List<string> errors) {
     errors = [];
-    List<JournalEntry> left = [];
     foreach (JournalEntry entry in entries.Where(e => e.Op == JournalOp.Backup)) {
       try {
         if (fs.File.Exists(entry.To!)) {
@@ -401,8 +448,7 @@ public sealed class WorkspaceTransaction : IDisposable {
         }
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-        errors.Add($"cannot delete the backup {entry.To}: {ex.Message}");
-        left.Add(entry);
+        errors.Add($"cannot delete the backup {entry.To}, delete it yourself: {ex.Message}");
       }
     }
 
@@ -417,12 +463,9 @@ public sealed class WorkspaceTransaction : IDisposable {
         }
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-        // A directory left behind is harmless, and it is no backup: nothing to try again.
-        errors.Add($"cannot delete the directory {entry.Path}: {ex.Message}");
+        errors.Add($"cannot delete the empty directory {entry.Path}: {ex.Message}");
       }
     }
-
-    return left;
   }
 
   private static bool Exists(IFileSystem fs, string path) =>
