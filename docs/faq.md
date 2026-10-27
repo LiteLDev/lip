@@ -35,4 +35,4 @@ Not currently. lip fetches packages anonymously over HTTPS and does not use the 
 ### Where does lip store installed packages?
 lip installs package files **directly into your workspace**. A mod is installed to `plugins/<name>/`; a file package places its files where its `manifest.json` says.
 
-The global cache is stored in your system's local application data directory (e.g., `%LOCALAPPDATA%\lip\cache` on Windows, or `~/.local/share/lip/cache` on Linux).
+The global cache is stored in `%LOCALAPPDATA%\lip\cache` on Windows, and in `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) on Linux and macOS. It is safe to delete at any time, e.g. with `lip cache clean`. Configuration lives in `%APPDATA%\lip` or `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`), and temporary files in `%TEMP%\lip` or `$TMPDIR/lip` (by default `/tmp/lip`).

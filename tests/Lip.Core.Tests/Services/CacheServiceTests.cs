@@ -7,8 +7,7 @@ using Moq;
 namespace Lip.Core.Tests.Services;
 
 public class CacheServiceTests {
-  private static string GetCachePath() =>
-      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "lip", "cache");
+  private static string GetCachePath() => LipDirectories.Cache;
 
   [Fact]
   public async Task GetOrCreateDirectory_NonExistent_CreatesAndCallsFactory() {

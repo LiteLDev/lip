@@ -35,4 +35,4 @@
 ### lip 会把安装的包放在哪里？
 lip 会将包文件**直接安装到你的工作区**。mod 安装到 `plugins/<name>/`；文件包按其 `manifest.json` 的规定放置文件。
 
-全局缓存位于系统本地应用数据目录（例如 Windows 的 `%LOCALAPPDATA%\lip\cache`，Linux 的 `~/.local/share/lip/cache`）。
+全局缓存位于 Windows 的 `%LOCALAPPDATA%\lip\cache`，Linux 和 macOS 的 `$XDG_CACHE_HOME/lip`（默认 `~/.cache/lip`）。它可以随时删除，例如使用 `lip cache clean`。配置位于 `%APPDATA%\lip` 或 `$XDG_CONFIG_HOME/lip`（默认 `~/.config/lip`），临时文件位于 `%TEMP%\lip` 或 `$TMPDIR/lip`（默认 `/tmp/lip`）。
