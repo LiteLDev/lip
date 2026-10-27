@@ -35,7 +35,9 @@ public interface IArchiveReader {
   public Task<ArchiveDocument> Read(ArchiveHandle archive);
 }
 
-public record ChainHop(Ref Ref, int? ArtifactIndex);
+/// One hop of a resolution chain: the ref, the artifact selected at the hop (routing documents),
+/// and for a spec ref the commit its archive is at (spec §8).
+public record ChainHop(Ref Ref, int? ArtifactIndex, string? Commit = null);
 
 /// A concrete package produced by Resolve, with the archive it lives in and the chain that led
 /// to it (spec §8).
@@ -48,7 +50,7 @@ public record ResolveResult(IReadOnlyList<Candidate> Candidates, IReadOnlyList<s
 public interface IResolver {
   public Task<ResolveResult> Resolve(
       Ref reference,
-      ArchiveHandle baseArchive,
+      ArchiveHandle? baseArchive,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool toothClientCompat = false);
@@ -59,7 +61,7 @@ public interface IResolver {
   /// result of Resolve.
   public async IAsyncEnumerable<Candidate> ResolveLazy(
       Ref reference,
-      ArchiveHandle baseArchive,
+      ArchiveHandle? baseArchive,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool toothClientCompat = false,
@@ -77,9 +79,9 @@ public interface IResolver {
   }
 }
 
-/// One (ref, range) of an operation's request (spec §6). Base is the workspace root archive
-/// for user requests.
-public record PackageRequest(Ref Ref, IVersionConstraint? Range, ArchiveHandle Base);
+/// One (ref, range) of an operation's request (spec §6). User requests are inside no archive, so
+/// their Base is null and a relative ref in them has no candidate.
+public record PackageRequest(Ref Ref, IVersionConstraint? Range, ArchiveHandle? Base = null);
 
 /// Thrown when no package set satisfies the request (spec §6).
 public class DependencyResolutionException(string message, IReadOnlyList<string> diagnostics)
@@ -165,7 +167,13 @@ public record LockFile {
 
 public record LockedHop(
     [property: JsonPropertyName("ref")] string Ref,
-    [property: JsonPropertyName("artifact")] int? Artifact);
+    [property: JsonPropertyName("artifact")] int? Artifact) {
+  /// For a spec ref, the commit its archive was at (spec §8): the tag's commit, or the commit a
+  /// git ref (@branch:, @tag:, @rev:) resolved to. Null for other refs and for older locks.
+  [JsonPropertyName("commit")]
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Commit { get; init; }
+}
 
 public record LockedPackage {
   [JsonPropertyName("name")]

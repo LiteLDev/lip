@@ -158,15 +158,23 @@ public class McmodService(
 
     List<(string Argument, PackageRequest Request)> requests;
     if (packages.Count == 0) {
-      // Every explicitly installed package, at its newest version.
+      // Every explicitly installed package, requested again by the ref it was installed from: a
+      // spec ref at its newest version, a branch at its head, a tag where it points now, a rev
+      // as it is, and a URL or local file with its current content.
       requests = [];
       foreach (IGrouping<string, LockedPackage> group in workspace.Lock.Packages
           .Where(p => p.Explicit && p.Chain.Count > 0)
           .GroupBy(p => Fold(p.Identity))) {
         LockedPackage package = group.First();
-        Ref reference = Ref.Parse(package.Chain[0].Ref);
-        requests.Add((package.Identity, new PackageRequest(
-            reference, null, BaseArchive(workspace, package, reference))));
+        Ref reference = Ref.Parse(package.Chain[0].Ref, allowFile: true);
+        if (reference.Kind == RefKind.File && !_fs.File.Exists(reference.LocalPath)) {
+          await _ui.PrintWarning(
+              $"Keeping package '{package.Identity}' as it is: {reference.LocalPath}, which it "
+              + "was installed from, does not exist any more.");
+          continue;
+        }
+
+        requests.Add((package.Identity, new PackageRequest(reference, null)));
       }
     } else {
       requests = ParseRequests(workspace, packages);
@@ -198,7 +206,8 @@ public class McmodService(
 
   /// The versions of a spec ref, lowest first.
   public async Task<IReadOnlyList<string>> Versions(string package) {
-    if (!Ref.TryParse(package, out Ref? reference, out _) || reference.Kind != RefKind.Spec) {
+    if (!Ref.TryParse(package, out Ref? reference, out _) || reference.Kind != RefKind.Spec
+        || reference.GitRef is not null) {
       throw new ArgumentException($"'{package}' is not a package path.", nameof(package));
     }
 
@@ -207,13 +216,16 @@ public class McmodService(
   }
 
   /// The root document (tooth.json or manifest.json) of the archive a package argument points
-  /// to: for a spec ref, its newest version, or the given one.
+  /// to: for a spec ref, its newest version, the given one, or the commit its git ref resolves
+  /// to; otherwise the archive of the URL or local file.
   public async Task<string> View(string package) {
-    string root = _workspaceRoot();
-    PackageRequest request = PackageArguments.Parse(package, root, _fs, _archiveProvider);
+    PackageRequest request = PackageArguments.Parse(package, _fs);
 
     ArchiveHandle archive;
-    if (request.Ref.Kind == RefKind.Spec) {
+    if (request.Ref is { Kind: RefKind.Spec, GitRef: GitRef gitRef }) {
+      archive = await _archiveProvider.OpenCommit(
+          request.Ref.Target, await _archiveProvider.ResolveGitRef(request.Ref.Target, gitRef));
+    } else if (request.Ref.Kind == RefKind.Spec) {
       IReadOnlyList<SpecVersion> versions = await _archiveProvider.ListVersions(
           request.Ref.Target);
       SpecVersion version = versions.FirstOrDefault(
@@ -250,7 +262,6 @@ public class McmodService(
         root,
         lockFile,
         environment,
-        _archiveProvider.OpenWorkspace(root),
         resolver,
         _createSolver(resolver),
         new LayoutState());
@@ -293,7 +304,7 @@ public class McmodService(
   private List<(string, PackageRequest)> ParseRequests(
       Workspace workspace, IReadOnlyList<string> packages) {
     List<(string, PackageRequest)> requests = [
-      .. packages.Select(p => (p, PackageArguments.Parse(p, workspace.Root, _fs, _archiveProvider))),
+      .. packages.Select(p => (p, PackageArguments.Parse(p, _fs))),
     ];
     return requests;
   }
@@ -554,7 +565,11 @@ public class McmodService(
       Version = candidate.Package.Version.ToString(),
       Kind = candidate.Package.Kind,
       Explicit = isExplicit,
-      Chain = [.. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.ArtifactIndex))],
+      Chain = [
+        .. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.ArtifactIndex) {
+          Commit = h.Commit,
+        }),
+      ],
       ArchiveKey = candidate.Archive.Key,
       Archive = candidate.Archive.Identity,
       Files = [.. files],
@@ -627,7 +642,10 @@ public class McmodService(
       // never used as a base; it is never written to the lock either.
       ArchiveIdentity identity = package.Archive ?? new GitArchiveIdentity(
           ArchiveProvider.GetRepoUrl(package.Identity), "", "");
-      List<ChainHop> chain = [.. package.Chain.Select(h => new ChainHop(Ref.Parse(h.Ref), h.Artifact))];
+      List<ChainHop> chain = [
+        .. package.Chain.Select(h => new ChainHop(
+            Ref.Parse(h.Ref, allowFile: true), h.Artifact, h.Commit)),
+      ];
       ArchiveHandle archive = new(
           package.ArchiveKey,
           new DeferredSource(async () => {
@@ -695,12 +713,17 @@ public class McmodService(
           $"{package.ArchiveKey}: the lock records no resolution chain.");
     }
 
-    Ref reference = Ref.Parse(package.Chain[0].Ref);
+    Ref reference = Ref.Parse(package.Chain[0].Ref, allowFile: true);
+    if (reference.GitRef?.Kind == GitRefKind.Branch && package.Chain[0].Commit is string commit) {
+      // The branch may have moved on; the locked package came from the recorded commit.
+      reference = reference.WithGitRef(GitRef.Rev(commit));
+    }
+
     SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
     List<string> diagnostics = [];
     await foreach (Candidate candidate in workspace.Resolver.ResolveLazy(
         reference,
-        BaseArchive(workspace, package, reference),
+        null,
         new ExactVersionConstraint(version),
         workspace.Environment,
         onDiagnostic: diagnostics.Add)) {
@@ -714,43 +737,30 @@ public class McmodService(
         + string.Concat(diagnostics.Take(5).Select(d => $"; {d}")));
   }
 
-  /// The base archive of the first ref of a locked chain. A relative first ref was resolved in
-  /// the workspace root, or in the directory holding a local package outside the workspace,
-  /// whose absolute path starts the archive key (spec §5.2: "base key!path").
-  private ArchiveHandle BaseArchive(Workspace workspace, LockedPackage package, Ref reference) {
-    if (reference.Kind == RefKind.Relative) {
-      int bang = package.ArchiveKey.IndexOf('!');
-      string baseKey = bang < 0 ? "" : package.ArchiveKey[..bang];
-      if (baseKey != "" && _fs.Path.IsPathRooted(baseKey) && _fs.Directory.Exists(baseKey)) {
-        return _archiveProvider.OpenWorkspace(baseKey);
-      }
-    }
-
-    return workspace.Archive;
-  }
-
   /// Matches an uninstall argument: an identity (ignoring ASCII case), or the first ref of the
   /// chain as written at install time (e.g. "github.com/owner/repo#variant" for tooth
-  /// packages); a path without a variant matches every variant.
+  /// packages); a ref without a variant matches every variant, and one without a git ref every
+  /// git ref.
   private static List<LockedPackage> MatchInstalled(LockFile lockFile, string argument) {
     List<LockedPackage> byIdentity = [
       .. lockFile.Packages.Where(p => SameIdentity(p.Identity, argument)),
     ];
-    if (byIdentity.Count > 0) {
+    if (byIdentity.Count > 0 || !Ref.TryParse(argument, out Ref? wanted, out _)) {
       return byIdentity;
     }
 
-    int hash = argument.IndexOf('#');
-    string target = hash < 0 ? argument : argument[..hash];
-    string? variant = hash < 0 ? null : argument[(hash + 1)..];
+    bool hasVariant = wanted.Variant != "";
     return [
       .. lockFile.Packages.Where(p => {
-        if (p.Chain.Count == 0 || !Ref.TryParse(p.Chain[0].Ref, out Ref? first, out _)) {
+        if (p.Chain.Count == 0
+            || !Ref.TryParse(p.Chain[0].Ref, allowFile: true, out Ref? first, out _)) {
           return false;
         }
 
-        return string.Equals(first.Target, target, StringComparison.OrdinalIgnoreCase)
-            && (variant is null || first.Variant == variant);
+        return first.Kind == wanted.Kind
+            && string.Equals(first.Target, wanted.Target, StringComparison.OrdinalIgnoreCase)
+            && (!hasVariant || first.Variant == wanted.Variant)
+            && (wanted.GitRef is null || first.GitRef == wanted.GitRef);
       }),
     ];
   }
@@ -760,10 +770,14 @@ public class McmodService(
   private static List<string> ExplicitIdentities(LockFile lockFile) =>
       [.. lockFile.Packages.Where(p => p.Explicit).Select(p => p.Identity)];
 
+  /// Whether a candidate is the installed package: same identity, version and archive key, and
+  /// the same archive content where the lock records it (a URL or local file read again, or a
+  /// branch that moved on, may yield other content under the same key and version).
   private static bool IsSamePackage(LockedPackage package, Candidate candidate) =>
       SameIdentity(package.Identity, candidate.Package.Identity)
       && package.Version == candidate.Package.Version.ToString()
-      && package.ArchiveKey == candidate.Archive.Key;
+      && package.ArchiveKey == candidate.Archive.Key
+      && (package.Archive is null || package.Archive == candidate.Archive.Identity);
 
   private static bool SameIdentity(string a, string b) => PackageNames.AreEqual(a, b);
 
@@ -773,7 +787,6 @@ public class McmodService(
       string Root,
       LockFile Lock,
       LipEnvironment Environment,
-      ArchiveHandle Archive,
       IResolver Resolver,
       IGraphSolver Solver,
       LayoutState Layout);

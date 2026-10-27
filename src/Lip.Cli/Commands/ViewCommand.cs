@@ -11,7 +11,7 @@ public class ViewCommand(ILipClient lipClient) : AsyncCommand<ViewCommand.Settin
 
   public class Settings : CommandSettings {
     [CommandArgument(0, "<PACKAGE>")]
-    [Description("The package to view")]
+    [Description("The package to view, in the forms install takes")]
     public required string Package { get; init; }
   }
 

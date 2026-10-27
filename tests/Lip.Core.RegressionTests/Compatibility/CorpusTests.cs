@@ -101,9 +101,6 @@ public class CorpusTests {
   // One resolver for all solves, so that dependencies (LeviLamina above all) are read once.
   private static readonly Resolver _sharedResolver = CreateResolver(_sharedProvider);
 
-  private static readonly ArchiveHandle _workspace =
-      _sharedProvider.OpenWorkspace(AppContext.BaseDirectory);
-
   public static IEnumerable<TheoryDataRow<string, string>> Entries => SelectEntries()
       .Select(entry => new TheoryDataRow<string, string>(entry.Package, entry.Version) {
         Skip = entry.Risk || _knownUpstreamBreakage.ContainsKey(Key(entry.Package, entry.Version))
@@ -159,7 +156,7 @@ public class CorpusTests {
     RecordingGitRemoteClient recorder = new(_cachedClient);
     ArchiveProvider provider = CreateProvider(recorder);
     ResolveResult result = await CreateResolver(provider).Resolve(
-        reference, _workspace, version, _environment);
+        reference, null, version, _environment);
 
     if (result.Candidates.Count == 0) {
       // Declared, but not for this platform: not installable here, with or without git.
@@ -203,7 +200,7 @@ public class CorpusTests {
     // 3. The request solves.
     try {
       await new GraphSolver(_sharedResolver).Solve(
-          [new PackageRequest(reference, version, _workspace)], [], _environment);
+          [new PackageRequest(reference, version)], [], _environment);
     }
     catch (DependencyResolutionException) when (
         _unsatisfiableUpstream.ContainsKey(Key(entry.Package, entry.Version))) {

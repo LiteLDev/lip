@@ -15,7 +15,7 @@ public class GraphSolverLazyTests {
   private static readonly LipEnvironment s_environment = new(McmodPlatform.Server, "win-x64");
 
   private static readonly ArchiveHandle s_workspace = new(
-      "C:/workspace", Mock.Of<ISource>(), new DirectoryArchiveIdentity("C:/workspace"));
+      "C:/workspace", Mock.Of<ISource>(), new ZipArchiveIdentity(TestIdentity.Sha256, "C:/workspace"));
 
   [Fact]
   public async Task Solve_RequestWithManyVersions_ProducesOnlyTheFirstCandidate() {
@@ -77,20 +77,20 @@ public class GraphSolverLazyTests {
       package.SetupGet(p => p.Manifest).Returns(JsonDocument.Parse("{}").RootElement);
       return new Candidate(
           package.Object,
-          new ArchiveHandle(key, Mock.Of<ISource>(), new DirectoryArchiveIdentity(key)),
+          new ArchiveHandle(key, Mock.Of<ISource>(), new ZipArchiveIdentity(TestIdentity.Sha256, key)),
           []);
     }
 
     public Task<ResolveResult> Resolve(
         Ref reference,
-        ArchiveHandle baseArchive,
+        ArchiveHandle? baseArchive,
         IVersionConstraint? range,
         LipEnvironment environment,
         bool toothClientCompat = false) => throw new NotSupportedException();
 
     public async IAsyncEnumerable<Candidate> ResolveLazy(
         Ref reference,
-        ArchiveHandle baseArchive,
+        ArchiveHandle? baseArchive,
         IVersionConstraint? range,
         LipEnvironment environment,
         bool toothClientCompat = false,

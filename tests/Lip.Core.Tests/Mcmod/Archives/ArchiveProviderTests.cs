@@ -111,24 +111,117 @@ public class ArchiveProviderTests {
           .GetAwaiter().GetResult();
 
   [Fact]
-  public void OpenWorkspace_ExistingDirectory_ReturnsDirectoryArchive() {
+  public async Task Open_LocalFile_ReturnsZipArchiveKeyedByFileUri() {
     // Arrange
-    _fileSystem.AddFile(Path.Combine(_workspace, "manifest.json"), new MockFileData("{}"));
+    byte[] zip = Zip(("manifest.json", "local"), ("sub/manifest.json", "sub"));
+    string path = Path.Combine(_workspace, "pkg.mcmod");
+    _fileSystem.AddFile(path, new MockFileData(zip));
+    Ref file = Ref.FromFile(path);
 
     // Act
-    ArchiveHandle archive =
-        CreateProvider().OpenWorkspace(_workspace + Path.DirectorySeparatorChar);
+    ArchiveHandle archive = await CreateProvider().Open(file, null);
+    ArchiveHandle sub = await CreateProvider().Open(Ref.Parse("./sub/"), archive);
 
     // Assert
-    Assert.Equal(_workspace, archive.Key);
-    Assert.Equal(new DirectoryArchiveIdentity(_workspace), archive.Identity);
-    Assert.Equal(["manifest.json"], archive.Source.Keys);
+    Assert.Equal(file.Target, archive.Key);
+    Assert.Equal(new ZipArchiveIdentity(Sha256(zip), file.Target), archive.Identity);
+    Assert.Equal("local", await Read(archive, "manifest.json"));
+    Assert.Equal("sub", await Read(sub, "manifest.json"));
   }
 
   [Fact]
-  public void OpenWorkspace_MissingDirectory_ThrowsArchiveUnavailable() {
+  public async Task Open_LocalDirectory_ThrowsArchiveUnavailable() {
+    // Arrange
+    _fileSystem.AddFile(Path.Combine(_workspace, "manifest.json"), new MockFileData("{}"));
+
     // Act & Assert
-    Assert.Throws<ArchiveUnavailableException>(() => CreateProvider().OpenWorkspace(_workspace));
+    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().Open(Ref.FromFile(_workspace), null));
+    Assert.Contains("is a directory", ex.Message);
+  }
+
+  [Fact]
+  public async Task Open_RelativeWithoutBase_ThrowsArchiveUnavailable() {
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().Open(Ref.Parse("./pkg/"), null));
+  }
+
+  [Fact]
+  public async Task OpenLocked_LocalFile_VerifiesContent() {
+    // Arrange
+    string path = Path.Combine(_workspace, "pkg.mcmod");
+    byte[] zip = Zip(("manifest.json", "v1"));
+    _fileSystem.AddFile(path, new MockFileData(zip));
+    Ref file = Ref.FromFile(path);
+    ZipArchiveIdentity identity = new(Sha256(zip), file.Target);
+    ArchiveProvider provider = CreateProvider();
+
+    // Act
+    ArchiveHandle locked = await provider.OpenLocked(file.Target, identity);
+    string content = await Read(locked, "manifest.json");
+    _fileSystem.File.WriteAllBytes(path, Zip(("manifest.json", "v2")));
+
+    // Assert
+    Assert.Equal("v1", content);
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => provider.OpenLocked(file.Target, identity));
+  }
+
+  [Theory]
+  [InlineData("branch:main", "refs/heads/main")]
+  [InlineData("tag:release-1", "refs/tags/release-1")]
+  public async Task ResolveGitRef_BranchOrTag_ReturnsExactRefCommitPeeled(
+      string gitRef, string refName) {
+    // Arrange: a longer name sharing the prefix, and an annotated tag object.
+    string other = new('1', 40);
+    string tagObject = new('2', 40);
+    SetupTags(
+        new GitRemoteRef(refName + "-old", other, null),
+        new GitRemoteRef(refName, tagObject, _commit));
+
+    // Act
+    string commit = await CreateProvider().ResolveGitRef(_spec, GitRef.Parse(gitRef));
+
+    // Assert
+    Assert.Equal(_commit, commit);
+    _git.Verify(c => c.ListRefs(
+        It.Is<Url>(u => u.ToString() == _repoUrl),
+        It.Is<IEnumerable<string>>(p => p.SequenceEqual(new[] { refName }))));
+  }
+
+  [Fact]
+  public async Task ResolveGitRef_MissingBranch_ThrowsArchiveUnavailable() {
+    // Arrange
+    SetupTags();
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().ResolveGitRef(_spec, GitRef.Parse("branch:gone")));
+  }
+
+  [Fact]
+  public async Task ResolveGitRef_Rev_ReturnsCommitWithoutNetwork() {
+    // Act
+    string commit = await CreateProvider().ResolveGitRef(
+        _spec, GitRef.Parse($"rev:{_commit.ToUpperInvariant()}"));
+
+    // Assert
+    Assert.Equal(_commit, commit);
+    _git.VerifyNoOtherCalls();
+  }
+
+  [Fact]
+  public async Task OpenCommit_Commit_ReturnsGitArchiveKeyedByRev() {
+    // Arrange
+    SetupTree(_commit, new GitTreeEntry("manifest.json", 100644, AddBlob("{}")));
+
+    // Act
+    ArchiveHandle archive = await CreateProvider().OpenCommit(_spec, _commit);
+
+    // Assert
+    Assert.Equal($"{_spec}@rev:{_commit}", archive.Key);
+    Assert.Equal(new GitArchiveIdentity(_repoUrl, _commit, ""), archive.Identity);
   }
 
   [Fact]
@@ -346,28 +439,6 @@ public class ArchiveProviderTests {
     Assert.Equal("b", await Read(locked, "manifest.json"));
   }
 
-  [Fact]
-  public async Task Open_RelativeInDirectory_OpensDirectoryAndZip() {
-    // Arrange
-    byte[] zip = Zip(("manifest.json", "zipped"));
-    _fileSystem.AddFile(Path.Combine(_workspace, "manifest.json"), new MockFileData("root"));
-    _fileSystem.AddFile(Path.Combine(_workspace, "sub", "manifest.json"), new MockFileData("sub"));
-    _fileSystem.AddFile(Path.Combine(_workspace, "sub", "pkg.zip"), new MockFileData(zip));
-    ArchiveProvider provider = CreateProvider();
-    ArchiveHandle workspace = provider.OpenWorkspace(_workspace);
-
-    // Act
-    ArchiveHandle sub = await provider.Open(Ref.Parse("./sub/"), workspace);
-    ArchiveHandle nested = await provider.Open(Ref.Parse("./pkg.zip"), sub);
-
-    // Assert
-    Assert.Equal(new DirectoryArchiveIdentity(Path.Combine(_workspace, "sub")), sub.Identity);
-    Assert.Equal($"{_workspace}!sub/", sub.Key);
-    Assert.Equal("sub", await Read(sub, "manifest.json"));
-    Assert.Equal($"{_workspace}!sub/!pkg.zip", nested.Key);
-    Assert.Equal("zipped", await Read(nested, "manifest.json"));
-  }
-
   [Theory]
   [InlineData("../evil.txt", 0)]
   [InlineData("a/../../evil.txt", 0)]
@@ -583,13 +654,6 @@ public class ArchiveProviderTests {
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
         "x!pkg.mcmod", new ZipArchiveIdentity(new string('0', 64), null)));
-  }
-
-  [Fact]
-  public async Task OpenLocked_DirectoryMissing_ThrowsArchiveUnavailable() {
-    // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
-        _workspace, new DirectoryArchiveIdentity(_workspace)));
   }
 
   [Fact]

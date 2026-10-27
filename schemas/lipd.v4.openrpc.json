@@ -108,7 +108,7 @@
     },
     {
       "name": "Install",
-      "description": "Installs packages: path[#variant][@version], ./dir/, ./file.mcmod, a local path or an https:// URL.",
+      "description": "Installs packages: path[#variant][@version], path[#variant]@branch:<name>, @tag:<name> or @rev:<40-digit commit id>, an https:// URL of a .mcmod/.zip file, or a local .mcmod/.zip file (absolute, or relative to the daemon current directory). Local directories are rejected.",
       "params": [
         {
           "name": "packages",
@@ -270,7 +270,7 @@
     },
     {
       "name": "Update",
-      "description": "Updates packages to the given or newest version; with an empty list, every explicitly installed package.",
+      "description": "Updates packages to the given or newest version, or the commit a git ref names now; with an empty list, every explicitly installed package, requested again by the ref it was installed from (a branch follows its head, a tag is resolved again, a rev stays, a URL or local file is read again).",
       "params": [
         {
           "name": "packages",
@@ -339,7 +339,7 @@
     },
     {
       "name": "View",
-      "description": "Returns the root document (tooth.json or manifest.json) of the archive a package argument points to.",
+      "description": "Returns the root document (tooth.json or manifest.json) of the archive a package argument points to; the argument takes the forms Install takes.",
       "params": [
         {
           "name": "package",

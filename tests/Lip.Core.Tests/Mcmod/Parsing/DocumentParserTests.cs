@@ -210,6 +210,43 @@ public class DocumentParserTests {
   }
 
   [Fact]
+  public void Parse_DependencyWithGitRef_KeepsGitRefAndRange() {
+    // Arrange
+    string json = $$"""
+        { {{Markers}}, "name": "m", "version": "1.0.0", "type": "native",
+          "dependencies": [
+            { "name": "a", "version": ">=1.0.0", "refs": ["github.com/o/a#lua@branch:main"] }
+          ] }
+        """;
+
+    // Act
+    ConcreteDocument doc = Assert.IsType<ConcreteDocument>(Parse(json));
+
+    // Assert
+    Ref reference = Assert.Single(doc.Dependencies[0].Refs!);
+    Assert.Equal("github.com/o/a", reference.Target);
+    Assert.Equal("lua", reference.Variant);
+    Assert.Equal(GitRefKind.Branch, reference.GitRef?.Kind);
+    Assert.NotNull(doc.Dependencies[0].Version);
+  }
+
+  [Theory]
+  [InlineData("./a/@branch:main")]
+  [InlineData("https://example.com/a.mcmod@tag:v1")]
+  [InlineData("github.com/o/a@1.0.0")]
+  [InlineData("file:///C:/a.mcmod")]
+  public void Parse_InvalidRefInInstallDependency_ThrowsManifestFormatException(string reference) {
+    // Arrange
+    string json = $$"""
+        { {{Markers}}, "name": "m", "version": "1.0.0", "type": "native",
+          "installDependencies": [ { "refs": ["{{reference}}"] } ] }
+        """;
+
+    // Act & Assert
+    Assert.Throws<ManifestFormatException>(() => Parse(json));
+  }
+
+  [Fact]
   public void Parse_EscapedLoneSurrogate_ThrowsManifestFormatException() {
     // Arrange
     string json = """{ "name": "\uD800", "version": "1.0.0", "type": "native" }""";

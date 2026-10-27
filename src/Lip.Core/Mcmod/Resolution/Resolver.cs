@@ -12,7 +12,9 @@ namespace Lip.Core.Mcmod.Resolution;
 /// reached on several paths (or resolved again by the graph solver) is fetched and read once.
 ///
 /// A tooth.json at a tag that declares another version than the tag is a candidate with the tag
-/// version, as in lip v3; onWarning is told once per archive.
+/// version, as in lip v3; onWarning is told once per archive. A spec ref pinned by a git ref
+/// (@branch:, @tag:, @rev:) has the single archive of the commit it resolves to; only a tag named
+/// "v" + SemVer gives it a tag version.
 public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
@@ -31,9 +33,13 @@ public class Resolver(
       _versions = new();
   private readonly ConcurrentDictionary<string, Lazy<Task<ArchiveDocument>>> _documents = new();
 
+  /// Commits of git refs ("spec@branch:name"), so that a branch resolves to one commit for the
+  /// whole operation.
+  private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _commits = new();
+
   public async Task<ResolveResult> Resolve(
       Ref reference,
-      ArchiveHandle baseArchive,
+      ArchiveHandle? baseArchive,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool toothClientCompat = false) {
@@ -49,7 +55,7 @@ public class Resolver(
 
   public async IAsyncEnumerable<Candidate> ResolveLazy(
       Ref reference,
-      ArchiveHandle baseArchive,
+      ArchiveHandle? baseArchive,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool toothClientCompat = false,
@@ -66,7 +72,7 @@ public class Resolver(
   private async IAsyncEnumerable<Candidate> ResolveRef(
       Walk walk,
       Ref reference,
-      ArchiveHandle baseArchive,
+      ArchiveHandle? baseArchive,
       bool toothClientCompat,
       ChainPath path) {
     walk.CancellationToken.ThrowIfCancellationRequested();
@@ -89,6 +95,15 @@ public class Resolver(
 
       await foreach (Candidate candidate in ResolveArchive(
           walk, reference, archive, tagVersion: null, toothClientCompat, path, refPath)) {
+        yield return candidate;
+      }
+
+      yield break;
+    }
+
+    if (reference.GitRef is GitRef gitRef) {
+      await foreach (Candidate candidate in ResolvePinned(
+          walk, reference, gitRef, toothClientCompat, path)) {
         yield return candidate;
       }
 
@@ -131,6 +146,38 @@ public class Resolver(
           walk, reference, archive, version.Version, toothClientCompat, path, refPath)) {
         yield return candidate;
       }
+    }
+  }
+
+  /// Step 1 for a spec ref pinned by a git ref (spec §3): the single archive of the commit the
+  /// git ref resolves to. Only a tag named "v" + SemVer has a tag version (§4.3, §9.1).
+  private async IAsyncEnumerable<Candidate> ResolvePinned(
+      Walk walk,
+      Ref reference,
+      GitRef gitRef,
+      bool toothClientCompat,
+      ChainPath path) {
+    ChainPath refPath = path.Then(reference.ToString());
+    ArchiveHandle archive;
+    try {
+      string commit = await Cached(
+          _commits, $"{reference.Target}@{gitRef}",
+          () => _archiveProvider.ResolveGitRef(reference.Target, gitRef));
+      archive = await Cached(
+          _archives, $"{reference.Target}@rev:{commit}",
+          () => _archiveProvider.OpenCommit(reference.Target, commit));
+    }
+    catch (ArchiveUnavailableException ex) {
+      walk.Report(refPath, ex.Message);
+      yield break;
+    }
+
+    SemVersion? tagVersion = gitRef.Kind == GitRefKind.Tag
+        ? ArchiveProvider.ParseVersionTag($"refs/tags/{gitRef.Name}")
+        : null;
+    await foreach (Candidate candidate in ResolveArchive(
+        walk, reference, archive, tagVersion, toothClientCompat, path, refPath)) {
+      yield return candidate;
     }
   }
 
@@ -184,10 +231,15 @@ public class Resolver(
 
     ImmutableHashSet<(string, string)> visited = path.Visited.Add((archive.Key, variant));
 
+    // The lock records the commit of every spec hop (spec §8).
+    string? commit = reference.Kind == RefKind.Spec && archive.Identity is GitArchiveIdentity git
+        ? git.Commit
+        : null;
+
     switch (document) {
       case RoutingArchiveDocument routing: {
           await foreach (Candidate candidate in ResolveRouting(
-              walk, hopRef, routing.Document, variant, archive, path, refPath, visited)) {
+              walk, hopRef, routing.Document, variant, archive, commit, path, refPath, visited)) {
             yield return candidate;
           }
 
@@ -204,7 +256,7 @@ public class Resolver(
           yield return new Candidate(
               new McmodPackage(concrete.Document, concrete.Manifest),
               archive,
-              path.Hops.Add(new ChainHop(hopRef, null)));
+              path.Hops.Add(new ChainHop(hopRef, null, commit)));
           break;
         }
 
@@ -235,7 +287,7 @@ public class Resolver(
           yield return new Candidate(
               package,
               conversion.OpenArchive(archive, _archiveProvider),
-              path.Hops.Add(new ChainHop(reference, null)));
+              path.Hops.Add(new ChainHop(reference, null, commit)));
           break;
         }
 
@@ -251,6 +303,7 @@ public class Resolver(
       RoutingDocument document,
       string variant,
       ArchiveHandle archive,
+      string? commit,
       ChainPath path,
       ChainPath refPath,
       ImmutableHashSet<(string, string)> visited) {
@@ -292,7 +345,7 @@ public class Resolver(
     }
 
     ChainPath next = new(
-        path.Hops.Add(new ChainHop(reference, selectedIndex)),
+        path.Hops.Add(new ChainHop(reference, selectedIndex, commit)),
         visited,
         refPath.Labels.SetItem(refPath.Labels.Count - 1,
             $"{refPath.Labels[^1]}[artifact {selectedIndex}]"));
@@ -333,9 +386,9 @@ public class Resolver(
     return null;
   }
 
-  private Task<ArchiveHandle> OpenArchive(Ref reference, ArchiveHandle baseArchive) {
+  private Task<ArchiveHandle> OpenArchive(Ref reference, ArchiveHandle? baseArchive) {
     string cacheKey = reference.Kind == RefKind.Relative
-        ? $"{baseArchive.Key}!{reference.Target}"
+        ? $"{baseArchive?.Key}!{reference.Target}"
         : reference.Target;
     return Cached(_archives, cacheKey, () => _archiveProvider.Open(reference, baseArchive));
   }

@@ -14,7 +14,7 @@ namespace Lip.Core.Sources;
 /// object id before it is cached, so the repository-independent cache key is safe to share.
 ///
 /// Keys are '/'-separated paths relative to <c>subdirectory</c>, matching ArchiveSource,
-/// DirectorySource and the old goproxy module zips on every platform. Only regular files
+/// ZipSource and the old goproxy module zips on every platform. Only regular files
 /// (modes 100644/100755) are exposed; symlinks (120000) are excluded like they were in goproxy zips.
 public class GitTreeSource(
     IGitRemoteClient gitRemoteClient,

@@ -11,7 +11,7 @@ public class InstallCommand(ILipClient lipClient, IUserInteraction userInteracti
 
   public class Settings : EnvironmentSettings {
     [CommandArgument(0, "<PACKAGES>")]
-    [Description("The packages to install: path[#variant][@version], ./dir/, ./file.mcmod, a local path or an https:// URL")]
+    [Description("The packages to install: path[#variant][@version], path[#variant]@branch:<name>, @tag:<name> or @rev:<commit>, an https:// URL of a .mcmod/.zip file, or a local .mcmod/.zip file")]
     public required string[] Packages { get; init; }
 
     [CommandOption("-n|--dry-run")]

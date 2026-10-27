@@ -16,14 +16,18 @@ namespace Lip.Core.Mcmod;
 /// downloaded once; the lock records their SHA-256, which is verified when they are reopened.
 /// ZIP archives nested in another archive are not cached: they are read into memory from their
 /// parent archive, which is reopened (or re-resolved through the recorded chain) to get them back.
-/// git archives are lazy GitTreeSources: only the tree is listed, blobs are fetched on demand.
-/// tooth.json assets (OpenAsset) are downloaded into the same cache.
+/// Local ZIP files (file refs of user requests) are read where they are, not cached; reopening
+/// one from the lock verifies its SHA-256. git archives are lazy GitTreeSources: only the tree is
+/// listed, blobs are fetched on demand. A git ref (branch, tag) is resolved with ls-refs; a rev
+/// must be a full commit id, since an abbreviated one cannot be resolved without fetching the
+/// history. tooth.json assets (OpenAsset) are downloaded into the same cache as url archives.
 public class ArchiveProvider(
     IGitRemoteClient gitRemoteClient,
     ICacheService cacheService,
     IFileSystem fileSystem,
     IFileDownloader fileDownloader,
     Url? githubProxy = null) : IArchiveProvider {
+  private const string _headsRefPrefix = "refs/heads/";
   private const string _tagsRefPrefix = "refs/tags/";
   private const string _versionTagRefPrefix = $"{_tagsRefPrefix}v";
 
@@ -36,20 +40,53 @@ public class ArchiveProvider(
   private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<TaggedVersion>>>>
       _tagCache = new();
 
-  public ArchiveHandle OpenWorkspace(string workspaceRoot) {
-    string root = Path.TrimEndingDirectorySeparator(_fileSystem.Path.GetFullPath(workspaceRoot));
-    return OpenDirectory(root, root);
-  }
+  public async Task<ArchiveHandle> Open(Ref target, ArchiveHandle? baseArchive) {
+    if (target.Kind == RefKind.Relative && baseArchive is null) {
+      throw new ArchiveUnavailableException(
+          $"{target}: a relative ref is only meaningful inside an archive.");
+    }
 
-  public async Task<ArchiveHandle> Open(Ref target, ArchiveHandle baseArchive) {
     return target.Kind switch {
       RefKind.Relative => target.IsDirectory
-          ? await OpenSubdirectory(target, baseArchive)
-          : await OpenNestedZip(target, baseArchive),
+          ? await OpenSubdirectory(target, baseArchive!)
+          : await OpenNestedZip(target, baseArchive!),
       RefKind.Url => await OpenUrl(target.Target),
+      RefKind.File => OpenFile(target.Target, target.Target, target.LocalPath),
       _ => throw new ArgumentException(
-          $"Spec refs are opened with OpenVersion, not Open: {target}", nameof(target)),
+          $"Spec refs are opened with OpenVersion or OpenCommit, not Open: {target}",
+          nameof(target)),
     };
+  }
+
+  public async Task<string> ResolveGitRef(string spec, GitRef gitRef) {
+    if (gitRef.Kind == GitRefKind.Rev) {
+      return gitRef.Name;
+    }
+
+    string repoUrl = GetRepoUrl(spec);
+    string refName = (gitRef.Kind == GitRefKind.Branch ? _headsRefPrefix : _tagsRefPrefix)
+        + gitRef.Name;
+
+    IReadOnlyList<GitRemoteRef> refs;
+    try {
+      refs = await _gitRemoteClient.ListRefs(repoUrl, [refName]);
+    }
+    catch (Exception ex) when (IsUnavailable(ex)) {
+      throw new ArchiveUnavailableException(
+          $"Failed to list the refs of {repoUrl}: {ex.Message}", ex);
+    }
+
+    // ref-prefix also matches longer names (e.g. "main" matches "main-old").
+    GitRemoteRef found = refs.FirstOrDefault(r => r.Name == refName)
+        ?? throw new ArchiveUnavailableException(
+            $"{repoUrl} has no {gitRef.Kind.ToString().ToLowerInvariant()} '{gitRef.Name}'.");
+    return found.PeeledObjectId ?? found.ObjectId;
+  }
+
+  public Task<ArchiveHandle> OpenCommit(string spec, string commit) {
+    string normalized = GitRef.Rev(commit).Name;
+    return OpenGit(
+        $"{spec}@rev:{normalized}", new GitArchiveIdentity(GetRepoUrl(spec), normalized, ""));
   }
 
   public async Task<IReadOnlyList<SpecVersion>> ListVersions(string spec) {
@@ -71,9 +108,6 @@ public class ArchiveProvider(
       case GitArchiveIdentity git:
         return await OpenGit(key, git);
 
-      case DirectoryArchiveIdentity directory:
-        return OpenDirectory(key, directory.Path);
-
       case ZipArchiveIdentity zip: {
           if (zip.Url is null) {
             // The caller reopens the parent archive by resolving the recorded chain again.
@@ -82,6 +116,20 @@ public class ArchiveProvider(
           }
 
           string sha256 = zip.Sha256.ToLowerInvariant();
+          if (Ref.TryParse(zip.Url, allowFile: true, out Ref? fileRef, out _)
+              && fileRef.Kind == RefKind.File) {
+            // A local file is read where it was; it must still have the recorded content.
+            ArchiveHandle local = OpenFile(key, zip.Url, fileRef.LocalPath);
+            string found = ((ZipArchiveIdentity)local.Identity).Sha256;
+            if (found != sha256) {
+              throw new ArchiveUnavailableException(
+                  $"{key}: {fileRef.LocalPath} now has sha256:{found}, "
+                      + $"but the lock records sha256:{sha256}.");
+            }
+
+            return zip.Path is null ? local : OpenZip(key, (ZipSource)local.Source, zip);
+          }
+
           IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(zip.Url));
           if (file is null || await ComputeSha256(file) != sha256) {
             // Missing, corrupted, or the URL served other bytes since: download it again.
@@ -147,12 +195,6 @@ public class ArchiveProvider(
         handle = await OpenGit(key, git with { Path = JoinPath(git.Path, relativePath) });
         break;
 
-      case DirectoryArchiveIdentity directory:
-        handle = OpenDirectory(
-            key,
-            _fileSystem.Path.Combine([directory.Path, .. relativePath.Split('/')]));
-        break;
-
       case ZipArchiveIdentity zip:
         handle = new ArchiveHandle(
             key,
@@ -175,26 +217,14 @@ public class ArchiveProvider(
 
     byte[] content;
     try {
-      if (baseArchive.Identity is DirectoryArchiveIdentity directory) {
-        // A directory archive may be a whole workspace: do not list it to find one file.
-        string path = _fileSystem.Path.Combine([directory.Path, .. relativePath.Split('/')]);
-        if (!_fileSystem.File.Exists(path)) {
-          string reason = _fileSystem.Directory.Exists(path)
-              ? "is a directory (directory refs end with '/')"
-              : "does not exist";
-          throw new ArchiveUnavailableException(
-              $"{key}: '{relativePath}' {reason} in {baseArchive.Key}.");
-        }
-      } else {
-        HashSet<string> keys = [.. baseArchive.Source.Keys];
-        if (!keys.Contains(relativePath)) {
-          string reason = keys.Any(
-              k => k.StartsWith(relativePath + "/", StringComparison.Ordinal))
-              ? "is a directory (directory refs end with '/')"
-              : "does not exist";
-          throw new ArchiveUnavailableException(
-              $"{key}: '{relativePath}' {reason} in {baseArchive.Key}.");
-        }
+      HashSet<string> keys = [.. baseArchive.Source.Keys];
+      if (!keys.Contains(relativePath)) {
+        string reason = keys.Any(
+            k => k.StartsWith(relativePath + "/", StringComparison.Ordinal))
+            ? "is a directory (directory refs end with '/')"
+            : "does not exist";
+        throw new ArchiveUnavailableException(
+            $"{key}: '{relativePath}' {reason} in {baseArchive.Key}.");
       }
 
       using Stream stream = await baseArchive.Source.OpenRead(relativePath);
@@ -256,14 +286,27 @@ public class ArchiveProvider(
     return new ArchiveHandle(key, source, identity);
   }
 
-  private ArchiveHandle OpenDirectory(string key, string path) {
-    IDirectoryInfo directory = _fileSystem.DirectoryInfo.New(path);
-    if (!directory.Exists) {
-      throw new ArchiveUnavailableException($"{key}: directory {path} does not exist.");
+  /// Opens a local ZIP file (a file ref of a user request), identified by its content.
+  private ArchiveHandle OpenFile(string key, string url, string path) {
+    IFileInfo file = _fileSystem.FileInfo.New(path);
+    if (!file.Exists) {
+      throw new ArchiveUnavailableException(_fileSystem.Directory.Exists(path)
+          ? $"{key}: {path} is a directory; lip installs a local package only from a .mcmod or "
+              + ".zip file."
+          : $"{key}: {path} does not exist.");
     }
 
-    return new ArchiveHandle(
-        key, new DirectorySource(directory), new DirectoryArchiveIdentity(directory.FullName));
+    string sha256;
+    try {
+      ZipValidator.Validate(file, key);
+      using Stream stream = file.OpenRead();
+      sha256 = Convert.ToHexStringLower(SHA256.HashData(stream));
+    }
+    catch (Exception ex) when (IsUnavailable(ex)) {
+      throw new ArchiveUnavailableException($"{key}: cannot read {path}: {ex.Message}", ex);
+    }
+
+    return new ArchiveHandle(key, new ZipSource(file), new ZipArchiveIdentity(sha256, url));
   }
 
   private async Task<ArchiveHandle> OpenGit(string key, GitArchiveIdentity identity) {

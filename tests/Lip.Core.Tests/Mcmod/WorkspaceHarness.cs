@@ -19,8 +19,8 @@ namespace Lip.Core.Tests.Mcmod;
 /// directories of the mock file system.
 internal sealed class WorkspaceHarness {
   public WorkspaceHarness() {
-    Fs = new MockFileSystem();
     Root = OperatingSystem.IsWindows() ? @"C:\ws" : "/ws";
+    Fs = new MockFileSystem(new Dictionary<string, MockFileData>(), currentDirectory: Root);
     Fs.AddDirectory(Root);
     Git = new FakeGitRemote();
     CommandRunner = new Mock<ICommandRunner>();
@@ -78,6 +78,13 @@ internal sealed class WorkspaceHarness {
   public void AddFile(string relative, string content) =>
       Fs.AddFile(Path(relative), new MockFileData(content));
 
+  /// Writes a ZIP file (e.g. an .mcmod) holding the given files; returns its absolute path.
+  public string AddZip(string relative, Dictionary<string, string> files) {
+    string path = Path(relative);
+    Fs.AddFile(path, new MockFileData(Zip(files)));
+    return path;
+  }
+
   public bool Exists(string relative) => Fs.File.Exists(Path(relative));
 
   public Task<LockFile> Lock() => LockStore.Load(Root);
@@ -130,30 +137,50 @@ internal sealed class WorkspaceHarness {
       """;
 
   /// The bytes of a ZIP file holding the given files.
-  public static byte[] Zip(Dictionary<string, string> files) {
+  public static byte[] Zip(Dictionary<string, string> files) =>
+      ZipBytes(files.ToDictionary(f => f.Key, f => Encoding.UTF8.GetBytes(f.Value)));
+
+  /// The bytes of a ZIP file holding the given files, e.g. other ZIP files.
+  public static byte[] ZipBytes(Dictionary<string, byte[]> files) {
     using MemoryStream memory = new();
     using (ZipArchive zip = new(memory, ZipArchiveMode.Create, leaveOpen: true)) {
-      foreach ((string path, string content) in files) {
+      foreach ((string path, byte[] content) in files) {
         using Stream entry = zip.CreateEntry(path).Open();
-        entry.Write(Encoding.UTF8.GetBytes(content));
+        entry.Write(content);
       }
     }
 
     return memory.ToArray();
   }
 
-  /// A git remote whose tags point to in-memory trees.
+  /// A git remote whose tags and branches point to in-memory trees.
   internal sealed class FakeGitRemote : IGitRemoteClient {
-    private readonly Dictionary<string, List<(string Tag, string Commit)>> _tags = [];
+    private readonly Dictionary<string, Dictionary<string, string>> _refs = [];
     private readonly Dictionary<string, List<GitTreeEntry>> _trees = [];
     private readonly Dictionary<string, byte[]> _blobs = [];
 
     public List<string> ListedTrees { get; } = [];
 
-    public void AddTag(string spec, string tag, Dictionary<string, string> files) {
+    /// Adds (or moves) a tag to a new commit holding the given files; returns the commit.
+    public string AddTag(string spec, string tag, Dictionary<string, string> files) =>
+        SetRef(spec, $"refs/tags/{tag}", files);
+
+    /// Adds (or moves) a branch to a new commit holding the given files; returns the commit.
+    public string AddBranch(string spec, string branch, Dictionary<string, string> files) =>
+        SetRef(spec, $"refs/heads/{branch}", files);
+
+    public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
+      List<string> prefixes = [.. refPrefixes];
+      IReadOnlyList<GitRemoteRef> refs = [
+        .. _refs.GetValueOrDefault(repoUrl.ToString(), [])
+            .Where(r => prefixes.Any(p => r.Key.StartsWith(p, StringComparison.Ordinal)))
+            .Select(r => new GitRemoteRef(r.Key, r.Value, null)),
+      ];
+      return Task.FromResult(refs);
+    }
+
+    private string SetRef(string spec, string refName, Dictionary<string, string> files) {
       string repo = ArchiveProvider.GetRepoUrl(spec);
-      string commit = Convert.ToHexStringLower(
-          SHA1.HashData(Encoding.UTF8.GetBytes($"{repo}@{tag}")));
       List<GitTreeEntry> tree = [];
       foreach ((string path, string content) in files) {
         byte[] bytes = Encoding.UTF8.GetBytes(content);
@@ -163,21 +190,16 @@ internal sealed class WorkspaceHarness {
         tree.Add(new GitTreeEntry(path, 100644, oid));
       }
 
+      string commit = Convert.ToHexStringLower(SHA1.HashData(
+          Encoding.UTF8.GetBytes($"{repo}@{refName}#{_trees.Count}")));
       _trees[commit] = tree;
-      if (!_tags.TryGetValue(repo, out List<(string, string)>? tags)) {
-        tags = [];
-        _tags[repo] = tags;
+      if (!_refs.TryGetValue(repo, out Dictionary<string, string>? refs)) {
+        refs = [];
+        _refs[repo] = refs;
       }
 
-      tags.Add((tag, commit));
-    }
-
-    public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
-      IReadOnlyList<GitRemoteRef> refs = [
-        .. _tags.GetValueOrDefault(repoUrl.ToString(), [])
-            .Select(t => new GitRemoteRef($"refs/tags/{t.Tag}", t.Commit, null)),
-      ];
-      return Task.FromResult(refs);
+      refs[refName] = commit;
+      return commit;
     }
 
     public Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {

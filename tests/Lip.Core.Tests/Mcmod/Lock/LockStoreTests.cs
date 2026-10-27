@@ -63,7 +63,9 @@ public class LockStoreTests {
         Kind = "mcmod",
         Explicit = true,
         Chain = [
-          new LockedHop("github.com/LiteLDev/" + name, 0),
+          new LockedHop("github.com/LiteLDev/" + name + "@branch:main", 0) {
+            Commit = new string('e', 40),
+          },
           new LockedHop("https://example.com/" + name + ".mcmod", null),
         ],
         ArchiveKey = "https://example.com/" + name + ".mcmod",
@@ -214,7 +216,8 @@ public class LockStoreTests {
         SamplePackage("ZipNoUrl", new ZipArchiveIdentity(new string('b', 64), null)),
         SamplePackage("Git", new GitArchiveIdentity(
             "https://github.com/LiteLDev/Git.git", new string('c', 40), "sub/dir")),
-        SamplePackage("Dir", new DirectoryArchiveIdentity("/abs/dir")),
+        SamplePackage(
+            "File", new ZipArchiveIdentity(new string('d', 64), "file:///abs/x.mcmod")),
         SamplePackage(
             "Legacy",
             null,

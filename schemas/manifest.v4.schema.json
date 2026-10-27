@@ -39,9 +39,9 @@
       "pattern": "^[a-z0-9_]+(/[a-z0-9_]+)?$"
     },
     "ref": {
-      "description": "target [ \"#\" variant ]. target is a relative path starting with \"./\", an https URL, or a Go module path.",
+      "description": "target [ \"#\" variant ], where target is a relative path starting with \"./\", an https URL, or a Go module path. A Go module path may be followed by [ \"@\" git-ref ] after the variant, pinning it to one commit: \"branch:<name>\", \"tag:<name>\" or \"rev:<40-digit commit id>\".",
       "type": "string",
-      "pattern": "^(?!http:|file:)[^#]+(#[a-z0-9_]+(/[a-z0-9_]+)?)?$"
+      "pattern": "^(?:(?:\\./|https://)(?!.*@(?:branch|tag|rev):)[^#]+(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|(?!\\./|https?:|file:)[^#@]+(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?(?:@(?:branch:[^\\s~^:?*\\[\\\\]+|tag:[^\\s~^:?*\\[\\\\]+|rev:[0-9a-fA-F]{40}))?)$"
     },
     "refs": {
       "type": "array",

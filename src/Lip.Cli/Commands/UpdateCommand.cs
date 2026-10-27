@@ -11,7 +11,7 @@ public class UpdateCommand(ILipClient lipClient, IUserInteraction userInteractio
 
   public class Settings : EnvironmentSettings {
     [CommandArgument(0, "[PACKAGES]")]
-    [Description("The packages to update (default: every explicitly installed package)")]
+    [Description("The packages to update, in the forms install takes (default: every explicitly installed package, from the ref it was installed from)")]
     public string[] Packages { get; init; } = [];
 
     [CommandOption("-n|--dry-run")]

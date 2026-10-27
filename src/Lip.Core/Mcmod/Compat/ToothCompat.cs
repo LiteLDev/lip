@@ -125,7 +125,9 @@ public class ToothCompat : IToothCompat {
       LockedPackage package, LipEnvironment environment) {
     PackageManifest manifest = await PackageManifest.FromStream(
         new MemoryStream(Encoding.UTF8.GetBytes(package.Manifest.GetRawText())));
-    string variant = package.Chain.Count > 0 ? Ref.Parse(package.Chain[^1].Ref).Variant : "";
+    string variant = package.Chain.Count > 0
+        ? Ref.Parse(package.Chain[^1].Ref, allowFile: true).Variant
+        : "";
     SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
 
     return Convert(manifest, variant, environment, version);

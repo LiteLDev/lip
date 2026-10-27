@@ -68,7 +68,7 @@ public class McmodInstallerTests {
     string manifest = ManifestJson(document);
     return new Candidate(
         new McmodPackage(document, JsonDocument.Parse(manifest).RootElement),
-        new ArchiveHandle("test", source, new DirectoryArchiveIdentity("/archive")),
+        new ArchiveHandle("test", source, new ZipArchiveIdentity(TestIdentity.Sha256, "/archive")),
         []);
   }
 
