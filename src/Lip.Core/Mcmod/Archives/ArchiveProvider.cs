@@ -108,8 +108,21 @@ public class ArchiveProvider(
     List<string> errors = [];
     foreach (string url in urls) {
       try {
-        IFileInfo file = await Download(url, url, validateZip: false);
-        return isArchive ? new ArchiveSource(file) : new SingleFileSource(file);
+        if (!isArchive) {
+          return new SingleFileSource(await Download(url, url, validate: null));
+        }
+
+        // A cached copy that is no archive (e.g. corrupted) is downloaded again.
+        IFileInfo? cached = await _cacheService.TryGetFile(CacheKeys.Http(url));
+        if (cached is not null && !IsArchive(cached)) {
+          cached.Delete();
+        }
+
+        return new ArchiveSource(await Download(url, url, validate: (file, key) => {
+          if (!IsArchive(file)) {
+            throw new ArchiveUnavailableException($"{key} is not an archive.");
+          }
+        }));
       }
       catch (ArchiveUnavailableException ex) {
         errors.Add(ex.Message);
@@ -325,9 +338,14 @@ public class ArchiveProvider(
 
   /// Downloads a URL into the cache under CacheKeys.Http(url), via the GitHub proxy first if one
   /// is configured, unless it is cached already. The download goes to the cache's staging
-  /// directory and is moved into place once complete. With validateZip, a candidate whose
-  /// response is not a valid ZIP archive (e.g. a proxy error page) is skipped.
-  private async Task<IFileInfo> Download(string url, string archiveKey, bool validateZip = true) {
+  /// directory and is moved into place once complete. A candidate whose response validate
+  /// rejects (by default: one that is not a valid ZIP archive, e.g. a proxy error page) is
+  /// skipped.
+  private Task<IFileInfo> Download(string url, string archiveKey) =>
+      Download(url, archiveKey, ZipValidator.Validate);
+
+  private async Task<IFileInfo> Download(
+      string url, string archiveKey, Action<IFileInfo, string>? validate) {
     try {
       return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), async destination => {
         List<Exception> exceptions = [];
@@ -342,10 +360,7 @@ public class ArchiveProvider(
 
             await _fileDownloader.DownloadFile(downloadUrl, destination);
             destination.Refresh();
-            if (validateZip) {
-              ZipValidator.Validate(destination, archiveKey);
-            }
-
+            validate?.Invoke(destination, archiveKey);
             return;
           }
           catch (Exception ex) when (IsUnavailable(ex) || ex is ArchiveUnavailableException) {
@@ -381,6 +396,17 @@ public class ArchiveProvider(
     return proxyUrl.ToString() == original.ToString() ? [original] : [proxyUrl, original];
   }
 
+
+  /// Whether a file is an archive ArchiveSource can open.
+  private static bool IsArchive(IFileInfo file) {
+    try {
+      _ = new ArchiveSource(file).Keys.Count();
+      return true;
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException) {
+      return false;
+    }
+  }
 
   private static async Task<string> ComputeSha256(IFileInfo file) {
     using Stream stream = file.OpenRead();

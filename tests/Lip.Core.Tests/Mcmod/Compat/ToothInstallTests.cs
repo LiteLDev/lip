@@ -391,6 +391,27 @@ public class ToothInstallTests {
   }
 
   [Fact]
+  public async Task Uninstall_RemoveFilesNamingLayoutDirectories_RemovesNothingBelowThem() {
+    // Arrange
+    Candidate candidate = await CreateCandidateFrom(
+        $$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid}}",
+          "tooth": "github.com/user/remover", "version": "1.0.0",
+          "variants": [{ "remove_files": ["plugins", "mods/"] }]
+        }
+        """,
+        []);
+    _fileSystem.AddFile(Workspace("mods/Other/other.dll"), new MockFileData("dll"));
+
+    // Act
+    await _installer.Uninstall(Lock(candidate, []), CreateContext());
+
+    // Assert
+    Assert.True(_fileSystem.File.Exists(Workspace("mods/Other/other.dll")));
+  }
+
+  [Fact]
   public async Task Uninstall_ClientEnvironment_UsesClientLabel() {
     // Arrange
     LipEnvironment client = new(McmodPlatform.Client, "win-x64");

@@ -690,6 +690,36 @@ public class ArchiveProviderTests {
   }
 
   [Fact]
+  public async Task OpenAsset_GitHubProxyReturnsNonArchive_FallsBackToOriginal() {
+    // Arrange
+    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/a.zip";
+    _downloads["https://proxy.example.com/owner/repo/releases/download/v1.0.0/a.zip"] =
+        Encoding.UTF8.GetBytes("<html>error</html>");
+    _downloads[githubUrl] = Zip(("a.txt", "a"));
+
+    // Act
+    ISource source = await CreateProvider(new Url("https://proxy.example.com"))
+        .OpenAsset([githubUrl], isArchive: true);
+
+    // Assert
+    Assert.Equal(["a.txt"], source.Keys);
+  }
+
+  [Fact]
+  public async Task OpenAsset_CachedArchiveCorrupted_Redownloads() {
+    // Arrange
+    _downloads[_url] = Zip(("a.txt", "a"));
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
+
+    // Act
+    ISource source = await CreateProvider().OpenAsset([_url], isArchive: true);
+
+    // Assert
+    Assert.Equal(["a.txt"], source.Keys);
+  }
+
+  [Fact]
   public async Task OpenAsset_NonGitHubUrlWithProxy_DoesNotRewrite() {
     // Arrange
     _downloads[_url] = Zip(("a.txt", "a"));

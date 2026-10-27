@@ -23,7 +23,8 @@ public class McmodInstallException(string message, Exception? inner = null)
 ///
 /// Paths are recorded and compared in their canonical form (WorkspaceLayout.CanonicalPath):
 /// a file package placing a file under plugins/ writes and owns it under mods/. Globs relative to
-/// the workspace root match both forms. The mods and plugins directories are never deleted.
+/// the workspace root match both forms. The mods and plugins directories are never deleted, and
+/// removeFiles never matches them (so a directory pattern naming them removes nothing).
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
@@ -238,7 +239,8 @@ public partial class McmodInstaller(
 
     List<string> keys = [.. source.Keys];
     HashSet<string> keySet = new(keys, StringComparer.Ordinal);
-    document = ToothPlacements.Expand(document, keySet);
+    // In key order: a later placement of the same target wins.
+    document = ToothPlacements.Expand(document, keys);
     if (!document.IsFilePackage) {
       if (document.Placements.Count > 0) {
         throw new McmodInstallException(
@@ -343,7 +345,7 @@ public partial class McmodInstaller(
     ManifestDocument? document;
     try {
       document = package.Kind == ToothCompat.KindName
-          ? (await ToothCompat.FromLocked(package, environment))?.Document
+          ? (await ToothCompat.FromLocked(package, environment))?.Package.Document
               ?? throw new McmodInstallException(
                   $"{package.Identity}: the tooth.json recorded in the lock has no variant "
                   + $"for the locked ref in {environment.Rid}.")
@@ -394,7 +396,11 @@ public partial class McmodInstaller(
     IDirectoryInfo startInfo = _fs.DirectoryInfo.New(startFull);
     int? maxDepth = segments[literal..].Contains("**") ? null : segments.Length - literal;
     if (literal == segments.Length) {
-      // A literal directory path.
+      // A literal directory path. mods and plugins are never matched, so a pattern naming them
+      // removes nothing below them either.
+      if (WorkspaceLayout.IsLayoutDirectory(start.TrimEnd('/'))) {
+        yield break;
+      }
       yield return (start.TrimEnd('/'), true);
       foreach ((string, bool) entry in Walk(startInfo, all: true, depth: 1)) {
         yield return entry;
@@ -416,7 +422,9 @@ public partial class McmodInstaller(
         string path = _fs.Path.GetRelativePath(root, info.FullName)
             .Replace(_fs.Path.DirectorySeparatorChar, '/');
         string suffix = isDirectory ? "/" : "";
-        bool matched = all || GlobForms(path, baseDir).Any(f => glob.IsMatch(f + suffix));
+        bool matched = all
+            || (!(isDirectory && WorkspaceLayout.IsLayoutDirectory(path))
+                && GlobForms(path, baseDir).Any(f => glob.IsMatch(f + suffix)));
         if (matched) {
           yield return (WorkspaceLayout.CanonicalPath(path), isDirectory);
         }

@@ -610,19 +610,37 @@ public class McmodService(
   /// read in this environment (e.g. a tooth.json variant for another rid).
   private async Task<Candidate?> PinnedCandidate(Workspace workspace, LockedPackage package) {
     try {
-      IPackage? rebuilt = await RebuildPackage(workspace, package);
+      ToothConversion? tooth = null;
+      IPackage? rebuilt;
+      if (package.Kind == ToothCompat.KindName) {
+        tooth = await ToothCompat.FromLocked(package, workspace.Environment);
+        rebuilt = tooth?.Package;
+      } else {
+        rebuilt = RebuildPackage(package);
+      }
+
       if (rebuilt is null) {
         return null;
       }
 
+      // Migrated v3 entries have no identity. Tooth packages have no relative refs, so it is
+      // never used as a base; it is never written to the lock either.
+      ArchiveIdentity identity = package.Archive ?? new GitArchiveIdentity(
+          ArchiveProvider.GetRepoUrl(package.Identity), "", "");
       List<ChainHop> chain = [.. package.Chain.Select(h => new ChainHop(Ref.Parse(h.Ref), h.Artifact))];
       ArchiveHandle archive = new(
           package.ArchiveKey,
-          new DeferredSource(() => OpenLockedArchive(workspace, package)),
-          // Migrated v3 entries have no identity. Tooth packages have no relative refs, so it is
-          // never used as a base; it is never written to the lock either.
-          package.Archive ?? new GitArchiveIdentity(
-              ArchiveProvider.GetRepoUrl(package.Identity), "", ""));
+          new DeferredSource(async () => {
+            Sources.ISource source = await OpenLockedArchive(workspace, package);
+            // The archive of a converted tooth.json mounts its assets (spec §9); resolving the
+            // chain again already yields that archive.
+            return tooth is null || source is MountSource
+                ? source
+                : tooth.OpenArchive(
+                    new ArchiveHandle(package.ArchiveKey, source, identity), _archiveProvider)
+                    .Source;
+          }),
+          identity);
       return new Candidate(rebuilt, archive, chain);
     }
     catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
@@ -633,20 +651,16 @@ public class McmodService(
     }
   }
 
-  private async Task<IPackage?> RebuildPackage(Workspace workspace, LockedPackage package) {
-    byte[] manifest = Encoding.UTF8.GetBytes(package.Manifest.GetRawText());
-    switch (package.Kind) {
-      case McmodPackage.KindName:
-        return _documentParser.Parse(manifest) is ConcreteDocument document
-            ? new McmodPackage(document, package.Manifest)
-            : throw new FormatException("the locked manifest is not a concrete document.");
-
-      case ToothCompat.KindName:
-        return await ToothCompat.FromLocked(package, workspace.Environment);
-
-      default:
-        return null;
+  /// The package of a manifest.json lock entry; null for an unknown kind.
+  private McmodPackage? RebuildPackage(LockedPackage package) {
+    if (package.Kind != McmodPackage.KindName) {
+      return null;
     }
+
+    byte[] manifest = Encoding.UTF8.GetBytes(package.Manifest.GetRawText());
+    return _documentParser.Parse(manifest) is ConcreteDocument document
+        ? new McmodPackage(document, package.Manifest)
+        : throw new FormatException("the locked manifest is not a concrete document.");
   }
 
   /// Opens the archive recorded in the lock and verifies its identity (spec §8). Two cases

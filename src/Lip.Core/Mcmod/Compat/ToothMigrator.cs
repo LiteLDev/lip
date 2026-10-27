@@ -212,6 +212,11 @@ public static class ToothMigrator {
       JsonObject document, string key, IEnumerable<string> globs, List<string> notes) {
     JsonArray array = [];
     foreach (string glob in globs) {
+      if (ToothCompat.TryParseGlob(glob) is null) {
+        notes.Add($"The {key} pattern '{glob}' can never match and was left out.");
+        continue;
+      }
+
       if (glob.IndexOfAny(['?', '[', '{', '!']) >= 0) {
         notes.Add($"The {key} pattern '{glob}' uses syntax beyond '*' and '**'; check it.");
       }

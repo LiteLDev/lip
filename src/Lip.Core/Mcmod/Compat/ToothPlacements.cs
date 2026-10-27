@@ -80,9 +80,13 @@ public static class ToothPlacements {
 
   /// A target path in the form of a workspace-relative placement dest: '/'-separated, without
   /// empty or "." segments, ".." segments applied. lip v3 resolved targets the same way as full
-  /// paths. A path that leaves the workspace keeps its leading ".." segments, so that installing
-  /// rejects it.
+  /// paths. A path that leaves the workspace keeps its leading ".." segments, and a rooted path
+  /// is returned as it is, so that installing rejects them.
   public static string NormalizeTarget(string target) {
+    if (Path.IsPathRooted(target) || target.StartsWith('/') || target.StartsWith('\\')) {
+      return target.Replace('\\', '/');
+    }
+
     List<string> segments = [];
     foreach (string segment in target.Replace('\\', '/').Split('/')) {
       if (segment is "" or ".") {

@@ -228,6 +228,7 @@ public class ToothPlacementsTests {
   [InlineData("./plugins//p/./a.dll", "plugins/p/a.dll")]
   [InlineData("plugins/x/../p/a.dll", "plugins/p/a.dll")]
   [InlineData("../a.dll", "../a.dll")]
+  [InlineData("/etc/a.conf", "/etc/a.conf")]
   public void NormalizeTarget_Path_IsWorkspaceRelativeForm(string target, string expected) {
     // Act
     string normalized = ToothPlacements.NormalizeTarget(target);

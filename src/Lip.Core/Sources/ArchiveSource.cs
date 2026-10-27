@@ -7,7 +7,8 @@ namespace Lip.Core.Sources;
 /// The files of an archive whose format (ZIP, tar, gzipped tar, ...) is detected from its
 /// content.
 public class ArchiveSource(IFileInfo archiveFileInfo) : ISource {
-  private readonly IFileInfo _archiveFileInfo = archiveFileInfo;
+  // A gzipped archive, decompressed once: SharpCompress opens tar archives, but not gzipped ones.
+  private readonly Lazy<byte[]?> _decompressed = new(() => Decompress(archiveFileInfo));
 
   public IEnumerable<string> Keys {
     get {
@@ -36,23 +37,23 @@ public class ArchiveSource(IFileInfo archiveFileInfo) : ISource {
     return memoryStream;
   }
 
-  /// The archive file, decompressed into memory when it is gzipped: SharpCompress opens tar
-  /// archives, but not gzipped ones.
-  private Stream OpenArchiveStream() {
-    Stream stream = _archiveFileInfo.OpenRead();
+  private Stream OpenArchiveStream() => _decompressed.Value is byte[] decompressed
+      ? new MemoryStream(decompressed, writable: false)
+      : archiveFileInfo.OpenRead();
+
+  /// The decompressed content of a gzipped file, or null when the file is not gzipped.
+  private static byte[]? Decompress(IFileInfo file) {
+    using Stream stream = file.OpenRead();
     Span<byte> magic = stackalloc byte[2];
-    int read = stream.ReadAtLeast(magic, magic.Length, throwOnEndOfStream: false);
-    stream.Position = 0;
-    if (read < magic.Length || magic[0] != 0x1f || magic[1] != 0x8b) {
-      return stream;
+    if (stream.ReadAtLeast(magic, magic.Length, throwOnEndOfStream: false) < magic.Length
+        || magic[0] != 0x1f || magic[1] != 0x8b) {
+      return null;
     }
 
-    using (stream) {
-      using GZipStream gzip = new(stream, CompressionMode.Decompress);
-      MemoryStream memory = new();
-      gzip.CopyTo(memory);
-      memory.Position = 0;
-      return memory;
-    }
+    stream.Position = 0;
+    using GZipStream gzip = new(stream, CompressionMode.Decompress);
+    using MemoryStream memory = new();
+    gzip.CopyTo(memory);
+    return memory.ToArray();
   }
 }

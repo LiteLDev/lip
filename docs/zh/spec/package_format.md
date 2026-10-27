@@ -224,7 +224,7 @@ lip 必须为请求求出一个具体包集合 S，满足下列全部条件；�
 卸载 P 的步骤：
 1. 执行 `scripts.preUninstall`。
 2. 删除 P 所有、且不匹配 `preserveFiles` 的文件。
-3. 删除匹配 `removeFiles`、且不归其他包所有的路径。目录模式会递归删除。
+3. 删除匹配 `removeFiles`、且不归其他包所有的路径。目录模式会递归删除。`mods` 与 `plugins` 本身永不匹配任何模式，因此不会经由它们删除其下的任何内容。
 4. 删除因第 2、3 步而变空的目录，但永不删除 `mods` 与 `plugins` 本身。
 5. 执行 `scripts.postUninstall`。
 
@@ -263,7 +263,7 @@ lip 必须为请求求出一个具体包集合 S，满足下列全部条件；�
 3. **依赖**：每个依赖 `"<path>[#label]": range` 成为一条安装边，其 refs 只有 `<path>[#label]`，没有 `name`，range 按 v3 的语义解释。该 ref 指向的归档采用 `manifest.json` 且 label 为 `client` 时，variant 视为 `""`。
 4. **资源（assets）**：变体的第 i 个资源（从 0 计数）挂载在包归档的目录 `i` 下。`self` 资源即 tooth.json 所在的归档本身。`zip`、`tar`、`tgz` 资源是从其 `urls` 中第一个可以下载的地址下载的归档，格式按内容判定，§2.1 不适用。`uncompressed` 资源是按同样方式下载的单个文件，挂载为文件 `i`。
 5. **放置（placements）**：安装时，资源 i 的每条放置对它匹配到的该资源中的每个文件生成一条文件形式的放置，按资源、再按文件在资源中的顺序、再按放置的顺序排列。`file` 放置取路径等于 `src` 的文件，放到 `dest`；没有这样的文件时，取匹配 glob `src`（tooth.json 的 glob 语法）的每个文件，放到 `dest/<文件名>`。`dir` 放置取目录 `src` 下的每个文件（`""` 与 `"."` 表示全部文件），放到 `dest/<相对 src 的路径>`。`dest` 中的 `\` 读作 `/`，`.` 与 `..` 段按路径语义处理。匹配不到文件的放置不放置任何文件；两条放置写同一路径时，后者生效。§7 中“归档根部的 `manifest.json` 永不写入”的规则不适用。
-6. **preserve_files 与 remove_files** 分别成为 `preserveFiles` 与 `removeFiles`，其中 `\` 替换为 `/`。不含 `/` 的 `preserve_files` 模式前加 `**/`，因为 v3 也用它匹配单独的文件名。不以 `/` 结尾的 `remove_files` 模式另外产生在其后加 `/` 的模式，因为 v3 也删除匹配的目录。
+6. **preserve_files 与 remove_files** 分别成为 `preserveFiles` 与 `removeFiles`，其中 `\` 替换为 `/`。不含 `/` 的 `preserve_files` 模式前加 `**/`，因为 v3 也用它匹配单独的文件名。不以 `/` 结尾的 `remove_files` 模式另外产生在其后加 `/` 的模式，因为 v3 也删除匹配的目录。不是合法 glob（§4.2）的模式（例如以 `/` 开头）被丢弃；`*` 与 `**` 以外的 tooth.json glob 语法在 glob 中没有含义，按字面匹配。
 7. **脚本**：`pre_install` 成为 `preInstall`；`install` 后接 `post_install` 成为 `postInstall`；`pre_uninstall` 后接 `uninstall` 成为 `preUninstall`；`post_uninstall` 成为 `postUninstall`。
 8. **锁**：锁中记录 tooth.json（格式 3，带所安装的版本）以代替文档。lip 再次需要该包时，以链中最后一跳的 variant 和锁中的环境，按本映射重新转换该 tooth.json。
 

@@ -397,7 +397,7 @@ public class ToothCompatTests {
     };
 
     // Act
-    McmodPackage? package = await ToothCompat.FromLocked(locked, _serverWin);
+    McmodPackage? package = (await ToothCompat.FromLocked(locked, _serverWin))?.Package;
 
     // Assert
     Assert.NotNull(package);
@@ -421,7 +421,7 @@ public class ToothCompatTests {
     };
 
     // Act
-    McmodPackage? package = await ToothCompat.FromLocked(locked, _serverWin);
+    McmodPackage? package = (await ToothCompat.FromLocked(locked, _serverWin))?.Package;
 
     // Assert
     Assert.Null(package);

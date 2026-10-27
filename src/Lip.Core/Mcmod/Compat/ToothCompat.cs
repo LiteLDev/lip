@@ -121,14 +121,14 @@ public class ToothCompat : IToothCompat {
   /// again: the label is the variant of the last chain hop (the ref that reached the tooth.json
   /// archive), the environment comes from the lock (spec §5.1), and the version is the recorded
   /// one. Null when the tooth.json has no such variant for the environment.
-  public static async Task<McmodPackage?> FromLocked(
+  public static async Task<ToothConversion?> FromLocked(
       LockedPackage package, LipEnvironment environment) {
     PackageManifest manifest = await PackageManifest.FromStream(
         new MemoryStream(Encoding.UTF8.GetBytes(package.Manifest.GetRawText())));
     string variant = package.Chain.Count > 0 ? Ref.Parse(package.Chain[^1].Ref).Variant : "";
     SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
 
-    return Convert(manifest, variant, environment, version)?.Package;
+    return Convert(manifest, variant, environment, version);
   }
 
   /// The v3 label a ref variant selects (spec §9.2).
@@ -168,8 +168,9 @@ public class ToothCompat : IToothCompat {
     PostUninstall = scripts.PostUninstall,
   };
 
-  /// A pattern v3 could never match (empty segments, a leading '/') is dropped.
-  private static PathGlob? TryParseGlob(string pattern) {
+  /// The format 4 glob of a converted pattern, or null for a pattern v3 could never match (empty
+  /// segments, a leading '/'), which the conversion drops.
+  public static PathGlob? TryParseGlob(string pattern) {
     try {
       return new PathGlob(pattern);
     }
