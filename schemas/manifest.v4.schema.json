@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/LiteLDev/lip/raw/main/schemas/manifest.v4.schema.json",
+  "title": "lip manifest.json (format version 4)",
+  "description": "A LeviLamina manifest.json extended with the keys of lip package format version 4. Keys not described here are ignored. Plain LeviLamina manifests without the format markers are also accepted by lip as self-contained packages, but they are outside this schema. Not expressible here: two artifacts with the same variant must not write the same selector keys with intersecting values.",
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/definitions/routingDocument"
+    },
+    {
+      "$ref": "#/definitions/concreteDocument"
+    }
+  ],
+  "definitions": {
+    "markers": {
+      "type": "object",
+      "properties": {
+        "formatVersion": {
+          "type": "integer",
+          "const": 4
+        },
+        "formatUuid": {
+          "type": "string",
+          "const": "0c6b977a-64ad-441f-9a29-c7f4b196882f"
+        }
+      },
+      "required": [
+        "formatVersion",
+        "formatUuid"
+      ]
+    },
+    "semVer": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "variant": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(/[a-z0-9_]+)?$"
+    },
+    "ref": {
+      "description": "target [ \"#\" variant ]. target is a relative path starting with \"./\", an https URL, or a Go module path.",
+      "type": "string",
+      "pattern": "^(?!http:|file:)[^#]+(#[a-z0-9_]+(/[a-z0-9_]+)?)?$"
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ref"
+      }
+    },
+    "nonEmptyRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/ref"
+      }
+    },
+    "range": {
+      "description": "A version requirement with LeviLamina's ll::data::VersionRequirement syntax. A bare full version without an operator is not allowed.",
+      "type": "string"
+    },
+    "glob": {
+      "description": "'*' matches any characters other than '/'; a '**' segment matches zero or more segments; a trailing '/' matches directories and everything below them.",
+      "type": "string",
+      "pattern": "^(?!/)(?!.*//)[^\\\\]+$"
+    },
+    "globs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/glob"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "placementPath": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!(.*/)?\\.\\.(/|$))[^\\\\]*$"
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "variant": {
+          "anyOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/definitions/variant"
+            }
+          ]
+        },
+        "platform": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "server",
+                "client"
+              ]
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "server",
+                  "client"
+                ]
+              }
+            }
+          ]
+        },
+        "rid": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "refs": {
+          "description": "Alternatives in order. May contain {{name}}, {{version}}, {{platform}} and {{rid}}.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "not": {
+              "pattern": "\\{\\{(?!(name|version|platform|rid)\\}\\})"
+            }
+          }
+        }
+      },
+      "required": [
+        "refs"
+      ]
+    },
+    "dep": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/definitions/range"
+        },
+        "refs": {
+          "$ref": "#/definitions/nonEmptyRefs"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "deps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/dep"
+      }
+    },
+    "installDep": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/definitions/range"
+        },
+        "refs": {
+          "$ref": "#/definitions/nonEmptyRefs"
+        }
+      },
+      "required": [
+        "refs"
+      ]
+    },
+    "placement": {
+      "type": "object",
+      "properties": {
+        "src": {
+          "$ref": "#/definitions/placementPath"
+        },
+        "dest": {
+          "$ref": "#/definitions/placementPath"
+        }
+      },
+      "required": [
+        "src",
+        "dest"
+      ],
+      "anyOf": [
+        {
+          "description": "Directory form: \"\" or a trailing '/'.",
+          "properties": {
+            "src": {
+              "pattern": "(^|/)$"
+            },
+            "dest": {
+              "pattern": "(^|/)$"
+            }
+          }
+        },
+        {
+          "description": "File form.",
+          "properties": {
+            "src": {
+              "pattern": "[^/]$"
+            },
+            "dest": {
+              "pattern": "[^/]$"
+            }
+          }
+        }
+      ]
+    },
+    "routingDocument": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/markers"
+        }
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/definitions/semVer"
+        },
+        "refs": {
+          "$ref": "#/definitions/refs"
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/artifact"
+          }
+        }
+      },
+      "required": [
+        "artifacts"
+      ]
+    },
+    "concreteDocument": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/markers"
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "files"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "placements"
+              ]
+            }
+          }
+        }
+      ],
+      "not": {
+        "required": [
+          "artifacts"
+        ]
+      },
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "version": {
+          "$ref": "#/definitions/semVer"
+        },
+        "type": {
+          "description": "\"files\" for a file package; any other value is a LeviLamina mod type.",
+          "type": "string"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "server",
+            "client",
+            "universal"
+          ],
+          "default": "universal"
+        },
+        "rid": {
+          "type": "string"
+        },
+        "refs": {
+          "$ref": "#/definitions/refs"
+        },
+        "dependencies": {
+          "$ref": "#/definitions/deps"
+        },
+        "optionalDependencies": {
+          "$ref": "#/definitions/deps"
+        },
+        "conflicts": {
+          "$ref": "#/definitions/deps"
+        },
+        "installDependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/installDep"
+          }
+        },
+        "placements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/placement"
+          }
+        },
+        "preserveFiles": {
+          "$ref": "#/definitions/globs"
+        },
+        "removeFiles": {
+          "$ref": "#/definitions/globs"
+        },
+        "scripts": {
+          "type": "object",
+          "properties": {
+            "preInstall": {
+              "$ref": "#/definitions/commands"
+            },
+            "postInstall": {
+              "$ref": "#/definitions/commands"
+            },
+            "preUninstall": {
+              "$ref": "#/definitions/commands"
+            },
+            "postUninstall": {
+              "$ref": "#/definitions/commands"
+            }
+          }
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "type"
+      ]
+    }
+  }
+}

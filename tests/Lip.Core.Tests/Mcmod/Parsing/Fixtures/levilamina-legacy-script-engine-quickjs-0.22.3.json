@@ -1,0 +1,20 @@
+{
+  "name": "legacy-script-engine-quickjs",
+  "entry": "legacy-script-engine-quickjs.dll",
+  "version": "0.22.3",
+  "type": "native",
+  "platform": "server",
+  "description": "A plugin engine for running LLSE plugins on LeviLamina",
+  "author": "LiteLDev",
+  "dependencies": [
+    {
+      "name": "LegacyMoney"
+    },
+    {
+      "name": "LegacyRemoteCall"
+    },
+    {
+      "name": "iListenAttentively"
+    }
+  ]
+}

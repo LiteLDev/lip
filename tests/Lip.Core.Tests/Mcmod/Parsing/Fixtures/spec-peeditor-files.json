@@ -1,0 +1,6 @@
+{
+  "formatVersion": 4,
+  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+  "name": "PeEditor", "type": "files", "version": "3.9.0", "rid": "win-x64",
+  "placements": [ { "src": "PeEditor.exe", "dest": "PeEditor.exe" } ]
+}

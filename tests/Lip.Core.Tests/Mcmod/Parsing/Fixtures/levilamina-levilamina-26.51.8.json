@@ -1,0 +1,10 @@
+{
+  "name": "LeviLamina",
+  "entry": "LeviLamina.dll",
+  "version": "26.51.8",
+  "type": "preload-native",
+  "extraInfo": {
+    "sentryDsn": "https://43a888504c33385bfd2e570c9ac939aa@o4508652421906432.ingest.us.sentry.io/4508652563398656",
+    "sentryUploadType": "all"
+  }
+}

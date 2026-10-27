@@ -1,0 +1,8 @@
+{
+    "name": "LegacyParticleAPI",
+    "entry": "LegacyParticleAPI.dll",
+    "version": "0.14.0",
+    "type": "native",
+    "description": "ParticleAPI ported from LiteLoaderBDS",
+    "author": "LiteLDev"
+}

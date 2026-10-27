@@ -30,6 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Mcmod\Parsing\Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Mcmod\Lock\Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
