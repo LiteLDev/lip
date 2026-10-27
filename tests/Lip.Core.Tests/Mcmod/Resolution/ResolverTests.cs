@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Lip.Core.Entities;
 using Lip.Core.Mcmod;
+using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Resolution;
 using Lip.Core.Sources;
 using Moq;
@@ -17,9 +18,9 @@ public class ResolverTests {
   private static readonly LipEnvironment _client = new(McmodPlatform.Client, "win-x64");
 
   private readonly FakeArchives _archives = new();
-  private readonly Mock<IToothCompat> _toothCompat = new();
+  private readonly List<string> _warnings = [];
 
-  private Resolver CreateResolver() => new(_archives, _archives, _toothCompat.Object);
+  private Resolver CreateResolver() => new(_archives, _archives, new ToothCompat(), _warnings.Add);
 
   private static ArchiveHandle Workspace => new(
       "/workspace", Mock.Of<ISource>(), new DirectoryArchiveIdentity("/workspace"));
@@ -54,9 +55,15 @@ public class ResolverTests {
 
   private static Artifact Art(params string[] refs) => new() { Refs = refs };
 
-  private static ToothArchiveDocument Tooth(string path, string version) => new(
-      new PackageManifest { Path = path, Version = SemVersion.Parse(version) },
-      JsonDocument.Parse("{}").RootElement.Clone());
+  /// A tooth.json with one variant per label, for every platform.
+  private static ToothArchiveDocument Tooth(string path, string version, params string[] labels) =>
+      new(
+          new PackageManifest {
+            Path = path,
+            Version = SemVersion.Parse(version),
+            Variants = [.. labels.Select(l => new PackageManifestVariant { Label = l })],
+          },
+          JsonDocument.Parse("{}").RootElement.Clone());
 
   private static IVersionConstraint Range(string range) =>
       new SemVersionRangeConstraint(SemVersionRange.Parse(range));
@@ -360,13 +367,10 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_ToothArchive_UsesToothCompatSelection() {
+  public async Task Resolve_ToothArchive_ConvertsSelectedVariant() {
     // Arrange
-    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.2.0");
+    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.2.0", "", "client");
     _archives.AddTag("github.com/user/tooth", "v1.2.0", tooth);
-    Mock<IPackage> package = new();
-    package.Setup(p => p.Version).Returns(SemVersion.Parse("1.2.0"));
-    _toothCompat.Setup(t => t.Select(tooth, "client", _client)).Returns(package.Object);
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
@@ -374,13 +378,21 @@ public class ResolverTests {
         toothClientCompat: true);
 
     // Assert
-    Assert.Same(package.Object, Assert.Single(result.Candidates).Package);
+    Candidate candidate = Assert.Single(result.Candidates);
+    McmodPackage package = Assert.IsType<McmodPackage>(candidate.Package);
+    Assert.Equal(ToothCompat.KindName, package.Kind);
+    Assert.Equal("github.com/user/tooth", package.Identity);
+    Assert.True(package.Document.IsFilePackage);
+    Assert.Equal("github.com/user/tooth@1.2.0", candidate.Archive.Key);
+    Assert.IsType<MountSource>(candidate.Archive.Source);
+    Assert.Equal(Ref.Parse("github.com/user/tooth#client"), Assert.Single(candidate.Chain).Ref);
   }
 
   [Fact]
   public async Task Resolve_ToothNoVariant_NoCandidate() {
     // Arrange
-    _archives.AddTag("github.com/user/tooth", "v1.2.0", Tooth("github.com/user/tooth", "1.2.0"));
+    _archives.AddTag(
+        "github.com/user/tooth", "v1.2.0", Tooth("github.com/user/tooth", "1.2.0", "client"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -394,11 +406,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_ToothVersionOutsideRange_NoCandidate() {
     // Arrange
-    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.2.0");
-    _archives.AddUrl("https://example.com/t.zip", tooth);
-    Mock<IPackage> package = new();
-    package.Setup(p => p.Version).Returns(SemVersion.Parse("1.2.0"));
-    _toothCompat.Setup(t => t.Select(tooth, "", _server)).Returns(package.Object);
+    _archives.AddUrl("https://example.com/t.zip", Tooth("github.com/user/tooth", "1.2.0", ""));
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
@@ -458,20 +466,19 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_ToothVersionDiffersFromTag_IsNotRejected() {
+  public async Task Resolve_ToothVersionDiffersFromTag_UsesTagVersionAndWarns() {
     // Arrange
-    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.0.1");
-    _archives.AddTag("github.com/user/tooth", "v1.0.0", tooth);
-    Mock<IPackage> package = new();
-    package.Setup(p => p.Version).Returns(SemVersion.Parse("1.0.1"));
-    _toothCompat.Setup(t => t.Select(tooth, "", _server)).Returns(package.Object);
+    _archives.AddTag("github.com/user/tooth", "v1.0.0", Tooth("github.com/user/tooth", "1.0.1", ""));
 
     // Act
     ResolveResult result = await CreateResolver()
         .Resolve(Ref.Parse("github.com/user/tooth"), Workspace, null, _server);
 
     // Assert
-    Assert.Single(result.Candidates);
+    Candidate candidate = Assert.Single(result.Candidates);
+    Assert.Equal(SemVersion.Parse("1.0.0"), candidate.Package.Version);
+    Assert.Equal("1.0.0", candidate.Package.Manifest.GetProperty("version").GetString());
+    Assert.Contains("using the tag version 1.0.0", Assert.Single(_warnings));
   }
 
   [Fact]
@@ -629,6 +636,9 @@ public class ResolverTests {
     }
 
     public Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity) =>
+        throw new NotSupportedException();
+
+    public Task<ISource> OpenAsset(IReadOnlyList<string> urls, bool isArchive) =>
         throw new NotSupportedException();
 
     public Task<ArchiveDocument> Read(ArchiveHandle archive) {

@@ -2,7 +2,6 @@ using System.IO.Abstractions;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Lock;
@@ -642,17 +641,8 @@ public class McmodService(
             ? new McmodPackage(document, package.Manifest)
             : throw new FormatException("the locked manifest is not a concrete document.");
 
-      case ToothPackage.KindName: {
-          PackageManifest tooth = await PackageManifest.FromStream(new MemoryStream(manifest));
-          string variant = package.Chain.Count > 0 ? Ref.Parse(package.Chain[^1].Ref).Variant : "";
-          ToothPackage? selected = ToothCompat.Select(tooth, variant, workspace.Environment);
-          if (selected is null) {
-            return null;
-          }
-
-          SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
-          return selected.Version.Equals(version) ? selected : selected.WithVersion(version);
-        }
+      case ToothCompat.KindName:
+        return await ToothCompat.FromLocked(package, workspace.Environment);
 
       default:
         return null;

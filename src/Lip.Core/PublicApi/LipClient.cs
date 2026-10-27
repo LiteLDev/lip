@@ -75,7 +75,6 @@ public class LipClient(
     GitRemoteClient gitRemoteClient = new(githubProxy);
 
     CommandRunner commandRunner = new();
-    SourceService sourceService = new(fileDownloader, cacheService, githubProxy);
     DocumentParser documentParser = new();
     ArchiveProvider archiveProvider = new(
         gitRemoteClient, cacheService, fileSystem, fileDownloader, githubProxy);
@@ -88,10 +87,7 @@ public class LipClient(
         new ArchiveReader(documentParser),
         new ToothCompat(),
         documentParser,
-        [
-          new McmodInstaller(fileSystem, commandRunner, documentParser, userInteraction),
-          new ToothInstaller(commandRunner, fileSystem, sourceService, userInteraction),
-        ]);
+        [new McmodInstaller(fileSystem, commandRunner, documentParser, userInteraction)]);
 
     LipClient lipClient = new(
         fileSystem, userInteraction, cacheService, configService, mcmodService);

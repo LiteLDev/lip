@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.Text;
 using System.Text.RegularExpressions;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod.Compat;
 using Lip.Core.Sources;
 
 namespace Lip.Core.Mcmod.Install;
@@ -11,7 +12,9 @@ namespace Lip.Core.Mcmod.Install;
 public class McmodInstallException(string message, Exception? inner = null)
     : Exception(message, inner);
 
-/// Installs and uninstalls manifest.json packages: mods and file packages (spec §7).
+/// Installs and uninstalls manifest.json packages: mods and file packages (spec §7), and the
+/// file packages tooth.json archives are converted to (spec §9; lock kind "tooth", whose recorded
+/// manifest is the tooth.json, converted again to uninstall).
 ///
 /// Ownership: a file is owned by a package when the package wrote it. A file that already
 /// exists and matches preserveFiles is kept and not written, so it is not owned by the package,
@@ -39,7 +42,7 @@ public partial class McmodInstaller(
   private static readonly StringComparison PathComparison =
       OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-  public bool CanHandle(string kind) => kind == McmodPackage.KindName;
+  public bool CanHandle(string kind) => kind is McmodPackage.KindName or ToothCompat.KindName;
 
   public async Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context) {
     if (candidate.Package is not McmodPackage package) {
@@ -110,7 +113,7 @@ public partial class McmodInstaller(
   }
 
   public async Task Uninstall(LockedPackage package, InstallContext context) {
-    ConcreteDocument document = ParseLockedManifest(package);
+    ConcreteDocument document = await LockedDocument(package, context.Environment);
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
     string baseDir = BaseDirectory(document, context.Environment);
     string stopDir = document.IsFilePackage
@@ -196,13 +199,15 @@ public partial class McmodInstaller(
   /// The directory globs are relative to, workspace-relative with a trailing '/' ("" for the
   /// workspace root).
   private static string BaseDirectory(ConcreteDocument document, LipEnvironment environment) {
+    if (document.IsFilePackage) {
+      // The name of a file package converted from a tooth.json is its tooth path.
+      return "";
+    }
     if (!NamePattern().IsMatch(document.Name)) {
       // The parser enforces this (spec §4.2); the name becomes a path segment here.
       throw new McmodInstallException($"Invalid package name '{document.Name}'.");
     }
-    return document.IsFilePackage
-        ? ""
-        : $"{environment.Platform.ModsDirectory()}/{document.Name}/";
+    return $"{environment.Platform.ModsDirectory()}/{document.Name}/";
   }
 
   [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$")]
@@ -232,6 +237,8 @@ public partial class McmodInstaller(
     }
 
     List<string> keys = [.. source.Keys];
+    HashSet<string> keySet = new(keys, StringComparer.Ordinal);
+    document = ToothPlacements.Expand(document, keySet);
     if (!document.IsFilePackage) {
       if (document.Placements.Count > 0) {
         throw new McmodInstallException(
@@ -253,7 +260,7 @@ public partial class McmodInstaller(
             Add(placement.Dest + key[placement.Src.Length..], key);
           }
         } else {
-          if (!keys.Contains(placement.Src, StringComparer.Ordinal)) {
+          if (!keySet.Contains(placement.Src)) {
             throw new McmodInstallException(
                 $"{document.Name}: placement source '{placement.Src}' is not in the archive.");
           }
@@ -331,12 +338,18 @@ public partial class McmodInstaller(
     }
   }
 
-  private ConcreteDocument ParseLockedManifest(LockedPackage package) {
-    ManifestDocument document;
+  private async Task<ConcreteDocument> LockedDocument(
+      LockedPackage package, LipEnvironment environment) {
+    ManifestDocument? document;
     try {
-      document = _parser.Parse(Encoding.UTF8.GetBytes(package.Manifest.GetRawText()));
+      document = package.Kind == ToothCompat.KindName
+          ? (await ToothCompat.FromLocked(package, environment))?.Document
+              ?? throw new McmodInstallException(
+                  $"{package.Identity}: the tooth.json recorded in the lock has no variant "
+                  + $"for the locked ref in {environment.Rid}.")
+          : _parser.Parse(Encoding.UTF8.GetBytes(package.Manifest.GetRawText()));
     }
-    catch (Exception ex) {
+    catch (Exception ex) when (ex is not McmodInstallException) {
       throw new McmodInstallException(
           $"{package.Identity}: the manifest recorded in the lock is invalid: {ex.Message}", ex);
     }

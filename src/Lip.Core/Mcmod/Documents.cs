@@ -79,6 +79,11 @@ public record ConcreteDocument : ManifestDocument {
 
   public IReadOnlyList<Placement> Placements { get; init; } = [];
 
+  /// The asset placements of a tooth.json converted to format 4 (spec §9.4), which select files
+  /// by pattern: they are expanded against the archive's files at install time, into placements
+  /// before Placements. Not part of the manifest.json syntax: the parser never sets them.
+  public IReadOnlyList<AssetPlacement> AssetPlacements { get; init; } = [];
+
   public IReadOnlyList<PathGlob> PreserveFiles { get; init; } = [];
 
   public IReadOnlyList<PathGlob> RemoveFiles { get; init; } = [];
@@ -101,6 +106,10 @@ public record InstallDep {
   public IVersionConstraint? Version { get; init; }
 
   public required IReadOnlyList<Ref> Refs { get; init; }
+
+  /// Set on the edges converted from tooth.json dependencies (spec §9.3); see InstallEdge. Not
+  /// part of the manifest.json syntax.
+  public bool ToothClientCompat { get; init; }
 }
 
 /// src is a path in the archive, dest a path in the workspace. "" or a trailing '/' marks the
@@ -108,6 +117,12 @@ public record InstallDep {
 public record Placement(string Src, string Dest) {
   public bool IsDirectory => Src == "" || Src.EndsWith('/');
 }
+
+/// A tooth.json asset placement (spec §9.4): Src is matched against the files of the asset
+/// mounted at Mount in the archive (a directory name), by the v3 rules: a file placement takes the
+/// file named Src or the files matching the glob Src, a directory placement the files below the
+/// directory Src. Dest is a workspace path.
+public record AssetPlacement(string Mount, bool IsDirectory, string Src, string Dest);
 
 public record Scripts {
   public IReadOnlyList<string> PreInstall { get; init; } = [];

@@ -209,32 +209,33 @@ public class Resolver(
         }
 
       case ToothArchiveDocument tooth: {
-          IPackage? package = _toothCompat.Select(tooth, variant, walk.Environment);
-          if (package is null) {
+          // lip v3 always used the tag version, whatever the tooth.json at the tag declares.
+          ToothConversion? conversion = _toothCompat.Convert(
+              tooth, variant, walk.Environment, tagVersion);
+          if (conversion is null) {
             walk.Report(refPath,
                 $"tooth.json has no variant for \"{variant}\" in this environment");
             break;
           }
 
-          // lip v3 always used the tag version, whatever the tooth.json at the tag declares.
-          if (tagVersion is not null && package is ToothPackage toothPackage
-              && !toothPackage.Version.Equals(tagVersion)) {
-            if (SemVersion.PrecedenceComparer.Compare(toothPackage.Version, tagVersion) != 0
-                && _warned.TryAdd(archive.Key, 0)) {
-              _onWarning($"{archive.Key}: tooth.json declares version {toothPackage.Version}; "
-                  + $"using the tag version {tagVersion}.");
-            }
-
-            package = toothPackage.WithVersion(tagVersion);
+          SemVersion declared = tooth.Manifest.Version;
+          if (tagVersion is not null
+              && SemVersion.PrecedenceComparer.Compare(declared, tagVersion) != 0
+              && _warned.TryAdd(archive.Key, 0)) {
+            _onWarning($"{archive.Key}: tooth.json declares version {declared}; "
+                + $"using the tag version {tagVersion}.");
           }
 
+          IPackage package = conversion.Package;
           if (walk.Range is not null && !walk.Range.IsSatisfiedBy(package.Version)) {
             walk.Report(refPath, $"version {package.Version} does not satisfy {walk.Range}");
             break;
           }
 
           yield return new Candidate(
-              package, archive, path.Hops.Add(new ChainHop(reference, null)));
+              package,
+              conversion.OpenArchive(archive, _archiveProvider),
+              path.Hops.Add(new ChainHop(reference, null)));
           break;
         }
 

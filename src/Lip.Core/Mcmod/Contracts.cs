@@ -17,9 +17,15 @@ public interface IDocumentParser {
 
 /// tooth.json compatibility (spec §9).
 public interface IToothCompat {
-  /// Selects the v3 variant for a ref variant and environment (spec §9.1, §9.2). Returns null
-  /// when no variant applies. The version range is checked by the resolver.
-  public IPackage? Select(ToothArchiveDocument document, string variant, LipEnvironment environment);
+  /// Converts a tooth.json to the format 4 package a ref variant selects in an environment
+  /// (spec §9). version, when set, replaces the version the tooth.json declares (the tag
+  /// version). Returns null when no variant applies. The version range is checked by the
+  /// resolver.
+  public Compat.ToothConversion? Convert(
+      ToothArchiveDocument document,
+      string variant,
+      LipEnvironment environment,
+      Semver.SemVersion? version);
 }
 
 /// Reads the root document of an archive: tooth.json if present, else manifest.json (spec §2.4).

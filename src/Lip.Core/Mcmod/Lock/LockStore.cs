@@ -26,8 +26,11 @@ public class LockFormatException(string message, Exception? inner = null)
 /// v3 recorded the absolute paths of the files a package placed (relative to the working
 /// directory, which was the workspace root). Migration turns paths under the workspace root into
 /// workspace-relative '/'-separated paths. Paths outside the root (a workspace moved after
-/// install, or a v3 placement that escaped the root) are kept verbatim as absolute paths, so
-/// uninstalling behaves exactly as v3 would have.
+/// install, or a v3 placement that escaped the root) are kept verbatim as absolute paths; lip
+/// never deletes them, as they are not inside the workspace.
+///
+/// Migrated entries have kind "tooth" and record the tooth.json (spec §9), like the entries of
+/// tooth.json packages lip installs itself: they are converted to format 4 when used.
 ///
 /// v3 keyed packages by (tooth path, variant); v4 keys them by identity (the tooth path). A v3
 /// lock holding two variants of one tooth migrates to two entries with the same identity; the
@@ -38,7 +41,7 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
   public const string LegacyFileName = "tooth_lock.json";
 
   /// Kind of packages migrated from a v3 lock (IPackage.Kind).
-  public const string ToothKind = "tooth";
+  public const string ToothKind = Compat.ToothCompat.KindName;
 
   private static readonly JsonSerializerOptions _readOptions = new() {
     RespectNullableAnnotations = true,

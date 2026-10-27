@@ -105,9 +105,10 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public void CanHandle_Kinds_OnlyMcmod() {
+  public void CanHandle_Kinds_McmodAndTooth() {
     Assert.True(_installer.CanHandle("mcmod"));
-    Assert.False(_installer.CanHandle("tooth"));
+    Assert.True(_installer.CanHandle("tooth"));
+    Assert.False(_installer.CanHandle("other"));
   }
 
   [Fact]

@@ -1,19 +1,20 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using Lip.Core.Entities;
+using Lip.Core.Json;
 using Semver;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Converts a tooth.json (v1–v3, already migrated to v3) into a format 4 manifest.json, as
+/// Converts a tooth.json (v1–v3, already migrated to v3) into a format 4 manifest.json file, as
 /// faithfully as the formats allow. It is a helper for package authors, not a guarantee: the
-/// notes list everything that needs a manual decision.
+/// notes list everything that needs a manual decision. lip itself does not need the file: it
+/// converts tooth.json archives in memory (ToothCompat, spec §9), with the same mapping where
+/// manifest.json can express it.
 ///
 /// - One variant without a label whose assets are all "self": a concrete file package
 ///   ("type": "files") with the variant's placements, dependencies (as installDependencies),
-///   preserve_files, remove_files and scripts. v3 "install" scripts run after the files are
-///   placed, so they are prepended to postInstall; "uninstall" scripts are appended to
-///   preUninstall.
+///   preserve_files, remove_files and scripts, mapped like ToothCompat maps them.
 /// - Anything else: a routing document with one artifact per variant. Each artifact points to
 ///   where the concrete package of that variant would be published (a GitHub release asset
 ///   for github.com paths, a directory of the repository otherwise); creating those packages
@@ -96,15 +97,17 @@ public static class ToothMigrator {
 
     document["placements"] = placements;
 
-    AddGlobs(document, "preserveFiles", variant.PreserveFiles.Select(g => g.ToString()), notes);
-    AddGlobs(document, "removeFiles", variant.RemoveFiles.Select(g => g.ToString()), notes);
+    AddGlobs(document, "preserveFiles", ToothCompat.PreserveFiles(
+        variant.PreserveFiles.Select(GlobListJsonConverter.Format)), notes);
+    AddGlobs(document, "removeFiles", ToothCompat.RemoveFiles(
+        variant.RemoveFiles.Select(GlobListJsonConverter.Format)), notes);
 
+    Scripts convertedScripts = ToothCompat.ConvertScripts(variant.Scripts);
     JsonObject scripts = [];
-    AddScripts(scripts, "preInstall", variant.Scripts.PreInstall);
-    AddScripts(scripts, "postInstall", [.. variant.Scripts.Install, .. variant.Scripts.PostInstall]);
-    AddScripts(scripts, "preUninstall",
-        [.. variant.Scripts.PreUninstall, .. variant.Scripts.Uninstall]);
-    AddScripts(scripts, "postUninstall", variant.Scripts.PostUninstall);
+    AddScripts(scripts, "preInstall", convertedScripts.PreInstall);
+    AddScripts(scripts, "postInstall", convertedScripts.PostInstall);
+    AddScripts(scripts, "preUninstall", convertedScripts.PreUninstall);
+    AddScripts(scripts, "postUninstall", convertedScripts.PostUninstall);
     if (scripts.Count > 0) {
       document["scripts"] = scripts;
     }
@@ -213,7 +216,7 @@ public static class ToothMigrator {
         notes.Add($"The {key} pattern '{glob}' uses syntax beyond '*' and '**'; check it.");
       }
 
-      array.Add(glob.Replace('\\', '/'));
+      array.Add(glob);
     }
 
     if (array.Count > 0) {
@@ -221,7 +224,7 @@ public static class ToothMigrator {
     }
   }
 
-  private static void AddScripts(JsonObject scripts, string key, List<string> commands) {
+  private static void AddScripts(JsonObject scripts, string key, IReadOnlyList<string> commands) {
     if (commands.Count > 0) {
       scripts[key] = new JsonArray([.. commands.Select(c => (JsonNode)c)]);
     }

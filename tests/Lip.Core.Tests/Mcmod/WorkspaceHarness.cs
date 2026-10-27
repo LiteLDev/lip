@@ -44,11 +44,7 @@ internal sealed class WorkspaceHarness {
         new ArchiveReader(parser),
         new ToothCompat(),
         parser,
-        [
-          new McmodInstaller(Fs, CommandRunner.Object, parser, Ui.Object),
-          new ToothInstaller(
-              CommandRunner.Object, Fs, new Mock<ISourceService>().Object, Ui.Object),
-        ],
+        [new McmodInstaller(Fs, CommandRunner.Object, parser, Ui.Object)],
         workspaceRoot: () => Root,
         directoryLinker: Linker);
   }

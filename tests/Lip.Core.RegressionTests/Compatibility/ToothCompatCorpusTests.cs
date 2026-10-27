@@ -1,20 +1,23 @@
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Lip.Core.Entities;
 using Lip.Core.Git;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
+using Lip.Core.Mcmod.Install;
 using Lip.Core.Services;
 using Moq;
 using Semver;
 
 namespace Lip.Core.RegressionTests.Compatibility;
 
-/// Checks that the v4 tooth.json compatibility layer (spec §9) selects and installs real tooth
-/// packages like lip v3: ToothCompat.Select must pick the same merged variant as
-/// PackageManifest.GetVariant, and ToothInstaller must write exactly the files it reports.
+/// Checks that the tooth.json conversion (spec §9) converts and installs real tooth packages like
+/// lip v3: ToothCompat.Convert must map the same merged variant PackageManifest.GetVariant picks,
+/// and McmodInstaller must write exactly the files it reports for the converted package.
 public class ToothCompatCorpusTests {
   private static readonly LipEnvironment _environment = new(McmodPlatform.Server, "win-x64");
 
@@ -28,9 +31,6 @@ public class ToothCompatCorpusTests {
 
   private static readonly ArchiveProvider _archiveProvider = new(
       _client, _cacheService, new FileSystem(), _fileDownloader);
-
-  private static readonly SourceService _sourceService = new(
-      _fileDownloader, _cacheService, githubProxy: null);
 
   /// The newest version of every LiteLDev package/variant in the corpus, plus every tenth
   /// other (lipr) package/variant.
@@ -54,7 +54,7 @@ public class ToothCompatCorpusTests {
 
   [WinX64Theory]
   [MemberData(nameof(Entries))]
-  public async Task Select_CorpusEntry_MatchesGetVariant(string package, string version) {
+  public async Task Convert_CorpusEntry_MapsGetVariant(string package, string version) {
     // Arrange
     Ref reference = Ref.Parse(package);
     ArchiveHandle archive = await OpenArchive(
@@ -70,8 +70,8 @@ public class ToothCompatCorpusTests {
     }
 
     // Act
-    ToothPackage? actual = (ToothPackage?)new ToothCompat().Select(
-        document, reference.Variant, _environment);
+    ToothConversion? actual = new ToothCompat().Convert(
+        document, reference.Variant, _environment, null);
 
     // Assert
     if (expected is null) {
@@ -80,13 +80,33 @@ public class ToothCompatCorpusTests {
     }
 
     Assert.NotNull(actual);
-    Assert.Equal(document.Manifest.Path, actual.Identity);
-    Assert.Equal(JsonSerializer.Serialize(expected), JsonSerializer.Serialize(actual.Variant));
+    ConcreteDocument converted = actual.Package.Document;
+    Assert.Equal(document.Manifest.Path, actual.Package.Identity);
+    Assert.Equal(
+        expected.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))),
+        actual.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))));
+    Assert.Equal(
+        expected.Assets.SelectMany((a, i) => a.Placements.Select(p => new AssetPlacement(
+            i.ToString(CultureInfo.InvariantCulture),
+            p.Type == PackageManifestAssetPlacement.PlacementType.Directory,
+            p.Src,
+            p.Dst))),
+        converted.AssetPlacements);
     Assert.Equal(
         expected.Dependencies.Select(d => (d.Key.ToString(), d.Value.ToString())),
-        actual.InstallEdges.Select(e => (
+        actual.Package.InstallEdges.Select(e => (
             Assert.Single(e.Refs).ToString(),
             ((SemVersionRangeConstraint)e.Version!).Range.ToString())));
+    Assert.All(actual.Package.InstallEdges, e => Assert.True(e.ToothClientCompat));
+    Assert.Equal(
+        ToothCompat.PreserveFiles(expected.PreserveFiles.Select(GlobListJsonConverter.Format)),
+        converted.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(
+        ToothCompat.RemoveFiles(expected.RemoveFiles.Select(GlobListJsonConverter.Format)),
+        converted.RemoveFiles.Select(g => g.Pattern));
+    Assert.Equal(
+        JsonSerializer.Serialize(ToothCompat.ConvertScripts(expected.Scripts)),
+        JsonSerializer.Serialize(converted.Scripts));
   }
 
   [WinX64Theory]
@@ -99,15 +119,18 @@ public class ToothCompatCorpusTests {
     ArchiveHandle archive = await _archiveProvider.OpenVersion(package, version);
     ToothArchiveDocument document = Assert.IsType<ToothArchiveDocument>(
         await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
-    IPackage toothPackage = new ToothCompat().Select(document, "", _environment)!;
-    ToothInstaller installer = new(
-        new CommandRunner(), new FileSystem(), _sourceService, _userInteraction);
+    ToothConversion conversion = new ToothCompat().Convert(document, "", _environment, null)!;
+    McmodInstaller installer = new(
+        new FileSystem(), new CommandRunner(), new DocumentParser(), _userInteraction);
 
     string root = Directory.CreateTempSubdirectory("lip-tooth-v4-").FullName;
     try {
       // Act
       IReadOnlyList<string> files = await installer.Install(
-          new Candidate(toothPackage, archive, [new ChainHop(Ref.Parse(package), null)]),
+          new Candidate(
+              conversion.Package,
+              conversion.OpenArchive(archive, _archiveProvider),
+              [new ChainHop(Ref.Parse(package), null)]),
           new InstallContext(
               root, _environment, new LockFile(), DryRun: false, IgnoreScripts: true));
 

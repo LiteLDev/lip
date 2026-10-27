@@ -64,4 +64,11 @@ public interface IArchiveProvider {
 
   /// Re-opens an archive recorded in the lock and verifies its identity (spec §8).
   public Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity);
+
+  /// Downloads a tooth.json asset (spec §9.4) from the first of its URLs that works, cached
+  /// under the key of that URL like url archives. An archive asset (ZIP, tar or gzipped tar, told
+  /// apart by content) is opened as its files; any other asset is a single file with the key "".
+  /// Unlike url archives, the files are not checked against §2, as lip v3 did not check them.
+  /// Throws ArchiveUnavailableException when no URL works.
+  public Task<ISource> OpenAsset(IReadOnlyList<string> urls, bool isArchive);
 }

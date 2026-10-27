@@ -174,17 +174,21 @@ public class CorpusTests {
 
     // 2. Self-asset placements are resolved against the git tree. Only the root document is
     // downloaded.
-    if (candidate.Package is ToothPackage tooth) {
-      List<string> keys = [.. candidate.Archive.Source.Keys];
-      foreach (PackageManifestAsset asset in tooth.Variant.Assets.Where(
-          a => a.Type == PackageManifestAsset.AssetType.Self)) {
-        foreach (PackageManifestAssetPlacement placement in asset.Placements) {
+    // The self assets of a converted tooth.json are the mounts of the tag itself; the other
+    // mounts (URL assets) are not opened.
+    if (candidate.Package is McmodPackage { Kind: ToothCompat.KindName } tooth
+        && candidate.Archive.Source is MountSource mounts) {
+      foreach ((string mount, Sources.ISource source) in mounts.Mounts.Where(
+          m => m.Source is not DeferredSource)) {
+        List<string> keys = [.. source.Keys];
+        foreach (AssetPlacement placement in tooth.Document.AssetPlacements.Where(
+            p => p.Mount == mount)) {
           // Many manifests place build outputs that are not committed, so a placement may match
           // nothing (as before). It must match, though, whenever the tree has the path it names.
-          if (PlacementMatcher.Match(keys, [placement]).Count == 0
+          if (ToothPlacements.Match(keys, [placement]).Count == 0
               && TreeHasPath(keys, placement)) {
-            return $"self placement {placement.Type} '{placement.Src}' -> '{placement.Dst}' "
-                + "matches no key";
+            return $"self placement {(placement.IsDirectory ? "dir" : "file")} "
+                + $"'{placement.Src}' -> '{placement.Dest}' matches no key";
           }
         }
       }
@@ -233,15 +237,14 @@ public class CorpusTests {
   private static Resolver CreateResolver(ArchiveProvider provider) => new(
       provider, new ArchiveReader(new DocumentParser()), new ToothCompat());
 
-  private static bool TreeHasPath(List<string> keys, PackageManifestAssetPlacement placement) {
+  private static bool TreeHasPath(List<string> keys, AssetPlacement placement) {
     string src = placement.Src.Replace('\\', '/');
 
-    return placement.Type switch {
-      PackageManifestAssetPlacement.PlacementType.File => keys.Contains(src),
-      _ => src.Trim('/') is "" or "."
-          ? keys.Count > 0
-          : keys.Any(k => k.StartsWith(src.Trim('/') + "/", StringComparison.Ordinal)),
-    };
+    return !placement.IsDirectory
+        ? keys.Contains(src)
+        : src.Trim('/') is "" or "."
+            ? keys.Count > 0
+            : keys.Any(k => k.StartsWith(src.Trim('/') + "/", StringComparison.Ordinal));
   }
 
   private static IEnumerable<CorpusEntry> SelectEntries() {

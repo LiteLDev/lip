@@ -17,6 +17,7 @@ namespace Lip.Core.Mcmod;
 /// ZIP archives nested in another archive are not cached: they are read into memory from their
 /// parent archive, which is reopened (or re-resolved through the recorded chain) to get them back.
 /// git archives are lazy GitTreeSources: only the tree is listed, blobs are fetched on demand.
+/// tooth.json assets (OpenAsset) are downloaded into the same cache.
 public class ArchiveProvider(
     IGitRemoteClient gitRemoteClient,
     ICacheService cacheService,
@@ -101,6 +102,23 @@ public class ArchiveProvider(
       default:
         throw new ArgumentException($"Unknown archive identity: {identity}", nameof(identity));
     }
+  }
+
+  public async Task<ISource> OpenAsset(IReadOnlyList<string> urls, bool isArchive) {
+    List<string> errors = [];
+    foreach (string url in urls) {
+      try {
+        IFileInfo file = await Download(url, url, validateZip: false);
+        return isArchive ? new ArchiveSource(file) : new SingleFileSource(file);
+      }
+      catch (ArchiveUnavailableException ex) {
+        errors.Add(ex.Message);
+      }
+    }
+
+    throw new ArchiveUnavailableException(urls.Count == 0
+        ? "The asset has no URLs."
+        : $"Failed to download the asset: {string.Join("; ", errors)}");
   }
 
   /// Gets the git repository URL of a spec (spec §3), without any GitHub proxy applied.
@@ -306,10 +324,10 @@ public class ArchiveProvider(
   }
 
   /// Downloads a URL into the cache under CacheKeys.Http(url), via the GitHub proxy first if one
-  /// is configured. The download goes to the cache's staging directory and is moved into place
-  /// once complete. A candidate whose response is not a valid ZIP archive (e.g. a proxy error
-  /// page) is skipped.
-  private async Task<IFileInfo> Download(string url, string archiveKey) {
+  /// is configured, unless it is cached already. The download goes to the cache's staging
+  /// directory and is moved into place once complete. With validateZip, a candidate whose
+  /// response is not a valid ZIP archive (e.g. a proxy error page) is skipped.
+  private async Task<IFileInfo> Download(string url, string archiveKey, bool validateZip = true) {
     try {
       return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), async destination => {
         List<Exception> exceptions = [];
@@ -324,7 +342,10 @@ public class ArchiveProvider(
 
             await _fileDownloader.DownloadFile(downloadUrl, destination);
             destination.Refresh();
-            ZipValidator.Validate(destination, archiveKey);
+            if (validateZip) {
+              ZipValidator.Validate(destination, archiveKey);
+            }
+
             return;
           }
           catch (Exception ex) when (IsUnavailable(ex) || ex is ArchiveUnavailableException) {

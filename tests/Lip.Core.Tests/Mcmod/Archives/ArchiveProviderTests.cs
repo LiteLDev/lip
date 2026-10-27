@@ -1,3 +1,4 @@
+using System.Formats.Tar;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
@@ -8,6 +9,7 @@ using Lip.Core.Git;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Services;
+using Lip.Core.Sources;
 using Moq;
 
 namespace Lip.Core.Tests.Mcmod.Archives;
@@ -599,5 +601,119 @@ public class ArchiveProviderTests {
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
         "k", new GitArchiveIdentity(_repoUrl, _commit, "")));
+  }
+
+  [Fact]
+  public async Task OpenAsset_Zip_IsNotValidatedLikeUrlArchives() {
+    // Arrange
+    _downloads[_url] = Zip(("dir\\a.dll", "a"), ("b.txt", "b"));
+
+    // Act
+    ISource source = await CreateProvider().OpenAsset([_url], isArchive: true);
+
+    // Assert
+    Assert.Equal(["dir\\a.dll", "b.txt"], source.Keys);
+    Assert.Equal("a", await Read(source, "dir\\a.dll"));
+  }
+
+  [Fact]
+  public async Task OpenAsset_Tgz_OpensItsFiles() {
+    // Arrange
+    using MemoryStream tgz = new();
+    using (GZipStream gzip = new(tgz, CompressionMode.Compress, leaveOpen: true))
+    using (TarWriter tar = new(gzip)) {
+      TarEntry entry = new UstarTarEntry(TarEntryType.RegularFile, "bdsdown") {
+        DataStream = new MemoryStream(Encoding.UTF8.GetBytes("elf")),
+      };
+      await tar.WriteEntryAsync(entry, TestContext.Current.CancellationToken);
+    }
+
+    _downloads[_url] = tgz.ToArray();
+
+    // Act
+    ISource source = await CreateProvider().OpenAsset([_url], isArchive: true);
+
+    // Assert
+    Assert.Equal(["bdsdown"], source.Keys);
+    Assert.Equal("elf", await Read(source, "bdsdown"));
+  }
+
+  [Fact]
+  public async Task OpenAsset_Uncompressed_IsOneFileWithEmptyKey() {
+    // Arrange
+    _downloads[_url] = Encoding.UTF8.GetBytes("not a zip");
+
+    // Act
+    ISource source = await CreateProvider().OpenAsset([_url], isArchive: false);
+
+    // Assert
+    Assert.Equal([""], source.Keys);
+    Assert.Equal("not a zip", await Read(source, ""));
+  }
+
+  [Fact]
+  public async Task OpenAsset_FirstUrlFails_UsesNextAndCachesUnderItsKey() {
+    // Arrange
+    const string mirror = "https://mirror.example.com/pkg.zip";
+    _downloads[mirror] = Zip(("a.txt", "a"));
+
+    // Act
+    ISource first = await CreateProvider().OpenAsset([_url, mirror], isArchive: true);
+    ISource second = await CreateProvider().OpenAsset([mirror], isArchive: true);
+
+    // Assert
+    Assert.Equal(["a.txt"], first.Keys);
+    Assert.Equal(["a.txt"], second.Keys);
+    Assert.Equal(
+        [CacheKeys.Http(mirror)],
+        _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName));
+    _downloader.Verify(d => d.DownloadFile(
+        It.Is<Url>(u => u.ToString() == mirror), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task OpenAsset_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
+    // Arrange
+    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/a.zip";
+    _downloads[githubUrl] = Zip(("a.txt", "a"));
+
+    // Act
+    ISource source = await CreateProvider(new Url("https://proxy.example.com"))
+        .OpenAsset([githubUrl], isArchive: true);
+
+    // Assert
+    Assert.Equal(["a.txt"], source.Keys);
+    _downloader.Verify(d => d.DownloadFile(
+        It.Is<Url>(u => u.ToString() ==
+            "https://proxy.example.com/owner/repo/releases/download/v1.0.0/a.zip"),
+        It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task OpenAsset_NonGitHubUrlWithProxy_DoesNotRewrite() {
+    // Arrange
+    _downloads[_url] = Zip(("a.txt", "a"));
+
+    // Act
+    await CreateProvider(new Url("https://proxy.example.com")).OpenAsset([_url], isArchive: true);
+
+    // Assert
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    _downloader.Verify(d => d.DownloadFile(
+        It.Is<Url>(u => u.ToString() == _url), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task OpenAsset_EveryUrlFails_ThrowsArchiveUnavailable() {
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenAsset([_url], isArchive: true));
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenAsset([], isArchive: true));
+  }
+
+  private static async Task<string> Read(ISource source, string key) {
+    using StreamReader reader = new(await source.OpenRead(key));
+    return await reader.ReadToEndAsync();
   }
 }
