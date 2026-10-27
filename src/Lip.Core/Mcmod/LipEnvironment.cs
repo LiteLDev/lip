@@ -34,16 +34,9 @@ public static class McmodPlatformExtensions {
   };
 }
 
-/// Thrown when an operation needs the environment platform but it could not be determined.
-public class PlatformUnknownException() : InvalidOperationException(
-    "Cannot determine the platform: none of bedrock_server.exe, bedrock_server_mod.exe and "
-    + "Minecraft.Windows.exe exists in the workspace. Specify it explicitly with "
-    + "--platform server|client.");
-
 /// The environment (platform, rid) of a workspace (spec §5.1).
 ///
-/// Platform is null when it could not be determined. That is only an error once something needs
-/// it (see RequirePlatform); tooth.json packages without a client label never do.
-public record LipEnvironment(McmodPlatform? Platform, string Rid) {
-  public McmodPlatform RequirePlatform() => Platform ?? throw new PlatformUnknownException();
-}
+/// lip manages server workspaces only: its operations always use McmodPlatform.Server. Client
+/// workspaces are left to launchers implementing the same spec (LeviLauncher). The client
+/// platform is still part of the model, since documents select artifacts by platform.
+public record LipEnvironment(McmodPlatform Platform, string Rid);

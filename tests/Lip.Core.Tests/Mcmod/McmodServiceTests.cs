@@ -11,12 +11,10 @@ public class McmodServiceTests {
 
   private static readonly OperationOptions s_options = new();
 
-  private static readonly OperationOptions s_server = new(Platform: McmodPlatform.Server);
-
   private readonly WorkspaceHarness _ws = new();
 
   [Fact]
-  public async Task Install_ToothSpecWithoutPlatform_InstallsAndLocksWithoutPlatform() {
+  public async Task Install_ToothSpec_InstallsAndLocksServerPlatform() {
     // Arrange
     _ws.AddTag(Lib, "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
@@ -29,7 +27,7 @@ public class McmodServiceTests {
     // Assert
     Assert.Equal("lib 1", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     LockFile lockFile = await _ws.Lock();
-    Assert.Null(lockFile.Platform);
+    Assert.Equal("server", lockFile.Platform);
     Assert.NotNull(lockFile.Rid);
     LockedPackage package = Assert.Single(lockFile.Packages);
     Assert.Equal(Lib, package.Identity);
@@ -228,7 +226,7 @@ public class McmodServiceTests {
     AddRoutingFixture();
 
     // Act
-    await _ws.Service.Install(["./fixture/"], s_server);
+    await _ws.Service.Install(["./fixture/"], s_options);
 
     // Assert
     Assert.Equal("server", _ws.Fs.File.ReadAllText(_ws.Path("plugins/Demo/Demo.dll")));
@@ -245,32 +243,30 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_RoutingWithoutPlatform_FailsWithPlatformUnknown() {
-    AddRoutingFixture();
-
-    await Assert.ThrowsAsync<PlatformUnknownException>(
-        () => _ws.Service.Install(["./fixture/"], s_options));
-  }
-
-  [Fact]
-  public async Task Install_ModdedServerExecutable_DetectsServer() {
+  public async Task Install_LockRecordsClientPlatform_ThrowsWithoutChanges() {
     // Arrange
     AddRoutingFixture();
-    _ws.AddFile("bedrock_server_mod.exe", "");
+    _ws.AddFile("lip_lock.json", $$"""
+        {
+          "formatVersion": 4,
+          "formatUuid": "{{ManifestFormat.Uuid}}",
+          "platform": "client",
+          "packages": []
+        }
+        """);
 
-    // Act
-    await _ws.Service.Install(["./fixture/"], s_options);
-
-    // Assert
-    Assert.True(_ws.Exists("plugins/Demo/Demo.dll"));
-    Assert.Equal("server", (await _ws.Lock()).Platform);
+    // Act & Assert
+    await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install(["./fixture/"], s_options));
+    Assert.False(_ws.Exists("plugins/Demo/Demo.dll"));
+    Assert.False(_ws.Exists("mods/Demo/Demo.dll"));
   }
 
   [Fact]
   public async Task Uninstall_ByCaseInsensitiveName_RemovesModFiles() {
     // Arrange
     AddRoutingFixture();
-    await _ws.Service.Install(["./fixture/"], s_server);
+    await _ws.Service.Install(["./fixture/"], s_options);
 
     // Act
     await _ws.Service.Uninstall(["demo"], s_options);
@@ -315,7 +311,7 @@ public class McmodServiceTests {
     })));
 
     // Act
-    await _ws.Service.Install(["./x.mcmod"], s_server);
+    await _ws.Service.Install(["./x.mcmod"], s_options);
 
     // Assert
     Assert.Equal("zipped", _ws.Fs.File.ReadAllText(_ws.Path("plugins/Zipped/Zipped.dll")));

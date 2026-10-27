@@ -46,20 +46,13 @@ You can also install a ZIP archive directly from an HTTPS URL:
 lip install https://example.com/package.mcmod
 ```
 
-## Choosing the Platform
+## Server Workspaces Only
 
-lip detects whether the workspace is a server or a client from the executables in it (see [Environment](../concepts/package_manifest.md#environment)). In an empty directory, tell lip which one it is the first time:
-
-```sh
-lip install --platform server github.com/user/repo
-```
-
-The platform is then recorded in the lockfile.
+lip manages server workspaces: mods are installed to `plugins/<name>/` (see [Environment](../concepts/package_manifest.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
 ## Command Flags
 
 -   `-n, --dry-run`: Simulate the installation without making any changes. Useful to see what would happen.
 -   `--no-dependencies`: Install only the specified package, ignoring its dependencies.
 -   `--ignore-scripts`: Skip running the `preInstall` and `postInstall` scripts defined in the package.
--   `--platform <server|client>`: Set the platform of the workspace.
 -   `--rid <RID>`: Set the .NET RID of the workspace, e.g. `win-x64`.

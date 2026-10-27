@@ -49,8 +49,8 @@ public interface IResolver {
 
   /// The same candidate sequence as Resolve, produced lazily: archives (e.g. older tags of a
   /// spec ref) are opened only when the caller asks for more candidates. Diagnostics are
-  /// reported through onDiagnostic as they arise. PlatformUnknownException propagates from
-  /// the enumeration. The default implementation enumerates the result of Resolve.
+  /// reported through onDiagnostic as they arise. The default implementation enumerates the
+  /// result of Resolve.
   public async IAsyncEnumerable<Candidate> ResolveLazy(
       Ref reference,
       ArchiveHandle baseArchive,
@@ -124,15 +124,6 @@ public interface IMcmodInstaller {
   public Task Uninstall(LockedPackage package, InstallContext context);
 }
 
-/// Determines the environment (spec §5.1).
-public interface IEnvironmentDetector {
-  public LipEnvironment Detect(
-      string workspaceRoot,
-      McmodPlatform? explicitPlatform,
-      string? explicitRid,
-      LockFile lockFile);
-}
-
 /// Reads and writes the workspace lock (spec §8).
 public interface ILockStore {
   /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json. Throws when the
@@ -149,7 +140,7 @@ public record LockFile {
   [JsonPropertyName("formatUuid")]
   public string FormatUuid { get; init; } = ManifestFormat.Uuid;
 
-  /// "server" or "client"; null until known.
+  /// "server" or "client" (spec §5.1). lip writes "server"; null in locks migrated from v3.
   [JsonPropertyName("platform")]
   public string? Platform { get; init; }
 

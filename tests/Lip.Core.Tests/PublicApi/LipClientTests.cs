@@ -164,12 +164,6 @@ public class LipClientTests {
     Assert.Equal(["B@2.0.0"], implicitPackages);
   }
 
-  [Fact]
-  public async Task Install_InvalidPlatform_Throws() {
-    await Assert.ThrowsAsync<ArgumentException>(() => _client.Install(
-        ["x"], dryRun: false, ignoreScripts: false, noDependencies: false, platform: "mobile"));
-  }
-
   private static LockedPackage Locked(string name, string version, bool isExplicit) => new() {
     Identity = name,
     Version = version,

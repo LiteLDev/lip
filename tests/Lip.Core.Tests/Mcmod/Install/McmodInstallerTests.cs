@@ -15,7 +15,6 @@ public class McmodInstallerTests {
 
   private static readonly LipEnvironment _server = new(McmodPlatform.Server, "win-x64");
   private static readonly LipEnvironment _client = new(McmodPlatform.Client, "win-x64");
-  private static readonly LipEnvironment _unknown = new(null, "win-x64");
 
   private readonly MockFileSystem _fs = new();
   private readonly Mock<ICommandRunner> _commandRunner = new();
@@ -144,22 +143,7 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Install_ModWithUnknownPlatform_ThrowsWithoutChanges() {
-    // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreInstall = ["echo pre"] },
-    };
-    SortedDictionary<string, string> before = Snapshot();
-
-    // Act & Assert
-    await Assert.ThrowsAsync<PlatformUnknownException>(() => _installer.Install(
-        Candidate(document, Source(_legacyMoneyFiles)), Context(_unknown)));
-    Assert.Equal(before, Snapshot());
-    _commandRunner.VerifyNoOtherCalls();
-  }
-
-  [Fact]
-  public async Task Install_FilePackageWithUnknownPlatform_WritesPlacementOnly() {
+  public async Task Install_FilePackage_WritesPlacementOnly() {
     // Arrange: PeEditor from the spec appendix.
     ConcreteDocument document =
         FilePackage("PeEditor", new Placement("PeEditor.exe", "PeEditor.exe"));
@@ -171,7 +155,7 @@ public class McmodInstallerTests {
 
     // Act
     IReadOnlyList<string> owned =
-        await _installer.Install(Candidate(document, source), Context(_unknown));
+        await _installer.Install(Candidate(document, source), Context(_server));
 
     // Assert
     Assert.Equal(["PeEditor.exe"], owned);
@@ -629,13 +613,13 @@ public class McmodInstallerTests {
           RemoveFiles = [new PathGlob("PeEditor.log"), new PathGlob("cache/")],
         };
     IReadOnlyList<string> owned = await _installer.Install(
-        Candidate(document, Source(new() { ["PeEditor.exe"] = "exe" })), Context(_unknown));
+        Candidate(document, Source(new() { ["PeEditor.exe"] = "exe" })), Context(_server));
     AddFile("PeEditor.log", "log");
     AddFile("cache/a/b.bin", "b");
     AddFile("bedrock_server.exe", "bds");
 
     // Act
-    await _installer.Uninstall(Locked(document, owned), Context(_unknown));
+    await _installer.Uninstall(Locked(document, owned), Context(_server));
 
     // Assert
     Assert.False(_fs.File.Exists(Full("PeEditor.exe")));
@@ -689,19 +673,6 @@ public class McmodInstallerTests {
 
     // Assert
     Assert.Equal([("pre", _root, true), ("post", _root, false)], calls);
-  }
-
-  [Fact]
-  public async Task Uninstall_ModWithUnknownPlatform_ThrowsWithoutChanges() {
-    // Arrange
-    IReadOnlyList<string> owned = await _installer.Install(
-        Candidate(LegacyMoney(), Source(_legacyMoneyFiles)), Context(_server));
-    SortedDictionary<string, string> before = Snapshot();
-
-    // Act & Assert
-    await Assert.ThrowsAsync<PlatformUnknownException>(
-        () => _installer.Uninstall(Locked(LegacyMoney(), owned), Context(_unknown)));
-    Assert.Equal(before, Snapshot());
   }
 
   [Fact]

@@ -71,8 +71,7 @@ lip maintains the state of your installed packages in the lockfile `lip_lock.jso
 
 lip implements the lip package specification (format version 4) with these deliberate differences:
 
-1.  **`bedrock_server_mod.exe`**: Besides `bedrock_server.exe`, `bedrock_server_mod.exe` in the workspace root also means `server`. A LeviLamina server renames `bedrock_server.exe` to `bedrock_server.exe.bak` and runs `bedrock_server_mod.exe` instead.
-2.  **Lazy platform failure**: An unknown platform is not an error until something needs it: an artifact with a `platform` selector, a concrete package with platform `server` or `client`, <span v-pre>`{{platform}}`</span>, or installing a mod. `tooth.json` packages without a `client` variant never need it, so `lip install github.com/LiteLDev/LeviLamina` works in an empty directory. The error asks you to pass `--platform`.
-3.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
-4.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and found again in the cache. If the cache was cleaned, lip resolves the recorded chain again and accepts the result only if its SHA-256 matches.
-5.  **Two variants of one tooth**: A `tooth_lock.json` may hold two variants of one `tooth.json` package under the same identity. Both entries are kept and listed, and can be uninstalled separately with `path#variant`. New solves require unique identities.
+1.  **Server only**: lip does not determine the platform from the workspace (spec §5.1); it always uses `server`. Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
+2.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
+3.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and found again in the cache. If the cache was cleaned, lip resolves the recorded chain again and accepts the result only if its SHA-256 matches.
+4.  **Two variants of one tooth**: A `tooth_lock.json` may hold two variants of one `tooth.json` package under the same identity. Both entries are kept and listed, and can be uninstalled separately with `path#variant`. New solves require unique identities.

@@ -38,7 +38,6 @@ internal sealed class WorkspaceHarness {
     Service = new McmodService(
         Fs,
         Ui.Object,
-        new EnvironmentDetector(Fs),
         LockStore,
         ArchiveProvider,
         new ArchiveReader(parser),

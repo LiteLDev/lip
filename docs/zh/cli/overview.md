@@ -11,7 +11,7 @@
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`list`](commands/list.md) 和 [`versions`](commands/versions.md)。
 
-[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--platform server|client` 和 `--rid <RID>`，用于设置工作区的[环境](../concepts/package_manifest.md#环境)。
+[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--rid <RID>`，用于设置工作区[环境](../concepts/package_manifest.md#环境)中的 RID。lip 只管理服务端工作区。
 
 ## 命令
 

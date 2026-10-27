@@ -33,7 +33,6 @@ public class UninstallCommand(ILipClient lipClient, IUserInteraction userInterac
         settings.DryRun,
         settings.IgnoreScripts,
         settings.NoDependencies,
-        settings.Platform,
         settings.Rid);
     await _userInteraction.PrintSuccess("Packages uninstalled successfully.");
     return 0;

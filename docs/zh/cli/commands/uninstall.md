@@ -29,5 +29,4 @@ lip uninstall <PACKAGES> [options]
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
 | `--ignore-scripts` | 跳过执行 `preUninstall` 和 `postUninstall` 脚本（`tooth.json` 包为 `pre_uninstall`、`uninstall` 和 `post_uninstall`）。 |
 | `--no-dependencies` | 只卸载给定的包（依赖也可以），不移除其他依赖。这可能导致工作区损坏。 |
-| `--platform <PLATFORM>` | 工作区的平台：`server` 或 `client`。参见[环境](../../concepts/package_manifest.md#环境)。 |
 | `--rid <RID>` | 工作区的 .NET RID，例如 `win-x64`。 |

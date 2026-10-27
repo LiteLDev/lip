@@ -112,7 +112,7 @@ public partial class McmodInstaller(
     string baseDir = BaseDirectory(document, context.Environment);
     string stopDir = document.IsFilePackage
         ? root
-        : ToFullPath(root, context.Environment.RequirePlatform().ModsDirectory());
+        : ToFullPath(root, context.Environment.Platform.ModsDirectory());
 
     // 1. preUninstall.
     if (!context.DryRun && !context.IgnoreScripts) {
@@ -200,7 +200,7 @@ public partial class McmodInstaller(
     }
     return document.IsFilePackage
         ? ""
-        : $"{environment.RequirePlatform().ModsDirectory()}/{document.Name}/";
+        : $"{environment.Platform.ModsDirectory()}/{document.Name}/";
   }
 
   [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$")]

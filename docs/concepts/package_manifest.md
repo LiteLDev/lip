@@ -205,7 +205,8 @@ that exits with a non-zero code fails the operation.
 ## File Packages and Mods
 
 - A **mod** (any `type` other than `"files"`): the whole archive is written to
-  `plugins/<name>/` on a server, or `mods/<name>/` on a client.
+  `plugins/<name>/` on a server, or `mods/<name>/` on a client. lip installs to server
+  workspaces; client workspaces are managed by launchers such as LeviLauncher.
 - A **file package** (`"type": "files"`): the `placements` are executed in order.
 
 ```json
@@ -226,15 +227,11 @@ Installing a file that another installed package owns is an error.
 
 The environment of a workspace is a pair `(platform, rid)`:
 
-- **platform**: `--platform`, else the value in the [lockfile](lockfiles.md), else `server` if
-  `bedrock_server.exe` or `bedrock_server_mod.exe` is in the workspace root, else `client` if
-  `Minecraft.Windows.exe` is there, else unknown.
+- **platform**: `server` or `client`. lip manages server workspaces only, so it always uses
+  `server`. Client workspaces are managed by launchers implementing the same specification,
+  such as LeviLauncher; lip refuses a workspace whose [lockfile](lockfiles.md) records `client`.
 - **rid**: `--rid`, else the value in the lockfile, else the RID lip itself runs on (e.g.
   `win-x64`).
-
-An unknown platform is only an error when something needs it: an artifact with a `platform`
-selector, a concrete package with platform `server` or `client`, <span v-pre>`{{platform}}`</span>, or installing
-a mod. lip then asks you to pass `--platform server` or `--platform client`.
 
 ## Legacy: tooth.json
 

@@ -11,8 +11,7 @@ namespace Lip.Core.Mcmod.Compat;
 ///   GetVariant (e.g. duplicate dependency keys across merged variants) propagate, as they
 ///   failed the operation in v3 too. The resolver checks the version range.
 /// - §9.2: a ref variant is a v3 label, except that "" means "client" when the environment
-///   platform is client and the tooth.json has a variant labeled "client". An unknown platform
-///   counts as "not client", so tooth packages never need the platform.
+///   platform is client and the tooth.json has a variant labeled "client".
 /// - §9.3: ToothPackage.InstallEdges carries each v3 dependency as an InstallEdge with
 ///   ToothClientCompat = true. This class does not apply the client-to-"" mapping itself: the
 ///   resolver does, when such an edge's ref has variant "client" and its target archive turns

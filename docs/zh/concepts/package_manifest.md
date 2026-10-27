@@ -197,7 +197,7 @@ RID、并且 `version` 在请求的范围内时，具体包才是候选。
 ## 文件包与 mod
 
 - **mod**（`type` 不是 `"files"`）：整个归档写入服务端的 `plugins/<name>/`，或客户端的
-  `mods/<name>/`。
+  `mods/<name>/`。lip 只安装到服务端工作区；客户端工作区由 LeviLauncher 等启动器管理。
 - **文件包**（`"type": "files"`）：按顺序执行 `placements`。
 
 ```json
@@ -218,14 +218,10 @@ RID、并且 `version` 在请求的范围内时，具体包才是候选。
 
 工作区的环境是一对值 `(platform, rid)`：
 
-- **platform**：`--platform`；否则取[锁文件](lockfiles.md)中的值；否则若工作区根目录存在
-  `bedrock_server.exe` 或 `bedrock_server_mod.exe` 则为 `server`；否则若存在
-  `Minecraft.Windows.exe` 则为 `client`；否则未知。
+- **platform**：`server` 或 `client`。lip 只管理服务端工作区，因此总是使用 `server`。客户端
+  工作区由实现同一规范的启动器（如 LeviLauncher）管理；[锁文件](lockfiles.md)记录为 `client`
+  的工作区会被 lip 拒绝。
 - **rid**：`--rid`；否则取锁文件中的值；否则取 lip 自身运行时的 RID（例如 `win-x64`）。
-
-平台未知只有在需要用到它时才会报错：带 `platform` 选择器的条目、平台为 `server` 或 `client`
-的具体包、<span v-pre>`{{platform}}`</span>，或安装 mod。此时 lip 会提示你传入 `--platform server` 或
-`--platform client`。
 
 ## 旧格式：tooth.json
 

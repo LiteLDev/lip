@@ -71,8 +71,7 @@ lip 在工作区根目录的锁文件 `lip_lock.json` 中维护已安装包状�
 
 lip 实现 lip 包规范（格式版本 4）时，有以下刻意的差异：
 
-1. **`bedrock_server_mod.exe`**：除 `bedrock_server.exe` 外，工作区根目录中的 `bedrock_server_mod.exe` 也表示 `server`。装有 LeviLamina 的服务端会把 `bedrock_server.exe` 重命名为 `bedrock_server.exe.bak`，改为运行 `bedrock_server_mod.exe`。
-2. **平台未知时延迟报错**：平台未知只有在需要用到它时才会报错：带 `platform` 选择器的条目、平台为 `server` 或 `client` 的具体包、<span v-pre>`{{platform}}`</span>，或安装 mod。没有 `client` 变体的 `tooth.json` 包从不需要平台，因此 `lip install github.com/LiteLDev/LeviLamina` 在空目录中也能执行。报错信息会提示你传入 `--platform`。
-3. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。
-4. **嵌套的 ZIP 归档**：位于另一个归档中的 ZIP 归档只按 SHA-256 锁定，并从缓存中重新找到。若缓存已被清理，lip 会重新解析记录的解析链，并且只接受 SHA-256 一致的结果。
-5. **同一 tooth 的两个变体**：`tooth_lock.json` 可能以同一身份记录同一个 `tooth.json` 包的两个变体。两个条目都会保留并列出，并可分别用 `path#variant` 卸载。新的求解要求身份唯一。
+1. **仅限服务端**：lip 不从工作区判断平台（规范 §5.1），总是使用 `server`。客户端工作区交由实现同一规范的启动器（如 LeviLauncher）处理。
+2. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。
+3. **嵌套的 ZIP 归档**：位于另一个归档中的 ZIP 归档只按 SHA-256 锁定，并从缓存中重新找到。若缓存已被清理，lip 会重新解析记录的解析链，并且只接受 SHA-256 一致的结果。
+4. **同一 tooth 的两个变体**：`tooth_lock.json` 可能以同一身份记录同一个 `tooth.json` 包的两个变体。两个条目都会保留并列出，并可分别用 `path#variant` 卸载。新的求解要求身份唯一。

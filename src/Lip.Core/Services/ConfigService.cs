@@ -17,8 +17,7 @@ public interface IConfigService {
 }
 
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) : IConfigService {
-  private static readonly string _configPath = Path.Combine(
-      Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "liprc.json");
+  private static readonly string _configPath = Path.Join(LipDirectories.Config, "liprc.json");
   private static readonly JsonSerializerOptions _jsonSerializerOptions = new() {
     WriteIndented = true
   };

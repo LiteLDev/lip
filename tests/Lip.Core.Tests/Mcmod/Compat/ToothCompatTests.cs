@@ -14,8 +14,6 @@ public class ToothCompatTests {
 
   private static readonly LipEnvironment _clientWin = new(McmodPlatform.Client, "win-x64");
 
-  private static readonly LipEnvironment _unknownWin = new(null, "win-x64");
-
   private static readonly string _multiPlatformV3 = $$"""
       {
         "format_version": 3,
@@ -118,16 +116,14 @@ public class ToothCompatTests {
         package.InstallEdges.Select(e => e.Refs.Single().ToString()));
   }
 
-  [Theory]
-  [InlineData(McmodPlatform.Server)]
-  [InlineData(null)]
-  public async Task Select_NotClientPlatform_KeepsEmptyLabel(McmodPlatform? platform) {
+  [Fact]
+  public async Task Select_ServerPlatform_KeepsEmptyLabel() {
     // Arrange
     ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
 
     // Act
     ToothPackage? package = ToothCompat.Select(
-        document.Manifest, "", new LipEnvironment(platform, "win-x64"));
+        document.Manifest, "", _serverWin);
 
     // Assert
     Assert.NotNull(package);
@@ -180,18 +176,6 @@ public class ToothCompatTests {
     // Assert
     Assert.Null(package);
     Assert.Throws<KeyNotFoundException>(() => document.Manifest.GetVariant(variant, "win-x64"));
-  }
-
-  [Fact]
-  public async Task Select_UnknownPlatformAndNoClientVariant_DoesNotNeedPlatform() {
-    // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
-
-    // Act
-    ToothPackage? package = ToothCompat.Select(document.Manifest, "client", _unknownWin);
-
-    // Assert
-    Assert.NotNull(package);
   }
 
   [Fact]

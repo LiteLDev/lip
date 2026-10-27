@@ -17,16 +17,12 @@ public interface ICacheService {
 }
 
 public class CacheService(IFileSystem fileSystem, IUserInteraction userInteraction) : ICacheService {
-  private readonly IDirectoryInfo _cacheDirectory = fileSystem.DirectoryInfo.New(
-      Path.Join(
-          Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-          "lip",
-          "cache"));
-  private readonly IDirectoryInfo _tempDirectory = fileSystem.DirectoryInfo.New(
-      Path.Join(
-          Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-          "lip",
-          "temp"));
+  private readonly IDirectoryInfo _cacheDirectory =
+      fileSystem.DirectoryInfo.New(LipDirectories.Cache);
+  // Inside the cache directory, so that moving a finished entry into place is a rename on the
+  // same volume. No cache key escapes to a name starting with ".".
+  private readonly IDirectoryInfo _tempDirectory =
+      fileSystem.DirectoryInfo.New(Path.Join(LipDirectories.Cache, ".staging"));
 
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;

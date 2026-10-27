@@ -17,11 +17,8 @@
 ### `tooth_lock.json` 去哪了？
 它已被 `lip_lock.json` 取代。下次安装、卸载或更新包时，lip 会自动迁移已有的 `tooth_lock.json`，然后将其删除。参见[锁文件](concepts/lockfiles.md#旧格式-tooth-lock-json)。
 
-### 需要 `--platform` 吗？
-通常不需要。lip 根据工作区根目录中的 `bedrock_server.exe` 或 `bedrock_server_mod.exe` 识别服务端，根据 `Minecraft.Windows.exe` 识别客户端；平台一旦确定就会记录在锁文件中。当你向一个还没有这些文件的目录安装时（例如在安装游戏本体之前），才需要 `--platform server` 或 `--platform client`。
-
-### 为什么 lip 提示平台未知？
-某个包需要用到平台（例如 mod 在服务端安装到 `plugins/`，在客户端安装到 `mods/`），而 lip 无法检测到它：工作区根目录中没有 `bedrock_server.exe`、`bedrock_server_mod.exe` 或 `Minecraft.Windows.exe`，锁文件中也没有记录。传入一次 `--platform server` 或 `--platform client` 即可，之后它会被记录在锁文件中。
+### lip 能安装客户端 mod 吗？
+不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的 `manifest.json` 包。
 
 ### 为什么我仓库的某个标签不是版本？
 只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。
@@ -36,6 +33,6 @@
 目前不支持。lip 通过 HTTPS 匿名获取包，不使用 `git` 命令行工具或其凭据管理器，因此只能从公开仓库安装。
 
 ### lip 会把安装的包放在哪里？
-lip 会将包文件**直接安装到你的工作区**。mod 在服务端安装到 `plugins/<name>/`，在客户端安装到 `mods/<name>/`；文件包按其 `manifest.json` 的规定放置文件。
+lip 会将包文件**直接安装到你的工作区**。mod 安装到 `plugins/<name>/`；文件包按其 `manifest.json` 的规定放置文件。
 
-全局缓存位于系统本地应用数据目录（例如 Windows 的 `%LOCALAPPDATA%\lip\cache`，Linux 的 `~/.local/share/lip/cache`）。
+全局缓存位于 Windows 的 `%LOCALAPPDATA%\lip\cache`，Linux 和 macOS 的 `$XDG_CACHE_HOME/lip`（默认 `~/.cache/lip`）。它可以随时删除，例如使用 `lip cache clean`。配置位于 `%APPDATA%\lip` 或 `$XDG_CONFIG_HOME/lip`（默认 `~/.config/lip`），临时文件位于 `%TEMP%\lip` 或 `$TMPDIR/lip`（默认 `/tmp/lip`）。

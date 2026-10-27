@@ -25,7 +25,7 @@ public class UpdateCommand(ILipClient lipClient, IUserInteraction userInteractio
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     await _lipClient.Update(
-        settings.Packages, settings.DryRun, settings.IgnoreScripts, settings.Platform, settings.Rid);
+        settings.Packages, settings.DryRun, settings.IgnoreScripts, settings.Rid);
     await _userInteraction.PrintSuccess("Packages updated successfully.");
     return 0;
   }

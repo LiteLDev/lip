@@ -28,13 +28,6 @@ public class RefTemplateTests {
   }
 
   [Fact]
-  public void Expand_PlatformUnknown_ThrowsPlatformUnknownException() {
-    // Act & Assert
-    Assert.Throws<PlatformUnknownException>(
-        () => RefTemplate.Expand("./{{platform}}/", _document, new(null, "win-x64")));
-  }
-
-  [Fact]
   public void Expand_MissingName_ThrowsFormatException() {
     // Arrange
     RoutingDocument document = _document with { Name = null };

@@ -24,5 +24,4 @@ The packages must already be installed. Updating a package uninstalls the old ve
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
 | `--ignore-scripts` | Skip running install and uninstall lifecycle scripts while updating packages. |
-| `--platform <PLATFORM>` | The platform of the workspace: `server` or `client`. See [Environment](../../concepts/package_manifest.md#environment). |
 | `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |

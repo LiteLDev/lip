@@ -17,11 +17,8 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 ### What happened to `tooth_lock.json`?
 It was replaced by `lip_lock.json`. lip migrates an existing `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it. See [Lockfiles](concepts/lockfiles.md#legacy-tooth-lock-json).
 
-### Do I need `--platform`?
-Usually not. lip detects a server from `bedrock_server.exe` or `bedrock_server_mod.exe` and a client from `Minecraft.Windows.exe` in the workspace root, and the platform is recorded in the lockfile once known. You need `--platform server` or `--platform client` when installing into a directory that has none of them yet, for example before the game itself is installed.
-
-### Why does lip say the platform is unknown?
-A package needs the platform (for example, a mod is installed to `plugins/` on a server but `mods/` on a client), and lip could not detect it: the workspace root has no `bedrock_server.exe`, `bedrock_server_mod.exe` or `Minecraft.Windows.exe`, and the lockfile records none. Pass `--platform server` or `--platform client` once; it is then recorded in the lockfile.
+### Can lip install client mods?
+No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same `manifest.json` packages.
 
 ### Why is a tag of my repository not a version?
 Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) version, such as `v1.2.3`, are versions. Tags such as `v1.2` or `1.2.3` are ignored.
@@ -36,6 +33,6 @@ No. lip talks to git repositories over HTTPS with its own built-in client, so th
 Not currently. lip fetches packages anonymously over HTTPS and does not use the `git` command-line tool or its credential helpers, so only public repositories can be installed from.
 
 ### Where does lip store installed packages?
-lip installs package files **directly into your workspace**. A mod is installed to `plugins/<name>/` on a server or `mods/<name>/` on a client; a file package places its files where its `manifest.json` says.
+lip installs package files **directly into your workspace**. A mod is installed to `plugins/<name>/`; a file package places its files where its `manifest.json` says.
 
-The global cache is stored in your system's local application data directory (e.g., `%LOCALAPPDATA%\lip\cache` on Windows, or `~/.local/share/lip/cache` on Linux).
+The global cache is stored in `%LOCALAPPDATA%\lip\cache` on Windows, and in `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) on Linux and macOS. It is safe to delete at any time, e.g. with `lip cache clean`. Configuration lives in `%APPDATA%\lip` or `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`), and temporary files in `%TEMP%\lip` or `$TMPDIR/lip` (by default `/tmp/lip`).

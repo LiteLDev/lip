@@ -42,7 +42,7 @@ public record Artifact {
   public int SelectorCount => (Platforms is null ? 0 : 1) + (Rids is null ? 0 : 1);
 
   public bool Matches(LipEnvironment environment) =>
-      (Platforms is null || Platforms.Contains(environment.RequirePlatform()))
+      (Platforms is null || Platforms.Contains(environment.Platform))
       && (Rids is null || Rids.Contains(environment.Rid));
 }
 

@@ -327,7 +327,7 @@ public class ArchiveProvider(
 
   /// Writes content to a temporary file, then moves it into the cache under its SHA-256.
   private async Task<(IFileInfo File, string Sha256)> StoreInCache(Func<IFileInfo, Task> write) {
-    string tempDirectory = _fileSystem.Path.Combine(_fileSystem.Path.GetTempPath(), "lip");
+    string tempDirectory = LipDirectories.Temp;
     _fileSystem.Directory.CreateDirectory(tempDirectory);
     IFileInfo temp = _fileSystem.FileInfo.New(
         _fileSystem.Path.Combine(tempDirectory, Guid.NewGuid().ToString()));

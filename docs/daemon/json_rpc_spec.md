@@ -16,11 +16,10 @@ This schema defines:
 
 ## Environment Parameters
 
-`Install`, `Uninstall` and `Update` take two optional trailing parameters that correspond to the CLI options `--platform` and `--rid`:
+`Install`, `Uninstall` and `Update` take an optional trailing parameter that corresponds to the CLI option `--rid`:
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `platform` | `string \| null` | `"server"` or `"client"`. `null` detects it (see [Environment](../concepts/package_manifest.md#environment)). |
 | `rid` | `string \| null` | A .NET RID such as `"win-x64"`. `null` uses the lock or lip's own RID. |
 
 The `packages` parameter of `Update` may be empty to update every explicitly installed package.

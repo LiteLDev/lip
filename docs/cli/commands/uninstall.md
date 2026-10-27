@@ -29,5 +29,4 @@ Dependencies that no explicitly installed package needs any more are uninstalled
 | `-n, --dry-run` | Run without making any changes. |
 | `--ignore-scripts` | Skip running `preUninstall` and `postUninstall` scripts (`pre_uninstall`, `uninstall` and `post_uninstall` for `tooth.json` packages). |
 | `--no-dependencies` | Uninstall exactly the given packages, even dependencies, and do not remove other dependencies. This may leave the workspace broken. |
-| `--platform <PLATFORM>` | The platform of the workspace: `server` or `client`. See [Environment](../../concepts/package_manifest.md#environment). |
 | `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |

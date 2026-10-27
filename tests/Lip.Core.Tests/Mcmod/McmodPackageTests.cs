@@ -49,8 +49,8 @@ public class McmodPackageTests {
     Artifact artifact = new() { Rids = ["win-x64"], Refs = ["./a/"] };
 
     // Act & Assert
-    Assert.True(artifact.Matches(new(null, "win-x64")));
-    Assert.False(artifact.Matches(new(null, "linux-x64")));
+    Assert.True(artifact.Matches(new(McmodPlatform.Server, "win-x64")));
+    Assert.False(artifact.Matches(new(McmodPlatform.Server, "linux-x64")));
     Assert.Equal(1, artifact.SelectorCount);
   }
 }

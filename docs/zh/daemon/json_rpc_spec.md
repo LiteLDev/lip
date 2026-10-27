@@ -16,11 +16,10 @@
 
 ## 环境参数
 
-`Install`、`Uninstall` 和 `Update` 末尾有两个可选参数，对应 CLI 选项 `--platform` 和 `--rid`：
+`Install`、`Uninstall` 和 `Update` 末尾有一个可选参数，对应 CLI 选项 `--rid`：
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `platform` | `string \| null` | `"server"` 或 `"client"`。为 `null` 时自动检测（参见[环境](../concepts/package_manifest.md#环境)）。 |
 | `rid` | `string \| null` | .NET RID，例如 `"win-x64"`。为 `null` 时使用锁中的值或 lip 自身的 RID。 |
 
 `Update` 的 `packages` 参数可以为空，表示更新所有显式安装的包。
