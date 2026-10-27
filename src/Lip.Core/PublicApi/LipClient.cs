@@ -9,7 +9,6 @@ using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
-using Lip.Core.Migration.PackageManifests;
 using Lip.Core.Services;
 
 namespace Lip.Core.PublicApi;
@@ -29,7 +28,7 @@ public interface ILipClient {
       string? rid = null,
       CancellationToken cancellationToken = default);
   Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List();
-  Task Migrate(string file, string output);
+  Task Migrate();
   Task Uninstall(
       IEnumerable<string> packages,
       bool dryRun,
@@ -174,22 +173,13 @@ public class LipClient(
         packages.Where(p => !p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct());
   }
 
-  /// Converts a tooth.json (format 1–3) into a format 4 manifest.json. Everything that cannot be
-  /// converted is reported as a warning.
-  public async Task Migrate(string file, string output) {
-    PackageManifest packageManifest;
-    using (Stream inputStream = _fileSystem.File.OpenRead(file)) {
-      using JsonDocument inputJson = await JsonDocument.ParseAsync(inputStream);
-      packageManifest = PackageManifestMigration.Migrate(inputJson);
-    }
+  /// Migrates the package repository in the current directory from tooth.json to manifest.json
+  /// (ToothRepositoryMigrator). Everything that cannot be converted is reported as a warning.
+  public async Task Migrate() {
+    IReadOnlyList<string> notes = await ToothRepositoryMigrator.Migrate(
+        _fileSystem, _fileSystem.Directory.GetCurrentDirectory());
 
-    ToothMigrator.Result result = ToothMigrator.Migrate(packageManifest);
-
-    using (Stream outputStream = _fileSystem.CreateFileWithDirectory(output)) {
-      await JsonSerializer.SerializeAsync(outputStream, result.Document, _jsonSerializerOptions);
-    }
-
-    foreach (string note in result.Notes) {
+    foreach (string note in notes) {
       await _userInteraction.PrintWarning(note);
     }
   }

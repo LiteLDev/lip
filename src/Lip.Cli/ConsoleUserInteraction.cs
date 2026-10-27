@@ -13,22 +13,22 @@ public class ConsoleUserInteraction : IUserInteraction {
   }
 
   public async Task PrintSuccess(string message) {
-    _console.MarkupLine($"[green]✓ {message}[/]");
+    _console.MarkupLine($"[green]✓ {Markup.Escape(message)}[/]");
   }
 
   public async Task PrintWarning(string message) {
-    _console.MarkupLine($"[#FFA500]⚠[/] [yellow]{message}[/]");
+    _console.MarkupLine($"[#FFA500]⚠[/] [yellow]{Markup.Escape(message)}[/]");
   }
 
   public async Task PrintError(string message) {
-    _console.MarkupLine($"[bold red]✗ {message}[/]");
+    _console.MarkupLine($"[bold red]✗ {Markup.Escape(message)}[/]");
   }
 
   public async Task RunWithProgress(string message, Func<IProgress<double>, Task> action) {
     Progress progress = _console.Progress();
 
     await progress.StartAsync(async ctx => {
-      ProgressTask task = ctx.AddTask(message);
+      ProgressTask task = ctx.AddTask(Markup.Escape(message));
 
       await action(task);
     });

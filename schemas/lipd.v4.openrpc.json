@@ -190,23 +190,8 @@
     },
     {
       "name": "Migrate",
-      "description": "Converts a tooth.json (format 1-3) into a format 4 manifest.json.",
-      "params": [
-        {
-          "name": "file",
-          "description": "Path to the tooth.json to convert.",
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "name": "output",
-          "description": "Path to the manifest.json to write.",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "description": "Migrates the package repository at the daemon's working directory (the workspace, which must be the repository root) from tooth.json (format 1-3) to a format 4 manifest.json: the converted keys are merged into an existing manifest.json without overwriting its keys, then tooth.json is deleted. What cannot be converted is reported through PrintWarning.",
+      "params": [],
       "result": {
         "name": "result",
         "schema": {

@@ -20,7 +20,7 @@
 - [`lip init`](commands/init.md)：为新项目创建 `manifest.json`。
 - [`lip install`](commands/install.md)：安装包。
 - [`lip list`](commands/list.md)：列出已安装包。
-- [`lip migrate`](commands/migrate.md)：将 `tooth.json` 转换为 `manifest.json`。
+- [`lip migrate`](commands/migrate.md)：把当前目录下的包仓库从 `tooth.json` 迁移到 `manifest.json`。
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。
 - [`lip versions`](commands/versions.md)：显示某个包的可用版本。
