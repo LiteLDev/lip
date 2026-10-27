@@ -329,9 +329,12 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     Url url = repoUrl.Clone()
         .AppendPathSegments("info", "refs")
         .SetQueryParam("service", "git-upload-pack");
+    // Flurl drops request headers on redirect by default; without Git-Protocol the redirect
+    // target answers with protocol version 0. Authorization is still never forwarded.
     using IFlurlResponse response = await url
         .WithHeader("Git-Protocol", GitProtocolHeader)
         .WithHeader("User-Agent", UserAgent)
+        .WithSettings(settings => settings.Redirects.ForwardHeaders = true)
         .AllowAnyHttpStatus()
         .GetAsync(HttpCompletionOption.ResponseHeadersRead);
     EnsureSuccess(response, url);

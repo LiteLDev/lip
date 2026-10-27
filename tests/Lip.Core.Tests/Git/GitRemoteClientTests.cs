@@ -176,6 +176,10 @@ public class GitRemoteClientTests {
 
     await client.ListRefs(new Url("https://github.com/Old/Name.git"), []);
 
+    // Without Git-Protocol the redirect target would answer with protocol version 0.
+    httpTest.ShouldHaveCalled("https://github.com/New/Name.git/info/refs*")
+        .WithHeader("Git-Protocol", "version=2")
+        .WithHeader("User-Agent", "git/2.0 (lip)");
     httpTest.ShouldHaveCalled("https://github.com/New/Name.git/git-upload-pack");
     httpTest.ShouldNotHaveCalled("https://github.com/Old/Name.git/git-upload-pack");
   }
