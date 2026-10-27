@@ -9,7 +9,7 @@
 `manifest.json` 是 lip 包的清单文件。它就是 LeviLamina mod 的清单，再加上 lip 需要的内容：去哪里找包的依赖、在哪个平台上安装哪个构建，以及如何放置文件。参见[包清单](concepts/package_manifest.md)。
 
 ### 还能安装 `tooth.json` 包吗？
-**可以。** lip 仍会读取 `tooth.json`（格式版本 1 到 3），因此已有的包仍可使用。lip 不再写入 `tooth.json`；请使用 [`lip migrate`](cli/commands/migrate.md) 把你的包转换为 `manifest.json`。
+**可以。** lip 仍会读取 `tooth.json`（格式版本 1 到 3）：它在内存中把每个 `tooth.json` 转换为第 4 版的包，并像其他包一样安装，放置的文件与以前相同，因此已有的包仍可使用。lip 不再写入 `tooth.json`；请使用 [`lip migrate`](cli/commands/migrate.md) 把你的包转换为 `manifest.json`。
 
 ### `lip install` 会更新 `manifest.json` 吗？
 **不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[锁文件](concepts/lockfiles.md)来记录状态，但**不会**修改你的 `manifest.json`。如果你希望依赖长期保留在包的要求中，需要手动把它加入 `manifest.json`。

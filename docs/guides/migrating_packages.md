@@ -52,6 +52,6 @@ lip does not create those packages: build a concrete `manifest.json` with the fi
 -   Version ranges that LeviLamina's syntax cannot express are left out.
 -   Glob patterns that use more than `*` and `**` are copied, but may not match the same files.
 -   A converted file package places files exactly where the `tooth.json` did. If your package is a mod, consider making it a mod instead (any `type` other than `"files"`), which is installed to `mods/<name>/`.
--   Dependencies on other `tooth.json` packages keep working, because lip still reads `tooth.json`.
+-   Dependencies on other `tooth.json` packages keep working, because lip still installs `tooth.json` packages (it converts them to format 4 in memory).
 
 Tags are versions only when they are named exactly `v<SemVer>` (e.g. `v1.2.3`). Tags such as `v1.2` are ignored.

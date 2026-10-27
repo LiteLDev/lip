@@ -229,11 +229,22 @@ RID、并且 `version` 在请求的范围内时，具体包才是候选。
 lip v0.x 的包使用 `tooth.json`（格式版本 1 到 3）。lip 仍然读取它们，但不再写入；
 请使用 [`lip migrate`](../cli/commands/migrate.md) 转换你的包。
 
+lip 在内存中把 `tooth.json` 转换为第 4 版的文件包，并像其他包一样处理它；确切的映射见
+[规范](../spec/package_format.md) §9：
+
 - 归档同时含有 `tooth.json` 和 `manifest.json` 时，以 `tooth.json` 为准。
 - 包的身份是 `tooth` 的值，ref 的 variant 即变体标签。当平台为 `client` 且 ref 不带
-  variant 时，若存在标签为 `client` 的变体，则使用它。
-- 所选变体的依赖按 `installDependencies` 的方式安装。
+  variant 时，若存在标签为 `client` 的变体，则使用它。具有该标签且与 RID 匹配的各变体
+  会像 lip v0.x 那样合并。
 - 若标签处的 `tooth.json` 声明的版本与标签不同，以标签版本为准，lip 会给出警告。
+- 所选变体的依赖按 `installDependencies` 的方式安装，其版本范围按 lip v0.x 的方式解释。
+- 每个资源都成为包的一部分：`self` 是标签处的仓库，`zip`、`tar`、`tgz` 和 `uncompressed`
+  资源在安装包时下载（并缓存）。放置规则在安装时与资源中的文件匹配（包括 glob），写入的
+  文件与 lip v0.x 相同。
+- `preserve_files`、`remove_files` 和脚本分别成为 `preserveFiles`、`removeFiles` 和
+  `scripts`（`install` 随 `postInstall` 运行，`uninstall` 随 `preUninstall` 运行）。文件的
+  归属、保留与删除遵循第 4 版的规则。
+- 锁以 `"kind": "tooth"` 记录该 `tooth.json`；卸载或更新该包时，lip 会再次转换它。
 
 格式 3 的 schema 为
 [`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.schema.json)

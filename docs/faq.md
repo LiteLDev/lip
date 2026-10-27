@@ -9,7 +9,7 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 `manifest.json` is the manifest of a lip package. It is the manifest of a LeviLamina mod, extended with what lip needs: where to find the package's dependencies, which build to install on which platform, and how to place files. See [Package Manifest](concepts/package_manifest.md).
 
 ### Can I still install `tooth.json` packages?
-**Yes.** lip still reads `tooth.json` (format versions 1 to 3), so existing packages keep working. lip no longer writes `tooth.json`; use [`lip migrate`](cli/commands/migrate.md) to convert your package to `manifest.json`.
+**Yes.** lip still reads `tooth.json` (format versions 1 to 3): it converts each one in memory into a format 4 package and installs it like any other, placing the same files as before, so existing packages keep working. lip no longer writes `tooth.json`; use [`lip migrate`](cli/commands/migrate.md) to convert your package to `manifest.json`.
 
 ### Does `lip install` update `manifest.json`?
 **No.** Running `lip install <package>` installs the package into your workspace and updates the [lockfile](concepts/lockfiles.md) to track the state, but it **does not** modify your `manifest.json`. You must manually add dependencies to `manifest.json` if you want them to be permanent parts of your package's requirements.

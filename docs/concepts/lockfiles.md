@@ -61,7 +61,7 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
 
 *   **`name`**: The identity of the package: the `name` of its `manifest.json`, or the `tooth` path of a `tooth.json` package.
 *   **`version`**: The installed version.
-*   **`kind`**: `"mcmod"` for a `manifest.json` package, `"tooth"` for a `tooth.json` package.
+*   **`kind`**: `"mcmod"` for a `manifest.json` package, `"tooth"` for a `tooth.json` package. Both are installed and uninstalled the same way; the kind says what `manifest` holds.
 *   **`explicit`**:
     *   `true`: The package was explicitly installed by the user (e.g., `lip install <package>`).
     *   `false`: The package was installed implicitly as a dependency of another package.
@@ -73,7 +73,7 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
     *   `{ "kind": "directory", "path": ... }`: a local directory.
     *   `null`: an entry migrated from `tooth_lock.json`.
 *   **`files`**: The files the package owns, relative to the workspace root and `/`-separated. Since `plugins` is a link to `mods` on a server, a file under `plugins/` is recorded under `mods/`; lip rewrites `plugins/` paths in locks written by earlier versions when it loads them.
-*   **`manifest`**: The package's document (`manifest.json`, or `tooth.json` for `tooth` packages), so lip does not have to fetch it again.
+*   **`manifest`**: The package's document (`manifest.json`, or `tooth.json` for `tooth` packages, which lip converts to format 4 again when it needs the package), so lip does not have to fetch it again.
 
 ## Example
 

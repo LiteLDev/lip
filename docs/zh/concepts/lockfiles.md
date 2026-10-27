@@ -61,7 +61,7 @@
 
 * **`name`**：包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径。
 * **`version`**：已安装的版本。
-* **`kind`**：`manifest.json` 包为 `"mcmod"`，`tooth.json` 包为 `"tooth"`。
+* **`kind`**：`manifest.json` 包为 `"mcmod"`，`tooth.json` 包为 `"tooth"`。两者的安装与卸载方式相同；kind 说明 `manifest` 中保存的是什么。
 * **`explicit`**：
   * `true`：用户显式安装（如 `lip install <package>`）。
   * `false`：作为其他包依赖被隐式安装。
@@ -73,7 +73,7 @@
   * `{ "kind": "directory", "path": ... }`：本地目录。
   * `null`：从 `tooth_lock.json` 迁移而来的条目。
 * **`files`**：该包拥有的文件，相对于工作区根目录，以 `/` 分隔。服务端的 `plugins` 是指向 `mods` 的链接，因此 `plugins/` 下的文件记为 `mods/` 下的路径；早期版本写下的锁中的 `plugins/` 路径会在加载时被改写。
-* **`manifest`**：包的文档（`manifest.json`；`tooth` 包为 `tooth.json`），这样 lip 无需再次获取。
+* **`manifest`**：包的文档（`manifest.json`；`tooth` 包为 `tooth.json`，lip 需要该包时会再次把它转换为第 4 版），这样 lip 无需再次获取。
 
 ## 示例
 

@@ -240,13 +240,26 @@ The environment of a workspace is a pair `(platform, rid)`:
 Packages of lip v0.x use `tooth.json` (format versions 1 to 3). lip still reads them, but no
 longer writes them; convert yours with [`lip migrate`](../cli/commands/migrate.md).
 
+lip converts a `tooth.json` in memory into a format 4 file package and handles it like any
+other package; the exact mapping is §9 of the [specification](../spec/package_format.md):
+
 - If an archive has both `tooth.json` and `manifest.json`, `tooth.json` wins.
 - The package's identity is the `tooth` value, and the variant of a ref is the variant label.
   When the platform is `client` and the ref has no variant, a variant labeled `client` is used
-  if there is one.
-- The dependencies of the selected variant are installed like `installDependencies`.
+  if there is one. The variants with that label that match the RID are merged, as in lip v0.x.
 - If the `tooth.json` at a tag declares another version than the tag, the tag version wins and
   lip prints a warning.
+- The dependencies of the selected variant are installed like `installDependencies`, with their
+  version ranges read as in lip v0.x.
+- Each asset becomes part of the package: `self` is the repository at the tag, and `zip`, `tar`,
+  `tgz` and `uncompressed` assets are downloaded (and cached) when the package is installed. The
+  placements are matched against the asset's files at install time, globs included, and write
+  the same files lip v0.x wrote.
+- `preserve_files`, `remove_files` and the scripts become `preserveFiles`, `removeFiles` and
+  `scripts` (`install` runs with `postInstall`, `uninstall` with `preUninstall`). Files are
+  owned, kept and removed by the rules of format 4.
+- The lock records the `tooth.json` with `"kind": "tooth"`; lip converts it again to uninstall
+  or update the package.
 
 The format 3 schema is
 [`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.schema.json)
