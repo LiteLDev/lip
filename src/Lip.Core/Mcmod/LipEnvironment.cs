@@ -26,10 +26,10 @@ public static class McmodPlatformExtensions {
     }
   }
 
-  /// The mod directory under the workspace root (spec §7).
+  /// The mod directory under the workspace root (spec §7). On servers, plugins links to it
+  /// (WorkspaceLayout).
   public static string ModsDirectory(this McmodPlatform platform) => platform switch {
-    McmodPlatform.Server => "plugins",
-    McmodPlatform.Client => "mods",
+    McmodPlatform.Server or McmodPlatform.Client => WorkspaceLayout.ModsDirectory,
     _ => throw new ArgumentOutOfRangeException(nameof(platform)),
   };
 }

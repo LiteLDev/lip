@@ -207,7 +207,7 @@ Steps to install a concrete package P:
 
 1. Run each command in `scripts.preInstall` in turn (see "Commands" below).
 2. Write files:
-   - **mod**: write the whole archive of P into `<modsDir>/<name>/`. `modsDir` is `plugins` on the server and `mods` on the client.
+   - **mod**: write the whole archive of P into `<modsDir>/<name>/`. `modsDir` is `mods` on both the server and the client.
    - **file package**: execute the `placements` one by one in order.
      - Directory form: write all files under the `src` directory into `dest`, keeping their relative paths.
      - File form: write the `src` file to `dest`.
@@ -225,10 +225,20 @@ Steps to uninstall P:
 1. Run `scripts.preUninstall`.
 2. Delete the files owned by P that do not match `preserveFiles`.
 3. Delete the paths matching `removeFiles` that are not owned by another package. Directory patterns are deleted recursively.
-4. Delete the directories left empty by steps 2 and 3.
+4. Delete the directories left empty by steps 2 and 3, but never `mods` or `plugins` themselves.
 5. Run `scripts.postUninstall`.
 
 **Update**: equivalent to uninstalling the old version, then installing the new version.
+
+**Server layout**: in a server workspace, `plugins` must be a link to `mods`, so that software still looking in `plugins` keeps working (lip creates a directory junction on Windows and a relative symbolic link on other platforms). A path through `plugins/` and the corresponding path through `mods/` are the same file: ownership is compared, and files are recorded in the lock, in the `mods/` form. Before an operation that modifies the workspace (install, uninstall, update), lip must establish this layout by the following rules:
+
+- When `mods` does not exist, create it.
+- When `plugins` does not exist, create a link to `mods`.
+- When `plugins` is already a link to `mods`, do nothing.
+- When `plugins` is a link to anywhere else, it is a failure.
+- When `plugins` is a regular directory, move its entries into `mods`, then delete `plugins` and create the link. When any entry has a namesake in `mods`, it is a failure before any entry is moved.
+
+When establishing the layout fails, the workspace must be left unchanged.
 
 **Commands**: each command is run by the platform shell (`cmd /c` on Windows, `sh -c` on other platforms), with the workspace root as working directory. When any command exits with a non-zero code, it is a failure.
 
@@ -240,7 +250,7 @@ For each installed package, lip must record the following in the workspace lock:
 - the environment;
 - the resolution chain: the ref of each hop, and the index of the Artifact selected at that hop;
 - the identifier of the final archive: the SHA-256 for a ZIP archive, the commit id and path for a git archive;
-- the list of files owned by the package.
+- the list of files owned by the package (workspace-relative paths; files under `plugins/` are recorded in the `mods/` form, see §7).
 
 When reinstalling from the lock, lip must take the final archive recorded in the lock directly and verify its identifier; it must not go through the resolution chain again.
 

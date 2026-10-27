@@ -20,6 +20,13 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
 
   public void Dispose() {
     if (Directory.Exists(_root)) {
+      // A recursive delete cannot remove a junction without administrator rights (it unmounts
+      // it first), so the link goes first.
+      string plugins = Path.Combine(_root, "plugins");
+      if (new DirectoryInfo(plugins).LinkTarget is not null) {
+        Directory.Delete(plugins);
+      }
+
       Directory.Delete(_root, recursive: true);
     }
     GC.SuppressFinalize(this);
@@ -62,12 +69,17 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
           []);
       InstallContext context = new(
           _root, new LipEnvironment(McmodPlatform.Server, "win-x64"), new LockFile(), false, false);
+      // The server layout: plugins links to mods.
+      await new WorkspaceLayout(fs, new DirectoryLinker(fs), new Mock<IUserInteraction>().Object)
+          .Prepare(_root, dryRun: false);
 
       // Act: install
       IReadOnlyList<string> owned = await installer.Install(candidate, context);
 
       // Assert
       Assert.Equal(3, owned.Count);
+      Assert.All(owned, f => Assert.StartsWith("mods/LegacyMoney/", f));
+      // Written under mods, visible through plugins.
       Assert.Equal("dll", File.ReadAllText(Path.Combine(_root, "plugins", "LegacyMoney",
           "LegacyMoney.dll")));
       Assert.True(File.Exists(Path.Combine(_root, "pre_install.txt")));
@@ -88,8 +100,9 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
       }, context);
 
       // Assert
-      Assert.False(Directory.Exists(Path.Combine(_root, "plugins", "LegacyMoney")));
-      Assert.True(Directory.Exists(Path.Combine(_root, "plugins")));
+      Assert.False(Directory.Exists(Path.Combine(_root, "mods", "LegacyMoney")));
+      Assert.True(Directory.Exists(Path.Combine(_root, "mods")));
+      Assert.NotNull(new DirectoryInfo(Path.Combine(_root, "plugins")).LinkTarget);
       Assert.True(File.Exists(Path.Combine(_root, "post_uninstall.txt")));
     }
     finally {

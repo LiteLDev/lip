@@ -33,7 +33,7 @@ No. lip talks to git repositories over HTTPS with its own built-in client, so th
 Not currently. lip fetches packages anonymously over HTTPS and does not use the `git` command-line tool or its credential helpers, so only public repositories can be installed from.
 
 ### Where does lip store installed packages?
-lip installs package files **directly into your workspace**. A mod is installed to `plugins/<name>/`; a file package places its files where its `manifest.json` says.
+lip installs package files **directly into your workspace**. A mod is installed to `mods/<name>/`, and `plugins` is a link to `mods` (see [Installing Dependencies](guides/installing_dependencies.md#server-workspaces-only)); a file package places its files where its `manifest.json` says.
 
 lip keeps its own files in per-user directories that follow the platform conventions:
 

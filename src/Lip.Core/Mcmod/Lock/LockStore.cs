@@ -58,7 +58,12 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
   public string GetLockPath(string workspaceRoot) =>
       _fs.Path.Join(_dataDirectory, "workspaces", $"{GetWorkspaceHash(workspaceRoot)}.json");
 
-  public async Task<LockFile> Load(string workspaceRoot) {
+  /// Owned files under plugins are rewritten to their canonical path under mods (spec §7), so
+  /// that locks written before plugins became a link to mods compare correctly.
+  public async Task<LockFile> Load(string workspaceRoot) =>
+      CanonicalizeFiles(await LoadUnchanged(workspaceRoot));
+
+  private async Task<LockFile> LoadUnchanged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
 
     string path = GetLockPath(root);
@@ -139,6 +144,16 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
       }
     }
   }
+
+  private static LockFile CanonicalizeFiles(LockFile lockFile) => lockFile with {
+    Packages = [
+      .. lockFile.Packages.Select(p => p with {
+        Files = [
+          .. p.Files.Select(WorkspaceLayout.CanonicalPath).Distinct(WorkspaceLayout.PathComparer),
+        ],
+      }),
+    ],
+  };
 
   /// The lowercase hex SHA-256 of the normalised absolute workspace path: the full path without
   /// a trailing separator, lower-cased on Windows, where paths are case-insensitive.

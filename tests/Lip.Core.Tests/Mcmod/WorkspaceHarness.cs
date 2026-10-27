@@ -35,6 +35,7 @@ internal sealed class WorkspaceHarness {
     ArchiveProvider = new ArchiveProvider(
         Git, Cache, Fs, new Mock<IFileDownloader>().Object);
     LockStore = new LockStore(Fs);
+    Linker = new MockDirectoryLinker(Fs);
     Service = new McmodService(
         Fs,
         Ui.Object,
@@ -48,7 +49,8 @@ internal sealed class WorkspaceHarness {
           new ToothInstaller(
               CommandRunner.Object, Fs, new Mock<ISourceService>().Object, Ui.Object),
         ],
-        workspaceRoot: () => Root);
+        workspaceRoot: () => Root,
+        directoryLinker: Linker);
   }
 
   public MockFileSystem Fs { get; }
@@ -68,6 +70,8 @@ internal sealed class WorkspaceHarness {
   public ArchiveProvider ArchiveProvider { get; }
 
   public LockStore LockStore { get; }
+
+  public MockDirectoryLinker Linker { get; }
 
   public McmodService Service { get; }
 

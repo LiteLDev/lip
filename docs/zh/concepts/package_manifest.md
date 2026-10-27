@@ -196,8 +196,9 @@ RID、并且 `version` 在请求的范围内时，具体包才是候选。
 
 ## 文件包与 mod
 
-- **mod**（`type` 不是 `"files"`）：整个归档写入服务端的 `plugins/<name>/`，或客户端的
-  `mods/<name>/`。lip 只安装到服务端工作区；客户端工作区由 LeviLauncher 等启动器管理。
+- **mod**（`type` 不是 `"files"`）：整个归档写入 `mods/<name>/`。服务端的 `plugins` 是指向
+  `mods` 的链接，因此也可以在 `plugins/<name>/` 下看到该 mod。lip 只安装到服务端工作区；
+  客户端工作区由 LeviLauncher 等启动器管理。
 - **文件包**（`"type": "files"`）：按顺序执行 `placements`。
 
 ```json

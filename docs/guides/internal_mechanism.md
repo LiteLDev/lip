@@ -21,7 +21,7 @@ The Daemon (`lipd`) communicates via **JSON-RPC over stdio**, allowing tools to 
 2.  **Environment**: Determine the platform and RID (see [Environment](../concepts/package_manifest.md#environment)).
 3.  **Resolver**: Turn every ref into a sequence of candidate concrete packages, following routing documents.
 4.  **Graph solver**: Choose one candidate per request and per install edge, so that every identity appears once and no `conflicts` entry is violated.
-5.  **Installers**: Uninstall the packages that leave the set, in reverse install order, then install the packages that enter it, dependencies first. `manifest.json` packages and `tooth.json` packages have their own installer.
+5.  **Installers**: Uninstall the packages that leave the set, in reverse install order, then install the packages that enter it, dependencies first. `manifest.json` packages and `tooth.json` packages have their own installer. Before the first package is installed or uninstalled, lip makes `plugins` a link to `mods` (see [Installing Dependencies](installing_dependencies.md#server-workspaces-only)). Files placed under `plugins/` are written under `mods/` and recorded there.
 6.  **Lock**: Save the lock after every package installed or uninstalled.
 
 If anything fails while resolving or solving, the workspace is not modified.

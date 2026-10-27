@@ -33,7 +33,7 @@
 目前不支持。lip 通过 HTTPS 匿名获取包，不使用 `git` 命令行工具或其凭据管理器，因此只能从公开仓库安装。
 
 ### lip 会把安装的包放在哪里？
-lip 会将包文件**直接安装到你的工作区**。mod 安装到 `plugins/<name>/`；文件包按其 `manifest.json` 的规定放置文件。
+lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<name>/`，而 `plugins` 是指向 `mods` 的链接（参见[安装依赖](guides/installing_dependencies.md#仅限服务端工作区)）；文件包按其 `manifest.json` 的规定放置文件。
 
 lip 自己的文件保存在遵循平台惯例的用户目录中：
 

@@ -224,7 +224,7 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_RoutingDirectoryByPlatform_InstallsServerModUnderPlugins() {
+  public async Task Install_RoutingDirectoryByPlatform_InstallsServerModUnderMods() {
     // Arrange
     AddRoutingFixture();
 
@@ -232,9 +232,9 @@ public class McmodServiceTests {
     await _ws.Service.Install(["./fixture/"], s_options);
 
     // Assert
-    Assert.Equal("server", _ws.Fs.File.ReadAllText(_ws.Path("plugins/Demo/Demo.dll")));
-    Assert.True(_ws.Exists("plugins/Demo/manifest.json"));
-    Assert.False(_ws.Exists("plugins/Demo/client/Demo.dll"));
+    Assert.Equal("server", _ws.Fs.File.ReadAllText(_ws.Path("mods/Demo/Demo.dll")));
+    Assert.True(_ws.Exists("mods/Demo/manifest.json"));
+    Assert.False(_ws.Exists("mods/Demo/client/Demo.dll"));
     LockFile lockFile = await _ws.Lock();
     Assert.Equal("server", lockFile.Platform);
     LockedPackage package = Assert.Single(lockFile.Packages);
@@ -275,7 +275,7 @@ public class McmodServiceTests {
     await _ws.Service.Uninstall(["demo"], s_options);
 
     // Assert
-    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("plugins/Demo")));
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods/Demo")));
     Assert.Empty((await _ws.Lock()).Packages);
   }
 
@@ -317,7 +317,7 @@ public class McmodServiceTests {
     await _ws.Service.Install(["./x.mcmod"], s_options);
 
     // Assert
-    Assert.Equal("zipped", _ws.Fs.File.ReadAllText(_ws.Path("plugins/Zipped/Zipped.dll")));
+    Assert.Equal("zipped", _ws.Fs.File.ReadAllText(_ws.Path("mods/Zipped/Zipped.dll")));
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
     Assert.IsType<ZipArchiveIdentity>(package.Archive);
   }

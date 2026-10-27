@@ -72,7 +72,7 @@
   * `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`：git 仓库的一个提交；仓库根目录的 `path` 为 `""`。
   * `{ "kind": "directory", "path": ... }`：本地目录。
   * `null`：从 `tooth_lock.json` 迁移而来的条目。
-* **`files`**：该包拥有的文件，相对于工作区根目录，以 `/` 分隔。
+* **`files`**：该包拥有的文件，相对于工作区根目录，以 `/` 分隔。服务端的 `plugins` 是指向 `mods` 的链接，因此 `plugins/` 下的文件记为 `mods/` 下的路径；早期版本写下的锁中的 `plugins/` 路径会在加载时被改写。
 * **`manifest`**：包的文档（`manifest.json`；`tooth` 包为 `tooth.json`），这样 lip 无需再次获取。
 
 ## 示例
@@ -97,8 +97,8 @@
     "url": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod"
   },
   "files": [
-    "plugins/LegacyMoney/LegacyMoney.dll",
-    "plugins/LegacyMoney/manifest.json"
+    "mods/LegacyMoney/LegacyMoney.dll",
+    "mods/LegacyMoney/manifest.json"
   ],
   "manifest": { "...": "..." }
 }

@@ -51,7 +51,7 @@ lip 不会创建这些包：请按 lip 针对每个变体输出的提示，自�
 - `platform` 的 glob 模式无法表示为 `rid`；此时包不限定 RID。
 - LeviLamina 语法无法表示的版本范围会被省略。
 - 使用了 `*` 和 `**` 以外语法的 glob 模式会原样复制，但匹配的文件可能不同。
-- 转换得到的文件包会把文件放到与 `tooth.json` 完全相同的位置。如果你的包是 mod，可以考虑改为 mod（`type` 不为 `"files"`），它会被安装到服务端的 `plugins/<name>/` 或客户端的 `mods/<name>/`。
+- 转换得到的文件包会把文件放到与 `tooth.json` 完全相同的位置。如果你的包是 mod，可以考虑改为 mod（`type` 不为 `"files"`），它会被安装到 `mods/<name>/`。
 - 对其他 `tooth.json` 包的依赖仍然有效，因为 lip 仍会读取 `tooth.json`。
 
 只有名称恰为 `v<SemVer>` 的标签（例如 `v1.2.3`）才是版本。`v1.2` 这样的标签会被忽略。

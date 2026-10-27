@@ -49,7 +49,8 @@ public class McmodService(
     IDocumentParser documentParser,
     IReadOnlyList<IMcmodInstaller> installers,
     Func<IResolver, IGraphSolver>? createSolver = null,
-    Func<string>? workspaceRoot = null) {
+    Func<string>? workspaceRoot = null,
+    IDirectoryLinker? directoryLinker = null) {
   private readonly IFileSystem _fs = fileSystem;
   private readonly IUserInteraction _ui = userInteraction;
   private readonly ILockStore _lockStore = lockStore;
@@ -62,6 +63,8 @@ public class McmodService(
       createSolver ?? (resolver => new GraphSolver(resolver));
   private readonly Func<string> _workspaceRoot =
       workspaceRoot ?? fileSystem.Directory.GetCurrentDirectory;
+  private readonly WorkspaceLayout _layout = new(
+      fileSystem, directoryLinker ?? new DirectoryLinker(fileSystem), userInteraction);
 
   public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
     Workspace workspace = await OpenWorkspace(options);
@@ -250,7 +253,20 @@ public class McmodService(
         environment,
         _archiveProvider.OpenWorkspace(root),
         resolver,
-        _createSolver(resolver));
+        _createSolver(resolver),
+        new LayoutState());
+  }
+
+  /// Makes the workspace layout right (spec §7) before the first package of an operation is
+  /// installed or uninstalled, so that a failure while resolving or solving changes nothing. In
+  /// a dry run, reports what that would do.
+  private async Task PrepareLayout(Workspace workspace, OperationOptions options) {
+    if (workspace.Layout.Prepared) {
+      return;
+    }
+
+    await _layout.Prepare(workspace.Root, options.DryRun);
+    workspace.Layout.Prepared = true;
   }
 
   /// The environment of the workspace (spec §5.1). lip manages server workspaces only, so the
@@ -512,6 +528,7 @@ public class McmodService(
       OperationOptions options,
       LockedPackage package,
       List<LockedPackage> remaining) {
+    await PrepareLayout(workspace, options);
     await _ui.PrintInfo((options.DryRun ? "Dry run: would uninstall" : "Uninstalling")
         + $" package '{package.Identity}' version {package.Version}");
 
@@ -526,6 +543,7 @@ public class McmodService(
       Candidate candidate,
       bool isExplicit,
       List<LockedPackage> remaining) {
+    await PrepareLayout(workspace, options);
     await _ui.PrintInfo((options.DryRun ? "Dry run: would install" : "Installing")
         + $" package '{candidate.Package.Identity}' version {candidate.Package.Version}"
         + $" from {candidate.Archive.Key}");
@@ -753,7 +771,13 @@ public class McmodService(
       LipEnvironment Environment,
       ArchiveHandle Archive,
       IResolver Resolver,
-      IGraphSolver Solver);
+      IGraphSolver Solver,
+      LayoutState Layout);
+
+  /// Whether the layout was prepared during the operation; shared by copies of the workspace.
+  private sealed class LayoutState {
+    public bool Prepared { get; set; }
+  }
 
   /// The lock entries of one identity, and the candidate pinning them (null when unpinned or
   /// unreadable).

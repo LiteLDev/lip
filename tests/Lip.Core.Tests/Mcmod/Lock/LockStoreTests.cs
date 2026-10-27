@@ -68,7 +68,7 @@ public class LockStoreTests {
         ],
         ArchiveKey = "https://example.com/" + name + ".mcmod",
         Archive = archive,
-        Files = ["plugins/" + name + "/" + name + ".dll"],
+        Files = ["mods/" + name + "/" + name + ".dll"],
         Manifest = JsonDocument.Parse(manifestJson).RootElement.Clone(),
       };
 
@@ -133,9 +133,9 @@ public class LockStoreTests {
         p => p.Identity == "github.com/LiteLDev/LeviLamina");
     Assert.Equal(
         [
-          "plugins/LeviLamina/manifest.json",
-          "plugins/LeviLamina/LeviLamina.pdb",
-          "plugins/LeviLamina/LeviLamina.dll",
+          "mods/LeviLamina/manifest.json",
+          "mods/LeviLamina/LeviLamina.pdb",
+          "mods/LeviLamina/LeviLamina.dll",
         ],
         leviLamina.Files);
     Assert.Equal(
@@ -146,7 +146,7 @@ public class LockStoreTests {
     Assert.Equal(["bdsdown.exe"], lockFile.Packages[0].Files);
     Assert.Empty(lockFile.Packages[1].Files);
     Assert.Equal(15, lockFile.Packages[3].Files.Count);
-    Assert.Equal("plugins/LeviLamina/lang/de.json", lockFile.Packages[3].Files[0]);
+    Assert.Equal("mods/LeviLamina/lang/de.json", lockFile.Packages[3].Files[0]);
     Assert.Equal(["bedrock_runtime_data"], lockFile.Packages[6].Files);
   }
 
@@ -243,6 +243,28 @@ public class LockStoreTests {
       Assert.Equal(expected.Files, actual.Files);
       Assert.True(JsonElement.DeepEquals(expected.Manifest, actual.Manifest));
     }
+  }
+
+  [Fact]
+  public async Task Load_FilesUnderPlugins_RewritesThemUnderMods() {
+    // Arrange: a lock written while plugins was the server mod directory.
+    string upper = OperatingSystem.IsWindows() ? "Plugins/A/b.dll" : "plugins/A/b.dll";
+    LockFile original = new() {
+      Packages = [
+        SamplePackage("A", null) with {
+          Files = ["plugins/A/a.dll", upper, "mods/A/a.dll", "pluginsx/c.txt", "d.txt"],
+        },
+      ],
+    };
+    await _store.Save(_root, original);
+
+    // Act
+    LockFile loaded = await _store.Load(_root);
+
+    // Assert: the path through mods appears once.
+    Assert.Equal(
+        ["mods/A/a.dll", "mods/A/b.dll", "pluginsx/c.txt", "d.txt"],
+        loaded.Packages[0].Files);
   }
 
   [Fact]

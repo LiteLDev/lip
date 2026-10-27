@@ -72,7 +72,7 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
     *   `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`: a commit of a git repository; `path` is `""` for the repository root.
     *   `{ "kind": "directory", "path": ... }`: a local directory.
     *   `null`: an entry migrated from `tooth_lock.json`.
-*   **`files`**: The files the package owns, relative to the workspace root and `/`-separated.
+*   **`files`**: The files the package owns, relative to the workspace root and `/`-separated. Since `plugins` is a link to `mods` on a server, a file under `plugins/` is recorded under `mods/`; lip rewrites `plugins/` paths in locks written by earlier versions when it loads them.
 *   **`manifest`**: The package's document (`manifest.json`, or `tooth.json` for `tooth` packages), so lip does not have to fetch it again.
 
 ## Example
@@ -97,8 +97,8 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
     "url": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod"
   },
   "files": [
-    "plugins/LegacyMoney/LegacyMoney.dll",
-    "plugins/LegacyMoney/manifest.json"
+    "mods/LegacyMoney/LegacyMoney.dll",
+    "mods/LegacyMoney/manifest.json"
   ],
   "manifest": { "...": "..." }
 }

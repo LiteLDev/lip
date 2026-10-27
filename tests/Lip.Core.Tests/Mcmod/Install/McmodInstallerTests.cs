@@ -111,7 +111,7 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Install_ModOnServer_WritesWholeArchiveUnderPlugins() {
+  public async Task Install_ModOnServer_WritesWholeArchiveUnderMods() {
     // Arrange
     InMemorySource source = Source(_legacyMoneyFiles);
 
@@ -121,12 +121,12 @@ public class McmodInstallerTests {
 
     // Assert
     Assert.Equal(
-        ["plugins/LegacyMoney/manifest.json", "plugins/LegacyMoney/LegacyMoney.dll",
-          "plugins/LegacyMoney/lang/en_US.json"],
+        ["mods/LegacyMoney/manifest.json", "mods/LegacyMoney/LegacyMoney.dll",
+          "mods/LegacyMoney/lang/en_US.json"],
         owned);
-    Assert.Equal("dll", Read("plugins/LegacyMoney/LegacyMoney.dll"));
-    Assert.Equal("{\"name\":\"LegacyMoney\"}", Read("plugins/LegacyMoney/manifest.json"));
-    Assert.Equal("{}", Read("plugins/LegacyMoney/lang/en_US.json"));
+    Assert.Equal("dll", Read("mods/LegacyMoney/LegacyMoney.dll"));
+    Assert.Equal("{\"name\":\"LegacyMoney\"}", Read("mods/LegacyMoney/manifest.json"));
+    Assert.Equal("{}", Read("mods/LegacyMoney/lang/en_US.json"));
     Assert.Equal(3, source.Prefetched.Count);
   }
 
@@ -343,7 +343,7 @@ public class McmodInstallerTests {
     await Assert.ThrowsAsync<McmodInstallException>(
         () => _installer.Install(Candidate(document, source), Context(_server)));
     _commandRunner.VerifyNoOtherCalls();
-    Assert.False(_fs.Directory.Exists(Full("plugins")));
+    Assert.False(_fs.Directory.Exists(Full("mods")));
   }
 
   [Fact]
@@ -383,7 +383,7 @@ public class McmodInstallerTests {
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(() => _installer.Install(
         Candidate(LegacyMoney(), Source(_legacyMoneyFiles)), Context(_server, lockFile)));
-    Assert.False(_fs.Directory.Exists(Full("plugins")));
+    Assert.False(_fs.Directory.Exists(Full("mods")));
   }
 
   [Fact]
@@ -392,7 +392,7 @@ public class McmodInstallerTests {
     ConcreteDocument document = LegacyMoney() with {
       PreserveFiles = [new PathGlob("config/")],
     };
-    AddFile("plugins/LegacyMoney/config/config.json", "user");
+    AddFile("mods/LegacyMoney/config/config.json", "user");
     InMemorySource source = Source(new() {
       ["LegacyMoney.dll"] = "dll",
       ["config/config.json"] = "default",
@@ -404,10 +404,10 @@ public class McmodInstallerTests {
         await _installer.Install(Candidate(document, source), Context(_server));
 
     // Assert
-    Assert.Equal("user", Read("plugins/LegacyMoney/config/config.json"));
-    Assert.Equal("default", Read("plugins/LegacyMoney/config/other.json"));
+    Assert.Equal("user", Read("mods/LegacyMoney/config/config.json"));
+    Assert.Equal("default", Read("mods/LegacyMoney/config/other.json"));
     Assert.Equal(
-        ["plugins/LegacyMoney/LegacyMoney.dll", "plugins/LegacyMoney/config/other.json"], owned);
+        ["mods/LegacyMoney/LegacyMoney.dll", "mods/LegacyMoney/config/other.json"], owned);
     Assert.DoesNotContain("config/config.json", source.Prefetched);
   }
 
@@ -417,9 +417,9 @@ public class McmodInstallerTests {
     ConcreteDocument document = LegacyMoney() with {
       PreserveFiles = [new PathGlob("config/*.json")],
     };
-    AddFile("plugins/LegacyMoney/config/config.json", "user");
+    AddFile("mods/LegacyMoney/config/config.json", "user");
     LockFile lockFile = new() {
-      Packages = [Locked(LegacyMoney("0.21.0"), ["plugins/LegacyMoney/config/config.json"])],
+      Packages = [Locked(LegacyMoney("0.21.0"), ["mods/LegacyMoney/config/config.json"])],
     };
     InMemorySource source = Source(new() { ["config/config.json"] = "default" });
 
@@ -428,8 +428,8 @@ public class McmodInstallerTests {
         await _installer.Install(Candidate(document, source), Context(_server, lockFile));
 
     // Assert
-    Assert.Equal(["plugins/LegacyMoney/config/config.json"], owned);
-    Assert.Equal("user", Read("plugins/LegacyMoney/config/config.json"));
+    Assert.Equal(["mods/LegacyMoney/config/config.json"], owned);
+    Assert.Equal("user", Read("mods/LegacyMoney/config/config.json"));
   }
 
   [Fact]
@@ -456,7 +456,7 @@ public class McmodInstallerTests {
     ConcreteDocument document = LegacyMoney() with {
       Scripts = new Scripts { PreInstall = ["pre1", "pre2"], PostInstall = ["post"] },
     };
-    string dll = Full("plugins/LegacyMoney/LegacyMoney.dll");
+    string dll = Full("mods/LegacyMoney/LegacyMoney.dll");
     List<(string Command, string Cwd, bool DllExists)> calls = [];
     _commandRunner.Setup(r => r.Run(It.IsAny<string>(), It.IsAny<string>()))
         .Callback((string c, string cwd) => calls.Add((c, cwd, _fs.File.Exists(dll))))
@@ -483,7 +483,7 @@ public class McmodInstallerTests {
 
     // Assert
     _commandRunner.VerifyNoOtherCalls();
-    Assert.True(_fs.File.Exists(Full("plugins/LegacyMoney/LegacyMoney.dll")));
+    Assert.True(_fs.File.Exists(Full("mods/LegacyMoney/LegacyMoney.dll")));
   }
 
   [Fact]
@@ -498,7 +498,7 @@ public class McmodInstallerTests {
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(() => _installer.Install(
         Candidate(document, Source(_legacyMoneyFiles)), Context(_server)));
-    Assert.False(_fs.Directory.Exists(Full("plugins")));
+    Assert.False(_fs.Directory.Exists(Full("mods")));
   }
 
   [Fact]
@@ -539,7 +539,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_TargetIsExistingDirectory_ThrowsWithoutChanges() {
     // Arrange
-    _fs.AddDirectory(Full("plugins/LegacyMoney/LegacyMoney.dll"));
+    _fs.AddDirectory(Full("mods/LegacyMoney/LegacyMoney.dll"));
     SortedDictionary<string, string> before = Snapshot();
 
     // Act & Assert
@@ -572,14 +572,72 @@ public class McmodInstallerTests {
     // Arrange
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(LegacyMoney(), Source(_legacyMoneyFiles)), Context(_server));
-    AddFile("plugins/Other/x.dll", "x");
+    AddFile("mods/Other/x.dll", "x");
 
     // Act
     await _installer.Uninstall(Locked(LegacyMoney(), owned), Context(_server));
 
     // Assert
-    Assert.False(_fs.Directory.Exists(Full("plugins/LegacyMoney")));
-    Assert.True(_fs.File.Exists(Full("plugins/Other/x.dll")));
+    Assert.False(_fs.Directory.Exists(Full("mods/LegacyMoney")));
+    Assert.True(_fs.File.Exists(Full("mods/Other/x.dll")));
+  }
+
+  [Fact]
+  public async Task Install_FilePackagePlacingUnderPlugins_WritesAndOwnsUnderMods() {
+    // Arrange
+    ConcreteDocument document = FilePackage(
+        "Patch",
+        new Placement("a.dll", "plugins/X/a.dll"),
+        new Placement("b.dll", "mods/X/a.dll"));
+    InMemorySource source = Source(new() { ["a.dll"] = "a", ["b.dll"] = "b" });
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(
+        Candidate(document, source), Context(_server));
+
+    // Assert: both placements are one file; the later one wins.
+    Assert.Equal(["mods/X/a.dll"], owned);
+    Assert.Equal("b", Read("mods/X/a.dll"));
+    Assert.False(_fs.Directory.Exists(Full("plugins")));
+  }
+
+  [Fact]
+  public async Task Uninstall_FilePackageGlobsThroughPlugins_MatchFilesUnderMods() {
+    // Arrange
+    ConcreteDocument document = FilePackage(
+        "Patch",
+        new Placement("a.dll", "plugins/X/a.dll"),
+        new Placement("c.json", "plugins/X/c.json")) with {
+      PreserveFiles = [new PathGlob("plugins/X/*.json")],
+      RemoveFiles = [new PathGlob("plugins/X/logs/")],
+    };
+    IReadOnlyList<string> owned = await _installer.Install(
+        Candidate(document, Source(new() { ["a.dll"] = "a", ["c.json"] = "c" })),
+        Context(_server));
+    AddFile("mods/X/logs/today.log", "log");
+
+    // Act
+    await _installer.Uninstall(Locked(document, owned), Context(_server));
+
+    // Assert
+    Assert.False(_fs.File.Exists(Full("mods/X/a.dll")));
+    Assert.Equal("c", Read("mods/X/c.json"));
+    Assert.False(_fs.Directory.Exists(Full("mods/X/logs")));
+  }
+
+  [Fact]
+  public async Task Uninstall_FilePackageEmptyingMods_KeepsModsDirectory() {
+    // Arrange
+    ConcreteDocument document = FilePackage("Patch", new Placement("a.dll", "mods/X/a.dll"));
+    IReadOnlyList<string> owned = await _installer.Install(
+        Candidate(document, Source(new() { ["a.dll"] = "a" })), Context(_server));
+
+    // Act
+    await _installer.Uninstall(Locked(document, owned), Context(_server));
+
+    // Assert
+    Assert.False(_fs.Directory.Exists(Full("mods/X")));
+    Assert.True(_fs.Directory.Exists(Full("mods")));
   }
 
   [Fact]
@@ -592,14 +650,14 @@ public class McmodInstallerTests {
     await _installer.Uninstall(Locked(LegacyMoney(), owned), Context(_server));
 
     // Assert
-    Assert.True(_fs.Directory.Exists(Full("plugins")));
-    Assert.False(_fs.Directory.Exists(Full("plugins/LegacyMoney")));
+    Assert.True(_fs.Directory.Exists(Full("mods")));
+    Assert.False(_fs.Directory.Exists(Full("mods/LegacyMoney")));
   }
 
   [Fact]
   public async Task Uninstall_PreexistingEmptyDirectory_IsKept() {
     // Arrange
-    _fs.AddDirectory(Full("plugins/LegacyMoney/empty"));
+    _fs.AddDirectory(Full("mods/LegacyMoney/empty"));
     _fs.AddDirectory(Full("unrelated"));
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(LegacyMoney(), Source(_legacyMoneyFiles)), Context(_server));
@@ -608,9 +666,9 @@ public class McmodInstallerTests {
     await _installer.Uninstall(Locked(LegacyMoney(), owned), Context(_server));
 
     // Assert
-    Assert.True(_fs.Directory.Exists(Full("plugins/LegacyMoney/empty")));
+    Assert.True(_fs.Directory.Exists(Full("mods/LegacyMoney/empty")));
     Assert.True(_fs.Directory.Exists(Full("unrelated")));
-    Assert.False(_fs.Directory.Exists(Full("plugins/LegacyMoney/lang")));
+    Assert.False(_fs.Directory.Exists(Full("mods/LegacyMoney/lang")));
   }
 
   [Fact]
@@ -630,8 +688,8 @@ public class McmodInstallerTests {
     await _installer.Uninstall(Locked(document, owned), Context(_server));
 
     // Assert
-    Assert.False(_fs.File.Exists(Full("plugins/LegacyMoney/LegacyMoney.dll")));
-    Assert.Equal("default", Read("plugins/LegacyMoney/config/config.json"));
+    Assert.False(_fs.File.Exists(Full("mods/LegacyMoney/LegacyMoney.dll")));
+    Assert.Equal("default", Read("mods/LegacyMoney/config/config.json"));
   }
 
   [Fact]
@@ -642,17 +700,17 @@ public class McmodInstallerTests {
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(new() { ["LegacyMoney.dll"] = "dll" })), Context(_server));
-    AddFile("plugins/LegacyMoney/data/db/money.db", "db");
-    AddFile("plugins/LegacyMoney/data/top.txt", "t");
-    _fs.AddDirectory(Full("plugins/LegacyMoney/data/emptysub"));
-    AddFile("plugins/LegacyMoney/data/foreign.txt", "f");
-    AddFile("plugins/LegacyMoney/run.log", "log");
-    AddFile("plugins/LegacyMoney/keep.txt", "k");
+    AddFile("mods/LegacyMoney/data/db/money.db", "db");
+    AddFile("mods/LegacyMoney/data/top.txt", "t");
+    _fs.AddDirectory(Full("mods/LegacyMoney/data/emptysub"));
+    AddFile("mods/LegacyMoney/data/foreign.txt", "f");
+    AddFile("mods/LegacyMoney/run.log", "log");
+    AddFile("mods/LegacyMoney/keep.txt", "k");
     ConcreteDocument other = FilePackage("Other", new Placement("x", "x"));
     LockFile lockFile = new() {
       Packages = [
         Locked(document, owned),
-        Locked(other, ["plugins/LegacyMoney/data/foreign.txt"]),
+        Locked(other, ["mods/LegacyMoney/data/foreign.txt"]),
       ],
     };
 
@@ -660,13 +718,13 @@ public class McmodInstallerTests {
     await _installer.Uninstall(Locked(document, owned), Context(_server, lockFile));
 
     // Assert
-    Assert.False(_fs.Directory.Exists(Full("plugins/LegacyMoney/data/db")));
-    Assert.False(_fs.Directory.Exists(Full("plugins/LegacyMoney/data/emptysub")));
-    Assert.False(_fs.File.Exists(Full("plugins/LegacyMoney/data/top.txt")));
-    Assert.False(_fs.File.Exists(Full("plugins/LegacyMoney/run.log")));
-    Assert.False(_fs.File.Exists(Full("plugins/LegacyMoney/LegacyMoney.dll")));
-    Assert.Equal("f", Read("plugins/LegacyMoney/data/foreign.txt"));
-    Assert.Equal("k", Read("plugins/LegacyMoney/keep.txt"));
+    Assert.False(_fs.Directory.Exists(Full("mods/LegacyMoney/data/db")));
+    Assert.False(_fs.Directory.Exists(Full("mods/LegacyMoney/data/emptysub")));
+    Assert.False(_fs.File.Exists(Full("mods/LegacyMoney/data/top.txt")));
+    Assert.False(_fs.File.Exists(Full("mods/LegacyMoney/run.log")));
+    Assert.False(_fs.File.Exists(Full("mods/LegacyMoney/LegacyMoney.dll")));
+    Assert.Equal("f", Read("mods/LegacyMoney/data/foreign.txt"));
+    Assert.Equal("k", Read("mods/LegacyMoney/keep.txt"));
   }
 
   [Fact]
@@ -726,7 +784,7 @@ public class McmodInstallerTests {
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(_legacyMoneyFiles)), Context(_server));
-    string dll = Full("plugins/LegacyMoney/LegacyMoney.dll");
+    string dll = Full("mods/LegacyMoney/LegacyMoney.dll");
     List<(string Command, string Cwd, bool DllExists)> calls = [];
     _commandRunner.Setup(r => r.Run(It.IsAny<string>(), It.IsAny<string>()))
         .Callback((string c, string cwd) => calls.Add((c, cwd, _fs.File.Exists(dll))))
@@ -774,7 +832,7 @@ public class McmodInstallerTests {
           ["config/config.json"] = "default1",
         })),
         Context(_server));
-    _fs.File.WriteAllText(Full("plugins/LegacyMoney/config/config.json"), "user");
+    _fs.File.WriteAllText(Full("mods/LegacyMoney/config/config.json"), "user");
     LockedPackage lockedV1 = Locked(v1, ownedV1);
 
     // Act
@@ -787,10 +845,10 @@ public class McmodInstallerTests {
         Context(_server));
 
     // Assert
-    Assert.Equal("v2", Read("plugins/LegacyMoney/LegacyMoney.dll"));
-    Assert.False(_fs.File.Exists(Full("plugins/LegacyMoney/old.dll")));
-    Assert.Equal("user", Read("plugins/LegacyMoney/config/config.json"));
-    Assert.Equal(["plugins/LegacyMoney/LegacyMoney.dll"], ownedV2);
+    Assert.Equal("v2", Read("mods/LegacyMoney/LegacyMoney.dll"));
+    Assert.False(_fs.File.Exists(Full("mods/LegacyMoney/old.dll")));
+    Assert.Equal("user", Read("mods/LegacyMoney/config/config.json"));
+    Assert.Equal(["mods/LegacyMoney/LegacyMoney.dll"], ownedV2);
   }
 
   [Fact]

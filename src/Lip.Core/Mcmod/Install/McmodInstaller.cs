@@ -17,6 +17,10 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// exists and matches preserveFiles is kept and not written, so it is not owned by the package,
 /// unless the lock already records it as owned by a package of the same identity (reinstall or
 /// update while the old entry is still in the lock), in which case ownership carries over.
+///
+/// Paths are recorded and compared in their canonical form (WorkspaceLayout.CanonicalPath):
+/// a file package placing a file under plugins/ writes and owns it under mods/. Globs relative to
+/// the workspace root match both forms. The mods and plugins directories are never deleted.
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
@@ -30,8 +34,7 @@ public partial class McmodInstaller(
   private readonly IUserInteraction _ui = userInteraction;
 
   /// How workspace paths are compared: ignoring case on Windows, ordinal elsewhere.
-  public static StringComparer PathComparer { get; } =
-      OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+  public static StringComparer PathComparer => WorkspaceLayout.PathComparer;
 
   private static readonly StringComparison PathComparison =
       OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -133,8 +136,7 @@ public partial class McmodInstaller(
       if (!IsSafeRelativePath(file) || ownedByOthers.Contains(file)) {
         continue;
       }
-      if (GlobPath(file, baseDir) is string globPath
-          && document.PreserveFiles.Any(g => g.IsMatch(globPath))) {
+      if (MatchesAny(document.PreserveFiles, file, baseDir)) {
         continue;
       }
       if (_fs.File.Exists(ToFullPath(root, file)) && fileSet.Add(file)) {
@@ -148,7 +150,7 @@ public partial class McmodInstaller(
     foreach (PathGlob glob in document.RemoveFiles) {
       foreach ((string path, bool isDirectory) in EnumerateMatches(root, baseDir, glob)) {
         if (isDirectory) {
-          if (directorySet.Add(path)) {
+          if (!WorkspaceLayout.IsLayoutDirectory(path) && directorySet.Add(path)) {
             directories.Add(path);
           }
         } else if (!ownedByOthers.Contains(path) && fileSet.Add(path)) {
@@ -182,7 +184,7 @@ public partial class McmodInstaller(
 
     // 4. Directories that became empty because of the deletions above.
     foreach (string path in files.Concat(directories)) {
-      PruneEmptyAncestors(ToFullPath(root, path), stopDir);
+      PruneEmptyAncestors(root, ToFullPath(root, path), stopDir);
     }
 
     // 5. postUninstall.
@@ -222,6 +224,7 @@ public partial class McmodInstaller(
         throw new McmodInstallException(
             $"{document.Name}: '{target}' is not a valid path inside the workspace.");
       }
+      target = WorkspaceLayout.CanonicalPath(target);
       if (!targets.ContainsKey(target)) {
         order.Add(target);
       }
@@ -303,9 +306,7 @@ public partial class McmodInstaller(
         }
       }
 
-      bool keep = _fs.File.Exists(full)
-          && GlobPath(target, baseDir) is string globPath
-          && document.PreserveFiles.Any(g => g.IsMatch(globPath));
+      bool keep = _fs.File.Exists(full) && MatchesAny(document.PreserveFiles, target, baseDir);
       plan.Add(new PlannedWrite(target, key, full, keep, keep && ownedBySelf.Contains(target)));
     }
     return plan;
@@ -363,14 +364,15 @@ public partial class McmodInstaller(
 
     if (literal == segments.Length && !glob.MatchesDirectories) {
       // A literal file path.
-      string file = baseDir + glob.Pattern;
+      string file = WorkspaceLayout.CanonicalPath(baseDir + glob.Pattern);
       if (_fs.File.Exists(ToFullPath(root, file))) {
         yield return (file, false);
       }
       yield break;
     }
 
-    string start = baseDir + string.Concat(segments[..literal].Select(s => s + "/"));
+    string start = WorkspaceLayout.CanonicalPath(
+        baseDir + string.Concat(segments[..literal].Select(s => s + "/")));
     string startFull = ToFullPath(root, start);
     if ((start != "" && !IsInside(root, startFull)) || !_fs.Directory.Exists(startFull)) {
       yield break;
@@ -400,9 +402,10 @@ public partial class McmodInstaller(
         bool isLink = info.Attributes.HasFlag(FileAttributes.ReparsePoint);
         string path = _fs.Path.GetRelativePath(root, info.FullName)
             .Replace(_fs.Path.DirectorySeparatorChar, '/');
-        bool matched = all || glob.IsMatch(path[baseDir.Length..] + (isDirectory ? "/" : ""));
+        string suffix = isDirectory ? "/" : "";
+        bool matched = all || GlobForms(path, baseDir).Any(f => glob.IsMatch(f + suffix));
         if (matched) {
-          yield return (path, isDirectory);
+          yield return (WorkspaceLayout.CanonicalPath(path), isDirectory);
         }
         if (isDirectory && !isLink && (matched || maxDepth is null || depth < maxDepth)) {
           foreach ((string, bool) entry in Walk((IDirectoryInfo)info, matched, depth + 1)) {
@@ -412,11 +415,16 @@ public partial class McmodInstaller(
       }
     }
   }
-  private void PruneEmptyAncestors(string deletedPath, string stopDir) {
+  /// Deletes the empty directories above a deleted path, up to stopDir (exclusive), never mods
+  /// or plugins.
+  private void PruneEmptyAncestors(string root, string deletedPath, string stopDir) {
     for (string? dir = _fs.Path.GetDirectoryName(deletedPath);
         dir is not null && IsInside(stopDir, dir);
         dir = _fs.Path.GetDirectoryName(dir)) {
-      if (!_fs.Directory.Exists(dir) || !IsEmpty(dir)) {
+      string relative = _fs.Path.GetRelativePath(root, dir)
+          .Replace(_fs.Path.DirectorySeparatorChar, '/');
+      if (!_fs.Directory.Exists(dir) || !IsEmpty(dir)
+          || WorkspaceLayout.IsLayoutDirectory(relative)) {
         return;
       }
       _fs.Directory.Delete(dir);
@@ -426,10 +434,17 @@ public partial class McmodInstaller(
   private bool IsEmpty(string directory) =>
       !_fs.Directory.EnumerateFileSystemEntries(directory).Any();
 
-  /// The path a glob of the package is matched against, or null when the path is outside the
-  /// package's base directory.
-  private static string? GlobPath(string path, string baseDir) =>
-      path.StartsWith(baseDir, PathComparison) ? path[baseDir.Length..] : null;
+  /// Whether a glob of the package matches a canonical workspace-relative path.
+  private static bool MatchesAny(IReadOnlyList<PathGlob> globs, string path, string baseDir) =>
+      GlobForms(path, baseDir).Any(f => globs.Any(g => g.IsMatch(f)));
+
+  /// The forms of a canonical workspace-relative path that globs of the package are matched
+  /// against: relative to the base directory, and, when that is the workspace root, also
+  /// through plugins. None when the path is outside the base directory.
+  private static IEnumerable<string> GlobForms(string path, string baseDir) =>
+      baseDir == "" ? WorkspaceLayout.GlobForms(path)
+      : path.StartsWith(baseDir, PathComparison) ? [path[baseDir.Length..]]
+      : [];
 
   private string ToFullPath(string root, string relative) =>
       relative.TrimEnd('/') == ""
@@ -445,7 +460,8 @@ public partial class McmodInstaller(
     return path.StartsWith(prefix, PathComparison);
   }
 
-  private static string NormalizeRelative(string path) => path.Replace('\\', '/');
+  private static string NormalizeRelative(string path) =>
+      WorkspaceLayout.CanonicalPath(path.Replace('\\', '/'));
 
   /// A non-empty '/'-separated relative path without empty, "." or ".." segments, backslashes
   /// or drive letters.

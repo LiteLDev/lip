@@ -206,8 +206,9 @@ that exits with a non-zero code fails the operation.
 ## File Packages and Mods
 
 - A **mod** (any `type` other than `"files"`): the whole archive is written to
-  `plugins/<name>/` on a server, or `mods/<name>/` on a client. lip installs to server
-  workspaces; client workspaces are managed by launchers such as LeviLauncher.
+  `mods/<name>/`. On a server, `plugins` is a link to `mods`, so the mod is also visible
+  under `plugins/<name>/`. lip installs to server workspaces; client workspaces are managed
+  by launchers such as LeviLauncher.
 - A **file package** (`"type": "files"`): the `placements` are executed in order.
 
 ```json

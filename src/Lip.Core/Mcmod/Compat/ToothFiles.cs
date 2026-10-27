@@ -11,10 +11,13 @@ namespace Lip.Core.Mcmod.Compat;
 
 /// The file operations of tooth.json v1–v3 packages (spec §9: tooth archives follow the v1–v3
 /// rules), shared by ToothInstaller and the v3 PackageInstaller.
+///
+/// Placements under plugins/ are written under mods/ (spec §7: plugins is a link to mods), and
+/// returned in that canonical form; globs match a path under mods/ through plugins/ as well.
 public static class ToothFiles {
   /// Places the assets of a variant under root, in manifest order. "self" assets are read from
   /// self; other assets are fetched from their URLs, trying each in turn. Existing files are
-  /// overwritten. Returns the absolute paths written, in order (a path may repeat).
+  /// overwritten. Returns the absolute canonical paths written, in order (a path may repeat).
   public static async Task<List<string>> PlaceAssets(
       IFileSystem fileSystem,
       ISourceService sourceService,
@@ -49,7 +52,7 @@ public static class ToothFiles {
       await assetSource.Prefetch(matches.Select(m => m.Key).Distinct());
 
       foreach ((string key, string targetPath) in matches) {
-        string fullPath = fileSystem.Path.GetFullPath(fileSystem.Path.Combine(root, targetPath));
+        string fullPath = CanonicalFullPath(fileSystem, root, targetPath);
 
         using Stream sourceStream = await assetSource.OpenRead(key);
         using Stream targetStream = fileSystem.CreateFileWithDirectory(fullPath);
@@ -68,16 +71,22 @@ public static class ToothFiles {
   public static bool IsPreserved(PackageManifestVariant variant, string relativePath) {
     string fileName = relativePath[(relativePath.LastIndexOf('/') + 1)..];
 
-    return variant.PreserveFiles.Any(glob => glob.IsMatch(relativePath) || glob.IsMatch(fileName));
+    return variant.PreserveFiles.Any(glob => glob.IsMatch(fileName)
+        || WorkspaceLayout.GlobForms(relativePath).Any(glob.IsMatch));
   }
 
   /// Removes every path under root matching the variant's remove_files. Globs are matched
   /// against '/'-separated paths relative to root; directories are also matched with a
-  /// trailing '/' and removed recursively.
+  /// trailing '/' and removed recursively. The mods and plugins directories themselves are
+  /// never removed.
   public static void RemoveFiles(
       IFileSystem fileSystem,
       PackageManifestVariant variant,
       string root) {
+    // Entries reached through the plugins link are the entries under mods, matched there.
+    bool pluginsIsLink = fileSystem.DirectoryInfo
+        .New(fileSystem.Path.Join(root, WorkspaceLayout.PluginsDirectory)).LinkTarget is not null;
+
     foreach (Glob glob in variant.RemoveFiles) {
       List<string> pathsToRemove = [];
 
@@ -90,14 +99,17 @@ public static class ToothFiles {
         // subdirectory.
         string relativePath = GetRelativePath(fileSystem, root, path);
 
-        if (string.IsNullOrEmpty(relativePath)) {
+        if (string.IsNullOrEmpty(relativePath)
+            || WorkspaceLayout.IsLayoutDirectory(relativePath)
+            || (pluginsIsLink && WorkspaceLayout.CanonicalPath(relativePath) != relativePath)) {
           continue;
         }
 
         // A trailing separator is required to match a directory, so also match patterns like
         // `temp/` against directories.
-        if (glob.IsMatch(relativePath)
-            || (fileSystem.Directory.Exists(path) && glob.IsMatch($"{relativePath}/"))) {
+        List<string> forms = [.. WorkspaceLayout.GlobForms(relativePath)];
+        if (forms.Any(glob.IsMatch)
+            || (fileSystem.Directory.Exists(path) && forms.Any(f => glob.IsMatch($"{f}/")))) {
           pathsToRemove.Add(path);
         }
       }
@@ -137,6 +149,17 @@ public static class ToothFiles {
     return fullPath.StartsWith($"{rootPath}/", StringComparison.OrdinalIgnoreCase)
         ? fullPath[(rootPath.Length + 1)..]
         : fullPath;
+  }
+
+  /// The absolute path of a placement target, through mods/ when the target is under plugins/.
+  private static string CanonicalFullPath(IFileSystem fileSystem, string root, string targetPath) {
+    string fullPath = fileSystem.Path.GetFullPath(fileSystem.Path.Combine(root, targetPath));
+    string relativePath = GetRelativePath(fileSystem, root, fullPath);
+    string canonical = WorkspaceLayout.CanonicalPath(relativePath);
+    return canonical == relativePath
+        ? fullPath
+        : fileSystem.Path.GetFullPath(fileSystem.Path.Combine(
+            root, canonical.Replace('/', fileSystem.Path.DirectorySeparatorChar)));
   }
 
   /// Gets a source from the first URL that works.
