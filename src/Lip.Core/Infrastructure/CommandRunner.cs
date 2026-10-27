@@ -3,18 +3,18 @@ using CliWrap;
 namespace Lip.Core.Infrastructure;
 
 public interface ICommandRunner {
-  /// Runs a command with the platform shell in the current working directory.
   Task Run(string command);
 
-  /// Runs a command with the platform shell (cmd /c on Windows, sh -c elsewhere) in the given
-  /// working directory, or in the current one when it is null.
-  Task Run(string command, string? workingDirectory);
+  /// Runs the command with the given working directory instead of the process's.
+  Task Run(string command, string workingDirectory);
 }
 
 public class CommandRunner : ICommandRunner {
-  public Task Run(string command) => Run(command, workingDirectory: null);
+  public Task Run(string command) => RunCore(command, workingDirectory: null);
 
-  public async Task Run(string command, string? workingDirectory) {
+  public Task Run(string command, string workingDirectory) => RunCore(command, workingDirectory);
+
+  private static async Task RunCore(string command, string? workingDirectory) {
     using Stream stdErrStream = Console.OpenStandardError();
 
     Command cli = Cli.Wrap(OperatingSystem.IsWindows() ? "cmd.exe" : "sh")

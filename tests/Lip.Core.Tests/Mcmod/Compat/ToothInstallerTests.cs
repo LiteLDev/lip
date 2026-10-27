@@ -179,8 +179,8 @@ public class ToothInstallerTests {
     // Arrange
     Candidate candidate = await CreateCandidate();
     List<string> calls = [];
-    _commandRunner.Setup(c => c.Run(It.IsAny<string>(), It.IsAny<string?>()))
-        .Callback((string command, string? workingDirectory) => {
+    _commandRunner.Setup(c => c.Run(It.IsAny<string>(), It.IsAny<string>()))
+        .Callback((string command, string workingDirectory) => {
           Assert.Equal(_root, workingDirectory);
           // Pre-install runs before files are placed, the others after.
           calls.Add($"{command}:{_fileSystem.File.Exists(Workspace("plugins/repo/a.dll"))}");
