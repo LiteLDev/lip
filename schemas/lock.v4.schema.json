@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "lip workspace lock (lip_lock.json), format 4",
+  "type": "object",
+  "properties": {
+    "formatVersion": {
+      "type": "integer",
+      "const": 4
+    },
+    "formatUuid": {
+      "type": "string",
+      "const": "0c6b977a-64ad-441f-9a29-c7f4b196882f"
+    },
+    "platform": {
+      "description": "Environment platform; null until known.",
+      "enum": ["server", "client", null]
+    },
+    "rid": {
+      "description": ".NET RID of the environment; null until known.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/package"
+      }
+    }
+  },
+  "required": [
+    "formatVersion",
+    "formatUuid",
+    "packages"
+  ],
+  "definitions": {
+    "package": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Identity: the name of the concrete package (the tooth path for tooth packages).",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "Package kind: \"mcmod\" or \"tooth\".",
+          "type": "string"
+        },
+        "explicit": {
+          "description": "Whether the user asked for the package (as opposed to a dependency).",
+          "type": "boolean"
+        },
+        "chain": {
+          "description": "Resolution chain: the ref of every hop and the Artifact index chosen at that hop.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "artifact": {
+                "type": ["integer", "null"],
+                "minimum": 0
+              }
+            },
+            "required": ["ref", "artifact"]
+          }
+        },
+        "archiveKey": {
+          "type": "string"
+        },
+        "archive": {
+          "description": "Identity of the final archive; null for packages migrated from a v3 lock.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/zipArchive" },
+            { "$ref": "#/definitions/gitArchive" },
+            { "$ref": "#/definitions/directoryArchive" }
+          ]
+        },
+        "files": {
+          "description": "Owned files, workspace-relative and '/'-separated.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "manifest": {
+          "description": "The package document (manifest.json, or tooth.json for tooth packages).",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "kind",
+        "explicit",
+        "chain",
+        "archiveKey",
+        "manifest"
+      ]
+    },
+    "zipArchive": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "zip" },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "url": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["kind", "sha256", "url"]
+    },
+    "gitArchive": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "git" },
+        "repo": { "type": "string" },
+        "commit": { "type": "string" },
+        "path": {
+          "description": "Path of the archive root in the repository; \"\" for the root.",
+          "type": "string"
+        }
+      },
+      "required": ["kind", "repo", "commit", "path"]
+    },
+    "directoryArchive": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "directory" },
+        "path": { "type": "string" }
+      },
+      "required": ["kind", "path"]
+    }
+  }
+}
