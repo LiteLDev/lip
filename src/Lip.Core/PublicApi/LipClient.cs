@@ -26,7 +26,8 @@ public interface ILipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null);
+      string? rid = null,
+      CancellationToken cancellationToken = default);
   Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List();
   Task Migrate(string file, string output);
   Task Uninstall(
@@ -34,12 +35,14 @@ public interface ILipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null);
+      string? rid = null,
+      CancellationToken cancellationToken = default);
   Task Update(
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
-      string? rid = null);
+      string? rid = null,
+      CancellationToken cancellationToken = default);
   Task<IEnumerable<string>> Versions(string package);
   Task<string> View(string package);
 }
@@ -156,9 +159,10 @@ public class LipClient(
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null) {
+      string? rid = null,
+      CancellationToken cancellationToken = default) {
     await _mcmodService.Install(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid));
+        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependencies.
@@ -195,9 +199,10 @@ public class LipClient(
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null) {
+      string? rid = null,
+      CancellationToken cancellationToken = default) {
     await _mcmodService.Uninstall(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid));
+        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
   }
 
   /// Updates the given packages to the requested (or newest) version; without packages, every
@@ -206,9 +211,11 @@ public class LipClient(
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
-      string? rid = null) {
+      string? rid = null,
+      CancellationToken cancellationToken = default) {
     await _mcmodService.Update(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies: false, rid));
+        [.. packages],
+        Options(dryRun, ignoreScripts, noDependencies: false, rid, cancellationToken));
   }
 
   public async Task<IEnumerable<string>> Versions(string package) {
@@ -220,8 +227,16 @@ public class LipClient(
   }
 
   private static OperationOptions Options(
-      bool dryRun, bool ignoreScripts, bool noDependencies, string? rid) {
+      bool dryRun,
+      bool ignoreScripts,
+      bool noDependencies,
+      string? rid,
+      CancellationToken cancellationToken) {
     return new OperationOptions(
-        dryRun, ignoreScripts, noDependencies, string.IsNullOrEmpty(rid) ? null : rid);
+        dryRun,
+        ignoreScripts,
+        noDependencies,
+        string.IsNullOrEmpty(rid) ? null : rid,
+        cancellationToken);
   }
 }

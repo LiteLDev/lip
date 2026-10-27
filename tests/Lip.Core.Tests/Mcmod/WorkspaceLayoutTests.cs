@@ -27,16 +27,7 @@ public class WorkspaceLayoutTests {
   private string? LinkTarget(string relative) =>
       _ws.Fs.DirectoryInfo.New(_ws.Path(relative)).LinkTarget;
 
-  private SortedDictionary<string, string> Snapshot() {
-    SortedDictionary<string, string> snapshot = new(StringComparer.Ordinal);
-    foreach (string path in _ws.Fs.AllPaths) {
-      snapshot[path] = _ws.Fs.File.Exists(path)
-          ? Convert.ToBase64String(_ws.Fs.File.ReadAllBytes(path))
-          : "<dir>";
-    }
-
-    return snapshot;
-  }
+  private SortedDictionary<string, string> Snapshot() => _ws.Snapshot();
 
   [Theory]
   [InlineData("plugins", "mods")]

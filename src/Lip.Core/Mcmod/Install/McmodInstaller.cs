@@ -45,7 +45,46 @@ public partial class McmodInstaller(
 
   public bool CanHandle(string kind) => kind is McmodPackage.KindName or ToothCompat.KindName;
 
+  /// Installs the package on its own: plans it, then applies the plan in a transaction of its
+  /// own. Returns the files the package owns.
   public async Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context) {
+    PackagePlan plan = await PlanInstall(candidate, context, new WorkspaceView(_fs));
+    if (!context.DryRun) {
+      await ApplyAlone(plan);
+    }
+
+    return plan.OwnedFiles;
+  }
+
+  /// Uninstalls the package on its own, like Install.
+  public async Task Uninstall(LockedPackage package, InstallContext context) {
+    PackagePlan plan = await PlanUninstall(package, context, new WorkspaceView(_fs));
+    if (!context.DryRun) {
+      await ApplyAlone(plan);
+    }
+  }
+
+  private async Task ApplyAlone(PackagePlan plan) {
+    using WorkspaceTransaction transaction = new(_fs, reserved: plan.WrittenPaths);
+    try {
+      await Apply(plan, transaction, CancellationToken.None);
+    }
+    catch {
+      foreach (string error in transaction.Rollback()) {
+        await _ui.PrintWarning($"Rollback: {error}");
+      }
+
+      throw;
+    }
+
+    transaction.Commit();
+    foreach (string error in transaction.Complete()) {
+      await _ui.PrintWarning(error);
+    }
+  }
+
+  public async Task<PackagePlan> PlanInstall(
+      Candidate candidate, InstallContext context, WorkspaceView view) {
     if (candidate.Package is not McmodPackage package) {
       throw new ArgumentException(
           $"Expected a {McmodPackage.KindName} package, got '{candidate.Package.Kind}'.",
@@ -57,8 +96,12 @@ public partial class McmodInstaller(
     string baseDir = BaseDirectory(document, context.Environment);
     ISource source = candidate.Archive.Source;
 
-    // 1. Plan: every check happens before anything is written or run.
-    List<PlannedWrite> plan = Plan(document, baseDir, source, root, context.Lock);
+    // Every check happens before anything is written or run.
+    List<PlannedWrite> plan = Plan(document, baseDir, source, root, context.Lock, view);
+    List<PlannedWrite> writes = [.. plan.Where(w => !w.Keep)];
+    foreach (PlannedWrite write in writes) {
+      view.AddFile(write.FullPath);
+    }
 
     if (context.DryRun) {
       foreach (PlannedWrite write in plan) {
@@ -66,54 +109,33 @@ public partial class McmodInstaller(
             ? $"Would keep {write.Target} (preserved)"
             : $"Would write {write.Target}");
       }
-      return OwnedFiles(plan);
-    }
-
-    // Fetch content before running anything, so that a fetch failure changes nothing.
-    List<PlannedWrite> writes = [.. plan.Where(w => !w.Keep)];
-    try {
-      await source.Prefetch(writes.Select(w => w.SourceKey).Distinct());
-    }
-    catch (Exception ex) {
-      throw new McmodInstallException(
-          $"{document.Name}: cannot fetch the archive content: {ex.Message}", ex);
-    }
-
-    // 2. preInstall.
-    if (!context.IgnoreScripts) {
-      await RunScripts(document.Name, "preInstall", document.Scripts.PreInstall, root);
-    }
-
-    // 3. Write files, rolling back on failure.
-    WriteTransaction transaction = new(_fs, writes.Select(w => w.FullPath));
-    try {
-      foreach (PlannedWrite write in writes) {
-        await using Stream content = await source.OpenRead(write.SourceKey);
-        await transaction.Write(write.FullPath, content);
+    } else {
+      // Fetch content now, so that a fetch failure changes nothing.
+      try {
+        await source.Prefetch(writes.Select(w => w.SourceKey).Distinct());
       }
-
-      // 4. postInstall.
-      if (!context.IgnoreScripts) {
-        await RunScripts(document.Name, "postInstall", document.Scripts.PostInstall, root);
+      catch (Exception ex) {
+        throw new McmodInstallException(
+            $"{document.Name}: cannot fetch the archive content: {ex.Message}", ex);
       }
     }
-    catch (Exception ex) {
-      IReadOnlyList<string> errors = transaction.Rollback();
-      foreach (string error in errors) {
-        await _ui.PrintWarning($"Rollback: {error}");
-      }
-      if (ex is McmodInstallException) {
-        throw;
-      }
-      throw new McmodInstallException(
-          $"Failed to install {document.Name}; written files were rolled back: {ex.Message}", ex);
-    }
-    transaction.Commit();
 
-    return OwnedFiles(plan);
+    // preInstall, the writes, postInstall.
+    List<PlannedStep> steps = [];
+    if (!context.IgnoreScripts && document.Scripts.PreInstall.Count > 0) {
+      steps.Add(new ScriptStep("preInstall", document.Scripts.PreInstall));
+    }
+
+    steps.AddRange(writes.Select(w => new WriteStep(w.Target, w.FullPath, source, w.SourceKey)));
+    if (!context.IgnoreScripts && document.Scripts.PostInstall.Count > 0) {
+      steps.Add(new ScriptStep("postInstall", document.Scripts.PostInstall));
+    }
+
+    return new PackagePlan(document.Name, root, OwnedFiles(plan), steps);
   }
 
-  public async Task Uninstall(LockedPackage package, InstallContext context) {
+  public async Task<PackagePlan> PlanUninstall(
+      LockedPackage package, InstallContext context, WorkspaceView view) {
     ConcreteDocument document = await LockedDocument(package, context.Environment);
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
     string baseDir = BaseDirectory(document, context.Environment);
@@ -121,11 +143,7 @@ public partial class McmodInstaller(
         ? root
         : ToFullPath(root, context.Environment.Platform.ModsDirectory());
 
-    // 1. preUninstall.
-    if (!context.DryRun && !context.IgnoreScripts) {
-      await RunScripts(document.Name, "preUninstall", document.Scripts.PreUninstall, root);
-    }
-
+    // The paths to delete are those of the workspace before preUninstall runs.
     HashSet<string> ownedByOthers = new(
         context.Lock.Packages
             .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))
@@ -143,16 +161,16 @@ public partial class McmodInstaller(
       if (MatchesAny(document.PreserveFiles, file, baseDir)) {
         continue;
       }
-      if (_fs.File.Exists(ToFullPath(root, file)) && fileSet.Add(file)) {
+      if (view.FileExists(ToFullPath(root, file)) && fileSet.Add(file)) {
         files.Add(file);
       }
     }
 
-    // 3. Paths matching removeFiles that no other package owns.
+    // Paths matching removeFiles that no other package owns.
     List<string> directories = [];
     HashSet<string> directorySet = new(PathComparer);
     foreach (PathGlob glob in document.RemoveFiles) {
-      foreach ((string path, bool isDirectory) in EnumerateMatches(root, baseDir, glob)) {
+      foreach ((string path, bool isDirectory) in EnumerateMatches(root, baseDir, glob, view)) {
         if (isDirectory) {
           if (!WorkspaceLayout.IsLayoutDirectory(path) && directorySet.Add(path)) {
             directories.Add(path);
@@ -170,30 +188,91 @@ public partial class McmodInstaller(
       foreach (string directory in directories) {
         await _ui.PrintInfo($"Would delete {directory}/ (if empty after deletion)");
       }
-      return;
+    }
+
+    List<PlannedStep> steps = [];
+    if (!context.IgnoreScripts && document.Scripts.PreUninstall.Count > 0) {
+      steps.Add(new ScriptStep("preUninstall", document.Scripts.PreUninstall));
     }
 
     foreach (string file in files) {
-      _fs.File.Delete(ToFullPath(root, file));
+      string full = ToFullPath(root, file);
+      view.DeleteFile(full);
+      steps.Add(new DeleteFileStep(full));
     }
 
     // Directory patterns delete whole directories, except what other packages own. Deepest
     // first, so that a matched directory containing matched directories empties bottom-up.
     foreach (string directory in directories.OrderByDescending(d => d.Count(c => c == '/'))) {
       string full = ToFullPath(root, directory);
-      if (_fs.Directory.Exists(full) && IsEmpty(full)) {
-        _fs.Directory.Delete(full);
+      if (view.DirectoryExists(full) && view.IsEmpty(full)) {
+        view.DeleteDirectory(full);
+        steps.Add(new DeleteDirectoryStep(full));
       }
     }
 
-    // 4. Directories that became empty because of the deletions above.
+    // Directories that became empty because of the deletions above.
     foreach (string path in files.Concat(directories)) {
-      PruneEmptyAncestors(root, ToFullPath(root, path), stopDir);
+      for (string? dir = _fs.Path.GetDirectoryName(ToFullPath(root, path));
+          dir is not null && IsInside(stopDir, dir);
+          dir = _fs.Path.GetDirectoryName(dir)) {
+        string relative = _fs.Path.GetRelativePath(root, dir)
+            .Replace(_fs.Path.DirectorySeparatorChar, '/');
+        if (!view.DirectoryExists(dir) || !view.IsEmpty(dir)
+            || WorkspaceLayout.IsLayoutDirectory(relative)) {
+          break;
+        }
+
+        view.DeleteDirectory(dir);
+        steps.Add(new DeleteDirectoryStep(dir));
+      }
     }
 
-    // 5. postUninstall.
-    if (!context.IgnoreScripts) {
-      await RunScripts(document.Name, "postUninstall", document.Scripts.PostUninstall, root);
+    if (!context.IgnoreScripts && document.Scripts.PostUninstall.Count > 0) {
+      steps.Add(new ScriptStep("postUninstall", document.Scripts.PostUninstall));
+    }
+
+    return new PackagePlan(document.Name, root, [], steps);
+  }
+
+  public async Task Apply(
+      PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken) {
+    foreach (PlannedStep step in plan.Steps) {
+      cancellationToken.ThrowIfCancellationRequested();
+      switch (step) {
+        case ScriptStep script:
+          await RunScripts(plan.Name, script.Stage, script.Commands, plan.Root);
+          break;
+        case WriteStep write:
+          try {
+            await using Stream content = await write.Source.OpenRead(write.Key);
+            await transaction.WriteFile(write.FullPath, content, cancellationToken);
+          }
+          catch (Exception ex) when (ex is not OperationCanceledException) {
+            throw new McmodInstallException(
+                $"{plan.Name}: cannot write {write.Target}: {ex.Message}", ex);
+          }
+
+          break;
+        case DeleteFileStep delete:
+          try {
+            // A script may have deleted it.
+            if (_fs.File.Exists(delete.FullPath)) {
+              transaction.DeleteFile(delete.FullPath);
+            }
+          }
+          catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            throw new McmodInstallException(
+                $"{plan.Name}: cannot delete {delete.FullPath}: {ex.Message}", ex);
+          }
+
+          break;
+        case DeleteDirectoryStep directory:
+          transaction.DeleteDirectoryOnCommit(directory.FullPath);
+          break;
+        default:
+          throw new ArgumentException($"Unknown step {step}.", nameof(plan));
+      }
     }
   }
 
@@ -219,7 +298,8 @@ public partial class McmodInstaller(
       string baseDir,
       ISource source,
       string root,
-      LockFile lockFile) {
+      LockFile lockFile,
+      WorkspaceView view) {
     // Target (workspace-relative) -> source key. Later entries overwrite earlier ones.
     List<string> order = [];
     Dictionary<string, (string Target, string Key)> targets = new(PathComparer);
@@ -303,19 +383,19 @@ public partial class McmodInstaller(
       if (!IsInside(root, full)) {
         throw new McmodInstallException($"{document.Name}: '{target}' escapes the workspace.");
       }
-      if (_fs.Directory.Exists(full)) {
+      if (view.DirectoryExists(full)) {
         throw new McmodInstallException($"{document.Name}: '{target}' is an existing directory.");
       }
       for (string? parent = _fs.Path.GetDirectoryName(full);
           parent is not null && IsInside(root, parent) && checkedDirectories.Add(parent);
           parent = _fs.Path.GetDirectoryName(parent)) {
-        if (_fs.File.Exists(parent)) {
+        if (view.FileExists(parent)) {
           throw new McmodInstallException(
               $"{document.Name}: cannot write '{target}': a parent path is an existing file.");
         }
       }
 
-      bool keep = _fs.File.Exists(full) && MatchesAny(document.PreserveFiles, target, baseDir);
+      bool keep = view.FileExists(full) && MatchesAny(document.PreserveFiles, target, baseDir);
       plan.Add(new PlannedWrite(target, key, full, keep, keep && ownedBySelf.Contains(target)));
     }
     return plan;
@@ -365,7 +445,8 @@ public partial class McmodInstaller(
   private IEnumerable<(string Path, bool IsDirectory)> EnumerateMatches(
       string root,
       string baseDir,
-      PathGlob glob) {
+      PathGlob glob,
+      WorkspaceView view) {
     string[] segments = glob.Pattern.TrimEnd('/').Split('/');
     if (segments.Any(s => s is "." or ".." || s.Contains(':'))) {
       // Never look outside the base directory.
@@ -380,7 +461,7 @@ public partial class McmodInstaller(
     if (literal == segments.Length && !glob.MatchesDirectories) {
       // A literal file path.
       string file = WorkspaceLayout.CanonicalPath(baseDir + glob.Pattern);
-      if (_fs.File.Exists(ToFullPath(root, file))) {
+      if (view.FileExists(ToFullPath(root, file))) {
         yield return (file, false);
       }
       yield break;
@@ -389,11 +470,10 @@ public partial class McmodInstaller(
     string start = WorkspaceLayout.CanonicalPath(
         baseDir + string.Concat(segments[..literal].Select(s => s + "/")));
     string startFull = ToFullPath(root, start);
-    if ((start != "" && !IsInside(root, startFull)) || !_fs.Directory.Exists(startFull)) {
+    if ((start != "" && !IsInside(root, startFull)) || !view.DirectoryExists(startFull)) {
       yield break;
     }
 
-    IDirectoryInfo startInfo = _fs.DirectoryInfo.New(startFull);
     int? maxDepth = segments[literal..].Contains("**") ? null : segments.Length - literal;
     if (literal == segments.Length) {
       // A literal directory path. mods and plugins are never matched, so a pattern naming them
@@ -402,58 +482,36 @@ public partial class McmodInstaller(
         yield break;
       }
       yield return (start.TrimEnd('/'), true);
-      foreach ((string, bool) entry in Walk(startInfo, all: true, depth: 1)) {
+      foreach ((string, bool) entry in Walk(startFull, all: true, depth: 1)) {
         yield return entry;
       }
       yield break;
     }
 
-    foreach ((string, bool) entry in Walk(startInfo, all: false, depth: 1)) {
+    foreach ((string, bool) entry in Walk(startFull, all: false, depth: 1)) {
       yield return entry;
     }
 
-    IEnumerable<(string Path, bool IsDirectory)> Walk(
-        IDirectoryInfo directory,
-        bool all,
-        int depth) {
-      foreach (IFileSystemInfo info in directory.EnumerateFileSystemInfos()) {
-        bool isDirectory = info is IDirectoryInfo;
-        bool isLink = info.Attributes.HasFlag(FileAttributes.ReparsePoint);
+    IEnumerable<(string Path, bool IsDirectory)> Walk(string directory, bool all, int depth) {
+      foreach (WorkspaceView.Entry info in view.Enumerate(directory)) {
         string path = _fs.Path.GetRelativePath(root, info.FullName)
             .Replace(_fs.Path.DirectorySeparatorChar, '/');
-        string suffix = isDirectory ? "/" : "";
+        string suffix = info.IsDirectory ? "/" : "";
         bool matched = all
-            || (!(isDirectory && WorkspaceLayout.IsLayoutDirectory(path))
+            || (!(info.IsDirectory && WorkspaceLayout.IsLayoutDirectory(path))
                 && GlobForms(path, baseDir).Any(f => glob.IsMatch(f + suffix)));
         if (matched) {
-          yield return (WorkspaceLayout.CanonicalPath(path), isDirectory);
+          yield return (WorkspaceLayout.CanonicalPath(path), info.IsDirectory);
         }
-        if (isDirectory && !isLink && (matched || maxDepth is null || depth < maxDepth)) {
-          foreach ((string, bool) entry in Walk((IDirectoryInfo)info, matched, depth + 1)) {
+        if (info.IsDirectory && !info.IsLink
+            && (matched || maxDepth is null || depth < maxDepth)) {
+          foreach ((string, bool) entry in Walk(info.FullName, matched, depth + 1)) {
             yield return entry;
           }
         }
       }
     }
   }
-  /// Deletes the empty directories above a deleted path, up to stopDir (exclusive), never mods
-  /// or plugins.
-  private void PruneEmptyAncestors(string root, string deletedPath, string stopDir) {
-    for (string? dir = _fs.Path.GetDirectoryName(deletedPath);
-        dir is not null && IsInside(stopDir, dir);
-        dir = _fs.Path.GetDirectoryName(dir)) {
-      string relative = _fs.Path.GetRelativePath(root, dir)
-          .Replace(_fs.Path.DirectorySeparatorChar, '/');
-      if (!_fs.Directory.Exists(dir) || !IsEmpty(dir)
-          || WorkspaceLayout.IsLayoutDirectory(relative)) {
-        return;
-      }
-      _fs.Directory.Delete(dir);
-    }
-  }
-
-  private bool IsEmpty(string directory) =>
-      !_fs.Directory.EnumerateFileSystemEntries(directory).Any();
 
   /// Whether a glob of the package matches a canonical workspace-relative path.
   private static bool MatchesAny(IReadOnlyList<PathGlob> globs, string path, string baseDir) =>
@@ -498,101 +556,4 @@ public partial class McmodInstaller(
       string FullPath,
       bool Keep,
       bool StaysOwned);
-
-  /// Writes files and remembers how to undo them: overwritten files are first renamed to a
-  /// backup next to them, created directories are recorded. Backups never take the name of a
-  /// planned write.
-  private sealed class WriteTransaction(IFileSystem fs, IEnumerable<string> planned) {
-    private readonly HashSet<string> _planned = new(planned, PathComparer);
-    private readonly List<string> _written = [];
-    private readonly List<(string Target, string Backup, bool WasHidden)> _backups = [];
-    private readonly List<string> _createdDirectories = [];
-
-    public async Task Write(string path, Stream content) {
-      string directory = fs.Path.GetDirectoryName(path)!;
-      List<string> missing = [];
-      for (string? d = directory; d is not null && !fs.Directory.Exists(d);
-          d = fs.Path.GetDirectoryName(d)) {
-        missing.Add(d);
-      }
-      fs.Directory.CreateDirectory(directory);
-      _createdDirectories.AddRange(missing);
-
-      if (fs.File.Exists(path)) {
-        // A hidden sibling: same volume (a cheap rename), and never in a directory that gets
-        // cleaned.
-        string backup = BackupPath(path);
-        bool wasHidden = fs.File.GetAttributes(path).HasFlag(FileAttributes.Hidden);
-        fs.File.Move(path, backup);
-        fs.SetHidden(backup, true);
-        _backups.Add((path, backup, wasHidden));
-      }
-
-      _written.Add(path);
-      await using FileSystemStream output = fs.File.Create(path);
-      await content.CopyToAsync(output);
-    }
-
-    /// ".{name}.bak" in the directory of the file, or ".{name}.bak1", ".{name}.bak2", ... when
-    /// that name is taken.
-    private string BackupPath(string path) {
-      string directory = fs.Path.GetDirectoryName(path)!;
-      string name = $".{fs.Path.GetFileName(path)}.bak";
-      string backup = fs.Path.Join(directory, name);
-      for (int i = 1;
-          fs.File.Exists(backup) || fs.Directory.Exists(backup) || _planned.Contains(backup);
-          i++) {
-        backup = fs.Path.Join(directory, $"{name}{i}");
-      }
-      return backup;
-    }
-
-    public void Commit() {
-      foreach ((_, string backup, _) in _backups) {
-        try {
-          fs.File.Delete(backup);
-        }
-        catch (IOException) {
-          // A leftover backup is harmless.
-        }
-      }
-    }
-
-    /// Best effort; returns what could not be undone.
-    public IReadOnlyList<string> Rollback() {
-      List<string> errors = [];
-      void Try(Action action, string what) {
-        try {
-          action();
-        }
-        catch (Exception ex) {
-          errors.Add($"{what}: {ex.Message}");
-        }
-      }
-
-      foreach (string path in Enumerable.Reverse(_written)) {
-        Try(() => {
-          if (fs.File.Exists(path)) {
-            fs.File.Delete(path);
-          }
-        }, $"cannot delete {path}");
-      }
-      foreach ((string target, string backup, bool wasHidden) in Enumerable.Reverse(_backups)) {
-        Try(() => {
-          fs.File.Move(backup, target);
-          fs.SetHidden(target, wasHidden);
-        }, $"cannot restore {target} from {backup}");
-      }
-      // Children before parents.
-      foreach (string directory in _createdDirectories.OrderByDescending(d => d.Length)) {
-        Try(() => {
-          if (fs.Directory.Exists(directory)
-              && !fs.Directory.EnumerateFileSystemEntries(directory).Any()) {
-            fs.Directory.Delete(directory);
-          }
-        }, $"cannot delete {directory}");
-      }
-      return errors;
-    }
-  }
 }

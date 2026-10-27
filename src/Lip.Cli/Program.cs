@@ -95,4 +95,17 @@ app.Configure(config => {
       .WithDescription("Shows available versions for a package");
 });
 
-return await app.RunAsync(args);
+// The first Ctrl+C cancels the command, which undoes the changes it started to make to the
+// workspace; a second one ends lip at once (the next operation then undoes them).
+using CancellationTokenSource cancellation = new();
+Console.CancelKeyPress += (_, e) => {
+  if (cancellation.IsCancellationRequested) {
+    return;
+  }
+
+  e.Cancel = true;
+  Console.Error.WriteLine("Cancelling... (press Ctrl+C again to exit at once)");
+  cancellation.Cancel();
+};
+
+return await app.RunAsync(args, cancellation.Token);

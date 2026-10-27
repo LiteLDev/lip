@@ -95,6 +95,11 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
   }
 
   public async Task Save(string workspaceRoot, LockFile lockFile) {
+    await Stage(workspaceRoot, lockFile);
+    CommitStaged(workspaceRoot);
+  }
+
+  public async Task Stage(string workspaceRoot, LockFile lockFile) {
     try {
       if (lockFile.FormatVersion != ManifestFormat.Version
           || lockFile.FormatUuid != ManifestFormat.Uuid) {
@@ -111,13 +116,8 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
 
     string root = NormalizeRoot(workspaceRoot);
     string path = GetLockPath(root);
-    // Migrating: the lock was read from the workspace, whose files are deleted below. Once the
-    // lock is in the data directory, files of those names in the workspace are not lip's.
-    bool migrating = !_fs.File.Exists(path);
-
-    string directory = _fs.Path.GetDirectoryName(path)!;
-    _fs.Directory.CreateDirectory(directory);
-    string tempPath = _fs.Path.Join(directory, $".{_fs.Path.GetFileName(path)}.tmp");
+    _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(path)!);
+    string tempPath = StagedPath(path);
 
     byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
         lockFile with { Workspace = root }, _writeOptions);
@@ -129,24 +129,57 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
 
       await _fs.File.WriteAllBytesAsync(tempPath, bytes);
       _fs.SetHidden(tempPath, true);
-      _fs.File.Move(tempPath, path, overwrite: true);
-      _fs.SetHidden(path, false);
     }
-    finally {
+    catch {
       if (_fs.File.Exists(tempPath)) {
         _fs.File.Delete(tempPath);
       }
+
+      throw;
+    }
+  }
+
+  public void CommitStaged(string workspaceRoot) {
+    string root = NormalizeRoot(workspaceRoot);
+    string path = GetLockPath(root);
+    string tempPath = StagedPath(path);
+    if (!_fs.File.Exists(tempPath)) {
+      return;
     }
 
-    if (migrating) {
-      foreach (string name in (string[])[WorkspaceFileName, LegacyFileName]) {
-        string workspacePath = _fs.Path.Combine(root, name);
-        if (_fs.File.Exists(workspacePath)) {
-          _fs.File.Delete(workspacePath);
+    // Migrating: the lock was read from the workspace, whose files are deleted below. Once the
+    // lock is in the data directory, files of those names in the workspace are not lip's.
+    bool migrating = !_fs.File.Exists(path);
+    _fs.File.Move(tempPath, path, overwrite: true);
+
+    // The lock is in place; what follows must not fail the operation.
+    try {
+      _fs.SetHidden(path, false);
+      if (migrating) {
+        foreach (string name in (string[])[WorkspaceFileName, LegacyFileName]) {
+          string workspacePath = _fs.Path.Combine(root, name);
+          if (_fs.File.Exists(workspacePath)) {
+            _fs.File.Delete(workspacePath);
+          }
         }
       }
     }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      // A hidden lock or a leftover workspace lock is read correctly.
+    }
   }
+
+  public void DiscardStaged(string workspaceRoot) {
+    string tempPath = StagedPath(GetLockPath(NormalizeRoot(workspaceRoot)));
+    if (_fs.File.Exists(tempPath)) {
+      _fs.File.Delete(tempPath);
+    }
+  }
+
+  /// The hidden temporary file a lock is staged in, next to the lock.
+  private string StagedPath(string lockPath) =>
+      _fs.Path.Join(
+          _fs.Path.GetDirectoryName(lockPath)!, $".{_fs.Path.GetFileName(lockPath)}.tmp");
 
   private static LockFile CanonicalizeFiles(LockFile lockFile) => lockFile with {
     Packages = [

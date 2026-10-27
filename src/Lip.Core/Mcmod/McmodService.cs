@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
+using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
 using Lip.Core.Mcmod.Resolution;
 using Semver;
@@ -11,11 +12,14 @@ using Semver;
 namespace Lip.Core.Mcmod;
 
 /// Options shared by the workspace operations. Rid overrides the environment rid (spec §5.1).
+/// Cancelling the token stops an operation; one that has started changing the workspace undoes
+/// its changes first.
 public record OperationOptions(
     bool DryRun = false,
     bool IgnoreScripts = false,
     bool NoDependencies = false,
-    string? Rid = null);
+    string? Rid = null,
+    CancellationToken CancellationToken = default);
 
 /// One entry of the workspace lock, as listed to the user.
 public record InstalledPackage(string Identity, string Version, bool Explicit, string Kind);
@@ -24,9 +28,16 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 ///
 /// Every operation loads the lock (migrating a v3 tooth_lock.json), determines the environment,
 /// computes the new package set with the graph solver, then uninstalls what leaves the set (in
-/// reverse install order) and installs what enters it (in install order), saving the lock after
-/// every step. An update of a package is an uninstall of the old and an install of the new
-/// version (spec §7).
+/// reverse install order) and installs what enters it (in install order). An update of a package
+/// is an uninstall of the old and an install of the new version (spec §7).
+///
+/// Operations are all or nothing (spec §7). An operation first plans every uninstall and install
+/// against a view of the workspace as the earlier steps leave it, checking everything and
+/// fetching every archive; a failure then changes nothing. It then applies the plans through one
+/// WorkspaceTransaction, journaled next to the lock, and writes the lock last; a failure (or
+/// cancellation) undoes every change and leaves the lock as it was. A mutating operation holds
+/// the workspace's WorkspaceMutex throughout, and first finishes or undoes what an interrupted
+/// operation left in the journal.
 ///
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the lock
 /// without network access, and their archives are opened from the lock only when needed. If the
@@ -66,6 +77,7 @@ public class McmodService(
       fileSystem, directoryLinker ?? new DirectoryLinker(fileSystem), userInteraction);
 
   public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
+    using WorkspaceMutex mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
     List<(string Argument, PackageRequest Request)> requests = ParseRequests(packages);
 
@@ -82,14 +94,15 @@ public class McmodService(
       }
     }
 
-    await Apply(workspace, options, await MakePlan(
+    await Execute(workspace, options, Changes(workspace, options, await MakePlan(
         workspace,
         [.. requests.Select(r => r.Request)],
         unpinned: identities,
-        explicitIdentities: ExplicitIdentities(workspace.Lock)));
+        explicitIdentities: ExplicitIdentities(workspace.Lock))));
   }
 
   public async Task Uninstall(IReadOnlyList<string> packages, OperationOptions options) {
+    using WorkspaceMutex mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
 
     List<LockedPackage> targets = [];
@@ -121,16 +134,21 @@ public class McmodService(
           "--no-dependencies is enabled. This operation may result in a broken workspace.");
     }
 
+    // The direct uninstalls come first, then what the plan of the rest changes; one
+    // transaction applies both.
+    Workspace original = workspace;
+    List<Change> changes = [];
     if (direct.Count > 0) {
       List<LockedPackage> remaining = [.. workspace.Lock.Packages];
       foreach (LockedPackage target in Enumerable.Reverse(workspace.Lock.Packages)
           .Where(direct.Contains)) {
-        await UninstallEntry(workspace, options, target, remaining);
+        changes.Add(new UninstallChange(target));
+        remaining.Remove(target);
       }
 
-      await SaveFinal(workspace, options, remaining);
       targets = [.. targets.Except(direct)];
       if (targets.Count == 0) {
+        await Execute(original, options, new ChangeSet(changes, Task.FromResult));
         return;
       }
 
@@ -150,10 +168,12 @@ public class McmodService(
           + "as a dependency.");
     }
 
-    await Apply(workspace, options, plan);
+    ChangeSet planned = Changes(workspace, options, plan);
+    await Execute(original, options, planned with { Changes = [.. changes, .. planned.Changes] });
   }
 
   public async Task Update(IReadOnlyList<string> packages, OperationOptions options) {
+    using WorkspaceMutex mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
 
     List<(string Argument, PackageRequest Request)> requests;
@@ -195,11 +215,11 @@ public class McmodService(
       }
     }
 
-    await Apply(workspace, options, await MakePlan(
+    await Execute(workspace, options, Changes(workspace, options, await MakePlan(
         workspace,
         [.. requests.Select(r => r.Request)],
         unpinned: identities,
-        explicitIdentities: ExplicitIdentities(workspace.Lock)));
+        explicitIdentities: ExplicitIdentities(workspace.Lock))));
   }
 
   public async Task<IReadOnlyList<InstalledPackage>> List() {
@@ -265,25 +285,73 @@ public class McmodService(
     LockFile lockFile = await _lockStore.Load(root);
     LipEnvironment environment = DetermineEnvironment(lockFile, options.Rid);
     Resolver resolver = new(_archiveProvider, _archiveReader, _toothCompat, Warn);
-    return new Workspace(
-        root,
-        lockFile,
-        environment,
-        resolver,
-        _createSolver(resolver),
-        new LayoutState());
+    return new Workspace(root, lockFile, environment, resolver, _createSolver(resolver));
   }
 
-  /// Makes the workspace layout right (spec §7) before the first package of an operation is
-  /// installed or uninstalled, so that a failure while resolving or solving changes nothing. In
-  /// a dry run, reports what that would do.
-  private async Task PrepareLayout(Workspace workspace, OperationOptions options) {
-    if (workspace.Layout.Prepared) {
+  /// Takes the workspace's inter-process lock for a mutating operation, then finishes or undoes
+  /// what an interrupted operation left in the journal.
+  private async Task<WorkspaceMutex> BeginOperation(OperationOptions options) {
+    string root = _fs.Path.GetFullPath(_workspaceRoot());
+    WorkspaceMutex mutex = WorkspaceMutex.Acquire(
+        _fs, _fs.Path.ChangeExtension(_lockStore.GetLockPath(root), ".lock"), root);
+    try {
+      await RecoverInterrupted(root, options);
+    }
+    catch {
+      mutex.Dispose();
+      throw;
+    }
+
+    return mutex;
+  }
+
+  /// The journal of the operation applying changes to a workspace, next to its lock.
+  private string JournalPath(string root) =>
+      _fs.Path.ChangeExtension(_lockStore.GetLockPath(root), ".journal");
+
+  private async Task RecoverInterrupted(string root, OperationOptions options) {
+    string journal = JournalPath(root);
+    if (!_fs.File.Exists(journal)) {
       return;
     }
 
-    await _layout.Prepare(workspace.Root, options.DryRun);
-    workspace.Layout.Prepared = true;
+    if (options.DryRun) {
+      await _ui.PrintWarning(
+          "An interrupted lip operation left changes in this workspace, which the next install,"
+          + " uninstall or update finishes or undoes. The dry run plans with the workspace as it"
+          + " is now.");
+      return;
+    }
+
+    WorkspaceTransaction.RecoveryResult result = WorkspaceTransaction.Recover(
+        _fs,
+        journal,
+        commitLock: () => _lockStore.CommitStaged(root),
+        discardLock: () => _lockStore.DiscardStaged(root))!;
+    string started = result.Started is null ? "" : $" (it started at {result.Started})";
+    string errors = string.Concat(result.Errors.Select(e => $"\n  - {e}"));
+    if (result.Committed) {
+      await _ui.PrintInfo(
+          $"Finished an interrupted lip operation that had completed{started}: deleted the"
+          + " backups it left.");
+      if (result.Errors.Count > 0) {
+        await _ui.PrintWarning(
+            $"Some backups could not be deleted; the next operation tries again:{errors}");
+      }
+
+      return;
+    }
+
+    if (result.Errors.Count > 0) {
+      throw new InvalidOperationException(
+          $"A lip operation on this workspace was interrupted{started}, and its changes cannot"
+          + $" all be undone:{errors}\nFix the problem (e.g. close programs using these files),"
+          + $" then run lip again. '{journal}' records what is left to undo.");
+    }
+
+    await _ui.PrintWarning(
+        $"A lip operation on this workspace was interrupted{started}; undid its"
+        + $" {result.Changes} changes. The workspace and its lock are as they were before it.");
   }
 
   /// The environment of the workspace (spec §5.1). lip manages server workspaces only, so the
@@ -446,7 +514,23 @@ public class McmodService(
 
   #region Applying
 
-  private async Task Apply(Workspace workspace, OperationOptions options, Plan plan) {
+  /// What an operation changes, in order, and how the lock entries left at the end are ordered
+  /// and marked.
+  private sealed record ChangeSet(
+      List<Change> Changes, Func<List<LockedPackage>, Task<List<LockedPackage>>> Finish);
+
+  private abstract record Change;
+
+  private sealed record UninstallChange(LockedPackage Package) : Change;
+
+  private sealed record InstallChange(Candidate Candidate, bool Explicit) : Change;
+
+  private sealed record MarkExplicitChange(LockedPackage Package) : Change;
+
+  /// The changes from the installed packages to the planned package set: uninstalling what
+  /// leaves or changes (in reverse install order), then installing what enters (in install
+  /// order).
+  private ChangeSet Changes(Workspace workspace, OperationOptions options, Plan plan) {
     Dictionary<string, Candidate> members = plan.Members.ToDictionary(
         c => Fold(c.Package.Identity), StringComparer.Ordinal);
 
@@ -460,43 +544,46 @@ public class McmodService(
       }
     }
 
-    List<LockedPackage> remaining = [.. workspace.Lock.Packages];
+    List<Change> changes = [];
     foreach (LockedPackage package in Enumerable.Reverse(workspace.Lock.Packages)) {
       if (!kept.Contains(Fold(package.Identity))) {
-        await UninstallEntry(workspace, options, package, remaining);
+        changes.Add(new UninstallChange(package));
       }
     }
 
     foreach (Candidate candidate in plan.Members) {
       string key = Fold(candidate.Package.Identity);
       if (!kept.Contains(key)) {
-        await InstallCandidate(
-            workspace, options, candidate, plan.Explicit.Contains(key), remaining);
+        changes.Add(new InstallChange(candidate, plan.Explicit.Contains(key)));
       }
     }
 
-    // Lock order is install order: frozen entries first (their dependencies are unknown), then
-    // the members of the new set.
-    List<LockedPackage> ordered = [
-      .. plan.Frozen.SelectMany(g => g.Entries),
-      .. plan.Members.SelectMany(c => remaining.Where(
-          p => Fold(p.Identity) == Fold(c.Package.Identity))),
-    ];
-    ordered.AddRange(remaining.Where(p => !ordered.Contains(p)));
+    async Task<List<LockedPackage>> Finish(List<LockedPackage> remaining) {
+      // Lock order is install order: frozen entries first (their dependencies are unknown),
+      // then the members of the new set.
+      List<LockedPackage> ordered = [
+        .. plan.Frozen.SelectMany(g => g.Entries),
+        .. plan.Members.SelectMany(c => remaining.Where(
+            p => Fold(p.Identity) == Fold(c.Package.Identity))),
+      ];
+      ordered.AddRange(remaining.Where(p => !ordered.Contains(p)));
 
-    List<LockedPackage> final = [];
-    foreach (LockedPackage package in ordered) {
-      bool isExplicit = plan.Explicit.Contains(Fold(package.Identity));
-      if (isExplicit != package.Explicit && kept.Contains(Fold(package.Identity))) {
-        await _ui.PrintInfo((options.DryRun ? "Dry run: would mark" : "Marking")
-            + $" package '{package.Identity}' version {package.Version} as "
-            + (isExplicit ? "explicitly installed." : "not explicitly installed."));
+      List<LockedPackage> final = [];
+      foreach (LockedPackage package in ordered) {
+        bool isExplicit = plan.Explicit.Contains(Fold(package.Identity));
+        if (isExplicit != package.Explicit && kept.Contains(Fold(package.Identity))) {
+          await _ui.PrintInfo((options.DryRun ? "Dry run: would mark" : "Marking")
+              + $" package '{package.Identity}' version {package.Version} as "
+              + (isExplicit ? "explicitly installed." : "not explicitly installed."));
+        }
+
+        final.Add(package with { Explicit = isExplicit });
       }
 
-      final.Add(package with { Explicit = isExplicit });
+      return final;
     }
 
-    await SaveFinal(workspace, options, final);
+    return new ChangeSet(changes, Finish);
   }
 
   private async Task InstallWithoutDependencies(
@@ -518,71 +605,154 @@ public class McmodService(
       candidates.Add(candidate);
     }
 
-    List<LockedPackage> remaining = [.. workspace.Lock.Packages];
+    List<Change> changes = [];
     foreach (Candidate candidate in candidates) {
       List<LockedPackage> existing = [
-        .. remaining.Where(p => SameIdentity(p.Identity, candidate.Package.Identity)),
+        .. workspace.Lock.Packages.Where(
+            p => SameIdentity(p.Identity, candidate.Package.Identity)),
       ];
       if (existing.Count > 0 && existing.All(p => IsSamePackage(p, candidate))) {
-        int index = remaining.IndexOf(existing[0]);
-        remaining[index] = existing[0] with { Explicit = true };
+        changes.Add(new MarkExplicitChange(existing[0]));
         continue;
       }
 
-      foreach (LockedPackage package in Enumerable.Reverse(existing)) {
-        await UninstallEntry(workspace, options, package, remaining);
-      }
-
-      await InstallCandidate(workspace, options, candidate, isExplicit: true, remaining);
+      changes.AddRange(Enumerable.Reverse(existing).Select(p => new UninstallChange(p)));
+      changes.Add(new InstallChange(candidate, Explicit: true));
     }
 
-    await SaveFinal(workspace, options, remaining);
+    await Execute(workspace, options, new ChangeSet(changes, Task.FromResult));
   }
 
-  private async Task UninstallEntry(
-      Workspace workspace,
-      OperationOptions options,
-      LockedPackage package,
-      List<LockedPackage> remaining) {
-    await PrepareLayout(workspace, options);
-    await _ui.PrintInfo((options.DryRun ? "Dry run: would uninstall" : "Uninstalling")
-        + $" package '{package.Identity}' version {package.Version}");
+  /// Plans every change against a view of the workspace as the earlier changes leave it, so
+  /// that every check and every fetch happens before anything changes; then applies the plans
+  /// in one transaction and writes the lock last. A failure while applying (or cancellation)
+  /// undoes every change and leaves the lock as it was (spec §7). In a dry run, reports the
+  /// plans instead.
+  private async Task Execute(Workspace workspace, OperationOptions options, ChangeSet changeSet) {
+    WorkspaceLayout.LayoutPlan? layout = null;
+    if (changeSet.Changes.Any(c => c is not MarkExplicitChange)) {
+      layout = _layout.Plan(workspace.Root);
+      if (options.DryRun) {
+        await _layout.ReportDryRun(layout);
+      }
+    }
 
-    await Installer(package.Kind).Uninstall(package, Context(workspace, options, remaining));
-    remaining.Remove(package);
-    await SaveProgress(workspace, options, remaining);
+    WorkspaceView view = new(_fs, layout);
+    List<LockedPackage> remaining = [.. workspace.Lock.Packages];
+    List<(string Message, IMcmodInstaller Installer, PackagePlan Plan)> plans = [];
+    foreach (Change change in changeSet.Changes) {
+      options.CancellationToken.ThrowIfCancellationRequested();
+      switch (change) {
+        case UninstallChange(LockedPackage package): {
+            string what = $" package '{package.Identity}' version {package.Version}";
+            if (options.DryRun) {
+              await _ui.PrintInfo("Dry run: would uninstall" + what);
+            }
+
+            IMcmodInstaller installer = Installer(package.Kind);
+            plans.Add(("Uninstalling" + what, installer, await installer.PlanUninstall(
+                package, Context(workspace, options, remaining), view)));
+            remaining.Remove(package);
+            break;
+          }
+        case InstallChange(Candidate candidate, bool isExplicit): {
+            string what = $" package '{candidate.Package.Identity}' version"
+                + $" {candidate.Package.Version} from {candidate.Archive.Key}";
+            if (options.DryRun) {
+              await _ui.PrintInfo("Dry run: would install" + what);
+            }
+
+            IMcmodInstaller installer = Installer(candidate.Package.Kind);
+            PackagePlan plan = await installer.PlanInstall(
+                candidate, Context(workspace, options, remaining), view);
+            plans.Add(("Installing" + what, installer, plan));
+            remaining.Add(Locked(candidate, isExplicit, plan.OwnedFiles));
+            break;
+          }
+        case MarkExplicitChange(LockedPackage package):
+          remaining[remaining.IndexOf(package)] = package with { Explicit = true };
+          break;
+        default:
+          throw new ArgumentException($"Unknown change {change}.", nameof(changeSet));
+      }
+    }
+
+    LockFile final = LockWith(workspace, await changeSet.Finish(remaining));
+    if (options.DryRun) {
+      return;
+    }
+
+    options.CancellationToken.ThrowIfCancellationRequested();
+    if (plans.Count == 0) {
+      await _lockStore.Save(workspace.Root, final);
+      return;
+    }
+
+    using WorkspaceTransaction transaction = new(
+        _fs, JournalPath(workspace.Root), plans.SelectMany(p => p.Plan.WrittenPaths));
+    try {
+      if (layout is not null) {
+        await _layout.Apply(layout, transaction);
+      }
+
+      foreach ((string message, IMcmodInstaller installer, PackagePlan plan) in plans) {
+        await _ui.PrintInfo(message);
+        await installer.Apply(plan, transaction, options.CancellationToken);
+      }
+
+      options.CancellationToken.ThrowIfCancellationRequested();
+      // The commit point: the journal records the commit, then the lock moves into place.
+      await _lockStore.Stage(workspace.Root, final);
+      transaction.Commit();
+      _lockStore.CommitStaged(workspace.Root);
+    }
+    catch (Exception ex) {
+      await _ui.PrintWarning(
+          (ex is OperationCanceledException ? "Cancelled" : "Failed")
+          + "; undoing the changes of this operation.");
+      try {
+        _lockStore.DiscardStaged(workspace.Root);
+      }
+      catch (Exception discard) when (discard is IOException or UnauthorizedAccessException) {
+        // A staged lock is never read, and the next save replaces it.
+      }
+
+      IReadOnlyList<string> errors = transaction.Rollback();
+      foreach (string error in errors) {
+        await _ui.PrintWarning($"Rollback: {error}");
+      }
+
+      if (errors.Count > 0) {
+        await _ui.PrintWarning(
+            "Some changes could not be undone; the next install, uninstall or update of this"
+            + " workspace tries again.");
+      }
+
+      throw;
+    }
+
+    foreach (string error in transaction.Complete()) {
+      await _ui.PrintWarning(
+          $"{error} (the next install, uninstall or update of this workspace tries again)");
+    }
   }
 
-  private async Task InstallCandidate(
-      Workspace workspace,
-      OperationOptions options,
-      Candidate candidate,
-      bool isExplicit,
-      List<LockedPackage> remaining) {
-    await PrepareLayout(workspace, options);
-    await _ui.PrintInfo((options.DryRun ? "Dry run: would install" : "Installing")
-        + $" package '{candidate.Package.Identity}' version {candidate.Package.Version}"
-        + $" from {candidate.Archive.Key}");
-
-    IReadOnlyList<string> files = await Installer(candidate.Package.Kind).Install(
-        candidate, Context(workspace, options, remaining));
-    remaining.Add(new LockedPackage {
-      Identity = candidate.Package.Identity,
-      Version = candidate.Package.Version.ToString(),
-      Kind = candidate.Package.Kind,
-      Explicit = isExplicit,
-      Chain = [
-        .. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.ArtifactIndex) {
-          Commit = h.Commit,
-        }),
-      ],
-      ArchiveKey = candidate.Archive.Key,
-      Archive = candidate.Archive.Identity,
-      Files = [.. files],
-      Manifest = candidate.Package.Manifest,
-    });
-    await SaveProgress(workspace, options, remaining);
-  }
+  private static LockedPackage Locked(
+      Candidate candidate, bool isExplicit, IReadOnlyList<string> files) => new() {
+        Identity = candidate.Package.Identity,
+        Version = candidate.Package.Version.ToString(),
+        Kind = candidate.Package.Kind,
+        Explicit = isExplicit,
+        Chain = [
+          .. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.ArtifactIndex) {
+            Commit = h.Commit,
+          }),
+        ],
+        ArchiveKey = candidate.Archive.Key,
+        Archive = candidate.Archive.Identity,
+        Files = [.. files],
+        Manifest = candidate.Package.Manifest,
+      };
 
   private InstallContext Context(
       Workspace workspace, OperationOptions options, List<LockedPackage> remaining) {
@@ -597,21 +767,6 @@ public class McmodService(
   private IMcmodInstaller Installer(string kind) {
     return _installers.FirstOrDefault(i => i.CanHandle(kind))
         ?? throw new InvalidOperationException($"No installer for package kind '{kind}'.");
-  }
-
-  /// Saves the lock after every step, so that it reflects the workspace if a later step fails.
-  private async Task SaveProgress(
-      Workspace workspace, OperationOptions options, List<LockedPackage> remaining) {
-    if (!options.DryRun) {
-      await _lockStore.Save(workspace.Root, LockWith(workspace, remaining));
-    }
-  }
-
-  private async Task SaveFinal(
-      Workspace workspace, OperationOptions options, List<LockedPackage> packages) {
-    if (!options.DryRun) {
-      await _lockStore.Save(workspace.Root, LockWith(workspace, packages));
-    }
   }
 
   /// The lock with the given packages and the environment, once known (spec §8).
@@ -803,13 +958,7 @@ public class McmodService(
       LockFile Lock,
       LipEnvironment Environment,
       IResolver Resolver,
-      IGraphSolver Solver,
-      LayoutState Layout);
-
-  /// Whether the layout was prepared during the operation; shared by copies of the workspace.
-  private sealed class LayoutState {
-    public bool Prepared { get; set; }
-  }
+      IGraphSolver Solver);
 
   /// The lock entries of one identity, and the candidate pinning them (null when unpinned or
   /// unreadable).

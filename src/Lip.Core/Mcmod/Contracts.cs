@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Lip.Core.Mcmod.Install;
 
 namespace Lip.Core.Mcmod;
 
@@ -121,15 +122,28 @@ public record InstallContext(
     bool DryRun,
     bool IgnoreScripts);
 
-/// Installs and uninstalls one package kind (spec §7).
+/// Installs and uninstalls one package kind (spec §7), in two phases: planning, which checks
+/// everything and changes nothing, then applying the plan through a transaction that the caller
+/// commits or rolls back.
 public interface IMcmodInstaller {
   public bool CanHandle(string kind);
 
-  /// Installs the package and returns the files it now owns (workspace-relative, '/'-separated).
-  /// Fails without touching the workspace when a file is owned by another locked package.
-  public Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context);
+  /// Plans installing the package into the workspace as the view shows it, and adds the planned
+  /// writes to the view. Fetches the archive content (except in a dry run, which reports the
+  /// plan instead). Throws when the package cannot be installed, e.g. when a file is owned by
+  /// another locked package.
+  public Task<PackagePlan> PlanInstall(
+      Candidate candidate, InstallContext context, WorkspaceView view);
 
-  public Task Uninstall(LockedPackage package, InstallContext context);
+  /// Plans uninstalling the package from the workspace as the view shows it, and adds the
+  /// planned deletions to the view. A dry run reports the plan.
+  public Task<PackagePlan> PlanUninstall(
+      LockedPackage package, InstallContext context, WorkspaceView view);
+
+  /// Runs the steps of a plan, making every file change through the transaction. Throws
+  /// McmodInstallException when a step fails; the caller rolls the transaction back.
+  public Task Apply(
+      PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken);
 }
 
 /// Reads and writes the workspace lock (spec §8), which lives in the per-user data directory.
@@ -139,7 +153,22 @@ public interface ILockStore {
   /// cannot be read or belongs to another workspace.
   public Task<LockFile> Load(string workspaceRoot);
 
+  /// Writes the lock: Stage, then CommitStaged.
   public Task Save(string workspaceRoot, LockFile lockFile);
+
+  /// The path of the lock of a workspace. Files of lip about the workspace (its journal and its
+  /// inter-process lock) live next to it.
+  public string GetLockPath(string workspaceRoot);
+
+  /// Writes the lock to a hidden temporary file next to it, replacing an earlier staged lock.
+  public Task Stage(string workspaceRoot, LockFile lockFile);
+
+  /// Moves the staged lock into place in one rename, the point at which an operation commits.
+  /// Does nothing when no lock is staged. Throws only when the lock was not moved.
+  public void CommitStaged(string workspaceRoot);
+
+  /// Deletes the staged lock, if any.
+  public void DiscardStaged(string workspaceRoot);
 }
 
 public record LockFile {

@@ -22,6 +22,9 @@ internal sealed class WorkspaceHarness {
     Root = OperatingSystem.IsWindows() ? @"C:\ws" : "/ws";
     Fs = new MockFileSystem(new Dictionary<string, MockFileData>(), currentDirectory: Root);
     Fs.AddDirectory(Root);
+    // The service and the installer change the workspace through it; the archive provider and
+    // the lock store use Fs directly.
+    Faults = new FaultyFileSystem(Fs);
     Git = new FakeGitRemote();
     CommandRunner = new Mock<ICommandRunner>();
     Ui = new Mock<IUserInteraction>();
@@ -37,19 +40,25 @@ internal sealed class WorkspaceHarness {
     LockStore = new LockStore(Fs);
     Linker = new MockDirectoryLinker(Fs);
     Service = new McmodService(
-        Fs,
+        Faults,
         Ui.Object,
         LockStore,
         ArchiveProvider,
         new ArchiveReader(parser),
         new ToothCompat(),
         parser,
-        [new McmodInstaller(Fs, CommandRunner.Object, parser, Ui.Object)],
+        [new McmodInstaller(Faults, CommandRunner.Object, parser, Ui.Object)],
         workspaceRoot: () => Root,
         directoryLinker: Linker);
   }
 
   public MockFileSystem Fs { get; }
+
+  /// The file system of the service, which can be made to fail.
+  public FaultyFileSystem Faults { get; }
+
+  /// The journal of the workspace, next to its lock.
+  public string JournalPath => Fs.Path.ChangeExtension(LockPath, ".journal");
 
   public string Root { get; }
 
@@ -86,6 +95,25 @@ internal sealed class WorkspaceHarness {
   }
 
   public bool Exists(string relative) => Fs.File.Exists(Path(relative));
+
+  /// Every file of the mock file system with its content and attributes, and every directory
+  /// and link in the workspace: what an operation that fails must leave as it was. Directories
+  /// outside the workspace (lip's data directory) may be created.
+  public SortedDictionary<string, string> Snapshot() {
+    SortedDictionary<string, string> snapshot = new(StringComparer.Ordinal);
+    foreach (string path in Fs.AllPaths) {
+      if (Fs.File.Exists(path)) {
+        snapshot[path] = Convert.ToBase64String(Fs.File.ReadAllBytes(path))
+            + $" ({Fs.File.GetAttributes(path)})";
+      } else if (path.StartsWith(Root, StringComparison.Ordinal)) {
+        snapshot[path] = Fs.DirectoryInfo.New(path).LinkTarget is string target
+            ? $"<link to {target}>"
+            : "<dir>";
+      }
+    }
+
+    return snapshot;
+  }
 
   public Task<LockFile> Lock() => LockStore.Load(Root);
 
