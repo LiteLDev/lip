@@ -6,35 +6,31 @@ using Lip.Core.Git;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
-using Lip.Core.PackageRegistries;
 using Lip.Core.Services;
-using Lip.Core.Sources;
 using Moq;
 using Semver;
 
 namespace Lip.Core.RegressionTests.Compatibility;
 
 /// Checks that the v4 tooth.json compatibility layer (spec §9) selects and installs real tooth
-/// packages exactly like the v3 code: ToothCompat.Select must pick the same merged variant as
-/// PackageManifest.GetVariant, and ToothInstaller must write the same files as PackageInstaller.
+/// packages like lip v3: ToothCompat.Select must pick the same merged variant as
+/// PackageManifest.GetVariant, and ToothInstaller must write exactly the files it reports.
 public class ToothCompatCorpusTests {
   private static readonly LipEnvironment _environment = new(McmodPlatform.Server, "win-x64");
 
   private static readonly GitRemoteClient _client = new(githubProxy: null);
 
-  private static readonly GitRemotePackageRegistry _registry = new(_client);
-
   private static readonly IUserInteraction _userInteraction = CreateUserInteraction();
 
   private static readonly CacheService _cacheService = new(new FileSystem(), _userInteraction);
 
+  private static readonly FileDownloader _fileDownloader = new(_userInteraction);
+
+  private static readonly ArchiveProvider _archiveProvider = new(
+      _client, _cacheService, new FileSystem(), _fileDownloader);
+
   private static readonly SourceService _sourceService = new(
-      new FileDownloader(_userInteraction),
-      _client,
-      _registry,
-      _userInteraction,
-      _cacheService,
-      githubProxy: null);
+      _fileDownloader, _cacheService, githubProxy: null);
 
   /// The newest version of every LiteLDev package/variant in the corpus, plus every tenth
   /// other (lipr) package/variant.
@@ -60,24 +56,22 @@ public class ToothCompatCorpusTests {
   [MemberData(nameof(Entries))]
   public async Task Select_CorpusEntry_MatchesGetVariant(string package, string version) {
     // Arrange
-    PackageId packageId = PackageId.Parse(package);
-    PackageSpec spec = new(packageId, SemVersion.Parse(version, SemVersionStyles.Strict));
-    PackageManifest baselineManifest = await _registry.GetPackageManifest(spec);
+    Ref reference = Ref.Parse(package);
+    ArchiveHandle archive = await OpenArchive(
+        reference.Target, SemVersion.Parse(version, SemVersionStyles.Strict));
+    ToothArchiveDocument document = Assert.IsType<ToothArchiveDocument>(
+        await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
     PackageManifestVariant? expected;
     try {
-      expected = baselineManifest.GetVariant(packageId.Variant);
+      expected = document.Manifest.GetVariant(reference.Variant, _environment.Rid);
     }
     catch (KeyNotFoundException) {
       expected = null;
     }
 
-    ArchiveHandle archive = await OpenArchive(spec);
-    ToothArchiveDocument document = Assert.IsType<ToothArchiveDocument>(
-        await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
-
     // Act
     ToothPackage? actual = (ToothPackage?)new ToothCompat().Select(
-        document, packageId.Variant, _environment);
+        document, reference.Variant, _environment);
 
     // Assert
     if (expected is null) {
@@ -86,7 +80,7 @@ public class ToothCompatCorpusTests {
     }
 
     Assert.NotNull(actual);
-    Assert.Equal(baselineManifest.Path, actual.Identity);
+    Assert.Equal(document.Manifest.Path, actual.Identity);
     Assert.Equal(JsonSerializer.Serialize(expected), JsonSerializer.Serialize(actual.Variant));
     Assert.Equal(
         expected.Dependencies.Select(d => (d.Key.ToString(), d.Value.ToString())),
@@ -98,58 +92,19 @@ public class ToothCompatCorpusTests {
   [WinX64Theory]
   [InlineData("github.com/LiteLDev/LeviLamina")]
   [InlineData("github.com/GroupMountain/Cleaner")]
-  public async Task Install_NewestVersion_WritesSameFilesAsPackageInstaller(string package) {
+  public async Task Install_NewestVersion_WritesExactlyTheReportedFiles(string package) {
     // Arrange
-    PackageId packageId = PackageId.Parse(package);
-    SemVersion version = (await _registry.GetAvailableVersions(packageId))
-        .Where(v => !v.IsPrerelease)
-        .Max(SemVersion.PrecedenceComparer)!;
-    PackageSpec spec = new(packageId, version);
+    SpecVersion version = (await _archiveProvider.ListVersions(package))
+        .First(v => !v.Version.IsPrerelease);
+    ArchiveHandle archive = await _archiveProvider.OpenVersion(package, version);
+    ToothArchiveDocument document = Assert.IsType<ToothArchiveDocument>(
+        await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
+    IPackage toothPackage = new ToothCompat().Select(document, "", _environment)!;
+    ToothInstaller installer = new(
+        new CommandRunner(), new FileSystem(), _sourceService, _userInteraction);
 
     string root = Directory.CreateTempSubdirectory("lip-tooth-v4-").FullName;
-    string baselineRoot = Directory.CreateTempSubdirectory("lip-tooth-v3-").FullName;
     try {
-      // Install with the v3 PackageInstaller (relative to the working directory).
-      List<string> baselineFiles = [];
-      Mock<IWorkspaceService> workspace = new();
-      workspace.Setup(w => w.GetInstalledPackages(IWorkspaceService.PackageScope.All))
-          .ReturnsAsync([]);
-      workspace.Setup(w => w.AddInstalledPackage(
-              It.IsAny<PackageSpec>(),
-              It.IsAny<PackageManifest>(),
-              It.IsAny<IEnumerable<IFileInfo>>(),
-              It.IsAny<bool>()))
-          .Callback((PackageSpec _, PackageManifest _, IEnumerable<IFileInfo> files, bool _) =>
-              baselineFiles.AddRange(files.Select(f => f.FullName)))
-          .Returns(Task.CompletedTask);
-      PackageInstaller baseline = new(
-          new CommandRunner(),
-          new FileSystem(),
-          _userInteraction,
-          _sourceService,
-          workspace.Object);
-
-      string previousDirectory = Directory.GetCurrentDirectory();
-      Directory.SetCurrentDirectory(baselineRoot);
-      try {
-        await baseline.InstallPackage(
-            new PackageArtifact(spec, await _sourceService.Get(spec)),
-            dryRun: false,
-            explicitInstall: true,
-            ignoreScripts: true);
-      }
-      finally {
-        Directory.SetCurrentDirectory(previousDirectory);
-      }
-
-      // Install with ToothInstaller.
-      ArchiveHandle archive = await OpenArchive(spec);
-      ToothArchiveDocument document = Assert.IsType<ToothArchiveDocument>(
-          await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
-      IPackage toothPackage = new ToothCompat().Select(document, packageId.Variant, _environment)!;
-      ToothInstaller installer = new(
-          new CommandRunner(), new FileSystem(), _sourceService, _userInteraction);
-
       // Act
       IReadOnlyList<string> files = await installer.Install(
           new Candidate(toothPackage, archive, [new ChainHop(Ref.Parse(package), null)]),
@@ -159,16 +114,11 @@ public class ToothCompatCorpusTests {
       // Assert
       Assert.NotEmpty(files);
       Assert.Equal(
-          baselineFiles
-              .Select(f => Path.GetRelativePath(baselineRoot, f).Replace('\\', '/'))
-              .Distinct()
-              .Order(StringComparer.Ordinal),
-          files.Order(StringComparer.Ordinal));
-      Assert.Equal(Snapshot(baselineRoot), Snapshot(root));
+          files.Order(StringComparer.Ordinal),
+          Snapshot(root).Select(f => f.Split(':')[0]));
     }
     finally {
       Directory.Delete(root, recursive: true);
-      Directory.Delete(baselineRoot, recursive: true);
     }
   }
 
@@ -182,12 +132,10 @@ public class ToothCompatCorpusTests {
     return userInteraction.Object;
   }
 
-  private static async Task<ArchiveHandle> OpenArchive(PackageSpec spec) {
-    string commit = await _registry.ResolveCommit(spec);
-    string repoUrl = GitRemotePackageRegistry.GetRepoUrl(spec.Id).ToString();
-    GitTreeSource source = await GitTreeSource.Create(_client, _cacheService, repoUrl, commit);
-    return new ArchiveHandle(
-        $"{spec.Id.Path}@{spec.Version}", source, new GitArchiveIdentity(repoUrl, commit, ""));
+  private static async Task<ArchiveHandle> OpenArchive(string spec, SemVersion version) {
+    SpecVersion tag = (await _archiveProvider.ListVersions(spec))
+        .First(v => v.Version.ComparePrecedenceTo(version) == 0);
+    return await _archiveProvider.OpenVersion(spec, tag);
   }
 
   private static List<string> Snapshot(string root) => [

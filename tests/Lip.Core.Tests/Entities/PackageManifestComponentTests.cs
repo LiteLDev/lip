@@ -45,19 +45,6 @@ public class PackageManifestAssetPlacementTests {
   }
 }
 
-public class PackageReqtTests {
-  [Fact]
-  public void Constructor_ValidValues_CreatesInstance() {
-    PackageId pkgId = new("github.com/test/pkg", "");
-    SemVersionRange range = SemVersionRange.Parse(">=1.0.0");
-
-    PackageReqt reqt = new(pkgId, range);
-
-    Assert.Equal(pkgId, reqt.Id);
-    Assert.Equal(range, reqt.VersionRange);
-  }
-}
-
 public class PackageManifestInfoTests {
   [Fact]
   public void Constructor_DefaultValues_SetsDefaults() {

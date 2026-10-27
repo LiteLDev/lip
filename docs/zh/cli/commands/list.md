@@ -16,9 +16,9 @@ lip list [options]
 
 ## 说明
 
-会按两组显示已安装包：
+读取[锁文件](../../concepts/lockfiles.md) `lip_lock.json`（或旧的 `tooth_lock.json`），按两组以 `<name>@<version>` 形式显示已安装包：
 
 - **User-Requested**：用户显式安装的包。
 - **Dependencies**：作为依赖安装的包。
 
-包会按依赖关系进行拓扑排序。
+包按安装顺序列出，依赖在前。名称即包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径。

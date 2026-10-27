@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Lip.Core.Entities;
 
+/// A package of the v3 lock (tooth_lock.json), read only to migrate it (see LockStore).
 public record WorkspaceStatePackage {
   [JsonPropertyName("files")]
   public required List<string> Files { get; init; }
@@ -18,9 +19,5 @@ public record WorkspaceStatePackage {
     init => field = PackageId.IsValidVariant(value)
         ? value
         : throw new ArgumentException($"Invalid package variant: {value}", nameof(Variant));
-  }
-
-  public PackageSpec GetPackageSpec() {
-    return new PackageSpec(new PackageId(Manifest.Path, Variant), Manifest.Version);
   }
 }

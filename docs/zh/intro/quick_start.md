@@ -8,26 +8,28 @@
 
 ## 初始化项目
 
-要开始追踪包，请先初始化项目清单。在项目根目录运行：
+如果你要创建 mod 或其他包，请先初始化其清单。在项目根目录运行：
 
 ```shell
 lip init
 ```
 
-该命令会在当前目录创建 `tooth.json` 文件（若已存在则覆盖）。这个文件是清单（manifest），用于保存项目及其依赖的元数据。
+该命令会在当前目录创建 `manifest.json` 文件（若已存在则失败）。这个文件既是你的 mod 的 LeviLamina 清单，也是它的 lip 包清单。如果只是安装包，则不需要它。
 
 ## 安装包
 
-使用 `install` 命令并跟上包标识即可安装包，也可用 `@` 指定版本。
+在服务端或客户端的根目录（即工作区）中运行 lip。使用 `install` 命令并跟上包路径即可安装包，也可用 `@` 指定版本。
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina@1.0.0
 ```
 
-`lip` 支持从多种来源安装（包括 Git 仓库）。安装时会：
+`lip` 支持从多种来源安装（包括 Git 仓库、`.mcmod` 文件和 URL）。安装时会：
 - 下载到本地缓存；
 - 解析并安装其依赖；
-- 记录到锁文件（`tooth_lock.json`）中。你的 `tooth.json` 不会被修改。
+- 记录到锁文件（`lip_lock.json`）中。你的 `manifest.json` 不会被修改。
+
+lip 根据工作区中的 `bedrock_server.exe`、`bedrock_server_mod.exe` 或 `Minecraft.Windows.exe` 识别服务端或客户端。在空目录中，若 lip 提示需要平台，请传入 `--platform server` 或 `--platform client`。
 
 ## 查看已安装包
 
@@ -63,7 +65,7 @@ lip versions github.com/LiteLDev/LeviLamina
 lip update github.com/LiteLDev/LeviLamina
 ```
 
-另外，使用 `install` 并指定版本也可完成升级或降级。
+如需切换到某个特定版本（包括更旧的版本），请用 `@` 指定，例如 `lip update github.com/LiteLDev/LeviLamina@1.0.0`。不带参数运行 `lip update` 会更新所有你显式安装的包。
 
 ## 卸载包
 

@@ -36,8 +36,9 @@ public static class McmodPlatformExtensions {
 
 /// Thrown when an operation needs the environment platform but it could not be determined.
 public class PlatformUnknownException() : InvalidOperationException(
-    "Cannot determine the platform: neither bedrock_server.exe nor Minecraft.Windows.exe exists "
-    + "in the workspace. Specify it explicitly with --platform server|client.");
+    "Cannot determine the platform: none of bedrock_server.exe, bedrock_server_mod.exe and "
+    + "Minecraft.Windows.exe exists in the workspace. Specify it explicitly with "
+    + "--platform server|client.");
 
 /// The environment (platform, rid) of a workspace (spec §5.1).
 ///

@@ -113,26 +113,6 @@ public class WorkspaceStateTests {
 
 public class WorkspaceStatePackageTests {
   [Fact]
-  public void GetPackageSpec_ReturnsCorrectSpec() {
-    PackageManifest manifest = new() {
-      Path = "github.com/test/pkg",
-      Version = new SemVersion(1, 0, 0)
-    };
-    WorkspaceStatePackage pkg = new() {
-      Files = [],
-      IsExplicit = true,
-      Manifest = manifest,
-      Variant = "win_x64"
-    };
-
-    PackageSpec spec = pkg.GetPackageSpec();
-
-    Assert.Equal("github.com/test/pkg", spec.Id.Path);
-    Assert.Equal("win_x64", spec.Id.Variant);
-    Assert.Equal(new SemVersion(1, 0, 0), spec.Version);
-  }
-
-  [Fact]
   public void Variant_Invalid_ThrowsArgumentException() {
     PackageManifest manifest = new() {
       Path = "github.com/test/pkg",

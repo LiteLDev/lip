@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Lip.Core.Entities;
 using Semver;
 
@@ -67,8 +68,25 @@ public record ConcreteArchiveDocument(ConcreteDocument Document, JsonElement Man
 /// A tooth.json root; Manifest is the v3 form after migration of v1/v2.
 public record ToothArchiveDocument(PackageManifest Manifest, JsonElement Json) : ArchiveDocument;
 
-public static class PackageNames {
+public static partial class PackageNames {
   public static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
 
-  public static bool AreEqual(string a, string b) => Comparer.Equals(a, b);
+  public static bool AreEqual(string a, string b) => Fold(a) == Fold(b);
+
+  /// Lowercases ASCII letters only: names are compared ignoring ASCII case (spec §1).
+  public static string Fold(string name) => string.Create(name.Length, name, (span, s) => {
+    for (int i = 0; i < s.Length; i++) {
+      span[i] = char.IsAsciiLetterUpper(s[i]) ? (char)(s[i] | 0x20) : s[i];
+    }
+  });
+
+  /// A valid package name (^[A-Za-z0-9][A-Za-z0-9._-]*$, spec §4.2) derived from free text:
+  /// other characters become '-', leading '.', '_' and '-' are dropped.
+  public static string FromText(string text, string fallback) {
+    string name = InvalidNameCharacters().Replace(text, "-").TrimStart('.', '_', '-');
+    return name == "" ? fallback : name;
+  }
+
+  [GeneratedRegex("[^A-Za-z0-9._-]")]
+  private static partial Regex InvalidNameCharacters();
 }

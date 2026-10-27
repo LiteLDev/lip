@@ -36,9 +36,13 @@ public class EnvironmentDetectorTests {
   [InlineData(null, null, "BEDROCK_SERVER.EXE", McmodPlatform.Server)]
   [InlineData(null, null, "minecraft.windows.exe", McmodPlatform.Client)]
   [InlineData(null, null, "bedrock_server.exe|Minecraft.Windows.exe", McmodPlatform.Server)]
+  // a LeviLamina server renames bedrock_server.exe and runs bedrock_server_mod.exe
+  [InlineData(null, null, "bedrock_server_mod.exe|bedrock_server.exe.bak", McmodPlatform.Server)]
+  [InlineData(null, null, "bedrock_server_mod.exe|Minecraft.Windows.exe", McmodPlatform.Server)]
+  [InlineData(null, "client", "bedrock_server_mod.exe", McmodPlatform.Client)]
   // nothing decides
   [InlineData(null, null, null, null)]
-  [InlineData(null, null, "bedrock_server_mod.exe|bedrock_server.exe.bak", null)]
+  [InlineData(null, null, "bedrock_server.exe.bak", null)]
   public void Detect_PlatformSources_FollowsSpecOrder(
       McmodPlatform? explicitPlatform,
       string? lockPlatform,

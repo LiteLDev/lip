@@ -1,38 +1,23 @@
 using System.IO.Abstractions.TestingHelpers;
-using Lip.Core.Entities;
-using Lip.Core.Infrastructure;
-using Lip.Core.PackageRegistries;
+using System.Text.Json;
+using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
 using Lip.Core.Services;
+using Lip.Core.Tests.Mcmod;
 using Moq;
-using Semver;
 
 namespace Lip.Core.Tests.PublicApi;
 
 public class LipClientTests {
-  private readonly MockFileSystem _fileSystem;
-  private readonly Mock<ICacheService> _cacheService;
-  private readonly Mock<IConfigService> _configService;
-  private readonly Mock<IInstallService> _installService;
-  private readonly Mock<IPackageRegistry> _packageRegistry;
-  private readonly Mock<IWorkspaceService> _workspaceService;
+  private readonly WorkspaceHarness _ws = new();
+  private readonly Mock<ICacheService> _cacheService = new();
+  private readonly Mock<IConfigService> _configService = new();
   private readonly LipClient _client;
 
   public LipClientTests() {
-    _fileSystem = new MockFileSystem();
-    _cacheService = new Mock<ICacheService>();
-    _configService = new Mock<IConfigService>();
-    _installService = new Mock<IInstallService>();
-    _packageRegistry = new Mock<IPackageRegistry>();
-    _workspaceService = new Mock<IWorkspaceService>();
-
+    _ws.Fs.Directory.SetCurrentDirectory(_ws.Root);
     _client = new LipClient(
-        _fileSystem,
-        _cacheService.Object,
-        _configService.Object,
-        _installService.Object,
-        _packageRegistry.Object,
-        _workspaceService.Object);
+        _ws.Fs, _ws.Ui.Object, _cacheService.Object, _configService.Object, _ws.Service);
   }
 
   [Fact]
@@ -66,273 +51,132 @@ public class LipClientTests {
 
   [Fact]
   public async Task ConfigList_ReturnsAllKeys() {
-    _configService.Setup(s => s.List()).ReturnsAsync(new Dictionary<string, string> { { "github_proxy", "https://proxy.com" } });
+    _configService.Setup(s => s.List()).ReturnsAsync(
+        new Dictionary<string, string> { { "github_proxy", "https://proxy.com" } });
 
     IDictionary<string, string> result = await _client.ConfigList();
 
-    Assert.True(result.ContainsKey("github_proxy"));
     Assert.Equal("https://proxy.com", result["github_proxy"]);
   }
 
   [Fact]
-  public async Task Init_CreatesToothJson() {
+  public async Task Init_WritesMarkedConcreteManifest() {
+    // Act
     await _client.Init();
 
-    Assert.True(_fileSystem.File.Exists("tooth.json"));
-    string content = _fileSystem.File.ReadAllText("tooth.json");
-    Assert.Contains("github.com/user/repo", content);
+    // Assert
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("manifest.json"));
+    ConcreteDocument document = Assert.IsType<ConcreteDocument>(new DocumentParser().Parse(bytes));
+    Assert.True(document.IsMarked);
+    Assert.Equal("ws", document.Name);
+    Assert.Equal("native", document.Type);
+    Assert.False(_ws.Exists("tooth.json"));
   }
 
   [Fact]
-  public async Task Install_ParsesAndCallsService() {
-    string[] packages = ["github.com/test/repo@1.0.0"];
-    await _client.Install(packages, false, false, false);
+  public async Task Init_ManifestExists_Throws() {
+    _ws.AddFile("manifest.json", "{}");
 
-    _installService.Verify(s => s.InstallPackages(
-        It.Is<IEnumerable<PackageSpec>>(p => p.Count() == 1 && p.First().Id.ToString() == "github.com/test/repo"),
-        It.Is<IEnumerable<PackageId>>(p => !p.Any()),
-        It.Is<IEnumerable<LocalPackageSpec>>(p => !p.Any()),
-        It.Is<IEnumerable<RemotePackageSpec>>(p => !p.Any()),
-        false,
-        false,
-        false), Times.Once);
+    await Assert.ThrowsAsync<InvalidOperationException>(_client.Init);
   }
 
   [Fact]
-  public async Task Install_ParsesFlexiblePackage() {
-    string[] packages = ["github.com/test/repo"];
-    await _client.Install(packages, false, false, false);
+  public async Task Migrate_SingleSelfVariant_WritesConcreteFilePackage() {
+    // Arrange
+    _ws.AddFile("tooth.json", """
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "tooth": "github.com/test/repo",
+          "version": "1.2.3",
+          "variants": [
+            {
+              "platform": "win-x64",
+              "dependencies": { "github.com/LiteLDev/LeviLamina": ">=1.9.0 <1.10.0" },
+              "assets": [ { "type": "self", "placements": [
+                { "type": "dir", "src": "bin", "dest": "plugins/repo" },
+                { "type": "file", "src": "a.txt", "dest": "a.txt" } ] } ],
+              "scripts": { "install": ["echo install"], "post_install": ["echo post"] }
+            }
+          ]
+        }
+        """);
 
-    _installService.Verify(s => s.InstallPackages(
-        It.Is<IEnumerable<PackageSpec>>(p => !p.Any()),
-        It.Is<IEnumerable<PackageId>>(p => p.Count() == 1 && p.First().ToString() == "github.com/test/repo"),
-        It.Is<IEnumerable<LocalPackageSpec>>(p => !p.Any()),
-        It.Is<IEnumerable<RemotePackageSpec>>(p => !p.Any()),
-        false,
-        false,
-        false), Times.Once);
+    // Act
+    await _client.Migrate("tooth.json", "manifest.json");
+
+    // Assert
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("manifest.json"));
+    ConcreteDocument document = Assert.IsType<ConcreteDocument>(new DocumentParser().Parse(bytes));
+    Assert.True(document.IsMarked);
+    Assert.Equal("repo", document.Name);
+    Assert.Equal("files", document.Type);
+    Assert.Equal("win-x64", document.Rid);
+    Assert.Equal(
+        [new Placement("bin/", "plugins/repo/"), new Placement("a.txt", "a.txt")],
+        document.Placements);
+    InstallDep dependency = Assert.Single(document.InstallDependencies);
+    Assert.Equal("github.com/LiteLDev/LeviLamina", Assert.Single(dependency.Refs).ToString());
+    Assert.True(dependency.Version!.IsSatisfiedBy(Semver.SemVersion.Parse("1.9.5")));
+    Assert.False(dependency.Version.IsSatisfiedBy(Semver.SemVersion.Parse("1.10.0")));
+    Assert.Equal(["echo install", "echo post"], document.Scripts.PostInstall);
   }
 
   [Fact]
-  public async Task List_ReturnsPackages() {
-    PackageSpec explicitPkg = new(new PackageId("github.com/test/pkg1", ""), new SemVersion(1));
-    PackageSpec implicitPkg = new(new PackageId("github.com/test/pkg2", ""), new SemVersion(1));
+  public async Task Migrate_SeveralVariants_WritesRoutingDocumentAndWarns() {
+    // Arrange
+    _ws.AddFile("tooth.json", """
+        {
+          "format_version": 2,
+          "tooth": "github.com/test/repo",
+          "version": "1.0.0",
+          "info": { "name": "Test", "description": "Test package", "author": "A", "tags": [] },
+          "platforms": [
+            { "goos": "windows", "goarch": "amd64", "files": { "place": [] } },
+            { "goos": "linux", "goarch": "amd64", "files": { "place": [] } }
+          ]
+        }
+        """);
 
-    _workspaceService.Setup(w => w.GetInstalledPackages(IWorkspaceService.PackageScope.Explicit))
-        .ReturnsAsync([explicitPkg]);
-    _workspaceService.Setup(w => w.GetInstalledPackages(IWorkspaceService.PackageScope.Implicit))
-        .ReturnsAsync([implicitPkg]);
+    // Act
+    await _client.Migrate("tooth.json", "out/manifest.json");
 
-    (IEnumerable<string>? explicitInstalled, IEnumerable<string>? implicitInstalled) = await _client.List();
-
-    Assert.Single(explicitInstalled);
-    Assert.Single(implicitInstalled);
-    Assert.Contains("github.com/test/pkg1", explicitInstalled.First());
+    // Assert
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("out/manifest.json"));
+    RoutingDocument document = Assert.IsType<RoutingDocument>(new DocumentParser().Parse(bytes));
+    Assert.Equal(2, document.Artifacts.Count);
+    Assert.NotEmpty(_ws.Warnings);
   }
 
   [Fact]
-  public async Task Uninstall_ParsesAndCallsService() {
-    string[] packages = ["github.com/test/repo"];
-    await _client.Uninstall(packages, false, false, false);
+  public async Task List_ReturnsExplicitAndImplicitPackages() {
+    // Arrange
+    _ws.AddFile("lip_lock.json", JsonSerializer.Serialize(new LockFile {
+      Packages = [Locked("A", "1.0.0", true), Locked("B", "2.0.0", false)],
+    }));
 
-    _installService.Verify(s => s.UninstallPackages(
-        It.Is<IEnumerable<PackageId>>(p => p.Single().ToString() == "github.com/test/repo"),
-        false,
-        false,
-        false), Times.Once);
+    // Act
+    (IEnumerable<string> explicitPackages, IEnumerable<string> implicitPackages) =
+        await _client.List();
+
+    // Assert
+    Assert.Equal(["A@1.0.0"], explicitPackages);
+    Assert.Equal(["B@2.0.0"], implicitPackages);
   }
 
   [Fact]
-  public async Task Update_ParsesAndCallsService() {
-    string[] packages = ["github.com/test/repo@2.0.0"];
-    await _client.Update(packages, false, false);
-
-    _installService.Verify(s => s.UpdatePackages(
-        It.Is<IEnumerable<PackageSpec>>(p => p.Single().Version.Major == 2),
-        It.IsAny<IEnumerable<PackageId>>(),
-        It.IsAny<IEnumerable<LocalPackageSpec>>(),
-        It.IsAny<IEnumerable<RemotePackageSpec>>(),
-        false,
-        false), Times.Once);
+  public async Task Install_InvalidPlatform_Throws() {
+    await Assert.ThrowsAsync<ArgumentException>(() => _client.Install(
+        ["x"], dryRun: false, ignoreScripts: false, noDependencies: false, platform: "mobile"));
   }
 
-  [Fact]
-  public async Task Update_ParsesFlexiblePackage() {
-    string[] packages = ["github.com/test/repo"];
-    await _client.Update(packages, false, false);
-
-    _installService.Verify(s => s.UpdatePackages(
-        It.Is<IEnumerable<PackageSpec>>(p => !p.Any()),
-        It.Is<IEnumerable<PackageId>>(p => p.Count() == 1 && p.First().ToString() == "github.com/test/repo"),
-        It.IsAny<IEnumerable<LocalPackageSpec>>(),
-        It.IsAny<IEnumerable<RemotePackageSpec>>(),
-        false,
-        false), Times.Once);
-  }
-
-  [Fact]
-  public async Task View_ReturnsManifestJson() {
-    PackageSpec pkgSpec = new(new PackageId("github.com/test/repo", ""), new SemVersion(1, 0, 0));
-    PackageManifest manifest = new() { Path = "github.com/test/repo", Version = new SemVersion(1, 0, 0) };
-    _packageRegistry.Setup(r => r.GetPackageManifest(It.IsAny<PackageSpec>())).ReturnsAsync(manifest);
-
-    string result = await _client.View("github.com/test/repo@1.0.0");
-
-    Assert.Contains("github.com/test/repo", result);
-  }
-  [Fact]
-  public async Task Create_ReturnsInstance() {
-    Mock<IUserInteraction> logger = new();
-    MockFileSystem fileSystem = new();
-
-    // Setup config structure if needed by ConfigService internals, 
-    // though default usually works if files missing (it creates them or returns default).
-    // If it fails we might need to pre-create directories.
-
-    LipClient client = await LipClient.Create(logger.Object, fileSystem);
-
-    Assert.NotNull(client);
-  }
-
-  [Fact]
-  public async Task Install_ParsesLocalPackage() {
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string localPath = Path.Combine(root, "path", "to", "package.zip");
-    _fileSystem.AddFile(localPath, new MockFileData("content"));
-    string[] packages = [localPath];
-
-    await _client.Install(packages, false, false, false);
-
-    _installService.Verify(s => s.InstallPackages(
-        It.Is<IEnumerable<PackageSpec>>(p => !p.Any()),
-        It.Is<IEnumerable<PackageId>>(p => !p.Any()),
-        It.Is<IEnumerable<LocalPackageSpec>>(p => p.Count() == 1 && p.First().ArchiveFile.FullName == localPath),
-        It.Is<IEnumerable<RemotePackageSpec>>(p => !p.Any()),
-        false,
-        false,
-        false), Times.Once);
-  }
-
-  [Fact]
-  public async Task Install_ParsesRemotePackage() {
-    string remoteUrl = "https://example.com/package.zip";
-    string[] packages = [remoteUrl];
-
-    await _client.Install(packages, false, false, false);
-
-    _installService.Verify(s => s.InstallPackages(
-        It.Is<IEnumerable<PackageSpec>>(p => !p.Any()),
-        It.Is<IEnumerable<PackageId>>(p => !p.Any()),
-        It.Is<IEnumerable<LocalPackageSpec>>(p => !p.Any()),
-        It.Is<IEnumerable<RemotePackageSpec>>(p => p.Count() == 1 && p.First().ArchiveUrl.ToString() == remoteUrl),
-        false,
-        false,
-        false), Times.Once);
-  }
-
-  [Fact]
-  public async Task Install_ThrowsAggregateException_WhenAllParsesFail() {
-    // Assuming PackageSpec.Parse, PackageId.Parse, etc. throw on this.
-    // Actually PackageId might be very permissive. We need a string that definitely fails everything.
-    // If PackageId accepts anything, then this test is hard. 
-    // But usually PackageId follows some format (e.g. name or name@version). 
-    // If PackageId.Parse fails, then we get exception.
-
-    // Let's assume an empty string or invalid chars might fail.
-    // But to be safe, I'll rely on the fact that if it fails, it throws.
-    // If PackageId parses everything, then "Install_ParsesFlexiblePackage" covers it.
-    // Let's assume " " (whitespace) might fail parse?
-
-    // If I cannot find a string that fails, I cannot test the exception path easily without mocking the static Parse methods (which I can't).
-    // However, looking at the code:
-    // PackageId.Parse(package) is tried after PackageSpec.Parse.
-    // If PackageId.Parse fails, it tries LocalPackageSpec.
-
-    // Let's try to verify behavior with a likely invalid string for ALL parsers.
-    // Attempting with empty string might be a good candidate if parsers validate input.
-    string[] packages = [""];
-
-    await Assert.ThrowsAsync<AggregateException>(() => _client.Install(packages, false, false, false));
-  }
-
-  [Fact]
-  public async Task Update_ParsesLocalAndRemotePackages() {
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string localPath = Path.Combine(root, "path", "to", "package.zip");
-    _fileSystem.AddFile(localPath, new MockFileData("content"));
-    string remoteUrl = "https://example.com/package.zip";
-    string[] packages = [localPath, remoteUrl];
-
-    await _client.Update(packages, false, false);
-
-    _installService.Verify(s => s.UpdatePackages(
-        It.IsAny<IEnumerable<PackageSpec>>(),
-        It.IsAny<IEnumerable<PackageId>>(),
-        It.Is<IEnumerable<LocalPackageSpec>>(p => p.Count() == 1 && p.First().ArchiveFile.FullName == localPath),
-        It.Is<IEnumerable<RemotePackageSpec>>(p => p.Count() == 1 && p.First().ArchiveUrl.ToString() == remoteUrl),
-        false,
-        false), Times.Once);
-  }
-
-  [Fact]
-  public async Task Update_ThrowsAggregateException_WhenParseFails() {
-    string[] packages = [""];
-    await Assert.ThrowsAsync<AggregateException>(() => _client.Update(packages, false, false));
-  }
-
-  [Fact]
-  public async Task Migrate_TransformsManifest() {
-    string root = Path.GetPathRoot(Environment.CurrentDirectory) ?? "/";
-    string inputFile = Path.Combine(root, "input.json");
-    string outputFile = Path.Combine(root, "output.json");
-
-    string inputJson = @"{
-            ""format_version"": 2,
-            ""tooth"": ""github.com/test/repo"",
-            ""version"": ""1.0.0"",
-            ""info"": { ""name"": ""Test"", ""description"": ""Test package"", ""author"": ""Test Author"", ""tags"": [] }
-        }";
-    _fileSystem.AddFile(inputFile, new MockFileData(inputJson));
-
-    await _client.Migrate(inputFile, outputFile);
-
-    Assert.True(_fileSystem.File.Exists(outputFile));
-    string content = _fileSystem.File.ReadAllText(outputFile);
-    Assert.Contains("github.com/test/repo", content);
-  }
-
-  [Fact]
-  public async Task Versions_ReturnsVersions_WhenPackageIdProvided() {
-    PackageId packageId = new("github.com/test/repo", "");
-    List<SemVersion> expectedVersions = [new(1, 0, 0), new(2, 0, 0)];
-
-    // Mocking IOrderedEnumerable return type explicitly is tricky with Moq if strict types are involved.
-    // Instead, we return an ordered version of the list which implements IOrderedEnumerable.
-    // Using ToString() because SemVersion might not verify IComparable in this context or Moq/Runtime issue.
-    _packageRegistry.Setup(r => r.GetAvailableVersions(packageId))
-        .ReturnsAsync(expectedVersions.OrderBy(v => v.ToString()));
-
-    IEnumerable<string> result = await _client.Versions("github.com/test/repo");
-
-    Assert.Equal(2, result.Count());
-    Assert.Contains("1.0.0", result);
-    Assert.Contains("2.0.0", result);
-  }
-
-  [Fact]
-  public async Task View_ResolvesLatestVersion_WhenPackageIdProvided() {
-    string packageIdString = "github.com/test/repo";
-    PackageId packageId = new(packageIdString, "");
-    PackageSpec expectedSpec = new(packageId, new SemVersion(2, 0, 0));
-    PackageManifest expectedManifest = new() { Path = packageIdString, Version = new SemVersion(2, 0, 0) };
-
-    _installService.Setup(s => s.GetLatestVersion(packageId)).ReturnsAsync(expectedSpec);
-    _packageRegistry.Setup(r => r.GetPackageManifest(expectedSpec)).ReturnsAsync(expectedManifest);
-
-    string result = await _client.View(packageIdString);
-
-    Assert.Contains("2.0.0", result);
-    _installService.Verify(s => s.GetLatestVersion(packageId), Times.Once);
-    _packageRegistry.Verify(r => r.GetPackageManifest(expectedSpec), Times.Once);
-  }
+  private static LockedPackage Locked(string name, string version, bool isExplicit) => new() {
+    Identity = name,
+    Version = version,
+    Kind = "mcmod",
+    Explicit = isExplicit,
+    Chain = [],
+    ArchiveKey = name,
+    Manifest = JsonDocument.Parse("{}").RootElement,
+  };
 }

@@ -23,7 +23,13 @@ public class ListCommand(ILipClient lipClient) : AsyncCommand<ListCommand.Settin
     (IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled) packages = await _lipClient.List();
 
     if (settings.Json) {
-      AnsiConsole.Write(new Text(JsonSerializer.Serialize(packages, _jsonSerializerOptions)));
+      // A value tuple has no properties to serialize, so name the two groups explicitly.
+      AnsiConsole.Write(new Text(JsonSerializer.Serialize(
+          new {
+            ExplicitInstalled = packages.ExplicitInstalled,
+            ImplicitInstalled = packages.ImplicitInstalled,
+          },
+          _jsonSerializerOptions)));
     } else {
       Tree explicitTree = new("User-Requested");
       foreach (string package in packages.ExplicitInstalled) {

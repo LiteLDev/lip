@@ -11,11 +11,11 @@ public class MigrateCommand(ILipClient lipClient, IUserInteraction userInteracti
 
   public class Settings : CommandSettings {
     [CommandArgument(0, "<FILE>")]
-    [Description("The input manifest file")]
+    [Description("The tooth.json to convert")]
     public required string File { get; init; }
 
     [CommandArgument(1, "<OUTPUT>")]
-    [Description("The output file path")]
+    [Description("The manifest.json to write")]
     public required string Output { get; init; }
   }
 

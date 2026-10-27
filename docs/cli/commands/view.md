@@ -2,7 +2,7 @@
 
 Shows the manifest of a package.
 
-The package argument can be a full package spec (e.g., `github.com/user/repo@1.0.0`) or just a package ID (e.g., `github.com/user/repo`). If only a package ID is provided, the latest version of the package will be resolved and its manifest shown.
+The package argument takes the same forms as [`lip install`](install.md#arguments). For a package path, the newest version is shown, or the given version with `@<version>` (e.g., `github.com/user/repo@1.0.0`). A local directory, local archive or URL is shown as it is.
 
 ## Synopsis
 
@@ -14,7 +14,7 @@ lip view <PACKAGE>
 
 | Argument | Description |
 | --- | --- |
-| `<PACKAGE>` | The package to view, specified as `<path>@<version>` or just `<path>`. |
+| `<PACKAGE>` | The package to view, e.g. `<path>`, `<path>@<version>`, `./package.mcmod` or an `https://` URL. |
 
 ## Examples
 
@@ -32,4 +32,4 @@ lip view github.com/user/repo
 
 ## Description
 
-Reads the package manifest (`tooth.json` at the version's tag in the package's git repository) and displays it as JSON.
+Reads the root document of the archive the argument points to and displays it as JSON: `tooth.json` if the archive has one, otherwise `manifest.json`. For a package path, the archive is the repository at the version's tag. The document is shown as it is: a routing document is not followed.

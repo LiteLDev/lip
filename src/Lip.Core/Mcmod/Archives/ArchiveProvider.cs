@@ -141,13 +141,26 @@ public class ArchiveProvider(
     IFileInfo file;
     string sha256;
     try {
-      HashSet<string> keys = [.. baseArchive.Source.Keys];
-      if (!keys.Contains(relativePath)) {
-        string reason = keys.Any(k => k.StartsWith(relativePath + "/", StringComparison.Ordinal))
-            ? "is a directory (directory refs end with '/')"
-            : "does not exist";
-        throw new ArchiveUnavailableException(
-            $"{key}: '{relativePath}' {reason} in {baseArchive.Key}.");
+      if (baseArchive.Identity is DirectoryArchiveIdentity directory) {
+        // A directory archive may be a whole workspace: do not list it to find one file.
+        string path = _fileSystem.Path.Combine([directory.Path, .. relativePath.Split('/')]);
+        if (!_fileSystem.File.Exists(path)) {
+          string reason = _fileSystem.Directory.Exists(path)
+              ? "is a directory (directory refs end with '/')"
+              : "does not exist";
+          throw new ArchiveUnavailableException(
+              $"{key}: '{relativePath}' {reason} in {baseArchive.Key}.");
+        }
+      } else {
+        HashSet<string> keys = [.. baseArchive.Source.Keys];
+        if (!keys.Contains(relativePath)) {
+          string reason = keys.Any(
+              k => k.StartsWith(relativePath + "/", StringComparison.Ordinal))
+              ? "is a directory (directory refs end with '/')"
+              : "does not exist";
+          throw new ArchiveUnavailableException(
+              $"{key}: '{relativePath}' {reason} in {baseArchive.Key}.");
+        }
       }
 
       (file, sha256) = await StoreInCache(async destination => {

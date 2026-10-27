@@ -81,12 +81,26 @@ public class DependencyResolutionException(string message, IReadOnlyList<string>
   public IReadOnlyList<string> Diagnostics { get; } = diagnostics;
 }
 
+/// A solved package set: S in install order; for every member (by index into Order) the members
+/// satisfying its install edges; and for every request the member satisfying it.
+public record SolvedGraph(
+    IReadOnlyList<Candidate> Order,
+    IReadOnlyList<IReadOnlyList<int>> Dependencies,
+    IReadOnlyList<int> RequestSatisfiers);
+
 /// Finds the package set S (spec §6).
 public interface IGraphSolver {
   /// Pinned candidates (installed packages to keep) are members of S as they are; their install
   /// edges must be satisfied too. Returns S in install order (spec §7: dependencies first,
   /// cycles ordered by lowercase identity). Throws DependencyResolutionException.
-  public Task<IReadOnlyList<Candidate>> Solve(
+  public async Task<IReadOnlyList<Candidate>> Solve(
+      IReadOnlyList<PackageRequest> requests,
+      IReadOnlyList<Candidate> pinned,
+      LipEnvironment environment) =>
+      (await SolveGraph(requests, pinned, environment)).Order;
+
+  /// Like Solve, but also reports which member satisfies which install edge and request.
+  public Task<SolvedGraph> SolveGraph(
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyList<Candidate> pinned,
       LipEnvironment environment);

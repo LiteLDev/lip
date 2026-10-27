@@ -9,9 +9,9 @@ public class UninstallCommand(ILipClient lipClient, IUserInteraction userInterac
   private readonly ILipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
-  public class Settings : CommandSettings {
+  public class Settings : EnvironmentSettings {
     [CommandArgument(0, "<PACKAGES>")]
-    [Description("The packages to uninstall")]
+    [Description("The packages to uninstall: a package name, or the path[#variant] it was installed from")]
     public required string[] Packages { get; init; }
 
     [CommandOption("-n|--dry-run")]
@@ -28,7 +28,13 @@ public class UninstallCommand(ILipClient lipClient, IUserInteraction userInterac
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
-    await _lipClient.Uninstall(settings.Packages, settings.DryRun, settings.IgnoreScripts, settings.NoDependencies);
+    await _lipClient.Uninstall(
+        settings.Packages,
+        settings.DryRun,
+        settings.IgnoreScripts,
+        settings.NoDependencies,
+        settings.Platform,
+        settings.Rid);
     await _userInteraction.PrintSuccess("Packages uninstalled successfully.");
     return 0;
   }
