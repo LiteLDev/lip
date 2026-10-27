@@ -21,6 +21,11 @@ public class PathGlobTests {
   [InlineData("config", "config/", false)]
   [InlineData("**/data/", "x/data/y.bin", true)]
   [InlineData("**/data/", "data/", true)]
+  [InlineData("**/", "file.txt", true)]
+  [InlineData("**/", "a/b/file.txt", true)]
+  [InlineData("**/**/", "file.txt", true)]
+  [InlineData("x/**/", "file.txt", false)]
+  [InlineData("x/**/", "x/file.txt", true)]
   [InlineData("a.?", "a.b", false)]
   [InlineData("a.?", "a.?", true)]
   public void IsMatch_ReturnsExpected(string pattern, string path, bool expected) {
