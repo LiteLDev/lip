@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
+using Lip.Core.Mcmod.Compat;
 using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
@@ -10,15 +11,21 @@ namespace Lip.Core.Mcmod.Resolution;
 /// One instance caches archives, spec version lists and documents by archive key, so a ref
 /// reached on several paths (or resolved again by the graph solver) is fetched and read once.
 /// PlatformUnknownException is not "no candidate": it propagates to the caller.
+///
+/// A tooth.json at a tag that declares another version than the tag is a candidate with the tag
+/// version, as in lip v3; onWarning is told once per archive.
 public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
-    IToothCompat toothCompat) : IResolver {
+    IToothCompat toothCompat,
+    Action<string>? onWarning = null) : IResolver {
   private const string _arrow = " → ";
 
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
   private readonly IToothCompat _toothCompat = toothCompat;
+  private readonly Action<string> _onWarning = onWarning ?? (_ => { });
+  private readonly ConcurrentDictionary<string, byte> _warned = new();
 
   private readonly ConcurrentDictionary<string, Lazy<Task<ArchiveHandle>>> _archives = new();
   private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<SpecVersion>>>>
@@ -208,6 +215,18 @@ public class Resolver(
             walk.Report(refPath,
                 $"tooth.json has no variant for \"{variant}\" in this environment");
             break;
+          }
+
+          // lip v3 always used the tag version, whatever the tooth.json at the tag declares.
+          if (tagVersion is not null && package is ToothPackage toothPackage
+              && !toothPackage.Version.Equals(tagVersion)) {
+            if (SemVersion.PrecedenceComparer.Compare(toothPackage.Version, tagVersion) != 0
+                && _warned.TryAdd(archive.Key, 0)) {
+              _onWarning($"{archive.Key}: tooth.json declares version {toothPackage.Version}; "
+                  + $"using the tag version {tagVersion}.");
+            }
+
+            package = toothPackage.WithVersion(tagVersion);
           }
 
           if (walk.Range is not null && !walk.Range.IsSatisfiedBy(package.Version)) {

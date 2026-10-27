@@ -421,3 +421,12 @@ public class SemVersionRangeConstraint(SemVersionRange range) : IVersionConstrai
 
   public override string ToString() => Range.ToString();
 }
+
+/// Accepts exactly one version, compared by SemVer precedence (build metadata is ignored). Used
+/// for "path@version" arguments and to look up one version of a ref.
+public sealed record ExactVersionConstraint(SemVersion Version) : IVersionConstraint {
+  public bool IsSatisfiedBy(SemVersion version) =>
+      SemVersion.PrecedenceComparer.Compare(Version, version) == 0;
+
+  public override string ToString() => $"={Version}";
+}

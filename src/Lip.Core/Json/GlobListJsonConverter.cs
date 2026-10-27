@@ -30,10 +30,18 @@ public class GlobListJsonConverter : JsonConverter<List<Glob>> {
     throw new JsonException("Expected end of array");
   }
 
+  // Glob.ToString() formats with a shared, unsynchronized formatter, so concurrent calls (e.g.
+  // tooth.json packages serialized while resolving in parallel) corrupt each other.
+  private static readonly Lock _formatLock = new();
+
   public override void Write(Utf8JsonWriter writer, List<Glob> value, JsonSerializerOptions options) {
     writer.WriteStartArray();
     foreach (var glob in value) {
-      writer.WriteStringValue(glob.ToString());
+      string pattern;
+      lock (_formatLock) {
+        pattern = glob.ToString();
+      }
+      writer.WriteStringValue(pattern);
     }
     writer.WriteEndArray();
   }

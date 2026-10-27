@@ -9,12 +9,27 @@ namespace Lip.Core.Mcmod.Resolution;
 /// requirement the candidates are tried in their sequence order, so earlier candidates win
 /// (spec §6). To avoid exponential blowup it uses conflict-directed backjumping and learns
 /// candidates that can never be part of S; a step limit bounds pathological inputs.
+///
+/// Candidates are produced lazily (IResolver.ResolveLazy): a spec ref with hundreds of tags only
+/// opens the tags the search actually reaches. Whether a member already satisfies a requirement
+/// is decided without enumerating every candidate: the loaded candidates are checked first, then
+/// each member whose version is in range and whose identity is that of a loaded candidate is
+/// looked up directly: the requirement's spec refs are resolved for exactly that version. This
+/// equals the full enumeration except for a routing document without a version key at a tag
+/// whose version differs from the routed package's, and for a package renamed between versions.
 public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultMaxSteps)
     : IGraphSolver {
   /// The default maximum number of candidates the search examines before giving up.
   public const int DefaultMaxSteps = 1_000_000;
 
   public async Task<IReadOnlyList<Candidate>> Solve(
+      IReadOnlyList<PackageRequest> requests,
+      IReadOnlyList<Candidate> pinned,
+      LipEnvironment environment) {
+    return (await SolveGraph(requests, pinned, environment)).Order;
+  }
+
+  public async Task<SolvedGraph> SolveGraph(
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyList<Candidate> pinned,
       LipEnvironment environment) {
@@ -113,6 +128,10 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
   /// version and same archive key.
   public static bool IsSamePackage(Candidate a, Candidate b) {
     return PackageKey.Of(a).Equals(PackageKey.Of(b));
+  }
+
+  private static bool SameIdentity(string a, string b) {
+    return a.Length == b.Length && FoldCase(a) == FoldCase(b);
   }
 
   /// Lowercases ASCII letters only, matching identity comparison (spec §1).
@@ -233,6 +252,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         null => "",
         VersionRange r => $"range:{r.Text}",
         SemVersionRangeConstraint r => $"semver:{r.Range}",
+        ExactVersionConstraint r => $"exact:{r.Version}",
         _ => range,
       };
     }
@@ -245,27 +265,97 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       Candidate? Owner,
       string Description,
       int OwnerLevel,
-      Func<Task<Choices>> Load) {
+      IReadOnlyList<Ref> Refs,
+      ArchiveHandle Base,
+      IVersionConstraint? Range,
+      bool Compat,
+      string? Name) {
     public Choices? Loaded { get; set; }
   }
 
-  /// The candidates that satisfy a requirement, in preference order and without duplicates.
-  private sealed class Choices(
-      IReadOnlyList<Candidate> candidates,
-      IReadOnlyList<string> diagnostics) {
-    public IReadOnlyList<Candidate> Candidates { get; } = candidates;
+  /// The candidate sequence of one Resolve call, produced on demand and shared by every
+  /// requirement that resolves the same ref.
+  private sealed class LazySequence(Func<Action<string>, IAsyncEnumerable<Candidate>> start) {
+    private IAsyncEnumerator<Candidate>? _enumerator;
 
-    public IReadOnlyList<string> Diagnostics { get; } = diagnostics;
+    public List<Candidate> Items { get; } = [];
 
-    public PackageKey[] CandidateKeys { get; } = [.. candidates.Select(PackageKey.Of)];
+    public List<string> Diagnostics { get; } = [];
 
-    public HashSet<PackageKey> Keys => field ??= [.. CandidateKeys];
+    public bool Complete { get; private set; }
 
-    /// Distinct case-folded identities of the candidates.
-    public string[] Identities => field ??= [.. CandidateKeys.Select(k => k.Identity).Distinct()];
+    /// Whether the sequence has an item at index, producing items up to it if needed.
+    public async ValueTask<bool> Has(int index) {
+      while (Items.Count <= index && !Complete) {
+        _enumerator ??= start(Diagnostics.Add).GetAsyncEnumerator();
+        if (await _enumerator.MoveNextAsync()) {
+          Items.Add(_enumerator.Current);
+        } else {
+          Complete = true;
+          await _enumerator.DisposeAsync();
+        }
+      }
+
+      return index < Items.Count;
+    }
+  }
+
+  /// The candidates that satisfy a requirement, in preference order and without duplicates:
+  /// the concatenated sequences of its refs, filtered by name. Loaded on demand.
+  private sealed class Choices(IReadOnlyList<(Ref Ref, LazySequence Sequence)> sources, string? name) {
+    private readonly HashSet<PackageKey> _keys = [];
+    private readonly List<string> _filtered = [];
+    private int _source;
+    private int _position;
+
+    public List<Candidate> Candidates { get; } = [];
+
+    public List<PackageKey> CandidateKeys { get; } = [];
+
+    public IEnumerable<string> Diagnostics =>
+        sources.SelectMany(s => s.Sequence.Diagnostics).Concat(_filtered);
+
+    /// Whether every candidate has been loaded.
+    public bool Complete { get; private set; }
 
     /// Set once no candidate can be chosen whatever the other members are.
     public bool Unsatisfiable { get; set; }
+
+    /// Whether there is a candidate at index, loading candidates up to it if needed.
+    public async ValueTask<bool> Has(int index) {
+      while (Candidates.Count <= index && !Complete) {
+        await LoadNext();
+      }
+
+      return index < Candidates.Count;
+    }
+
+    private async ValueTask LoadNext() {
+      while (_source < sources.Count) {
+        (Ref reference, LazySequence sequence) = sources[_source];
+        if (!await sequence.Has(_position)) {
+          _source++;
+          _position = 0;
+          continue;
+        }
+
+        Candidate candidate = sequence.Items[_position++];
+        if (name is not null && !SameIdentity(name, candidate.Package.Identity)) {
+          _filtered.Add($"{reference}: {candidate.Package.Identity}@{candidate.Package.Version}"
+              + $" is not named {name}");
+          continue;
+        }
+
+        PackageKey key = PackageKey.Of(candidate);
+        if (_keys.Add(key)) {
+          Candidates.Add(candidate);
+          CandidateKeys.Add(key);
+          return;
+        }
+      }
+
+      Complete = true;
+    }
   }
 
   private sealed record Member(Candidate Candidate, PackageKey Key, int Level);
@@ -277,8 +367,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     private const int MaxReportedFailures = 10;
     private const int MaxListedReasons = 5;
 
-    private readonly Dictionary<ResolveKey, Task<ResolveResult>> _resolved = [];
-    private readonly Dictionary<ChoicesKey, Task<Choices>> _choices = [];
+    private readonly Dictionary<ResolveKey, LazySequence> _resolved = [];
+    private readonly Dictionary<ChoicesKey, Choices> _choices = [];
     /// Members by case-folded identity.
     private readonly Dictionary<string, Member> _members = new(StringComparer.Ordinal);
     private readonly List<Requirement> _agenda = [];
@@ -292,7 +382,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     private readonly HashSet<string> _reported = [];
     private int _steps;
 
-    public async Task<IReadOnlyList<Candidate>> Run(
+    public async Task<SolvedGraph> Run(
         IReadOnlyList<PackageRequest> requests,
         IReadOnlyList<Candidate> pinned) {
       for (int i = 0; i < requests.Count; i++) {
@@ -302,7 +392,11 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
             null,
             $"request {request.Ref} {Show(request.Range)}",
             -1,
-            () => LoadChoices([request.Ref], request.Base, request.Range, false, null)));
+            [request.Ref],
+            request.Base,
+            request.Range,
+            false,
+            null));
       }
 
       foreach (Candidate candidate in pinned) {
@@ -352,16 +446,32 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       // satisfied by a member.
       Dictionary<PackageKey, List<Candidate>> dependencies =
           _members.Values.ToDictionary(m => m.Key, _ => new List<Candidate>());
+      List<Candidate?> requestSatisfiers = [];
       foreach (Requirement requirement in _agenda) {
-        if (requirement.Owner is Candidate owner
-            && SatisfyingMember(requirement.Loaded!) is Candidate dependee) {
-          dependencies[PackageKey.Of(owner)].Add(dependee);
+        Candidate? satisfier = await SatisfyingMember(requirement, await GetChoices(requirement));
+        if (requirement.Owner is Candidate owner) {
+          if (satisfier is not null) {
+            dependencies[PackageKey.Of(owner)].Add(satisfier);
+          }
+        } else {
+          requestSatisfiers.Add(satisfier);
         }
       }
 
-      return InstallOrder(
+      IReadOnlyList<Candidate> order = InstallOrder(
           [.. _members.Values.Select(m => m.Candidate)],
           c => dependencies[PackageKey.Of(c)]);
+      Dictionary<PackageKey, int> indexOf = [];
+      for (int i = 0; i < order.Count; i++) {
+        indexOf[PackageKey.Of(order[i])] = i;
+      }
+
+      return new SolvedGraph(
+          order,
+          [.. order.Select(c => (IReadOnlyList<int>)[
+            .. dependencies[PackageKey.Of(c)].Select(d => indexOf[PackageKey.Of(d)]).Distinct(),
+          ])],
+          [.. requestSatisfiers.Select(s => s is null ? -1 : indexOf[PackageKey.Of(s)])]);
     }
 
     /// Satisfies the open requirements from agenda position index on. Returns null on success
@@ -383,7 +493,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
         requirement = _agenda[index];
         choices = await GetChoices(requirement);
-        if (SatisfyingMember(choices) is null) {
+        if (await SatisfyingMember(requirement, choices) is null) {
           break;
         }
 
@@ -395,7 +505,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       HashSet<int> blame = [];
       List<string> blocked = [];
       int failedDeeper = 0;
-      for (int i = 0; i < choices.Candidates.Count && !choices.Unsatisfiable; i++) {
+      for (int i = 0; !choices.Unsatisfiable && await choices.Has(i); i++) {
         Candidate candidate = choices.Candidates[i];
         if (++_steps > maxSteps) {
           throw Fail($"Gave up resolving dependencies after examining {maxSteps} candidates; "
@@ -482,15 +592,82 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       return best;
     }
 
-    private Candidate? SatisfyingMember(Choices choices) {
-      foreach (string identity in choices.Identities) {
-        if (_members.TryGetValue(identity, out Member? member)
-            && choices.Keys.Contains(member.Key)) {
+    /// Returns the member that satisfies a requirement (spec §6: a member that is one of the
+    /// requirement's candidates), or null. See the class remarks for how this avoids loading
+    /// every candidate.
+    private async Task<Candidate?> SatisfyingMember(Requirement requirement, Choices choices) {
+      if (_members.Count == 0) {
+        return null;
+      }
+
+      for (int i = 0; i < choices.Candidates.Count; i++) {
+        if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
+            && member.Key == choices.CandidateKeys[i]) {
+          return member.Candidate;
+        }
+      }
+
+      if (choices.Complete) {
+        return null;
+      }
+
+      // Only spec refs can have long candidate sequences; load the others completely.
+      if (requirement.Refs.All(r => r.Kind != RefKind.Spec)) {
+        for (int i = choices.Candidates.Count; await choices.Has(i); i++) {
+          if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
+              && member.Key == choices.CandidateKeys[i]) {
+            return member.Candidate;
+          }
+        }
+
+        return null;
+      }
+
+      // Only members named like a candidate are looked up, so that members of unrelated packages
+      // never make the requirement's repository open the tag of their version.
+      if (!await choices.Has(0)) {
+        return null;
+      }
+
+      HashSet<string> identities = [.. choices.CandidateKeys.Select(k => k.Identity)];
+      foreach (Member member in _members.Values.ToList()) {
+        if (identities.Contains(member.Key.Identity) && await IsCandidate(requirement, member)) {
           return member.Candidate;
         }
       }
 
       return null;
+    }
+
+    /// Whether a member is one of the candidates of a requirement, without enumerating the
+    /// candidates of other versions.
+    private async Task<bool> IsCandidate(Requirement requirement, Member member) {
+      SemVersion version = member.Candidate.Package.Version;
+      if (requirement.Range is not null && !requirement.Range.IsSatisfiedBy(version)) {
+        return false;
+      }
+
+      if (requirement.Name is not null
+          && !SameIdentity(requirement.Name, member.Candidate.Package.Identity)) {
+        return false;
+      }
+
+      foreach (Ref reference in requirement.Refs) {
+        LazySequence sequence = Resolve(
+            reference,
+            requirement.Base,
+            reference.Kind == RefKind.Spec
+                ? new ExactVersionConstraint(version)
+                : requirement.Range,
+            requirement.Compat);
+        for (int i = 0; await sequence.Has(i); i++) {
+          if (PackageKey.Of(sequence.Items[i]) == member.Key) {
+            return true;
+          }
+        }
+      }
+
+      return false;
     }
 
     private void AddEdges(Candidate owner, int level, string suffix) {
@@ -502,8 +679,11 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
             $"{Show(owner)}{suffix} requires {edge.Name ?? "a package"} {Show(edge.Version)} "
                 + $"from {string.Join(", ", edge.Refs)}",
             level,
-            () => LoadChoices(edge.Refs, owner.Archive, edge.Version, edge.ToothClientCompat,
-                edge.Name)));
+            edge.Refs,
+            owner.Archive,
+            edge.Version,
+            edge.ToothClientCompat,
+            edge.Name));
       }
     }
 
@@ -512,44 +692,22 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
           edge.Name);
     }
 
-    private async Task<Choices> GetChoices(Requirement requirement) {
-      if (!_choices.TryGetValue(requirement.Key, out Task<Choices>? choices)) {
-        choices = requirement.Load();
+    private Task<Choices> GetChoices(Requirement requirement) {
+      if (!_choices.TryGetValue(requirement.Key, out Choices? choices)) {
+        choices = new Choices(
+            [
+              .. requirement.Refs.Select(r => (r, Resolve(
+                  r, requirement.Base, requirement.Range, requirement.Compat))),
+            ],
+            requirement.Name);
         _choices[requirement.Key] = choices;
       }
 
-      requirement.Loaded = await choices;
-      return requirement.Loaded;
+      requirement.Loaded = choices;
+      return Task.FromResult(choices);
     }
 
-    private async Task<Choices> LoadChoices(
-        IReadOnlyList<Ref> refs,
-        ArchiveHandle baseArchive,
-        IVersionConstraint? range,
-        bool compat,
-        string? name) {
-      List<Candidate> candidates = [];
-      HashSet<PackageKey> seen = [];
-      List<string> diagnostics = [];
-      foreach (Ref reference in refs) {
-        ResolveResult result = await Resolve(reference, baseArchive, range, compat);
-        diagnostics.AddRange(result.Diagnostics);
-        foreach (Candidate candidate in result.Candidates) {
-          if (name is not null && !SameIdentity(name, candidate.Package.Identity)) {
-            diagnostics.Add($"{reference}: {Show(candidate)} is not named {name}");
-            continue;
-          }
-
-          if (seen.Add(PackageKey.Of(candidate))) {
-            candidates.Add(candidate);
-          }
-        }
-      }
-
-      return new Choices(candidates, diagnostics);
-    }
-
-    private Task<ResolveResult> Resolve(
+    private LazySequence Resolve(
         Ref reference,
         ArchiveHandle baseArchive,
         IVersionConstraint? range,
@@ -559,12 +717,13 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
           ChoicesKey.BaseKey([reference], baseArchive),
           ChoicesKey.RangeKey(range),
           compat);
-      if (!_resolved.TryGetValue(key, out Task<ResolveResult>? result)) {
-        result = resolver.Resolve(reference, baseArchive, range, environment, compat);
-        _resolved[key] = result;
+      if (!_resolved.TryGetValue(key, out LazySequence? sequence)) {
+        sequence = new LazySequence(sink => resolver.ResolveLazy(
+            reference, baseArchive, range, environment, compat, sink));
+        _resolved[key] = sequence;
       }
 
-      return result;
+      return sequence;
     }
 
     private void RecordFailure(
@@ -604,7 +763,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     }
 
     /// Keeps the most recent distinct failures.
-    private void AddFailure(string line, IReadOnlyList<string> diagnostics) {
+    private void AddFailure(string line, IEnumerable<string> diagnostics) {
       if (!_reported.Add(line)) {
         return;
       }
@@ -617,7 +776,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       AddDiagnostics(line, diagnostics);
     }
 
-    private void AddDiagnostics(string line, IReadOnlyList<string> diagnostics) {
+    private void AddDiagnostics(string line, IEnumerable<string> diagnostics) {
       if (_diagnostics.Count < MaxDiagnostics) {
         _diagnostics.Add(line);
         _diagnostics.AddRange(diagnostics.Select(d => $"    {d}"));
@@ -631,10 +790,6 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     private static bool Conflicts(IPackage package, IPackage other) {
       return package.Conflicts.Any(d => SameIdentity(d.Name, other.Identity)
           && (d.Version is null || d.Version.IsSatisfiedBy(other.Version)));
-    }
-
-    private static bool SameIdentity(string a, string b) {
-      return a.Length == b.Length && FoldCase(a) == FoldCase(b);
     }
 
     private static string Show(Candidate candidate) {
