@@ -2,7 +2,7 @@
 
 管理配置项。
 
-配置保存在 `liprc.json`：Windows 为 `%APPDATA%\lip\liprc.json`，Linux/macOS 为 `$XDG_CONFIG_HOME/lip/liprc.json`。可用键请参见[配置参考](../configuration.md)。
+配置保存在 `config.yaml`：Windows 为 `%APPDATA%\lip\config.yaml`，Linux/macOS 为 `$XDG_CONFIG_HOME/lip/config.yaml`。可用键请参见[配置参考](../configuration.md)。
 
 ## lip config get
 

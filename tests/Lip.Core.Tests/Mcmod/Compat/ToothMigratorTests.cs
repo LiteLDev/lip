@@ -91,6 +91,183 @@ public class ToothMigratorTests {
     Assert.Contains(result.Notes, n => n.Contains("'*.dll'"));
   }
 
+  [Fact]
+  public void Migrate_NameOnlyPreservePattern_IsPrefixedWithNote() {
+    // Arrange
+    PackageManifest tooth = Parse("""
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "variants": [
+            { "assets": [ { "type": "self" } ], "preserve_files": ["config.json", "data/"] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = ToothMigrator.Migrate(tooth);
+
+    // Assert
+    ConcreteDocument document = Assert.IsType<ConcreteDocument>(Reparse(result));
+    Assert.Equal(["**/config.json", "data/"], document.PreserveFiles.Select(g => g.Pattern));
+    string note = Assert.Single(result.Notes, n => n.Contains("config.json"));
+    Assert.StartsWith("variants[0].preserve_files:", note);
+  }
+
+  [Fact]
+  public void Migrate_RoutedVariantWithZipAssets_NamesTheAssetKind() {
+    // Arrange
+    PackageManifest tooth = Parse("""
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "variants": [
+            { "assets": [ { "type": "zip", "urls": ["https://example.com/a.zip"] } ],
+              "remove_files": ["old/"], "scripts": { "post_install": ["echo"] } }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = ToothMigrator.Migrate(tooth);
+
+    // Assert
+    Assert.IsType<RoutingDocument>(Reparse(result));
+    string note = Assert.Single(result.Notes, n => n.StartsWith("variants[0]:", StringComparison.Ordinal));
+    Assert.Contains("zip assets", note);
+    Assert.Contains("removeFiles", note);
+    Assert.Contains("scripts", note);
+  }
+
+  [Fact]
+  public void Migrate_ConvertibleRange_HasNoNote() {
+    // Arrange
+    PackageManifest tooth = Parse("""
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "variants": [ { "assets": [], "dependencies": {
+            "example.com/a": ">=26.51.2 <26.60.0", "example.com/b": "26.51.*" } } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = ToothMigrator.Migrate(tooth);
+
+    // Assert
+    ConcreteDocument document = Assert.IsType<ConcreteDocument>(Reparse(result));
+    Assert.Equal(2, document.InstallDependencies.Count);
+    Assert.DoesNotContain(result.Notes, n => n.Contains("dependencies"));
+  }
+
+  [Fact]
+  public void Migrate_RangeWithDifferentSemantics_KeepsItWithNote() {
+    // Arrange
+    PackageManifest tooth = Parse("""
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "variants": [ { "assets": [], "dependencies": {
+            "example.com/a": "^1.2.3 || ^2.0.0-0" } } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = ToothMigrator.Migrate(tooth);
+
+    // Assert
+    ConcreteDocument document = Assert.IsType<ConcreteDocument>(Reparse(result));
+    Assert.Equal("^1.2.3||2.*", Assert.Single(document.InstallDependencies).Version!.ToString());
+    string note = Assert.Single(result.Notes);
+    Assert.StartsWith("variants[0].dependencies[\"example.com/a\"]:", note);
+    Assert.Contains("rejects 2.0.0-0", note);
+  }
+
+  [Fact]
+  public void DroppedFields_ExtraV3Scripts_AreNoted() {
+    // Arrange
+    using JsonDocument json = JsonDocument.Parse("""
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "variants": [ { "scripts": { "post_install": ["a"], "pre_pack": [], "build": ["b"] } } ]
+        }
+        """);
+
+    // Act
+    IReadOnlyList<string> notes = ToothMigrator.DroppedFields(
+        json.RootElement, PackageManifestMigration.Migrate(json));
+
+    // Assert
+    Assert.StartsWith("variants[0].scripts.build:", Assert.Single(notes));
+  }
+
+  [Fact]
+  public void DroppedFields_UnreadableV1RangeAndV2Prerequisites_AreNoted() {
+    // Arrange
+    using JsonDocument v1 = JsonDocument.Parse("""
+        {
+          "format_version": 1,
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "dependencies": { "example.com/a": [["2.16.x"]], "example.com/b": [[">=1.0.0"]] }
+        }
+        """);
+    using JsonDocument v2 = JsonDocument.Parse("""
+        {
+          "format_version": 2,
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "info": { "name": "", "description": "", "author": "", "tags": [] },
+          "prerequisites": { "example.com/a": "1.x" }
+        }
+        """);
+
+    // Act
+    IReadOnlyList<string> v1Notes = ToothMigrator.DroppedFields(
+        v1.RootElement, PackageManifestMigration.Migrate(v1));
+    IReadOnlyList<string> v2Notes = ToothMigrator.DroppedFields(
+        v2.RootElement, PackageManifestMigration.Migrate(v2));
+
+    // Assert
+    Assert.StartsWith("dependencies[\"example.com/a\"]:", Assert.Single(v1Notes));
+    Assert.StartsWith("prerequisites:", Assert.Single(v2Notes));
+  }
+
+  [Fact]
+  public void DroppedFields_V2RootDependenciesOverriddenByEveryPlatform_AreNotNoted() {
+    // Arrange
+    using JsonDocument json = JsonDocument.Parse("""
+        {
+          "format_version": 2,
+          "tooth": "example.com/tool",
+          "version": "1.0.0",
+          "info": { "name": "", "description": "", "author": "", "tags": [] },
+          "dependencies": { "example.com/a": "1.x" },
+          "platforms": [
+            { "goos": "windows", "goarch": "amd64", "dependencies": { "example.com/b": "2.x" } }
+          ]
+        }
+        """);
+
+    // Act
+    IReadOnlyList<string> notes = ToothMigrator.DroppedFields(
+        json.RootElement, PackageManifestMigration.Migrate(json));
+
+    // Assert
+    Assert.Empty(notes);
+  }
+
   private static PackageManifest Parse(string json) =>
       PackageManifestMigration.Migrate(JsonDocument.Parse(json));
 

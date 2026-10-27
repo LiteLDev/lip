@@ -34,7 +34,7 @@ A package path such as `github.com/user/MyMod` is the git repository `https://gi
 
 ## A Mod
 
-A mod is a concrete package whose `type` is not `"files"`. The whole archive is written to `plugins/<name>/` on a server (by lip) or `mods/<name>/` on a client (by launchers such as LeviLauncher).
+A mod is a concrete package whose `type` is not `"files"`. The whole archive is written to `mods/<name>/`, on a server (by lip) as on a client (by launchers such as LeviLauncher). On a server, `plugins` is a link to `mods`, so LeviLamina finds the mod under `plugins/<name>/` as well.
 
 Dependencies listed with `refs` are installed by lip; LeviLamina still reads `name` and `version` as usual. Use `installDependencies` for packages that only lip should install, such as LeviLamina itself:
 

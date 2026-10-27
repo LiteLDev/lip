@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Lip.Core.Entities;
 using Lip.Core.Mcmod;
+using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Resolution;
 using Lip.Core.Sources;
 using Moq;
@@ -17,12 +18,12 @@ public class ResolverTests {
   private static readonly LipEnvironment _client = new(McmodPlatform.Client, "win-x64");
 
   private readonly FakeArchives _archives = new();
-  private readonly Mock<IToothCompat> _toothCompat = new();
+  private readonly List<string> _warnings = [];
 
-  private Resolver CreateResolver() => new(_archives, _archives, _toothCompat.Object);
+  private Resolver CreateResolver() => new(_archives, _archives, new ToothCompat(), _warnings.Add);
 
   private static ArchiveHandle Workspace => new(
-      "/workspace", Mock.Of<ISource>(), new DirectoryArchiveIdentity("/workspace"));
+      "/workspace", Mock.Of<ISource>(), new ZipArchiveIdentity(TestIdentity.Sha256, "/workspace"));
 
   private static ConcreteArchiveDocument Concrete(
       string name,
@@ -54,9 +55,15 @@ public class ResolverTests {
 
   private static Artifact Art(params string[] refs) => new() { Refs = refs };
 
-  private static ToothArchiveDocument Tooth(string path, string version) => new(
-      new PackageManifest { Path = path, Version = SemVersion.Parse(version) },
-      JsonDocument.Parse("{}").RootElement.Clone());
+  /// A tooth.json with one variant per label, for every platform.
+  private static ToothArchiveDocument Tooth(string path, string version, params string[] labels) =>
+      new(
+          new PackageManifest {
+            Path = path,
+            Version = SemVersion.Parse(version),
+            Variants = [.. labels.Select(l => new PackageManifestVariant { Label = l })],
+          },
+          JsonDocument.Parse("{}").RootElement.Clone());
 
   private static IVersionConstraint Range(string range) =>
       new SemVersionRangeConstraint(SemVersionRange.Parse(range));
@@ -360,13 +367,10 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_ToothArchive_UsesToothCompatSelection() {
+  public async Task Resolve_ToothArchive_ConvertsSelectedVariant() {
     // Arrange
-    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.2.0");
+    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.2.0", "", "client");
     _archives.AddTag("github.com/user/tooth", "v1.2.0", tooth);
-    Mock<IPackage> package = new();
-    package.Setup(p => p.Version).Returns(SemVersion.Parse("1.2.0"));
-    _toothCompat.Setup(t => t.Select(tooth, "client", _client)).Returns(package.Object);
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
@@ -374,13 +378,21 @@ public class ResolverTests {
         toothClientCompat: true);
 
     // Assert
-    Assert.Same(package.Object, Assert.Single(result.Candidates).Package);
+    Candidate candidate = Assert.Single(result.Candidates);
+    McmodPackage package = Assert.IsType<McmodPackage>(candidate.Package);
+    Assert.Equal(ToothCompat.KindName, package.Kind);
+    Assert.Equal("github.com/user/tooth", package.Identity);
+    Assert.True(package.Document.IsFilePackage);
+    Assert.Equal("github.com/user/tooth@1.2.0", candidate.Archive.Key);
+    Assert.IsType<MountSource>(candidate.Archive.Source);
+    Assert.Equal(Ref.Parse("github.com/user/tooth#client"), Assert.Single(candidate.Chain).Ref);
   }
 
   [Fact]
   public async Task Resolve_ToothNoVariant_NoCandidate() {
     // Arrange
-    _archives.AddTag("github.com/user/tooth", "v1.2.0", Tooth("github.com/user/tooth", "1.2.0"));
+    _archives.AddTag(
+        "github.com/user/tooth", "v1.2.0", Tooth("github.com/user/tooth", "1.2.0", "client"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -394,11 +406,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_ToothVersionOutsideRange_NoCandidate() {
     // Arrange
-    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.2.0");
-    _archives.AddUrl("https://example.com/t.zip", tooth);
-    Mock<IPackage> package = new();
-    package.Setup(p => p.Version).Returns(SemVersion.Parse("1.2.0"));
-    _toothCompat.Setup(t => t.Select(tooth, "", _server)).Returns(package.Object);
+    _archives.AddUrl("https://example.com/t.zip", Tooth("github.com/user/tooth", "1.2.0", ""));
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
@@ -458,20 +466,19 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_ToothVersionDiffersFromTag_IsNotRejected() {
+  public async Task Resolve_ToothVersionDiffersFromTag_UsesTagVersionAndWarns() {
     // Arrange
-    ToothArchiveDocument tooth = Tooth("github.com/user/tooth", "1.0.1");
-    _archives.AddTag("github.com/user/tooth", "v1.0.0", tooth);
-    Mock<IPackage> package = new();
-    package.Setup(p => p.Version).Returns(SemVersion.Parse("1.0.1"));
-    _toothCompat.Setup(t => t.Select(tooth, "", _server)).Returns(package.Object);
+    _archives.AddTag("github.com/user/tooth", "v1.0.0", Tooth("github.com/user/tooth", "1.0.1", ""));
 
     // Act
     ResolveResult result = await CreateResolver()
         .Resolve(Ref.Parse("github.com/user/tooth"), Workspace, null, _server);
 
     // Assert
-    Assert.Single(result.Candidates);
+    Candidate candidate = Assert.Single(result.Candidates);
+    Assert.Equal(SemVersion.Parse("1.0.0"), candidate.Package.Version);
+    Assert.Equal("1.0.0", candidate.Package.Manifest.GetProperty("version").GetString());
+    Assert.Contains("using the tag version 1.0.0", Assert.Single(_warnings));
   }
 
   [Fact]
@@ -570,11 +577,87 @@ public class ResolverTests {
     Assert.Equal(1, _archives.ListCount);
   }
 
+  [Fact]
+  public async Task Resolve_BranchRef_ResolvesHeadCommitAndRecordsIt() {
+    // Arrange: the branch routes to the release of the version it declares.
+    const string commit = "0123456789abcdef0123456789abcdef01234567";
+    AddLegacyMoney();
+    _archives.AddGitRef(_legacyMoney, "branch:main", commit, Routing(
+        "LegacyMoney", "0.22.0", new Artifact { Refs = [_legacyMoneyTemplate] }));
+    Ref reference = Ref.Parse($"{_legacyMoney}@branch:main");
+
+    // Act
+    ResolveResult result = await CreateResolver().Resolve(reference, null, null, _server);
+
+    // Assert
+    Candidate candidate = Assert.Single(result.Candidates);
+    Assert.Equal(new ChainHop(reference, 0, commit), candidate.Chain[0]);
+    Assert.Equal([$"{_legacyMoney}@rev:{commit}"], _archives.OpenedVersions);
+    Assert.Equal(0, _archives.ListCount);
+  }
+
+  [Theory]
+  [InlineData("tag:v1.0.0", "2.0.0", false)]
+  [InlineData("tag:v2.0.0", "2.0.0", true)]
+  [InlineData("tag:latest", "2.0.0", true)]
+  [InlineData("branch:main", "2.0.0", true)]
+  public async Task Resolve_GitRef_ChecksDocumentAgainstSemVerTagNameOnly(
+      string gitRef, string documentVersion, bool expectCandidate) {
+    // Arrange
+    const string spec = "example.com/x";
+    _archives.AddGitRef(spec, gitRef, new string('a', 40), Concrete("X", documentVersion));
+
+    // Act
+    ResolveResult result = await CreateResolver().Resolve(
+        Ref.Parse($"{spec}@{gitRef}"), null, null, _server);
+
+    // Assert
+    Assert.Equal(expectCandidate ? 1 : 0, result.Candidates.Count);
+  }
+
+  [Fact]
+  public async Task Resolve_GitRefOutsideRange_NoCandidate() {
+    // Arrange
+    const string spec = "example.com/x";
+    _archives.AddGitRef(spec, "branch:main", new string('a', 40), Concrete("X", "1.0.0"));
+
+    // Act
+    ResolveResult result = await CreateResolver().Resolve(
+        Ref.Parse($"{spec}@branch:main"), null, Range(">=2.0.0"), _server);
+
+    // Assert
+    Assert.Empty(result.Candidates);
+    Assert.Contains("does not satisfy", Assert.Single(result.Diagnostics));
+  }
+
+  [Fact]
+  public async Task Resolve_MissingBranch_NoCandidateWithDiagnostic() {
+    // Act
+    ResolveResult result = await CreateResolver().Resolve(
+        Ref.Parse("example.com/x@branch:gone"), null, null, _server);
+
+    // Assert
+    Assert.Empty(result.Candidates);
+    Assert.Contains("branch:gone", Assert.Single(result.Diagnostics));
+  }
+
+  [Fact]
+  public async Task Resolve_RelativeRefWithoutBase_NoCandidate() {
+    // Act
+    ResolveResult result = await CreateResolver().Resolve(
+        Ref.Parse("./pkg/"), null, null, _server);
+
+    // Assert
+    Assert.Empty(result.Candidates);
+    Assert.Single(result.Diagnostics);
+  }
+
   /// In-memory archives: url, relative and spec targets mapped to documents. A null document
   /// stands for an invalid archive.
   private sealed class FakeArchives : IArchiveProvider, IArchiveReader {
     private readonly Dictionary<string, ArchiveDocument?> _documents = [];
     private readonly Dictionary<string, List<SpecVersion>> _tags = [];
+    private readonly Dictionary<string, string> _gitRefs = [];
 
     public List<string> OpenedVersions { get; } = [];
 
@@ -600,11 +683,15 @@ public class ResolverTests {
       _documents[$"{spec}@{version.Version}"] = document;
     }
 
-    public ArchiveHandle OpenWorkspace(string workspaceRoot) => throw new NotSupportedException();
+    /// Adds a git ref ("branch:main", "tag:x") of a spec repository pointing to a commit.
+    public void AddGitRef(string spec, string gitRef, string commit, ArchiveDocument document) {
+      _gitRefs[$"{spec}@{gitRef}"] = commit;
+      _documents[$"{spec}@rev:{commit}"] = document;
+    }
 
-    public Task<ArchiveHandle> Open(Ref target, ArchiveHandle baseArchive) {
+    public Task<ArchiveHandle> Open(Ref target, ArchiveHandle? baseArchive) {
       string key = target.Kind == RefKind.Relative
-          ? $"{baseArchive.Key}!{target.Target}"
+          ? $"{baseArchive?.Key}!{target.Target}"
           : target.Target;
       if (FailOnce.Remove(key)) {
         throw new ArchiveUnavailableException($"timeout {key}");
@@ -628,7 +715,24 @@ public class ResolverTests {
       return Task.FromResult(Handle(key));
     }
 
+    public Task<string> ResolveGitRef(string spec, GitRef gitRef) =>
+        gitRef.Kind == GitRefKind.Rev ? Task.FromResult(gitRef.Name)
+        : _gitRefs.TryGetValue($"{spec}@{gitRef}", out string? commit) ? Task.FromResult(commit)
+        : throw new ArchiveUnavailableException($"no {gitRef} in {spec}");
+
+    public Task<ArchiveHandle> OpenCommit(string spec, string commit) {
+      string key = $"{spec}@rev:{commit}";
+      OpenedVersions.Add(key);
+      return _documents.ContainsKey(key)
+          ? Task.FromResult(new ArchiveHandle(
+              key, Mock.Of<ISource>(), new GitArchiveIdentity($"https://{spec}.git", commit, "")))
+          : throw new ArchiveUnavailableException($"no commit {commit} in {spec}");
+    }
+
     public Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity) =>
+        throw new NotSupportedException();
+
+    public Task<ISource> OpenAsset(IReadOnlyList<string> urls, bool isArchive) =>
         throw new NotSupportedException();
 
     public Task<ArchiveDocument> Read(ArchiveHandle archive) {
@@ -639,6 +743,6 @@ public class ResolverTests {
     }
 
     private static ArchiveHandle Handle(string key) =>
-        new(key, Mock.Of<ISource>(), new DirectoryArchiveIdentity(key));
+        new(key, Mock.Of<ISource>(), new ZipArchiveIdentity(TestIdentity.Sha256, key));
   }
 }

@@ -101,11 +101,14 @@ public class LipClientTests {
           ]
         }
         """);
+    _ws.AddFile("bin/repo.dll", "dll");
+    _ws.AddFile("a.txt", "a");
 
     // Act
-    await _client.Migrate("tooth.json", "manifest.json");
+    await _client.Migrate();
 
     // Assert
+    Assert.False(_ws.Exists("tooth.json"));
     byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("manifest.json"));
     ConcreteDocument document = Assert.IsType<ConcreteDocument>(new DocumentParser().Parse(bytes));
     Assert.True(document.IsMarked);
@@ -139,13 +142,28 @@ public class LipClientTests {
         """);
 
     // Act
-    await _client.Migrate("tooth.json", "out/manifest.json");
+    await _client.Migrate();
 
     // Assert
-    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("out/manifest.json"));
+    Assert.False(_ws.Exists("tooth.json"));
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("manifest.json"));
     RoutingDocument document = Assert.IsType<RoutingDocument>(new DocumentParser().Parse(bytes));
     Assert.Equal(2, document.Artifacts.Count);
     Assert.NotEmpty(_ws.Warnings);
+  }
+
+  [Fact]
+  public async Task Migrate_NoToothJson_ThrowsAndChangesNothing() {
+    // Arrange
+    _ws.AddFile("manifest.json", "{}");
+
+    // Act
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        _client.Migrate);
+
+    // Assert
+    Assert.Contains("tooth.json", ex.Message);
+    Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("manifest.json")));
   }
 
   [Fact]

@@ -3,108 +3,123 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Turns command line package arguments into requests (spec §6: (ref, range) pairs whose base is
-/// the workspace root).
+/// Turns command line package arguments into requests (spec §6: (ref, range) pairs that are inside
+/// no archive).
 ///
 /// Accepted forms:
-/// - "https://..." [ "#" variant ]: a url ref.
-/// - a local file or directory [ "#" variant ]: anything starting with "./", "../", ".\", "..\"
-///   or rooted, or any other argument naming an existing file or directory. Inside the workspace
-///   it becomes a relative ref of the workspace root ("./dir/" or "./file.mcmod"); outside it, a
-///   relative ref of the directory containing it, opened as a directory archive.
-/// - "path" [ "#" variant ] [ "@" version ]: a spec ref; with a version, exactly that version
-///   (SemVer 2.0.0, without a leading "v"), otherwise any version (the newest wins).
+/// - "https://..." [ "#" variant ]: a url ref to a ZIP archive.
+/// - a local ZIP file (.mcmod or .zip) [ "#" variant ]: a path, absolute or relative to the
+///   current directory (the workspace root), recognized when it starts with "./", "../", ".\",
+///   "..\", is rooted, or has no '@' and ends with ".mcmod" or ".zip" or names an existing file
+///   or directory. It becomes a file ref. Directories are rejected: lip does not install from a
+///   plain directory.
+/// - "path" [ "#" variant ] [ "@" version ]: a spec ref; version is a SemVer 2.0.0 version
+///   (without a leading "v") for exactly that version, or a git ref ("branch:" name, "tag:" name,
+///   "rev:" full commit id) pinning the spec ref; without it, any version (the newest wins).
 public static class PackageArguments {
+  private static readonly string[] _zipExtensions = [".mcmod", ".zip"];
+
   public static PackageRequest Parse(
-      string argument,
-      string workspaceRoot,
-      IFileSystem fileSystem,
-      IArchiveProvider archiveProvider) {
-    ArchiveHandle workspace = archiveProvider.OpenWorkspace(workspaceRoot);
-
+      string argument, string currentDirectory, IFileSystem fileSystem) {
     if (argument.StartsWith("https://", StringComparison.Ordinal)) {
-      return new PackageRequest(ParseRef(argument, argument), null, workspace);
+      Ref url = ParseRef(argument, argument);
+      return url.Kind == RefKind.Url
+          ? new PackageRequest(url, null)
+          : throw new ArgumentException(
+              $"Invalid package '{argument}': not an https URL.", nameof(argument));
     }
 
-    (string path, string variant) = SplitVariant(argument);
-    if (IsLocalPath(path, workspaceRoot, fileSystem)) {
-      return ParseLocal(argument, path, variant, workspaceRoot, fileSystem, archiveProvider);
+    if (LocalFileRef(argument, currentDirectory, fileSystem) is Ref file) {
+      if (fileSystem.Directory.Exists(file.LocalPath)) {
+        throw new ArgumentException(
+            $"Invalid package '{argument}': {file.LocalPath} is a directory. lip installs a "
+            + "local package only from a .mcmod or .zip file.",
+            nameof(argument));
+      }
+
+      return fileSystem.File.Exists(file.LocalPath)
+          ? new PackageRequest(file, null)
+          : throw new ArgumentException(
+              $"Invalid package '{argument}': {file.LocalPath} does not exist.",
+              nameof(argument));
     }
 
-    int at = argument.LastIndexOf('@');
+    int at = argument.IndexOf('@');
     if (at < 0) {
-      return new PackageRequest(ParseSpec(argument, argument), null, workspace);
+      return new PackageRequest(ParseSpec(argument, argument), null);
     }
 
     string versionText = argument[(at + 1)..];
-    if (!SemVersion.TryParse(versionText, SemVersionStyles.Strict, out SemVersion? version)) {
+    if (SemVersion.TryParse(versionText, SemVersionStyles.Strict, out SemVersion? version)) {
+      return new PackageRequest(
+          ParseSpec(argument[..at], argument), new ExactVersionConstraint(version));
+    }
+
+    if (!versionText.Contains(':')) {
       throw new ArgumentException(
-          $"Invalid package '{argument}': '{versionText}' is not a SemVer 2.0.0 version.",
+          $"Invalid package '{argument}': '{versionText}' is neither a SemVer 2.0.0 version nor "
+          + "a git ref (branch:<name>, tag:<name> or rev:<commit>).",
           nameof(argument));
     }
 
-    return new PackageRequest(
-        ParseSpec(argument[..at], argument), new ExactVersionConstraint(version), workspace);
+    return new PackageRequest(ParseSpec(argument, argument), null);
   }
 
-  private static bool IsLocalPath(string path, string workspaceRoot, IFileSystem fileSystem) {
-    if (path.StartsWith("./", StringComparison.Ordinal)
+  /// The file ref of an argument that names a local path (see the class remarks), whether or not
+  /// it exists; null when the argument is no local path. A variant follows the last '#' unless
+  /// the whole argument names an existing path, so that file names may contain '#'.
+  public static Ref? LocalFileRef(
+      string argument, string currentDirectory, IFileSystem fileSystem) {
+    string path = argument;
+    string variant = "";
+    if (!Exists(path, currentDirectory, fileSystem)) {
+      int hash = argument.LastIndexOf('#');
+      if (hash >= 0 && Ref.IsValidVariant(argument[(hash + 1)..])) {
+        path = argument[..hash];
+        variant = argument[(hash + 1)..];
+      }
+    }
+
+    bool isLocal = path.StartsWith("./", StringComparison.Ordinal)
         || path.StartsWith(".\\", StringComparison.Ordinal)
         || path.StartsWith("../", StringComparison.Ordinal)
         || path.StartsWith("..\\", StringComparison.Ordinal)
-        || fileSystem.Path.IsPathRooted(path)) {
-      return true;
+        || path is "." or ".."
+        || IsRooted(path, fileSystem)
+        || (!path.Contains('@')
+            && (_zipExtensions.Any(e => path.EndsWith(e, StringComparison.OrdinalIgnoreCase))
+                || Exists(path, currentDirectory, fileSystem)));
+    if (!isLocal) {
+      return null;
     }
 
-    if (path == "" || path.Contains('@')) {
+    string full = Path.TrimEndingDirectorySeparator(
+        fileSystem.Path.GetFullPath(fileSystem.Path.Combine(currentDirectory, path)));
+    return Ref.FromFile(full, variant);
+  }
+
+  private static bool IsRooted(string path, IFileSystem fileSystem) {
+    try {
+      return fileSystem.Path.IsPathRooted(path);
+    }
+    catch (ArgumentException) {
+      return false;
+    }
+  }
+
+  private static bool Exists(string path, string currentDirectory, IFileSystem fileSystem) {
+    if (path == "") {
       return false;
     }
 
-    string full = fileSystem.Path.GetFullPath(fileSystem.Path.Combine(workspaceRoot, path));
-    return fileSystem.File.Exists(full) || fileSystem.Directory.Exists(full);
-  }
-
-  private static PackageRequest ParseLocal(
-      string argument,
-      string path,
-      string variant,
-      string workspaceRoot,
-      IFileSystem fileSystem,
-      IArchiveProvider archiveProvider) {
-    if (variant.Contains('@')) {
-      throw new ArgumentException(
-          $"Invalid package '{argument}': a local package has no versions to choose from.",
-          nameof(argument));
+    try {
+      string full = fileSystem.Path.GetFullPath(fileSystem.Path.Combine(currentDirectory, path));
+      return fileSystem.File.Exists(full) || fileSystem.Directory.Exists(full);
     }
-
-    string root = Path.TrimEndingDirectorySeparator(fileSystem.Path.GetFullPath(workspaceRoot));
-    string full = Path.TrimEndingDirectorySeparator(
-        fileSystem.Path.GetFullPath(fileSystem.Path.Combine(root, path)));
-
-    bool isDirectory = fileSystem.Directory.Exists(full);
-    if (!isDirectory && !fileSystem.File.Exists(full)) {
-      throw new ArgumentException(
-          $"Invalid package '{argument}': {full} does not exist.", nameof(argument));
+    catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+        or PathTooLongException) {
+      return false;
     }
-
-    string relative = fileSystem.Path.GetRelativePath(root, full);
-    ArchiveHandle baseArchive;
-    if (relative != "." && relative != ".." && !fileSystem.Path.IsPathRooted(relative)
-        && !relative.StartsWith(".." + fileSystem.Path.DirectorySeparatorChar)
-        && !relative.StartsWith("../")) {
-      baseArchive = archiveProvider.OpenWorkspace(root);
-    } else {
-      string parent = fileSystem.Path.GetDirectoryName(full)
-          ?? throw new ArgumentException(
-              $"Invalid package '{argument}': {full} has no parent directory.",
-              nameof(argument));
-      baseArchive = archiveProvider.OpenWorkspace(parent);
-      relative = fileSystem.Path.GetFileName(full);
-    }
-
-    string target = "./" + relative.Replace('\\', '/') + (isDirectory ? "/" : "");
-    return new PackageRequest(
-        ParseRef(variant == "" ? target : $"{target}#{variant}", argument), null, baseArchive);
   }
 
   private static Ref ParseSpec(string text, string argument) {
@@ -119,14 +134,5 @@ public static class PackageArguments {
     return Ref.TryParse(text, out Ref? reference, out string? error)
         ? reference
         : throw new ArgumentException($"Invalid package '{argument}': {error}.", nameof(argument));
-  }
-
-  private static (string Path, string Variant) SplitVariant(string argument) {
-    int hash = argument.IndexOf('#');
-    if (hash < 0) {
-      return (argument, "");
-    }
-
-    return (argument[..hash], argument[(hash + 1)..]);
   }
 }

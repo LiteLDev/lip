@@ -2,7 +2,7 @@
 
 Manage configuration values.
 
-Configuration is stored in `liprc.json` at `%APPDATA%\lip\liprc.json` (Windows) or `$XDG_CONFIG_HOME/lip/liprc.json` (Linux/macOS). See [Configuration Reference](../configuration.md) for available keys.
+Configuration is stored in `config.yaml` at `%APPDATA%\lip\config.yaml` (Windows) or `$XDG_CONFIG_HOME/lip/config.yaml` (Linux/macOS). See [Configuration Reference](../configuration.md) for available keys.
 
 ## lip config get
 

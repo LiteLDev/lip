@@ -15,10 +15,9 @@ public record InstallEdge(
     IReadOnlyList<Ref> Refs,
     bool ToothClientCompat = false);
 
-/// A concrete package, i.e. a resolution candidate's payload: either a concrete manifest.json
-/// (McmodPackage) or a tooth.json package with its variant selected (spec §9).
+/// A concrete package, i.e. a resolution candidate's payload.
 public interface IPackage {
-  /// "mcmod" or "tooth"; recorded in the lock.
+  /// How the lock reads the recorded manifest: "mcmod" or "tooth" (McmodPackage.Kind).
   public string Kind { get; }
 
   /// The package name; compared ignoring ASCII case.
@@ -34,10 +33,14 @@ public interface IPackage {
   public JsonElement Manifest { get; }
 }
 
+/// A concrete document, from a manifest.json or converted from a tooth.json (spec §9).
 public record McmodPackage(ConcreteDocument Document, JsonElement Manifest) : IPackage {
   public const string KindName = "mcmod";
 
-  public string Kind => KindName;
+  /// "mcmod" when Manifest is the manifest.json; "tooth" (ToothCompat.KindName) when it is the
+  /// tooth.json the document was converted from, which the lock records instead, since the
+  /// conversion is not expressible as manifest.json.
+  public string Kind { get; init; } = KindName;
 
   public string Identity => Document.Name;
 
@@ -50,7 +53,7 @@ public record McmodPackage(ConcreteDocument Document, JsonElement Manifest) : IP
             .Where(d => d.Refs is not null)
             .Select(d => new InstallEdge(d.Name, d.Version, d.Refs!)),
         .. Document.InstallDependencies
-            .Select(d => new InstallEdge(d.Name, d.Version, d.Refs)),
+            .Select(d => new InstallEdge(d.Name, d.Version, d.Refs, d.ToothClientCompat)),
       ]
       : [];
 

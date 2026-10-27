@@ -413,7 +413,7 @@ public class GraphSolverTests {
   }
 
   private static ArchiveHandle Archive(string key) {
-    return new ArchiveHandle(key, Mock.Of<ISource>(), new DirectoryArchiveIdentity(key));
+    return new ArchiveHandle(key, Mock.Of<ISource>(), new ZipArchiveIdentity(TestIdentity.Sha256, key));
   }
 
   private static PackageRequest Request(string reference) {
@@ -490,14 +490,14 @@ public class GraphSolverTests {
 
     public Task<ResolveResult> Resolve(
         Ref reference,
-        ArchiveHandle baseArchive,
+        ArchiveHandle? baseArchive,
         IVersionConstraint? range,
         LipEnvironment environment,
         bool toothClientCompat = false) {
-      Calls.Add(new ResolveCall(reference.ToString(), baseArchive.Key, range?.ToString(),
+      Calls.Add(new ResolveCall(reference.ToString(), baseArchive?.Key ?? "", range?.ToString(),
           toothClientCompat));
       string location = reference.Kind == RefKind.Relative
-          ? $"{baseArchive.Key}!{reference.RelativePath}"
+          ? $"{baseArchive?.Key}!{reference.RelativePath}"
           : reference.Target;
       List<Candidate> candidates = [
         .. _packages.GetValueOrDefault(location, [])

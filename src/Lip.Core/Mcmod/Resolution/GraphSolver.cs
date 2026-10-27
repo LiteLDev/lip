@@ -17,6 +17,13 @@ namespace Lip.Core.Mcmod.Resolution;
 /// looked up directly: the requirement's spec refs are resolved for exactly that version. This
 /// equals the full enumeration except for a routing document without a version key at a tag
 /// whose version differs from the routed package's, and for a package renamed between versions.
+///
+/// A member resolved from a pinned spec ref stands in for the versions of that spec (spec §6),
+/// but pinned candidates are never offered to an unpinned requirement: when an unpinned
+/// requirement is decided before a pinned one for the same spec (both install edges, the
+/// unpinned one first in the agenda), the search does not find the set in which the pinned
+/// package satisfies both. Requests come before every install edge and installed packages are
+/// members from the start, so requesting or having installed the pinned package avoids this.
 public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultMaxSteps)
     : IGraphSolver {
   /// The default maximum number of candidates the search examines before giving up.
@@ -230,7 +237,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       string? Name) {
     public static ChoicesKey Of(
         IReadOnlyList<Ref> refs,
-        ArchiveHandle baseArchive,
+        ArchiveHandle? baseArchive,
         IVersionConstraint? range,
         bool compat,
         string? name) {
@@ -242,8 +249,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
           name is null ? null : FoldCase(name));
     }
 
-    public static string BaseKey(IEnumerable<Ref> refs, ArchiveHandle baseArchive) {
-      return refs.Any(r => r.Kind == RefKind.Relative) ? baseArchive.Key : "";
+    public static string BaseKey(IEnumerable<Ref> refs, ArchiveHandle? baseArchive) {
+      return refs.Any(r => r.Kind == RefKind.Relative) ? baseArchive?.Key ?? "" : "";
     }
 
     /// Ranges are keyed by text for the known range types and by value equality for others.
@@ -266,7 +273,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       string Description,
       int OwnerLevel,
       IReadOnlyList<Ref> Refs,
-      ArchiveHandle Base,
+      ArchiveHandle? Base,
       IVersionConstraint? Range,
       bool Compat,
       string? Name) {
@@ -607,6 +614,14 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         }
       }
 
+      if (requirement.Refs.Any(r => r.Kind == RefKind.Spec && r.GitRef is null)) {
+        foreach (Member member in _members.Values) {
+          if (IsPinnedSatisfier(requirement, member.Candidate)) {
+            return member.Candidate;
+          }
+        }
+      }
+
       if (choices.Complete) {
         return null;
       }
@@ -637,6 +652,33 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       }
 
       return null;
+    }
+
+    /// Whether a candidate resolved from a spec ref pinned by a git ref satisfies a requirement
+    /// through one of its unpinned spec refs (spec §6): same module path (ignoring ASCII case, as
+    /// the hosts do) and variant, and a version in the requirement's range. A pinned build thus
+    /// stands in for the tag versions of its repository, while a pinned requirement still needs
+    /// exactly its pin.
+    private static bool IsPinnedSatisfier(Requirement requirement, Candidate candidate) {
+      if (candidate.Chain.Count == 0
+          || candidate.Chain[0].Ref is not { Kind: RefKind.Spec, GitRef: not null } pinned) {
+        return false;
+      }
+
+      if (requirement.Range is not null
+          && !requirement.Range.IsSatisfiedBy(candidate.Package.Version)) {
+        return false;
+      }
+
+      if (requirement.Name is not null
+          && !SameIdentity(requirement.Name, candidate.Package.Identity)) {
+        return false;
+      }
+
+      return requirement.Refs.Any(r => r.Kind == RefKind.Spec && r.GitRef is null
+          && string.Equals(r.Target, pinned.Target, StringComparison.OrdinalIgnoreCase)
+          && (r.Variant == pinned.Variant
+              || (requirement.Compat && r.Variant == "client" && pinned.Variant == "")));
     }
 
     /// Whether a member is one of the candidates of a requirement, without enumerating the
@@ -709,7 +751,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
     private LazySequence Resolve(
         Ref reference,
-        ArchiveHandle baseArchive,
+        ArchiveHandle? baseArchive,
         IVersionConstraint? range,
         bool compat) {
       ResolveKey key = new(

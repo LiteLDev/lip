@@ -2,7 +2,7 @@
 
 lip 包由其归档根部的 `manifest.json` 描述。它就是 LeviLamina 的 `manifest.json`，
 再加上 lip 包格式第 4 版新增的键。LeviLamina 会忽略 lip 新增的键，lip 也不会改变任何
-LeviLamina 键的含义。
+LeviLamina 键的含义。规范性定义见[包格式规范](../spec/package_format.md)。
 
 该格式由 JSON Schema
 [`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json)
@@ -12,10 +12,12 @@ LeviLamina 键的含义。
 
 包位于一个**归档**中，归档是一棵根部带有 `manifest.json` 的文件树：
 
-- **git 归档**：git 仓库中某个版本标签所指的提交；
+- **git 归档**：git 仓库的一个提交，通常是某个版本标签所指的提交；
 - **ZIP 归档**：一个 ZIP 文件。扩展名为 `.mcmod` 的 ZIP 归档称为 **mcmod**。一个文件是否为
   ZIP 归档只看内容，与扩展名无关；
-- **目录归档**：一个本地目录。
+- **目录归档**：另一个归档内的一个目录（以 `/` 结尾的相对引用）。
+
+单独的本地目录不是归档：要从磁盘安装包，请先把它打包为 `.mcmod` 文件。
 
 `manifest.json` 必须是 UTF-8 编码的严格 JSON（不允许注释），顶层必须是对象。
 
@@ -68,7 +70,8 @@ lip 只把它当作自包含的具体包接受，忽略其依赖中的 `refs` �
 
 ## 引用
 
-引用（ref）指向一个归档，形式为 `target[#variant]`：
+引用（ref）指向一个归档，形式为 `target[#variant]`；spec target 后面还可以跟 git 引用：
+`spec[#variant][@git-ref]`。
 
 | target | 示例 | 指向 |
 | --- | --- | --- |
@@ -76,11 +79,16 @@ lip 只把它当作自包含的具体包接受，忽略其依赖中的 `refs` �
 | 相对文件 | `./LegacyMoney.mcmod` | 当前文档所在归档内的一个 ZIP 文件。 |
 | URL | `https://example.com/pkg.mcmod` | 通过 HTTPS 下载的 ZIP 归档（会跟随重定向）。 |
 | spec | `github.com/LiteLDev/LeviLamina` | git 仓库 `https://<spec>.git`。 |
+| 带 git 引用的 spec | `github.com/LiteLDev/LeviLamina@branch:main` | 该仓库的一个提交。 |
 
 - 相对 target 以 `./` 开头，不得包含空段、`.` 段、`..` 段或 `\`。
 - spec 必须是合法的 [Go module path](https://go.dev/ref/mod#module-path)。其版本是名称恰为
   `v<version>` 的标签，其中 `<version>` 是 [SemVer 2.0.0](https://semver.org/) 版本（例如
   `v1.2.3`）。其他标签（例如 `v1.2`）会被忽略。
+- git 引用把 spec 固定到一个提交，而不是其各个版本：`@branch:<branch>`（分支的头）、
+  `@tag:<tag>`（任意标签，例如 `@tag:nightly`）或 `@rev:<commit>`（完整的 40 位提交 ID）。
+  它写在 variant 之后：`github.com/LiteLDev/LegacyScriptEngine#lua@branch:develop`。只有 spec
+  引用可以带 git 引用。
 - 不允许其他 scheme，例如 `http:` 和 `file:`。
 - variant 必须匹配 `^[a-z0-9_]+(/[a-z0-9_]+)?$`。不带 `#` 的 ref，其 variant 为 `""`。
 
@@ -166,6 +174,22 @@ RID、并且 `version` 在请求的范围内时，具体包才是候选。
 `>=1.0.0 <2.0.0`、`1.x` 或 `>=1.0.0 || =0.9.0`。不带运算符的完整版本号（例如 `1.2.3`）
 会被拒绝，请写成 `=1.2.3`。
 
+如需依赖某个分支、标签或提交，而不是正式发布的版本，请在 `refs` 中的 spec 上加 git 引用；
+`version` 仍是版本范围，因为 LeviLamina 也会读取它：
+
+```json
+{
+  "name": "LeviLamina",
+  "version": ">=1.5.0",
+  "refs": ["github.com/LiteLDev/LeviLamina@branch:main"]
+}
+```
+
+git 引用所指提交处的包必须声明在范围内的 `version`，否则该依赖无法满足。反过来，从 git
+引用安装的包（作为依赖，或通过 [`lip install`](../cli/commands/install.md#git-引用)），
+只要其版本在依赖的范围内，也能满足以同一 spec 和 variant、但不带 git 引用的依赖；因此工作区
+可以运行一个库的开发构建，而依赖它的正式发布的模组仍可安装。
+
 ### Placement
 
 | 字段 | 类型 | 必需 | 说明 |
@@ -196,8 +220,9 @@ RID、并且 `version` 在请求的范围内时，具体包才是候选。
 
 ## 文件包与 mod
 
-- **mod**（`type` 不是 `"files"`）：整个归档写入服务端的 `plugins/<name>/`，或客户端的
-  `mods/<name>/`。lip 只安装到服务端工作区；客户端工作区由 LeviLauncher 等启动器管理。
+- **mod**（`type` 不是 `"files"`）：整个归档写入 `mods/<name>/`。服务端的 `plugins` 是指向
+  `mods` 的链接，因此也可以在 `plugins/<name>/` 下看到该 mod。lip 只安装到服务端工作区；
+  客户端工作区由 LeviLauncher 等启动器管理。
 - **文件包**（`"type": "files"`）：按顺序执行 `placements`。
 
 ```json
@@ -228,11 +253,22 @@ RID、并且 `version` 在请求的范围内时，具体包才是候选。
 lip v0.x 的包使用 `tooth.json`（格式版本 1 到 3）。lip 仍然读取它们，但不再写入；
 请使用 [`lip migrate`](../cli/commands/migrate.md) 转换你的包。
 
+lip 在内存中把 `tooth.json` 转换为第 4 版的文件包，并像其他包一样处理它；确切的映射见
+[规范](../spec/package_format.md) §9：
+
 - 归档同时含有 `tooth.json` 和 `manifest.json` 时，以 `tooth.json` 为准。
 - 包的身份是 `tooth` 的值，ref 的 variant 即变体标签。当平台为 `client` 且 ref 不带
-  variant 时，若存在标签为 `client` 的变体，则使用它。
-- 所选变体的依赖按 `installDependencies` 的方式安装。
+  variant 时，若存在标签为 `client` 的变体，则使用它。具有该标签且与 RID 匹配的各变体
+  会像 lip v0.x 那样合并。
 - 若标签处的 `tooth.json` 声明的版本与标签不同，以标签版本为准，lip 会给出警告。
+- 所选变体的依赖按 `installDependencies` 的方式安装，其版本范围按 lip v0.x 的方式解释。
+- 每个资源都成为包的一部分：`self` 是标签处的仓库，`zip`、`tar`、`tgz` 和 `uncompressed`
+  资源在安装包时下载（并缓存）。放置规则在安装时与资源中的文件匹配（包括 glob），写入的
+  文件与 lip v0.x 相同。
+- `preserve_files`、`remove_files` 和脚本分别成为 `preserveFiles`、`removeFiles` 和
+  `scripts`（`install` 随 `postInstall` 运行，`uninstall` 随 `preUninstall` 运行）。文件的
+  归属、保留与删除遵循第 4 版的规则。
+- 锁以 `"kind": "tooth"` 记录该 `tooth.json`；卸载或更新该包时，lip 会再次转换它。
 
 格式 3 的 schema 为
 [`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.schema.json)

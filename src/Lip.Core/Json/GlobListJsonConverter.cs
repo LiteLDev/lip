@@ -37,12 +37,15 @@ public class GlobListJsonConverter : JsonConverter<List<Glob>> {
   public override void Write(Utf8JsonWriter writer, List<Glob> value, JsonSerializerOptions options) {
     writer.WriteStartArray();
     foreach (var glob in value) {
-      string pattern;
-      lock (_formatLock) {
-        pattern = glob.ToString();
-      }
-      writer.WriteStringValue(pattern);
+      writer.WriteStringValue(Format(glob));
     }
     writer.WriteEndArray();
+  }
+
+  /// The pattern of a glob; safe to call concurrently, unlike Glob.ToString().
+  public static string Format(Glob glob) {
+    lock (_formatLock) {
+      return glob.ToString();
+    }
   }
 }

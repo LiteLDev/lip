@@ -15,6 +15,7 @@
     <PackageReference Include="SharpCompress" Version="0.50.5" />
     <PackageReference Include="Spectre.Console.Json" Version="0.57.2" />
     <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" Version="22.3.0" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 
   <PropertyGroup>

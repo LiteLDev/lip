@@ -101,9 +101,6 @@ public class CorpusTests {
   // One resolver for all solves, so that dependencies (LeviLamina above all) are read once.
   private static readonly Resolver _sharedResolver = CreateResolver(_sharedProvider);
 
-  private static readonly ArchiveHandle _workspace =
-      _sharedProvider.OpenWorkspace(AppContext.BaseDirectory);
-
   public static IEnumerable<TheoryDataRow<string, string>> Entries => SelectEntries()
       .Select(entry => new TheoryDataRow<string, string>(entry.Package, entry.Version) {
         Skip = entry.Risk || _knownUpstreamBreakage.ContainsKey(Key(entry.Package, entry.Version))
@@ -159,7 +156,7 @@ public class CorpusTests {
     RecordingGitRemoteClient recorder = new(_cachedClient);
     ArchiveProvider provider = CreateProvider(recorder);
     ResolveResult result = await CreateResolver(provider).Resolve(
-        reference, _workspace, version, _environment);
+        reference, null, version, _environment);
 
     if (result.Candidates.Count == 0) {
       // Declared, but not for this platform: not installable here, with or without git.
@@ -174,17 +171,21 @@ public class CorpusTests {
 
     // 2. Self-asset placements are resolved against the git tree. Only the root document is
     // downloaded.
-    if (candidate.Package is ToothPackage tooth) {
-      List<string> keys = [.. candidate.Archive.Source.Keys];
-      foreach (PackageManifestAsset asset in tooth.Variant.Assets.Where(
-          a => a.Type == PackageManifestAsset.AssetType.Self)) {
-        foreach (PackageManifestAssetPlacement placement in asset.Placements) {
+    // The self assets of a converted tooth.json are the mounts of the tag itself; the other
+    // mounts (URL assets) are not opened.
+    if (candidate.Package is McmodPackage { Kind: ToothCompat.KindName } tooth
+        && candidate.Archive.Source is MountSource mounts) {
+      foreach ((string mount, Sources.ISource source) in mounts.Mounts.Where(
+          m => m.Source is not DeferredSource)) {
+        List<string> keys = [.. source.Keys];
+        foreach (AssetPlacement placement in tooth.Document.AssetPlacements.Where(
+            p => p.Mount == mount)) {
           // Many manifests place build outputs that are not committed, so a placement may match
           // nothing (as before). It must match, though, whenever the tree has the path it names.
-          if (PlacementMatcher.Match(keys, [placement]).Count == 0
+          if (ToothPlacements.Match(keys, [placement]).Count == 0
               && TreeHasPath(keys, placement)) {
-            return $"self placement {placement.Type} '{placement.Src}' -> '{placement.Dst}' "
-                + "matches no key";
+            return $"self placement {(placement.IsDirectory ? "dir" : "file")} "
+                + $"'{placement.Src}' -> '{placement.Dest}' matches no key";
           }
         }
       }
@@ -199,7 +200,7 @@ public class CorpusTests {
     // 3. The request solves.
     try {
       await new GraphSolver(_sharedResolver).Solve(
-          [new PackageRequest(reference, version, _workspace)], [], _environment);
+          [new PackageRequest(reference, version)], [], _environment);
     }
     catch (DependencyResolutionException) when (
         _unsatisfiableUpstream.ContainsKey(Key(entry.Package, entry.Version))) {
@@ -233,15 +234,14 @@ public class CorpusTests {
   private static Resolver CreateResolver(ArchiveProvider provider) => new(
       provider, new ArchiveReader(new DocumentParser()), new ToothCompat());
 
-  private static bool TreeHasPath(List<string> keys, PackageManifestAssetPlacement placement) {
+  private static bool TreeHasPath(List<string> keys, AssetPlacement placement) {
     string src = placement.Src.Replace('\\', '/');
 
-    return placement.Type switch {
-      PackageManifestAssetPlacement.PlacementType.File => keys.Contains(src),
-      _ => src.Trim('/') is "" or "."
-          ? keys.Count > 0
-          : keys.Any(k => k.StartsWith(src.Trim('/') + "/", StringComparison.Ordinal)),
-    };
+    return !placement.IsDirectory
+        ? keys.Contains(src)
+        : src.Trim('/') is "" or "."
+            ? keys.Count > 0
+            : keys.Any(k => k.StartsWith(src.Trim('/') + "/", StringComparison.Ordinal));
   }
 
   private static IEnumerable<CorpusEntry> SelectEntries() {

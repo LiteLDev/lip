@@ -47,9 +47,10 @@ public class PathGlob {
     }
 
     // A directory pattern matches a directory and everything below it. The last segment of a
-    // file path is the file itself, never a directory.
+    // file path is the file itself, never a directory. The empty prefix is the base directory,
+    // which only a pattern of "**" segments matches (e.g. "**/" matches every path).
     int maxPrefix = isDirectory ? segments.Length : segments.Length - 1;
-    for (int length = 1; length <= maxPrefix; length++) {
+    for (int length = 0; length <= maxPrefix; length++) {
       if (MatchSegments(0, segments, 0, length)) {
         return true;
       }

@@ -80,6 +80,43 @@ public class CacheServiceTests {
   }
 
   [Fact]
+  public async Task GetOrCreateFile_NonExistent_FactoryWritesIntoStaging() {
+    // Arrange
+    MockFileSystem mockFileSystem = new();
+    CacheService service = new(mockFileSystem, new Mock<IUserInteraction>().Object);
+    string? written = null;
+
+    // Act
+    IFileInfo result = await service.GetOrCreateFile(CacheKeys.Http("https://example.com/a.zip"), file => {
+      written = file.FullName;
+      mockFileSystem.File.WriteAllText(file.FullName, "content");
+      return Task.CompletedTask;
+    });
+
+    // Assert
+    Assert.Equal(LipDirectories.Staging, Path.GetDirectoryName(written));
+    Assert.Equal(GetCachePath(), Path.GetDirectoryName(result.FullName));
+    Assert.Empty(mockFileSystem.Directory.GetFiles(LipDirectories.Staging));
+  }
+
+  [Fact]
+  public void CacheKeys_Http_IsSha256OfUrl() {
+    // Arrange
+    string url = "https://example.com/a.zip";
+    string expected = Convert.ToHexStringLower(
+        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url)));
+
+    // Act & Assert
+    Assert.Equal($"http-{expected}", CacheKeys.Http(url));
+  }
+
+  [Fact]
+  public void CacheKeys_GitBlob_IsGitPrefixedObjectId() {
+    // Act & Assert
+    Assert.Equal("git-abc123", CacheKeys.GitBlob("ABC123"));
+  }
+
+  [Fact]
   public async Task GetOrCreateFile_CreatedConcurrently_ReturnsExistingFile() {
     // Arrange
     string cachePath = GetCachePath();
@@ -149,7 +186,7 @@ public class CacheServiceTests {
     CacheService service = new(mockFileSystem, new Mock<IUserInteraction>().Object);
 
     // Act
-    IFileInfo? result = await service.TryGetFile("git-blob:abc");
+    IFileInfo? result = await service.TryGetFile("git-abc");
 
     // Assert
     Assert.Null(result);
@@ -159,7 +196,7 @@ public class CacheServiceTests {
   [Fact]
   public async Task TryGetFile_Cached_ReturnsFile() {
     // Arrange
-    string key = "git-blob:abc";
+    string key = "git-abc";
     string path = Path.Combine(GetCachePath(), Uri.EscapeDataString(key));
     MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData> {
       { path, new MockFileData("content") },

@@ -27,7 +27,7 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 `lip` 支持从多种来源安装（包括 Git 仓库、`.mcmod` 文件和 URL）。安装时会：
 - 下载到本地缓存；
 - 解析并安装其依赖；
-- 记录到锁文件（`lip_lock.json`）中。你的 `manifest.json` 不会被修改。
+- 记录到[锁文件](../concepts/lockfiles.md)中，lip 将其保存在工作区之外。你的 `manifest.json` 不会被修改。
 
 lip 只管理服务端工作区。客户端 mod 由 LeviLauncher 等启动器管理。
 

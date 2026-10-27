@@ -3,6 +3,7 @@
 A lip package is described by a `manifest.json` at the root of its archive. It is the
 `manifest.json` of LeviLamina, extended with the keys of lip package format version 4.
 LeviLamina ignores the keys lip adds, and lip never changes the meaning of a LeviLamina key.
+The normative definition is the [package format specification](../spec/package_format.md).
 
 The format is described by the JSON Schema
 [`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json).
@@ -12,10 +13,13 @@ The older `tooth.json` format is still read, see [Legacy: tooth.json](#legacy-to
 
 A package lives in an **archive**, a file tree with `manifest.json` at its root:
 
-- a **git archive**: the commit of a version tag of a git repository;
+- a **git archive**: a commit of a git repository, usually the commit of a version tag;
 - a **ZIP archive**: a ZIP file. A ZIP archive with the `.mcmod` extension is called an
   **mcmod**. Whether a file is a ZIP archive depends only on its content, not its extension;
-- a **directory archive**: a local directory.
+- a **directory archive**: a directory inside another archive (a relative ref ending with `/`).
+
+A local directory on its own is not an archive: to install a package from your disk, pack it
+into an `.mcmod` file.
 
 `manifest.json` must be strict UTF-8 JSON (no comments) with an object at the top level.
 
@@ -71,7 +75,8 @@ ASCII case.
 
 ## Refs
 
-A ref points to an archive. It has the form `target[#variant]`:
+A ref points to an archive. It has the form `target[#variant]`, and a spec target may be
+followed by a git ref: `spec[#variant][@git-ref]`.
 
 | Target | Example | Points to |
 | --- | --- | --- |
@@ -79,12 +84,17 @@ A ref points to an archive. It has the form `target[#variant]`:
 | Relative file | `./LegacyMoney.mcmod` | A ZIP file inside the archive of the current document. |
 | URL | `https://example.com/pkg.mcmod` | A ZIP archive downloaded over HTTPS (redirects are followed). |
 | Spec | `github.com/LiteLDev/LeviLamina` | The git repository `https://<spec>.git`. |
+| Spec with a git ref | `github.com/LiteLDev/LeviLamina@branch:main` | One commit of that repository. |
 
 - A relative target starts with `./`, must not contain empty, `.` or `..` segments or `\`.
 - A spec must be a valid [Go module path](https://go.dev/ref/mod#module-path). Its versions are
   the tags named exactly `v<version>`, where `<version>` is a
   [SemVer 2.0.0](https://semver.org/) version (e.g. `v1.2.3`). Other tags, such as `v1.2`, are
   ignored.
+- A git ref pins a spec to one commit instead of its versions: `@branch:<branch>` (the head of
+  the branch), `@tag:<tag>` (any tag, e.g. `@tag:nightly`) or `@rev:<commit>` (a full
+  40-digit commit id). It comes after the variant: `github.com/LiteLDev/LegacyScriptEngine#lua@branch:develop`.
+  Only spec refs may have one.
 - Other schemes, such as `http:` and `file:`, are not allowed.
 - The variant must match `^[a-z0-9_]+(/[a-z0-9_]+)?$`. A ref without `#` has the variant `""`.
 
@@ -173,6 +183,24 @@ Version ranges use the syntax of LeviLamina's `ll::data::VersionRequirement`, fo
 `^1.2.0`, `~1.2`, `>=1.0.0 <2.0.0`, `1.x` or `>=1.0.0 || =0.9.0`. A bare full version without
 an operator, such as `1.2.3`, is rejected; write `=1.2.3`.
 
+To depend on a branch, a tag or a commit rather than on released versions, put a git ref on the
+spec in `refs`; `version` stays a version range, since LeviLamina reads it too:
+
+```json
+{
+  "name": "LeviLamina",
+  "version": ">=1.5.0",
+  "refs": ["github.com/LiteLDev/LeviLamina@branch:main"]
+}
+```
+
+The package at the commit the git ref names must declare a `version` in the range, otherwise the
+dependency cannot be satisfied. In the other direction, a package installed from a git ref
+(as a dependency or by [`lip install`](../cli/commands/install.md#git-refs)) also satisfies a
+dependency whose ref is the same spec and variant without a git ref, when its version is in that
+dependency's range; so a workspace can run a development build of a library that released mods
+depend on.
+
 ### Placement
 
 | Field | Type | Required | Description |
@@ -205,8 +233,9 @@ that exits with a non-zero code fails the operation.
 ## File Packages and Mods
 
 - A **mod** (any `type` other than `"files"`): the whole archive is written to
-  `plugins/<name>/` on a server, or `mods/<name>/` on a client. lip installs to server
-  workspaces; client workspaces are managed by launchers such as LeviLauncher.
+  `mods/<name>/`. On a server, `plugins` is a link to `mods`, so the mod is also visible
+  under `plugins/<name>/`. lip installs to server workspaces; client workspaces are managed
+  by launchers such as LeviLauncher.
 - A **file package** (`"type": "files"`): the `placements` are executed in order.
 
 ```json
@@ -238,13 +267,26 @@ The environment of a workspace is a pair `(platform, rid)`:
 Packages of lip v0.x use `tooth.json` (format versions 1 to 3). lip still reads them, but no
 longer writes them; convert yours with [`lip migrate`](../cli/commands/migrate.md).
 
+lip converts a `tooth.json` in memory into a format 4 file package and handles it like any
+other package; the exact mapping is §9 of the [specification](../spec/package_format.md):
+
 - If an archive has both `tooth.json` and `manifest.json`, `tooth.json` wins.
 - The package's identity is the `tooth` value, and the variant of a ref is the variant label.
   When the platform is `client` and the ref has no variant, a variant labeled `client` is used
-  if there is one.
-- The dependencies of the selected variant are installed like `installDependencies`.
+  if there is one. The variants with that label that match the RID are merged, as in lip v0.x.
 - If the `tooth.json` at a tag declares another version than the tag, the tag version wins and
   lip prints a warning.
+- The dependencies of the selected variant are installed like `installDependencies`, with their
+  version ranges read as in lip v0.x.
+- Each asset becomes part of the package: `self` is the repository at the tag, and `zip`, `tar`,
+  `tgz` and `uncompressed` assets are downloaded (and cached) when the package is installed. The
+  placements are matched against the asset's files at install time, globs included, and write
+  the same files lip v0.x wrote.
+- `preserve_files`, `remove_files` and the scripts become `preserveFiles`, `removeFiles` and
+  `scripts` (`install` runs with `postInstall`, `uninstall` with `preUninstall`). Files are
+  owned, kept and removed by the rules of format 4.
+- The lock records the `tooth.json` with `"kind": "tooth"`; lip converts it again to uninstall
+  or update the package.
 
 The format 3 schema is
 [`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.schema.json)

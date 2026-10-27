@@ -2,6 +2,7 @@
 using Lip.Cli;
 using Lip.Cli.Commands;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod.Install;
 using Lip.Core.PublicApi;
 using Microsoft.Extensions.DependencyInjection;
 using Semver;
@@ -80,7 +81,7 @@ app.Configure(config => {
       .WithDescription("Lists installed packages");
 
   config.AddCommand<MigrateCommand>("migrate")
-      .WithDescription("Converts a tooth.json into a manifest.json");
+      .WithDescription("Migrates the package repository in the current directory from tooth.json to manifest.json");
 
   config.AddCommand<UninstallCommand>("uninstall")
       .WithDescription("Uninstalls packages");
@@ -95,4 +96,18 @@ app.Configure(config => {
       .WithDescription("Shows available versions for a package");
 });
 
-return await app.RunAsync(args);
+// Ctrl+C while an operation changes a workspace cancels it, which undoes its changes. Otherwise,
+// and on a second Ctrl+C, lip ends at once: nothing is changed yet, or the next operation on the
+// workspace undoes the changes (see WorkspaceTransaction).
+using CancellationTokenSource cancellation = new();
+Console.CancelKeyPress += (_, e) => {
+  if (!WorkspaceTransaction.AnyOpen || cancellation.IsCancellationRequested) {
+    return;
+  }
+
+  e.Cancel = true;
+  Console.Error.WriteLine("Cancelling... (press Ctrl+C again to exit at once)");
+  cancellation.Cancel();
+};
+
+return await app.RunAsync(args, cancellation.Token);

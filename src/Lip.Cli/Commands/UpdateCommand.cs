@@ -11,7 +11,7 @@ public class UpdateCommand(ILipClient lipClient, IUserInteraction userInteractio
 
   public class Settings : EnvironmentSettings {
     [CommandArgument(0, "[PACKAGES]")]
-    [Description("The packages to update (default: every explicitly installed package)")]
+    [Description("The packages to update, in the forms install takes (default: every explicitly installed package, from the ref it was installed from)")]
     public string[] Packages { get; init; } = [];
 
     [CommandOption("-n|--dry-run")]
@@ -25,7 +25,11 @@ public class UpdateCommand(ILipClient lipClient, IUserInteraction userInteractio
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     await _lipClient.Update(
-        settings.Packages, settings.DryRun, settings.IgnoreScripts, settings.Rid);
+        settings.Packages,
+        settings.DryRun,
+        settings.IgnoreScripts,
+        settings.Rid,
+        cancellationToken);
     await _userInteraction.PrintSuccess("Packages updated successfully.");
     return 0;
   }

@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Lip.Core.Mcmod.Install;
 
 namespace Lip.Core.Mcmod;
 
@@ -17,9 +18,15 @@ public interface IDocumentParser {
 
 /// tooth.json compatibility (spec §9).
 public interface IToothCompat {
-  /// Selects the v3 variant for a ref variant and environment (spec §9.1, §9.2). Returns null
-  /// when no variant applies. The version range is checked by the resolver.
-  public IPackage? Select(ToothArchiveDocument document, string variant, LipEnvironment environment);
+  /// Converts a tooth.json to the format 4 package a ref variant selects in an environment
+  /// (spec §9). version, when set, replaces the version the tooth.json declares (the tag
+  /// version). Returns null when no variant applies. The version range is checked by the
+  /// resolver.
+  public Compat.ToothConversion? Convert(
+      ToothArchiveDocument document,
+      string variant,
+      LipEnvironment environment,
+      Semver.SemVersion? version);
 }
 
 /// Reads the root document of an archive: tooth.json if present, else manifest.json (spec §2.4).
@@ -29,7 +36,9 @@ public interface IArchiveReader {
   public Task<ArchiveDocument> Read(ArchiveHandle archive);
 }
 
-public record ChainHop(Ref Ref, int? ArtifactIndex);
+/// One hop of a resolution chain: the ref, the artifact selected at the hop (routing documents),
+/// and for a spec ref the commit its archive is at (spec §8).
+public record ChainHop(Ref Ref, int? ArtifactIndex, string? Commit = null);
 
 /// A concrete package produced by Resolve, with the archive it lives in and the chain that led
 /// to it (spec §8).
@@ -42,7 +51,7 @@ public record ResolveResult(IReadOnlyList<Candidate> Candidates, IReadOnlyList<s
 public interface IResolver {
   public Task<ResolveResult> Resolve(
       Ref reference,
-      ArchiveHandle baseArchive,
+      ArchiveHandle? baseArchive,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool toothClientCompat = false);
@@ -53,7 +62,7 @@ public interface IResolver {
   /// result of Resolve.
   public async IAsyncEnumerable<Candidate> ResolveLazy(
       Ref reference,
-      ArchiveHandle baseArchive,
+      ArchiveHandle? baseArchive,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool toothClientCompat = false,
@@ -71,9 +80,9 @@ public interface IResolver {
   }
 }
 
-/// One (ref, range) of an operation's request (spec §6). Base is the workspace root archive
-/// for user requests.
-public record PackageRequest(Ref Ref, IVersionConstraint? Range, ArchiveHandle Base);
+/// One (ref, range) of an operation's request (spec §6). User requests are inside no archive, so
+/// their Base is null and a relative ref in them has no candidate.
+public record PackageRequest(Ref Ref, IVersionConstraint? Range, ArchiveHandle? Base = null);
 
 /// Thrown when no package set satisfies the request (spec §6).
 public class DependencyResolutionException(string message, IReadOnlyList<string> diagnostics)
@@ -113,24 +122,53 @@ public record InstallContext(
     bool DryRun,
     bool IgnoreScripts);
 
-/// Installs and uninstalls one package kind (spec §7).
+/// Installs and uninstalls one package kind (spec §7), in two phases: planning, which checks
+/// everything and changes nothing, then applying the plan through a transaction that the caller
+/// commits or rolls back.
 public interface IMcmodInstaller {
   public bool CanHandle(string kind);
 
-  /// Installs the package and returns the files it now owns (workspace-relative, '/'-separated).
-  /// Fails without touching the workspace when a file is owned by another locked package.
-  public Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context);
+  /// Plans installing the package into the workspace as the view shows it, and adds the planned
+  /// writes to the view. Fetches the archive content (except in a dry run, which reports the
+  /// plan instead). Throws when the package cannot be installed, e.g. when a file is owned by
+  /// another locked package.
+  public Task<PackagePlan> PlanInstall(
+      Candidate candidate, InstallContext context, WorkspaceView view);
 
-  public Task Uninstall(LockedPackage package, InstallContext context);
+  /// Plans uninstalling the package from the workspace as the view shows it, and adds the
+  /// planned deletions to the view. A dry run reports the plan.
+  public Task<PackagePlan> PlanUninstall(
+      LockedPackage package, InstallContext context, WorkspaceView view);
+
+  /// Runs the steps of a plan, making every file change through the transaction. Throws
+  /// McmodInstallException when a step fails; the caller rolls the transaction back.
+  public Task Apply(
+      PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken);
 }
 
-/// Reads and writes the workspace lock (spec §8).
+/// Reads and writes the workspace lock (spec §8), which lives in the per-user data directory.
 public interface ILockStore {
-  /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json. Throws when the
-  /// lock exists but cannot be read.
+  /// Returns an empty lock when none exists; reads a lip_lock.json or migrates a v3
+  /// tooth_lock.json left in the workspace by earlier versions. Throws when the lock exists but
+  /// cannot be read or belongs to another workspace.
   public Task<LockFile> Load(string workspaceRoot);
 
+  /// Writes the lock: Stage, then CommitStaged.
   public Task Save(string workspaceRoot, LockFile lockFile);
+
+  /// The path of the lock of a workspace. Files of lip about the workspace (its journal and its
+  /// inter-process lock) live next to it.
+  public string GetLockPath(string workspaceRoot);
+
+  /// Writes the lock to a hidden temporary file next to it, replacing an earlier staged lock.
+  public Task Stage(string workspaceRoot, LockFile lockFile);
+
+  /// Moves the staged lock into place in one rename, the point at which an operation commits.
+  /// Does nothing when no lock is staged. Throws only when the lock was not moved.
+  public void CommitStaged(string workspaceRoot);
+
+  /// Deletes the staged lock, if any.
+  public void DiscardStaged(string workspaceRoot);
 }
 
 public record LockFile {
@@ -139,6 +177,11 @@ public record LockFile {
 
   [JsonPropertyName("formatUuid")]
   public string FormatUuid { get; init; } = ManifestFormat.Uuid;
+
+  /// The absolute path of the workspace the lock belongs to. ILockStore.Save sets it; null in
+  /// locks read from the workspace itself.
+  [JsonPropertyName("workspace")]
+  public string? Workspace { get; init; }
 
   /// "server" or "client" (spec §5.1). lip writes "server"; null in locks migrated from v3.
   [JsonPropertyName("platform")]
@@ -153,7 +196,13 @@ public record LockFile {
 
 public record LockedHop(
     [property: JsonPropertyName("ref")] string Ref,
-    [property: JsonPropertyName("artifact")] int? Artifact);
+    [property: JsonPropertyName("artifact")] int? Artifact) {
+  /// For a spec ref, the commit its archive was at (spec §8): the tag's commit, or the commit a
+  /// git ref (@branch:, @tag:, @rev:) resolved to. Null for other refs and for older locks.
+  [JsonPropertyName("commit")]
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Commit { get; init; }
+}
 
 public record LockedPackage {
   [JsonPropertyName("name")]

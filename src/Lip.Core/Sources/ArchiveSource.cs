@@ -1,14 +1,18 @@
 using System.IO.Abstractions;
+using System.IO.Compression;
 using SharpCompress.Archives;
 
 namespace Lip.Core.Sources;
 
+/// The files of an archive whose format (ZIP, tar, gzipped tar, ...) is detected from its
+/// content.
 public class ArchiveSource(IFileInfo archiveFileInfo) : ISource {
-  private readonly IFileInfo _archiveFileInfo = archiveFileInfo;
+  // A gzipped archive, decompressed once: SharpCompress opens tar archives, but not gzipped ones.
+  private readonly Lazy<byte[]?> _decompressed = new(() => Decompress(archiveFileInfo));
 
   public IEnumerable<string> Keys {
     get {
-      using Stream archiveStream = _archiveFileInfo.OpenRead();
+      using Stream archiveStream = OpenArchiveStream();
       using IArchive archive = ArchiveFactory.OpenArchive(archiveStream);
 
       return [.. archive.Entries
@@ -18,7 +22,7 @@ public class ArchiveSource(IFileInfo archiveFileInfo) : ISource {
   }
 
   public virtual async Task<Stream> OpenRead(string key) {
-    using Stream archiveStream = _archiveFileInfo.OpenRead();
+    using Stream archiveStream = OpenArchiveStream();
     using IArchive archive = ArchiveFactory.OpenArchive(archiveStream);
 
     IArchiveEntry entry = archive.Entries.FirstOrDefault(e => e.Key == key && !e.IsDirectory)
@@ -31,5 +35,25 @@ public class ArchiveSource(IFileInfo archiveFileInfo) : ISource {
     memoryStream.Position = 0;
 
     return memoryStream;
+  }
+
+  private Stream OpenArchiveStream() => _decompressed.Value is byte[] decompressed
+      ? new MemoryStream(decompressed, writable: false)
+      : archiveFileInfo.OpenRead();
+
+  /// The decompressed content of a gzipped file, or null when the file is not gzipped.
+  private static byte[]? Decompress(IFileInfo file) {
+    using Stream stream = file.OpenRead();
+    Span<byte> magic = stackalloc byte[2];
+    if (stream.ReadAtLeast(magic, magic.Length, throwOnEndOfStream: false) < magic.Length
+        || magic[0] != 0x1f || magic[1] != 0x8b) {
+      return null;
+    }
+
+    stream.Position = 0;
+    using GZipStream gzip = new(stream, CompressionMode.Decompress);
+    using MemoryStream memory = new();
+    gzip.CopyTo(memory);
+    return memory.ToArray();
   }
 }

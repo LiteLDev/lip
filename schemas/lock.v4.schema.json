@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "title": "lip workspace lock (lip_lock.json), format 4",
+  "title": "lip workspace lock (<data directory>/workspaces/<hash>.json), format 4",
   "type": "object",
   "properties": {
     "formatVersion": {
@@ -10,6 +10,10 @@
     "formatUuid": {
       "type": "string",
       "const": "0c6b977a-64ad-441f-9a29-c7f4b196882f"
+    },
+    "workspace": {
+      "description": "Absolute path of the workspace the lock belongs to.",
+      "type": "string"
     },
     "platform": {
       "description": "Environment platform; null until known.",
@@ -30,6 +34,7 @@
   "required": [
     "formatVersion",
     "formatUuid",
+    "workspace",
     "packages"
   ],
   "definitions": {
@@ -52,17 +57,23 @@
           "type": "boolean"
         },
         "chain": {
-          "description": "Resolution chain: the ref of every hop and the Artifact index chosen at that hop.",
+          "description": "Resolution chain: the ref of every hop and the Artifact index chosen at that hop. The first ref is what `lip update` requests again.",
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "ref": {
+                "description": "The ref as resolved, including a git ref (e.g. \"github.com/o/r@branch:main\"); the first hop may also be the file: URI of a local ZIP file given to lip install.",
                 "type": "string"
               },
               "artifact": {
                 "type": ["integer", "null"],
                 "minimum": 0
+              },
+              "commit": {
+                "description": "For a spec ref: the commit its archive was at (the version tag's commit, or the commit the git ref resolved to). Absent for other refs and in older locks.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
               }
             },
             "required": ["ref", "artifact"]
@@ -76,8 +87,7 @@
           "oneOf": [
             { "type": "null" },
             { "$ref": "#/definitions/zipArchive" },
-            { "$ref": "#/definitions/gitArchive" },
-            { "$ref": "#/definitions/directoryArchive" }
+            { "$ref": "#/definitions/gitArchive" }
           ]
         },
         "files": {
@@ -111,7 +121,12 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "url": {
+          "description": "Where the ZIP file was read from: the https URL it was downloaded from, the file: URI of a local file, or null for a ZIP file nested in another archive.",
           "type": ["string", "null"]
+        },
+        "path": {
+          "description": "The directory inside the ZIP file that is the package's archive root, when the package is a directory of it.",
+          "type": "string"
         }
       },
       "required": ["kind", "sha256", "url"]
@@ -128,14 +143,6 @@
         }
       },
       "required": ["kind", "repo", "commit", "path"]
-    },
-    "directoryArchive": {
-      "type": "object",
-      "properties": {
-        "kind": { "const": "directory" },
-        "path": { "type": "string" }
-      },
-      "required": ["kind", "path"]
     }
   }
 }

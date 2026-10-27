@@ -9,7 +9,6 @@ using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
-using Lip.Core.Migration.PackageManifests;
 using Lip.Core.Services;
 
 namespace Lip.Core.PublicApi;
@@ -26,20 +25,23 @@ public interface ILipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null);
+      string? rid = null,
+      CancellationToken cancellationToken = default);
   Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List();
-  Task Migrate(string file, string output);
+  Task Migrate();
   Task Uninstall(
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null);
+      string? rid = null,
+      CancellationToken cancellationToken = default);
   Task Update(
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
-      string? rid = null);
+      string? rid = null,
+      CancellationToken cancellationToken = default);
   Task<IEnumerable<string>> Versions(string package);
   Task<string> View(string package);
 }
@@ -75,7 +77,6 @@ public class LipClient(
     GitRemoteClient gitRemoteClient = new(githubProxy);
 
     CommandRunner commandRunner = new();
-    SourceService sourceService = new(fileDownloader, cacheService, githubProxy);
     DocumentParser documentParser = new();
     ArchiveProvider archiveProvider = new(
         gitRemoteClient, cacheService, fileSystem, fileDownloader, githubProxy);
@@ -88,10 +89,7 @@ public class LipClient(
         new ArchiveReader(documentParser),
         new ToothCompat(),
         documentParser,
-        [
-          new McmodInstaller(fileSystem, commandRunner, documentParser, userInteraction),
-          new ToothInstaller(commandRunner, fileSystem, sourceService, userInteraction),
-        ]);
+        [new McmodInstaller(fileSystem, commandRunner, documentParser, userInteraction)]);
 
     LipClient lipClient = new(
         fileSystem, userInteraction, cacheService, configService, mcmodService);
@@ -160,9 +158,10 @@ public class LipClient(
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null) {
+      string? rid = null,
+      CancellationToken cancellationToken = default) {
     await _mcmodService.Install(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid));
+        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependencies.
@@ -174,22 +173,13 @@ public class LipClient(
         packages.Where(p => !p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct());
   }
 
-  /// Converts a tooth.json (format 1–3) into a format 4 manifest.json. Everything that cannot be
-  /// converted is reported as a warning.
-  public async Task Migrate(string file, string output) {
-    PackageManifest packageManifest;
-    using (Stream inputStream = _fileSystem.File.OpenRead(file)) {
-      using JsonDocument inputJson = await JsonDocument.ParseAsync(inputStream);
-      packageManifest = PackageManifestMigration.Migrate(inputJson);
-    }
+  /// Migrates the package repository in the current directory from tooth.json to manifest.json
+  /// (ToothRepositoryMigrator). Everything that cannot be converted is reported as a warning.
+  public async Task Migrate() {
+    IReadOnlyList<string> notes = await ToothRepositoryMigrator.Migrate(
+        _fileSystem, _fileSystem.Directory.GetCurrentDirectory());
 
-    ToothMigrator.Result result = ToothMigrator.Migrate(packageManifest);
-
-    using (Stream outputStream = _fileSystem.CreateFileWithDirectory(output)) {
-      await JsonSerializer.SerializeAsync(outputStream, result.Document, _jsonSerializerOptions);
-    }
-
-    foreach (string note in result.Notes) {
+    foreach (string note in notes) {
       await _userInteraction.PrintWarning(note);
     }
   }
@@ -199,9 +189,10 @@ public class LipClient(
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null) {
+      string? rid = null,
+      CancellationToken cancellationToken = default) {
     await _mcmodService.Uninstall(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid));
+        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
   }
 
   /// Updates the given packages to the requested (or newest) version; without packages, every
@@ -210,9 +201,11 @@ public class LipClient(
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
-      string? rid = null) {
+      string? rid = null,
+      CancellationToken cancellationToken = default) {
     await _mcmodService.Update(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies: false, rid));
+        [.. packages],
+        Options(dryRun, ignoreScripts, noDependencies: false, rid, cancellationToken));
   }
 
   public async Task<IEnumerable<string>> Versions(string package) {
@@ -224,8 +217,16 @@ public class LipClient(
   }
 
   private static OperationOptions Options(
-      bool dryRun, bool ignoreScripts, bool noDependencies, string? rid) {
+      bool dryRun,
+      bool ignoreScripts,
+      bool noDependencies,
+      string? rid,
+      CancellationToken cancellationToken) {
     return new OperationOptions(
-        dryRun, ignoreScripts, noDependencies, string.IsNullOrEmpty(rid) ? null : rid);
+        dryRun,
+        ignoreScripts,
+        noDependencies,
+        string.IsNullOrEmpty(rid) ? null : rid,
+        cancellationToken);
   }
 }

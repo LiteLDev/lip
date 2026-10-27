@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Mcmod;
@@ -11,6 +13,10 @@ public class LockStoreTests {
       ? @"C:\lip-workspace"
       : "/lip-workspace";
 
+  private static readonly string _dataDir = OperatingSystem.IsWindows()
+      ? @"C:\data\lip"
+      : "/data/lip";
+
   private static readonly string _fixtureDir =
       Path.Combine(AppContext.BaseDirectory, "Mcmod", "Lock", "Fixtures");
 
@@ -19,10 +25,11 @@ public class LockStoreTests {
 
   public LockStoreTests() {
     _fs.AddDirectory(_root);
-    _store = new LockStore(_fs);
+    _store = new LockStore(_fs, _dataDir);
   }
 
-  private string LipLockPath => _fs.Path.Combine(_root, "lip_lock.json");
+  private string LipLockPath => _store.GetLockPath(_root);
+  private string WorkspaceLockPath => _fs.Path.Combine(_root, "lip_lock.json");
   private string ToothLockPath => _fs.Path.Combine(_root, "tooth_lock.json");
 
   /// The real v3 lock lip wrote after `lip install github.com/LiteLDev/LeviLamina` in
@@ -56,12 +63,14 @@ public class LockStoreTests {
         Kind = "mcmod",
         Explicit = true,
         Chain = [
-          new LockedHop("github.com/LiteLDev/" + name, 0),
+          new LockedHop("github.com/LiteLDev/" + name + "@branch:main", 0) {
+            Commit = new string('e', 40),
+          },
           new LockedHop("https://example.com/" + name + ".mcmod", null),
         ],
         ArchiveKey = "https://example.com/" + name + ".mcmod",
         Archive = archive,
-        Files = ["plugins/" + name + "/" + name + ".dll"],
+        Files = ["mods/" + name + "/" + name + ".dll"],
         Manifest = JsonDocument.Parse(manifestJson).RootElement.Clone(),
       };
 
@@ -126,9 +135,9 @@ public class LockStoreTests {
         p => p.Identity == "github.com/LiteLDev/LeviLamina");
     Assert.Equal(
         [
-          "plugins/LeviLamina/manifest.json",
-          "plugins/LeviLamina/LeviLamina.pdb",
-          "plugins/LeviLamina/LeviLamina.dll",
+          "mods/LeviLamina/manifest.json",
+          "mods/LeviLamina/LeviLamina.pdb",
+          "mods/LeviLamina/LeviLamina.dll",
         ],
         leviLamina.Files);
     Assert.Equal(
@@ -139,7 +148,7 @@ public class LockStoreTests {
     Assert.Equal(["bdsdown.exe"], lockFile.Packages[0].Files);
     Assert.Empty(lockFile.Packages[1].Files);
     Assert.Equal(15, lockFile.Packages[3].Files.Count);
-    Assert.Equal("plugins/LeviLamina/lang/de.json", lockFile.Packages[3].Files[0]);
+    Assert.Equal("mods/LeviLamina/lang/de.json", lockFile.Packages[3].Files[0]);
     Assert.Equal(["bedrock_runtime_data"], lockFile.Packages[6].Files);
   }
 
@@ -207,7 +216,8 @@ public class LockStoreTests {
         SamplePackage("ZipNoUrl", new ZipArchiveIdentity(new string('b', 64), null)),
         SamplePackage("Git", new GitArchiveIdentity(
             "https://github.com/LiteLDev/Git.git", new string('c', 40), "sub/dir")),
-        SamplePackage("Dir", new DirectoryArchiveIdentity("/abs/dir")),
+        SamplePackage(
+            "File", new ZipArchiveIdentity(new string('d', 64), "file:///abs/x.mcmod")),
         SamplePackage(
             "Legacy",
             null,
@@ -236,6 +246,28 @@ public class LockStoreTests {
       Assert.Equal(expected.Files, actual.Files);
       Assert.True(JsonElement.DeepEquals(expected.Manifest, actual.Manifest));
     }
+  }
+
+  [Fact]
+  public async Task Load_FilesUnderPlugins_RewritesThemUnderMods() {
+    // Arrange: a lock written while plugins was the server mod directory.
+    string upper = OperatingSystem.IsWindows() ? "Plugins/A/b.dll" : "plugins/A/b.dll";
+    LockFile original = new() {
+      Packages = [
+        SamplePackage("A", null) with {
+          Files = ["plugins/A/a.dll", upper, "mods/A/a.dll", "pluginsx/c.txt", "d.txt"],
+        },
+      ],
+    };
+    await _store.Save(_root, original);
+
+    // Act
+    LockFile loaded = await _store.Load(_root);
+
+    // Assert: the path through mods appears once.
+    Assert.Equal(
+        ["mods/A/a.dll", "mods/A/b.dll", "pluginsx/c.txt", "d.txt"],
+        loaded.Packages[0].Files);
   }
 
   [Fact]
@@ -276,7 +308,7 @@ public class LockStoreTests {
     // Assert
     Assert.False(_fs.File.Exists(ToothLockPath));
     Assert.True(_fs.File.Exists(LipLockPath));
-    Assert.Equal([LipLockPath], _fs.Directory.GetFiles(_root));
+    Assert.Empty(_fs.Directory.GetFiles(_root));
     LockFile reloaded = await _store.Load(_root);
     Assert.Equal("server", reloaded.Platform);
     Assert.Equal(8, reloaded.Packages.Count);
@@ -299,25 +331,114 @@ public class LockStoreTests {
     // Assert
     LockFile loaded = await _store.Load(_root);
     Assert.Equal(["C"], loaded.Packages.Select(p => p.Identity));
-    Assert.Equal([LipLockPath], _fs.Directory.GetFiles(_root));
+    Assert.Equal([LipLockPath], _fs.Directory.GetFiles(_fs.Path.GetDirectoryName(LipLockPath)!));
+    Assert.Empty(_fs.Directory.GetFiles(_root));
   }
 
   [Fact]
-  public async Task Save_MissingWorkspaceDirectory_CreatesIt() {
+  public void GetLockPath_Always_IsSha256OfWorkspacePathInDataDirectory() {
     // Arrange
-    string root = _fs.Path.Combine(_root, "new");
+    string normalized = OperatingSystem.IsWindows() ? _root.ToLowerInvariant() : _root;
+    string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
 
     // Act
-    await _store.Save(root, new LockFile());
+    string path = _store.GetLockPath(_root);
 
     // Assert
-    Assert.True(_fs.File.Exists(_fs.Path.Combine(root, "lip_lock.json")));
+    Assert.Equal(_fs.Path.Join(_dataDir, "workspaces", $"{hash}.json"), path);
+  }
+
+  [Fact]
+  public void GetLockPath_TrailingSeparatorOrCase_SamePathWhereFileSystemAgrees() {
+    // Act
+    string withSeparator = _store.GetLockPath(_root + _fs.Path.DirectorySeparatorChar);
+    string upperCase = _store.GetLockPath(_root.ToUpperInvariant());
+
+    // Assert
+    Assert.Equal(LipLockPath, withSeparator);
+    if (OperatingSystem.IsWindows()) {
+      Assert.Equal(LipLockPath, upperCase);
+    } else {
+      Assert.NotEqual(LipLockPath, upperCase);
+    }
+  }
+
+  [Fact]
+  public async Task Save_Always_RecordsWorkspaceAndWritesNothingIntoIt() {
+    // Act
+    await _store.Save(_root, new LockFile());
+
+    // Assert
+    JsonElement root = JsonDocument.Parse(_fs.File.ReadAllText(LipLockPath)).RootElement;
+    Assert.Equal(_root, root.GetProperty("workspace").GetString());
+    Assert.Equal(_root, (await _store.Load(_root)).Workspace);
+    Assert.Empty(_fs.Directory.GetFileSystemEntries(_root));
+  }
+
+  [Fact]
+  public async Task Load_LockOfOtherWorkspace_ThrowsLockFormatException() {
+    // Arrange
+    string other = OperatingSystem.IsWindows() ? @"C:\other" : "/other";
+    await _store.Save(other, new LockFile());
+    _fs.File.Copy(_store.GetLockPath(other), LipLockPath);
+
+    // Act
+    LockFormatException ex =
+        await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
+
+    // Assert
+    Assert.Contains(other, ex.Message);
+    Assert.Contains(_root, ex.Message);
+  }
+
+  [Fact]
+  public async Task Load_LockWithoutWorkspace_ThrowsLockFormatException() {
+    // Arrange
+    _fs.AddFile(LipLockPath, new MockFileData("""
+        { "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f", "packages": [] }
+        """));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
+  }
+
+  [Fact]
+  public async Task Save_LockReadFromWorkspace_MovesItToDataDirectory() {
+    // Arrange
+    await _store.Save(_root, new LockFile { Rid = "win-x64" });
+    _fs.File.Move(LipLockPath, WorkspaceLockPath);
+    _fs.AddFile(ToothLockPath, new MockFileData("{}"));
+    LockFile loaded = await _store.Load(_root);
+
+    // Act
+    await _store.Save(_root, loaded);
+
+    // Assert
+    Assert.Equal("win-x64", loaded.Rid);
+    Assert.False(_fs.File.Exists(WorkspaceLockPath));
+    Assert.False(_fs.File.Exists(ToothLockPath));
+    Assert.Equal("win-x64", (await _store.Load(_root)).Rid);
+  }
+
+  [Fact]
+  public async Task Save_LockInDataDirectory_KeepsWorkspaceFilesOfLegacyNames() {
+    // Arrange: once migrated, files of these names in the workspace are not lip's.
+    await _store.Save(_root, new LockFile());
+    _fs.AddFile(WorkspaceLockPath, new MockFileData("a package's file"));
+    _fs.AddFile(ToothLockPath, new MockFileData("a package's file"));
+
+    // Act
+    await _store.Save(_root, new LockFile { Rid = "win-x64" });
+
+    // Assert
+    Assert.True(_fs.File.Exists(WorkspaceLockPath));
+    Assert.True(_fs.File.Exists(ToothLockPath));
   }
 
   [Fact]
   public async Task Load_ArchiveKindNotFirst_ReadsArchive() {
     // Arrange
-    _fs.AddFile(LipLockPath, new MockFileData("""
+    _fs.AddFile(WorkspaceLockPath, new MockFileData("""
         {
           "formatVersion": 4,
           "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
