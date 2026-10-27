@@ -15,7 +15,13 @@ public abstract record ArchiveIdentity;
 /// Url is where it was downloaded from, if anywhere.
 public record ZipArchiveIdentity(
     [property: JsonPropertyName("sha256")] string Sha256,
-    [property: JsonPropertyName("url")] string? Url) : ArchiveIdentity;
+    [property: JsonPropertyName("url")] string? Url) : ArchiveIdentity {
+  /// The directory inside the ZIP file that is the archive root (a directory ref into a ZIP
+  /// archive), without leading or trailing '/'; null for the root of the ZIP file.
+  [JsonPropertyName("path")]
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Path { get; init; }
+}
 
 /// A git archive: a commit of a repository, and the path of the archive root inside it ("" for
 /// the repository root, otherwise without leading or trailing '/').
