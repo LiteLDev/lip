@@ -1,15 +1,21 @@
 # Configuration
 
-lip stores its configuration in `liprc.json`.
+lip stores its configuration in `config.yaml`.
 
 ## File Location
 
 | Platform | Path |
 | --- | --- |
-| Windows | `%APPDATA%\lip\liprc.json` |
-| Linux / macOS | `$XDG_CONFIG_HOME/lip/liprc.json` (typically `~/.config/lip/liprc.json`) |
+| Windows | `%APPDATA%\lip\config.yaml` |
+| Linux / macOS | `$XDG_CONFIG_HOME/lip/config.yaml` (typically `~/.config/lip/config.yaml`) |
 
-The file is created automatically with default values when lip first runs.
+The file is a YAML mapping of the keys below to their values; a key that is not in the file has its default value. lip creates the file when you first set a value with [`lip config set`](commands/config.md):
+
+```yaml
+github_proxy: https://proxy.example.com
+```
+
+Earlier versions stored the configuration in `liprc.json` in the same directory. If there is no `config.yaml` but there is a `liprc.json`, lip converts it to `config.yaml` and deletes `liprc.json` the next time it reads the configuration.
 
 ## Keys
 

@@ -10,7 +10,7 @@ namespace Lip.Core.Sources;
 
 /// A source backed by the tree of a remote git commit. The tree is listed lazily (once per
 /// instance) without downloading any blob, and blobs are downloaded on demand into the
-/// content-addressed cache under the key "git-blob:{oid}". Blob content is verified against its
+/// content-addressed cache under the key "git-{oid}" (CacheKeys.GitBlob). Blob content is verified against its
 /// object id before it is cached, so the repository-independent cache key is safe to share.
 ///
 /// Keys are '/'-separated paths relative to <c>subdirectory</c>, matching ArchiveSource,
@@ -156,7 +156,7 @@ public class GitTreeSource(
     return await _cacheService.TryGetFile(GetCacheKey(objectId)) is not null;
   }
 
-  private static string GetCacheKey(string objectId) => $"git-blob:{objectId}";
+  private static string GetCacheKey(string objectId) => CacheKeys.GitBlob(objectId);
 
   private static string NormalizeSubdirectory(string subdirectory) {
     string[] segments = [.. subdirectory.Replace('\\', '/').Split('/').Where(s => s is not ("" or "."))];

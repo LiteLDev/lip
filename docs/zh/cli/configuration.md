@@ -1,15 +1,21 @@
 # 配置
 
-lip 将配置存储在 `liprc.json` 中。
+lip 将配置存储在 `config.yaml` 中。
 
 ## 文件位置
 
 | 平台 | 路径 |
 | --- | --- |
-| Windows | `%APPDATA%\lip\liprc.json` |
-| Linux / macOS | `$XDG_CONFIG_HOME/lip/liprc.json`（通常为 `~/.config/lip/liprc.json`） |
+| Windows | `%APPDATA%\lip\config.yaml` |
+| Linux / macOS | `$XDG_CONFIG_HOME/lip/config.yaml`（通常为 `~/.config/lip/config.yaml`） |
 
-当 lip 首次运行时，会自动创建该文件并写入默认值。
+该文件是一个 YAML 映射，把下列配置键映射到其值；文件中没有的键取默认值。首次使用 [`lip config set`](commands/config.md) 设置值时，lip 会创建该文件：
+
+```yaml
+github_proxy: https://proxy.example.com
+```
+
+早期版本把配置保存在同一目录下的 `liprc.json` 中。若没有 `config.yaml` 但有 `liprc.json`，lip 会在下次读取配置时把它转换为 `config.yaml`，并删除 `liprc.json`。
 
 ## 配置键
 

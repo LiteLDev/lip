@@ -238,12 +238,9 @@ public class McmodInstallerTests {
   }
 
   [Theory]
-  [InlineData("lip_lock.json")]
-  [InlineData("tooth_lock.json")]
-  [InlineData(".git/hooks/pre-commit")]
   [InlineData("trailing./a.txt")]
   [InlineData("a.txt ")]
-  public async Task Install_ReservedOrAliasingDest_Throws(string dest) {
+  public async Task Install_AliasingDest_Throws(string dest) {
     // Arrange
     ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", dest));
     SortedDictionary<string, string> before = Snapshot();
@@ -252,6 +249,73 @@ public class McmodInstallerTests {
     await Assert.ThrowsAsync<McmodInstallException>(() => _installer.Install(
         Candidate(document, Source(new() { ["a.txt"] = "a" })), Context(_server)));
     Assert.Equal(before, Snapshot());
+  }
+
+  [Theory]
+  [InlineData("lip_lock.json")]
+  [InlineData("tooth_lock.json")]
+  [InlineData(".git/hooks/pre-commit")]
+  public async Task Install_DestNamedLikeLipOrGitFile_Writes(string dest) {
+    // Arrange
+    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", dest));
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(
+        Candidate(document, Source(new() { ["a.txt"] = "a" })), Context(_server));
+
+    // Assert
+    Assert.Equal([dest], owned);
+    Assert.Equal("a", Read(dest));
+  }
+
+  [Fact]
+  public async Task Install_OverwritesExistingFile_BacksItUpAsHiddenSibling() {
+    // Arrange
+    ConcreteDocument document = FilePackage(
+        "Pack", new Placement("a.txt", "dir/existing.txt"), new Placement("b.txt", "dir/b.txt"));
+    AddFile("dir/existing.txt", "original");
+    AddFile("dir/.existing.txt.bak", "someone else's");
+    InMemorySource source = Source(new() { ["a.txt"] = "a", ["b.txt"] = "b" });
+    string[] duringInstall = [];
+    string? backup = null;
+    bool hidden = false;
+    source.OnOpen = key => {
+      if (key == "b.txt") {
+        duringInstall = [.. _fs.Directory.GetFiles(Full("dir")).Select(f => Path.GetFileName(f))];
+        backup = Read("dir/.existing.txt.bak1");
+        hidden = _fs.File.GetAttributes(Full("dir/.existing.txt.bak1")).HasFlag(FileAttributes.Hidden);
+      }
+    };
+
+    // Act
+    await _installer.Install(Candidate(document, source), Context(_server));
+
+    // Assert
+    Assert.Contains(".existing.txt.bak1", duringInstall);
+    Assert.Equal("original", backup);
+    Assert.Equal(OperatingSystem.IsWindows(), hidden);
+    Assert.Equal(
+        [".existing.txt.bak", "b.txt", "existing.txt"],
+        _fs.Directory.GetFiles(Full("dir")).Select(f => Path.GetFileName(f)).Order(StringComparer.Ordinal));
+    Assert.Equal("someone else's", Read("dir/.existing.txt.bak"));
+    Assert.Equal("a", Read("dir/existing.txt"));
+  }
+
+  [Fact]
+  public async Task Install_PackageWritesBackupName_BackupAvoidsIt() {
+    // Arrange
+    ConcreteDocument document = FilePackage(
+        "Pack", new Placement("a.txt", "foo"), new Placement("b.txt", ".foo.bak"));
+    AddFile("foo", "original");
+    InMemorySource source = Source(new() { ["a.txt"] = "a", ["b.txt"] = "b" });
+
+    // Act
+    await _installer.Install(Candidate(document, source), Context(_server));
+
+    // Assert
+    Assert.Equal("a", Read("foo"));
+    Assert.Equal("b", Read(".foo.bak"));
+    Assert.False(_fs.File.Exists(Full(".foo.bak1")));
   }
 
   [Fact]
@@ -755,11 +819,17 @@ public class McmodInstallerTests {
 
     public HashSet<string> Failing { get; } = [];
 
+    /// Called with the key before it is read.
+    public Action<string>? OnOpen { get; set; }
+
     public IEnumerable<string> Keys => files.Keys;
 
-    public Task<Stream> OpenRead(string key) => Failing.Contains(key)
-        ? throw new IOException($"cannot read {key}")
-        : Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(files[key])));
+    public Task<Stream> OpenRead(string key) {
+      OnOpen?.Invoke(key);
+      return Failing.Contains(key)
+          ? throw new IOException($"cannot read {key}")
+          : Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(files[key])));
+    }
 
     public bool FailPrefetch { get; set; }
 

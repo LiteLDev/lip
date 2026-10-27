@@ -17,7 +17,7 @@ The Daemon (`lipd`) communicates via **JSON-RPC over stdio**, allowing tools to 
 
 `lip install`, `lip uninstall` and `lip update` run the same steps:
 
-1.  **Lock**: Load `lip_lock.json`, or migrate a legacy `tooth_lock.json` (see [Lockfiles](../concepts/lockfiles.md)).
+1.  **Lock**: Load the workspace's lock from the per-user data directory, or a `lip_lock.json` or legacy `tooth_lock.json` left in the workspace by earlier versions (see [Lockfiles](../concepts/lockfiles.md)).
 2.  **Environment**: Determine the platform and RID (see [Environment](../concepts/package_manifest.md#environment)).
 3.  **Resolver**: Turn every ref into a sequence of candidate concrete packages, following routing documents.
 4.  **Graph solver**: Choose one candidate per request and per install edge, so that every identity appears once and no `conflicts` entry is violated.
@@ -36,7 +36,7 @@ lip does not use a central package registry or module proxy. A package path such
 -   **Routing**: A routing document selects an artifact by variant and environment and resolves its refs in order. A chain longer than 8 hops, or one that visits the same archive and variant twice, yields no candidate.
 -   **Installation**: Files are downloaded only when an installer needs them: the whole tree for a mod, the placed files for a file package or a `tooth.json` package.
 -   **Integrity**: Every downloaded git object is checked against its git object id (SHA-1). ZIP archives are identified by their SHA-256.
--   **Caching**: Downloaded git files are stored in the global cache by object id, and ZIP archives by SHA-256, so identical files are downloaded once and reused across versions and packages. A URL is downloaded once. Tag lists and trees are kept in memory for the duration of a command; tags are looked up again on every run, so a moved tag takes effect immediately.
+-   **Caching**: The global cache keys every entry by the transport it came over. Downloaded git files are stored as `git-<object id>`, so identical files are downloaded once and reused across versions and packages. Everything downloaded over HTTP(S) is stored as `http-<SHA-256 of the URL>`, so a URL is downloaded once; when lip reopens a locked ZIP archive it checks the cached file against the SHA-256 in the lock, and downloads it again if it is missing or differs. A ZIP archive inside another archive is not cached on its own: lip reads it from its parent archive again. Downloads are written to the hidden `.staging` directory inside the cache and moved into place when complete; lip writes nothing to the system temporary directory. Tag lists and trees are kept in memory for the duration of a command; tags are looked up again on every run, so a moved tag takes effect immediately.
 -   **Redirects**: Renamed or transferred GitHub repositories are followed through GitHub's HTTP redirects. `github.com` owner and repository names are matched case-insensitively.
 -   **Proxy**: If `github_proxy` is configured, requests for `github.com` repositories are first sent through the proxy. If a proxied request fails, lip retries it against `github.com` directly. Release assets downloaded from `github.com` URLs use the same rule.
 
@@ -54,18 +54,20 @@ A `manifest.json` at a tag that has a `version` must declare the tag's version. 
 
 ## Manifest Validation
 
-The formats are described by JSON Schemas in the repository's `schemas/` directory: `manifest.v4.schema.json` for `manifest.json`, `lock.v4.schema.json` for `lip_lock.json`, and, for the legacy formats, `manifest.schema.json` (tooth.json format 3), `manifest.v1.schema.json`, `manifest.v2.schema.json` and `workspace_state.schema.json` (tooth_lock.json). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
+The formats are described by JSON Schemas in the repository's `schemas/` directory: `manifest.v4.schema.json` for `manifest.json`, `lock.v4.schema.json` for the lock, and, for the legacy formats, `manifest.schema.json` (tooth.json format 3), `manifest.v1.schema.json`, `manifest.v2.schema.json` and `workspace_state.schema.json` (tooth_lock.json). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
 
 -   **Validation**: lip parses `manifest.json` strictly (UTF-8, no comments, no duplicate keys) and rejects a document whose keys have the wrong type, such as an invalid `name`, `version`, ref, range or template. A ref to an invalid document yields no candidate, and lip reports why.
 -   **Versioning**: A `manifest.json` with `formatVersion` 4 and the format UUID is a format 4 document; one without either is a plain LeviLamina manifest. `tooth.json` in format 1 or 2 is converted to format 3 in memory when it is read; run `lip migrate` to convert a `tooth.json` to `manifest.json`.
 
 ## Workspace State
 
-lip maintains the state of your installed packages in the lockfile `lip_lock.json` in the workspace root (see [Lockfiles](../concepts/lockfiles.md)). This tracks:
+lip maintains the state of your installed packages in a lockfile kept outside the workspace, in the per-user data directory (see [Lockfiles](../concepts/lockfiles.md#location)). This tracks:
 -   Which packages are explicitly requested versus implicit dependencies.
 -   The exact versions installed, and the archives they came from.
 -   The files each package owns.
 -   The platform and RID of the workspace.
+
+Files written to make an operation atomic are hidden and sit next to their target: the lock is first written to `.<name>.tmp` beside it, and a file that an installer overwrites is first renamed to `.<name>.bak` (or `.<name>.bak1`, `.<name>.bak2`, … if that name is taken) in the same directory, which is deleted once the package is installed or restored if installing fails. On Windows these files also get the hidden attribute.
 
 ## Deviations from the Specification
 
@@ -73,5 +75,5 @@ lip implements the lip package specification (format version 4) with these delib
 
 1.  **Server only**: lip does not determine the platform from the workspace (spec §5.1); it always uses `server`. Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
 2.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
-3.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and found again in the cache. If the cache was cleaned, lip resolves the recorded chain again and accepts the result only if its SHA-256 matches.
+3.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and is not cached on its own. To open it again, lip resolves the recorded chain again, which reopens the parent archive and extracts the ZIP file, and accepts the result only if its SHA-256 matches.
 4.  **Two variants of one tooth**: A `tooth_lock.json` may hold two variants of one `tooth.json` package under the same identity. Both entries are kept and listed, and can be uninstalled separately with `path#variant`. New solves require unique identities.

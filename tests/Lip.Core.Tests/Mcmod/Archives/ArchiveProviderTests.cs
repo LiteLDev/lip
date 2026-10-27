@@ -258,23 +258,38 @@ public class ArchiveProviderTests {
   }
 
   [Fact]
-  public async Task Open_RelativeZipInGit_OpensZipByContentAndCachesIt() {
+  public async Task Open_RelativeZipInGit_OpensZipByContentWithoutCachingIt() {
     // Arrange
     byte[] zip = Zip(("manifest.json", "inner"), ("dir/", null));
+    string zipOid = AddBlob(zip);
     SetupTree(_commit,
         new GitTreeEntry("manifest.json", 100644, AddBlob("root")),
-        new GitTreeEntry("dist/pkg.bin", 100644, AddBlob(zip)));
+        new GitTreeEntry("dist/pkg.bin", 100644, zipOid));
     ArchiveProvider provider = CreateProvider();
 
     // Act
     ArchiveHandle archive = await provider.Open(Ref.Parse("./dist/pkg.bin"), OpenGitBase(provider));
-    ArchiveHandle locked = await provider.OpenLocked(archive.Key, archive.Identity);
 
     // Assert
     Assert.Equal($"{_spec}@1.0.0!dist/pkg.bin", archive.Key);
     Assert.Equal(new ZipArchiveIdentity(Sha256(zip), null), archive.Identity);
     Assert.Equal("inner", await Read(archive, "manifest.json"));
-    Assert.Equal("inner", await Read(locked, "manifest.json"));
+    Assert.Equal(
+        [CacheKeys.GitBlob(zipOid)],
+        _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName));
+  }
+
+  [Fact]
+  public async Task OpenLocked_NestedZip_ThrowsArchiveUnavailableToReopenItsParent() {
+    // Arrange
+    byte[] zip = Zip(("manifest.json", "inner"));
+    SetupTree(_commit, new GitTreeEntry("pkg.mcmod", 100644, AddBlob(zip)));
+    ArchiveProvider provider = CreateProvider();
+    ArchiveHandle archive = await provider.Open(Ref.Parse("./pkg.mcmod"), OpenGitBase(provider));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => provider.OpenLocked(archive.Key, archive.Identity));
   }
 
   [Fact]
@@ -401,6 +416,37 @@ public class ArchiveProviderTests {
   }
 
   [Fact]
+  public async Task Open_Url_CachesOnlyUnderHttpKeyOfUrl() {
+    // Arrange
+    _downloads[_url] = Zip(("manifest.json", "{}"));
+
+    // Act
+    await CreateProvider().Open(Ref.Parse(_url), null!);
+
+    // Assert
+    Assert.Equal(
+        [CacheKeys.Http(_url)],
+        _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName));
+    Assert.Empty(_fileSystem.Directory.GetFiles(LipDirectories.Staging));
+  }
+
+  [Fact]
+  public async Task Open_CachedUrlCorrupted_Redownloads() {
+    // Arrange
+    byte[] zip = Zip(("manifest.json", "{}"));
+    _downloads[_url] = zip;
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
+
+    // Act
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url), null!);
+
+    // Assert
+    Assert.Equal(new ZipArchiveIdentity(Sha256(zip), _url), archive.Identity);
+    Assert.Equal("{}", await Read(archive, "manifest.json"));
+  }
+
+  [Fact]
   public async Task Open_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
     // Arrange
     const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.mcmod";
@@ -457,7 +503,7 @@ public class ArchiveProviderTests {
     _downloads[_url] = zip;
     ZipArchiveIdentity identity = new(Sha256(zip), _url);
     await CreateProvider().OpenLocked(_url, identity);
-    IFileInfo cached = (await _cache.TryGetFile($"sha256:{Sha256(zip)}"))!;
+    IFileInfo cached = (await _cache.TryGetFile(CacheKeys.Http(_url)))!;
     _fileSystem.File.WriteAllText(cached.FullName, "corrupted");
 
     // Act
@@ -466,6 +512,24 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal("{}", await Read(archive, "manifest.json"));
     Assert.Equal(zip, _fileSystem.File.ReadAllBytes(cached.FullName));
+  }
+
+  [Fact]
+  public async Task OpenLocked_CachedZipOtherContent_RedownloadsAndVerifiesHash() {
+    // Arrange: the cached copy is a valid ZIP, but not the one the lock records.
+    byte[] zip = Zip(("manifest.json", "locked"));
+    _downloads[_url] = zip;
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)),
+        new MockFileData(Zip(("manifest.json", "other"))));
+
+    // Act
+    ArchiveHandle archive = await CreateProvider().OpenLocked(
+        _url, new ZipArchiveIdentity(Sha256(zip), _url));
+
+    // Assert
+    Assert.Equal("locked", await Read(archive, "manifest.json"));
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
   }
 
   [Fact]

@@ -27,7 +27,7 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 `lip` supports installing from various sources, including Git repositories, `.mcmod` files and URLs. When you install a package:
 - It is downloaded to the local cache.
 - Its dependencies are resolved and installed.
-- It is recorded in the lockfile (`lip_lock.json`). Your `manifest.json` is not modified.
+- It is recorded in the [lockfile](../concepts/lockfiles.md), which lip keeps outside the workspace. Your `manifest.json` is not modified.
 
 lip manages server workspaces only. Client mods are managed by launchers such as LeviLauncher.
 

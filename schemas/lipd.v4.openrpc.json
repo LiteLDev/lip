@@ -162,7 +162,7 @@
     },
     {
       "name": "List",
-      "description": "Lists installed packages from lip_lock.json.",
+      "description": "Lists installed packages from the workspace lock.",
       "params": [],
       "result": {
         "name": "packages",

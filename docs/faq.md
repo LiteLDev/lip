@@ -12,10 +12,10 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 **Yes.** lip still reads `tooth.json` (format versions 1 to 3), so existing packages keep working. lip no longer writes `tooth.json`; use [`lip migrate`](cli/commands/migrate.md) to convert your package to `manifest.json`.
 
 ### Does `lip install` update `manifest.json`?
-**No.** Running `lip install <package>` installs the package into your workspace and updates the lockfile (`lip_lock.json`) to track the state, but it **does not** modify your `manifest.json`. You must manually add dependencies to `manifest.json` if you want them to be permanent parts of your package's requirements.
+**No.** Running `lip install <package>` installs the package into your workspace and updates the [lockfile](concepts/lockfiles.md) to track the state, but it **does not** modify your `manifest.json`. You must manually add dependencies to `manifest.json` if you want them to be permanent parts of your package's requirements.
 
-### What happened to `tooth_lock.json`?
-It was replaced by `lip_lock.json`. lip migrates an existing `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it. See [Lockfiles](concepts/lockfiles.md#legacy-tooth-lock-json).
+### What happened to `tooth_lock.json` and `lip_lock.json`?
+The lock no longer lives in the workspace: lip keeps it in its per-user data directory, in `%LOCALAPPDATA%\lip\workspaces\` on Windows or `$XDG_DATA_HOME/lip/workspaces/` (by default `~/.local/share/lip/workspaces/`) on Linux and macOS, one file per workspace. lip migrates an existing `lip_lock.json` or `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it from the workspace. See [Lockfiles](concepts/lockfiles.md#location).
 
 ### Can lip install client mods?
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same `manifest.json` packages.
@@ -35,4 +35,12 @@ Not currently. lip fetches packages anonymously over HTTPS and does not use the 
 ### Where does lip store installed packages?
 lip installs package files **directly into your workspace**. A mod is installed to `plugins/<name>/`; a file package places its files where its `manifest.json` says.
 
-The global cache is stored in `%LOCALAPPDATA%\lip\cache` on Windows, and in `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) on Linux and macOS. It is safe to delete at any time, e.g. with `lip cache clean`. Configuration lives in `%APPDATA%\lip` or `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`), and temporary files in `%TEMP%\lip` or `$TMPDIR/lip` (by default `/tmp/lip`).
+lip keeps its own files in per-user directories that follow the platform conventions:
+
+| What | Windows | Linux / macOS |
+| --- | --- | --- |
+| Configuration (`config.yaml`) | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`) |
+| Lockfiles (`workspaces/<hash>.json`) | `%LOCALAPPDATA%\lip` | `$XDG_DATA_HOME/lip` (by default `~/.local/share/lip`) |
+| Cache | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) |
+
+The cache is safe to delete at any time, e.g. with `lip cache clean`. Downloads in progress are written to the hidden `.staging` directory inside the cache; lip writes nothing to the system temporary directory.

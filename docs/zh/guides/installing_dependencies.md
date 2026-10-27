@@ -15,7 +15,7 @@ lip install <PACKAGES>
 lip install github.com/user/repo
 ```
 
-这会把该包的最新版本及其声明的依赖安装到工作区，并记录到锁文件（`lip_lock.json`）中，但不会修改 `manifest.json`。
+这会把该包的最新版本及其声明的依赖安装到工作区，并记录到[锁文件](../concepts/lockfiles.md)中，但不会修改 `manifest.json`。
 
 ## 指定版本
 

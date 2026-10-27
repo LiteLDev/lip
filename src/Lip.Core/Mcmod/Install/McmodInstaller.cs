@@ -78,7 +78,7 @@ public partial class McmodInstaller(
     }
 
     // 3. Write files, rolling back on failure.
-    WriteTransaction transaction = new(_fs);
+    WriteTransaction transaction = new(_fs, writes.Select(w => w.FullPath));
     try {
       foreach (PlannedWrite write in writes) {
         await using Stream content = await source.OpenRead(write.SourceKey);
@@ -221,10 +221,6 @@ public partial class McmodInstaller(
           || target.Split('/').Any(s => s.EndsWith('.') || s.EndsWith(' '))) {
         throw new McmodInstallException(
             $"{document.Name}: '{target}' is not a valid path inside the workspace.");
-      }
-      if (IsReserved(target)) {
-        throw new McmodInstallException(
-            $"{document.Name}: '{target}' is reserved for lip and cannot be written.");
       }
       if (!targets.ContainsKey(target)) {
         order.Add(target);
@@ -449,13 +445,6 @@ public partial class McmodInstaller(
     return path.StartsWith(prefix, PathComparison);
   }
 
-  /// lip's own workspace state: the locks at the workspace root and anything inside .git.
-  private static bool IsReserved(string path) =>
-      ReservedRootFiles.Contains(path, PathComparer)
-      || path.Split('/').Any(s => PathComparer.Equals(s, ".git"));
-
-  private static readonly string[] ReservedRootFiles = ["lip_lock.json", "tooth_lock.json"];
-
   private static string NormalizeRelative(string path) => path.Replace('\\', '/');
 
   /// A non-empty '/'-separated relative path without empty, "." or ".." segments, backslashes
@@ -474,12 +463,13 @@ public partial class McmodInstaller(
       bool StaysOwned);
 
   /// Writes files and remembers how to undo them: overwritten files are first renamed to a
-  /// backup next to them, created directories are recorded.
-  private sealed class WriteTransaction(IFileSystem fs) {
+  /// backup next to them, created directories are recorded. Backups never take the name of a
+  /// planned write.
+  private sealed class WriteTransaction(IFileSystem fs, IEnumerable<string> planned) {
+    private readonly HashSet<string> _planned = new(planned, PathComparer);
     private readonly List<string> _written = [];
-    private readonly List<(string Target, string Backup)> _backups = [];
+    private readonly List<(string Target, string Backup, bool WasHidden)> _backups = [];
     private readonly List<string> _createdDirectories = [];
-
 
     public async Task Write(string path, Stream content) {
       string directory = fs.Path.GetDirectoryName(path)!;
@@ -492,10 +482,13 @@ public partial class McmodInstaller(
       _createdDirectories.AddRange(missing);
 
       if (fs.File.Exists(path)) {
-        // A sibling: same volume (a cheap rename), and never in a directory that gets cleaned.
-        string backup = $"{path}.lip-backup-{Guid.NewGuid():N}";
+        // A hidden sibling: same volume (a cheap rename), and never in a directory that gets
+        // cleaned.
+        string backup = BackupPath(path);
+        bool wasHidden = fs.File.GetAttributes(path).HasFlag(FileAttributes.Hidden);
         fs.File.Move(path, backup);
-        _backups.Add((path, backup));
+        fs.SetHidden(backup, true);
+        _backups.Add((path, backup, wasHidden));
       }
 
       _written.Add(path);
@@ -503,8 +496,22 @@ public partial class McmodInstaller(
       await content.CopyToAsync(output);
     }
 
+    /// ".{name}.bak" in the directory of the file, or ".{name}.bak1", ".{name}.bak2", ... when
+    /// that name is taken.
+    private string BackupPath(string path) {
+      string directory = fs.Path.GetDirectoryName(path)!;
+      string name = $".{fs.Path.GetFileName(path)}.bak";
+      string backup = fs.Path.Join(directory, name);
+      for (int i = 1;
+          fs.File.Exists(backup) || fs.Directory.Exists(backup) || _planned.Contains(backup);
+          i++) {
+        backup = fs.Path.Join(directory, $"{name}{i}");
+      }
+      return backup;
+    }
+
     public void Commit() {
-      foreach ((_, string backup) in _backups) {
+      foreach ((_, string backup, _) in _backups) {
         try {
           fs.File.Delete(backup);
         }
@@ -533,8 +540,11 @@ public partial class McmodInstaller(
           }
         }, $"cannot delete {path}");
       }
-      foreach ((string target, string backup) in Enumerable.Reverse(_backups)) {
-        Try(() => fs.File.Move(backup, target), $"cannot restore {target} from {backup}");
+      foreach ((string target, string backup, bool wasHidden) in Enumerable.Reverse(_backups)) {
+        Try(() => {
+          fs.File.Move(backup, target);
+          fs.SetHidden(target, wasHidden);
+        }, $"cannot restore {target} from {backup}");
       }
       // Children before parents.
       foreach (string directory in _createdDirectories.OrderByDescending(d => d.Length)) {

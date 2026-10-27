@@ -1,6 +1,23 @@
 # 锁文件
 
-`lip` 使用锁文件（工作区根目录下的 `lip_lock.json`）来维护当前工作区状态。该文件会精确记录已安装的包、具体版本、包的来源，以及写入磁盘的文件。
+`lip` 使用锁文件来维护当前工作区状态。该文件会精确记录已安装的包、具体版本、包的来源，以及写入磁盘的文件。
+
+## 位置
+
+锁文件保存在工作区之外、lip 的用户数据目录中，因此工作区里只有各个包的文件：
+
+| 平台 | 路径 |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\lip\workspaces\<hash>.json` |
+| Linux / macOS | `$XDG_DATA_HOME/lip/workspaces/<hash>.json`（默认 `~/.local/share/lip/workspaces/<hash>.json`） |
+
+`<hash>` 是工作区绝对路径（不带末尾分隔符；Windows 上路径不区分大小写，因此先转为小写）的 SHA-256，以小写十六进制表示。锁文件还会在 `workspace` 中记录该路径；若两者不一致，lip 会报错停止，而不会使用其他工作区的锁。
+
+由于锁与路径绑定，移动或重命名工作区目录后，原来的锁不会跟随：lip 会把移动后的工作区视为未安装任何包。
+
+### 从工作区迁移
+
+早期版本把锁保存在工作区根目录，即 `lip_lock.json`（格式 4）或 `tooth_lock.json`（格式 3）。当数据目录中没有某个工作区的锁时，lip 会读取 `lip_lock.json`，否则迁移 `tooth_lock.json`（参见[下文](#旧格式-tooth-lock-json)）。下一次保存锁时（安装、卸载或更新包之后），lip 会把锁写入数据目录，并从工作区删除这两个文件。
 
 ## 作用
 
@@ -22,6 +39,7 @@
 {
   "formatVersion": 4,
   "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+  "workspace": "C:\\bds",
   "platform": "server",
   "rid": "win-x64",
   "packages": [
@@ -34,6 +52,7 @@
 
 * **`formatVersion`**：锁文件格式版本号（当前为 `4`）。
 * **`formatUuid`**：用于确保文件类型正确的唯一标识。
+* **`workspace`**：锁文件所属工作区的绝对路径。
 * **`platform`**：工作区的平台。lip 写入 `"server"`；从 `tooth_lock.json` 迁移而来的锁在 lip 保存之前为 `null`。
 * **`rid`**：工作区的 [.NET RID](https://learn.microsoft.com/zh-cn/dotnet/core/rid-catalog)。
 * **`packages`**：已安装的包，按安装顺序排列。
@@ -87,7 +106,7 @@
 
 ## 旧格式：tooth_lock.json
 
-lip v0.x 使用 `tooth_lock.json`（格式 3）。若工作区没有 `lip_lock.json` 但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时写入 `lip_lock.json` 并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
+lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若数据目录中没有锁、工作区中也没有 `lip_lock.json`，但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时把锁写入数据目录并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
 
 旧格式由 [`workspace_state.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/workspace_state.schema.json) 描述：
 

@@ -15,7 +15,7 @@ Example:
 lip install github.com/user/repo
 ```
 
-This installs the newest version of the package and the dependencies it declares into your workspace, and records them in the lockfile (`lip_lock.json`). It does not modify `manifest.json`.
+This installs the newest version of the package and the dependencies it declares into your workspace, and records them in the [lockfile](../concepts/lockfiles.md). It does not modify `manifest.json`.
 
 ## Specifying Versions
 

@@ -1,7 +1,4 @@
 using System.IO.Abstractions.TestingHelpers;
-using System.Text.Json;
-using Flurl;
-using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 using Lip.Core.Services;
 using Moq;
@@ -9,13 +6,14 @@ using Moq;
 namespace Lip.Core.Tests.Services;
 
 public class ConfigServiceTests {
-  private static readonly JsonSerializerOptions _jsonSerializerOptions = new() { WriteIndented = true };
-
   private static string GetConfigPath() =>
+      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "config.yaml");
+
+  private static string GetLegacyConfigPath() =>
       Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "liprc.json");
 
   [Fact]
-  public async Task List_FileNotExists_ReturnsDefaultAndSaves() {
+  public async Task List_FileNotExists_ReturnsDefaultWithoutSaving() {
     // Arrange
     string configPath = GetConfigPath();
     MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
@@ -29,7 +27,7 @@ public class ConfigServiceTests {
     var result = await service.List();
 
     // Assert
-    Assert.NotNull(result);
+    Assert.Equal("", result["github_proxy"]);
     Assert.False(mockFileSystem.File.Exists(configPath));
   }
 
@@ -37,12 +35,9 @@ public class ConfigServiceTests {
   public async Task Get_ValidFile_ReturnsConfig() {
     // Arrange
     string configPath = GetConfigPath();
-    RuntimeConfig config = new() { GithubProxy = new Url("https://proxy.com") };
-    string json = JsonSerializer.Serialize(config, _jsonSerializerOptions);
-
     MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
     {
-            { configPath, new MockFileData(json) }
+            { configPath, new MockFileData("github_proxy: https://proxy.com\n") }
         });
     Mock<IUserInteraction> mockUserInteraction = new();
     ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
@@ -55,7 +50,43 @@ public class ConfigServiceTests {
   }
 
   [Fact]
-  public async Task Set_CreatesFileWithConfig() {
+  public async Task Get_EmptyFile_ReturnsDefault() {
+    // Arrange
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
+    {
+            { GetConfigPath(), new MockFileData("") }
+        });
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    string result = await service.Get("github_proxy");
+
+    // Assert
+    Assert.Equal("", result);
+    mockUserInteraction.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task Get_InvalidYaml_PrintsErrorAndReturnsDefault() {
+    // Arrange
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
+    {
+            { GetConfigPath(), new MockFileData("github_proxy: [unclosed\n") }
+        });
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    string result = await service.Get("github_proxy");
+
+    // Assert
+    Assert.Equal("", result);
+    mockUserInteraction.Verify(u => u.PrintError(It.IsAny<string>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task Set_CreatesYamlFileWithConfig() {
     // Arrange
     string configPath = GetConfigPath();
     MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
@@ -69,9 +100,27 @@ public class ConfigServiceTests {
     await service.Set("github_proxy", "https://new.com");
 
     // Assert
-    Assert.True(mockFileSystem.File.Exists(configPath));
-    string content = mockFileSystem.File.ReadAllText(configPath);
-    Assert.Contains("https://new.com", content);
+    Assert.Equal("github_proxy: https://new.com", mockFileSystem.File.ReadAllText(configPath).Trim());
+    Assert.Equal("https://new.com", await service.Get("github_proxy"));
+  }
+
+  [Fact]
+  public async Task Delete_SetKey_RemovesItFromFile() {
+    // Arrange
+    string configPath = GetConfigPath();
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
+    {
+            { configPath, new MockFileData("github_proxy: https://proxy.com\n") }
+        });
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    await service.Delete("github_proxy");
+
+    // Assert
+    Assert.DoesNotContain("github_proxy", mockFileSystem.File.ReadAllText(configPath));
+    Assert.Equal("", await service.Get("github_proxy"));
   }
 
   private const string _legacyConfigJson = """
@@ -84,12 +133,11 @@ public class ConfigServiceTests {
       """;
 
   [Fact]
-  public async Task List_LegacyGoModuleProxyKey_LoadsWithoutErrorAndIsHidden() {
+  public async Task List_LegacyLiprcJson_ConvertsToYamlAndDeletesIt() {
     // Arrange
-    string configPath = GetConfigPath();
     MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
     {
-            { configPath, new MockFileData(_legacyConfigJson) }
+            { GetLegacyConfigPath(), new MockFileData(_legacyConfigJson) }
         });
     Mock<IUserInteraction> mockUserInteraction = new();
     ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
@@ -100,16 +148,57 @@ public class ConfigServiceTests {
     // Assert
     Assert.Equal("https://proxy.com", result["github_proxy"]);
     Assert.False(result.ContainsKey("go_module_proxy"));
+    Assert.False(mockFileSystem.File.Exists(GetLegacyConfigPath()));
+    Assert.Equal(
+        "github_proxy: https://proxy.com",
+        mockFileSystem.File.ReadAllText(GetConfigPath()).Trim());
     mockUserInteraction.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task List_CorruptLegacyLiprcJson_KeepsItAndReturnsDefault() {
+    // Arrange
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
+    {
+            { GetLegacyConfigPath(), new MockFileData("not json") }
+        });
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    IDictionary<string, string> result = await service.List();
+
+    // Assert
+    Assert.Equal("", result["github_proxy"]);
+    Assert.True(mockFileSystem.File.Exists(GetLegacyConfigPath()));
+    Assert.False(mockFileSystem.File.Exists(GetConfigPath()));
+  }
+
+  [Fact]
+  public async Task List_BothFilesExist_UsesYamlAndKeepsLegacy() {
+    // Arrange
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
+    {
+            { GetConfigPath(), new MockFileData("github_proxy: https://yaml.com\n") },
+            { GetLegacyConfigPath(), new MockFileData(_legacyConfigJson) }
+        });
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    IDictionary<string, string> result = await service.List();
+
+    // Assert
+    Assert.Equal("https://yaml.com", result["github_proxy"]);
+    Assert.True(mockFileSystem.File.Exists(GetLegacyConfigPath()));
   }
 
   [Fact]
   public async Task Get_LegacyGoModuleProxyKey_ThrowsKeyNotFoundException() {
     // Arrange
-    string configPath = GetConfigPath();
     MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
     {
-            { configPath, new MockFileData(_legacyConfigJson) }
+            { GetLegacyConfigPath(), new MockFileData(_legacyConfigJson) }
         });
     Mock<IUserInteraction> mockUserInteraction = new();
     ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
@@ -119,22 +208,20 @@ public class ConfigServiceTests {
   }
 
   [Fact]
-  public async Task Set_LegacyGoModuleProxyKey_DropsKeyOnSave() {
+  public async Task Get_UnknownYamlKey_IsIgnored() {
     // Arrange
-    string configPath = GetConfigPath();
     MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
     {
-            { configPath, new MockFileData(_legacyConfigJson) }
+            { GetConfigPath(), new MockFileData("go_module_proxy: https://goproxy.cn\ngithub_proxy: https://proxy.com\n") }
         });
     Mock<IUserInteraction> mockUserInteraction = new();
     ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
 
     // Act
-    await service.Set("github_proxy", "https://new.com");
+    string result = await service.Get("github_proxy");
 
     // Assert
-    string content = mockFileSystem.File.ReadAllText(configPath);
-    Assert.Contains("https://new.com", content);
-    Assert.DoesNotContain("go_module_proxy", content);
+    Assert.Equal("https://proxy.com", result);
+    mockUserInteraction.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
 }

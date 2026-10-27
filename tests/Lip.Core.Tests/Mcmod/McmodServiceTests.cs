@@ -37,6 +37,9 @@ public class McmodServiceTests {
     Assert.Equal(["lib/lib.dll"], package.Files);
     Assert.Equal($"{Lib}@1.0.0", package.ArchiveKey);
     Assert.IsType<GitArchiveIdentity>(package.Archive);
+    Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
+    Assert.Equal(_ws.Root, lockFile.Workspace);
+    Assert.False(_ws.Exists(LockStore.WorkspaceFileName));
   }
 
   [Fact]
@@ -204,7 +207,7 @@ public class McmodServiceTests {
 
     // Assert
     Assert.False(_ws.Exists("app/app.dll"));
-    Assert.False(_ws.Exists(LockStore.FileName));
+    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
   }
 
   [Fact]
@@ -380,6 +383,7 @@ public class McmodServiceTests {
 
     // Assert: lib 1.0.0 is kept (app needs >=1.0.0), the lock is migrated.
     Assert.False(_ws.Exists(LockStore.LegacyFileName));
+    Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
     LockFile lockFile = await _ws.Lock();
     Assert.Equal(
         [(Lib, "1.0.0", true), (App, "1.0.0", true)],

@@ -21,7 +21,7 @@ public class SourceService(
   public async Task<ISource> Get(Url url, bool isArchive) {
     IEnumerable<Url> downloadUrls = GetDownloadUrls(url);
 
-    IFileInfo archiveFile = await _cacheService.GetOrCreateFile(url, async cacheFile => {
+    IFileInfo archiveFile = await _cacheService.GetOrCreateFile(CacheKeys.Http(url.ToString()), async cacheFile => {
       List<Exception> exceptions = [];
 
       foreach (Url downloadUrl in downloadUrls) {

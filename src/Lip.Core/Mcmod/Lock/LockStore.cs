@@ -1,6 +1,9 @@
 using System.IO.Abstractions;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Lip.Core.Entities;
+using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Lock;
 
@@ -10,9 +13,15 @@ public class LockFormatException(string message, Exception? inner = null)
 
 /// Reads and writes the workspace lock (spec §8).
 ///
-/// The lock lives at &lt;root&gt;/lip_lock.json (format 4). When it is absent, a v3
-/// &lt;root&gt;/tooth_lock.json is migrated on Load; the next Save writes lip_lock.json and deletes
-/// tooth_lock.json.
+/// The lock (format 4) lives outside the workspace, in the per-user data directory:
+/// &lt;Data&gt;/workspaces/&lt;hash&gt;.json, where hash is the lowercase hex SHA-256 of the
+/// normalised absolute workspace path (see GetWorkspaceHash). It records that path in
+/// "workspace", and Load fails when it does not match the workspace.
+///
+/// When that lock is absent, a lock inside the workspace is read instead: a format 4
+/// &lt;root&gt;/lip_lock.json written by earlier lip versions, else a v3 &lt;root&gt;/tooth_lock.json,
+/// which is migrated. The next Save writes the lock to the data directory and deletes both
+/// workspace files.
 ///
 /// v3 recorded the absolute paths of the files a package placed (relative to the working
 /// directory, which was the workspace root). Migration turns paths under the workspace root into
@@ -23,8 +32,9 @@ public class LockFormatException(string message, Exception? inner = null)
 /// v3 keyed packages by (tooth path, variant); v4 keys them by identity (the tooth path). A v3
 /// lock holding two variants of one tooth migrates to two entries with the same identity; the
 /// caller decides how to reconcile them.
-public class LockStore(IFileSystem fs) : ILockStore {
-  public const string FileName = "lip_lock.json";
+public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStore {
+  /// The format 4 lock earlier lip versions kept in the workspace root.
+  public const string WorkspaceFileName = "lip_lock.json";
   public const string LegacyFileName = "tooth_lock.json";
 
   /// Kind of packages migrated from a v3 lock (IPackage.Kind).
@@ -42,16 +52,35 @@ public class LockStore(IFileSystem fs) : ILockStore {
   };
 
   private readonly IFileSystem _fs = fs;
+  private readonly string _dataDirectory = dataDirectory ?? LipDirectories.Data;
+
+  /// The path of the lock of a workspace.
+  public string GetLockPath(string workspaceRoot) =>
+      _fs.Path.Join(_dataDirectory, "workspaces", $"{GetWorkspaceHash(workspaceRoot)}.json");
 
   public async Task<LockFile> Load(string workspaceRoot) {
-    string path = _fs.Path.Combine(workspaceRoot, FileName);
+    string root = NormalizeRoot(workspaceRoot);
+
+    string path = GetLockPath(root);
     if (_fs.File.Exists(path)) {
-      return Parse(await _fs.File.ReadAllBytesAsync(path), path);
+      LockFile lockFile = Parse(await _fs.File.ReadAllBytesAsync(path), path);
+      if (lockFile.Workspace is not string recorded || !SameWorkspace(recorded, root)) {
+        throw new LockFormatException(
+            $"Cannot read lock '{path}': it belongs to the workspace "
+            + $"'{lockFile.Workspace ?? "(missing)"}', not '{root}'.");
+      }
+
+      return lockFile;
     }
 
-    string legacyPath = _fs.Path.Combine(workspaceRoot, LegacyFileName);
+    string workspacePath = _fs.Path.Combine(root, WorkspaceFileName);
+    if (_fs.File.Exists(workspacePath)) {
+      return Parse(await _fs.File.ReadAllBytesAsync(workspacePath), workspacePath);
+    }
+
+    string legacyPath = _fs.Path.Combine(root, LegacyFileName);
     if (_fs.File.Exists(legacyPath)) {
-      return Migrate(await _fs.File.ReadAllBytesAsync(legacyPath), legacyPath, workspaceRoot);
+      return Migrate(await _fs.File.ReadAllBytesAsync(legacyPath), legacyPath, root);
     }
 
     return new LockFile();
@@ -72,14 +101,28 @@ public class LockStore(IFileSystem fs) : ILockStore {
       throw new ArgumentException($"Cannot save an invalid lock: {ex.Message}", nameof(lockFile));
     }
 
-    _fs.Directory.CreateDirectory(workspaceRoot);
-    string path = _fs.Path.Combine(workspaceRoot, FileName);
-    string tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+    string root = NormalizeRoot(workspaceRoot);
+    string path = GetLockPath(root);
+    // Migrating: the lock was read from the workspace, whose files are deleted below. Once the
+    // lock is in the data directory, files of those names in the workspace are not lip's.
+    bool migrating = !_fs.File.Exists(path);
 
-    byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(lockFile, _writeOptions);
+    string directory = _fs.Path.GetDirectoryName(path)!;
+    _fs.Directory.CreateDirectory(directory);
+    string tempPath = _fs.Path.Join(directory, $".{_fs.Path.GetFileName(path)}.tmp");
+
+    byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
+        lockFile with { Workspace = root }, _writeOptions);
     try {
+      // A leftover of an interrupted save; on Windows a hidden file cannot be overwritten.
+      if (_fs.File.Exists(tempPath)) {
+        _fs.File.Delete(tempPath);
+      }
+
       await _fs.File.WriteAllBytesAsync(tempPath, bytes);
+      _fs.SetHidden(tempPath, true);
       _fs.File.Move(tempPath, path, overwrite: true);
+      _fs.SetHidden(path, false);
     }
     finally {
       if (_fs.File.Exists(tempPath)) {
@@ -87,11 +130,35 @@ public class LockStore(IFileSystem fs) : ILockStore {
       }
     }
 
-    string legacyPath = _fs.Path.Combine(workspaceRoot, LegacyFileName);
-    if (_fs.File.Exists(legacyPath)) {
-      _fs.File.Delete(legacyPath);
+    if (migrating) {
+      foreach (string name in (string[])[WorkspaceFileName, LegacyFileName]) {
+        string workspacePath = _fs.Path.Combine(root, name);
+        if (_fs.File.Exists(workspacePath)) {
+          _fs.File.Delete(workspacePath);
+        }
+      }
     }
   }
+
+  /// The lowercase hex SHA-256 of the normalised absolute workspace path: the full path without
+  /// a trailing separator, lower-cased on Windows, where paths are case-insensitive.
+  public string GetWorkspaceHash(string workspaceRoot) {
+    string root = NormalizeRoot(workspaceRoot);
+    if (OperatingSystem.IsWindows()) {
+      root = root.ToLowerInvariant();
+    }
+
+    return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(root)));
+  }
+
+  private string NormalizeRoot(string workspaceRoot) =>
+      _fs.Path.TrimEndingDirectorySeparator(_fs.Path.GetFullPath(workspaceRoot));
+
+  private bool SameWorkspace(string recorded, string root) =>
+      string.Equals(
+          NormalizeRoot(recorded),
+          root,
+          OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
   private static LockFile Parse(byte[] bytes, string path) {
     try {

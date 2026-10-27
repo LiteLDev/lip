@@ -124,10 +124,11 @@ public interface IMcmodInstaller {
   public Task Uninstall(LockedPackage package, InstallContext context);
 }
 
-/// Reads and writes the workspace lock (spec §8).
+/// Reads and writes the workspace lock (spec §8), which lives in the per-user data directory.
 public interface ILockStore {
-  /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json. Throws when the
-  /// lock exists but cannot be read.
+  /// Returns an empty lock when none exists; reads a lip_lock.json or migrates a v3
+  /// tooth_lock.json left in the workspace by earlier versions. Throws when the lock exists but
+  /// cannot be read or belongs to another workspace.
   public Task<LockFile> Load(string workspaceRoot);
 
   public Task Save(string workspaceRoot, LockFile lockFile);
@@ -139,6 +140,11 @@ public record LockFile {
 
   [JsonPropertyName("formatUuid")]
   public string FormatUuid { get; init; } = ManifestFormat.Uuid;
+
+  /// The absolute path of the workspace the lock belongs to. ILockStore.Save sets it; null in
+  /// locks read from the workspace itself.
+  [JsonPropertyName("workspace")]
+  public string? Workspace { get; init; }
 
   /// "server" or "client" (spec §5.1). lip writes "server"; null in locks migrated from v3.
   [JsonPropertyName("platform")]

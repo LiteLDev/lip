@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using Flurl;
 using Flurl.Http;
+using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Git;
 
@@ -628,9 +629,11 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     }
   }
 
+  // In the cache's staging directory, since lip keeps nothing in the system temp directory.
   private static FileStream CreateTempFile() {
+    Directory.CreateDirectory(LipDirectories.Staging);
     return new FileStream(
-        Path.Combine(Path.GetTempPath(), $"lip-{Guid.NewGuid():N}.pack"),
+        Path.Join(LipDirectories.Staging, $"{Guid.NewGuid():N}.pack"),
         FileMode.CreateNew,
         FileAccess.ReadWrite,
         FileShare.None,

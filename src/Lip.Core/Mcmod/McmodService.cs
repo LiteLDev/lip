@@ -644,8 +644,9 @@ public class McmodService(
   /// Opens the archive recorded in the lock and verifies its identity (spec §8). Two cases
   /// re-resolve the recorded chain instead, accepting only the recorded archive:
   /// - migrated v3 entries, which record no identity: the tag "path@version" is resolved again;
-  /// - nested ZIP archives, which are found by their SHA-256 in the cache only: when the cache
-  ///   was cleaned, the chain is resolved again and the result must have the same SHA-256.
+  /// - nested ZIP archives, which are not cached on their own: the chain is resolved again,
+  ///   which reopens the parent archive and extracts the ZIP again, and the result must have the
+  ///   same SHA-256.
   private async Task<Sources.ISource> OpenLockedArchive(
       Workspace workspace, LockedPackage package) {
     if (package.Archive is ArchiveIdentity identity) {

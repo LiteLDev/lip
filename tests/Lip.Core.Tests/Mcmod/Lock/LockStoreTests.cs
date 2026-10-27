@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Mcmod;
@@ -11,6 +13,10 @@ public class LockStoreTests {
       ? @"C:\lip-workspace"
       : "/lip-workspace";
 
+  private static readonly string _dataDir = OperatingSystem.IsWindows()
+      ? @"C:\data\lip"
+      : "/data/lip";
+
   private static readonly string _fixtureDir =
       Path.Combine(AppContext.BaseDirectory, "Mcmod", "Lock", "Fixtures");
 
@@ -19,10 +25,11 @@ public class LockStoreTests {
 
   public LockStoreTests() {
     _fs.AddDirectory(_root);
-    _store = new LockStore(_fs);
+    _store = new LockStore(_fs, _dataDir);
   }
 
-  private string LipLockPath => _fs.Path.Combine(_root, "lip_lock.json");
+  private string LipLockPath => _store.GetLockPath(_root);
+  private string WorkspaceLockPath => _fs.Path.Combine(_root, "lip_lock.json");
   private string ToothLockPath => _fs.Path.Combine(_root, "tooth_lock.json");
 
   /// The real v3 lock lip wrote after `lip install github.com/LiteLDev/LeviLamina` in
@@ -276,7 +283,7 @@ public class LockStoreTests {
     // Assert
     Assert.False(_fs.File.Exists(ToothLockPath));
     Assert.True(_fs.File.Exists(LipLockPath));
-    Assert.Equal([LipLockPath], _fs.Directory.GetFiles(_root));
+    Assert.Empty(_fs.Directory.GetFiles(_root));
     LockFile reloaded = await _store.Load(_root);
     Assert.Equal("server", reloaded.Platform);
     Assert.Equal(8, reloaded.Packages.Count);
@@ -299,25 +306,114 @@ public class LockStoreTests {
     // Assert
     LockFile loaded = await _store.Load(_root);
     Assert.Equal(["C"], loaded.Packages.Select(p => p.Identity));
-    Assert.Equal([LipLockPath], _fs.Directory.GetFiles(_root));
+    Assert.Equal([LipLockPath], _fs.Directory.GetFiles(_fs.Path.GetDirectoryName(LipLockPath)!));
+    Assert.Empty(_fs.Directory.GetFiles(_root));
   }
 
   [Fact]
-  public async Task Save_MissingWorkspaceDirectory_CreatesIt() {
+  public void GetLockPath_Always_IsSha256OfWorkspacePathInDataDirectory() {
     // Arrange
-    string root = _fs.Path.Combine(_root, "new");
+    string normalized = OperatingSystem.IsWindows() ? _root.ToLowerInvariant() : _root;
+    string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
 
     // Act
-    await _store.Save(root, new LockFile());
+    string path = _store.GetLockPath(_root);
 
     // Assert
-    Assert.True(_fs.File.Exists(_fs.Path.Combine(root, "lip_lock.json")));
+    Assert.Equal(_fs.Path.Join(_dataDir, "workspaces", $"{hash}.json"), path);
+  }
+
+  [Fact]
+  public void GetLockPath_TrailingSeparatorOrCase_SamePathWhereFileSystemAgrees() {
+    // Act
+    string withSeparator = _store.GetLockPath(_root + _fs.Path.DirectorySeparatorChar);
+    string upperCase = _store.GetLockPath(_root.ToUpperInvariant());
+
+    // Assert
+    Assert.Equal(LipLockPath, withSeparator);
+    if (OperatingSystem.IsWindows()) {
+      Assert.Equal(LipLockPath, upperCase);
+    } else {
+      Assert.NotEqual(LipLockPath, upperCase);
+    }
+  }
+
+  [Fact]
+  public async Task Save_Always_RecordsWorkspaceAndWritesNothingIntoIt() {
+    // Act
+    await _store.Save(_root, new LockFile());
+
+    // Assert
+    JsonElement root = JsonDocument.Parse(_fs.File.ReadAllText(LipLockPath)).RootElement;
+    Assert.Equal(_root, root.GetProperty("workspace").GetString());
+    Assert.Equal(_root, (await _store.Load(_root)).Workspace);
+    Assert.Empty(_fs.Directory.GetFileSystemEntries(_root));
+  }
+
+  [Fact]
+  public async Task Load_LockOfOtherWorkspace_ThrowsLockFormatException() {
+    // Arrange
+    string other = OperatingSystem.IsWindows() ? @"C:\other" : "/other";
+    await _store.Save(other, new LockFile());
+    _fs.File.Copy(_store.GetLockPath(other), LipLockPath);
+
+    // Act
+    LockFormatException ex =
+        await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
+
+    // Assert
+    Assert.Contains(other, ex.Message);
+    Assert.Contains(_root, ex.Message);
+  }
+
+  [Fact]
+  public async Task Load_LockWithoutWorkspace_ThrowsLockFormatException() {
+    // Arrange
+    _fs.AddFile(LipLockPath, new MockFileData("""
+        { "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f", "packages": [] }
+        """));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
+  }
+
+  [Fact]
+  public async Task Save_LockReadFromWorkspace_MovesItToDataDirectory() {
+    // Arrange
+    await _store.Save(_root, new LockFile { Rid = "win-x64" });
+    _fs.File.Move(LipLockPath, WorkspaceLockPath);
+    _fs.AddFile(ToothLockPath, new MockFileData("{}"));
+    LockFile loaded = await _store.Load(_root);
+
+    // Act
+    await _store.Save(_root, loaded);
+
+    // Assert
+    Assert.Equal("win-x64", loaded.Rid);
+    Assert.False(_fs.File.Exists(WorkspaceLockPath));
+    Assert.False(_fs.File.Exists(ToothLockPath));
+    Assert.Equal("win-x64", (await _store.Load(_root)).Rid);
+  }
+
+  [Fact]
+  public async Task Save_LockInDataDirectory_KeepsWorkspaceFilesOfLegacyNames() {
+    // Arrange: once migrated, files of these names in the workspace are not lip's.
+    await _store.Save(_root, new LockFile());
+    _fs.AddFile(WorkspaceLockPath, new MockFileData("a package's file"));
+    _fs.AddFile(ToothLockPath, new MockFileData("a package's file"));
+
+    // Act
+    await _store.Save(_root, new LockFile { Rid = "win-x64" });
+
+    // Assert
+    Assert.True(_fs.File.Exists(WorkspaceLockPath));
+    Assert.True(_fs.File.Exists(ToothLockPath));
   }
 
   [Fact]
   public async Task Load_ArchiveKindNotFirst_ReadsArchive() {
     // Arrange
-    _fs.AddFile(LipLockPath, new MockFileData("""
+    _fs.AddFile(WorkspaceLockPath, new MockFileData("""
         {
           "formatVersion": 4,
           "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",

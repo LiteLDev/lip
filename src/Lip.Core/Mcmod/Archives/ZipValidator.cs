@@ -14,7 +14,11 @@ public static class ZipValidator {
   /// Throws ArchiveUnavailableException naming the archive key when the file is not valid.
   public static void Validate(IFileInfo file, string archiveKey) {
     using Stream stream = file.OpenRead();
+    Validate(stream, archiveKey);
+  }
 
+  /// Validates the ZIP archive in a seekable stream, which is left open.
+  public static void Validate(Stream stream, string archiveKey) {
     ZipArchive zip;
     try {
       zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
