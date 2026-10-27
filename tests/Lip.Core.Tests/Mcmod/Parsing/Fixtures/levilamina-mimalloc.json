@@ -1,0 +1,13 @@
+{
+    "entry": "mimalloc.dll",
+    "name": "mimalloc",
+    "type": "preload-native",
+    "version": "0.0.0",
+    "author": "microsoft",
+    "description": "mimalloc is a compact general purpose allocator with excellent performance.",
+    "loadBefore": [
+        {
+            "name": "__before_all_mods__"
+        }
+    ]
+}

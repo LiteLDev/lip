@@ -1,0 +1,8 @@
+{
+  "formatVersion": 4,
+  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+  "artifacts": [
+    { "variant": "quickjs", "refs": ["./quickjs/"] },
+    { "variant": "lua", "refs": ["./lua/"] }
+  ]
+}

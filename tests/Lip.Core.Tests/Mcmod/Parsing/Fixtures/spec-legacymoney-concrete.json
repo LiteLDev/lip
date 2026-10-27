@@ -1,0 +1,13 @@
+{
+  "formatVersion": 4,
+  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+  "name": "LegacyMoney", "entry": "LegacyMoney.dll", "type": "native",
+  "version": "0.22.0", "platform": "server", "rid": "win-x64",
+  "refs": ["github.com/LiteLDev/LegacyMoney"],
+  "dependencies": [
+    { "name": "iListenAttentively", "version": "^0.17.0", "refs": ["github.com/MiracleForest/iListenAttentively"] }
+  ],
+  "installDependencies": [
+    { "version": ">=26.51.0 <26.52.0", "refs": ["github.com/LiteLDev/LeviLamina"] }
+  ]
+}
