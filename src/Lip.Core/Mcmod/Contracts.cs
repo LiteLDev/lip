@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -45,6 +46,29 @@ public interface IResolver {
       IVersionConstraint? range,
       LipEnvironment environment,
       bool toothClientCompat = false);
+
+  /// The same candidate sequence as Resolve, produced lazily: archives (e.g. older tags of a
+  /// spec ref) are opened only when the caller asks for more candidates. Diagnostics are
+  /// reported through onDiagnostic as they arise. PlatformUnknownException propagates from
+  /// the enumeration. The default implementation enumerates the result of Resolve.
+  public async IAsyncEnumerable<Candidate> ResolveLazy(
+      Ref reference,
+      ArchiveHandle baseArchive,
+      IVersionConstraint? range,
+      LipEnvironment environment,
+      bool toothClientCompat = false,
+      Action<string>? onDiagnostic = null,
+      [EnumeratorCancellation] CancellationToken cancellationToken = default) {
+    ResolveResult result = await Resolve(
+        reference, baseArchive, range, environment, toothClientCompat);
+    foreach (string diagnostic in result.Diagnostics) {
+      onDiagnostic?.Invoke(diagnostic);
+    }
+
+    foreach (Candidate candidate in result.Candidates) {
+      yield return candidate;
+    }
+  }
 }
 
 /// One (ref, range) of an operation's request (spec §6). Base is the workspace root archive
