@@ -18,9 +18,13 @@ public class ViewCommand(ILipClient lipClient) : AsyncCommand<ViewCommand.Settin
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     string json = await _lipClient.View(settings.Package);
 
-    JsonText jsonText = new(json);
-
-    AnsiConsole.Write(jsonText);
+    // Piped or redirected, the document is written as is: JsonText wraps long lines at the
+    // console width (80 columns when redirected), breaking the JSON.
+    if (Console.IsOutputRedirected) {
+      Console.Out.WriteLine(json);
+    } else {
+      AnsiConsole.Write(new JsonText(json));
+    }
 
     return 0;
   }

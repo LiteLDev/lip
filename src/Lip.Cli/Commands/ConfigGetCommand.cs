@@ -22,7 +22,8 @@ public class ConfigGetCommand(ILipClient lipClient) : AsyncCommand<ConfigGetComm
     string value = await _lipClient.ConfigGet(settings.Key);
 
     if (settings.Json) {
-      AnsiConsole.Write(new Text(value));
+      // Not through Spectre.Console, which wraps long lines at the console width.
+      Console.Out.WriteLine(value);
     } else {
       Table table = new();
       table.AddColumn("Key");

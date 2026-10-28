@@ -28,7 +28,8 @@ public class VersionsCommand(ILipClient lipClient) : AsyncCommand<VersionsComman
     IEnumerable<string> versions = await _lipClient.Versions(settings.Package);
 
     if (settings.Json) {
-      AnsiConsole.Write(new Text(JsonSerializer.Serialize(versions, _jsonSerializerOptions)));
+      // Not through Spectre.Console, which wraps long lines at the console width.
+      Console.Out.WriteLine(JsonSerializer.Serialize(versions, _jsonSerializerOptions));
     } else {
       Tree tree = new($"Versions");
 

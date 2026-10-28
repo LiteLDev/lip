@@ -23,7 +23,8 @@ public class ConfigListCommand(ILipClient lipClient) : AsyncCommand<ConfigListCo
     IDictionary<string, string> config = await _lipClient.ConfigList();
 
     if (settings.Json) {
-      AnsiConsole.Write(new Text(JsonSerializer.Serialize(config, _jsonSerializerOptions)));
+      // Not through Spectre.Console, which wraps long lines at the console width.
+      Console.Out.WriteLine(JsonSerializer.Serialize(config, _jsonSerializerOptions));
     } else {
       Table table = new();
       table.AddColumn("Key");

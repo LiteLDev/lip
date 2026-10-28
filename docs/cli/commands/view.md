@@ -38,4 +38,4 @@ lip view github.com/user/repo@branch:main
 
 ## Description
 
-Reads the root document of the archive the argument points to and displays it as JSON: `tooth.json` if the archive has one, otherwise `manifest.json`. For a package path, the archive is the repository at the version's tag, or at the commit of the git ref. The document is shown as it is: a routing document is not followed.
+Reads the root document of the archive the argument points to and displays it as JSON: `tooth.json` if the archive has one, otherwise `manifest.json`. For a package path, the archive is the repository at the version's tag, or at the commit of the git ref. The document is shown as it is: a routing document is not followed. In a terminal it is highlighted; when the output is redirected or piped, the document is written unchanged, so that `lip view <PACKAGE> > tooth.json` saves it.
