@@ -184,7 +184,7 @@ public class LockStoreTests {
 
     // Assert
     LockedPackage package = Assert.Single(lockFile.Packages);
-    Assert.Equal("github.com/LiteLDev/LeviLamina", package.Identity);
+    Assert.Equal("github.com/LiteLDev/LeviLamina#client", package.Identity);
     Assert.Equal("1.0.0-rc.1", package.Version);
     Assert.True(package.Explicit);
     Assert.Equal([new LockedHop("github.com/LiteLDev/LeviLamina#client", null)], package.Chain);

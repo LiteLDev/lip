@@ -381,7 +381,8 @@ public class ResolverTests {
     Candidate candidate = Assert.Single(result.Candidates);
     McmodPackage package = Assert.IsType<McmodPackage>(candidate.Package);
     Assert.Equal(ToothCompat.KindName, package.Kind);
-    Assert.Equal("github.com/user/tooth", package.Identity);
+    Assert.Equal("github.com/user/tooth#client", package.Identity);
+    Assert.Equal("client", package.Variant);
     Assert.True(package.Document.IsFilePackage);
     Assert.Equal("github.com/user/tooth@1.2.0", candidate.Archive.Key);
     Assert.IsType<MountSource>(candidate.Archive.Source);

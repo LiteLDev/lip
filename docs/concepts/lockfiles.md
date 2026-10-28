@@ -59,7 +59,7 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
 
 ### Package Entry
 
-*   **`name`**: The identity of the package: the `name` of its `manifest.json`, or the `tooth` path of a `tooth.json` package.
+*   **`name`**: The identity of the package: the `name` of its `manifest.json`, or for a `tooth.json` package its `tooth` path, followed by `#<label>` for a labeled variant (e.g. `github.com/LiteLDev/LegacyScriptEngine#lua`). Locks written by earlier versions recorded the bare `tooth` path for labeled variants; lip reads them with the label added.
 *   **`version`**: The installed version.
 *   **`kind`**: `"mcmod"` for a `manifest.json` package, `"tooth"` for a `tooth.json` package. Both are installed and uninstalled the same way; the kind says what `manifest` holds.
 *   **`explicit`**:

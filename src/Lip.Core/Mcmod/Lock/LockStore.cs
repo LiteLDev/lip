@@ -32,9 +32,10 @@ public class LockFormatException(string message, Exception? inner = null)
 /// Migrated entries have kind "tooth" and record the tooth.json (spec §9), like the entries of
 /// tooth.json packages lip installs itself: they are converted to format 4 when used.
 ///
-/// v3 keyed packages by (tooth path, variant); v4 keys them by identity (the tooth path). A v3
-/// lock holding two variants of one tooth migrates to two entries with the same identity; the
-/// caller decides how to reconcile them.
+/// v3 keyed packages by (tooth path, variant); v4 keys them by identity, which for a tooth.json
+/// package is the tooth path followed by "#label" for a labelled variant (spec §9.1), so the
+/// variants of one tooth migrate to entries of distinct identities. Format 4 locks written before
+/// the identity carried the label get it when loaded (ToothIdentities).
 public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStore {
   /// The format 4 lock earlier lip versions kept in the workspace root.
   public const string WorkspaceFileName = "lip_lock.json";
@@ -62,9 +63,10 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
       _fs.Path.Join(_dataDirectory, "workspaces", $"{GetWorkspaceHash(workspaceRoot)}.json");
 
   /// Owned files under plugins are rewritten to their canonical path under mods (spec §7), so
-  /// that locks written before plugins became a link to mods compare correctly.
+  /// that locks written before plugins became a link to mods compare correctly. Entries of kind "tooth" get the identity of spec §9.1 (ToothCompat.GetLockedIdentity), which
+  /// locks written before the identity carried the v3 label lack.
   public async Task<LockFile> Load(string workspaceRoot) =>
-      CanonicalizeFiles(await LoadUnchanged(workspaceRoot));
+      await ToothIdentities(CanonicalizeFiles(await LoadUnchanged(workspaceRoot)));
 
   private async Task<LockFile> LoadUnchanged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
@@ -191,6 +193,41 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     ],
   };
 
+  /// An entry that cannot be read keeps its identity; using it fails later with the reason.
+  private static async Task<LockFile> ToothIdentities(LockFile lockFile) {
+    if (!lockFile.Packages.Any(p => p.Kind == ToothKind)) {
+      return lockFile;
+    }
+
+    // Validate checked the platform; a lock without one (a migrated v3 lock) is a server's. The
+    // label (spec §9.2) does not depend on the rid.
+    LipEnvironment environment = new(
+        lockFile.Platform is not null
+            && McmodPlatformExtensions.TryParse(lockFile.Platform, out McmodPlatform platform)
+            ? platform
+            : McmodPlatform.Server,
+        lockFile.Rid ?? "");
+    List<LockedPackage> packages = [];
+    foreach (LockedPackage package in lockFile.Packages) {
+      if (package.Kind != ToothKind) {
+        packages.Add(package);
+        continue;
+      }
+
+      try {
+        packages.Add(package with {
+          Identity = await Compat.ToothCompat.GetLockedIdentity(package, environment),
+        });
+      }
+      catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
+          or InvalidOperationException or KeyNotFoundException) {
+        packages.Add(package);
+      }
+    }
+
+    return lockFile with { Packages = [.. packages] };
+  }
+
   /// The lowercase hex SHA-256 of the normalised absolute workspace path: the full path without
   /// a trailing separator, lower-cased on Windows, where paths are case-insensitive.
   public string GetWorkspaceHash(string workspaceRoot) {
@@ -304,7 +341,7 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     string version = package.Manifest.Version.ToString();
 
     return new LockedPackage {
-      Identity = path,
+      Identity = Compat.ToothCompat.GetIdentity(path, package.Variant),
       Version = version,
       Kind = ToothKind,
       Explicit = package.IsExplicit,

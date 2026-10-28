@@ -21,4 +21,4 @@ Reads the workspace's [lockfile](../../concepts/lockfiles.md) (or a `lip_lock.js
 - **User-Requested** — Packages explicitly installed by the user.
 - **Dependencies** — Packages installed as dependencies.
 
-Packages are listed in install order, dependencies first. The name is the package's identity: the `name` of its `manifest.json`, or the `tooth` path of a `tooth.json` package.
+Packages are listed in install order, dependencies first. The name is the package's identity: the `name` of its `manifest.json`, or for a `tooth.json` package its `tooth` path, followed by `#<label>` for a labeled variant (e.g. `github.com/LiteLDev/LegacyScriptEngine#lua`).

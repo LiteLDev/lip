@@ -21,4 +21,4 @@ lip list [options]
 - **User-Requested**：用户显式安装的包。
 - **Dependencies**：作为依赖安装的包。
 
-包按安装顺序列出，依赖在前。名称即包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径。
+包按安装顺序列出，依赖在前。名称即包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径，带标签的变体在其后加 `#<label>`（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`）。

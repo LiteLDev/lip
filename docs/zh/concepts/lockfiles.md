@@ -59,7 +59,7 @@
 
 ### 包条目
 
-* **`name`**：包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径。
+* **`name`**：包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径，带标签的变体在其后加 `#<label>`（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`）。早期版本写入的锁对带标签的变体只记录了 `tooth` 路径；lip 读取时会补上标签。
 * **`version`**：已安装的版本。
 * **`kind`**：`manifest.json` 包为 `"mcmod"`，`tooth.json` 包为 `"tooth"`。两者的安装与卸载方式相同；kind 说明 `manifest` 中保存的是什么。
 * **`explicit`**：

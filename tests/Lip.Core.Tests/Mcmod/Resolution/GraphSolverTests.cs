@@ -221,7 +221,109 @@ public class GraphSolverTests {
             [Request("github.com/x/x")], [pinned], s_environment));
 
     // Assert
-    Assert.Contains("X@2.0.0 has the same identity as x@1.0.0 (installed)", exception.Message);
+    Assert.Contains(
+        "X@2.0.0 (from github.com/x/x@2.0.0) has the same identity as x@1.0.0 "
+            + "(from github.com/x/x@1.0.0) (installed)",
+        exception.Message);
+  }
+
+  [Fact]
+  public async Task Solve_DefaultVariantDependsOnItsLabelledVariants_SolvesThreePackages() {
+    // Arrange: a converted tooth.json like LegacyScriptEngine; its variants share one archive.
+    FakeResolver resolver = new();
+    resolver.Add("github.com/t/t", Variant("t", "", [Edge("github.com/t/t#a"),
+        Edge("github.com/t/t#b")]));
+    resolver.Add("github.com/t/t#a", Variant("t#a", "a"));
+    resolver.Add("github.com/t/t#b", Variant("t#b", "b"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/t/t")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["t#a@1.0.0", "t#b@1.0.0", "t@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_TwoLabelledVariantsRequested_SolvesBoth() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.Add("github.com/t/t#a", Variant("t#a", "a", [Edge("github.com/l/l")]));
+    resolver.Add("github.com/t/t#b", Variant("t#b", "b", [Edge("github.com/l/l")]));
+    resolver.AddVersions("github.com/l/l", "L", ["1.0.0"]);
+    GraphSolver solver = new(resolver);
+
+    // Act
+    SolvedGraph graph = await solver.SolveGraph(
+        [Request("github.com/t/t#a"), Request("github.com/t/t#b")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["L@1.0.0", "t#a@1.0.0", "t#b@1.0.0"], Names(graph.Order));
+    Assert.Equal([1, 2], graph.RequestSatisfiers);
+  }
+
+  [Fact]
+  public async Task Solve_PinnedToothDefaultVariant_DoesNotStandInForClientVariant() {
+    // Arrange: "client" means "" only for archives that use manifest.json (spec §9.3).
+    FakeResolver resolver = new();
+    resolver.Add("github.com/t/t#client", Variant("t#client", "client"));
+    resolver.Add("github.com/r/r", Package("R", "1.0.0", "github.com/r/r", edges: [
+      new InstallEdge(null, null, [Ref.Parse("github.com/t/t#client")], ToothClientCompat: true),
+    ]));
+    Candidate pinned = new(
+        Variant("t", ""),
+        Archive("github.com/t/t@rev:abc"),
+        [new ChainHop(Ref.Parse("github.com/t/t@branch:main"), null)]);
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/r/r")], [pinned], s_environment);
+
+    // Assert
+    Assert.Equal(["t@1.0.0", "t#client@1.0.0", "R@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_VariantOfSameArchiveWithSameIdentity_FailsInsteadOfMerging() {
+    // Arrange: two packages of one archive and one identity; the root does not satisfy the
+    // edge to its sibling.
+    FakeResolver resolver = new();
+    resolver.Add("github.com/t/t", Variant("t", "", [Edge("github.com/t/t#a")]));
+    resolver.Add("github.com/t/t#a", Variant("t", "a"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/t/t")], [], s_environment));
+
+    // Assert
+    Assert.Contains(
+        "t@1.0.0 (from github.com/t/t@1.0.0, variant \"a\") has the same identity as t@1.0.0 "
+            + "(from github.com/t/t@1.0.0)",
+        exception.Message);
+  }
+
+  [Fact]
+  public async Task Solve_TwoArchivesWithSameIdentity_FailsWithBothSources() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/x", "dup", ["1.0.0"]);
+    resolver.AddVersions("github.com/y/y", "dup", ["1.0.0"]);
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/x/x"), Request("github.com/y/y")], [], s_environment));
+
+    // Assert
+    Assert.Contains(
+        "dup@1.0.0 (from github.com/y/y@1.0.0) has the same identity as dup@1.0.0 "
+            + "(from github.com/x/x@1.0.0)",
+        exception.Message);
   }
 
   [Fact]
@@ -439,6 +541,13 @@ public class GraphSolverTests {
         $"{spec}@{version}");
   }
 
+  /// A package of the converted tooth.json at github.com/t/t@1.0.0 (one archive for every
+  /// variant).
+  private static FakePackage Variant(
+      string name, string variant, IReadOnlyList<InstallEdge>? edges = null) {
+    return Package(name, "1.0.0", "github.com/t/t", "tooth", edges) with { Variant = variant };
+  }
+
   private static Candidate ToCandidate(FakePackage package) {
     return new Candidate(package, Archive(package.ArchiveKey), []);
   }
@@ -460,7 +569,8 @@ public class GraphSolverTests {
       SemVersion Version,
       IReadOnlyList<InstallEdge> InstallEdges,
       IReadOnlyList<Dep> Conflicts,
-      string ArchiveKey) : IPackage {
+      string ArchiveKey,
+      string Variant = "") : IPackage {
     public JsonElement Manifest => default;
   }
 
@@ -498,7 +608,7 @@ public class GraphSolverTests {
           toothClientCompat));
       string location = reference.Kind == RefKind.Relative
           ? $"{baseArchive?.Key}!{reference.RelativePath}"
-          : reference.Target;
+          : reference.Variant == "" ? reference.Target : $"{reference.Target}#{reference.Variant}";
       List<Candidate> candidates = [
         .. _packages.GetValueOrDefault(location, [])
             .Where(p => range is null || range.IsSatisfiedBy(p.Version))

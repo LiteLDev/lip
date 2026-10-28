@@ -12,7 +12,7 @@ lip uninstall <PACKAGES> [options]
 
 | Argument | Description |
 | --- | --- |
-| `<PACKAGES>` | The packages to uninstall, specified by package name (e.g. `LegacyMoney`, compared ignoring case) or by the `<path>` or `<path>#<variant>` they were installed from (e.g. `github.com/LiteLDev/LegacyMoney`). A path without a variant matches every variant. |
+| `<PACKAGES>` | The packages to uninstall, specified by package name (e.g. `LegacyMoney`, compared ignoring case) or by the `<path>` or `<path>#<variant>` they were installed from (e.g. `github.com/LiteLDev/LegacyMoney`). A `tooth.json` package installed as `<path>#<variant>` is named `<path>#<variant>`. A path without a variant matches every variant, unless it is itself the name of an installed package (such as the unlabeled variant of a `tooth.json` package). |
 
 The names are shown by [`lip list`](list.md).
 

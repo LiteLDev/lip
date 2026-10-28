@@ -283,7 +283,7 @@ lip 必须为请求求出一个具体包集合 S，满足下列全部条件；�
 
 归档根部存在 `tooth.json` 时，lip 忽略 `manifest.json`，按下列映射把 tooth.json 转换为一个具体包。此后该包与其他具体包一样参与解析、安装、卸载与锁定（§5–§8）。tooth.json 格式 1 与 2 先按 tooth.json 规范的定义迁移为格式 3（包括其中的模板替换）；下列映射定义在格式 3 上。
 
-1. **身份与版本**：身份为 `tooth` 的值，版本为 `version` 的值。在 spec 版本的归档中（包括固定的 `tag:v<SemVer 2.0.0>` 的归档，见 §4.3），改用该 tag 的版本，且 §4.3 不适用；二者不同时 lip 应当给出警告。位于 branch、rev 或其他 tag 时，使用 `version` 的值。
+1. **身份与版本**：规则 2 选出的 label 为 `""` 时，身份为 `tooth` 的值，否则为 `<tooth>#<label>`；版本为 `version` 的值。tooth.json 把每个带 label 的变体作为独立的包安装，且变体可以依赖同一 tooth.json 的其他变体（默认变体依赖 `<tooth>#<label>`），因此同一 tooth.json 的各变体不能共用一个身份（§6 条件 3）。在 spec 版本的归档中（包括固定的 `tag:v<SemVer 2.0.0>` 的归档，见 §4.3），改用该 tag 的版本，且 §4.3 不适用；二者不同时 lip 应当给出警告。位于 branch、rev 或其他 tag 时，使用 `version` 的值。
 2. **变体选择**（取代 §5.2 第 4 步）：ref 的 variant 即 v3 的 label，但 variant 为 `""`、环境 `platform` 为 `"client"`、并且存在 label 为 `client` 的变体时，表示 `client`。label 等于它、且 `platform` 为空、等于环境 `rid` 或作为 glob 匹配环境 `rid` 的各变体按顺序合并：其 `dependencies`、`assets`、`preserve_files`、`remove_files` 依次拼接，每个脚本钩子取自唯一具有它的变体。没有变体匹配时无候选；两个被合并的变体声明了相同的依赖键或相同的脚本钩子时为失败。结果是一个文件包（`"type": "files"`、`"platform": "universal"`、没有 `rid`）；其版本满足 `range` 时为唯一候选，否则无候选。
 3. **依赖**：每个依赖 `"<path>[#label]": range` 成为一条安装边，其 refs 只有 `<path>[#label]`，没有 `name`，range 按 v3 的语义解释。该 ref 指向的归档采用 `manifest.json` 且 label 为 `client` 时，variant 视为 `""`。
 4. **资源（assets）**：变体的第 i 个资源（从 0 计数）挂载在包归档的目录 `i` 下。`self` 资源即 tooth.json 所在的归档本身。`zip`、`tar`、`tgz` 资源是从其 `urls` 中第一个可以下载的地址下载的归档，格式按内容判定，§2.1 不适用。`uncompressed` 资源是按同样方式下载的单个文件，挂载为文件 `i`。

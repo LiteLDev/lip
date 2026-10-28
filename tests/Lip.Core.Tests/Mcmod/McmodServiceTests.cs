@@ -526,6 +526,79 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_ToothDefaultVariantNeedsItsLabelledVariants_InstallsEachVariant() {
+    // Arrange: like LegacyScriptEngine, the default variant only depends on its engines.
+    AddVariantsTooth();
+
+    // Act
+    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
+
+    // Assert
+    Assert.Equal(
+        [($"{Lib}#a", false), ($"{Lib}#b", false), (Lib, true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Explicit)));
+    Assert.Equal("a", _ws.Fs.File.ReadAllText(_ws.Path("a.dll")));
+    Assert.Equal("b", _ws.Fs.File.ReadAllText(_ws.Path("b.dll")));
+    LockFile lockFile = await _ws.Lock();
+    Assert.Equal($"{Lib}#a", lockFile.Packages[0].Chain[0].Ref);
+    Assert.Equal(["a.dll"], lockFile.Packages[0].Files);
+  }
+
+  [Fact]
+  public async Task Uninstall_ToothDefaultVariant_RemovesItsLabelledVariants() {
+    // Arrange
+    AddVariantsTooth();
+    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
+
+    // Act
+    await _ws.Service.Uninstall([Lib], s_options);
+
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("a.dll"));
+    Assert.False(_ws.Exists("b.dll"));
+  }
+
+  [Fact]
+  public async Task Install_TwoLabelledVariantsTogether_InstallsBothAndUninstallsOneByRef() {
+    // Arrange
+    AddVariantsTooth();
+    await _ws.Service.Install([$"{Lib}#a@1.0.0", $"{Lib}#b@1.0.0"], s_options);
+
+    // Act
+    await _ws.Service.Uninstall([$"{Lib}#a"], s_options);
+
+    // Assert
+    Assert.False(_ws.Exists("a.dll"));
+    Assert.Equal("b", _ws.Fs.File.ReadAllText(_ws.Path("b.dll")));
+    LockedPackage remaining = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal($"{Lib}#b", remaining.Identity);
+    Assert.True(remaining.Explicit);
+  }
+
+  [Fact]
+  public async Task Uninstall_LockWithBareToothIdentityForVariant_UsesTheLabelledIdentity() {
+    // Arrange: a format 4 lock written while the identity of a variant was the bare tooth path.
+    AddVariantsTooth();
+    await _ws.Service.Install([$"{Lib}#a@1.0.0"], s_options);
+    LockFile written = await _ws.Lock();
+    await _ws.LockStore.Save(_ws.Root, written with {
+      Packages = [.. written.Packages.Select(p => p with { Identity = Lib })],
+    });
+    string raw = _ws.Fs.File.ReadAllText(_ws.LockPath);
+
+    // Act
+    IReadOnlyList<InstalledPackage> listed = await _ws.Service.List();
+    await _ws.Service.Uninstall([$"{Lib}#a"], s_options);
+
+    // Assert
+    Assert.Contains($"\"name\": \"{Lib}\"", raw);
+    Assert.Equal($"{Lib}#a", Assert.Single(listed).Identity);
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("a.dll"));
+  }
+
+  [Fact]
   public async Task Install_ToothTagDeclaresOtherVersion_UsesTagVersionAndWarns() {
     // Arrange
     _ws.AddTag(Lib, "2.0.0", new() {
@@ -706,6 +779,30 @@ public class McmodServiceTests {
       ["tooth.json"] = WorkspaceHarness.Tooth(App, "2.0.0", "app/app.dll",
           $$"""{ "{{Lib}}": ">=1.1.0" }"""),
       ["file.dll"] = "app 2",
+    });
+  }
+
+  /// Lib 1.0.0: a tooth.json whose default variant has no assets and depends on its variants
+  /// "a" and "b", which place a.dll and b.dll.
+  private void AddVariantsTooth() {
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = $$"""
+          {
+            "format_version": 3,
+            "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+            "tooth": "{{Lib}}",
+            "version": "1.0.0",
+            "variants": [
+              { "label": "", "dependencies": { "{{Lib}}#a": "1.0.0", "{{Lib}}#b": "1.0.0" } },
+              { "label": "a", "assets": [ { "type": "self", "placements": [
+                { "type": "file", "src": "a.dll", "dest": "a.dll" } ] } ] },
+              { "label": "b", "assets": [ { "type": "self", "placements": [
+                { "type": "file", "src": "b.dll", "dest": "b.dll" } ] } ] }
+            ]
+          }
+          """,
+      ["a.dll"] = "a",
+      ["b.dll"] = "b",
     });
   }
 
