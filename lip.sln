@@ -20,6 +20,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lip.Core.Tests", "tests\Lip
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lip.Core.RegressionTests", "tests\Lip.Core.RegressionTests\Lip.Core.RegressionTests.csproj", "{CBFBF11A-08C9-DF2C-83AA-051DC19FB36D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lip.Daemon.Tests", "tests\Lip.Daemon.Tests\Lip.Daemon.Tests.csproj", "{DC1FEC9D-18DB-4BC9-8CFC-2D72BEB42324}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -54,6 +56,10 @@ Global
 		{CBFBF11A-08C9-DF2C-83AA-051DC19FB36D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CBFBF11A-08C9-DF2C-83AA-051DC19FB36D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CBFBF11A-08C9-DF2C-83AA-051DC19FB36D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DC1FEC9D-18DB-4BC9-8CFC-2D72BEB42324}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DC1FEC9D-18DB-4BC9-8CFC-2D72BEB42324}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DC1FEC9D-18DB-4BC9-8CFC-2D72BEB42324}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DC1FEC9D-18DB-4BC9-8CFC-2D72BEB42324}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -66,6 +72,7 @@ Global
 		{ECC982C6-2610-8080-F33E-1824FAE7E671} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{F6AD0BE0-A770-A5B3-D0DF-CAB706A7A436} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{CBFBF11A-08C9-DF2C-83AA-051DC19FB36D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{DC1FEC9D-18DB-4BC9-8CFC-2D72BEB42324} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {ACEB4B60-1469-4836-AC3E-8E8CE91AB418}

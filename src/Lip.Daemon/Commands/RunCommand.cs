@@ -13,13 +13,10 @@ public class RunCommand : AsyncCommand<RunCommand.Settings> {
         Console.OpenStandardOutput(),
         Console.OpenStandardInput());
 
-    IClientContract clientProxy = rpc.Attach<IClientContract>();
+    using LipClient client = await LipClient.Create(new RpcUserInteraction(rpc));
 
-    RpcUserInteraction userInteraction = new(clientProxy);
-
-    using LipClient client = await LipClient.Create(userInteraction);
-
-    rpc.AddLocalRpcTarget(client);
+    // Only the schema's methods: not the public methods LipClient has besides ILipClient.
+    rpc.AddLocalRpcTarget(new DaemonRpcTarget(client));
 
     rpc.StartListening();
 
