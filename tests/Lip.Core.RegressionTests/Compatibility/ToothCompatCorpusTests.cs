@@ -81,7 +81,10 @@ public class ToothCompatCorpusTests {
 
     Assert.NotNull(actual);
     ConcreteDocument converted = actual.Package.Document;
-    Assert.Equal(document.Manifest.Path, actual.Package.Identity);
+    Assert.Equal(
+        reference.Variant == "" ? document.Manifest.Path
+            : $"{document.Manifest.Path}#{reference.Variant}",
+        actual.Package.Identity);
     Assert.Equal(
         expected.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))),
         actual.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))));

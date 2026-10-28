@@ -1,3 +1,4 @@
+using Lip.Core.Mcmod.Compat;
 using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
@@ -132,7 +133,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
   }
 
   /// Whether two candidates are the same package: same identity (ignoring ASCII case), same
-  /// version and same archive key.
+  /// version, same archive key and same variant (IPackage.Variant).
   public static bool IsSamePackage(Candidate a, Candidate b) {
     return PackageKey.Of(a).Equals(PackageKey.Of(b));
   }
@@ -215,13 +216,20 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     return component;
   }
 
-  /// The "same package" identity of a candidate.
-  private readonly record struct PackageKey(string Identity, SemVersion Version, string Archive) {
+  /// The "same package" identity of a candidate. The variant tells apart the packages of one
+  /// archive (the variants of a tooth.json), so that a member never satisfies a requirement for
+  /// another package of its archive; two such packages of one identity clash (spec §6.3).
+  private readonly record struct PackageKey(
+      string Identity,
+      SemVersion Version,
+      string Archive,
+      string Variant) {
     public static PackageKey Of(Candidate candidate) {
       return new(
           FoldCase(candidate.Package.Identity),
           candidate.Package.Version,
-          candidate.Archive.Key);
+          candidate.Archive.Key,
+          candidate.Package.Variant);
     }
   }
 
@@ -413,8 +421,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
             continue;
           }
 
-          throw Fail($"Installed packages {Show(other.Candidate)} and {Show(candidate)} have the "
-              + "same identity.");
+          throw Fail($"Installed packages {ShowSource(other.Candidate)} and {ShowSource(candidate)}"
+              + " have the same identity.");
         }
 
         foreach (Member member in _members.Values) {
@@ -576,7 +584,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       }
 
       if (_members.TryGetValue(key.Identity, out Member? same)) {
-        return (same.Level, $"{Show(candidate)} has the same identity as {Show(same)}");
+        return (same.Level, $"{ShowSource(candidate)} has the same identity as "
+            + $"{ShowSource(same.Candidate)}{(same.Level < 0 ? " (installed)" : "")}");
       }
 
       if (Conflicts(candidate.Package, candidate.Package)) {
@@ -675,10 +684,15 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         return false;
       }
 
+      // §9.3: "client" means "" only when the pinned archive uses manifest.json; a package
+      // converted from the tooth.json at that archive itself is reached in one hop.
+      bool manifestArchive = candidate.Chain.Count > 1
+          || candidate.Package.Kind != ToothCompat.KindName;
       return requirement.Refs.Any(r => r.Kind == RefKind.Spec && r.GitRef is null
           && string.Equals(r.Target, pinned.Target, StringComparison.OrdinalIgnoreCase)
           && (r.Variant == pinned.Variant
-              || (requirement.Compat && r.Variant == "client" && pinned.Variant == "")));
+              || (requirement.Compat && manifestArchive && r.Variant == "client"
+                  && pinned.Variant == "")));
     }
 
     /// Whether a member is one of the candidates of a requirement, without enumerating the
@@ -836,6 +850,13 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
     private static string Show(Candidate candidate) {
       return $"{candidate.Package.Identity}@{candidate.Package.Version}";
+    }
+
+    /// A candidate with where it comes from, to tell apart packages of one identity.
+    private static string ShowSource(Candidate candidate) {
+      return $"{Show(candidate)} (from {candidate.Archive.Key}"
+          + (candidate.Package.Variant == "" ? "" : $", variant \"{candidate.Package.Variant}\"")
+          + ")";
     }
 
     private static string Show(Member member) {

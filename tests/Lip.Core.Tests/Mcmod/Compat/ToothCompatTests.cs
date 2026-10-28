@@ -402,8 +402,56 @@ public class ToothCompatTests {
     // Assert
     Assert.NotNull(package);
     Assert.Equal("tooth", package.Kind);
+    Assert.Equal("github.com/user/repo#client", package.Identity);
     Assert.Equal(SemVersion.Parse("1.2.5"), package.Version);
     Assert.Equal(["github.com/user/clientdep"], EdgeRefs(package));
+  }
+
+  [Theory]
+  [InlineData("", "server", "github.com/user/repo")]
+  [InlineData("client", "server", "github.com/user/repo#client")]
+  [InlineData("", "client", "github.com/user/repo#client")]
+  public async Task Convert_Variant_IdentityCarriesSelectedLabel(
+      string variant, string platform, string identity) {
+    // Arrange
+    PackageManifest manifest = (await ParseDocument(_multiPlatformV3)).Manifest;
+    McmodPlatformExtensions.TryParse(platform, out McmodPlatform parsed);
+    LipEnvironment environment = new(parsed, "win-x64");
+
+    // Act
+    McmodPackage? package = ToothCompat.Convert(manifest, variant, environment)?.Package;
+
+    // Assert
+    Assert.NotNull(package);
+    Assert.Equal(identity, package.Identity);
+    Assert.Equal(identity == "github.com/user/repo" ? "" : identity.Split('#')[1],
+        package.Variant);
+  }
+
+  [Theory]
+  [InlineData("github.com/user/repo", McmodPlatform.Server, "github.com/user/repo")]
+  [InlineData("github.com/user/repo", McmodPlatform.Client, "github.com/user/repo#client")]
+  [InlineData("github.com/user/repo#extra", McmodPlatform.Server, "github.com/user/repo#extra")]
+  public async Task GetLockedIdentity_LockEntry_IsThatOfTheConversion(
+      string firstHop, McmodPlatform platform, string identity) {
+    // Arrange: written before the identity carried the label.
+    PackageManifest manifest = (await ParseDocument(_multiPlatformV3)).Manifest;
+    LockedPackage locked = new() {
+      Identity = "github.com/user/repo",
+      Version = "1.2.3",
+      Kind = "tooth",
+      Explicit = true,
+      Chain = [new LockedHop(firstHop, null)],
+      ArchiveKey = "github.com/user/repo@1.2.3",
+      Manifest = JsonSerializer.SerializeToElement(manifest),
+    };
+
+    // Act
+    string actual = await ToothCompat.GetLockedIdentity(
+        locked, new LipEnvironment(platform, "win-x64"));
+
+    // Assert
+    Assert.Equal(identity, actual);
   }
 
   [Fact]

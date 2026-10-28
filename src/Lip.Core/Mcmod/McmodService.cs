@@ -46,9 +46,10 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 /// that no explicitly installed package needs any more are removed.
 ///
 /// Locks migrated from v3 have no archive identity: such packages are reopened by resolving
-/// their tag again (archive key "path@version"). A v3 lock may hold two variants of one tooth
-/// under the same identity; they are kept, listed and uninstalled as separate entries, while
-/// the solver sees the identity once (spec §6.3 applies to new solves).
+/// their tag again (archive key "path@version"). The variants of one tooth have distinct
+/// identities (spec §9.1), but a lock may still hold two entries of one identity (e.g. a v3 lock
+/// with tooth paths differing only in case); they are kept, listed and uninstalled as separate
+/// entries, while the solver sees the identity once (spec §6.3 applies to new solves).
 public class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
@@ -121,8 +122,8 @@ public class McmodService(
       targets.AddRange(matched.Where(p => !targets.Contains(p)));
     }
 
-    // Removing some of several entries of one identity (two variants of one tooth from a v3
-    // lock) leaves the identity installed, so the package set does not change: such entries
+    // Removing some of several entries of one identity (see the class remarks) leaves the
+    // identity installed, so the package set does not change: such entries
     // are uninstalled directly, like every target with --no-dependencies.
     List<LockedPackage> direct = options.NoDependencies
         ? targets
@@ -797,10 +798,11 @@ public class McmodService(
         return null;
       }
 
-      // Migrated v3 entries have no identity. Tooth packages have no relative refs, so it is
+      // Migrated v3 entries have no identity: that of the repository of the tooth path (the
+      // package identity without its "#label"). Tooth packages have no relative refs, so it is
       // never used as a base; it is never written to the lock either.
       ArchiveIdentity identity = package.Archive ?? new GitArchiveIdentity(
-          ArchiveProvider.GetRepoUrl(package.Identity), "", "");
+          ArchiveProvider.GetRepoUrl(package.Identity.Split('#')[0]), "", "");
       List<ChainHop> chain = [
         .. package.Chain.Select(h => new ChainHop(
             Ref.Parse(h.Ref, allowFile: true), h.Artifact, h.Commit)),

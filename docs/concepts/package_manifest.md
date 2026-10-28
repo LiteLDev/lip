@@ -271,9 +271,13 @@ lip converts a `tooth.json` in memory into a format 4 file package and handles i
 other package; the exact mapping is §9 of the [specification](../spec/package_format.md):
 
 - If an archive has both `tooth.json` and `manifest.json`, `tooth.json` wins.
-- The package's identity is the `tooth` value, and the variant of a ref is the variant label.
-  When the platform is `client` and the ref has no variant, a variant labeled `client` is used
-  if there is one. The variants with that label that match the RID are merged, as in lip v0.x.
+- The variant of a ref is the variant label. When the platform is `client` and the ref has no
+  variant, a variant labeled `client` is used if there is one. The variants with that label
+  that match the RID are merged, as in lip v0.x.
+- The package's identity is the `tooth` value for the unlabeled variant, and `tooth#label` for
+  a labeled one: as in lip v0.x, each labeled variant is a package of its own, so
+  `github.com/LiteLDev/LegacyScriptEngine` and the `#quickjs` and `#lua` variants it depends on
+  are installed side by side.
 - If the `tooth.json` at a tag declares another version than the tag, the tag version wins and
   lip prints a warning.
 - The dependencies of the selected variant are installed like `installDependencies`, with their

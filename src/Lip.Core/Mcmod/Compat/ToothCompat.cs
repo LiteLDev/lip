@@ -31,8 +31,9 @@ public record ToothAsset(string Mount, PackageManifestAsset.AssetType Type, IRea
 /// tooth.json compatibility (spec §9): converts a tooth.json (format 1–3; 1 and 2 are first
 /// migrated to 3 by PackageManifestMigration) to the format 4 package a ref variant selects.
 ///
-/// - §9.1: the identity is the "tooth" value, the version its "version" (the tag version wins
-///   over it; the resolver warns). The variant is selected exactly like PackageManifest.GetVariant
+/// - §9.1: the identity is the "tooth" value, followed by "#label" when the selected v3 label
+///   is not "" (GetIdentity); the version is its "version" (the tag version wins over it; the
+///   resolver warns). The variant is selected exactly like PackageManifest.GetVariant
 ///   does, but for the environment rid instead of lip's own: every variant with the label whose
 ///   platform matches the rid, merged. Null when no variant applies; other errors of GetVariant
 ///   (e.g. duplicate dependency keys across merged variants) propagate, as they failed the
@@ -94,7 +95,7 @@ public class ToothCompat : IToothCompat {
 
     ConcreteDocument document = new() {
       IsMarked = true,
-      Name = manifest.Path,
+      Name = GetIdentity(manifest.Path, label),
       Version = manifest.Version,
       Type = "files",
       InstallDependencies = [
@@ -113,7 +114,10 @@ public class ToothCompat : IToothCompat {
     };
 
     return new ToothConversion(
-        new McmodPackage(document, JsonSerializer.SerializeToElement(manifest)) { Kind = KindName },
+        new McmodPackage(document, JsonSerializer.SerializeToElement(manifest)) {
+          Kind = KindName,
+          Variant = label,
+        },
         assets);
   }
 
@@ -123,14 +127,37 @@ public class ToothCompat : IToothCompat {
   /// one. Null when the tooth.json has no such variant for the environment.
   public static async Task<ToothConversion?> FromLocked(
       LockedPackage package, LipEnvironment environment) {
+    (PackageManifest manifest, string variant) = await ReadLocked(package);
+    SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
+
+    return Convert(manifest, variant, environment, version);
+  }
+
+  /// The identity of the package a tooth.json variant converts to (spec §9.1): the tooth path,
+  /// followed by "#label" for a labelled variant. v3 installed every labelled variant as a
+  /// package of its own, which may depend on its sibling variants.
+  public static string GetIdentity(string tooth, string label) =>
+      label == "" ? tooth : $"{tooth}#{label}";
+
+  /// The identity of a lock entry of kind "tooth": that of its recorded tooth.json converted
+  /// with the variant of the last chain hop (spec §9.8), as FromLocked converts it. Locks
+  /// written before the identity carried the label record the bare tooth path for labelled
+  /// variants. Throws like FromLocked when the entry cannot be read.
+  public static async Task<string> GetLockedIdentity(
+      LockedPackage package, LipEnvironment environment) {
+    (PackageManifest manifest, string variant) = await ReadLocked(package);
+    return GetIdentity(manifest.Path, GetLabel(manifest, variant, environment));
+  }
+
+  /// The recorded tooth.json of a lock entry and the variant of its last chain hop.
+  private static async Task<(PackageManifest Manifest, string Variant)> ReadLocked(
+      LockedPackage package) {
     PackageManifest manifest = await PackageManifest.FromStream(
         new MemoryStream(Encoding.UTF8.GetBytes(package.Manifest.GetRawText())));
     string variant = package.Chain.Count > 0
         ? Ref.Parse(package.Chain[^1].Ref, allowFile: true).Variant
         : "";
-    SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
-
-    return Convert(manifest, variant, environment, version);
+    return (manifest, variant);
   }
 
   /// The v3 label a ref variant selects (spec §9.2).

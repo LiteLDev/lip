@@ -239,6 +239,13 @@ public static partial class ToothMigrator {
     if (byPlatform) {
       notes.Add("variants: the unlabeled and \"client\" variants became server and client "
           + "artifacts of the default variant.");
+    } else if (tooth.Variants.FirstOrDefault(v => v.Label != "") is { } labeled) {
+      // §9.1: tooth.json gave each labelled variant an identity of its own.
+      notes.Add($"variants: lip installs each labeled variant of a tooth.json as a package of "
+          + $"its own, named \"{tooth.Path}#<label>\"; give the packages the labeled artifacts "
+          + $"point to distinct names (e.g. '{PackageNames.FromText($"{name}-{labeled.Label}", name)}')"
+          + " so that "
+          + "they can be installed together and depend on each other.");
     }
 
     JsonArray artifacts = [];

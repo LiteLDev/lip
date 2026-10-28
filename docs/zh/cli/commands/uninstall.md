@@ -12,7 +12,7 @@ lip uninstall <PACKAGES> [options]
 
 | 参数 | 说明 |
 | --- | --- |
-| `<PACKAGES>` | 要卸载的包，可以是包名（例如 `LegacyMoney`，不区分大小写），也可以是安装时使用的 `<path>` 或 `<path>#<variant>`（例如 `github.com/LiteLDev/LegacyMoney`）。不带 variant 的路径匹配所有变体。 |
+| `<PACKAGES>` | 要卸载的包，可以是包名（例如 `LegacyMoney`，不区分大小写），也可以是安装时使用的 `<path>` 或 `<path>#<variant>`（例如 `github.com/LiteLDev/LegacyMoney`）。以 `<path>#<variant>` 安装的 `tooth.json` 包，其包名即 `<path>#<variant>`。不带 variant 的路径匹配所有变体，除非它本身就是某个已安装包的包名（例如 `tooth.json` 包的无标签变体）。 |
 
 包名可通过 [`lip list`](list.md) 查看。
 

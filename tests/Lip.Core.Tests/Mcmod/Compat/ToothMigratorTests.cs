@@ -144,6 +144,32 @@ public class ToothMigratorTests {
   }
 
   [Fact]
+  public void Migrate_LabeledVariants_NotesThatTheyNeedDistinctNames() {
+    // Arrange
+    PackageManifest tooth = Parse("""
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "tooth": "example.com/engine",
+          "version": "1.0.0",
+          "variants": [
+            { "label": "", "dependencies": { "example.com/engine#lua": "1.0.0" } },
+            { "label": "lua", "assets": [ { "type": "self" } ] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = ToothMigrator.Migrate(tooth);
+
+    // Assert
+    Assert.IsType<RoutingDocument>(Reparse(result));
+    string note = Assert.Single(result.Notes, n => n.StartsWith("variants:", StringComparison.Ordinal));
+    Assert.Contains("\"example.com/engine#<label>\"", note);
+    Assert.Contains("'engine-lua'", note);
+  }
+
+  [Fact]
   public void Migrate_ConvertibleRange_HasNoNote() {
     // Arrange
     PackageManifest tooth = Parse("""

@@ -25,6 +25,11 @@ public interface IPackage {
 
   public SemVersion Version { get; }
 
+  /// What selected this package within its archive besides the archive itself: "" for a
+  /// manifest.json package (an archive holds one concrete document), the v3 label for a
+  /// converted tooth.json, whose variants are different packages in one archive (spec §9).
+  public string Variant => "";
+
   public IReadOnlyList<InstallEdge> InstallEdges { get; }
 
   public IReadOnlyList<Dep> Conflicts { get; }
@@ -45,6 +50,9 @@ public record McmodPackage(ConcreteDocument Document, JsonElement Manifest) : IP
   public string Identity => Document.Name;
 
   public SemVersion Version => Document.Version;
+
+  /// The v3 label a tooth.json was converted with (IPackage.Variant); "" otherwise.
+  public string Variant { get; init; } = "";
 
   /// Unmarked documents are self-contained: they never create install edges.
   public IReadOnlyList<InstallEdge> InstallEdges => Document.IsMarked

@@ -257,9 +257,11 @@ lip 在内存中把 `tooth.json` 转换为第 4 版的文件包，并像其他�
 [规范](../spec/package_format.md) §9：
 
 - 归档同时含有 `tooth.json` 和 `manifest.json` 时，以 `tooth.json` 为准。
-- 包的身份是 `tooth` 的值，ref 的 variant 即变体标签。当平台为 `client` 且 ref 不带
-  variant 时，若存在标签为 `client` 的变体，则使用它。具有该标签且与 RID 匹配的各变体
-  会像 lip v0.x 那样合并。
+- ref 的 variant 即变体标签。当平台为 `client` 且 ref 不带 variant 时，若存在标签为
+  `client` 的变体，则使用它。具有该标签且与 RID 匹配的各变体会像 lip v0.x 那样合并。
+- 无标签变体的包身份是 `tooth` 的值，带标签变体的包身份是 `tooth#label`：与 lip v0.x
+  一样，每个带标签的变体都是独立的包，因此 `github.com/LiteLDev/LegacyScriptEngine` 与它
+  所依赖的 `#quickjs`、`#lua` 变体会并存安装。
 - 若标签处的 `tooth.json` 声明的版本与标签不同，以标签版本为准，lip 会给出警告。
 - 所选变体的依赖按 `installDependencies` 的方式安装，其版本范围按 lip v0.x 的方式解释。
 - 每个资源都成为包的一部分：`self` 是标签处的仓库，`zip`、`tar`、`tgz` 和 `uncompressed`

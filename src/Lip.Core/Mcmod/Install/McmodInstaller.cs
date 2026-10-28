@@ -280,7 +280,8 @@ public partial class McmodInstaller(
   /// workspace root).
   private static string BaseDirectory(ConcreteDocument document, LipEnvironment environment) {
     if (document.IsFilePackage) {
-      // The name of a file package converted from a tooth.json is its tooth path.
+      // The name of a file package converted from a tooth.json is its tooth path (with
+      // "#label" for a labelled variant), never a path segment.
       return "";
     }
     if (!NamePattern().IsMatch(document.Name)) {
