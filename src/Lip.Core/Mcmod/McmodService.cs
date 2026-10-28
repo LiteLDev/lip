@@ -41,8 +41,9 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 ///
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the lock
 /// without network access, and their archives are opened from the lock only when needed. If the
-/// request cannot be satisfied with every installed package pinned, it is solved again with only
-/// the explicitly installed packages pinned, so that dependencies may change version. Packages
+/// request cannot be satisfied with every installed package pinned, or the installed dependencies
+/// hold a request back from a higher version, it is solved again with only the explicitly
+/// installed packages pinned, so that dependencies may change version. Packages
 /// that no explicitly installed package needs any more are removed.
 ///
 /// Locks migrated from v3 have no archive identity: such packages are reopened by resolving
@@ -208,19 +209,37 @@ public class McmodService(
     }
 
     List<string> identities = await RequestedIdentities(workspace, requests);
+
+    // The installed packages each request replaces. Usually the package of the requested
+    // identity; but the identity of a tooth.json package is its "tooth" path, which may change
+    // between versions (a renamed repository), and an update then replaces the package installed
+    // from the same ref under its old identity (spec §7: the package is replaced when the result
+    // differs in identity).
+    HashSet<string> renamed = [];
     for (int i = 0; i < identities.Count; i++) {
-      if (!workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, identities[i]))) {
+      if (workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, identities[i]))) {
+        continue;
+      }
+
+      List<LockedPackage> replaced = packages.Count == 0
+          ? [.. workspace.Lock.Packages.Where(p => SameIdentity(p.Identity, requests[i].Argument))]
+          : InstalledFromRef(workspace, requests[i].Request.Ref);
+      if (replaced.Count == 0) {
         throw new InvalidOperationException(
             $"Cannot update package '{requests[i].Argument}' because it is not currently "
             + "installed.");
       }
+
+      renamed.UnionWith(replaced.Select(p => Fold(p.Identity)));
     }
 
     await Execute(workspace, options, Changes(workspace, options, await MakePlan(
         workspace,
         [.. requests.Select(r => r.Request)],
-        unpinned: identities,
-        explicitIdentities: ExplicitIdentities(workspace.Lock))));
+        unpinned: [.. identities, .. renamed],
+        explicitIdentities: [
+          .. ExplicitIdentities(workspace.Lock).Where(i => !renamed.Contains(Fold(i))),
+        ])));
   }
 
   public async Task<IReadOnlyList<InstalledPackage>> List() {
@@ -439,18 +458,23 @@ public class McmodService(
     List<Group> frozen = [.. groups.Where(g => g.Pinned is null && !unpinnedSet.Contains(g.Key))];
     List<Candidate> pinnedAll = [.. groups.Where(g => g.Pinned is not null).Select(g => g.Pinned!)];
 
+    List<Candidate> pinnedExplicit = [
+      .. groups
+          .Where(g => g.Pinned is not null && explicitSet.Contains(g.Key)
+              && g.Entries.Any(p => p.Explicit))
+          .Select(g => g.Pinned!),
+    ];
+    bool dependenciesPinned = pinnedExplicit.Count < pinnedAll.Count;
+
     SolvedGraph graph;
     try {
       graph = await workspace.Solver.SolveGraph(requests, pinnedAll, workspace.Environment);
+      if (dependenciesPinned) {
+        graph = await WithoutHeldBackRequests(workspace, requests, pinnedExplicit, graph);
+      }
     }
     catch (DependencyResolutionException withInstalled) {
-      List<Candidate> pinnedExplicit = [
-        .. groups
-            .Where(g => g.Pinned is not null && explicitSet.Contains(g.Key)
-                && g.Entries.Any(p => p.Explicit))
-            .Select(g => g.Pinned!),
-      ];
-      if (pinnedExplicit.Count == pinnedAll.Count) {
+      if (!dependenciesPinned) {
         throw;
       }
 
@@ -508,6 +532,64 @@ public class McmodService(
         groups,
         frozen,
         finalExplicit);
+  }
+
+  /// Pinning the installed dependencies must not make a request settle for an older version than
+  /// it gets without them (spec §6 prefers earlier candidates; a spec ref without a version takes
+  /// its newest one). When a spec request is satisfied below its first candidate, the requests
+  /// are solved again with only the explicitly installed packages pinned, as when the installed
+  /// dependencies do not fit at all; that solution is taken if it gives a request a higher
+  /// version. (With every installed package pinned, the search already found the highest
+  /// versions the installed dependencies allow, so they cannot stay for a higher one.)
+  private async Task<SolvedGraph> WithoutHeldBackRequests(
+      Workspace workspace,
+      IReadOnlyList<PackageRequest> requests,
+      IReadOnlyList<Candidate> pinnedExplicit,
+      SolvedGraph graph) {
+    static bool IsVersioned(PackageRequest request) =>
+        request.Ref.Kind == RefKind.Spec && request.Ref.GitRef is null;
+    static bool IsNewer(Candidate a, Candidate b) =>
+        SemVersion.ComparePrecedence(a.Package.Version, b.Package.Version) > 0;
+
+    bool heldBack = false;
+    for (int i = 0; i < requests.Count && !heldBack; i++) {
+      if (!IsVersioned(requests[i]) || graph.RequestSatisfiers[i] < 0) {
+        continue;
+      }
+
+      await foreach (Candidate first in workspace.Resolver.ResolveLazy(
+          requests[i].Ref, requests[i].Base, requests[i].Range, workspace.Environment)) {
+        heldBack = IsNewer(first, graph.Order[graph.RequestSatisfiers[i]]);
+        break;
+      }
+    }
+
+    if (!heldBack) {
+      return graph;
+    }
+
+    SolvedGraph unpinned;
+    try {
+      unpinned = await workspace.Solver.SolveGraph(requests, pinnedExplicit, workspace.Environment);
+    }
+    catch (DependencyResolutionException) {
+      return graph;
+    }
+
+    bool newer = Enumerable.Range(0, requests.Count).Any(i =>
+        IsVersioned(requests[i])
+        && unpinned.RequestSatisfiers[i] >= 0
+        && graph.RequestSatisfiers[i] >= 0
+        && IsNewer(unpinned.Order[unpinned.RequestSatisfiers[i]],
+            graph.Order[graph.RequestSatisfiers[i]]));
+    if (!newer) {
+      return graph;
+    }
+
+    await _ui.PrintInfo(
+        "The installed dependencies hold back a newer version of the request; resolving them"
+        + " again.");
+    return unpinned;
   }
 
   #endregion
@@ -934,6 +1016,17 @@ public class McmodService(
       }),
     ];
   }
+
+  /// The installed packages whose chain starts with the target and variant of a ref (any git
+  /// ref).
+  private static List<LockedPackage> InstalledFromRef(Workspace workspace, Ref wanted) => [
+    .. workspace.Lock.Packages.Where(p =>
+        p.Chain.Count > 0
+        && Ref.TryParse(p.Chain[0].Ref, allowFile: true, out Ref? first, out _)
+        && first.Kind == wanted.Kind
+        && string.Equals(first.Target, wanted.Target, StringComparison.OrdinalIgnoreCase)
+        && first.Variant == wanted.Variant),
+  ];
 
   #endregion
 

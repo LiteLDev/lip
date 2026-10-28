@@ -190,6 +190,99 @@ public class McmodServiceTests {
     Assert.Equal("app 2", _ws.Fs.File.ReadAllText(_ws.Path("app/app.dll")));
   }
 
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Update_NewestNeedsNewerInstalledDependency_UpdatesBoth(bool byName) {
+    // Arrange: lib 1.0.0 is installed as a dependency of app 1.0.0; app 2.0.0 needs lib 1.1.0.
+    AddLibAndApp();
+    await InstallAppOnLib100();
+
+    // Act
+    await _ws.Service.Update(byName ? [App] : [], s_options);
+
+    // Assert
+    Assert.Equal(
+        [(Lib, "1.1.0", false), (App, "2.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal("app 2", _ws.Fs.File.ReadAllText(_ws.Path("app/app.dll")));
+    Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Fact]
+  public async Task Update_VersionAcceptingInstalledDependency_KeepsIt() {
+    // Arrange: app 1.5.0 still accepts lib 1.0.0, so lib is not updated.
+    AddLibAndApp();
+    _ws.AddTag(App, "1.5.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(App, "1.5.0", "app/app.dll",
+          $$"""{ "{{Lib}}": ">=1.0.0" }"""),
+      ["file.dll"] = "app 1.5",
+    });
+    await InstallAppOnLib100();
+
+    // Act
+    await _ws.Service.Update([$"{App}@1.5.0"], s_options);
+
+    // Assert
+    Assert.Equal(
+        [(Lib, "1.0.0", false), (App, "1.5.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+  }
+
+  [Fact]
+  public async Task Install_NewestNeedsNewerInstalledDependency_UpdatesTheDependency() {
+    // Arrange: tool 2.0.0 needs lib 1.1.0, tool 1.0.0 accepts the installed lib 1.0.0.
+    const string Tool = "example.com/tool";
+    AddLibAndApp();
+    _ws.AddTag(Tool, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Tool, "1.0.0", "tool/tool.dll",
+          $$"""{ "{{Lib}}": ">=1.0.0" }"""),
+      ["file.dll"] = "tool 1",
+    });
+    _ws.AddTag(Tool, "2.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Tool, "2.0.0", "tool/tool.dll",
+          $$"""{ "{{Lib}}": ">=1.1.0" }"""),
+      ["file.dll"] = "tool 2",
+    });
+    await InstallAppOnLib100();
+
+    // Act
+    await _ws.Service.Install([Tool], s_options);
+
+    // Assert
+    Assert.Equal(
+        [(Lib, "1.1.0", false), (App, "1.0.0", true), (Tool, "2.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+  }
+
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Update_ToothPathChanged_ReplacesThePackage(bool byName) {
+    // Arrange: the repository example.com/old declares "example.com/new" from 2.0.0 on (a
+    // renamed repository), so its newest version has another identity.
+    const string Old = "example.com/old";
+    const string New = "example.com/new";
+    _ws.AddTag(Old, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Old, "1.0.0", "shim/shim.dll"),
+      ["file.dll"] = "shim 1",
+    });
+    _ws.AddTag(Old, "2.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(New, "2.0.0", "shim/shim.dll"),
+      ["file.dll"] = "shim 2",
+    });
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+
+    // Act
+    await _ws.Service.Update(byName ? [Old] : [], s_options);
+
+    // Assert
+    Assert.Equal(
+        [(New, "2.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal("shim 2", _ws.Fs.File.ReadAllText(_ws.Path("shim/shim.dll")));
+  }
+
   [Fact]
   public async Task Update_NotInstalled_Throws() {
     AddLibAndApp();
@@ -762,6 +855,16 @@ public class McmodServiceTests {
   }
 
   /// lib 1.0.0 and 1.1.0; app 1.0.0 (lib >=1.0.0) and 2.0.0 (lib >=1.1.0).
+  /// Installs app 1.0.0 with lib 1.0.0 as its (implicit) dependency.
+  private async Task InstallAppOnLib100() {
+    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{App}@1.0.0"], s_options);
+    await _ws.Service.Uninstall([Lib], s_options);
+    Assert.Equal(
+        [(Lib, "1.0.0", false), (App, "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+  }
+
   private void AddLibAndApp() {
     foreach (string version in new[] { "1.0.0", "1.1.0" }) {
       _ws.AddTag(Lib, version, new() {
