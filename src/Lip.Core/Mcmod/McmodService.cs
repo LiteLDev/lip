@@ -220,8 +220,17 @@ public class McmodService(
         workspace,
         [.. requests.Select(r => r.Request)],
         unpinned: identities,
-        explicitIdentities: ExplicitIdentities(workspace.Lock))));
+        explicitIdentities: ExplicitIdentities(workspace.Lock),
+        preferNewest: true)));
   }
+
+  /// Whether some request is satisfied by a newer version in candidate than in current.
+  private static bool SatisfiesWithNewerVersion(SolvedGraph candidate, SolvedGraph current) =>
+      candidate.RequestSatisfiers.Zip(current.RequestSatisfiers).Any(pair =>
+          pair.First >= 0 && pair.Second >= 0
+          && SemVersion.ComparePrecedence(
+              candidate.Order[pair.First].Package.Version,
+              current.Order[pair.Second].Package.Version) > 0);
 
   public async Task<IReadOnlyList<InstalledPackage>> List() {
     LockFile lockFile = await _lockStore.Load(_workspaceRoot());
@@ -422,7 +431,8 @@ public class McmodService(
       Workspace workspace,
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyCollection<string> unpinned,
-      IReadOnlyCollection<string> explicitIdentities) {
+      IReadOnlyCollection<string> explicitIdentities,
+      bool preferNewest = false) {
     HashSet<string> unpinnedSet = [.. unpinned.Select(Fold)];
     HashSet<string> explicitSet = [.. explicitIdentities.Select(Fold)];
 
@@ -438,18 +448,39 @@ public class McmodService(
 
     List<Group> frozen = [.. groups.Where(g => g.Pinned is null && !unpinnedSet.Contains(g.Key))];
     List<Candidate> pinnedAll = [.. groups.Where(g => g.Pinned is not null).Select(g => g.Pinned!)];
+    List<Candidate> pinnedExplicit = [
+      .. groups
+          .Where(g => g.Pinned is not null && explicitSet.Contains(g.Key)
+              && g.Entries.Any(p => p.Explicit))
+          .Select(g => g.Pinned!),
+    ];
 
     SolvedGraph graph;
     try {
       graph = await workspace.Solver.SolveGraph(requests, pinnedAll, workspace.Environment);
+
+      // An update takes the newest version of what it requests (spec §8, "Updating"): installed
+      // dependencies that hold a request back at an older version are resolved again, as when
+      // they do not fit the request at all.
+      if (preferNewest && pinnedExplicit.Count < pinnedAll.Count) {
+        SolvedGraph? unpinnedDependencies = null;
+        try {
+          unpinnedDependencies = await workspace.Solver.SolveGraph(
+              requests, pinnedExplicit, workspace.Environment);
+        }
+        catch (DependencyResolutionException) {
+          // Then the installed dependencies are the only way to satisfy the request.
+        }
+
+        if (unpinnedDependencies is not null
+            && SatisfiesWithNewerVersion(unpinnedDependencies, graph)) {
+          await _ui.PrintInfo(
+              "The installed dependencies hold back the requested version; resolving them again.");
+          graph = unpinnedDependencies;
+        }
+      }
     }
     catch (DependencyResolutionException withInstalled) {
-      List<Candidate> pinnedExplicit = [
-        .. groups
-            .Where(g => g.Pinned is not null && explicitSet.Contains(g.Key)
-                && g.Entries.Any(p => p.Explicit))
-            .Select(g => g.Pinned!),
-      ];
       if (pinnedExplicit.Count == pinnedAll.Count) {
         throw;
       }

@@ -190,6 +190,44 @@ public class McmodServiceTests {
     Assert.Equal("app 2", _ws.Fs.File.ReadAllText(_ws.Path("app/app.dll")));
   }
 
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Update_InstalledDependencyHoldsBackNewest_ResolvesItAgain(bool byName) {
+    // Arrange: app 2.0.0 needs lib >=1.1.0, but the installed lib 1.0.0 (which app 1.0.0 needed)
+    // still allows app 1.0.0. That must not keep the update from taking app 2.0.0.
+    AddLibAndAppWithRanges(app1Lib: "<1.1.0", app2Lib: ">=1.1.0");
+    await _ws.Service.Install([$"{App}@1.0.0"], s_options);
+    Assert.Equal(
+        [(Lib, "1.0.0", false), (App, "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+
+    // Act
+    await _ws.Service.Update(byName ? [App] : [], s_options);
+
+    // Assert
+    Assert.Equal(
+        [(Lib, "1.1.0", false), (App, "2.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal("app 2", _ws.Fs.File.ReadAllText(_ws.Path("app/app.dll")));
+    Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Fact]
+  public async Task Update_InstalledDependencyFitsNewest_IsKept() {
+    // Arrange: app 2.0.0 accepts the installed lib 1.0.0, so lib stays although 1.1.0 exists.
+    AddLibAndAppWithRanges(app1Lib: "<1.1.0", app2Lib: ">=1.0.0");
+    await _ws.Service.Install([$"{App}@1.0.0"], s_options);
+
+    // Act
+    await _ws.Service.Update([App], s_options);
+
+    // Assert
+    Assert.Equal(
+        [(Lib, "1.0.0", false), (App, "2.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+  }
+
   [Fact]
   public async Task Update_NotInstalled_Throws() {
     AddLibAndApp();
@@ -762,6 +800,24 @@ public class McmodServiceTests {
   }
 
   /// lib 1.0.0 and 1.1.0; app 1.0.0 (lib >=1.0.0) and 2.0.0 (lib >=1.1.0).
+  /// Lib 1.0.0 and 1.1.0; app 1.0.0 and 2.0.0 depending on lib with the given ranges.
+  private void AddLibAndAppWithRanges(string app1Lib, string app2Lib) {
+    foreach (string version in new[] { "1.0.0", "1.1.0" }) {
+      _ws.AddTag(Lib, version, new() {
+        ["tooth.json"] = WorkspaceHarness.Tooth(Lib, version, "lib/lib.dll"),
+        ["file.dll"] = $"lib {version}",
+      });
+    }
+
+    foreach ((string version, string range) in new[] { ("1.0.0", app1Lib), ("2.0.0", app2Lib) }) {
+      _ws.AddTag(App, version, new() {
+        ["tooth.json"] = WorkspaceHarness.Tooth(App, version, "app/app.dll",
+            $$"""{ "{{Lib}}": "{{range}}" }"""),
+        ["file.dll"] = $"app {version[0]}",
+      });
+    }
+  }
+
   private void AddLibAndApp() {
     foreach (string version in new[] { "1.0.0", "1.1.0" }) {
       _ws.AddTag(Lib, version, new() {
