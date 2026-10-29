@@ -24,7 +24,7 @@ This is useful for trying `lip` or running one-off commands.
 This package was previously published as `@futrime/lip`. If you installed it under the old name, uninstall it first with `npm uninstall -g @futrime/lip`.
 :::
 
-## winget
+## winget <Badge platform="windows" />
 
 ```shell
 winget install levimc.lip
@@ -34,6 +34,6 @@ winget install levimc.lip
 This package was previously published as `futrime.lip`. If you installed it under the old ID, uninstall it first with `winget uninstall futrime.lip`.
 :::
 
-## Windows setup
+## Windows setup <Badge platform="windows" />
 
 Download the latest `lip-<version>-<runtime>-setup.exe` from the [Releases page](https://github.com/LiteLDev/lip/releases/latest) and run it.
