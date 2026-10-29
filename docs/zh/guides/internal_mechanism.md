@@ -76,7 +76,7 @@ lip 在保存于工作区之外、用户数据目录中的锁文件里维护已�
 
 ## 与规范的差异
 
-lip 实现 [lip 包规范](../spec/package_format.md)（格式版本 4）时，有以下刻意的差异：
+lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)（格式版本 4）时，有以下刻意的差异：
 
 1. **仅限服务端**：lip 不从工作区判断平台（规范 §5.1），总是使用 `server`。客户端工作区交由实现同一规范的启动器（如 LeviLauncher）处理。
 2. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。

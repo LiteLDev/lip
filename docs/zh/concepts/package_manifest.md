@@ -2,7 +2,7 @@
 
 lip 包由其归档根部的 `manifest.json` 描述。它就是 LeviLamina 的 `manifest.json`，
 再加上 lip 包格式第 4 版新增的键。LeviLamina 会忽略 lip 新增的键，lip 也不会改变任何
-LeviLamina 键的含义。规范性定义见[包格式规范](../spec/package_format.md)。
+LeviLamina 键的含义。规范性定义见[包格式规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)。
 
 该格式由 JSON Schema
 [`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json)
@@ -254,7 +254,7 @@ lip v0.x 的包使用 `tooth.json`（格式版本 1 到 3）。lip 仍然读取�
 请使用 [`lip migrate`](../cli/commands/migrate.md) 转换你的包。
 
 lip 在内存中把 `tooth.json` 转换为第 4 版的文件包，并像其他包一样处理它；确切的映射见
-[规范](../spec/package_format.md) §9：
+[规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md) §9：
 
 - 归档同时含有 `tooth.json` 和 `manifest.json` 时，以 `tooth.json` 为准。
 - ref 的 variant 即变体标签。当平台为 `client` 且 ref 不带 variant 时，若存在标签为

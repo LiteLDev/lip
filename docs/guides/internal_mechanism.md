@@ -76,7 +76,7 @@ Files written to make an operation atomic are hidden and sit next to their targe
 
 ## Deviations from the Specification
 
-lip implements the [lip package specification](../spec/package_format.md) (format version 4) with these deliberate differences:
+lip implements the [lip package specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md) (format version 4) with these deliberate differences:
 
 1.  **Server only**: lip does not determine the platform from the workspace (spec §5.1); it always uses `server`. Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
 2.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.

@@ -3,7 +3,7 @@
 A lip package is described by a `manifest.json` at the root of its archive. It is the
 `manifest.json` of LeviLamina, extended with the keys of lip package format version 4.
 LeviLamina ignores the keys lip adds, and lip never changes the meaning of a LeviLamina key.
-The normative definition is the [package format specification](../spec/package_format.md).
+The normative definition is the [package format specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md).
 
 The format is described by the JSON Schema
 [`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json).
@@ -268,7 +268,7 @@ Packages of lip v0.x use `tooth.json` (format versions 1 to 3). lip still reads 
 longer writes them; convert yours with [`lip migrate`](../cli/commands/migrate.md).
 
 lip converts a `tooth.json` in memory into a format 4 file package and handles it like any
-other package; the exact mapping is §9 of the [specification](../spec/package_format.md):
+other package; the exact mapping is §9 of the [specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md):
 
 - If an archive has both `tooth.json` and `manifest.json`, `tooth.json` wins.
 - The variant of a ref is the variant label. When the platform is `client` and the ref has no

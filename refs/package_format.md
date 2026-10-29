@@ -85,11 +85,11 @@ Other keys in a routing document are not used in resolution. A routing document 
 | `rid` | string \| non-empty string array | No | .NET RID; omitted means any |
 | `refs` | ref[] | Yes | Non-empty; alternatives in order |
 
-<span v-pre>**Templates**: strings in `refs` may contain `{{name}}`, `{{version}}`, `{{platform}}` and `{{rid}}`, substituted as follows:</span>
-- <span v-pre>`{{name}}` and `{{version}}` take the value of the key of the same name in this document; if this document lacks that key, the ref produces no candidates (see §5.2) instead of failing the whole operation.</span>
-- <span v-pre>`{{platform}}` and `{{rid}}` take the value of the current environment.</span>
+**Templates**: strings in `refs` may contain `{{name}}`, `{{version}}`, `{{platform}}` and `{{rid}}`, substituted as follows:
+- `{{name}}` and `{{version}}` take the value of the key of the same name in this document; if this document lacks that key, the ref produces no candidates (see §5.2) instead of failing the whole operation.
+- `{{platform}}` and `{{rid}}` take the value of the current environment.
 - Templates are substituted first, then the ref is parsed according to §3.
-- <span v-pre>When any other `{{`…`}}` appears, the document is invalid.</span>
+- When any other `{{`…`}}` appears, the document is invalid.
 
 **Validity**: let A and B be two entries with the same `variant`. The document is invalid if both of the following hold:
 1. A and B write the same set of selector keys (`platform` and `rid` are each written in both or in neither);
@@ -164,7 +164,7 @@ Resolve produces an **ordered sequence of concrete package candidates**. Below, 
    - relative: obtained inside `base` according to §3.
    - url: obtained by downloading.
    - spec: take all tag versions satisfying `range`, ordered by SemVer precedence from highest to lowest; at equal precedence, the lexicographically greater tag name comes first. Run steps 2–4 on the archive of each version in turn, and concatenate the candidates each produces in that order.
-   - pinned spec: resolve the git-ref to a commit (§3) once per operation, so that one branch names one commit throughout, and run steps 2–4 on the git archive of that commit. When the repository has no such branch or tag, or no such commit, there is no candidate. `range` is not used to select the archive; it still applies in step 4.
+   - pinned spec: the git-ref names a commit (§3); within one operation a git-ref names the same commit throughout, even if its branch or tag moves meanwhile. Run steps 2–4 on the git archive of that commit. When the repository has no such branch or tag, or no such commit, there is no candidate. `range` is not used to select the archive; it still applies in step 4.
    - When the archive cannot be obtained, or is invalid (§2), there is no candidate.
 2. **Read the document.** When the document is invalid, there is no candidate.
 3. **If it is a routing document:**
@@ -258,11 +258,11 @@ When establishing the layout fails, the workspace must be left unchanged. Establ
 
 **Atomicity**: an operation (install, uninstall or update, together with every dependency it installs, replaces or removes) succeeds or fails as a whole.
 
-1. **Plan first**: before changing the workspace, lip must do everything that can fail without changing it: resolving, solving, fetching every archive the operation installs, establishing which files every installation and uninstallation writes, keeps and deletes, and checking every failure condition of this section, including the server layout. Each step is planned against the workspace as the steps before it leave it (for example, an update installs the new version into the workspace the uninstallation of the old version leaves). A failure while planning leaves the workspace and the lock unchanged.
-2. **Then apply**: when a step fails while it is applied (a file cannot be written or deleted, a command exits with a non-zero code, the user cancels the operation), lip must undo every change the operation made to the workspace, in reverse order: delete the files it created, restore the files it overwrote or deleted, and restore the directories and the server layout. The lock must not change. lip writes the lock last, once every step has succeeded.
+1. **Early failures change nothing**: when an operation fails for a reason that does not depend on changing the workspace — a resolution or dependency-graph failure (§5, §6), an archive that cannot be obtained, a missing `src`, a file owned by another package, a server layout that cannot be established — no command of the operation runs, and the workspace and the lock are left unchanged. Each step is checked against the workspace as the steps before it leave it (for example, an update installs the new version into the workspace the uninstallation of the old version leaves).
+2. **Later failures are undone**: when a step fails while the workspace is being changed (a file cannot be written or deleted, a command exits with a non-zero code, the user cancels the operation), every change the operation made to the workspace is undone: files it created are deleted, files it overwrote or deleted are restored, and directories and the server layout are restored. The lock is left unchanged. The lock reflects an operation only once every step of it has succeeded.
 3. **Commands are not undone**: lip cannot undo what a command did. A failing command (`preInstall`, `postInstall`, `preUninstall` or `postUninstall`) fails the operation like any other step, and lip undoes its own changes, including those made before earlier commands of the operation ran; the commands that already ran are neither run again nor reversed. Commands should therefore be safe to run again, and should not assume that the files of the operation stay in place.
-4. The paths that uninstallation steps 2–4 delete are determined while planning, before any command runs: files a command creates are not deleted by `removeFiles`.
-5. **Interruption**: when lip is interrupted while applying an operation (for example, the process is killed), the next operation on the workspace must first complete the interrupted operation if its lock had been written, and undo it otherwise.
+4. The paths that uninstallation steps 2–4 delete are those that match before any command of the operation runs: files a command creates are not deleted by `removeFiles`.
+5. **Interruption**: when lip is interrupted while changing the workspace (for example, the process is killed), the next operation on the workspace first brings it back to a consistent state: the interrupted operation is either completed, when the lock already reflects it, or undone otherwise.
 6. **Concurrency**: two operations must not apply to the same workspace at the same time.
 
 ## 8. Lock
@@ -275,7 +275,7 @@ For each installed package, lip must record the following in the workspace lock:
 - the identifier of the final archive: the SHA-256 (and the URL or local file it was read from) for a ZIP archive, the commit id and path for a git archive;
 - the list of files owned by the package (workspace-relative paths; files under `plugins/` are recorded in the `mods/` form, see §7).
 
-When reinstalling from the lock, lip must take the final archive recorded in the lock directly and verify its identifier; it must not go through the resolution chain again. In particular a package from a pinned spec ref is reinstalled at the recorded commit, wherever its branch or tag points now.
+When reinstalling from the lock, lip installs the final archive recorded in the lock, and fails when its identifier does not match; the result does not depend on where the refs of the resolution chain point now. In particular a package from a pinned spec ref is reinstalled at the recorded commit, wherever its branch or tag points now.
 
 **Updating** an explicitly installed package requests the first ref of its chain again: an unpinned spec ref takes its newest version, a `branch:` takes the current head, a `tag:` the commit the tag points to now, and a `rev:` the same commit; a url is requested again (lip may serve it from its download cache, so the content behind a URL should not change), and a local file is read again. The package is replaced when the result differs in identity, version, archive key or archive identifier.
 
@@ -290,7 +290,7 @@ When `tooth.json` exists at the root of an archive, lip ignores `manifest.json` 
 5. **Placements**: at install time, every placement of asset i becomes one file-form placement for each file of the asset it matches, ordered by asset, then by the file's position in the asset, then by placement. A `file` placement takes the file whose path equals `src`, placed at `dest`; when there is none, every file matching the glob `src` (tooth.json glob syntax), placed at `dest/<file name>`. A `dir` placement takes every file below the directory `src` (`""` and `"."` meaning every file), placed at `dest/<path relative to src>`. `\` in `dest` is read as `/`, and `.` and `..` segments are applied. A placement matching no file places nothing; when two placements write the same path, the later one wins. The rule of §7 that the root `manifest.json` is never written does not apply.
 6. **preserve_files and remove_files** become `preserveFiles` and `removeFiles`, with `\` replaced by `/`. A `preserve_files` pattern without `/` is prefixed with `**/`, since v3 also matched it against the file name alone. A `remove_files` pattern not ending with `/` also yields the same pattern followed by `/`, since v3 also removed matching directories. A pattern that is not a valid glob (§4.2), such as one starting with `/`, is dropped; tooth.json glob syntax other than `*` and `**` has no meaning in a glob and is matched literally.
 7. **Scripts**: `pre_install` becomes `preInstall`; `install` followed by `post_install` becomes `postInstall`; `pre_uninstall` followed by `uninstall` becomes `preUninstall`; `post_uninstall` becomes `postUninstall`.
-8. **Lock**: the lock records the tooth.json (in format 3, with the version installed) in place of a document. When lip needs the package again, it converts that tooth.json again by this mapping, with the variant of the last hop of the chain and the environment of the lock.
+8. **Lock**: the lock records the tooth.json (in format 3, with the version installed) in place of a document. Reinstalling or uninstalling the package from the lock treats it as the concrete package that recorded tooth.json maps to by this mapping, with the variant of the last hop of the chain and the environment of the lock.
 
 ## Appendix: Examples (Non-normative)
 

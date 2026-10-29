@@ -38,7 +38,6 @@ export default defineDocsConfig({
       { text: 'Guides', link: '/guides/creating_packages' },
       { text: 'CLI', link: '/cli/overview' },
       { text: 'Daemon', link: '/daemon/overview' },
-      { text: 'Spec', link: '/spec/package_format' },
     ],
     zh: [
       { text: '介绍', link: '/zh/intro/quick_start' },
@@ -46,7 +45,6 @@ export default defineDocsConfig({
       { text: '指南', link: '/zh/guides/creating_packages' },
       { text: 'CLI', link: '/zh/cli/overview' },
       { text: '守护进程', link: '/zh/daemon/overview' },
-      { text: '规范', link: '/zh/spec/package_format' },
     ],
   },
   sidebar: {
@@ -119,12 +117,6 @@ export default defineDocsConfig({
           ],
         },
       ],
-      '/spec/': [
-        {
-          text: 'Specification',
-          items: [{ text: 'Package Format', link: '/spec/package_format' }],
-        },
-      ],
     },
     zh: {
       '/zh/intro/': [
@@ -193,12 +185,6 @@ export default defineDocsConfig({
             { text: '管理配置', link: '/zh/guides/managing_configuration' },
             { text: '内部机制', link: '/zh/guides/internal_mechanism' },
           ],
-        },
-      ],
-      '/zh/spec/': [
-        {
-          text: '规范',
-          items: [{ text: '包格式', link: '/zh/spec/package_format' }],
         },
       ],
     },
