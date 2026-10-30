@@ -58,7 +58,7 @@ internal sealed class WorkspaceHarness {
   public FaultyFileSystem Faults { get; }
 
   /// The journal of the workspace, next to its lock.
-  public string JournalPath => Fs.Path.ChangeExtension(LockPath, ".journal");
+  public string JournalPath => LockStore.GetStatePath(Root) + ".journal";
 
   public string Root { get; }
 
@@ -117,7 +117,7 @@ internal sealed class WorkspaceHarness {
 
   public Task<LockFile> Lock() => LockStore.Load(Root);
 
-  /// Where the lock of the workspace lives, outside the workspace.
+  /// Where the lock of the workspace lives, in .lip inside the workspace.
   public string LockPath => LockStore.GetLockPath(Root);
 
   /// Adds a tag of a spec repository, whose tree holds the given files.

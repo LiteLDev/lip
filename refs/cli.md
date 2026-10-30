@@ -196,13 +196,6 @@ The file is a YAML mapping of keys to values. A key absent from the file has its
 
 ## 7. The Lock
 
-The lock of a workspace (PF §8) is kept outside the workspace, per user:
-
-| Platform | Path |
-|---|---|
-| Windows | `%LOCALAPPDATA%\lip\workspaces\<hash>.json` |
-| Other | `$XDG_DATA_HOME/lip/workspaces/<hash>.json`, by default `~/.local/share/lip/workspaces/<hash>.json` |
-
-`<hash>` is the lowercase hexadecimal SHA-256 of the UTF-8 absolute path of the workspace without a trailing separator, lower-cased first on Windows. The lock records that path; when it names another workspace, every command that reads the lock fails. A workspace that is moved or renamed has no lock, and so no installed packages.
+The lock of a workspace (PF §8) is the file `.lip/lock.json` in the workspace. It belongs to the directory, not to its path: a workspace that is moved, renamed or copied keeps its lock, and so its installed packages.
 
 **Legacy**: a lock written by earlier versions of lip, at any location they used, keeps working (PF §8, "Earlier formats").

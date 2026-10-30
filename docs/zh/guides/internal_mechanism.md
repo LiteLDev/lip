@@ -17,7 +17,7 @@ Daemon（`lipd`）通过 **stdio 上的 JSON-RPC** 通信，使工具无需为�
 
 `lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：
 
-1. **锁**：从用户数据目录加载该工作区的锁，或读取早期版本留在工作区中的 `lip_lock.json` 或旧的 `tooth_lock.json`（参见[锁文件](../concepts/lockfiles.md)）。
+1. **锁**：从 `.lip/lock.json` 加载该工作区的锁，或读取早期版本留下的锁：用户数据目录中的锁，或工作区中的 `lip_lock.json` 或旧的 `tooth_lock.json`（参见[锁文件](../concepts/lockfiles.md)）。
 2. **环境**：确定平台和 RID（参见[环境](../concepts/package_manifest.md#环境)）。
 3. **解析器**：把每个 ref 转换为一个具体包候选序列，途中跟随路由文档。
 4. **依赖图求解器**：为每个请求和每条安装边各选出一个候选，使每个身份只出现一次，且不违反任何 `conflicts` 条目。
@@ -63,7 +63,7 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 ## 工作区状态
 
-lip 在保存于工作区之外、用户数据目录中的锁文件里维护已安装包状态（参见[锁文件](../concepts/lockfiles.md#位置)），记录：
+lip 在保存于工作区中 `.lip/lock.json` 的锁文件里维护已安装包状态（参见[锁文件](../concepts/lockfiles.md#位置)），记录：
 - 用户显式请求的包与隐式依赖；
 - 精确安装版本，以及其来源归档；
 - 每个包拥有的文件；
@@ -71,8 +71,10 @@ lip 在保存于工作区之外、用户数据目录中的锁文件里维护已�
 
 为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：锁先写入同目录下的 `.<name>.tmp`，再重命名覆盖锁；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。锁保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
 
-- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到锁旁边的 `<hash>.journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存锁的阶段，则删除备份以完成它。试运行（dry run）只报告日志的存在。
-- **同一时间只有一个操作**：操作期间独占打开锁旁边的 `<hash>.lock`（操作结束时删除）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another lip process is changing the workspace"；请在第一个操作结束后重新运行。
+下面的日志和操作锁保存在 lip 的用户数据目录中：Windows 为 `%LOCALAPPDATA%\lip\workspaces\`，Linux 和 macOS 为 `$XDG_DATA_HOME/lip/workspaces/`（默认 `~/.local/share/lip/workspaces/`）。`<hash>` 是工作区绝对路径的 SHA-256，以小写十六进制表示，因此它们与路径绑定：移动或复制后的工作区不会带走原工作区被中断的操作。
+
+- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `<hash>.journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存锁的阶段，则删除备份以完成它。试运行（dry run）只报告日志的存在。
+- **同一时间只有一个操作**：操作期间独占打开 `<hash>.lock`（操作结束时删除）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another lip process is changing the workspace"；请在第一个操作结束后重新运行。
 
 ## 关于规范的说明
 

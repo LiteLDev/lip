@@ -15,7 +15,7 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 **No.** Running `lip install <package>` installs the package into your workspace and updates the [lockfile](concepts/lockfiles.md) to track the state, but it **does not** modify your `manifest.json`. You must manually add dependencies to `manifest.json` if you want them to be permanent parts of your package's requirements.
 
 ### What happened to `tooth_lock.json` and `lip_lock.json`?
-The lock no longer lives in the workspace: lip keeps it in its per-user data directory, in `%LOCALAPPDATA%\lip\workspaces\` on Windows or `$XDG_DATA_HOME/lip/workspaces/` (by default `~/.local/share/lip/workspaces/`) on Linux and macOS, one file per workspace. lip migrates an existing `lip_lock.json` or `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it from the workspace. See [Lockfiles](concepts/lockfiles.md#location).
+The lock is now `.lip/lock.json` in the workspace, so it moves with the workspace: a workspace that is moved, renamed or copied keeps its installed packages. lip migrates an existing `lip_lock.json` or `tooth_lock.json`, or a lock the previous version kept in `%LOCALAPPDATA%\lip\workspaces\` on Windows or `$XDG_DATA_HOME/lip/workspaces/` (by default `~/.local/share/lip/workspaces/`) on Linux and macOS, automatically the next time you install, uninstall or update a package, and then deletes the old file. See [Lockfiles](concepts/lockfiles.md#location).
 
 ### Can lip install client mods?
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same `manifest.json` packages.
@@ -38,12 +38,12 @@ Not currently. lip fetches packages anonymously over HTTPS and does not use the 
 ### Where does lip store installed packages?
 lip installs package files **directly into your workspace**. A mod is installed to `mods/<name>/`, and `plugins` is a link to `mods` (see [Installing Dependencies](guides/installing_dependencies.md#server-workspaces-only)); a file package places its files where its `manifest.json` says.
 
-lip keeps its own files in per-user directories that follow the platform conventions:
+The [lockfile](concepts/lockfiles.md) of a workspace is `.lip/lock.json` inside it. lip keeps its other files in per-user directories that follow the platform conventions:
 
 | What | Windows | Linux / macOS |
 | --- | --- | --- |
 | Configuration (`config.yaml`) | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`) |
-| Lockfiles (`workspaces/<hash>.json`) | `%LOCALAPPDATA%\lip` | `$XDG_DATA_HOME/lip` (by default `~/.local/share/lip`) |
+| Operation journals and locks (`workspaces/<hash>.journal`, `workspaces/<hash>.lock`) | `%LOCALAPPDATA%\lip` | `$XDG_DATA_HOME/lip` (by default `~/.local/share/lip`) |
 | Cache | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) |
 
 The cache is safe to delete at any time, e.g. with `lip cache clean`. Downloads in progress are written to the hidden `.staging` directory inside the cache; lip writes nothing to the system temporary directory.

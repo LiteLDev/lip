@@ -146,19 +146,22 @@ public interface IMcmodInstaller {
       PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken);
 }
 
-/// Reads and writes the workspace lock (spec §8), which lives in the per-user data directory.
+/// Reads and writes the workspace lock (spec §8), which lives in &lt;root&gt;/.lip/lock.json.
 public interface ILockStore {
-  /// Returns an empty lock when none exists; reads a lip_lock.json or migrates a v3
-  /// tooth_lock.json left in the workspace by earlier versions. Throws when the lock exists but
-  /// cannot be read or belongs to another workspace.
+  /// Returns an empty lock when none exists; reads a lock earlier versions kept in the data
+  /// directory or in lip_lock.json, or migrates a v3 tooth_lock.json. Throws when the lock exists
+  /// but cannot be read, or a lock in the data directory belongs to another workspace.
   public Task<LockFile> Load(string workspaceRoot);
 
   /// Writes the lock: Stage, then CommitStaged.
   public Task Save(string workspaceRoot, LockFile lockFile);
 
-  /// The path of the lock of a workspace. Files of lip about the workspace (its journal and its
-  /// inter-process lock) live next to it.
+  /// The path of the lock of a workspace.
   public string GetLockPath(string workspaceRoot);
+
+  /// The path, without extension, of lip's files about the process changing a workspace (its
+  /// journal and its inter-process lock), in the per-user data directory.
+  public string GetStatePath(string workspaceRoot);
 
   /// Writes the lock to a hidden temporary file next to it, replacing an earlier staged lock.
   public Task Stage(string workspaceRoot, LockFile lockFile);
@@ -178,9 +181,10 @@ public record LockFile {
   [JsonPropertyName("formatUuid")]
   public string FormatUuid { get; init; } = ManifestFormat.Uuid;
 
-  /// The absolute path of the workspace the lock belongs to. ILockStore.Save sets it; null in
-  /// locks read from the workspace itself.
+  /// The absolute path of the workspace, recorded by earlier lip versions that kept the lock in
+  /// the data directory. lip no longer writes it; null in every lock ILockStore.Load returns.
   [JsonPropertyName("workspace")]
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Workspace { get; init; }
 
   /// "server" or "client" (spec §5.1). lip writes "server"; null in locks migrated from v3.

@@ -17,7 +17,7 @@ The Daemon (`lipd`) communicates via **JSON-RPC over stdio**, allowing tools to 
 
 `lip install`, `lip uninstall` and `lip update` run the same steps:
 
-1.  **Lock**: Load the workspace's lock from the per-user data directory, or a `lip_lock.json` or legacy `tooth_lock.json` left in the workspace by earlier versions (see [Lockfiles](../concepts/lockfiles.md)).
+1.  **Lock**: Load the workspace's lock from `.lip/lock.json`, or a lock left by earlier versions: in the per-user data directory, or as `lip_lock.json` or legacy `tooth_lock.json` in the workspace (see [Lockfiles](../concepts/lockfiles.md)).
 2.  **Environment**: Determine the platform and RID (see [Environment](../concepts/package_manifest.md#environment)).
 3.  **Resolver**: Turn every ref into a sequence of candidate concrete packages, following routing documents.
 4.  **Graph solver**: Choose one candidate per request and per install edge, so that every identity appears once and no `conflicts` entry is violated.
@@ -63,7 +63,7 @@ The formats are described by JSON Schemas in the repository's `refs/schemas/` di
 
 ## Workspace State
 
-lip maintains the state of your installed packages in a lockfile kept outside the workspace, in the per-user data directory (see [Lockfiles](../concepts/lockfiles.md#location)). This tracks:
+lip maintains the state of your installed packages in a lockfile kept in the workspace, at `.lip/lock.json` (see [Lockfiles](../concepts/lockfiles.md#location)). This tracks:
 -   Which packages are explicitly requested versus implicit dependencies.
 -   The exact versions installed, and the archives they came from.
 -   The files each package owns.
@@ -71,8 +71,10 @@ lip maintains the state of your installed packages in a lockfile kept outside th
 
 Files written to make an operation atomic are hidden and sit next to their target: the lock is first written to `.<name>.tmp` beside it and then renamed over it, and a file that an operation overwrites or deletes is first renamed to `.<name>.bak` (or `.<name>.bak1`, `.<name>.bak2`, … if that name is taken) in the same directory. The backups are deleted once the lock is saved (one that cannot be deleted, for example because a program has it open, is left and named in a warning), or renamed back if the operation fails. Directories that an uninstallation empties are deleted at the same time. On Windows these files also get the hidden attribute.
 
--   **Journal**: While an operation changes the workspace, lip records every change, before making it, in `<hash>.journal` next to the lock. If lip is killed, the next `lip install`, `uninstall` or `update` of the workspace reads the journal first: it undoes the interrupted operation (restoring the backups) and reports it, or, if the operation had already reached the point of saving its lock, finishes it by deleting the backups. A dry run only reports the journal.
--   **One operation at a time**: An operation holds `<hash>.lock` next to the lock open exclusively (deleted when it ends). A second `lip install`, `uninstall` or `update` of the same workspace fails at once with "Another lip process is changing the workspace"; run it again when the first one has finished.
+The journal and the operation lock below are kept in lip's per-user data directory, in `%LOCALAPPDATA%\lip\workspaces\` on Windows or `$XDG_DATA_HOME/lip/workspaces/` (by default `~/.local/share/lip/workspaces/`) on Linux and macOS. `<hash>` is the lowercase hexadecimal SHA-256 of the workspace's absolute path, so they stay with the path: a moved or copied workspace does not take an interrupted operation of the original with it.
+
+-   **Journal**: While an operation changes the workspace, lip records every change, before making it, in `<hash>.journal`. If lip is killed, the next `lip install`, `uninstall` or `update` of the workspace reads the journal first: it undoes the interrupted operation (restoring the backups) and reports it, or, if the operation had already reached the point of saving its lock, finishes it by deleting the backups. A dry run only reports the journal.
+-   **One operation at a time**: An operation holds `<hash>.lock` open exclusively (deleted when it ends). A second `lip install`, `uninstall` or `update` of the same workspace fails at once with "Another lip process is changing the workspace"; run it again when the first one has finished.
 
 ## Notes on the Specification
 

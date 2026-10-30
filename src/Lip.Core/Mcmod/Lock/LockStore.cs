@@ -13,21 +13,22 @@ public class LockFormatException(string message, Exception? inner = null)
 
 /// Reads and writes the workspace lock (spec §8).
 ///
-/// The lock (format 4) lives outside the workspace, in the per-user data directory:
-/// &lt;Data&gt;/workspaces/&lt;hash&gt;.json, where hash is the lowercase hex SHA-256 of the
-/// normalised absolute workspace path (see GetWorkspaceHash). It records that path in
-/// "workspace", and Load fails when it does not match the workspace.
+/// The lock (format 4) lives inside the workspace, in &lt;root&gt;/.lip/lock.json, so that it
+/// follows the workspace when the workspace is moved, renamed or copied.
 ///
-/// When that lock is absent, a lock inside the workspace is read instead: a format 4
-/// &lt;root&gt;/lip_lock.json written by earlier lip versions, else a v3 &lt;root&gt;/tooth_lock.json,
-/// which is migrated. The next Save writes the lock to the data directory and deletes both
-/// workspace files.
+/// When that lock is absent, a lock written by earlier lip versions is read instead: a format 4
+/// lock in the per-user data directory (&lt;Data&gt;/workspaces/&lt;hash&gt;.json, where hash is the
+/// lowercase hex SHA-256 of the normalised absolute workspace path, see GetWorkspaceHash), else a
+/// format 4 &lt;root&gt;/lip_lock.json, else a v3 &lt;root&gt;/tooth_lock.json, which is migrated. The
+/// next Save writes .lip/lock.json and deletes all three.
 ///
 /// v3 recorded the absolute paths of the files a package placed (relative to the working
 /// directory, which was the workspace root). Migration turns paths under the workspace root into
-/// workspace-relative '/'-separated paths. Paths outside the root (a workspace moved after
-/// install, or a v3 placement that escaped the root) are kept verbatim as absolute paths; lip
-/// never deletes them, as they are not inside the workspace.
+/// workspace-relative '/'-separated paths. When the workspace was moved after install, its paths
+/// are under the old root: the old root is inferred from where the recorded files are now (see
+/// MovedRoot), and paths under it are rebased onto the workspace. Other paths outside the root (a
+/// v3 placement that escaped the root) are kept verbatim as absolute paths; lip never deletes
+/// them, as they are not inside the workspace.
 ///
 /// Migrated entries have kind "tooth" and record the tooth.json (spec §9), like the entries of
 /// tooth.json packages lip installs itself: they are converted to format 4 when used.
@@ -37,6 +38,10 @@ public class LockFormatException(string message, Exception? inner = null)
 /// variants of one tooth migrate to entries of distinct identities. Format 4 locks written before
 /// the identity carried the label get it when loaded (ToothIdentities).
 public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStore {
+  /// The directory of lip's own files in the workspace root, and the lock in it.
+  public const string LipDirectory = ".lip";
+  public const string FileName = "lock.json";
+
   /// The format 4 lock earlier lip versions kept in the workspace root.
   public const string WorkspaceFileName = "lip_lock.json";
   public const string LegacyFileName = "tooth_lock.json";
@@ -60,7 +65,16 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
 
   /// The path of the lock of a workspace.
   public string GetLockPath(string workspaceRoot) =>
-      _fs.Path.Join(_dataDirectory, "workspaces", $"{GetWorkspaceHash(workspaceRoot)}.json");
+      _fs.Path.Join(NormalizeRoot(workspaceRoot), LipDirectory, FileName);
+
+  /// The data directory path, without extension, of lip's files about the process changing a
+  /// workspace (its journal and its inter-process lock). They stay with the path: a workspace
+  /// moved or copied does not take an interrupted operation of the original with it.
+  public string GetStatePath(string workspaceRoot) =>
+      _fs.Path.Join(_dataDirectory, "workspaces", GetWorkspaceHash(workspaceRoot));
+
+  /// Where earlier lip versions kept the lock in the data directory.
+  private string DataLockPath(string root) => GetStatePath(root) + ".json";
 
   /// Owned files under plugins are rewritten to their canonical path under mods (spec §7), so
   /// that locks written before plugins became a link to mods compare correctly. Entries of kind "tooth" get the identity of spec §9.1 (ToothCompat.GetLockedIdentity), which
@@ -73,14 +87,19 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
 
     string path = GetLockPath(root);
     if (_fs.File.Exists(path)) {
-      LockFile lockFile = Parse(await _fs.File.ReadAllBytesAsync(path), path);
+      return Parse(await _fs.File.ReadAllBytesAsync(path), path);
+    }
+
+    string dataPath = DataLockPath(root);
+    if (_fs.File.Exists(dataPath)) {
+      LockFile lockFile = Parse(await _fs.File.ReadAllBytesAsync(dataPath), dataPath);
       if (lockFile.Workspace is not string recorded || !SameWorkspace(recorded, root)) {
         throw new LockFormatException(
-            $"Cannot read lock '{path}': it belongs to the workspace "
+            $"Cannot read lock '{dataPath}': it belongs to the workspace "
             + $"'{lockFile.Workspace ?? "(missing)"}', not '{root}'.");
       }
 
-      return lockFile;
+      return lockFile with { Workspace = null };
     }
 
     string workspacePath = _fs.Path.Combine(root, WorkspaceFileName);
@@ -118,11 +137,11 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
 
     string root = NormalizeRoot(workspaceRoot);
     string path = GetLockPath(root);
-    _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(path)!);
+    CreateLipDirectory(root);
     string tempPath = StagedPath(path);
 
     byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
-        lockFile with { Workspace = root }, _writeOptions);
+        lockFile with { Workspace = null }, _writeOptions);
     try {
       // A leftover of an interrupted save; on Windows a hidden file cannot be overwritten.
       if (_fs.File.Exists(tempPath)) {
@@ -149,8 +168,8 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
       return;
     }
 
-    // Migrating: the lock was read from the workspace, whose files are deleted below. Once the
-    // lock is in the data directory, files of those names in the workspace are not lip's.
+    // Migrating: the lock was read from where earlier versions kept it, whose files are deleted
+    // below. Once .lip/lock.json exists, files of those names are not lip's.
     bool migrating = !_fs.File.Exists(path);
     _fs.File.Move(tempPath, path, overwrite: true);
 
@@ -158,10 +177,12 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     try {
       _fs.SetHidden(path, false);
       if (migrating) {
-        foreach (string name in (string[])[WorkspaceFileName, LegacyFileName]) {
-          string workspacePath = _fs.Path.Combine(root, name);
-          if (_fs.File.Exists(workspacePath)) {
-            _fs.File.Delete(workspacePath);
+        foreach (string legacyPath in (string[])[
+            DataLockPath(root),
+            _fs.Path.Combine(root, WorkspaceFileName),
+            _fs.Path.Combine(root, LegacyFileName)]) {
+          if (_fs.File.Exists(legacyPath)) {
+            _fs.File.Delete(legacyPath);
           }
         }
       }
@@ -175,6 +196,22 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     string tempPath = StagedPath(GetLockPath(NormalizeRoot(workspaceRoot)));
     if (_fs.File.Exists(tempPath)) {
       _fs.File.Delete(tempPath);
+    }
+  }
+
+  /// Creates &lt;root&gt;/.lip, hidden like on other platforms, where its name hides it.
+  private void CreateLipDirectory(string root) {
+    string directory = _fs.Path.Join(root, LipDirectory);
+    if (_fs.Directory.Exists(directory)) {
+      return;
+    }
+
+    _fs.Directory.CreateDirectory(directory);
+    try {
+      _fs.SetHidden(directory, true);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      // A visible .lip works the same.
     }
   }
 
@@ -330,13 +367,49 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     }
 
     string root = _fs.Path.GetFullPath(workspaceRoot);
+    string? movedRoot = MovedRoot(
+        [.. state.Packages.SelectMany(p => p.Files ?? []).Where(f => IsOutside(f, root))], root);
 
     return new LockFile {
-      Packages = [.. state.Packages.Select(p => MigratePackage(p, root))],
+      Packages = [.. state.Packages.Select(p => MigratePackage(p, root, movedRoot))],
     };
   }
 
-  private LockedPackage MigratePackage(WorkspaceStatePackage package, string root) {
+  /// The root a moved v3 workspace had: of the directories containing the recorded paths outside
+  /// the workspace, the one under which most of them exist at the same relative path in the
+  /// workspace (on a tie, the one containing most of them). Null when none does.
+  private string? MovedRoot(IReadOnlyList<string> outside, string root) {
+    List<string> files = [.. outside
+        .Where(_fs.Path.IsPathRooted)
+        .Select(f => _fs.Path.GetFullPath(f))
+        .Distinct(WorkspaceLayout.PathComparer)];
+    HashSet<string> candidates = new(WorkspaceLayout.PathComparer);
+    foreach (string file in files) {
+      for (string? dir = _fs.Path.GetDirectoryName(file);
+          dir is not null;
+          dir = _fs.Path.GetDirectoryName(dir)) {
+        candidates.Add(dir);
+      }
+    }
+
+    string? best = null;
+    (int Found, int Contained) bestScore = (0, 0);
+    foreach (string candidate in candidates) {
+      List<string> contained = [.. files.Where(f => IsUnder(candidate, f))];
+      int found = contained.Count(f => _fs.File.Exists(
+          _fs.Path.Join(root, _fs.Path.GetRelativePath(candidate, f))));
+      if (found > bestScore.Found
+          || (found == bestScore.Found && found > 0 && contained.Count > bestScore.Contained)) {
+        best = candidate;
+        bestScore = (found, contained.Count);
+      }
+    }
+
+    return best;
+  }
+
+  private LockedPackage MigratePackage(
+      WorkspaceStatePackage package, string root, string? movedRoot) {
     string path = package.Manifest.Path;
     string version = package.Manifest.Version.ToString();
 
@@ -348,28 +421,43 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
       Chain = [new LockedHop(new PackageId(path, package.Variant).ToString(), null)],
       ArchiveKey = $"{path}@{version}",
       Archive = null,
-      Files = [.. (package.Files ?? []).Select(f => MigrateFilePath(f, root))],
+      Files = [.. (package.Files ?? []).Select(f => MigrateFilePath(f, root, movedRoot))],
       Manifest = JsonSerializer.SerializeToElement(package.Manifest),
     };
   }
 
-  private string MigrateFilePath(string file, string root) {
-    // A Windows absolute path read on another OS (a lock copied across machines) is foreign:
-    // keep it verbatim rather than mistaking it for a relative path.
+  private string MigrateFilePath(string file, string root, string? movedRoot) {
+    if (IsOutside(file, root)) {
+      return movedRoot is not null && _fs.Path.IsPathRooted(file)
+          && IsUnder(movedRoot, _fs.Path.GetFullPath(file))
+          ? _fs.Path.GetRelativePath(movedRoot, _fs.Path.GetFullPath(file)).Replace('\\', '/')
+          : file;
+    }
+
+    return _fs.Path.GetRelativePath(root, _fs.Path.GetFullPath(_fs.Path.Combine(root, file)))
+        .Replace('\\', '/');
+  }
+
+  /// Whether a v3 path names no file inside the workspace root. A Windows absolute path read on
+  /// another OS (a lock copied across machines) is foreign: it is outside rather than mistaken
+  /// for a relative path.
+  private bool IsOutside(string file, string root) {
     if (!_fs.Path.IsPathRooted(file) && IsWindowsAbsolute(file)) {
-      return file;
+      return true;
     }
 
     string full = _fs.Path.GetFullPath(_fs.Path.Combine(root, file));
     string relative = _fs.Path.GetRelativePath(root, full);
-    if (relative == "." || relative == ".." || _fs.Path.IsPathRooted(relative)
+    return relative == "." || relative == ".." || _fs.Path.IsPathRooted(relative)
         || relative.StartsWith(".." + _fs.Path.DirectorySeparatorChar)
-        || relative.StartsWith("../")) {
-      return file;
-    }
-
-    return relative.Replace('\\', '/');
+        || relative.StartsWith("../");
   }
+
+  /// Whether path is strictly below directory.
+  private bool IsUnder(string directory, string path) =>
+      path.StartsWith(
+          _fs.Path.TrimEndingDirectorySeparator(directory) + _fs.Path.DirectorySeparatorChar,
+          OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
   private static bool IsWindowsAbsolute(string path) =>
       path.StartsWith(@"\\")

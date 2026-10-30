@@ -5,7 +5,7 @@
 ## 工作区状态
 
 表示工作区当前状态，追踪安装了哪些包以及安装方式。
-- **Packages**：已安装包集合，记录在[锁文件](lockfiles.md)中；lip 将锁文件保存在用户数据目录中。
+- **Packages**：已安装包集合，记录在[锁文件](lockfiles.md)中；lip 将锁文件保存在工作区中的 `.lip/lock.json`。
 - **环境**：工作区的平台（`server` 或 `client`）和 .NET RID。参见[环境](package_manifest.md#环境)。
 
 ## 配置

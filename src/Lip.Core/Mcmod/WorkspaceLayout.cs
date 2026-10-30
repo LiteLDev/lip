@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
+using Lip.Core.Mcmod.Lock;
 
 namespace Lip.Core.Mcmod;
 
@@ -55,6 +56,12 @@ public class WorkspaceLayout(
   /// Whether a workspace-relative path is mods or plugins itself, which lip never deletes.
   public static bool IsLayoutDirectory(string path) =>
       string.Equals(CanonicalPath(path.TrimEnd('/')), ModsDirectory, PathComparison);
+
+  /// Whether a workspace-relative path is .lip or below it, where lip keeps its own files (the
+  /// lock): packages never write there, and removeFiles never matches it.
+  public static bool IsLipPath(string path) =>
+      string.Equals(path.TrimEnd('/'), LockStore.LipDirectory, PathComparison)
+      || path.StartsWith(LockStore.LipDirectory + "/", PathComparison);
 
   /// What making the layout right takes (see Plan). Paths are absolute.
   public sealed record LayoutPlan(

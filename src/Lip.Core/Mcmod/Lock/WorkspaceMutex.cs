@@ -10,7 +10,7 @@ public class WorkspaceBusyException(string message, Exception? inner = null)
 /// update runs, so that two lip processes never interleave their changes, their journals or
 /// their lock files.
 ///
-/// It is a file next to the workspace lock (&lt;Data&gt;/workspaces/&lt;hash&gt;.lock) opened without
+/// It is a file in the per-user data directory (&lt;Data&gt;/workspaces/&lt;hash&gt;.lock) opened without
 /// sharing: on Windows no other process can open it, elsewhere .NET takes an advisory lock
 /// (flock) on it. The file is deleted when the lock is released. A process that is killed
 /// releases the lock with its handles; the file it leaves is taken over by the next process.

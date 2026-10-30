@@ -5,7 +5,7 @@
 ## Workspace State
 
 Represents the current state of the workspace, tracking which packages are installed and how.
-- **Packages**: The installed packages, recorded in the [lockfile](lockfiles.md), which lip keeps in its per-user data directory.
+- **Packages**: The installed packages, recorded in the [lockfile](lockfiles.md), which lip keeps in the workspace as `.lip/lock.json`.
 - **Environment**: The platform (`server` or `client`) and the .NET RID of the workspace. See [Environment](package_manifest.md#environment).
 
 ## Configuration

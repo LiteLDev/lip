@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
+using Lip.Core.Mcmod.Lock;
 using Lip.Core.Sources;
 
 namespace Lip.Core.Mcmod.Install;
@@ -24,7 +25,8 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// Paths are recorded and compared in their canonical form (WorkspaceLayout.CanonicalPath):
 /// a file package placing a file under plugins/ writes and owns it under mods/. Globs relative to
 /// the workspace root match both forms. The mods and plugins directories are never deleted, and
-/// removeFiles never matches them (so a directory pattern naming them removes nothing).
+/// removeFiles never matches them (so a directory pattern naming them removes nothing). .lip,
+/// where lip keeps the lock, is never written, deleted or matched.
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
@@ -155,7 +157,8 @@ public partial class McmodInstaller(
     List<string> files = [];
     HashSet<string> fileSet = new(PathComparer);
     foreach (string file in package.Files.Select(NormalizeRelative)) {
-      if (!IsSafeRelativePath(file) || ownedByOthers.Contains(file)) {
+      if (!IsSafeRelativePath(file) || WorkspaceLayout.IsLipPath(file)
+          || ownedByOthers.Contains(file)) {
         continue;
       }
       if (MatchesAny(document.PreserveFiles, file, baseDir)) {
@@ -312,6 +315,11 @@ public partial class McmodInstaller(
             $"{document.Name}: '{target}' is not a valid path inside the workspace.");
       }
       target = WorkspaceLayout.CanonicalPath(target);
+      if (WorkspaceLayout.IsLipPath(target)) {
+        throw new McmodInstallException(
+            $"{document.Name}: '{target}' is inside {LockStore.LipDirectory}, which is reserved"
+            + " for lip.");
+      }
       if (!targets.ContainsKey(target)) {
         order.Add(target);
       }
@@ -462,7 +470,7 @@ public partial class McmodInstaller(
     if (literal == segments.Length && !glob.MatchesDirectories) {
       // A literal file path.
       string file = WorkspaceLayout.CanonicalPath(baseDir + glob.Pattern);
-      if (view.FileExists(ToFullPath(root, file))) {
+      if (!WorkspaceLayout.IsLipPath(file) && view.FileExists(ToFullPath(root, file))) {
         yield return (file, false);
       }
       yield break;
@@ -471,7 +479,8 @@ public partial class McmodInstaller(
     string start = WorkspaceLayout.CanonicalPath(
         baseDir + string.Concat(segments[..literal].Select(s => s + "/")));
     string startFull = ToFullPath(root, start);
-    if ((start != "" && !IsInside(root, startFull)) || !view.DirectoryExists(startFull)) {
+    if ((start != "" && !IsInside(root, startFull)) || !view.DirectoryExists(startFull)
+        || WorkspaceLayout.IsLipPath(start)) {
       yield break;
     }
 
@@ -497,6 +506,9 @@ public partial class McmodInstaller(
       foreach (WorkspaceView.Entry info in view.Enumerate(directory)) {
         string path = _fs.Path.GetRelativePath(root, info.FullName)
             .Replace(_fs.Path.DirectorySeparatorChar, '/');
+        if (WorkspaceLayout.IsLipPath(path)) {
+          continue;
+        }
         string suffix = info.IsDirectory ? "/" : "";
         bool matched = all
             || (!(info.IsDirectory && WorkspaceLayout.IsLayoutDirectory(path))

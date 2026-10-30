@@ -336,51 +336,122 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public void GetLockPath_Always_IsSha256OfWorkspacePathInDataDirectory() {
+  public void GetLockPath_Always_IsLockJsonInLipDirectoryOfWorkspace() {
+    // Act
+    string path = _store.GetLockPath(_root + _fs.Path.DirectorySeparatorChar);
+
+    // Assert
+    Assert.Equal(_fs.Path.Join(_root, ".lip", "lock.json"), path);
+  }
+
+  [Fact]
+  public void GetStatePath_Always_IsSha256OfWorkspacePathInDataDirectory() {
     // Arrange
     string normalized = OperatingSystem.IsWindows() ? _root.ToLowerInvariant() : _root;
     string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
 
     // Act
-    string path = _store.GetLockPath(_root);
+    string path = _store.GetStatePath(_root);
 
     // Assert
-    Assert.Equal(_fs.Path.Join(_dataDir, "workspaces", $"{hash}.json"), path);
+    Assert.Equal(_fs.Path.Join(_dataDir, "workspaces", hash), path);
   }
 
   [Fact]
-  public void GetLockPath_TrailingSeparatorOrCase_SamePathWhereFileSystemAgrees() {
+  public void GetStatePath_TrailingSeparatorOrCase_SamePathWhereFileSystemAgrees() {
     // Act
-    string withSeparator = _store.GetLockPath(_root + _fs.Path.DirectorySeparatorChar);
-    string upperCase = _store.GetLockPath(_root.ToUpperInvariant());
+    string withSeparator = _store.GetStatePath(_root + _fs.Path.DirectorySeparatorChar);
+    string upperCase = _store.GetStatePath(_root.ToUpperInvariant());
 
     // Assert
-    Assert.Equal(LipLockPath, withSeparator);
+    Assert.Equal(_store.GetStatePath(_root), withSeparator);
     if (OperatingSystem.IsWindows()) {
-      Assert.Equal(LipLockPath, upperCase);
+      Assert.Equal(_store.GetStatePath(_root), upperCase);
     } else {
-      Assert.NotEqual(LipLockPath, upperCase);
+      Assert.NotEqual(_store.GetStatePath(_root), upperCase);
     }
   }
 
   [Fact]
-  public async Task Save_Always_RecordsWorkspaceAndWritesNothingIntoIt() {
+  public async Task Save_Always_WritesOnlyLipDirectoryAndNoWorkspacePath() {
     // Act
     await _store.Save(_root, new LockFile());
 
     // Assert
     JsonElement root = JsonDocument.Parse(_fs.File.ReadAllText(LipLockPath)).RootElement;
-    Assert.Equal(_root, root.GetProperty("workspace").GetString());
-    Assert.Equal(_root, (await _store.Load(_root)).Workspace);
-    Assert.Empty(_fs.Directory.GetFileSystemEntries(_root));
+    Assert.False(root.TryGetProperty("workspace", out _));
+    Assert.Null((await _store.Load(_root)).Workspace);
+    Assert.Equal([_fs.Path.Join(_root, ".lip")], _fs.Directory.GetFileSystemEntries(_root));
+    Assert.False(_fs.Directory.Exists(_dataDir));
   }
 
   [Fact]
-  public async Task Load_LockOfOtherWorkspace_ThrowsLockFormatException() {
+  public async Task Load_MovedWorkspace_KeepsItsLock() {
+    // Arrange
+    string moved = OperatingSystem.IsWindows() ? @"C:\moved\server" : "/moved/server";
+    await _store.Save(_root, new LockFile { Packages = [SamplePackage("A", null)] });
+    _fs.AddDirectory(_fs.Path.GetDirectoryName(moved)!);
+    _fs.Directory.Move(_root, moved);
+
+    // Act
+    LockFile loaded = await _store.Load(moved);
+
+    // Assert
+    Assert.Equal(["A"], loaded.Packages.Select(p => p.Identity));
+  }
+
+  [Fact]
+  public async Task Load_LipLockNamingAnotherWorkspace_IgnoresTheName() {
+    // Arrange: a lock copied from the data directory still names the workspace it was for.
+    string other = OperatingSystem.IsWindows() ? @"C:\other" : "/other";
+    _fs.AddFile(LipLockPath, new MockFileData($$"""
+        { "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+          "workspace": {{JsonSerializer.Serialize(other)}}, "rid": "win-x64", "packages": [] }
+        """));
+
+    // Act
+    LockFile loaded = await _store.Load(_root);
+
+    // Assert
+    Assert.Equal("win-x64", loaded.Rid);
+  }
+
+  /// The lock the previous lip version kept in the data directory.
+  private string DataLockPath => _store.GetStatePath(_root) + ".json";
+
+  private void AddDataLock(string? workspace) {
+    string recorded = workspace is null
+        ? ""
+        : $"\"workspace\": {JsonSerializer.Serialize(workspace)},";
+    _fs.AddFile(DataLockPath, new MockFileData($$"""
+        { "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+          {{recorded}} "rid": "win-x64", "packages": [] }
+        """));
+  }
+
+  [Fact]
+  public async Task Save_LockInDataDirectory_MovesItIntoWorkspace() {
+    // Arrange
+    AddDataLock(_root);
+    _fs.AddFile(WorkspaceLockPath, new MockFileData("{}"));
+    LockFile loaded = await _store.Load(_root);
+
+    // Act
+    await _store.Save(_root, loaded);
+
+    // Assert
+    Assert.Equal("win-x64", loaded.Rid);
+    Assert.Null(loaded.Workspace);
+    Assert.False(_fs.File.Exists(DataLockPath));
+    Assert.False(_fs.File.Exists(WorkspaceLockPath));
+    Assert.Equal("win-x64", (await _store.Load(_root)).Rid);
+  }
+
+  [Fact]
+  public async Task Load_DataDirectoryLockOfOtherWorkspace_ThrowsLockFormatException() {
     // Arrange
     string other = OperatingSystem.IsWindows() ? @"C:\other" : "/other";
-    await _store.Save(other, new LockFile());
-    _fs.File.Copy(_store.GetLockPath(other), LipLockPath);
+    AddDataLock(other);
 
     // Act
     LockFormatException ex =
@@ -392,18 +463,50 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Load_LockWithoutWorkspace_ThrowsLockFormatException() {
+  public async Task Load_DataDirectoryLockWithoutWorkspace_ThrowsLockFormatException() {
     // Arrange
-    _fs.AddFile(LipLockPath, new MockFileData("""
-        { "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f", "packages": [] }
-        """));
+    AddDataLock(null);
 
     // Act & Assert
     await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
   }
 
   [Fact]
-  public async Task Save_LockReadFromWorkspace_MovesItToDataDirectory() {
+  public async Task Load_V3LockOfMovedWorkspace_RebasesPathsUnderOldRoot() {
+    // Arrange: the v3 lock recorded absolute paths under the root the workspace had then.
+    string old = OperatingSystem.IsWindows() ? @"D:\old\server" : "/old/server";
+    string outside = OperatingSystem.IsWindows() ? @"D:\elsewhere\b.dll" : "/elsewhere/b.dll";
+    string[] files = [
+      _fs.Path.Join(old, "mods", "A", "a.dll"),
+      _fs.Path.Join(old, "mods", "A", "gone.json"),
+      _fs.Path.Join(old, "bedrock_server.exe"),
+      outside,
+    ];
+    _fs.AddFile(_fs.Path.Join(_root, "mods", "A", "a.dll"), new MockFileData(""));
+    _fs.AddFile(_fs.Path.Join(_root, "bedrock_server.exe"), new MockFileData(""));
+    _fs.AddFile(ToothLockPath, new MockFileData($$"""
+        {
+          "format_version": 3, "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "packages": [{
+            "files": {{JsonSerializer.Serialize(files)}}, "locked": true, "variant": "",
+            "manifest": { "format_version": 3,
+              "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+              "tooth": "github.com/a/b", "version": "1.0.0" }
+          }]
+        }
+        """));
+
+    // Act
+    LockFile lockFile = await _store.Load(_root);
+
+    // Assert
+    Assert.Equal(
+        ["mods/A/a.dll", "mods/A/gone.json", "bedrock_server.exe", outside],
+        Assert.Single(lockFile.Packages).Files);
+  }
+
+  [Fact]
+  public async Task Save_LockReadFromWorkspace_MovesItToLipDirectory() {
     // Arrange
     await _store.Save(_root, new LockFile { Rid = "win-x64" });
     _fs.File.Move(LipLockPath, WorkspaceLockPath);
@@ -421,7 +524,7 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Save_LockInDataDirectory_KeepsWorkspaceFilesOfLegacyNames() {
+  public async Task Save_LockInLipDirectory_KeepsWorkspaceFilesOfLegacyNames() {
     // Arrange: once migrated, files of these names in the workspace are not lip's.
     await _store.Save(_root, new LockFile());
     _fs.AddFile(WorkspaceLockPath, new MockFileData("a package's file"));

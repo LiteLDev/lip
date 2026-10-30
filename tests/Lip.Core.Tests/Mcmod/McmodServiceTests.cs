@@ -40,7 +40,7 @@ public class McmodServiceTests {
     Assert.Equal($"{Lib}@1.0.0", package.ArchiveKey);
     Assert.IsType<GitArchiveIdentity>(package.Archive);
     Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
-    Assert.Equal(_ws.Root, lockFile.Workspace);
+    Assert.Null(lockFile.Workspace);
     Assert.False(_ws.Exists(LockStore.WorkspaceFileName));
   }
 

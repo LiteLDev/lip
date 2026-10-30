@@ -230,6 +230,7 @@ Steps to install a concrete package P:
 3. Run each command in `scripts.postInstall` in turn.
 
 **Write rules:**
+- When a file to be written is `.lip` at the workspace root or below it, where lip keeps the lock, it is a failure.
 - When a file to be written is already owned by another installed package, it is a failure.
 - When a file to be written already exists and matches P's `preserveFiles`, the original file is kept and not written.
 - Otherwise it is overwritten.
@@ -238,7 +239,7 @@ Steps to install a concrete package P:
 Steps to uninstall P:
 1. Run `scripts.preUninstall`.
 2. Delete the files owned by P that do not match `preserveFiles`.
-3. Delete the paths matching `removeFiles` that are not owned by another package. Directory patterns are deleted recursively. `mods` and `plugins` themselves never match a pattern, so nothing below them is deleted through them.
+3. Delete the paths matching `removeFiles` that are not owned by another package. Directory patterns are deleted recursively. `mods` and `plugins` themselves never match a pattern, so nothing below them is deleted through them. `.lip` at the workspace root and everything below it never match a pattern.
 4. Delete the directories left empty by steps 2 and 3, but never `mods` or `plugins` themselves.
 5. Run `scripts.postUninstall`.
 

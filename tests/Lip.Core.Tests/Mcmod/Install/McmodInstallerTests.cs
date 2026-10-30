@@ -224,6 +224,28 @@ public class McmodInstallerTests {
   }
 
   [Theory]
+  [InlineData(".lip/lock.json")]
+  [InlineData(".lip")]
+  [InlineData(".LIP/x.txt")]
+  public async Task Install_DestInLipDirectory_Throws(string dest) {
+    // Arrange
+    if (!OperatingSystem.IsWindows() && dest.StartsWith(".LIP")) {
+      return;
+    }
+    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", dest));
+    SortedDictionary<string, string> before = Snapshot();
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => _installer.Install(
+            Candidate(document, Source(new() { ["a.txt"] = "a" })), Context(_server)));
+
+    // Assert
+    Assert.Contains("reserved", ex.Message);
+    Assert.Equal(before, Snapshot());
+  }
+
+  [Theory]
   [InlineData("../escape.txt")]
   [InlineData("a/../../escape.txt")]
   [InlineData("C:/escape.txt")]
@@ -750,6 +772,30 @@ public class McmodInstallerTests {
     Assert.False(_fs.Directory.Exists(Full("cache")));
     Assert.True(_fs.File.Exists(Full("bedrock_server.exe")));
     Assert.True(_fs.Directory.Exists(_root));
+  }
+
+  [Fact]
+  public async Task Uninstall_RemoveFilesMatchingLipDirectory_LeavesIt() {
+    // Arrange
+    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", "a.txt")) with {
+      RemoveFiles = [
+        new PathGlob(".lip/"), new PathGlob(".lip/lock.json"), new PathGlob("*/"),
+        new PathGlob("**/*.json"),
+      ],
+    };
+    IReadOnlyList<string> owned = await _installer.Install(
+        Candidate(document, Source(new() { ["a.txt"] = "a" })), Context(_server));
+    AddFile(".lip/lock.json", "lock");
+    AddFile("logs/a.json", "x");
+
+    // Act
+    await _installer.Uninstall(
+        Locked(document, [.. owned, ".lip/lock.json"]), Context(_server));
+
+    // Assert
+    Assert.Equal("lock", Read(".lip/lock.json"));
+    Assert.False(_fs.File.Exists(Full("a.txt")));
+    Assert.False(_fs.File.Exists(Full("logs/a.json")));
   }
 
   [Fact]

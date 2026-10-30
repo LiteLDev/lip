@@ -16,7 +16,7 @@ lip list [options]
 
 ## 说明
 
-读取该工作区的[锁文件](../../concepts/lockfiles.md)（或早期版本留在工作区中的 `lip_lock.json` 或旧的 `tooth_lock.json`），按两组以 `<name>@<version>` 形式显示已安装包：
+读取该工作区的[锁文件](../../concepts/lockfiles.md)（或早期版本留下的锁：用户数据目录中的锁，或工作区中的 `lip_lock.json` 或旧的 `tooth_lock.json`），按两组以 `<name>@<version>` 形式显示已安装包：
 
 - **User-Requested**：用户显式安装的包。
 - **Dependencies**：作为依赖安装的包。

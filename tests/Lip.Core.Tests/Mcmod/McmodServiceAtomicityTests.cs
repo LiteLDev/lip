@@ -316,8 +316,10 @@ public class McmodServiceAtomicityTests {
 
     // Assert
     Assert.Equal("Demo 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("mods/Demo/Demo.dll")));
-    string workspaces = _ws.Fs.Path.GetDirectoryName(_ws.LockPath)!;
-    Assert.Equal([_ws.LockPath], _ws.Fs.Directory.GetFiles(workspaces));
+    Assert.Equal(
+        [_ws.LockPath], _ws.Fs.Directory.GetFiles(_ws.Fs.Path.GetDirectoryName(_ws.LockPath)!));
+    string state = _ws.LockStore.GetStatePath(_ws.Root);
+    Assert.DoesNotContain(_ws.Fs.AllFiles, f => f.StartsWith(state, StringComparison.Ordinal));
     Assert.DoesNotContain(_ws.Fs.AllFiles, f => f.Contains(".bak", StringComparison.Ordinal));
   }
 }

@@ -294,7 +294,7 @@ public class McmodService(
   private async Task<WorkspaceMutex> BeginOperation(OperationOptions options) {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     WorkspaceMutex mutex = WorkspaceMutex.Acquire(
-        _fs, _fs.Path.ChangeExtension(_lockStore.GetLockPath(root), ".lock"), root);
+        _fs, _lockStore.GetStatePath(root) + ".lock", root);
     try {
       await RecoverInterrupted(root, options);
     }
@@ -306,9 +306,8 @@ public class McmodService(
     return mutex;
   }
 
-  /// The journal of the operation applying changes to a workspace, next to its lock.
-  private string JournalPath(string root) =>
-      _fs.Path.ChangeExtension(_lockStore.GetLockPath(root), ".journal");
+  /// The journal of the operation applying changes to a workspace.
+  private string JournalPath(string root) => _lockStore.GetStatePath(root) + ".journal";
 
   private async Task RecoverInterrupted(string root, OperationOptions options) {
     string journal = JournalPath(root);
