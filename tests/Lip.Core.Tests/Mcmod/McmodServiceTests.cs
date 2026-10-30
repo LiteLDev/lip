@@ -40,8 +40,6 @@ public class McmodServiceTests {
     Assert.Equal($"{Lib}@1.0.0", package.ArchiveKey);
     Assert.IsType<GitArchiveIdentity>(package.Archive);
     Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
-    Assert.Null(lockFile.Workspace);
-    Assert.False(_ws.Exists(LockStore.WorkspaceFileName));
   }
 
   [Fact]
@@ -361,7 +359,7 @@ public class McmodServiceTests {
   public async Task Install_LockRecordsClientPlatform_ThrowsWithoutChanges() {
     // Arrange
     AddRoutingFixture();
-    _ws.AddFile("lip_lock.json", $$"""
+    _ws.AddFile(".lip/lock.json", $$"""
         {
           "formatVersion": 4,
           "formatUuid": "{{ManifestFormat.Uuid}}",
@@ -607,28 +605,6 @@ public class McmodServiceTests {
     LockedPackage remaining = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal($"{Lib}#b", remaining.Identity);
     Assert.True(remaining.Explicit);
-  }
-
-  [Fact]
-  public async Task Uninstall_LockWithBareToothIdentityForVariant_UsesTheLabelledIdentity() {
-    // Arrange: a format 4 lock written while the identity of a variant was the bare tooth path.
-    AddVariantsTooth();
-    await _ws.Service.Install([$"{Lib}#a@1.0.0"], s_options);
-    LockFile written = await _ws.Lock();
-    await _ws.LockStore.Save(_ws.Root, written with {
-      Packages = [.. written.Packages.Select(p => p with { Identity = Lib })],
-    });
-    string raw = _ws.Fs.File.ReadAllText(_ws.LockPath);
-
-    // Act
-    IReadOnlyList<InstalledPackage> listed = await _ws.Service.List();
-    await _ws.Service.Uninstall([$"{Lib}#a"], s_options);
-
-    // Assert
-    Assert.Contains($"\"name\": \"{Lib}\"", raw);
-    Assert.Equal($"{Lib}#a", Assert.Single(listed).Identity);
-    Assert.Empty((await _ws.Lock()).Packages);
-    Assert.False(_ws.Exists("a.dll"));
   }
 
   [Fact]

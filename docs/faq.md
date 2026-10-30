@@ -14,8 +14,8 @@ The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, G
 ### Does `lip install` update `manifest.json`?
 **No.** Running `lip install <package>` installs the package into your workspace and updates the [lockfile](concepts/lockfiles.md) to track the state, but it **does not** modify your `manifest.json`. You must manually add dependencies to `manifest.json` if you want them to be permanent parts of your package's requirements.
 
-### What happened to `tooth_lock.json` and `lip_lock.json`?
-The lock is now `.lip/lock.json` in the workspace, so it moves with the workspace: a workspace that is moved, renamed or copied keeps its installed packages. lip migrates an existing `lip_lock.json` or `tooth_lock.json`, or a lock the previous version kept in `%LOCALAPPDATA%\lip\workspaces\` on Windows or `$XDG_DATA_HOME/lip/workspaces/` (by default `~/.local/share/lip/workspaces/`) on Linux and macOS, automatically the next time you install, uninstall or update a package, and then deletes the old file. See [Lockfiles](concepts/lockfiles.md#location).
+### What happened to `tooth_lock.json`?
+The lock is now `.lip/lock.json` in the workspace, so it moves with the workspace: a workspace that is moved, renamed or copied keeps its installed packages. lip migrates an existing `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it. See [Lockfiles](concepts/lockfiles.md#location).
 
 ### Can lip install client mods?
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same `manifest.json` packages.

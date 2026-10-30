@@ -181,7 +181,7 @@ public class LipClientTests {
   [Fact]
   public async Task List_ReturnsExplicitAndImplicitPackages() {
     // Arrange
-    _ws.AddFile("lip_lock.json", JsonSerializer.Serialize(new LockFile {
+    _ws.AddFile(".lip/lock.json", JsonSerializer.Serialize(new LockFile {
       Packages = [Locked("A", "1.0.0", true), Locked("B", "2.0.0", false)],
     }));
 

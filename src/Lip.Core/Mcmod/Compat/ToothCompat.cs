@@ -139,16 +139,6 @@ public class ToothCompat : IToothCompat {
   public static string GetIdentity(string tooth, string label) =>
       label == "" ? tooth : $"{tooth}#{label}";
 
-  /// The identity of a lock entry of kind "tooth": that of its recorded tooth.json converted
-  /// with the variant of the last chain hop (spec §9.8), as FromLocked converts it. Locks
-  /// written before the identity carried the label record the bare tooth path for labelled
-  /// variants. Throws like FromLocked when the entry cannot be read.
-  public static async Task<string> GetLockedIdentity(
-      LockedPackage package, LipEnvironment environment) {
-    (PackageManifest manifest, string variant) = await ReadLocked(package);
-    return GetIdentity(manifest.Path, GetLabel(manifest, variant, environment));
-  }
-
   /// The recorded tooth.json of a lock entry and the variant of its last chain hop.
   private static async Task<(PackageManifest Manifest, string Variant)> ReadLocked(
       LockedPackage package) {

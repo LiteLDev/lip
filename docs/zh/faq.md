@@ -14,8 +14,8 @@
 ### `lip install` 会更新 `manifest.json` 吗？
 **不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[锁文件](concepts/lockfiles.md)来记录状态，但**不会**修改你的 `manifest.json`。如果你希望依赖长期保留在包的要求中，需要手动把它加入 `manifest.json`。
 
-### `tooth_lock.json` 和 `lip_lock.json` 去哪了？
-锁现在是工作区中的 `.lip/lock.json`，因此会随工作区一起移动：移动、重命名或复制工作区后，已安装的包仍然保留。下次安装、卸载或更新包时，lip 会自动迁移已有的 `lip_lock.json` 或 `tooth_lock.json`，或上一版本保存在用户数据目录中的锁（Windows 为 `%LOCALAPPDATA%\lip\workspaces\`，Linux 和 macOS 为 `$XDG_DATA_HOME/lip/workspaces/`，默认 `~/.local/share/lip/workspaces/`），然后删除旧文件。参见[锁文件](concepts/lockfiles.md#位置)。
+### `tooth_lock.json` 去哪了？
+锁现在是工作区中的 `.lip/lock.json`，因此会随工作区一起移动：移动、重命名或复制工作区后，已安装的包仍然保留。下次安装、卸载或更新包时，lip 会自动迁移已有的 `tooth_lock.json`，然后删除它。参见[锁文件](concepts/lockfiles.md#位置)。
 
 ### lip 能安装客户端 mod 吗？
 不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的 `manifest.json` 包。

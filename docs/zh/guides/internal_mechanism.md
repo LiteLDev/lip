@@ -17,7 +17,7 @@ Daemon（`lipd`）通过 **stdio 上的 JSON-RPC** 通信，使工具无需为�
 
 `lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：
 
-1. **锁**：从 `.lip/lock.json` 加载该工作区的锁，或读取早期版本留下的锁：用户数据目录中的锁，或工作区中的 `lip_lock.json` 或旧的 `tooth_lock.json`（参见[锁文件](../concepts/lockfiles.md)）。
+1. **锁**：从 `.lip/lock.json` 加载该工作区的锁，或迁移 lip v0.x 留下的旧 `tooth_lock.json`（参见[锁文件](../concepts/lockfiles.md)）。
 2. **环境**：确定平台和 RID（参见[环境](../concepts/package_manifest.md#环境)）。
 3. **解析器**：把每个 ref 转换为一个具体包候选序列，途中跟随路由文档。
 4. **依赖图求解器**：为每个请求和每条安装边各选出一个候选，使每个身份只出现一次，且不违反任何 `conflicts` 条目。
@@ -84,4 +84,4 @@ lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/refs/packag
 
 1. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。
 2. **嵌套的 ZIP 归档**：位于另一个归档中的 ZIP 归档只按 SHA-256 锁定，且不单独缓存。要再次打开它，lip 会重新解析记录的解析链，从而重新打开父归档并解出该 ZIP 文件，并且只接受 SHA-256 一致的结果。
-3. **同一身份的多个条目**：同一个 `tooth.json` 包的各变体身份不同（`path` 与 `path#label`，规范 §9.1），从 `tooth_lock.json` 迁移时也是如此；对于该规则之前写入的锁，lip 会为其条目补上所要求的身份。若锁中仍有同一身份的两个条目，两者都会保留并列出，并可分别用 `path#variant` 卸载。新的求解要求身份唯一。
+3. **同一身份的多个条目**：同一个 `tooth.json` 包的各变体身份不同（`path` 与 `path#label`，规范 §9.1），从 `tooth_lock.json` 迁移时也是如此。若锁中仍有同一身份的两个条目，两者都会保留并列出，并可分别用 `path#variant` 卸载。新的求解要求身份唯一。

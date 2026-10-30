@@ -10,15 +10,7 @@
 
 `.lip` 为 lip 保留：安装的包若要把文件写入工作区根目录下的 `.lip` 或其下任何位置，安装会失败；`removeFiles` 模式也永远不会匹配 `.lip` 及其下的任何内容。
 
-### 从早期版本迁移
-
-早期版本把锁保存在别处。当不存在 `.lip/lock.json` 时，lip 按以下顺序读取：
-
-1. 上一版本写在 lip 用户数据目录中的锁：Windows 为 `%LOCALAPPDATA%\lip\workspaces\<hash>.json`，Linux 和 macOS 为 `$XDG_DATA_HOME/lip/workspaces/<hash>.json`（默认 `~/.local/share/lip/workspaces/<hash>.json`），其中 `<hash>` 是工作区绝对路径的 SHA-256，以小写十六进制表示。该锁在 `workspace` 中记录了所属工作区的路径；若它指向其他工作区，lip 会报错停止，而不会使用其他工作区的锁；
-2. 工作区根目录中的 `lip_lock.json`（格式 4）；
-3. 工作区根目录中的 `tooth_lock.json`（格式 3），lip 会迁移它（参见[下文](#旧格式-tooth-lock-json)）。
-
-下一次保存锁时（安装、卸载或更新包之后），lip 会写入 `.lip/lock.json`，并删除这三个文件。
+lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当不存在 `.lip/lock.json` 时，lip 会迁移它（参见[下文](#旧格式-tooth-lock-json)）。
 
 ## 作用
 
@@ -56,11 +48,9 @@
 * **`rid`**：工作区的 [.NET RID](https://learn.microsoft.com/zh-cn/dotnet/core/rid-catalog)。
 * **`packages`**：已安装的包，按安装顺序排列。
 
-早期版本写在数据目录中的锁还有 **`workspace`**，即其所属工作区的绝对路径。lip 不写入该字段，在 `.lip/lock.json` 中也会忽略它。
-
 ### 包条目
 
-* **`name`**：包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径，带标签的变体在其后加 `#<label>`（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`）。早期版本写入的锁对带标签的变体只记录了 `tooth` 路径；lip 读取时会补上标签。
+* **`name`**：包的身份：其 `manifest.json` 的 `name`，或 `tooth.json` 包的 `tooth` 路径，带标签的变体在其后加 `#<label>`（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`）。
 * **`version`**：已安装的版本。
 * **`kind`**：`manifest.json` 包为 `"mcmod"`，`tooth.json` 包为 `"tooth"`。两者的安装与卸载方式相同；kind 说明 `manifest` 中保存的是什么。
 * **`explicit`**：
@@ -69,7 +59,7 @@
 * **`chain`**：包的解析链，每一跳一项，包含：
   * `ref`：该跳解析时的 ref，例如 `github.com/user/repo`、[git 引用](../cli/commands/install.md#git-引用)形式的 `github.com/user/repo@branch:main`、`https://` URL、上一归档内的 `./sub/`，或传给 `lip install` 的本地文件的 `file:///` URI；
   * `artifact`：在该跳选中的路由条目下标（该跳不是路由文档时为 `null`）；
-  * `commit`（仅包路径）：该跳仓库所在的提交：版本标签的提交，或 git 引用解析到的提交。早期版本写下的锁中没有此项。
+  * `commit`（仅包路径）：该跳仓库所在的提交：版本标签的提交，或 git 引用解析到的提交。从 `tooth_lock.json` 迁移而来的条目没有此项。
 
   [`lip update`](../cli/commands/update.md) 会重新请求第一跳：分支跟随到新的头，标签重新解析，rev 保持不变。
 * **`archiveKey`**：最终归档的键，例如 `github.com/user/repo@1.0.0`；带 git 引用的包路径为 `github.com/user/repo@rev:<commit>`。
@@ -79,7 +69,7 @@
   * `null`：从 `tooth_lock.json` 迁移而来的条目。
 
   lip 再次需要已安装包的文件时，会打开该归档并校验其标识：git 归档按记录的提交获取（即使它来自一个已经前进的分支），下载的或本地的 ZIP 文件必须仍具有记录的 SHA-256。卸载则两者都不需要。
-* **`files`**：该包拥有的文件，相对于工作区根目录，以 `/` 分隔。服务端的 `plugins` 是指向 `mods` 的链接，因此 `plugins/` 下的文件记为 `mods/` 下的路径；早期版本写下的锁中的 `plugins/` 路径会在加载时被改写。
+* **`files`**：该包拥有的文件，相对于工作区根目录，以 `/` 分隔。服务端的 `plugins` 是指向 `mods` 的链接，因此 `plugins/` 下的文件记为 `mods/` 下的路径；从 `tooth_lock.json` 迁移而来的条目中的 `plugins/` 路径会被改写。
 * **`manifest`**：包的文档（`manifest.json`；`tooth` 包为 `tooth.json`，lip 需要该包时会再次把它转换为第 4 版），这样 lip 无需再次获取。
 
 ## 示例
@@ -113,7 +103,7 @@
 
 ## 旧格式：tooth_lock.json
 
-lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若没有其他锁（参见[从早期版本迁移](#从早期版本迁移)），但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时写入 `.lip/lock.json` 并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
+lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若没有 `.lip/lock.json`，但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时写入 `.lip/lock.json` 并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
 
 `tooth_lock.json` 记录的是文件的绝对路径。若工作区在这些包安装之后被移动过，这些路径会指向旧位置：lip 会根据所记录的文件现在在工作区中的位置推断出旧的根目录，并把这些路径改写到当前工作区下，因此这些包仍然拥有各自的文件，也仍然可以卸载。
 

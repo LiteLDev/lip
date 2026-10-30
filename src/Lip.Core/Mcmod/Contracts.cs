@@ -148,9 +148,8 @@ public interface IMcmodInstaller {
 
 /// Reads and writes the workspace lock (spec §8), which lives in &lt;root&gt;/.lip/lock.json.
 public interface ILockStore {
-  /// Returns an empty lock when none exists; reads a lock earlier versions kept in the data
-  /// directory or in lip_lock.json, or migrates a v3 tooth_lock.json. Throws when the lock exists
-  /// but cannot be read, or a lock in the data directory belongs to another workspace.
+  /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json left in the workspace
+  /// by lip v0.x. Throws when the lock exists but cannot be read.
   public Task<LockFile> Load(string workspaceRoot);
 
   /// Writes the lock: Stage, then CommitStaged.
@@ -181,12 +180,6 @@ public record LockFile {
   [JsonPropertyName("formatUuid")]
   public string FormatUuid { get; init; } = ManifestFormat.Uuid;
 
-  /// The absolute path of the workspace, recorded by earlier lip versions that kept the lock in
-  /// the data directory. lip no longer writes it; null in every lock ILockStore.Load returns.
-  [JsonPropertyName("workspace")]
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public string? Workspace { get; init; }
-
   /// "server" or "client" (spec §5.1). lip writes "server"; null in locks migrated from v3.
   [JsonPropertyName("platform")]
   public string? Platform { get; init; }
@@ -202,7 +195,8 @@ public record LockedHop(
     [property: JsonPropertyName("ref")] string Ref,
     [property: JsonPropertyName("artifact")] int? Artifact) {
   /// For a spec ref, the commit its archive was at (spec §8): the tag's commit, or the commit a
-  /// git ref (@branch:, @tag:, @rev:) resolved to. Null for other refs and for older locks.
+  /// git ref (@branch:, @tag:, @rev:) resolved to. Null for other refs and for entries migrated
+  /// from tooth_lock.json.
   [JsonPropertyName("commit")]
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Commit { get; init; }

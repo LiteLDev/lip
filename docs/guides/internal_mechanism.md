@@ -17,7 +17,7 @@ The Daemon (`lipd`) communicates via **JSON-RPC over stdio**, allowing tools to 
 
 `lip install`, `lip uninstall` and `lip update` run the same steps:
 
-1.  **Lock**: Load the workspace's lock from `.lip/lock.json`, or a lock left by earlier versions: in the per-user data directory, or as `lip_lock.json` or legacy `tooth_lock.json` in the workspace (see [Lockfiles](../concepts/lockfiles.md)).
+1.  **Lock**: Load the workspace's lock from `.lip/lock.json`, or migrate the legacy `tooth_lock.json` of lip v0.x (see [Lockfiles](../concepts/lockfiles.md)).
 2.  **Environment**: Determine the platform and RID (see [Environment](../concepts/package_manifest.md#environment)).
 3.  **Resolver**: Turn every ref into a sequence of candidate concrete packages, following routing documents.
 4.  **Graph solver**: Choose one candidate per request and per install edge, so that every identity appears once and no `conflicts` entry is violated.
@@ -84,4 +84,4 @@ lip implements the [lip package specification](https://github.com/LiteLDev/lip/b
 
 1.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
 2.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and is not cached on its own. To open it again, lip resolves the recorded chain again, which reopens the parent archive and extracts the ZIP file, and accepts the result only if its SHA-256 matches.
-3.  **Entries of one identity**: The variants of one `tooth.json` package have distinct identities (`path` and `path#label`, spec §9.1), also when migrated from `tooth_lock.json`, and lip gives the entries of locks written before that rule the identity it requires. Should a lock still hold two entries of one identity, both are kept and listed, and can be uninstalled separately with `path#variant`. New solves require unique identities.
+3.  **Entries of one identity**: The variants of one `tooth.json` package have distinct identities (`path` and `path#label`, spec §9.1), also when migrated from `tooth_lock.json`. Should a lock still hold two entries of one identity, both are kept and listed, and can be uninstalled separately with `path#variant`. New solves require unique identities.

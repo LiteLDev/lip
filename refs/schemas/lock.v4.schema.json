@@ -11,10 +11,6 @@
       "type": "string",
       "const": "0c6b977a-64ad-441f-9a29-c7f4b196882f"
     },
-    "workspace": {
-      "description": "Written only by earlier versions of lip, which kept the lock outside the workspace; lip ignores it in .lip/lock.json and does not write it.",
-      "type": "string"
-    },
     "platform": {
       "description": "Environment platform. lip manages server workspaces only and writes \"server\"; null in a lock migrated from tooth_lock.json. A lock recording another platform makes workspace operations fail.",
       "enum": ["server", "client", null]
@@ -71,7 +67,7 @@
                 "minimum": 0
               },
               "commit": {
-                "description": "For a spec ref: the commit its archive was at (the version tag's commit, or the commit the git ref resolved to). Absent for other refs and in older locks.",
+                "description": "For a spec ref: the commit its archive was at (the version tag's commit, or the commit the git ref resolved to). Absent for other refs and in entries migrated from tooth_lock.json.",
                 "type": "string",
                 "pattern": "^[0-9a-f]{40}$"
               }

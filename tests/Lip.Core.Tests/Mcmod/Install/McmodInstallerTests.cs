@@ -276,6 +276,7 @@ public class McmodInstallerTests {
 
   [Theory]
   [InlineData("lip_lock.json")]
+  [InlineData("lock.json")]
   [InlineData("tooth_lock.json")]
   [InlineData(".git/hooks/pre-commit")]
   public async Task Install_DestNamedLikeLipOrGitFile_Writes(string dest) {

@@ -29,7 +29,6 @@ public class LockStoreTests {
   }
 
   private string LipLockPath => _store.GetLockPath(_root);
-  private string WorkspaceLockPath => _fs.Path.Combine(_root, "lip_lock.json");
   private string ToothLockPath => _fs.Path.Combine(_root, "tooth_lock.json");
 
   /// The real v3 lock lip wrote after `lip install github.com/LiteLDev/LeviLamina` in
@@ -249,17 +248,27 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Load_FilesUnderPlugins_RewritesThemUnderMods() {
-    // Arrange: a lock written while plugins was the server mod directory.
-    string upper = OperatingSystem.IsWindows() ? "Plugins/A/b.dll" : "plugins/A/b.dll";
-    LockFile original = new() {
-      Packages = [
-        SamplePackage("A", null) with {
-          Files = ["plugins/A/a.dll", upper, "mods/A/a.dll", "pluginsx/c.txt", "d.txt"],
-        },
-      ],
-    };
-    await _store.Save(_root, original);
+  public async Task Load_V3LockWithFilesUnderPlugins_RewritesThemUnderMods() {
+    // Arrange: lip v0.x installed server mods into plugins.
+    string upper = OperatingSystem.IsWindows() ? "Plugins" : "plugins";
+    string[] files = [
+      _fs.Path.Join(_root, "plugins", "A", "a.dll"),
+      _fs.Path.Join(_root, upper, "A", "b.dll"),
+      _fs.Path.Join(_root, "mods", "A", "a.dll"),
+      _fs.Path.Join(_root, "pluginsx", "c.txt"),
+      _fs.Path.Join(_root, "d.txt"),
+    ];
+    _fs.AddFile(ToothLockPath, new MockFileData($$"""
+        {
+          "format_version": 3, "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "packages": [{
+            "files": {{JsonSerializer.Serialize(files)}}, "locked": true, "variant": "",
+            "manifest": { "format_version": 3,
+              "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+              "tooth": "github.com/a/b", "version": "1.0.0" }
+          }]
+        }
+        """));
 
     // Act
     LockFile loaded = await _store.Load(_root);
@@ -267,7 +276,7 @@ public class LockStoreTests {
     // Assert: the path through mods appears once.
     Assert.Equal(
         ["mods/A/a.dll", "mods/A/b.dll", "pluginsx/c.txt", "d.txt"],
-        loaded.Packages[0].Files);
+        Assert.Single(loaded.Packages).Files);
   }
 
   [Fact]
@@ -380,7 +389,6 @@ public class LockStoreTests {
     // Assert
     JsonElement root = JsonDocument.Parse(_fs.File.ReadAllText(LipLockPath)).RootElement;
     Assert.False(root.TryGetProperty("workspace", out _));
-    Assert.Null((await _store.Load(_root)).Workspace);
     Assert.Equal([_fs.Path.Join(_root, ".lip")], _fs.Directory.GetFileSystemEntries(_root));
     Assert.False(_fs.Directory.Exists(_dataDir));
   }
@@ -398,77 +406,6 @@ public class LockStoreTests {
 
     // Assert
     Assert.Equal(["A"], loaded.Packages.Select(p => p.Identity));
-  }
-
-  [Fact]
-  public async Task Load_LipLockNamingAnotherWorkspace_IgnoresTheName() {
-    // Arrange: a lock copied from the data directory still names the workspace it was for.
-    string other = OperatingSystem.IsWindows() ? @"C:\other" : "/other";
-    _fs.AddFile(LipLockPath, new MockFileData($$"""
-        { "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-          "workspace": {{JsonSerializer.Serialize(other)}}, "rid": "win-x64", "packages": [] }
-        """));
-
-    // Act
-    LockFile loaded = await _store.Load(_root);
-
-    // Assert
-    Assert.Equal("win-x64", loaded.Rid);
-  }
-
-  /// The lock the previous lip version kept in the data directory.
-  private string DataLockPath => _store.GetStatePath(_root) + ".json";
-
-  private void AddDataLock(string? workspace) {
-    string recorded = workspace is null
-        ? ""
-        : $"\"workspace\": {JsonSerializer.Serialize(workspace)},";
-    _fs.AddFile(DataLockPath, new MockFileData($$"""
-        { "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-          {{recorded}} "rid": "win-x64", "packages": [] }
-        """));
-  }
-
-  [Fact]
-  public async Task Save_LockInDataDirectory_MovesItIntoWorkspace() {
-    // Arrange
-    AddDataLock(_root);
-    _fs.AddFile(WorkspaceLockPath, new MockFileData("{}"));
-    LockFile loaded = await _store.Load(_root);
-
-    // Act
-    await _store.Save(_root, loaded);
-
-    // Assert
-    Assert.Equal("win-x64", loaded.Rid);
-    Assert.Null(loaded.Workspace);
-    Assert.False(_fs.File.Exists(DataLockPath));
-    Assert.False(_fs.File.Exists(WorkspaceLockPath));
-    Assert.Equal("win-x64", (await _store.Load(_root)).Rid);
-  }
-
-  [Fact]
-  public async Task Load_DataDirectoryLockOfOtherWorkspace_ThrowsLockFormatException() {
-    // Arrange
-    string other = OperatingSystem.IsWindows() ? @"C:\other" : "/other";
-    AddDataLock(other);
-
-    // Act
-    LockFormatException ex =
-        await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
-
-    // Assert
-    Assert.Contains(other, ex.Message);
-    Assert.Contains(_root, ex.Message);
-  }
-
-  [Fact]
-  public async Task Load_DataDirectoryLockWithoutWorkspace_ThrowsLockFormatException() {
-    // Arrange
-    AddDataLock(null);
-
-    // Act & Assert
-    await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
   }
 
   [Fact]
@@ -506,42 +443,22 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Save_LockReadFromWorkspace_MovesItToLipDirectory() {
-    // Arrange
-    await _store.Save(_root, new LockFile { Rid = "win-x64" });
-    _fs.File.Move(LipLockPath, WorkspaceLockPath);
-    _fs.AddFile(ToothLockPath, new MockFileData("{}"));
-    LockFile loaded = await _store.Load(_root);
-
-    // Act
-    await _store.Save(_root, loaded);
-
-    // Assert
-    Assert.Equal("win-x64", loaded.Rid);
-    Assert.False(_fs.File.Exists(WorkspaceLockPath));
-    Assert.False(_fs.File.Exists(ToothLockPath));
-    Assert.Equal("win-x64", (await _store.Load(_root)).Rid);
-  }
-
-  [Fact]
-  public async Task Save_LockInLipDirectory_KeepsWorkspaceFilesOfLegacyNames() {
-    // Arrange: once migrated, files of these names in the workspace are not lip's.
+  public async Task Save_LockInLipDirectory_KeepsWorkspaceFileOfLegacyName() {
+    // Arrange: once migrated, a file of that name in the workspace is not lip's.
     await _store.Save(_root, new LockFile());
-    _fs.AddFile(WorkspaceLockPath, new MockFileData("a package's file"));
     _fs.AddFile(ToothLockPath, new MockFileData("a package's file"));
 
     // Act
     await _store.Save(_root, new LockFile { Rid = "win-x64" });
 
     // Assert
-    Assert.True(_fs.File.Exists(WorkspaceLockPath));
     Assert.True(_fs.File.Exists(ToothLockPath));
   }
 
   [Fact]
   public async Task Load_ArchiveKindNotFirst_ReadsArchive() {
     // Arrange
-    _fs.AddFile(WorkspaceLockPath, new MockFileData("""
+    _fs.AddFile(LipLockPath, new MockFileData("""
         {
           "formatVersion": 4,
           "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",

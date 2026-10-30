@@ -198,4 +198,4 @@ The file is a YAML mapping of keys to values. A key absent from the file has its
 
 The lock of a workspace (PF §8) is the file `.lip/lock.json` in the workspace. It belongs to the directory, not to its path: a workspace that is moved, renamed or copied keeps its lock, and so its installed packages.
 
-**Legacy**: a lock written by earlier versions of lip, at any location they used, keeps working (PF §8, "Earlier formats").
+**Legacy**: a `tooth_lock.json` that lip v0.x left in the workspace keeps working (PF §8, "Earlier formats").
