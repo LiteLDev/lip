@@ -5,7 +5,7 @@ lip 包由其归档根部的 `manifest.json` 描述。它就是 LeviLamina 的 `
 LeviLamina 键的含义。规范性定义见[包格式规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)。
 
 该格式由 JSON Schema
-[`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json)
+[`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/manifest.v4.schema.json)
 描述。lip 仍可读取旧的 `tooth.json` 格式，参见[旧格式：tooth.json](#旧格式-tooth-json)。
 
 ## 归档
@@ -273,7 +273,7 @@ lip 在内存中把 `tooth.json` 转换为第 4 版的文件包，并像其他�
 - 锁以 `"kind": "tooth"` 记录该 `tooth.json`；卸载或更新该包时，lip 会再次转换它。
 
 格式 3 的 schema 为
-[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.schema.json)
+[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/manifest.schema.json)
 （格式 1 和 2：`manifest.v1.schema.json`、`manifest.v2.schema.json`）：
 
 ```json

@@ -6,7 +6,7 @@
 
 关于全部方法、参数与返回类型的完整且严格定义，请参阅我们的 OpenRPC schema：
 
-[**lipd.v4.openrpc.json**](https://github.com/LiteLDev/lip/blob/main/schemas/lipd.v4.openrpc.json)
+[**lipd.v4.openrpc.json**](https://github.com/LiteLDev/lip/blob/main/refs/schemas/lipd.v4.openrpc.json)
 
 该 schema 定义了：
 - 所有可用 RPC 方法（如 `Install`、`List`、`Versions`）。

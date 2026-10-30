@@ -20,6 +20,8 @@ jobs:
       - id: release-pr
         uses: googleapis/release-please-action@v5
         with:
+          config-file: .github/release-please-config.json
+          manifest-file: .github/release-please-manifest.json
           skip-github-release: true
           release-as: ${{ inputs.version }}
 
@@ -34,6 +36,8 @@ jobs:
       - id: release
         uses: googleapis/release-please-action@v5
         with:
+          config-file: .github/release-please-config.json
+          manifest-file: .github/release-please-manifest.json
           skip-github-pull-request: true
 
       - if: steps.release.outputs.release_created

@@ -6,7 +6,7 @@ LeviLamina ignores the keys lip adds, and lip never changes the meaning of a Lev
 The normative definition is the [package format specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md).
 
 The format is described by the JSON Schema
-[`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.v4.schema.json).
+[`manifest.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/manifest.v4.schema.json).
 The older `tooth.json` format is still read, see [Legacy: tooth.json](#legacy-tooth-json).
 
 ## Archives
@@ -293,7 +293,7 @@ other package; the exact mapping is §9 of the [specification](https://github.co
   or update the package.
 
 The format 3 schema is
-[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/manifest.schema.json)
+[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/manifest.schema.json)
 (formats 1 and 2: `manifest.v1.schema.json`, `manifest.v2.schema.json`):
 
 ```json

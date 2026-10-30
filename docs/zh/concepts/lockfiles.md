@@ -33,7 +33,7 @@
 
 ## 结构
 
-锁文件是一个 JSON 文件，由 JSON Schema [`lock.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/lock.v4.schema.json) 描述：
+锁文件是一个 JSON 文件，由 JSON Schema [`lock.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/lock.v4.schema.json) 描述：
 
 ```json
 {
@@ -114,7 +114,7 @@
 
 lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若数据目录中没有锁、工作区中也没有 `lip_lock.json`，但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时把锁写入数据目录并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
 
-旧格式由 [`workspace_state.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/workspace_state.schema.json) 描述：
+旧格式由 [`workspace_state.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/workspace_state.schema.json) 描述：
 
 ```json
 {

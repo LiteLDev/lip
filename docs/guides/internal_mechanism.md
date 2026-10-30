@@ -56,7 +56,7 @@ A `manifest.json` at a tag that has a `version` must declare the tag's version. 
 
 ## Manifest Validation
 
-The formats are described by JSON Schemas in the repository's `schemas/` directory: `manifest.v4.schema.json` for `manifest.json`, `lock.v4.schema.json` for the lock, and, for the legacy formats, `manifest.schema.json` (tooth.json format 3), `manifest.v1.schema.json`, `manifest.v2.schema.json` and `workspace_state.schema.json` (tooth_lock.json). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
+The formats are described by JSON Schemas in the repository's `refs/schemas/` directory: `manifest.v4.schema.json` for `manifest.json`, `lock.v4.schema.json` for the lock, and, for the legacy formats, `manifest.schema.json` (tooth.json format 3), `manifest.v1.schema.json`, `manifest.v2.schema.json` and `workspace_state.schema.json` (tooth_lock.json). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
 
 -   **Validation**: lip parses `manifest.json` strictly (UTF-8, no comments, no duplicate keys) and rejects a document whose keys have the wrong type, such as an invalid `name`, `version`, ref, range or template. A ref to an invalid document yields no candidate, and lip reports why.
 -   **Versioning**: A `manifest.json` with `formatVersion` 4 and the format UUID is a format 4 document; one without either is a plain LeviLamina manifest. `tooth.json` in format 1 or 2 is converted to format 3 in memory when it is read, and then to a format 4 file package (spec §9); run `lip migrate` in a package repository to migrate it from `tooth.json` to `manifest.json`.

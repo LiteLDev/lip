@@ -6,7 +6,7 @@
 
 For a complete and rigorous definition of all available methods, parameters, and return types, please refer to our OpenRPC schema:
 
-[**lipd.v4.openrpc.json**](https://github.com/LiteLDev/lip/blob/main/schemas/lipd.v4.openrpc.json)
+[**lipd.v4.openrpc.json**](https://github.com/LiteLDev/lip/blob/main/refs/schemas/lipd.v4.openrpc.json)
 
 This schema defines:
 -   All available RPC methods (e.g., `Install`, `List`, `Versions`).

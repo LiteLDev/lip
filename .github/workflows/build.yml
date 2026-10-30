@@ -4,13 +4,13 @@ on:
       - .github/workflows/build.yml
       - 'src/**'
       - 'tests/**'
-      - 'wix/**'
+      - 'packaging/wix/**'
   push:
     paths:
       - .github/workflows/build.yml
       - 'src/**'
       - 'tests/**'
-      - 'wix/**'
+      - 'packaging/wix/**'
   workflow_dispatch:
 
 jobs:
@@ -138,8 +138,8 @@ jobs:
             -p:DebugType=embedded
 
       - run: |
-          ./wix/build.ps1 -Version 0.0.1 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
-          ./wix/build.ps1 -Version 0.0.2 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
+          ./packaging/wix/build.ps1 -Version 0.0.1 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
+          ./packaging/wix/build.ps1 -Version 0.0.2 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
 
       # The last version released with the former Inno Setup installer.
       - run: |
@@ -151,7 +151,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - run: |
-          ./wix/test.ps1 `
+          ./packaging/wix/test.ps1 `
             -ArtifactsDir .tmp/wix `
             -Arch ${{ matrix.arch }} `
             -InnoSetup .tmp/inno/lip-0.35.0-win-${{ matrix.arch }}-setup.exe
@@ -192,15 +192,15 @@ jobs:
             -p:DebugType=embedded
 
       - run: |
-          ./wix/build.ps1 -Version 0.0.1 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
-          ./wix/build.ps1 -Version 0.0.2 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
+          ./packaging/wix/build.ps1 -Version 0.0.1 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
+          ./packaging/wix/build.ps1 -Version 0.0.2 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
 
       - run: |
           docker run --rm `
             -v "${{ github.workspace }}:C:\lip" `
             mcr.microsoft.com/windows/servercore:ltsc2022 `
             powershell -ExecutionPolicy Bypass -Command `
-            "`$ErrorActionPreference = 'Stop'; & C:\lip\wix\test.ps1 -ArtifactsDir C:\lip\.tmp\wix -Arch x64 -Scenario Bundle; & C:\lip\wix\test.ps1 -ArtifactsDir C:\lip\.tmp\wix -Arch x64 -Scenario Msi"
+            "`$ErrorActionPreference = 'Stop'; & C:\lip\packaging\wix\test.ps1 -ArtifactsDir C:\lip\.tmp\wix -Arch x64 -Scenario Bundle; & C:\lip\packaging\wix\test.ps1 -ArtifactsDir C:\lip\.tmp\wix -Arch x64 -Scenario Msi"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - if: always()

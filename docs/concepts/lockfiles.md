@@ -33,7 +33,7 @@ The lockfile is saved once, after every package of an operation has been install
 
 ## Structure
 
-The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/lock.v4.schema.json):
+The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/lock.v4.schema.json):
 
 ```json
 {
@@ -114,7 +114,7 @@ The lockfile is a JSON file described by the JSON Schema [`lock.v4.schema.json`]
 
 lip v0.x used `tooth_lock.json` (format 3) in the workspace root. If there is no lock in the data directory and no `lip_lock.json` in the workspace, but there is a `tooth_lock.json`, lip migrates it when it loads it, writes the lock to the data directory on the next save and deletes `tooth_lock.json`. Migrated entries have the kind `"tooth"` and no `archive`; when lip needs their files it resolves the tag `path@version` again.
 
-The old format is described by [`workspace_state.schema.json`](https://github.com/LiteLDev/lip/blob/main/schemas/workspace_state.schema.json):
+The old format is described by [`workspace_state.schema.json`](https://github.com/LiteLDev/lip/blob/main/refs/schemas/workspace_state.schema.json):
 
 ```json
 {

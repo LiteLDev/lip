@@ -144,7 +144,7 @@ jobs:
           path: .tmp/artifacts
 
       - run: |
-          ./wix/build.ps1 `
+          ./packaging/wix/build.ps1 `
             -Version ${{ needs.get-version.outputs.version }} `
             -Arch ${{ matrix.arch }} `
             -BinDir .tmp/artifacts `
@@ -222,7 +222,7 @@ jobs:
           path: .tmp/artifacts
 
       - run: |
-          cp -R npm/. .tmp/npm/
+          cp -R packaging/npm/. .tmp/npm/
 
       - run: |
           chmod +x .tmp/npm/lip.js .tmp/npm/lipd.js

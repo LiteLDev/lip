@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/LiteLDev/lip/raw/main/schemas/manifest.v4.schema.json",
+  "$id": "https://github.com/LiteLDev/lip/raw/main/refs/schemas/manifest.v4.schema.json",
   "title": "lip manifest.json (format version 4)",
   "description": "A LeviLamina manifest.json extended with the keys of lip package format version 4. Keys not described here are ignored. Plain LeviLamina manifests without the format markers are also accepted by lip as self-contained packages, but they are outside this schema. Not expressible here: two artifacts with the same variant must not write the same selector keys with intersecting values.",
   "type": "object",

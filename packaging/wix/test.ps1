@@ -78,7 +78,7 @@ function Invoke-Msi([string] $Action, [string] $Version, [int] $ExpectedExitCode
 }
 
 function Test-DotNetRuntime {
-    $csproj = Get-Content (Join-Path $PSScriptRoot '../src/Lip.Cli/Lip.Cli.csproj') -Raw
+    $csproj = Get-Content (Join-Path $PSScriptRoot '../../src/Lip.Cli/Lip.Cli.csproj') -Raw
     $major = [regex]::Match($csproj, '<TargetFramework>net(\d+)\.0</TargetFramework>').Groups[1].Value
     Test-Path (Join-Path $env:ProgramFiles "dotnet\shared\Microsoft.NETCore.App\$major.*")
 }

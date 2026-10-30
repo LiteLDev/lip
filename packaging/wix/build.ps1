@@ -4,7 +4,7 @@ Builds the Windows installers of lip: lip-<Version>-win-<Arch>.msi, and
 lip-<Version>-win-<Arch>-setup.exe, which also installs the .NET runtime when it is missing.
 
 .EXAMPLE
-./wix/build.ps1 -Version 1.2.3 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
+./packaging/wix/build.ps1 -Version 1.2.3 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
 #>
 param(
     [Parameter(Mandatory)]
@@ -25,7 +25,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
-$repoRoot = Split-Path $PSScriptRoot -Parent
+$repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $BinDir = (Resolve-Path $BinDir).Path
 $OutDir = New-Item -ItemType Directory -Force $OutDir | Select-Object -ExpandProperty FullName
 
