@@ -8,7 +8,7 @@
   "methods": [
     {
       "name": "CacheClean",
-      "description": "Cleans the local package cache.",
+      "description": "Deletes all data lip has cached, as lip cache clean. Installed packages, the lock and the configuration are not affected.",
       "params": [],
       "result": {
         "name": "result",
@@ -19,14 +19,15 @@
     },
     {
       "name": "ConfigDelete",
-      "description": "Deletes a configuration key.",
+      "description": "Resets a configuration key to its default value, as lip config delete. Fails when the key is not a configuration key.",
       "params": [
         {
           "name": "key",
-          "description": "The configuration key to delete.",
+          "description": "The configuration key to reset.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -38,14 +39,15 @@
     },
     {
       "name": "ConfigGet",
-      "description": "Gets a configuration value.",
+      "description": "Gets the value of a configuration key, as lip config get. Fails when the key is not a configuration key.",
       "params": [
         {
           "name": "key",
           "description": "The configuration key to get.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -57,7 +59,7 @@
     },
     {
       "name": "ConfigList",
-      "description": "Lists all configuration values.",
+      "description": "Lists every configuration key with its value as a string, as lip config list.",
       "params": [],
       "result": {
         "name": "config",
@@ -71,21 +73,23 @@
     },
     {
       "name": "ConfigSet",
-      "description": "Sets a configuration value.",
+      "description": "Sets a configuration key to a value, as lip config set. Fails when the key is not a configuration key.",
       "params": [
         {
           "name": "key",
           "description": "The configuration key.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         },
         {
           "name": "value",
           "description": "The configuration value.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -97,7 +101,7 @@
     },
     {
       "name": "Init",
-      "description": "Writes a format 4 manifest.json (a concrete native mod named after the current directory). Fails if manifest.json exists.",
+      "description": "Writes a format 4 concrete manifest.json in the daemon working directory, as lip init: named after the directory, entry \"<name>.dll\", type \"native\", version \"0.1.0\", no dependencies. Fails, leaving the file unchanged, when manifest.json exists.",
       "params": [],
       "result": {
         "name": "result",
@@ -108,42 +112,46 @@
     },
     {
       "name": "Install",
-      "description": "Installs packages: path[#variant][@version], path[#variant]@branch:<name>, @tag:<name> or @rev:<40-digit commit id>, an https:// URL of a .mcmod/.zip file, or a local .mcmod/.zip file (absolute, or relative to the daemon current directory). Local directories are rejected.",
+      "description": "Installs the requested packages and their dependencies, as lip install; the requested packages become explicitly installed. Fails when a requested package is already explicitly installed or two arguments request the same identity. Each element of packages is a package argument (CLI section 2): an https:// URL [#variant] of a ZIP archive; a local ZIP file [#variant], absolute or relative to the daemon working directory; or a package path [#variant] optionally followed by @<version>, @branch:<name>, @tag:<name> or @rev:<40-digit commit id>. A local directory is rejected.",
       "params": [
         {
           "name": "packages",
-          "description": "List of packages to install.",
+          "description": "The package arguments to install.",
           "schema": {
             "type": "array",
             "items": {
               "type": "string"
             }
-          }
+          },
+          "required": true
         },
         {
           "name": "dryRun",
-          "description": "If true, simulates the installation.",
+          "description": "As --dry-run: reports the changes the operation would make without changing the workspace or the lock, and runs no command.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "ignoreScripts",
-          "description": "If true, ignores package scripts.",
+          "description": "As --ignore-scripts: package commands (scripts) are not run.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "noDependencies",
-          "description": "If true, skips installing dependencies.",
+          "description": "As --no-dependencies: installs exactly the first candidate of each request as explicitly installed, following no install edges and installing or uninstalling no other package; the workspace may be left broken.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "rid",
-          "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
+          "description": "The .NET runtime identifier (e.g. \"win-x64\"), as --rid. null, an empty string or an omitted rid means the option is not given: the rid then comes from the lock, otherwise from the runtime lip runs on.",
           "required": false,
           "schema": {
             "type": [
@@ -162,11 +170,11 @@
     },
     {
       "name": "List",
-      "description": "Lists installed packages from the workspace lock.",
+      "description": "Lists the packages of the workspace lock in installation order, as lip list. Changes nothing.",
       "params": [],
       "result": {
         "name": "packages",
-        "description": "Explicitly installed packages and dependencies, each as \"name@version\".",
+        "description": "Two arrays: the explicitly installed packages, then the dependencies, each entry as \"<identity>@<version>\".",
         "schema": {
           "type": "array",
           "items": [
@@ -190,7 +198,7 @@
     },
     {
       "name": "Migrate",
-      "description": "Migrates the package repository at the daemon's working directory (the workspace, which must be the repository root) from tooth.json (format 1-3) to a format 4 manifest.json: the converted keys are merged into an existing manifest.json without overwriting its keys, then tooth.json is deleted. What cannot be converted is reported through PrintWarning.",
+      "description": "Converts the package repository in the daemon working directory from tooth.json (format 1, 2 or 3) to a format 4 manifest.json, as lip migrate: the converted keys an existing manifest.json lacks are added to it without changing the keys it has, then tooth.json is deleted. What cannot be converted, and each existing key whose value differs from the converted value, is reported through PrintWarning. Fails, changing nothing, when tooth.json is missing or tooth.json or an existing manifest.json cannot be read.",
       "params": [],
       "result": {
         "name": "result",
@@ -201,42 +209,46 @@
     },
     {
       "name": "Uninstall",
-      "description": "Uninstalls packages, given by name or by the path[#variant] they were installed from.",
+      "description": "Uninstalls packages, as lip uninstall. Each element of packages names installed packages by identity (ignoring ASCII case), or else by the first ref of the resolution chain they were installed from (a ref without a variant matches every variant, a ref without a git ref every git ref; a local file path is resolved as in Install). Fails when an element names no installed package. Without noDependencies, the named packages must be explicitly installed; they stop being explicitly installed, packages no remaining explicitly installed package needs are uninstalled, and a named package other packages still need is kept as a dependency.",
       "params": [
         {
           "name": "packages",
-          "description": "List of packages to uninstall.",
+          "description": "The installed packages to uninstall.",
           "schema": {
             "type": "array",
             "items": {
               "type": "string"
             }
-          }
+          },
+          "required": true
         },
         {
           "name": "dryRun",
-          "description": "If true, simulates uninstallation.",
+          "description": "As --dry-run: reports the changes the operation would make without changing the workspace or the lock, and runs no command.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "ignoreScripts",
-          "description": "If true, ignores scripts.",
+          "description": "As --ignore-scripts: package commands (scripts) are not run.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "noDependencies",
-          "description": "If true, skips dependencies.",
+          "description": "As --no-dependencies: uninstalls exactly the named packages, dependencies included, and no other package; the workspace may be left broken.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "rid",
-          "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
+          "description": "The .NET runtime identifier (e.g. \"win-x64\"), as --rid. null, an empty string or an omitted rid means the option is not given: the rid then comes from the lock, otherwise from the runtime lip runs on.",
           "required": false,
           "schema": {
             "type": [
@@ -255,35 +267,38 @@
     },
     {
       "name": "Update",
-      "description": "Updates packages to the given or newest version, or the commit a git ref names now; with an empty list, every explicitly installed package, requested again by the ref it was installed from (a branch follows its head, a tag is resolved again, a rev stays, a URL is requested again but served from the download cache, a local file is read again).",
+      "description": "Updates packages, as lip update. Each element of packages is a package argument as in Install and is requested again: without @, its newest version; with @<version>, that version; with a git ref, the commit it names now. Every requested package must already be installed. An empty packages list is lip update without arguments: every explicitly installed package is requested again by the first ref of its resolution chain (an unpinned spec ref takes its newest version, a branch its current head, a tag the commit it points to now, a rev the same commit; a URL is requested again and may be served from the download cache; a local file is read again, and when it no longer exists the package is kept and a warning is sent). A package is replaced only when the result differs in identity, version, archive key or archive identifier.",
       "params": [
         {
           "name": "packages",
-          "description": "List of packages to update.",
+          "description": "The package arguments to update; empty to update every explicitly installed package.",
           "schema": {
             "type": "array",
             "items": {
               "type": "string"
             }
-          }
+          },
+          "required": true
         },
         {
           "name": "dryRun",
-          "description": "If true, simulates update.",
+          "description": "As --dry-run: reports the changes the operation would make without changing the workspace or the lock, and runs no command.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "ignoreScripts",
-          "description": "If true, ignores scripts.",
+          "description": "As --ignore-scripts: package commands (scripts) are not run.",
           "schema": {
             "type": "boolean"
-          }
+          },
+          "required": true
         },
         {
           "name": "rid",
-          "description": "The .NET runtime identifier (e.g. \"win-x64\"). When null, it comes from the lock or the runtime lip runs on.",
+          "description": "The .NET runtime identifier (e.g. \"win-x64\"), as --rid. null, an empty string or an omitted rid means the option is not given: the rid then comes from the lock, otherwise from the runtime lip runs on.",
           "required": false,
           "schema": {
             "type": [
@@ -302,14 +317,15 @@
     },
     {
       "name": "Versions",
-      "description": "Lists the v<SemVer> tag versions of a package path, lowest first.",
+      "description": "Lists the versions of a package path (its v<SemVer 2.0.0> tags), without the leading \"v\", in ascending SemVer precedence, as lip versions.",
       "params": [
         {
           "name": "package",
-          "description": "The package to list versions for.",
+          "description": "A package path, path[#variant], without @. The variant does not affect the result.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -319,38 +335,42 @@
           "items": {
             "type": "string"
           }
-        }
+        },
+        "description": "The versions, lowest first."
       }
     },
     {
       "name": "View",
-      "description": "Returns the root document (tooth.json or manifest.json) of the archive a package argument points to; the argument takes the forms Install takes.",
+      "description": "Returns the root document of the archive a package argument points to, as lip view: tooth.json when the archive has one, otherwise manifest.json. For a package path the archive is that of its newest version, of the given version, or of the commit the git ref names. A routing document is returned as it is and not followed. Changes nothing.",
       "params": [
         {
           "name": "package",
-          "description": "The package to view.",
+          "description": "The package to view: a package argument (CLI section 2): an https:// URL [#variant] of a ZIP archive; a local ZIP file [#variant], absolute or relative to the daemon working directory; or a package path [#variant] optionally followed by @<version>, @branch:<name>, @tag:<name> or @rev:<40-digit commit id>. A local directory is rejected.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
         "name": "manifest",
         "schema": {
           "type": "string"
-        }
+        },
+        "description": "The document as JSON text."
       }
     },
     {
       "name": "PrintInfo",
-      "description": "Notification from daemon to print an informational message.",
+      "description": "Request sent by lipd to the client: an informational message. The client must answer with the result null; lipd does not proceed with the method that sent it until the answer arrives.",
       "params": [
         {
           "name": "message",
           "description": "The message to display.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -362,14 +382,15 @@
     },
     {
       "name": "PrintSuccess",
-      "description": "Notification from daemon to print a success message.",
+      "description": "Request sent by lipd to the client: a success message. The client must answer with the result null; lipd does not proceed with the method that sent it until the answer arrives.",
       "params": [
         {
           "name": "message",
           "description": "The message to display.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -381,14 +402,15 @@
     },
     {
       "name": "PrintWarning",
-      "description": "Notification from daemon to print a warning message.",
+      "description": "Request sent by lipd to the client: a warning. The client must answer with the result null; lipd does not proceed with the method that sent it until the answer arrives.",
       "params": [
         {
           "name": "message",
           "description": "The message to display.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -400,14 +422,15 @@
     },
     {
       "name": "PrintError",
-      "description": "Notification from daemon to print an error message.",
+      "description": "Request sent by lipd to the client: an error message. The client must answer with the result null; lipd does not proceed with the method that sent it until the answer arrives.",
       "params": [
         {
           "name": "message",
           "description": "The message to display.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         }
       ],
       "result": {
@@ -419,28 +442,31 @@
     },
     {
       "name": "ReportProgress",
-      "description": "Notification from daemon to report progress for a running operation.",
+      "description": "Request sent by lipd to the client: progress of a running task. The client must answer with the result null; lipd does not wait for the answer.",
       "params": [
         {
           "name": "id",
-          "description": "The progress operation identifier.",
+          "description": "Identifies the task; all reports of one task carry the same id.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         },
         {
           "name": "message",
-          "description": "A human-readable progress message.",
+          "description": "A human-readable description of the task; the same in all reports of one task.",
           "schema": {
             "type": "string"
-          }
+          },
+          "required": true
         },
         {
           "name": "percentage",
-          "description": "Progress value reported by the running operation.",
+          "description": "The progress reached so far.",
           "schema": {
             "type": "number"
-          }
+          },
+          "required": true
         }
       ],
       "result": {

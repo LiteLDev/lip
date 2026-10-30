@@ -12,11 +12,11 @@
       "const": "0c6b977a-64ad-441f-9a29-c7f4b196882f"
     },
     "workspace": {
-      "description": "Absolute path of the workspace the lock belongs to.",
+      "description": "Absolute path of the workspace the lock belongs to, without a trailing separator. When it names another workspace, every command that reads the lock fails.",
       "type": "string"
     },
     "platform": {
-      "description": "Environment platform; null until known.",
+      "description": "Environment platform. lip manages server workspaces only and writes \"server\"; null in a lock migrated from tooth_lock.json. A lock recording another platform makes workspace operations fail.",
       "enum": ["server", "client", null]
     },
     "rid": {
@@ -42,7 +42,7 @@
       "type": "object",
       "properties": {
         "name": {
-          "description": "Identity: the name of the concrete package (the tooth path for tooth packages).",
+          "description": "Identity: the name of the concrete package; for a tooth.json package, the tooth path, followed by \"#<label>\" for a labelled variant.",
           "type": "string"
         },
         "version": {
@@ -63,10 +63,11 @@
             "type": "object",
             "properties": {
               "ref": {
-                "description": "The ref as resolved, including a git ref (e.g. \"github.com/o/r@branch:main\"); the first hop may also be the file: URI of a local ZIP file given to lip install.",
+                "description": "The ref as resolved, including a git ref (e.g. \"github.com/o/r@branch:main\"); the first hop may also be the file: URI of a local ZIP file requested by the user.",
                 "type": "string"
               },
               "artifact": {
+                "description": "Index of the Artifact selected in the routing document at this hop; null when the hop reaches a concrete document.",
                 "type": ["integer", "null"],
                 "minimum": 0
               },
@@ -91,14 +92,14 @@
           ]
         },
         "files": {
-          "description": "Owned files, workspace-relative and '/'-separated.",
+          "description": "Owned files, workspace-relative and '/'-separated; files under plugins/ are recorded in the mods/ form.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "manifest": {
-          "description": "The package document (manifest.json, or tooth.json for tooth packages).",
+          "description": "The package document: manifest.json, or for a tooth.json package the tooth.json in format 3 with the version installed.",
           "type": "object"
         }
       },
