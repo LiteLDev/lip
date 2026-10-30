@@ -16,15 +16,16 @@ namespace Lip.Core.Mcmod.Resolution;
 /// is decided without enumerating every candidate: the loaded candidates are checked first, then
 /// each member whose version is in range and whose identity is that of a loaded candidate is
 /// looked up directly: the requirement's spec refs are resolved for exactly that version. This
-/// equals the full enumeration except for a routing document without a version key at a tag
-/// whose version differs from the routed package's, and for a package renamed between versions.
+/// shortcut misses a member routed from a tag of another version (a routing document without a
+/// version key) and a member named differently from the loaded candidates (a package renamed
+/// between versions); the search then meets the member while walking the candidates, and takes
+/// it there as satisfying the requirement.
 ///
 /// A member resolved from a pinned spec ref stands in for the versions of that spec (spec §6),
-/// but pinned candidates are never offered to an unpinned requirement: when an unpinned
-/// requirement is decided before a pinned one for the same spec (both install edges, the
-/// unpinned one first in the agenda), the search does not find the set in which the pinned
-/// package satisfies both. Requests come before every install edge and installed packages are
-/// members from the start, so requesting or having installed the pinned package avoids this.
+/// but pinned candidates are not candidates of an unpinned requirement. When an unpinned
+/// requirement is decided before a pinned one for the same spec, its choice clashes with the
+/// pinned package; once every candidate has failed so, the requirement is deferred to the end
+/// of the agenda, where the pinned package may satisfy it.
 public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultMaxSteps)
     : IGraphSolver {
   /// The default maximum number of candidates the search examines before giving up.
@@ -284,7 +285,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       ArchiveHandle? Base,
       IVersionConstraint? Range,
       bool Compat,
-      string? Name) {
+      string? Name,
+      bool Deferred = false) {
     public Choices? Loaded { get; set; }
   }
 
@@ -391,6 +393,9 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     /// Candidates proven to fail whatever else is chosen, with the reason.
     private readonly Dictionary<PackageKey, string> _dead = [];
 
+    /// Decision levels whose member blocked a candidate of a pinned spec ref by its identity.
+    private readonly HashSet<int> _pinnedClashes = [];
+
     private readonly List<string> _failures = [];
     private readonly List<string> _unresolvable = [];
     private readonly List<string> _diagnostics = [];
@@ -462,8 +467,9 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       Dictionary<PackageKey, List<Candidate>> dependencies =
           _members.Values.ToDictionary(m => m.Key, _ => new List<Candidate>());
       List<Candidate?> requestSatisfiers = [];
-      foreach (Requirement requirement in _agenda) {
-        Candidate? satisfier = await SatisfyingMember(requirement, await GetChoices(requirement));
+      foreach (Requirement requirement in _agenda.Where(r => !r.Deferred)) {
+        Candidate? satisfier = await SatisfyingMember(requirement, await GetChoices(requirement))
+            ?? await MemberAmongCandidates(await GetChoices(requirement));
         if (requirement.Owner is Candidate owner) {
           if (satisfier is not null) {
             dependencies[PackageKey.Of(owner)].Add(satisfier);
@@ -509,7 +515,12 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         requirement = _agenda[index];
         choices = await GetChoices(requirement);
         if (await SatisfyingMember(requirement, choices) is null) {
-          break;
+          if (!requirement.Deferred || _agenda.Skip(index + 1).All(r => r.Deferred)) {
+            break;
+          }
+
+          // A deferred requirement waits until every other open requirement is decided.
+          _agenda.Add(requirement);
         }
 
         index++;
@@ -520,16 +531,39 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       HashSet<int> blame = [];
       List<string> blocked = [];
       int failedDeeper = 0;
+      _pinnedClashes.Remove(level);
       for (int i = 0; !choices.Unsatisfiable && await choices.Has(i); i++) {
         Candidate candidate = choices.Candidates[i];
+        PackageKey key = choices.CandidateKeys[i];
         if (++_steps > maxSteps) {
           throw Fail($"Gave up resolving dependencies after examining {maxSteps} candidates; "
               + $"last open requirement: {requirement.Description}.");
         }
 
-        if (Blocker(candidate, choices.CandidateKeys[i]) is (int blockerLevel, string reason)) {
+        if (_members.TryGetValue(key.Identity, out Member? existing) && existing.Key == key) {
+          // A member the shortcut of SatisfyingMember missed (see the class remarks). Nothing is
+          // decided here, so no nogood of the rest contains this level.
+          HashSet<int>? rest = await Solve(index + 1, level + 1);
+          if (rest is null) {
+            return null;
+          }
+
+          blame.UnionWith(rest);
+          if (existing.Level >= 0) {
+            blame.Add(existing.Level);
+          }
+
+          failedDeeper++;
+          break;
+        }
+
+        if (Blocker(candidate, key) is (int blockerLevel, string reason)) {
           if (blockerLevel >= 0) {
             blame.Add(blockerLevel);
+            if (IsPinned(candidate) && _members.TryGetValue(key.Identity, out Member? clash)
+                && clash.Level == blockerLevel) {
+              _pinnedClashes.Add(blockerLevel);
+            }
           }
 
           blocked.Add(reason);
@@ -537,7 +571,6 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         }
 
         int agendaCount = _agenda.Count;
-        PackageKey key = choices.CandidateKeys[i];
         _members.Add(key.Identity, new Member(candidate, key, level));
         AddEdges(candidate, level, "");
 
@@ -561,6 +594,27 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
         blame.UnionWith(result);
         failedDeeper++;
+      }
+
+      if (!requirement.Deferred && _pinnedClashes.Contains(level)
+          && requirement.Refs.Any(r => r.Kind == RefKind.Spec && r.GitRef is null)) {
+        // A pinned package clashed with every choice made here; it may stand in for this
+        // requirement once it is a member (see the class remarks). The deferred copy belongs to
+        // this level, so its failure leads back here.
+        int agendaCount = _agenda.Count;
+        _agenda.Add(requirement with { OwnerLevel = level, Deferred = true });
+        HashSet<int>? result = await Solve(index + 1, level + 1);
+        if (result is null) {
+          return null;
+        }
+
+        _agenda.RemoveRange(agendaCount, _agenda.Count - agendaCount);
+        if (!result.Contains(level)) {
+          return result;
+        }
+
+        result.Remove(level);
+        blame.UnionWith(result);
       }
 
       if (blame.Count == 0) {
@@ -661,6 +715,23 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       }
 
       return null;
+    }
+
+    /// The member that is one of the loaded-on-demand candidates, walking all of them.
+    private async Task<Candidate?> MemberAmongCandidates(Choices choices) {
+      for (int i = 0; await choices.Has(i); i++) {
+        if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
+            && member.Key == choices.CandidateKeys[i]) {
+          return member.Candidate;
+        }
+      }
+
+      return null;
+    }
+
+    private static bool IsPinned(Candidate candidate) {
+      return candidate.Chain.Count > 0
+          && candidate.Chain[0].Ref is { Kind: RefKind.Spec, GitRef: not null };
     }
 
     /// Whether a candidate resolved from a spec ref pinned by a git ref satisfies a requirement

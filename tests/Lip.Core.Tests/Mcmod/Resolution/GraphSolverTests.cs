@@ -347,6 +347,92 @@ public class GraphSolverTests {
   }
 
   [Fact]
+  public async Task Solve_MemberRoutedFromTagOfOtherVersion_SatisfiesEdge() {
+    // Arrange: the routing document at tag v1.0.0 has no version and routes to R 1.0.1, which
+    // is installed; Mod's edge must accept it although no tag is named v1.0.1 (spec §5.2, §6).
+    FakeResolver resolver = new();
+    resolver.Add("github.com/r/r", Package("R", "2.0.0", "github.com/r/r"));
+    FakePackage routed = Package("R", "1.0.1", "github.com/r/r") with {
+      ArchiveKey = "https://example.com/R-1.0.1.mcmod",
+    };
+    resolver.Add("github.com/r/r", routed, tag: "1.0.0");
+    resolver.Add("github.com/mod/mod", Package("Mod", "1.0.0", "github.com/mod/mod",
+        edges: [Edge("github.com/r/r", Between("1.0.0", "3.0.0"))]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/mod/mod")], [ToCandidate(routed)], s_environment);
+
+    // Assert
+    Assert.Equal(["R@1.0.1", "Mod@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_MemberWithNameOfOlderVersion_SatisfiesEdge() {
+    // Arrange: the package was renamed from Old to New in 2.0.0; Old 1.0.0 is installed and New
+    // conflicts with it, so Mod's edge is satisfied only by the installed Old (spec §6).
+    FakeResolver resolver = new();
+    resolver.Add("github.com/n/n", Package("New", "2.0.0", "github.com/n/n",
+        conflicts: [new Dep { Name = "Old" }]));
+    FakePackage old = Package("Old", "1.0.0", "github.com/n/n");
+    resolver.Add("github.com/n/n", old);
+    resolver.Add("github.com/mod/mod", Package("Mod", "1.0.0", "github.com/mod/mod",
+        edges: [Edge("github.com/n/n")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    SolvedGraph graph = await solver.SolveGraph(
+        [Request("github.com/mod/mod")], [ToCandidate(old)], s_environment);
+
+    // Assert
+    Assert.Equal(["Old@1.0.0", "Mod@1.0.0"], Names(graph.Order));
+    Assert.Equal([0], graph.Dependencies[1]);
+  }
+
+  [Fact]
+  public async Task Solve_UnpinnedEdgeBeforePinnedEdge_PinnedPackageSatisfiesBoth() {
+    // Arrange: A requires S (any version) and B; B requires S at branch main. The package at
+    // the branch stands in for the versions of S (spec §6), so it satisfies both edges.
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/s/s", "S", ["2.0.0", "1.0.0"]);
+    resolver.Add("github.com/s/s@branch:main", Package("S", "2.5.0", "github.com/s/s") with {
+      ArchiveKey = "github.com/s/s@rev:0123456789abcdef0123456789abcdef01234567",
+    });
+    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
+        edges: [Edge("github.com/s/s"), Edge("github.com/b/b")]));
+    resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b",
+        edges: [Edge("github.com/s/s@branch:main")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["S@2.5.0", "B@1.0.0", "A@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_UnpinnedEdgeOutsidePinnedVersion_Fails() {
+    // Arrange: as above, but A needs S below 2.0.0, which the package at the branch is not.
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/s/s", "S", ["2.0.0", "1.0.0"]);
+    resolver.Add("github.com/s/s@branch:main", Package("S", "2.5.0", "github.com/s/s") with {
+      ArchiveKey = "github.com/s/s@rev:0123456789abcdef0123456789abcdef01234567",
+    });
+    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
+        edges: [Edge("github.com/s/s", Between("1.0.0", "2.0.0")), Edge("github.com/b/b")]));
+    resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b",
+        edges: [Edge("github.com/s/s@branch:main")]));
+    GraphSolver solver = new(resolver);
+
+    // Act & Assert
+    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.Solve(
+        [Request("github.com/a/a")], [], s_environment));
+  }
+
+  [Fact]
   public async Task Solve_PinnedPackagesConflict_Throws() {
     // Arrange
     FakeResolver resolver = new();
@@ -579,17 +665,20 @@ public class GraphSolverTests {
   /// Maps a spec ref (or "<base key>!<path>" for relative refs) to its candidates in order and
   /// filters them by range, like the real resolver for spec refs.
   private sealed class FakeResolver : IResolver {
-    private readonly Dictionary<string, List<FakePackage>> _packages = [];
+    private readonly Dictionary<string, List<(FakePackage Package, SemVersion? Tag)>> _packages = [];
 
     public List<ResolveCall> Calls { get; } = [];
 
-    public void Add(string location, FakePackage package) {
-      if (!_packages.TryGetValue(location, out List<FakePackage>? list)) {
+    /// Adds a candidate; tag is the version of the tag it is reached from when that differs
+    /// from the package's (a routing document without a version), which the range must accept
+    /// as well (spec §5.2 step 1).
+    public void Add(string location, FakePackage package, string? tag = null) {
+      if (!_packages.TryGetValue(location, out List<(FakePackage, SemVersion?)>? list)) {
         list = [];
         _packages[location] = list;
       }
 
-      list.Add(package);
+      list.Add((package, tag is null ? null : SemVersion.Parse(tag)));
     }
 
     public void AddVersions(string spec, string name, IEnumerable<string> versions) {
@@ -608,11 +697,16 @@ public class GraphSolverTests {
           toothClientCompat));
       string location = reference.Kind == RefKind.Relative
           ? $"{baseArchive?.Key}!{reference.RelativePath}"
+          : reference.GitRef is not null ? reference.ToString()
           : reference.Variant == "" ? reference.Target : $"{reference.Target}#{reference.Variant}";
       List<Candidate> candidates = [
         .. _packages.GetValueOrDefault(location, [])
-            .Where(p => range is null || range.IsSatisfiedBy(p.Version))
-            .Select(ToCandidate),
+            .Where(p => range is null || (range.IsSatisfiedBy(p.Package.Version)
+                && (p.Tag is null || range.IsSatisfiedBy(p.Tag))))
+            .Select(p => reference.GitRef is null
+                ? ToCandidate(p.Package)
+                : new Candidate(p.Package, Archive(p.Package.ArchiveKey),
+                    [new ChainHop(reference, null)])),
       ];
       List<string> diagnostics = candidates.Count == 0
           ? [$"{location}: no version matches {range?.ToString() ?? "*"}"]
