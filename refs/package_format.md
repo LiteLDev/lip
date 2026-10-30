@@ -10,7 +10,7 @@ In every case this specification calls a "failure", lip must abort the current o
   - **ZIP archive**: a ZIP file; called an mcmod when its extension is `.mcmod`.
   - **git archive**: the tree of a commit.
   - **directory archive**: a directory inside another archive (a relative ref ending with `/`, §3).
-- **Document**: the `manifest.json` at the root of an archive. It must be strict JSON (RFC 8259, no comments) encoded in UTF-8, and its top level must be an object.
+- **Document**: the `manifest.json` at the root of an archive. It must be strict JSON (RFC 8259, no comments) encoded in UTF-8, no object in it may have two members with the same name, and its top level must be an object.
 - **Routing document**: a document with the `artifacts` key.
 - **Concrete document**: a document without the `artifacts` key. An archive whose root is a concrete document is called a **concrete package**.
 - **Identity**: the `name` of a concrete package. Names are compared ignoring ASCII case.
@@ -272,12 +272,14 @@ For each installed package, lip must record the following in the workspace lock:
 - the identity and `version`;
 - the environment;
 - the resolution chain: the ref of each hop (including its git-ref, if any), the index of the Artifact selected at that hop, and for a spec hop the commit its archive was at;
-- the identifier of the final archive: the SHA-256 (and the URL or local file it was read from) for a ZIP archive, the commit id and path for a git archive;
+- the identifier of the final archive: the SHA-256 (and the URL or local file it was read from) for a ZIP archive, the SHA-256 and the identifier of the archive containing it for a ZIP archive inside another archive, the commit id and path for a git archive;
 - the list of files owned by the package (workspace-relative paths; files under `plugins/` are recorded in the `mods/` form, see §7).
 
 When reinstalling from the lock, lip installs the final archive recorded in the lock, and fails when its identifier does not match; the result does not depend on where the refs of the resolution chain point now. In particular a package from a pinned spec ref is reinstalled at the recorded commit, wherever its branch or tag points now.
 
 **Updating** an explicitly installed package requests the first ref of its chain again: an unpinned spec ref takes its newest version, a `branch:` takes the current head, a `tag:` the commit the tag points to now, and a `rev:` the same commit; a url is requested again (lip may serve it from its download cache, so the content behind a URL should not change), and a local file is read again. The package is replaced when the result differs in identity, version, archive key or archive identifier.
+
+**Earlier formats**: lip accepts locks written by earlier versions of lip, including `tooth_lock.json`, and keeps managing the packages they record: they can be listed, uninstalled and updated. How it does so is not specified; the rest of this section applies to the entries lip records itself.
 
 ## 9. tooth.json Compatibility
 

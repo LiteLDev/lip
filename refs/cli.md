@@ -5,12 +5,13 @@ This specification defines the observable behavior of the `lip` command. Package
 ## 1. Invocation
 
 ```
-lip [-h | --help] [--version]
+lip [-h | --help] [-v | --version]
 lip <command> [arguments] [options]
 ```
 
 - `-h`, `--help` prints help for `lip` or for the command it follows, and exits with code 0.
-- `--version` prints the version of lip (SemVer 2.0.0) and exits with code 0.
+- `-v`, `--version` prints the version of lip (SemVer 2.0.0) and exits with code 0.
+- `lip` without arguments prints help and exits with code 0.
 - An unknown command or option, or a missing required argument, is a usage error.
 
 ### 1.1 Workspace
@@ -108,7 +109,7 @@ With `--no-dependencies`, exactly the named packages are uninstalled, dependenci
 
 Options: the common options of §4.
 
-With arguments, each argument (§2) is requested again: without `@`, its newest version; with `@<version>`, that version; with a git-ref, the commit it names now. Every requested package must already be installed (as explicitly installed or as a dependency); otherwise the command fails.
+With arguments, each argument (§2) is requested again: without `@`, its newest version; with `@<version>`, that version; with a git-ref, the commit it names now. Every requested package must already be installed (as explicitly installed or as a dependency); otherwise the command fails. The requested packages become explicitly installed.
 
 Without arguments, every explicitly installed package is requested again by the first ref of its resolution chain, as defined in PF §8 ("Updating"). When that ref is a local file that no longer exists, the package is kept as it is and lip warns.
 
@@ -144,7 +145,7 @@ Writes `manifest.json` in the current directory: a concrete document (PF §4.2) 
 - `version`: `"0.1.0"`;
 - `dependencies`: `[]`.
 
-When `manifest.json` already exists, the command fails and the file is unchanged.
+When `manifest.json` already exists, or the resulting `name` is not a valid name (PF §4.2), the command fails and writes nothing.
 
 ### 5.8 `lip migrate`
 
@@ -169,7 +170,7 @@ lip config list [--json]
 lip config delete <KEY>
 ```
 
-- `get` writes the value of the key. With `--json`, it writes the bare value.
+- `get` writes the value of the key. With `--json`, it writes the value as a JSON string.
 - `set` sets the key to the value.
 - `list` writes every key with its value. With `--json`, it writes a JSON object mapping each key to its value as a string.
 - `delete` resets the key to its default value.
@@ -191,7 +192,7 @@ The file is a YAML mapping of keys to values. A key absent from the file has its
 |---|---|---|---|
 | `github_proxy` | URL | none | Prefix through which requests to GitHub (git repositories and downloads) are sent. When a request through the proxy fails, lip sends it to GitHub directly. |
 
-**Legacy**: when `config.yaml` does not exist and `liprc.json` exists in the same directory, lip converts it to `config.yaml` and deletes `liprc.json`.
+**Legacy**: a configuration written by earlier versions of lip keeps working.
 
 ## 7. The Lock
 
@@ -204,4 +205,4 @@ The lock of a workspace (PF §8) is kept outside the workspace, per user:
 
 `<hash>` is the lowercase hexadecimal SHA-256 of the UTF-8 absolute path of the workspace without a trailing separator, lower-cased first on Windows. The lock records that path; when it names another workspace, every command that reads the lock fails. A workspace that is moved or renamed has no lock, and so no installed packages.
 
-**Legacy**: when there is no lock for a workspace, lip reads `lip_lock.json` (format 4) or else `tooth_lock.json` (format 3) at the workspace root. The next workspace operation that succeeds writes the lock to the path above and deletes both files from the workspace.
+**Legacy**: a lock written by earlier versions of lip, at any location they used, keeps working (PF §8, "Earlier formats").
