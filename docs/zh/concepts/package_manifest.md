@@ -117,7 +117,7 @@ lip 保留 `variant` 等于 ref 的 variant、且所有选择器（`platform`、
 ### 模板
 
 <span v-pre>`refs` 中的字符串可以包含 `{{name}}`、`{{version}}`、`{{platform}}` 和
-`{{rid}}`。`{{name}}` 和 `{{version}}` 取文档中同名键的值（缺少该键时报错）；
+`{{rid}}`。`{{name}}` 和 `{{version}}` 取文档中同名键的值（缺少该键时，该 ref 不产生候选）；
 `{{platform}}` 和 `{{rid}}` 取环境的值。出现其他任何 `{{...}}` 时，文档无效。</span>
 
 ```json
@@ -143,7 +143,7 @@ lip 保留 `variant` 等于 ref 的 variant、且所有选择器（`platform`、
 | 字段 | 类型 | 必需 | 说明 |
 | --- | --- | --- | --- |
 | `name` | `string` | 是 | 身份。必须匹配 `^[A-Za-z0-9][A-Za-z0-9._-]*$`。 |
-| `version` | `string` | 是 | SemVer 2.0.0。位于标签处时必须等于标签版本。 |
+| `version` | `string` | 是 | SemVer 2.0.0。位于版本标签（`v<version>`）处时必须等于标签版本。 |
 | `type` | `string` | 是 | `"files"` 表示[文件包](#文件包与-mod)；其他任何值都是 LeviLamina 的 mod 类型（例如 `"native"`）。 |
 | `platform` | `string` | 否 | `"server"`、`"client"` 或 `"universal"`（默认）。 |
 | `rid` | `string` | 否 | .NET RID。缺省表示不限。 |
@@ -264,7 +264,7 @@ lip 在内存中把 `tooth.json` 转换为第 4 版的文件包，并像其他�
   所依赖的 `#quickjs`、`#lua` 变体会并存安装。
 - 若标签处的 `tooth.json` 声明的版本与标签不同，以标签版本为准，lip 会给出警告。
 - 所选变体的依赖按 `installDependencies` 的方式安装，其版本范围按 lip v0.x 的方式解释。
-- 每个资源都成为包的一部分：`self` 是标签处的仓库，`zip`、`tar`、`tgz` 和 `uncompressed`
+- 每个资源都成为包的一部分：`self` 是 `tooth.json` 自身所在的归档（例如标签处的仓库），`zip`、`tar`、`tgz` 和 `uncompressed`
   资源在安装包时下载（并缓存）。放置规则在安装时与资源中的文件匹配（包括 glob），写入的
   文件与 lip v0.x 相同。
 - `preserve_files`、`remove_files` 和脚本分别成为 `preserveFiles`、`removeFiles` 和

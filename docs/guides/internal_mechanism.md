@@ -76,9 +76,10 @@ Files written to make an operation atomic are hidden and sit next to their targe
 
 ## Deviations from the Specification
 
+lip manages server workspaces only: it never determines the platform from the workspace, but always uses `server` as if the user had specified it ([CLI specification](https://github.com/LiteLDev/lip/blob/main/refs/cli.md) §3, spec §5.1). Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
+
 lip implements the [lip package specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md) (format version 4) with these deliberate differences:
 
-1.  **Server only**: lip does not determine the platform from the workspace (spec §5.1); it always uses `server`. Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
-2.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
-3.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and is not cached on its own. To open it again, lip resolves the recorded chain again, which reopens the parent archive and extracts the ZIP file, and accepts the result only if its SHA-256 matches.
-4.  **Entries of one identity**: The variants of one `tooth.json` package have distinct identities (`path` and `path#label`, spec §9.1), also when migrated from `tooth_lock.json`, and lip gives the entries of locks written before that rule the identity it requires. Should a lock still hold two entries of one identity, both are kept and listed, and can be uninstalled separately with `path#variant`. New solves require unique identities.
+1.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
+2.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and is not cached on its own. To open it again, lip resolves the recorded chain again, which reopens the parent archive and extracts the ZIP file, and accepts the result only if its SHA-256 matches.
+3.  **Entries of one identity**: The variants of one `tooth.json` package have distinct identities (`path` and `path#label`, spec §9.1), also when migrated from `tooth_lock.json`, and lip gives the entries of locks written before that rule the identity it requires. Should a lock still hold two entries of one identity, both are kept and listed, and can be uninstalled separately with `path#variant`. New solves require unique identities.

@@ -10,7 +10,7 @@ To start the daemon, simply run:
 lipd run
 ```
 
-This will start the JSON-RPC server, listening on `stdin` and writing responses to `stdout`.
+This will start the JSON-RPC server, listening on `stdin` and writing responses to `stdout`. It serves until `stdin` is closed. Every method operates on the workspace that is the current working directory of `lipd`.
 
 ## Connecting
 
@@ -26,9 +26,9 @@ It is recommended to use a JSON-RPC library for your programming language to han
 
 ## Client Contract
 
-When connecting to `lipd`, your client should be prepared to handle notifications sent by the daemon. These notifications provide feedback on operations, such as progress updates or log messages.
+While a method runs, `lipd` sends your client the messages that `lip` would print, such as progress updates or log messages, as JSON-RPC **requests** (not notifications). Your client must answer each with the result `null`: `lipd` does not continue the method that sent a `Print*` request until the answer arrives. It does not wait for the answer to `ReportProgress`.
 
-Common notifications include:
+These requests are:
 
 -   `PrintInfo`
 -   `PrintSuccess`
@@ -36,4 +36,4 @@ Common notifications include:
 -   `PrintError`
 -   `ReportProgress`
 
-See the [OpenRPC Specification](json_rpc_spec.md) for rigorous definitions of these methods.
+See the [JSON-RPC Specification](json_rpc_spec.md) for the definitions of these methods.

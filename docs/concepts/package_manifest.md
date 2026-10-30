@@ -124,8 +124,8 @@ same selector keys with overlapping values.
 ### Templates
 
 <span v-pre>Strings in `refs` may contain `{{name}}`, `{{version}}`, `{{platform}}` and
-`{{rid}}`. `{{name}}` and `{{version}}` are the keys of the document (it is an error if the key
-is missing); `{{platform}}` and `{{rid}}` are the values of the environment. Any other
+`{{rid}}`. `{{name}}` and `{{version}}` are the keys of the document (if the key is missing, the ref
+yields no candidate); `{{platform}}` and `{{rid}}` are the values of the environment. Any other
 `{{...}}` makes the document invalid.</span>
 
 ```json
@@ -151,7 +151,7 @@ is missing); `{{platform}}` and `{{rid}}` are the values of the environment. Any
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | `string` | Yes | Identity. Must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. |
-| `version` | `string` | Yes | SemVer 2.0.0. At a tag, it must equal the tag version. |
+| `version` | `string` | Yes | SemVer 2.0.0. At a version tag (`v<version>`), it must equal the tag version. |
 | `type` | `string` | Yes | `"files"` for a [file package](#file-packages-and-mods); any other value is a LeviLamina mod type (e.g. `"native"`). |
 | `platform` | `string` | No | `"server"`, `"client"` or `"universal"` (default). |
 | `rid` | `string` | No | .NET RID. Omitted means any. |
@@ -282,7 +282,7 @@ other package; the exact mapping is §9 of the [specification](https://github.co
   lip prints a warning.
 - The dependencies of the selected variant are installed like `installDependencies`, with their
   version ranges read as in lip v0.x.
-- Each asset becomes part of the package: `self` is the repository at the tag, and `zip`, `tar`,
+- Each asset becomes part of the package: `self` is the archive of the `tooth.json` itself (e.g. the repository at the tag), and `zip`, `tar`,
   `tgz` and `uncompressed` assets are downloaded (and cached) when the package is installed. The
   placements are matched against the asset's files at install time, globs included, and write
   the same files lip v0.x wrote.

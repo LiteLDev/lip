@@ -10,7 +10,7 @@
 lipd run
 ```
 
-这会启动 JSON-RPC 服务器，从 `stdin` 读取请求并将响应写入 `stdout`。
+这会启动 JSON-RPC 服务器，从 `stdin` 读取请求并将响应写入 `stdout`，直到 `stdin` 关闭。每个方法都作用于 `lipd` 当前工作目录所在的工作区。
 
 ## 连接方式
 
@@ -26,9 +26,9 @@ lipd run
 
 ## 客户端约定
 
-连接 `lipd` 时，客户端应能处理守护进程发送的通知。这些通知用于反馈操作状态，例如进度更新或日志消息。
+方法执行期间，`lipd` 会把 `lip` 本应输出的消息（例如进度更新或日志消息）以 JSON-RPC **请求**（而非通知）的形式发给客户端。客户端必须以结果 `null` 应答每个请求：在应答到达之前，`lipd` 不会继续执行发出 `Print*` 请求的方法；对 `ReportProgress` 则不等待应答。
 
-常见通知包括：
+这些请求包括：
 
 - `PrintInfo`
 - `PrintSuccess`
@@ -36,4 +36,4 @@ lipd run
 - `PrintError`
 - `ReportProgress`
 
-严谨定义请参见 [OpenRPC 规范](json_rpc_spec.md)。
+这些方法的定义请参见 [JSON-RPC 规范](json_rpc_spec.md)。

@@ -12,7 +12,7 @@ lip init
 
 会创建一个描述 LeviLamina 原生 mod 的第 4 版 `manifest.json`，取值如下：
 
-- `name`：当前目录的名称（字母、数字、`.`、`_` 和 `-` 以外的字符替换为 `-`）。
+- `name`：当前目录的名称（ASCII 字母、数字、`.`、`_` 和 `-` 以外的字符替换为 `-`）。
 - `entry`：`"<name>.dll"`
 - `type`：`"native"`
 - `version`：`"0.1.0"`

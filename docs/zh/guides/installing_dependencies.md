@@ -73,6 +73,6 @@ lip 管理服务端工作区：mod 安装到 `mods/<name>/`（参见[环境](../
 ## 命令参数
 
 - `-n, --dry-run`：仅模拟安装，不做实际更改，可用于预览结果。
-- `--no-dependencies`：仅安装指定包，忽略其依赖。
-- `--ignore-scripts`：跳过执行包中定义的 `preInstall` 和 `postInstall` 脚本。
+- `--no-dependencies`：仅安装指定包，忽略其依赖，也不卸载其他包。这可能导致工作区损坏。
+- `--ignore-scripts`：不执行任何包脚本，包括安装过程中被移除或替换的包的卸载脚本。
 - `--rid <RID>`：设置工作区的 .NET RID，例如 `win-x64`。

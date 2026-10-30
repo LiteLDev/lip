@@ -12,7 +12,7 @@ lip init
 
 Creates a format 4 `manifest.json` describing a LeviLamina native mod, with these values:
 
-- `name`: The name of the current directory (characters other than letters, digits, `.`, `_` and `-` are replaced with `-`).
+- `name`: The name of the current directory (characters other than ASCII letters, digits, `.`, `_` and `-` are replaced with `-`).
 - `entry`: `"<name>.dll"`
 - `type`: `"native"`
 - `version`: `"0.1.0"`

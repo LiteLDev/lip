@@ -49,7 +49,7 @@ lip 自己的文件保存在遵循平台惯例的用户目录中：
 缓存可以随时删除，例如使用 `lip cache clean`。正在进行的下载会写入缓存中隐藏的 `.staging` 目录；lip 不向系统临时目录写入任何内容。
 
 ### 安装到一半失败会怎样？
-什么都不会改变。`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、脚本失败或按下 Ctrl+C，它会撤销已做的全部修改，锁保持原样。只有包脚本所做的事无法撤销。若 lip 在中途被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先撤销被中断的操作并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。
+什么都不会改变。`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、脚本失败或按下 Ctrl+C，它会撤销已做的全部修改，锁保持原样。只有包脚本所做的事无法撤销。若 lip 在中途被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先处理被中断的操作：若它已保存锁，则将其完成，否则将其撤销，并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。
 
 ### 可以同时运行两个 lip 命令吗？
 不能作用于同一个工作区：一个 `lip install`、`uninstall` 或 `update` 正在修改某个工作区时，对该工作区的另一个此类命令会立即失败，并提示"Another lip process is changing the workspace"。作用于不同工作区的命令，以及只读取的命令（如 `lip list` 或 `lip view`），随时都可以运行。

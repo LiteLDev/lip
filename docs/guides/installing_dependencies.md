@@ -73,6 +73,6 @@ With `--dry-run`, lip only prints what it would do.
 ## Command Flags
 
 -   `-n, --dry-run`: Simulate the installation without making any changes. Useful to see what would happen.
--   `--no-dependencies`: Install only the specified package, ignoring its dependencies.
--   `--ignore-scripts`: Skip running the `preInstall` and `postInstall` scripts defined in the package.
+-   `--no-dependencies`: Install only the specified package, ignoring its dependencies, and uninstall no other package. This may leave the workspace broken.
+-   `--ignore-scripts`: Do not run any package scripts, including the uninstall scripts of packages the installation removes or replaces.
 -   `--rid <RID>`: Set the .NET RID of the workspace, e.g. `win-x64`.
