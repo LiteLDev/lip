@@ -27,7 +27,7 @@ Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) ve
 Pack it into a `.mcmod` (or `.zip`) file with `manifest.json` at its root and run `lip install ./package.mcmod`. lip does not install from a plain directory. The lock records the file's path and SHA-256: uninstalling needs nothing, and `lip update` reads the file again.
 
 ### How do I upgrade lip itself?
-Reinstall `lip` using the same method you used originally, such as `npm install -g @levimc/lip`, `winget upgrade levimc.lip`, or the latest Windows `setup.exe` from the GitHub releases page. There is no built-in `lip self-update` command yet. If you installed `lip` from the old `@futrime/lip` npm package or the `futrime.lip` winget package, uninstall it first and then install `@levimc/lip` or `levimc.lip`.
+Reinstall `lip` using the same method you used originally, such as `npm install -g @levimc/lip`, `winget upgrade levimc.lip`, or the latest Windows installer (`setup.exe` or `.msi`) from the GitHub releases page. There is no built-in `lip self-update` command yet. If you installed `lip` from the old `@futrime/lip` npm package or the `futrime.lip` winget package, uninstall it first and then install `@levimc/lip` or `levimc.lip`.
 
 ### Does lip require git?
 No. lip talks to git repositories over HTTPS with its own built-in client, so the `git` command-line tool does not need to be installed. See [Internal Mechanism](guides/internal_mechanism.md#package-resolution).

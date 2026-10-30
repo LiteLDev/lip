@@ -1,0 +1,21 @@
+<Project Sdk="WixToolset.Sdk/7.0.1">
+
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <OutputName>lip-setup</OutputName>
+    <AcceptEula>wix7</AcceptEula>
+    <!-- The .wxl files are payloads of the bootstrapper application, not localizations of the bundle. -->
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <DefineConstants>$(DefineConstants);ProductVersion=$(ProductVersion);DotNetMajorVersion=$(DotNetMajorVersion);DotNetRuntimeInstaller=$(DotNetRuntimeInstaller);DotNetRuntimeUrl=$(DotNetRuntimeUrl)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="7.0.1" />
+    <PackageReference Include="WixToolset.Netfx.wixext" Version="7.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Package\Lip.Package.wixproj" />
+  </ItemGroup>
+
+</Project>

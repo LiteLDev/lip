@@ -112,7 +112,7 @@ jobs:
           name: release-asset-${{ matrix.runtime }}
           path: lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}.*
 
-  create-windows-installer:
+  create-windows-installers:
     runs-on: ${{ matrix.runs-on }}
     needs:
       - build
@@ -125,41 +125,43 @@ jobs:
         include:
           - runtime: win-arm64
             runs-on: windows-11-arm
-            build-arch: arm64
+            arch: arm64
           - runtime: win-x64
             runs-on: windows-latest
-            build-arch: x64compatible
+            arch: x64
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10
 
       - uses: actions/download-artifact@v8
         with:
           name: lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}
           path: .tmp/artifacts
 
-      - shell: bash
-        run: |
-          mkdir -p .tmp/inno
-
-      - uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
-        with:
-          path: inno/lip.iss
-          options: |
-            /DAppVersion=${{ needs.get-version.outputs.version }}
-            /DBuildArch=${{ matrix.build-arch }}
+      - run: |
+          ./wix/build.ps1 `
+            -Version ${{ needs.get-version.outputs.version }} `
+            -Arch ${{ matrix.arch }} `
+            -BinDir .tmp/artifacts `
+            -OutDir .tmp/wix
 
       - uses: actions/upload-artifact@v7
         with:
-          name: release-asset-${{ matrix.runtime }}-setup
-          path: .tmp/inno/lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}-setup.exe
+          name: release-asset-${{ matrix.runtime }}-installers
+          path: |
+            .tmp/wix/lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}.msi
+            .tmp/wix/lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}-setup.exe
 
   publish-release:
     runs-on: ubuntu-latest
     needs:
       - create-portable-archives
-      - create-windows-installer
+      - create-windows-installers
       - get-version
     permissions:
       contents: write

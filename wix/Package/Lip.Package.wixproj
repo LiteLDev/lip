@@ -1,0 +1,15 @@
+<Project Sdk="WixToolset.Sdk/7.0.1">
+
+  <PropertyGroup>
+    <OutputName>lip</OutputName>
+    <AcceptEula>wix7</AcceptEula>
+    <DefineConstants>$(DefineConstants);ProductVersion=$(ProductVersion);BinDir=$(BinDir)</DefineConstants>
+    <!-- These ICEs are implemented in VBScript, which recent Windows versions no longer ship. -->
+    <SuppressIces>ICE09;ICE32;ICE61</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="7.0.1" />
+  </ItemGroup>
+
+</Project>

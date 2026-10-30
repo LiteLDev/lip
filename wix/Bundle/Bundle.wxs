@@ -1,0 +1,49 @@
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+  xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+
+  <Bundle
+    Name="lip"
+    Manufacturer="LiteLDev"
+    Version="$(ProductVersion)"
+    UpgradeCode="{1262DA0B-A856-4C62-B330-50F4C59B7C87}"
+    AboutUrl="https://docs.levimc.org/lip/"
+    HelpUrl="https://github.com/LiteLDev/lip/issues"
+    DisableModify="yes">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        Theme="hyperlinkLicense"
+        LicenseUrl="https://github.com/LiteLDev/lip/blob/main/COPYING"
+        ShowVersion="yes"
+        SuppressOptionsUI="yes" />
+      <Payload Name="1033\thm.wxl" SourceFile="en-US.wxl" />
+      <Payload Name="2052\thm.wxl" SourceFile="zh-CN.wxl" />
+    </BootstrapperApplication>
+
+    <netfx:DotNetCoreSearch
+      RuntimeType="core"
+      Platform="$(sys.BUILDARCH)"
+      MajorVersion="$(DotNetMajorVersion)"
+      Variable="DotNetRuntimeVersion" />
+
+    <Chain>
+      <!-- Downloaded only when the runtime is missing: a cached package would be downloaded on every install. -->
+      <ExePackage
+        Id="DotNetRuntime"
+        SourceFile="$(DotNetRuntimeInstaller)"
+        DownloadUrl="$(DotNetRuntimeUrl)"
+        Compressed="no"
+        Cache="remove"
+        DetectCondition="DotNetRuntimeVersion"
+        InstallArguments="/install /quiet /norestart"
+        Permanent="yes"
+        Vital="yes" />
+
+      <MsiPackage SourceFile="$(Lip.Package.TargetPath)" />
+    </Chain>
+
+  </Bundle>
+
+</Wix>

@@ -1,0 +1,79 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="lip"
+    Manufacturer="LiteLDev"
+    Version="$(ProductVersion)"
+    UpgradeCode="{6DE6BECA-CCBD-4B31-A335-3EE37063C932}"
+    Scope="perMachine">
+
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://docs.levimc.org/lip/" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/LiteLDev/lip/issues" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="lip" />
+    </StandardDirectory>
+
+    <Component Directory="INSTALLFOLDER">
+      <File Source="$(BinDir)\lip.exe" />
+      <Environment
+        Id="PATH"
+        Name="PATH"
+        Value="[INSTALLFOLDER]"
+        Action="set"
+        Part="last"
+        System="yes" />
+      <!-- Windows Installer keeps directories that already existed, e.g. from an Inno Setup installation. -->
+      <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+    </Component>
+
+    <Component Directory="INSTALLFOLDER">
+      <File Source="$(BinDir)\lipd.exe" />
+    </Component>
+
+    <!--
+      Versions up to 0.35.0 were installed by an Inno Setup installer. Run its uninstaller
+      first, so that it neither keeps a second entry in Installed Apps nor later deletes the
+      files and the PATH entry this package installs to the same place.
+    -->
+    <Property Id="INNOUNINSTALLSTRING">
+      <RegistrySearch
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{C9BEB1D4-E698-4D84-A644-9E0C4B2E72BD}_is1"
+        Name="UninstallString"
+        Type="raw"
+        Bitness="always64" />
+    </Property>
+
+    <SetProperty
+      Id="RemoveInnoInstallation"
+      Value="[INNOUNINSTALLSTRING] /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
+      Before="RemoveInnoInstallation"
+      Sequence="execute"
+      Condition="INNOUNINSTALLSTRING AND NOT REMOVE" />
+
+    <CustomAction
+      Id="RemoveInnoInstallation"
+      BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom
+        Action="RemoveInnoInstallation"
+        After="InstallInitialize"
+        Condition="INNOUNINSTALLSTRING AND NOT REMOVE" />
+    </InstallExecuteSequence>
+
+  </Package>
+
+</Wix>

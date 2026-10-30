@@ -27,7 +27,7 @@
 把它打包为根目录含 `manifest.json` 的 `.mcmod`（或 `.zip`）文件，然后运行 `lip install ./package.mcmod`。lip 不从普通目录安装。锁会记录该文件的路径和 SHA-256：卸载不需要它，`lip update` 会重新读取该文件。
 
 ### 如何升级 lip 自身？
-使用你最初的安装方式重新安装 `lip`，例如 `npm install -g @levimc/lip`、`winget upgrade levimc.lip`，或从 GitHub Releases 页面下载最新的 Windows `setup.exe`。目前还没有内置的 `lip self-update` 命令。如果你是通过旧的 `@futrime/lip` npm 包或 `futrime.lip` winget 包安装的 `lip`，请先卸载，再安装 `@levimc/lip` 或 `levimc.lip`。
+使用你最初的安装方式重新安装 `lip`，例如 `npm install -g @levimc/lip`、`winget upgrade levimc.lip`，或从 GitHub Releases 页面下载最新的 Windows 安装包（`setup.exe` 或 `.msi`）。目前还没有内置的 `lip self-update` 命令。如果你是通过旧的 `@futrime/lip` npm 包或 `futrime.lip` winget 包安装的 `lip`，请先卸载，再安装 `@levimc/lip` 或 `levimc.lip`。
 
 ### lip 需要安装 git 吗？
 不需要。lip 使用内置客户端通过 HTTPS 访问 git 仓库，无需安装 `git` 命令行工具。详见[内部机制](guides/internal_mechanism.md#包解析)。
