@@ -10,7 +10,7 @@
 lip config get <KEY> [--json]
 ```
 
-获取并显示指定配置键的值。使用 `--json` 时只输出值本身，而不是表格。
+获取并显示指定配置键的值。使用 `--json` 时以 JSON 字符串输出该值，而不是表格。
 
 ## lip config set
 

@@ -128,7 +128,8 @@ public class LipClient(
     await _configService.Set(key, value);
   }
 
-  /// Writes a format 4 manifest.json (a concrete native mod) named after the current directory.
+  /// Writes a format 4 manifest.json (a concrete native mod) named after the current directory
+  /// (refs/cli.md §5.7). Fails when that name is not a valid package name.
   public async Task Init() {
     string path = ManifestFormat.ManifestFileName;
     if (_fileSystem.File.Exists(path)) {
@@ -137,7 +138,12 @@ public class LipClient(
 
     string directoryName = _fileSystem.Path.GetFileName(
         Path.TrimEndingDirectorySeparator(_fileSystem.Directory.GetCurrentDirectory()));
-    string name = PackageNames.FromText(directoryName, "my-mod");
+    string name = PackageNames.ReplaceInvalidCharacters(directoryName);
+    if (!PackageNames.IsValid(name)) {
+      throw new InvalidOperationException(
+          $"Cannot name the package after the directory '{directoryName}': '{name}' is not a "
+          + "valid package name. Rename the directory, or write manifest.json yourself.");
+    }
 
     JsonObject manifest = new() {
       [ManifestFormat.FormatVersionKey] = ManifestFormat.Version,

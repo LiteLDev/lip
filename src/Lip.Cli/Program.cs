@@ -56,11 +56,13 @@ app.Configure(config => {
   });
 
   config.AddBranch("cache", cache => {
+    cache.SetDefaultCommand<MissingSubcommandCommand>();
     cache.AddCommand<CacheCleanCommand>("clean")
         .WithDescription("Cleans the local cache");
   });
 
   config.AddBranch("config", config => {
+    config.SetDefaultCommand<MissingSubcommandCommand>();
     config.AddCommand<ConfigGetCommand>("get")
         .WithDescription("Gets a configuration value");
     config.AddCommand<ConfigSetCommand>("set")

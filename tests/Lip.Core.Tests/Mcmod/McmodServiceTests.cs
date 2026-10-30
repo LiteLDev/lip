@@ -192,6 +192,19 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Update_Dependency_BecomesExplicitlyInstalled() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([App], s_options);
+
+    // Act
+    await _ws.Service.Update([Lib], s_options);
+
+    // Assert
+    Assert.True((await _ws.Lock()).Packages.Single(p => p.Identity == Lib).Explicit);
+  }
+
+  [Fact]
   public async Task Update_NotInstalled_Throws() {
     AddLibAndApp();
 

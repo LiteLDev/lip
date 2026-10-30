@@ -18,6 +18,6 @@ lip init
 - `version`：`"0.1.0"`
 - `dependencies`：`[]`
 
-若当前目录已存在 `manifest.json`，命令会失败，且不修改该文件。
+若当前目录已存在 `manifest.json`，或得到的名称不是有效的包名（例如以 `_` 或 `-` 开头），命令会失败，且不写入任何内容。
 
 后续步骤参见[创建包](../../guides/creating_packages.md)。

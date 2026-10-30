@@ -74,11 +74,11 @@ lip 在保存于工作区之外、用户数据目录中的锁文件里维护已�
 - **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到锁旁边的 `<hash>.journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存锁的阶段，则删除备份以完成它。试运行（dry run）只报告日志的存在。
 - **同一时间只有一个操作**：操作期间独占打开锁旁边的 `<hash>.lock`（操作结束时删除）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another lip process is changing the workspace"；请在第一个操作结束后重新运行。
 
-## 与规范的差异
+## 关于规范的说明
 
 lip 只管理服务端工作区：它从不从工作区判断平台，而是总是使用 `server`，如同由用户显式指定（[CLI 规范](https://github.com/LiteLDev/lip/blob/main/refs/cli.md) §3，规范 §5.1）。客户端工作区交由实现同一规范的启动器（如 LeviLauncher）处理。
 
-lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)（格式版本 4）时，有以下刻意的差异：
+lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)（格式版本 4）。规范没有规定 lip 如何继续管理旧版本写入的锁（规范 §8 "Earlier formats"），并允许通过包含嵌套 ZIP 归档的归档来标识它（规范 §8）。lip 的做法如下：
 
 1. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。
 2. **嵌套的 ZIP 归档**：位于另一个归档中的 ZIP 归档只按 SHA-256 锁定，且不单独缓存。要再次打开它，lip 会重新解析记录的解析链，从而重新打开父归档并解出该 ZIP 文件，并且只接受 SHA-256 一致的结果。

@@ -101,7 +101,7 @@
     },
     {
       "name": "Init",
-      "description": "Writes a format 4 concrete manifest.json in the daemon working directory, as lip init: named after the directory, entry \"<name>.dll\", type \"native\", version \"0.1.0\", no dependencies. Fails, leaving the file unchanged, when manifest.json exists.",
+      "description": "Writes a format 4 concrete manifest.json in the daemon working directory, as lip init: named after the directory, entry \"<name>.dll\", type \"native\", version \"0.1.0\", no dependencies. Fails, writing nothing, when manifest.json exists or the resulting name is not a valid package name.",
       "params": [],
       "result": {
         "name": "result",
@@ -267,7 +267,7 @@
     },
     {
       "name": "Update",
-      "description": "Updates packages, as lip update. Each element of packages is a package argument as in Install and is requested again: without @, its newest version; with @<version>, that version; with a git ref, the commit it names now. Every requested package must already be installed. An empty packages list is lip update without arguments: every explicitly installed package is requested again by the first ref of its resolution chain (an unpinned spec ref takes its newest version, a branch its current head, a tag the commit it points to now, a rev the same commit; a URL is requested again and may be served from the download cache; a local file is read again, and when it no longer exists the package is kept and a warning is sent). A package is replaced only when the result differs in identity, version, archive key or archive identifier.",
+      "description": "Updates packages, as lip update. Each element of packages is a package argument as in Install and is requested again: without @, its newest version; with @<version>, that version; with a git ref, the commit it names now. Every requested package must already be installed, and becomes explicitly installed. An empty packages list is lip update without arguments: every explicitly installed package is requested again by the first ref of its resolution chain (an unpinned spec ref takes its newest version, a branch its current head, a tag the commit it points to now, a rev the same commit; a URL is requested again and may be served from the download cache; a local file is read again, and when it no longer exists the package is kept and a warning is sent). A package is replaced only when the result differs in identity, version, archive key or archive identifier.",
       "params": [
         {
           "name": "packages",

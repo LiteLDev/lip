@@ -16,7 +16,7 @@ lip update [PACKAGES] [options]
 
 ## Description
 
-The packages must already be installed. Updating a package uninstalls the old version and installs the new one; its dependencies are updated as needed. A package is reinstalled only when the result differs from what is installed: another version, another archive, or the same archive with other content.
+The packages must already be installed, and become explicitly installed. Updating a package uninstalls the old version and installs the new one; its dependencies are updated as needed. A package is reinstalled only when the result differs from what is installed: another version, another archive, or the same archive with other content.
 
 Without arguments, every explicitly installed package is requested again by what it was installed from, as recorded in the [lock](../../concepts/lockfiles.md):
 

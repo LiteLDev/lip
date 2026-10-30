@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json;
 using Lip.Core.PublicApi;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -22,7 +23,7 @@ public class ConfigGetCommand(ILipClient lipClient) : AsyncCommand<ConfigGetComm
     string value = await _lipClient.ConfigGet(settings.Key);
 
     if (settings.Json) {
-      Console.Out.WriteLine(value);
+      Console.Out.WriteLine(JsonSerializer.Serialize(value));
     } else {
       Table table = new();
       table.AddColumn("Key");

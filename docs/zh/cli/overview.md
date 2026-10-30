@@ -7,7 +7,9 @@
 | 选项 | 说明 |
 | :--- | :--- |
 | `-h, --help` | 显示 `lip` 或某个命令的帮助（例如 `lip install --help`）。 |
-| `--version` | 输出 `lip` 的版本号。 |
+| `-v, --version` | 输出 `lip` 的版本号。 |
+
+不带参数运行 `lip` 时输出帮助。
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`list`](commands/list.md) 和 [`versions`](commands/versions.md)。
 

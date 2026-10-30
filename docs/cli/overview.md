@@ -7,7 +7,9 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 | Option | Description |
 | :--- | :--- |
 | `-h, --help` | Show help for `lip` or for a command (e.g. `lip install --help`). |
-| `--version` | Print the version of `lip`. |
+| `-v, --version` | Print the version of `lip`. |
+
+`lip` without arguments prints help.
 
 Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md), [`list`](commands/list.md), and [`versions`](commands/versions.md).
 

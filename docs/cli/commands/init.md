@@ -18,6 +18,6 @@ Creates a format 4 `manifest.json` describing a LeviLamina native mod, with thes
 - `version`: `"0.1.0"`
 - `dependencies`: `[]`
 
-If a `manifest.json` already exists in the current directory, the command fails and the file is left unchanged.
+If a `manifest.json` already exists in the current directory, or the resulting name is not a valid package name (for example, it starts with `_` or `-`), the command fails and writes nothing.
 
 See [Creating Packages](../../guides/creating_packages.md) for what to do next.

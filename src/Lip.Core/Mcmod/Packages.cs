@@ -94,10 +94,20 @@ public static partial class PackageNames {
   /// A valid package name (^[A-Za-z0-9][A-Za-z0-9._-]*$, spec §4.2) derived from free text:
   /// other characters become '-', leading '.', '_' and '-' are dropped.
   public static string FromText(string text, string fallback) {
-    string name = InvalidNameCharacters().Replace(text, "-").TrimStart('.', '_', '-');
+    string name = ReplaceInvalidCharacters(text).TrimStart('.', '_', '-');
     return name == "" ? fallback : name;
   }
 
+  /// Replaces every character other than ASCII letters, digits, '.', '_' and '-' with '-'.
+  public static string ReplaceInvalidCharacters(string text) =>
+      InvalidNameCharacters().Replace(text, "-");
+
+  /// Whether a name matches ^[A-Za-z0-9][A-Za-z0-9._-]*$ (spec §4.2).
+  public static bool IsValid(string name) => ValidName().IsMatch(name);
+
   [GeneratedRegex("[^A-Za-z0-9._-]")]
   private static partial Regex InvalidNameCharacters();
+
+  [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*\z")]
+  private static partial Regex ValidName();
 }

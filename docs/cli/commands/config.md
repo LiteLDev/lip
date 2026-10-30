@@ -10,7 +10,7 @@ Configuration is stored in `config.yaml` at `%APPDATA%\lip\config.yaml` (Windows
 lip config get <KEY> [--json]
 ```
 
-Gets and displays the value of a configuration key. With `--json`, prints the bare value instead of a table.
+Gets and displays the value of a configuration key. With `--json`, prints the value as a JSON string instead of a table.
 
 ## lip config set
 

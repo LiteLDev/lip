@@ -74,11 +74,11 @@ Files written to make an operation atomic are hidden and sit next to their targe
 -   **Journal**: While an operation changes the workspace, lip records every change, before making it, in `<hash>.journal` next to the lock. If lip is killed, the next `lip install`, `uninstall` or `update` of the workspace reads the journal first: it undoes the interrupted operation (restoring the backups) and reports it, or, if the operation had already reached the point of saving its lock, finishes it by deleting the backups. A dry run only reports the journal.
 -   **One operation at a time**: An operation holds `<hash>.lock` next to the lock open exclusively (deleted when it ends). A second `lip install`, `uninstall` or `update` of the same workspace fails at once with "Another lip process is changing the workspace"; run it again when the first one has finished.
 
-## Deviations from the Specification
+## Notes on the Specification
 
 lip manages server workspaces only: it never determines the platform from the workspace, but always uses `server` as if the user had specified it ([CLI specification](https://github.com/LiteLDev/lip/blob/main/refs/cli.md) §3, spec §5.1). Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
 
-lip implements the [lip package specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md) (format version 4) with these deliberate differences:
+lip implements the [lip package specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md) (format version 4). The specification leaves open how lip keeps managing locks written by earlier versions (spec §8, "Earlier formats"), and lets a nested ZIP archive be identified through the archive containing it (spec §8). lip does this as follows:
 
 1.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
 2.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and is not cached on its own. To open it again, lip resolves the recorded chain again, which reopens the parent archive and extracts the ZIP file, and accepts the result only if its SHA-256 matches.

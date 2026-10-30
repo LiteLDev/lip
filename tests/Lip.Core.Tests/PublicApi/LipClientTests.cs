@@ -73,6 +73,18 @@ public class LipClientTests {
     Assert.False(_ws.Exists("tooth.json"));
   }
 
+  [Theory]
+  [InlineData("_x")]
+  [InlineData("模组")]
+  public async Task Init_DirectoryNameNotAValidName_ThrowsAndWritesNothing(string directory) {
+    string path = _ws.Path(directory);
+    _ws.Fs.Directory.CreateDirectory(path);
+    _ws.Fs.Directory.SetCurrentDirectory(path);
+
+    await Assert.ThrowsAsync<InvalidOperationException>(_client.Init);
+    Assert.False(_ws.Fs.File.Exists(_ws.Fs.Path.Join(path, "manifest.json")));
+  }
+
   [Fact]
   public async Task Init_ManifestExists_Throws() {
     _ws.AddFile("manifest.json", "{}");
