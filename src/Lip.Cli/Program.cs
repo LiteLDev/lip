@@ -68,7 +68,7 @@ app.Configure(config => {
     config.AddCommand<ConfigListCommand>("list")
         .WithDescription("Lists all configuration values");
     config.AddCommand<ConfigDeleteCommand>("delete")
-        .WithDescription("Deletes a configuration value");
+        .WithDescription("Resets a configuration value to its default");
   });
 
   config.AddCommand<InitCommand>("init")

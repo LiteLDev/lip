@@ -9,9 +9,13 @@ public class RunCommand : AsyncCommand<RunCommand.Settings> {
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
-    using JsonRpc rpc = new(
+    JsonMessageFormatter formatter = new();
+    formatter.JsonSerializer.Converters.Add(new TupleArrayConverter());
+
+    using JsonRpc rpc = new(new HeaderDelimitedMessageHandler(
         Console.OpenStandardOutput(),
-        Console.OpenStandardInput());
+        Console.OpenStandardInput(),
+        formatter));
 
     IClientContract clientProxy = rpc.Attach<IClientContract>();
 

@@ -291,7 +291,7 @@ public partial class McmodInstaller(
     return $"{environment.Platform.ModsDirectory()}/{document.Name}/";
   }
 
-  [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$")]
+  [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*\z")]
   private static partial Regex NamePattern();
 
   private List<PlannedWrite> Plan(

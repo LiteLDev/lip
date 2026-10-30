@@ -670,6 +670,12 @@ public class McmodService(
             break;
           }
         case MarkExplicitChange(LockedPackage package):
+          if (!package.Explicit) {
+            await _ui.PrintInfo((options.DryRun ? "Dry run: would mark" : "Marking")
+                + $" package '{package.Identity}' version {package.Version} as explicitly"
+                + " installed.");
+          }
+
           remaining[remaining.IndexOf(package)] = package with { Explicit = true };
           break;
         default:

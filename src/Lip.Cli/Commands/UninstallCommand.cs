@@ -19,7 +19,7 @@ public class UninstallCommand(ILipClient lipClient, IUserInteraction userInterac
     public bool DryRun { get; init; }
 
     [CommandOption("--ignore-scripts")]
-    [Description("Skip running uninstall scripts")]
+    [Description("Do not run the scripts of the packages installed or uninstalled")]
     public bool IgnoreScripts { get; init; }
 
     [CommandOption("--no-dependencies")]

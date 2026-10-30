@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Lock;
+using Moq;
 
 namespace Lip.Core.Tests.Mcmod;
 
@@ -222,6 +223,25 @@ public class McmodServiceTests {
     // Assert
     Assert.Equal([App], (await _ws.Lock()).Packages.Select(p => p.Identity));
     Assert.False(_ws.Exists("lib/lib.dll"));
+  }
+
+  [Fact]
+  public async Task Install_NoDependenciesDryRunOfInstalledDependency_ReportsMarkingIt() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([App], s_options);
+    List<string> infos = [];
+    _ws.Ui.Setup(u => u.PrintInfo(It.IsAny<string>()))
+        .Callback((string message) => infos.Add(message))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([Lib], s_options with { NoDependencies = true, DryRun = true });
+
+    // Assert: refs/cli.md §4, a dry run reports the packages it would mark as explicitly
+    // installed.
+    Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{Lib}'"));
+    Assert.False((await _ws.Lock()).Packages.Single(p => p.Identity == Lib).Explicit);
   }
 
   [Fact]

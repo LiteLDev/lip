@@ -23,13 +23,14 @@ public class ListCommand(ILipClient lipClient) : AsyncCommand<ListCommand.Settin
     (IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled) packages = await _lipClient.List();
 
     if (settings.Json) {
-      // A value tuple has no properties to serialize, so name the two groups explicitly.
-      AnsiConsole.Write(new Text(JsonSerializer.Serialize(
+      // A value tuple has no properties to serialize, so name the two groups explicitly. JSON is
+      // written as is: Spectre.Console would wrap long lines, breaking strings apart.
+      Console.Out.WriteLine(JsonSerializer.Serialize(
           new {
             ExplicitInstalled = packages.ExplicitInstalled,
             ImplicitInstalled = packages.ImplicitInstalled,
           },
-          _jsonSerializerOptions)));
+          _jsonSerializerOptions));
     } else {
       Tree explicitTree = new("User-Requested");
       foreach (string package in packages.ExplicitInstalled) {

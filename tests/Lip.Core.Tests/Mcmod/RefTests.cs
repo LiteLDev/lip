@@ -36,6 +36,8 @@ public class RefTests {
   [InlineData("github.com/a/b@branch:a b")]
   [InlineData("github.com/a/b@tag:x.lock")]
   [InlineData("github.com/a/b@rev:0123abc")]
+  [InlineData("github.com/a/b@rev:0123456789abcdef0123456789abcdef01234567\n")]
+  [InlineData("github.com/a/b#lua\n")]
   [InlineData("./a/@branch:main")]
   [InlineData("https://example.com/x.zip@tag:v1")]
   [InlineData("https://")]

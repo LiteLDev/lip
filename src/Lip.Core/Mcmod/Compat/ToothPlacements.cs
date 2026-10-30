@@ -2,7 +2,7 @@ using DotNet.Globbing;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Expands the asset placements of a converted tooth.json (spec §9.4) against the files of its
+/// Expands the asset placements of a converted tooth.json (spec §9.5) against the files of its
 /// archive into concrete placements, by the matching rules of lip v3.
 public static class ToothPlacements {
   /// Returns the document with its asset placements expanded into placements, which come before

@@ -166,6 +166,16 @@ public class DocumentParserTests {
   }
 
   [Fact]
+  public void Parse_NameWithTrailingNewline_ThrowsManifestFormatException() {
+    // Arrange: a name must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ in full (refs/package_format.md
+    // §4.2); .NET's '$' alone would accept a trailing line break.
+    string json = """{ "name": "my-mod\n", "version": "1.0.0", "type": "native" }""";
+
+    // Act & Assert
+    Assert.Throws<ManifestFormatException>(() => Parse(json));
+  }
+
+  [Fact]
   public void Parse_ByteOrderMark_IsIgnored() {
     // Arrange
     byte[] bytes = [

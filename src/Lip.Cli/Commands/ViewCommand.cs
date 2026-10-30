@@ -1,8 +1,6 @@
 using System.ComponentModel;
 using Lip.Core.PublicApi;
-using Spectre.Console;
 using Spectre.Console.Cli;
-using Spectre.Console.Json;
 
 namespace Lip.Cli.Commands;
 
@@ -18,9 +16,8 @@ public class ViewCommand(ILipClient lipClient) : AsyncCommand<ViewCommand.Settin
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     string json = await _lipClient.View(settings.Package);
 
-    JsonText jsonText = new(json);
-
-    AnsiConsole.Write(jsonText);
+    // Written as is: Spectre.Console would wrap long lines, breaking JSON strings apart.
+    Console.Out.WriteLine(json);
 
     return 0;
   }

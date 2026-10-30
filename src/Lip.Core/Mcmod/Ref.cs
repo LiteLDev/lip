@@ -100,7 +100,7 @@ public sealed partial record GitRef {
     _ => "rev:",
   };
 
-  [GeneratedRegex("^[0-9a-fA-F]{40}$")]
+  [GeneratedRegex(@"^[0-9a-fA-F]{40}\z")]
   private static partial Regex CommitIdRegex();
 }
 
@@ -263,7 +263,7 @@ public partial record Ref {
     return true;
   }
 
-  [GeneratedRegex(@"^[a-z0-9_]+(/[a-z0-9_]+)?$")]
+  [GeneratedRegex(@"^[a-z0-9_]+(/[a-z0-9_]+)?\z")]
   private static partial Regex VariantRegex();
 
   [GeneratedRegex("@(branch|tag|rev):")]

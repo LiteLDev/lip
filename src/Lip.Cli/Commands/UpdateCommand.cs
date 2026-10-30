@@ -19,7 +19,7 @@ public class UpdateCommand(ILipClient lipClient, IUserInteraction userInteractio
     public bool DryRun { get; init; }
 
     [CommandOption("--ignore-scripts")]
-    [Description("Skip running update scripts")]
+    [Description("Do not run the scripts of the packages installed or uninstalled")]
     public bool IgnoreScripts { get; init; }
   }
 

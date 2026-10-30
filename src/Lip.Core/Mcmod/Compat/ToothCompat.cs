@@ -33,7 +33,7 @@ public record ToothAsset(string Mount, PackageManifestAsset.AssetType Type, IRea
 ///
 /// - §9.1: the identity is the "tooth" value, followed by "#label" when the selected v3 label
 ///   is not "" (GetIdentity); the version is its "version" (the tag version wins over it; the
-///   resolver warns). The variant is selected exactly like PackageManifest.GetVariant
+///   resolver warns). The variant (§9.2) is selected exactly like PackageManifest.GetVariant
 ///   does, but for the environment rid instead of lip's own: every variant with the label whose
 ///   platform matches the rid, merged. Null when no variant applies; other errors of GetVariant
 ///   (e.g. duplicate dependency keys across merged variants) propagate, as they failed the
@@ -43,10 +43,10 @@ public record ToothAsset(string Mount, PackageManifestAsset.AssetType Type, IRea
 /// - §9.3: every v3 dependency "&lt;path&gt;[#label]": range becomes an install dependency with
 ///   that ref, the v3 range semantics and no name; its "client" label means "" when the target
 ///   archive uses manifest.json (InstallDep.ToothClientCompat, applied by the resolver).
-/// - §9.4: the package is a file package. Asset i of the variant is mounted at "i" in its archive
-///   (ToothConversion.OpenArchive); its placements become AssetPlacements, expanded at install
-///   time (ToothPlacements). preserve_files, remove_files and scripts map as described at
-///   PreserveFiles, RemoveFiles and ConvertScripts.
+/// - §9.2, §9.4–§9.7: the package is a file package. Asset i of the variant is mounted at "i" in
+///   its archive (ToothConversion.OpenArchive); its placements become AssetPlacements, expanded
+///   at install time (ToothPlacements, §9.5). preserve_files, remove_files and scripts map as
+///   described at PreserveFiles, RemoveFiles and ConvertScripts (§9.6, §9.7).
 public class ToothCompat : IToothCompat {
   /// The lock kind of converted packages, whose recorded manifest is the tooth.json (in its v3
   /// form, with the installed version).

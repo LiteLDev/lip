@@ -436,7 +436,7 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
       Exception? inner = null) =>
       new($"Invalid manifest.json at {path}: {reason}.", inner);
 
-  [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
+  [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*\z")]
   private static partial Regex NameRegex();
 
   [GeneratedRegex(@"\{\{(name|version|platform|rid)\}\}")]
