@@ -40,13 +40,18 @@ public class CorpusTests {
       "no LLTranslatorApi tag in range has a valid tooth.json (v26.x declares '>=26.20.*')";
   private const string _noLeviLamina18 = "LeviLamina has only 1.8.0 prerelease tags";
   private const string _noLeviLamina2630 = "LeviLamina has no 26.30.x tag";
+  private const string _urlToothPath =
+      "tooth.json at the tag declares a URL ('https://github.com/...') as its tooth path";
 
   // Entries outside the README's RISK list that fail for reasons outside lip's control, keyed by
   // "package@version". Only the lipr-hosted (rewritten) manifest made them installable before.
-  private static readonly Dictionary<string, string> _knownUpstreamBreakage = new() {
+  internal static readonly Dictionary<string, string> KnownUpstreamBreakage = new() {
     ["github.com/spygamingog/Animated-Mojang-Android#client@1.0.0"] =
         "tooth.json at the tag uses the unsupported asset type 'levipack'",
     ["github.com/Kashifro/LL-ModMenu#client@1.0.0"] = "tag v1.0.0 was deleted upstream",
+    ["github.com/PuceLi/PlayerIPregion@1.0.1"] = _urlToothPath,
+    ["github.com/PuceLi/PlayerIPregion#client@1.0.1"] = _urlToothPath,
+    ["github.com/Eragon327/LazyBedrockBreaker2#server@1.3.0"] = _urlToothPath,
   };
 
   // Entries that resolve, but whose dependencies cannot be satisfied from git, so solving them
@@ -82,6 +87,10 @@ public class CorpusTests {
     ["github.com/MiracleForest/iInfiniteNightVision#client@1.2.0"] = _noLeviLamina2630,
     ["github.com/loitietu/LOICollectionA@1.17.1"] = "LeviLamina has no 26.50.x tag",
     ["github.com/loitietu/LOICollectionA#client@1.17.1"] = "LeviLamina has no 26.50.x tag",
+    ["github.com/Dofes/DataDrivenTagRegistry@0.0.1"] = _noLeviLamina18,
+    ["github.com/Dofes/DataDrivenTagRegistry#client@0.0.1"] = _noLeviLamina18,
+    ["github.com/Maskviva/CrossBind@0.2.1"] =
+        "requires LeviLamina 26.32.0, but its dependency Maskviva/pier 26.32.2 requires 26.32.1",
   };
 
   private static readonly Lazy<ConcurrentDictionary<string, Task<string?>>> _results = new(StartAll);
@@ -103,7 +112,7 @@ public class CorpusTests {
 
   public static IEnumerable<TheoryDataRow<string, string>> Entries => SelectEntries()
       .Select(entry => new TheoryDataRow<string, string>(entry.Package, entry.Version) {
-        Skip = entry.Risk || _knownUpstreamBreakage.ContainsKey(Key(entry.Package, entry.Version))
+        Skip = entry.Risk || KnownUpstreamBreakage.ContainsKey(Key(entry.Package, entry.Version))
             ? _skipReason
             : null,
         TestDisplayName = Key(entry.Package, entry.Version),
@@ -130,7 +139,7 @@ public class CorpusTests {
 
     ConcurrentDictionary<string, Task<string?>> results = new();
     foreach (CorpusEntry entry in SelectEntries().Where(
-        e => !e.Risk && !_knownUpstreamBreakage.ContainsKey(Key(e.Package, e.Version)))) {
+        e => !e.Risk && !KnownUpstreamBreakage.ContainsKey(Key(e.Package, e.Version)))) {
       results[Key(entry.Package, entry.Version)] = Task.Run(async () => {
         await semaphore.WaitAsync();
         try {
