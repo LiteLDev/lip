@@ -28,6 +28,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
 
   private readonly Url? _githubProxy = githubProxy;
   private readonly ConcurrentDictionary<string, RemoteInfo> _remotes = new();
+  private readonly ConcurrentDictionary<string, Lazy<Task<Url?>>> _webPages = new();
   private readonly ConcurrentDictionary<string, byte> _proxyFailedRepos = new();
   private readonly Lock _treesLock = new();
   private readonly Dictionary<string, Lazy<Task<IReadOnlyList<GitTreeEntry>>>> _trees = [];
@@ -79,12 +80,23 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
         : [.. refs.Where(r => prefixes.Any(p => r.Name.StartsWith(p, StringComparison.Ordinal)))];
   }
 
-  public Task<Url> GetRepositoryUrl(Url repoUrl) {
-    // Discovery follows the redirects and is cached, so after ListRefs this sends nothing.
-    return WithProxyFallback(repoUrl, async url => {
-      Url endpoint = (await Discover(url)).Endpoint;
-      return FromProxy(endpoint) ?? endpoint;
+  /// Where a repository answers: the endpoint its discovery request was redirected to (cached
+  /// after ListRefs), or else where its web page redirects. GitHub serves the git endpoints of
+  /// a transferred or renamed repository at its old path without redirecting them, but
+  /// redirects the web page (e.g. https://github.com/Old/Name answers 301 with Location
+  /// https://github.com/New/Name). The web page is asked directly, not through the GitHub
+  /// proxy, once per repository; when that fails, the discovered endpoint is the answer.
+  public async Task<Url> GetRepositoryUrl(Url repoUrl) {
+    Url endpoint = await WithProxyFallback(repoUrl, async url => {
+      Url discovered = (await Discover(url)).Endpoint;
+      return FromProxy(discovered) ?? discovered;
     });
+    if (GetRepoKey(endpoint) != GetRepoKey(repoUrl)) {
+      return endpoint;
+    }
+
+    return await _webPages.GetOrAdd(
+        GetRepoKey(repoUrl), _ => new(() => WebPageUrl(repoUrl))).Value ?? endpoint;
   }
 
   public async Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {
@@ -315,6 +327,32 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
         .Clone()
         .AppendPathSegments(repoUrl.PathSegments);
     return proxied.ToString() == repoUrl.ToString() ? null : proxied;
+  }
+
+  /// The repository URL (with ".git" when repoUrl has it) of where the web page of a repository
+  /// (repoUrl without ".git") answers after redirects; null when it does not answer with a
+  /// success status or cannot be asked.
+  private static async Task<Url?> WebPageUrl(Url repoUrl) {
+    string url = repoUrl.ToString().TrimEnd('/');
+    bool git = url.EndsWith(".git", StringComparison.Ordinal);
+    try {
+      using IFlurlResponse response = await (git ? url[..^4] : url)
+          .WithHeader("User-Agent", UserAgent)
+          .WithTimeout(TimeSpan.FromSeconds(30))
+          .AllowAnyHttpStatus()
+          .HeadAsync();
+      Uri? final = response.ResponseMessage.RequestMessage?.RequestUri;
+      if (response.StatusCode is < 200 or >= 300 || final is null) {
+        return null;
+      }
+
+      string page = final.GetLeftPart(UriPartial.Path).TrimEnd('/');
+      return Url.Parse(git ? page + ".git" : page);
+    }
+    catch (Exception ex) when (ex is FlurlHttpException or HttpRequestException
+        or IOException or UriFormatException) {
+      return null;
+    }
   }
 
   /// The github.com URL of a URL of the GitHub proxy (the inverse of RewriteUrl), or null when
