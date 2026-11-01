@@ -1022,10 +1022,13 @@ public class McmodService(
   /// installed package must have the candidate's variant and be either
   /// - installed from the same spec ref as the candidate (same spec, ignoring ASCII case, and
   ///   variant): resolving that ref again led to the candidate, whatever its identity; or
-  /// - a tooth.json package whose version's tag is at the same commit in the repository the
-  ///   candidate comes from as in its own: the two paths name one repository. Only installed
-  ///   packages whose repository has the candidate's repository name are asked, so that
-  ///   installing another package does not contact the repositories of the installed ones.
+  /// - a tooth.json package whose repository publishes the candidate: the candidate's version
+  ///   tag is at the candidate's commit in the installed package's repository, and the installed
+  ///   version's tag is at the same commit in both repositories. The two paths then name one
+  ///   repository (or the old one redirects to the new one). A fork shares the tags made before
+  ///   it, but not the commits released by the fork, so it is not taken for the original. Only
+  ///   installed packages whose repository has the candidate's repository name are asked, so
+  ///   that installing another package does not contact the repositories of the installed ones.
   private async Task<LockedPackage?> MovedFrom(Workspace workspace, Candidate candidate) {
     if (candidate.Chain.Count == 0 || candidate.Chain[0].Ref.Kind != RefKind.Spec
         || workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, candidate.Package.Identity))) {
@@ -1050,6 +1053,12 @@ public class McmodService(
       return null;
     }
 
+    if (candidate.Archive.Identity is not GitArchiveIdentity { Commit.Length: > 0 } released
+        || !GitRef.TryParse(
+            $"tag:v{candidate.Package.Version}", out GitRef? releasedTag, out _)) {
+      return null;
+    }
+
     string label = Label(candidate.Package.Identity);
     HashSet<string> names = new(StringComparer.OrdinalIgnoreCase) {
       RepositoryName(first.Target),
@@ -1065,6 +1074,13 @@ public class McmodService(
       }
 
       try {
+        if (!string.Equals(
+            released.Commit,
+            await _archiveProvider.ResolveGitRef(from.Target, releasedTag),
+            StringComparison.OrdinalIgnoreCase)) {
+          continue;
+        }
+
         string commit = (from.GitRef is null ? package.Chain[0].Commit : null)
             ?? await _archiveProvider.ResolveGitRef(from.Target, tag);
         if (string.Equals(

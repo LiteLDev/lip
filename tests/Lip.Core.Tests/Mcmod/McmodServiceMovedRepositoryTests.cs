@@ -11,6 +11,7 @@ public class McmodServiceMovedRepositoryTests {
   private const string Old = "github.com/LiteLDev/Mod";
   private const string New = "github.com/MiracleForest/Mod";
   private const string App = "example.com/app";
+  private const string Fork = "github.com/Someone/Mod";
 
   private static readonly OperationOptions s_options = new();
 
@@ -105,6 +106,39 @@ public class McmodServiceMovedRepositoryTests {
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
         () => _ws.Service.Update([other], s_options));
     Assert.Contains("not currently installed", ex.Message);
+  }
+
+  [Fact]
+  public async Task Update_NamedForkSharingTheInstalledTag_StillFailsAsNotInstalled() {
+    // Arrange: a fork made after v1.0.0 has that tag at the same commit, and released its own
+    // v1.1.0 naming the fork's path; the original repository did not publish that commit.
+    AddVersion("1.0.0", Old);
+    AddFork();
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
+
+    // Act & Assert
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Update([Fork], s_options));
+    Assert.Contains("not currently installed", ex.Message);
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Fact]
+  public async Task Install_ForkWhileOriginalIsExplicit_IsNotReportedAsTheSamePackage() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddFork();
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+
+    // Act
+    Exception ex = await Assert.ThrowsAnyAsync<Exception>(
+        () => _ws.Service.Install([Fork], s_options));
+
+    // Assert: the fork is another package (its files clash with the installed one); lip must
+    // not tell the user that updating the original installs the fork.
+    Assert.DoesNotContain("already explicitly installed as", ex.Message);
+    _ws.Ui.Verify(u => u.PrintInfo(It.Is<string>(m => m.Contains("is now"))), Times.Never);
   }
 
   [Fact]
@@ -250,10 +284,18 @@ public class McmodServiceMovedRepositoryTests {
     Assert.False(_ws.Exists(LockStore.LegacyFileName));
   }
 
-  /// Adds tag v&lt;version&gt; to the new repository, whose tooth.json names the given path. It
-  /// places mod/mod.dll and mod/config.json, which it preserves.
-  private void AddVersion(string version, string tooth, string label = "") {
-    _ws.AddTag(New, version, new() {
+  /// A fork of the new repository: tag v1.0.0 at the commit of the original, and its own v1.1.0
+  /// whose tooth.json names the fork's path.
+  private void AddFork() {
+    _ws.Git.CopyRef(New, Fork, "refs/tags/v1.0.0");
+    AddVersion("1.1.0", Fork, repository: Fork);
+  }
+
+  /// Adds tag v&lt;version&gt; to a repository (the new one by default), whose tooth.json names
+  /// the given path. It places mod/mod.dll and mod/config.json, which it preserves.
+  private void AddVersion(
+      string version, string tooth, string label = "", string repository = New) {
+    _ws.AddTag(repository, version, new() {
       ["tooth.json"] = $$"""
           {
             "format_version": 3,

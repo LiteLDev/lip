@@ -203,6 +203,19 @@ internal sealed class WorkspaceHarness {
     public void AddRedirect(string fromSpec, string toSpec) =>
         _redirects[ArchiveProvider.GetRepoUrl(fromSpec)] = ArchiveProvider.GetRepoUrl(toSpec);
 
+    /// Points a ref of one repository at the commit a ref of another has, like a fork created
+    /// after the tag: both repositories have the tag at the same commit.
+    public void CopyRef(string fromSpec, string toSpec, string refName) {
+      string commit = _refs[ArchiveProvider.GetRepoUrl(fromSpec)][refName];
+      string repo = ArchiveProvider.GetRepoUrl(toSpec);
+      if (!_refs.TryGetValue(repo, out Dictionary<string, string>? refs)) {
+        refs = [];
+        _refs[repo] = refs;
+      }
+
+      refs[refName] = commit;
+    }
+
     public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
       List<string> prefixes = [.. refPrefixes];
       string repo = repoUrl.ToString();
