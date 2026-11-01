@@ -33,7 +33,7 @@ public class ToothCompatCorpusTests {
       _client, _cacheService, new FileSystem(), _fileDownloader);
 
   /// The newest version of every LiteLDev package/variant in the corpus, plus every tenth
-  /// other (lipr) package/variant.
+  /// other (lipr) package/variant. Entries with known upstream breakage are skipped.
   public static IEnumerable<TheoryDataRow<string, string>> Entries {
     get {
       List<(string Package, string Version)> newest = [.. LoadNewestEntries()];
@@ -47,6 +47,9 @@ public class ToothCompatCorpusTests {
 
       return liteLDev.Concat(others).Select(
           e => new TheoryDataRow<string, string>(e.Package, e.Version) {
+            Skip = CorpusTests.KnownUpstreamBreakage.ContainsKey($"{e.Package}@{e.Version}")
+                ? "upstream breakage"
+                : null,
             TestDisplayName = $"{e.Package}@{e.Version}",
           });
     }
