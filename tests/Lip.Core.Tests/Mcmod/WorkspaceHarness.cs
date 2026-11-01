@@ -190,6 +190,10 @@ internal sealed class WorkspaceHarness {
 
     public List<string> ListedTrees { get; } = [];
 
+    /// The repository URL and ref prefixes of every ListRefs call, e.g.
+    /// "https://example.com/x.git refs/tags/v".
+    public List<string> ListedRefs { get; } = [];
+
     /// Whether GetRepositoryUrl tells where a repository redirects, as lip v0.36.0 did not ask:
     /// when false, every repository answers at its own URL.
     public bool ReportsRedirects { get; set; } = true;
@@ -223,6 +227,7 @@ internal sealed class WorkspaceHarness {
     public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
       List<string> prefixes = [.. refPrefixes];
       string repo = repoUrl.ToString();
+      ListedRefs.Add($"{repo} {string.Join(" ", prefixes)}");
       IReadOnlyList<GitRemoteRef> refs = [
         .. _refs.GetValueOrDefault(_redirects.GetValueOrDefault(repo, repo), [])
             .Where(r => prefixes.Any(p => r.Key.StartsWith(p, StringComparison.Ordinal)))

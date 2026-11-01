@@ -119,14 +119,13 @@ public class McmodServiceMovedRepositoryTests {
   [Theory]
   [InlineData("tag:v1.1.0")]
   [InlineData("branch:main")]
-  public async Task Update_PinnedToTheOldPath_StaysPinnedAtTheNewPath(string gitRef) {
-    // Arrange
+  public async Task Update_PinnedToTheOldPath_KeepsThePinnedRef(string gitRef) {
+    // Arrange: a pinned package stands in for the versions of its spec only (spec §6), and
+    // dependencies of other packages name the old path, so the pinned ref keeps it.
     AddVersion("1.0.0", Old);
     AddVersion("1.1.0", New);
     _ws.Git.AddBranch(New, "main", VersionFiles("1.1.0", New));
-    _ws.Git.ReportsRedirects = false;
     await _ws.Service.Install([$"{Old}@{gitRef}"], s_options);
-    _ws.Git.ReportsRedirects = true;
 
     // Act
     await _ws.Service.Update([], s_options);
@@ -134,25 +133,99 @@ public class McmodServiceMovedRepositoryTests {
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
-    AssertRecordedFrom($"{New}@{gitRef}", package);
-    Assert.StartsWith($"{New}@rev:", package.ArchiveKey, StringComparison.Ordinal);
+    AssertRecordedFrom($"{Old}@{gitRef}", package);
+    Assert.StartsWith($"{Old}@rev:", package.ArchiveKey, StringComparison.Ordinal);
   }
 
   [Fact]
-  public async Task Install_PinnedRevByTheOldPath_RecordsTheRevAtTheNewPath() {
+  public async Task Install_DependencyOnTheOldPath_IsSatisfiedByThePackagePinnedByIt() {
     // Arrange
-    AddVersion("1.0.0", New);
-    string commit = Assert.Single(
-        await _ws.Git.ListRefs(ArchiveProvider.GetRepoUrl(New), ["refs/tags/v1.0.0"])).ObjectId;
+    _ws.Git.AddBranch(New, "main", VersionFiles("1.2.0", New));
+    await _ws.Service.Install([$"{Old}@branch:main"], s_options);
+    AddApp($$"""{ "{{Old}}": ">=1.0.0" }""");
 
     // Act
-    await _ws.Service.Install([$"{Old}@rev:{commit}"], s_options);
+    await _ws.Service.Install([App], s_options);
+
+    // Assert
+    LockedPackage kept = Assert.Single((await _ws.Lock()).Packages, p => p.Identity == New);
+    AssertRecordedFrom($"{Old}@branch:main", kept);
+  }
+
+  [Fact]
+  public async Task Update_NamedByThePinnedOldPathWhoseBranchMoved_ReplacesThePackage() {
+    // Arrange: the branch declared the old path, then the new one, at a version without a tag.
+    _ws.Git.AddBranch(New, "main", VersionFiles("1.0.0", Old));
+    await _ws.Service.Install([$"{Old}@branch:main"], s_options);
+    _ws.Git.AddBranch(New, "main", VersionFiles("1.2.0", New));
+
+    // Act
+    await _ws.Service.Update([$"{Old}@branch:main"], s_options);
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.0.0"), (package.Identity, package.Version));
-    AssertRecordedFrom($"{New}@rev:{commit}", package);
-    Assert.Equal($"{New}@rev:{commit}", package.ArchiveKey);
+    Assert.Equal((New, "1.2.0", true), (package.Identity, package.Version, package.Explicit));
+    AssertRecordedFrom($"{Old}@branch:main", package);
+  }
+
+  [Fact]
+  public async Task Update_NamedByTheOldPath_FindsTheInstalledPackageWithoutAskingForTags() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Git.ListedRefs.Clear();
+
+    // Act
+    await _ws.Service.Update([Old], s_options);
+
+    // Assert: the installed package is the one installed from the requested path; MovedFrom
+    // does not compare the tags of both paths (one listing of "refs/tags/v1.0.0" each).
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+    AssertRecordedFrom(New, package);
+    Assert.DoesNotContain(_ws.Git.ListedRefs, r => r.EndsWith("refs/tags/v1.0.0"));
+  }
+
+  [Fact]
+  public async Task Install_NoDependenciesByTheOldPath_RecordsTheNewPath() {
+    // Arrange
+    AddVersion("1.0.0", New);
+
+    // Act
+    await _ws.Service.Install([Old], s_options with { NoDependencies = true });
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.0.0", true), (package.Identity, package.Version, package.Explicit));
+    AssertRecordedFrom(New, package);
+  }
+
+  [Fact]
+  public async Task Uninstall_ByTheOldPathItWasInstalledBy_UninstallsThePackage() {
+    // Arrange
+    AddVersion("1.0.0", New);
+    await _ws.Service.Install([Old], s_options);
+
+    // Act
+    await _ws.Service.Uninstall([Old], s_options);
+
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("mod/mod.dll"));
+  }
+
+  [Fact]
+  public async Task Uninstall_ByAForkPath_FailsAsNotInstalled() {
+    // Arrange
+    AddVersion("1.0.0", New);
+    _ws.Git.CopyRef(New, Fork, "refs/tags/v1.0.0");
+    await _ws.Service.Install([New], s_options);
+
+    // Act & Assert
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Uninstall([Fork], s_options));
+    Assert.Contains("is not installed", ex.Message);
   }
 
   [Fact]
