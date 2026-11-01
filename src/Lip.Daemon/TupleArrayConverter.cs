@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 namespace Lip.Daemon;
 
 /// Writes a value tuple as a JSON array of its items, e.g. the result of List as
-/// [string[], string[]] (refs/lipd.md §3) rather than {"Item1": ..., "Item2": ...}.
+/// [string[], string[]] (refs/lipd/lipd.md §3) rather than {"Item1": ..., "Item2": ...}.
 public sealed class TupleArrayConverter : JsonConverter {
   public override bool CanRead => false;
 

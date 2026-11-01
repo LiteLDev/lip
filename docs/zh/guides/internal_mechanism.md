@@ -56,7 +56,7 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 ## 清单校验
 
-各格式由仓库 `refs/schemas/` 目录中的 JSON Schema 描述：`manifest.json` 为 `manifest.v4.schema.json`，锁为 `lock.v4.schema.json`；旧格式为 `manifest.schema.json`（tooth.json 格式 3）、`manifest.v1.schema.json`、`manifest.v2.schema.json` 和 `workspace_state.schema.json`（tooth_lock.json）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
+各格式由仓库 `refs/files/` 目录中以 YAML 编写的 JSON Schema 描述：`manifest.json` 为 `manifest.schema.yaml`，锁为 `lock.schema.yaml`。旧格式位于 `refs/files/legacy/v<格式>/`：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
 
 - **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `name`、`version`、ref、范围或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
 - **版本**：带有 `formatVersion` 4 和格式 UUID 的 `manifest.json` 是第 4 版文档；两者都没有的是普通 LeviLamina 清单。格式版本为 1 或 2 的 `tooth.json` 会在读取时于内存中转换为版本 3，再转换为第 4 版的文件包（规范 §9）；如需把包仓库从 `tooth.json` 迁移到 `manifest.json`，请在仓库中运行 `lip migrate`。

@@ -1,6 +1,6 @@
 # lipd JSON-RPC Specification
 
-This specification defines the observable behavior of `lipd`, which offers the functions of the `lip` command over JSON-RPC. The behavior of each method is that of the corresponding `lip` command, defined by the [CLI specification](cli.md) (cited as "CLI §N"), which in turn relies on the [package specification](package_format.md). "must / must not / may / should" correspond to MUST / MUST NOT / MAY / SHOULD of RFC 2119.
+This specification defines the observable behavior of `lipd`, which offers the functions of the `lip` command over JSON-RPC. The behavior of each method is that of the corresponding `lip` command, defined by the [CLI specification](../cli.md) (cited as "CLI §N"), which in turn relies on the [package specification](../package_format.md). "must / must not / may / should" correspond to MUST / MUST NOT / MAY / SHOULD of RFC 2119.
 
 ## 1. Invocation
 
@@ -58,4 +58,4 @@ What `lip` writes to standard error as messages (CLI §1.2), `lipd` sends to the
 
 The final success line of a CLI command is not sent: the response of the method takes its place.
 
-The OpenRPC document `schemas/lipd.v4.openrpc.json` must describe the same methods, parameters and results as this specification.
+The OpenRPC document `lipd.openrpc.yaml` must describe the same methods, parameters and results as this specification.
