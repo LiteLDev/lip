@@ -201,6 +201,68 @@ public class GitRemoteClientTests {
   }
 
   [Fact]
+  public async Task GetRepositoryUrl_GitEndpointServedAtOldPathAndWebPageRedirected_ReturnsWebTarget() {
+    // GitHub serves the git endpoints of a transferred repository at its old path, but
+    // redirects its web page.
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("https://github.com/Old/Name.git/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("https://github.com/Old/Name").WithVerb(HttpMethod.Head)
+        .RespondWith("", 301, new { Location = "https://github.com/New/Name" });
+    httpTest.ForCallsTo("https://github.com/New/Name").WithVerb(HttpMethod.Head).RespondWith("", 200);
+    GitRemoteClient client = new(new Url("https://proxy.example.com/gh"));
+    httpTest.ForCallsTo("https://proxy.example.com/*").RespondWith("not found", 404);
+
+    Url first = await client.GetRepositoryUrl(new Url("https://github.com/Old/Name.git"));
+    Url second = await client.GetRepositoryUrl(new Url("https://github.com/old/name.git"));
+
+    Assert.Equal("https://github.com/New/Name.git", first.ToString());
+    Assert.Equal("https://github.com/New/Name.git", second.ToString());
+    httpTest.ShouldHaveCalled("https://github.com/Old/Name").WithVerb(HttpMethod.Head).Times(1);
+    httpTest.ShouldNotHaveCalled("https://proxy.example.com/gh/Old/Name");
+  }
+
+  [Theory]
+  [InlineData(404)]
+  [InlineData(500)]
+  public async Task GetRepositoryUrl_WebPageNotFound_ReturnsTheUrl(int status) {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("https://github.com/Owner/Repo").WithVerb(HttpMethod.Head)
+        .RespondWith("", status);
+    GitRemoteClient client = new(githubProxy: null);
+
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Owner/Repo.git"));
+
+    Assert.Equal("https://github.com/Owner/Repo.git", url.ToString());
+  }
+
+  [Fact]
+  public async Task GetRepositoryUrl_WebPageUnreachable_ReturnsTheUrl() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("https://github.com/Owner/Repo").WithVerb(HttpMethod.Head).SimulateTimeout();
+    GitRemoteClient client = new(githubProxy: null);
+
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Owner/Repo.git"));
+
+    Assert.Equal("https://github.com/Owner/Repo.git", url.ToString());
+  }
+
+  [Fact]
+  public async Task GetRepositoryUrl_OtherHost_DoesNotAskForTheWebPage() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("https://example.com/owner/repo").WithVerb(HttpMethod.Head)
+        .RespondWith("", 301, new { Location = "https://github.com/Owner/Repo" });
+    GitRemoteClient client = new(githubProxy: null);
+
+    Url url = await client.GetRepositoryUrl(new Url(RepoUrl));
+
+    Assert.Equal(RepoUrl, url.ToString());
+    httpTest.ShouldNotHaveCalled("https://example.com/owner/repo");
+  }
+
+  [Fact]
   public async Task GetRepositoryUrl_RepositoryAnsweringAtItsUrl_ReturnsTheUrl() {
     using HttpTest httpTest = new();
     httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
