@@ -185,6 +185,73 @@ public class GitRemoteClientTests {
   }
 
   [Fact]
+  public async Task GetRepositoryUrl_RedirectedRepository_ReturnsRedirectTargetWithoutAskingTwice() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("https://github.com/Old/Name.git/info/refs*")
+        .RespondWith("", 301, new { Location = "https://github.com/New/Name.git/info/refs?service=git-upload-pack" });
+    httpTest.ForCallsTo("https://github.com/New/Name.git/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("*/git-upload-pack").RespondWith(() => Content(PackBuilder.PktLines("FLUSH")));
+    GitRemoteClient client = new(githubProxy: null);
+    await client.ListRefs(new Url("https://github.com/Old/Name.git"), []);
+
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Old/Name.git"));
+
+    Assert.Equal("https://github.com/New/Name.git", url.ToString());
+    httpTest.ShouldHaveCalled("https://github.com/Old/Name.git/info/refs*").Times(1);
+  }
+
+  [Fact]
+  public async Task GetRepositoryUrl_RepositoryAnsweringAtItsUrl_ReturnsTheUrl() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    GitRemoteClient client = new(githubProxy: null);
+
+    Url url = await client.GetRepositoryUrl(new Url(RepoUrl));
+
+    Assert.Equal(RepoUrl, url.ToString());
+  }
+
+  [Fact]
+  public async Task GetRepositoryUrl_GithubProxyFollowingRedirect_ReturnsGithubUrlOfTarget() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("https://proxy.example.com/gh/Old/Name.git/info/refs*")
+        .RespondWith("", 301, new { Location = "https://proxy.example.com/gh/New/Name.git/info/refs?service=git-upload-pack" });
+    httpTest.ForCallsTo("https://proxy.example.com/gh/New/Name.git/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    GitRemoteClient client = new(new Url("https://proxy.example.com/gh"));
+
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Old/Name.git"));
+
+    Assert.Equal("https://github.com/New/Name.git", url.ToString());
+  }
+
+  [Fact]
+  public async Task GetRepositoryUrl_GithubProxyRedirectingToGithub_ReturnsGithubUrlOfTarget() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("https://proxy.example.com/gh/Old/Name.git/info/refs*")
+        .RespondWith("", 301, new { Location = "https://github.com/New/Name.git/info/refs?service=git-upload-pack" });
+    httpTest.ForCallsTo("https://github.com/New/Name.git/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    GitRemoteClient client = new(new Url("https://proxy.example.com/gh"));
+
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Old/Name.git"));
+
+    Assert.Equal("https://github.com/New/Name.git", url.ToString());
+  }
+
+  [Fact]
+  public async Task GetRepositoryUrl_GithubProxyFails_AsksGithubDirectly() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("https://proxy.example.com/*").RespondWith("not found", 404);
+    httpTest.ForCallsTo("https://github.com/Old/Name.git/info/refs*")
+        .RespondWith("", 301, new { Location = "https://github.com/New/Name.git/info/refs?service=git-upload-pack" });
+    httpTest.ForCallsTo("https://github.com/New/Name.git/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    GitRemoteClient client = new(new Url("https://proxy.example.com/gh"));
+
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Old/Name.git"));
+
+    Assert.Equal("https://github.com/New/Name.git", url.ToString());
+  }
+
+  [Fact]
   public async Task ListTree_SameCommitTwice_FetchesOnceAcrossGithubCaseVariants() {
     (byte[] pack, string tagId, _) = CreateRepositoryPack(includeBlobs: false);
     using HttpTest httpTest = new();

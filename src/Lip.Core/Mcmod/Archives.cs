@@ -61,6 +61,12 @@ public interface IArchiveProvider {
   /// ArchiveUnavailableException when the repository has no such branch or tag.
   public Task<string> ResolveGitRef(string spec, GitRef gitRef);
 
+  /// Whether the repository of a spec target is the repository of another spec target because
+  /// it redirects there, as GitHub redirects the old path of a repository that was transferred
+  /// or renamed. False when the specs name the same path, when the repository answers at its
+  /// own path or elsewhere, and when lip cannot tell (e.g. the repository is unreachable).
+  public Task<bool> RedirectsTo(string spec, string target);
+
   /// Opens the git archive of a commit of a spec target. Its key is "spec@rev:commit".
   public Task<ArchiveHandle> OpenCommit(string spec, string commit);
 
