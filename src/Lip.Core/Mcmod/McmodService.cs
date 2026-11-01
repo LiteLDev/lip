@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using Lip.Core.Git;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
@@ -1054,10 +1055,6 @@ public class McmodService(
         + string.Concat(diagnostics.Take(5).Select(d => $"; {d}")));
   }
 
-  /// Matches an uninstall argument: an identity (ignoring ASCII case), or the first ref of the
-  /// chain as written at install time (e.g. "github.com/owner/repo#variant" for tooth
-  /// packages, or the path of the local file it was installed from); a ref without a variant
-  /// matches every variant, and one without a git ref every git ref.
   /// The installed packages an uninstall argument names by the old path of a moved repository:
   /// tooth.json packages installed from a spec ref of the same repository name whose path the
   /// argument's path redirects to (see MovedRequest, which records the new path), with the
@@ -1069,7 +1066,8 @@ public class McmodService(
     }
 
     List<LockedPackage> matched = [];
-    Dictionary<string, bool> asked = new(StringComparer.OrdinalIgnoreCase);
+    // By repository, as GitRemoteClient.GetRepoKey tells them apart.
+    Dictionary<string, bool> asked = [];
     foreach (LockedPackage package in workspace.Lock.Packages) {
       if (package.Kind != ToothCompat.KindName || package.Chain.Count == 0
           || !Ref.TryParse(package.Chain[0].Ref, out Ref? first, out _)
@@ -1082,9 +1080,10 @@ public class McmodService(
         continue;
       }
 
-      if (!asked.TryGetValue(first.Target, out bool redirects)) {
+      string repository = GitRemoteClient.GetRepoKey(ArchiveProvider.GetRepoUrl(first.Target));
+      if (!asked.TryGetValue(repository, out bool redirects)) {
         redirects = await _archiveProvider.RedirectsTo(wanted.Target, first.Target);
-        asked[first.Target] = redirects;
+        asked[repository] = redirects;
       }
 
       if (redirects) {
@@ -1095,6 +1094,10 @@ public class McmodService(
     return matched;
   }
 
+  /// Matches an uninstall argument: an identity (ignoring ASCII case), or the first ref of the
+  /// chain as written at install time (e.g. "github.com/owner/repo#variant" for tooth
+  /// packages, or the path of the local file it was installed from); a ref without a variant
+  /// matches every variant, and one without a git ref every git ref.
   private List<LockedPackage> MatchInstalled(Workspace workspace, string argument) {
     LockFile lockFile = workspace.Lock;
     List<LockedPackage> byIdentity = [
