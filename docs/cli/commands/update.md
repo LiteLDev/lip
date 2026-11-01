@@ -31,6 +31,8 @@ Without arguments, every explicitly installed package is requested again by what
 
 To move a package installed from a git ref back to released versions, update it by its plain package path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
 
+A package whose repository moved (for example, transferred to another GitHub organization) can still be updated by its old path, which GitHub redirects. When the `tooth.json` of a newer version declares the new path, that version is a package of another identity: updating the package by its old or its new path replaces the installed package with it, keeping its preserved files, and lip reports the change. Installing the package by the other path does not install a second copy, and a dependency declared on either path is satisfied by the same version installed from the other.
+
 ## Options
 
 | Option | Description |

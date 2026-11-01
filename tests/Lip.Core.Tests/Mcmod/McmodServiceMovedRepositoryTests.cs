@@ -1,0 +1,340 @@
+using Lip.Core.Mcmod;
+using Lip.Core.Mcmod.Lock;
+using Moq;
+
+namespace Lip.Core.Tests.Mcmod;
+
+/// A tooth.json repository that moved (e.g. transferred from one GitHub organisation to
+/// another): the old path redirects to the new one, older tags name the old path in "tooth" and
+/// newer tags the new one, so the package changes identity between versions (spec §9.1).
+public class McmodServiceMovedRepositoryTests {
+  private const string Old = "github.com/LiteLDev/Mod";
+  private const string New = "github.com/MiracleForest/Mod";
+  private const string App = "example.com/app";
+  private const string Fork = "github.com/Someone/Mod";
+
+  private static readonly OperationOptions s_options = new();
+
+  private readonly WorkspaceHarness _ws = new();
+
+  public McmodServiceMovedRepositoryTests() {
+    _ws.Git.AddRedirect(Old, New);
+  }
+
+  [Fact]
+  public async Task Update_NoArguments_ReplacesPackageUnderNewIdentityKeepingPreservedFiles() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.AddFile("mod/config.json", "edited by the user");
+
+    // Act
+    await _ws.Service.Update([], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
+    Assert.Equal(Old, package.Chain[0].Ref);
+    Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
+    Assert.Equal("edited by the user", _ws.Fs.File.ReadAllText(_ws.Path("mod/config.json")));
+    VerifyInfo($"Package '{Old}' is now '{New}'");
+  }
+
+  [Theory]
+  [InlineData(Old)]
+  [InlineData(New)]
+  public async Task Update_NamedByEitherPath_ReplacesPackageUnderNewIdentity(string argument) {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+
+    // Act
+    await _ws.Service.Update([argument], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
+    Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
+  }
+
+  [Fact]
+  public async Task Update_LabelledVariant_KeepsTheLabel() {
+    // Arrange
+    AddVersion("1.0.0", Old, label: "server");
+    AddVersion("1.1.0", New, label: "server");
+    await _ws.Service.Install([$"{Old}#server@1.0.0"], s_options);
+
+    // Act
+    await _ws.Service.Update([], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(($"{New}#server", "1.1.0"), (package.Identity, package.Version));
+    Assert.Equal($"{Old}#server", package.Chain[0].Ref);
+  }
+
+  [Fact]
+  public async Task Update_DryRun_ReportsTheReplacementAndChangesNothing() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
+
+    // Act
+    await _ws.Service.Update([], s_options with { DryRun = true });
+
+    // Assert
+    Assert.Equal(before, WorkspaceSnapshot());
+    VerifyInfo("it would be replaced by");
+  }
+
+  [Fact]
+  public async Task Update_NamedPackageOfAnotherRepository_StillFailsAsNotInstalled() {
+    // Arrange: another repository of the same name, at other commits.
+    AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    const string other = "example.com/someone/Mod";
+    _ws.AddTag(other, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(other, "1.0.0", "other/mod.dll"),
+      ["file.dll"] = "other",
+    });
+
+    // Act & Assert
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Update([other], s_options));
+    Assert.Contains("not currently installed", ex.Message);
+  }
+
+  [Fact]
+  public async Task Update_NamedForkSharingTheInstalledTag_StillFailsAsNotInstalled() {
+    // Arrange: a fork made after v1.0.0 has that tag at the same commit, and released its own
+    // v1.1.0 naming the fork's path; the original repository did not publish that commit.
+    AddVersion("1.0.0", Old);
+    AddFork();
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
+
+    // Act & Assert
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Update([Fork], s_options));
+    Assert.Contains("not currently installed", ex.Message);
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Fact]
+  public async Task Install_ForkWhileOriginalIsExplicit_IsNotReportedAsTheSamePackage() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddFork();
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+
+    // Act
+    Exception ex = await Assert.ThrowsAnyAsync<Exception>(
+        () => _ws.Service.Install([Fork], s_options));
+
+    // Assert: the fork is another package (its files clash with the installed one); lip must
+    // not tell the user that updating the original installs the fork.
+    Assert.DoesNotContain("already explicitly installed as", ex.Message);
+    _ws.Ui.Verify(u => u.PrintInfo(It.Is<string>(m => m.Contains("is now"))), Times.Never);
+  }
+
+  [Fact]
+  public async Task Install_OldPath_IdentifiesThePackageByItsToothAndWarns() {
+    // Arrange
+    AddVersion("1.0.0", New);
+
+    // Act
+    await _ws.Service.Install([Old], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(New, package.Identity);
+    Assert.Equal(Old, package.Chain[0].Ref);
+    Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{New}'"));
+  }
+
+  [Fact]
+  public async Task Install_BothPaths_FailsAsOnePackage() {
+    // Arrange
+    AddVersion("1.0.0", New);
+
+    // Act & Assert
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install([Old, New], s_options));
+    Assert.Contains("Multiple requested packages", ex.Message);
+  }
+
+  [Theory]
+  [InlineData(Old)]
+  [InlineData(New)]
+  public async Task Install_EitherPathWhileInstalledUnderOldIdentity_FailsAsAlreadyInstalled(
+      string argument) {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
+
+    // Act & Assert
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install([argument], s_options));
+    Assert.Contains($"already explicitly installed as '{Old}'", ex.Message);
+    Assert.Contains($"lip update {Old}", ex.Message);
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Fact]
+  public async Task Install_NewPathWhileOldIdentityIsADependency_ReplacesTheDependency() {
+    // Arrange: app depends on the old path; the package is installed as a dependency under the
+    // identity of its old version.
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    AddApp($$"""{ "{{Old}}": ">=1.0.0" }""");
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Install([App], s_options);
+    await _ws.Service.Uninstall([Old], s_options);
+    Assert.Equal(
+        [(App, "1.0.0", true), (Old, "1.0.0", false)],
+        (await _ws.Lock()).Packages.Select(p => (p.Identity, p.Version, p.Explicit)).Order());
+
+    // Act
+    await _ws.Service.Install([New], s_options);
+
+    // Assert
+    Assert.Equal(
+        [(App, "1.0.0", true), (New, "1.1.0", true)],
+        (await _ws.Lock()).Packages.Select(p => (p.Identity, p.Version, p.Explicit)).Order());
+    Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
+  }
+
+  [Fact]
+  public async Task Install_NoDependencies_ReplacesThePackageUnderTheOldIdentity() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+
+    // Act
+    await _ws.Service.Install([New], s_options with { NoDependencies = true });
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+  }
+
+  [Theory]
+  [InlineData(Old)]
+  [InlineData(New)]
+  public async Task Install_DependencyOnEitherPath_IsSatisfiedByThePackageFromTheOther(
+      string dependency) {
+    // Arrange: the package is installed from one path; app depends on the other.
+    AddVersion("1.0.0", New);
+    string installedFrom = dependency == Old ? New : Old;
+    await _ws.Service.Install([installedFrom], s_options);
+    LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
+    AddApp($$"""{ "{{dependency}}": ">=1.0.0" }""");
+
+    // Act
+    await _ws.Service.Install([App], s_options);
+
+    // Assert: the installed package stays as it is.
+    LockFile lockFile = await _ws.Lock();
+    Assert.Equal(2, lockFile.Packages.Count);
+    LockedPackage kept = Assert.Single(lockFile.Packages, p => p.Identity == New);
+    Assert.Equal(installed.ArchiveKey, kept.ArchiveKey);
+    Assert.Equal(installedFrom, kept.Chain[0].Ref);
+  }
+
+  [Fact]
+  public async Task Update_V035ToothLockRecordingTheRequestedPath_ReplacesPackage() {
+    // Arrange: lip v0.35.0 recorded the requested path as "tooth", whatever the tooth.json
+    // declared; here the old path, which the tag already declares as the new one.
+    AddVersion("1.0.0", New);
+    string manifest = WorkspaceHarness.Tooth(Old, "1.0.0", "mod/mod.dll");
+    _ws.AddFile("tooth_lock.json", $$"""
+        {
+          "format_version": 3,
+          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "packages": [
+            {
+              "files": ["mod/mod.dll"],
+              "locked": true,
+              "manifest": {{manifest}},
+              "variant": ""
+            }
+          ]
+        }
+        """);
+    _ws.AddFile("mod/mod.dll", "mod 1.0.0");
+    LockedPackage migrated = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((Old, Old, $"{Old}@1.0.0"),
+        (migrated.Identity, migrated.Chain[0].Ref, migrated.ArchiveKey));
+    AddVersion("1.1.0", New);
+
+    // Act
+    await _ws.Service.Update([], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+    Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
+    Assert.False(_ws.Exists(LockStore.LegacyFileName));
+  }
+
+  /// A fork of the new repository: tag v1.0.0 at the commit of the original, and its own v1.1.0
+  /// whose tooth.json names the fork's path.
+  private void AddFork() {
+    _ws.Git.CopyRef(New, Fork, "refs/tags/v1.0.0");
+    AddVersion("1.1.0", Fork, repository: Fork);
+  }
+
+  /// Adds tag v&lt;version&gt; to a repository (the new one by default), whose tooth.json names
+  /// the given path. It places mod/mod.dll and mod/config.json, which it preserves.
+  private void AddVersion(
+      string version, string tooth, string label = "", string repository = New) {
+    _ws.AddTag(repository, version, new() {
+      ["tooth.json"] = $$"""
+          {
+            "format_version": 3,
+            "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+            "tooth": "{{tooth}}",
+            "version": "{{version}}",
+            "variants": [
+              {
+                "label": "{{label}}",
+                "assets": [
+                  {
+                    "type": "self",
+                    "placements": [
+                      { "type": "file", "src": "file.dll", "dest": "mod/mod.dll" },
+                      { "type": "file", "src": "config.json", "dest": "mod/config.json" }
+                    ]
+                  }
+                ],
+                "preserve_files": ["mod/config.json"]
+              }
+            ]
+          }
+          """,
+      ["file.dll"] = $"mod {version}",
+      ["config.json"] = "{}",
+    });
+  }
+
+  private void AddApp(string dependencies) {
+    _ws.AddTag(App, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(App, "1.0.0", "app/app.dll", dependencies),
+      ["file.dll"] = "app",
+    });
+  }
+
+  /// The files, directories and links of the workspace (lip may cache what it fetched).
+  private List<KeyValuePair<string, string>> WorkspaceSnapshot() =>
+      [.. _ws.Snapshot().Where(e => e.Key.StartsWith(_ws.Root, StringComparison.Ordinal))];
+
+  private void VerifyInfo(string fragment) =>
+      _ws.Ui.Verify(u => u.PrintInfo(It.Is<string>(m => m.Contains(fragment))), Times.Once);
+}

@@ -1090,7 +1090,7 @@ RECOMMENDATIONS = """## Recommendations for the cut-over
    (old path -> new path [+ variant], or "drop") and apply it to dependency keys after manifest parsing. Without it,
    accept these as known regressions.
 2. **Do not require `manifest.tooth == requested path`.** <<tooth_path_mismatch_at_tag>> entries declare a different `tooth`
-   (renames/transfers: `HuHoBot/BDSAdapter`, `LiteLDev/iListenAttentively`, `LiteLDev/BarelyEnoughItems`, ...).
+   (renames/transfers: `HuHoBot/BDSAdapter`, `LiteLDev/iListenAttentively`, `LiteLDev/BarelyEnoughItems` -> `MiracleForest/BarelyEnoughItems`, ...).
    Keep the *requested* path as the package identity; at most warn. Note that `{{tooth}}` in v3 asset URLs renders
    from the manifest's own `tooth`, so such URLs rely on GitHub's rename redirects.
 3. **Follow GitHub redirects and be case-insensitive for `github.com`.** <<renamed_packages>> paths are renamed/transferred repos

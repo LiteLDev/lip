@@ -568,6 +568,80 @@ public class GraphSolverTests {
   }
 
   [Fact]
+  public async Task Solve_DependencyOnMovedRepositoryPath_IsSatisfiedByPackageAtSameCommit() {
+    // Arrange: the package was installed from the new path; the old path redirects to the same
+    // repository, so its tag is the same commit, reached under another archive key.
+    FakeResolver resolver = new();
+    const string identity = "github.com/new/mod";
+    Candidate installed = ToCandidate(Package(identity, "1.0.0", "github.com/new/mod", "tooth")
+        with { Git = new GitArchiveIdentity("https://github.com/new/mod.git", "C1", "") });
+    resolver.Add("github.com/old/mod", Package(identity, "1.0.0", "github.com/old/mod", "tooth")
+        with { Git = new GitArchiveIdentity("https://github.com/old/mod.git", "c1", "") });
+    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
+        edges: [Edge("github.com/old/mod")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a")], [installed], s_environment);
+
+    // Assert
+    Assert.Equal([$"{identity}@1.0.0", "A@1.0.0"], Names(result));
+    Assert.Same(installed, result[0]);
+  }
+
+  [Fact]
+  public async Task Solve_ToothRenamedBetweenVersions_KeepsTheInstalledVersionAsOnePackage() {
+    // Arrange: the newer tag of the repository names a new path in "tooth" (the repository
+    // moved); the installed older version still has the old identity.
+    FakeResolver resolver = new();
+    GitArchiveIdentity Git(string commit) => new("https://github.com/old/mod.git", commit, "");
+    Candidate installed = ToCandidate(
+        Package("github.com/old/mod", "1.0.0", "github.com/old/mod", "tooth")
+            with { Git = Git("c1") });
+    resolver.Add("github.com/old/mod",
+        Package("github.com/new/mod", "1.1.0", "github.com/old/mod", "tooth")
+            with { Git = Git("c2") });
+    resolver.Add("github.com/old/mod",
+        Package("github.com/old/mod", "1.0.0", "github.com/old/mod", "tooth")
+            with { Git = Git("c1") });
+    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
+        edges: [Edge("github.com/old/mod")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a")], [installed], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/old/mod@1.0.0", "A@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_ToothRenamedBetweenVersionsAndNewerNeeded_FailsInsteadOfInstallingBoth() {
+    // Arrange
+    FakeResolver resolver = new();
+    GitArchiveIdentity Git(string commit) => new("https://github.com/old/mod.git", commit, "");
+    Candidate installed = ToCandidate(
+        Package("github.com/old/mod", "1.0.0", "github.com/old/mod", "tooth")
+            with { Git = Git("c1") });
+    resolver.Add("github.com/old/mod",
+        Package("github.com/new/mod", "1.1.0", "github.com/old/mod", "tooth")
+            with { Git = Git("c2") });
+    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
+        edges: [Edge("github.com/old/mod", Between("1.1.0", "2.0.0"))]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/a/a")], [installed], s_environment));
+
+    // Assert
+    Assert.Contains("under another identity", exception.Message);
+  }
+
+  [Fact]
   public void InstallOrder_DisconnectedPackages_OrdersByLowercaseIdentity() {
     // Arrange
     Candidate b = ToCandidate(Package("b", "1.0.0", "github.com/b/b"));
@@ -635,7 +709,15 @@ public class GraphSolverTests {
   }
 
   private static Candidate ToCandidate(FakePackage package) {
-    return new Candidate(package, Archive(package.ArchiveKey), []);
+    return new Candidate(package, ArchiveOf(package), []);
+  }
+
+  /// The archive of a package: a git archive when the package names one, otherwise a ZIP
+  /// archive.
+  private static ArchiveHandle ArchiveOf(FakePackage package) {
+    return package.Git is null
+        ? Archive(package.ArchiveKey)
+        : new ArchiveHandle(package.ArchiveKey, Mock.Of<ISource>(), package.Git);
   }
 
   /// [Min, Max).
@@ -658,6 +740,9 @@ public class GraphSolverTests {
       string ArchiveKey,
       string Variant = "") : IPackage {
     public JsonElement Manifest => default;
+
+    /// The git archive the package comes from; null for a ZIP archive.
+    public GitArchiveIdentity? Git { get; init; }
   }
 
   private sealed record ResolveCall(string Ref, string Base, string? Range, bool Compat);
@@ -705,7 +790,7 @@ public class GraphSolverTests {
                 && (p.Tag is null || range.IsSatisfiedBy(p.Tag))))
             .Select(p => reference.GitRef is null
                 ? ToCandidate(p.Package)
-                : new Candidate(p.Package, Archive(p.Package.ArchiveKey),
+                : new Candidate(p.Package, ArchiveOf(p.Package),
                     [new ChainHop(reference, null)])),
       ];
       List<string> diagnostics = candidates.Count == 0
