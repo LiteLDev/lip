@@ -81,17 +81,21 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
   }
 
   /// Where a repository answers: the endpoint its discovery request was redirected to (cached
-  /// after ListRefs), or else where its web page redirects. GitHub serves the git endpoints of
-  /// a transferred or renamed repository at its old path without redirecting them, but
-  /// redirects the web page (e.g. https://github.com/Old/Name answers 301 with Location
-  /// https://github.com/New/Name). The web page is asked directly, not through the GitHub
-  /// proxy, once per repository; when that fails, the discovered endpoint is the answer.
+  /// after ListRefs), or else, for a github.com repository, where its web page redirects.
+  /// GitHub serves the git endpoints of a transferred or renamed repository at its old path
+  /// without redirecting them, but redirects the web page (e.g. https://github.com/Old/Name
+  /// answers 301 with Location https://github.com/New/Name). Other hosts are not asked for
+  /// their web page, whose redirects may mean something else (e.g. a mirror pointing at its
+  /// upstream). The web page is asked directly, not through the GitHub proxy, once per
+  /// repository and with a short timeout; when that fails, the discovered endpoint is the
+  /// answer.
   public async Task<Url> GetRepositoryUrl(Url repoUrl) {
     Url endpoint = await WithProxyFallback(repoUrl, async url => {
       Url discovered = (await Discover(url)).Endpoint;
       return FromProxy(discovered) ?? discovered;
     });
-    if (GetRepoKey(endpoint) != GetRepoKey(repoUrl)) {
+    if (GetRepoKey(endpoint) != GetRepoKey(repoUrl)
+        || !string.Equals(repoUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase)) {
       return endpoint;
     }
 
@@ -338,7 +342,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     try {
       using IFlurlResponse response = await (git ? url[..^4] : url)
           .WithHeader("User-Agent", UserAgent)
-          .WithTimeout(TimeSpan.FromSeconds(30))
+          .WithTimeout(TimeSpan.FromSeconds(5))
           .AllowAnyHttpStatus()
           .HeadAsync();
       Uri? final = response.ResponseMessage.RequestMessage?.RequestUri;
@@ -349,8 +353,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
       string page = final.GetLeftPart(UriPartial.Path).TrimEnd('/');
       return Url.Parse(git ? page + ".git" : page);
     }
-    catch (Exception ex) when (ex is FlurlHttpException or HttpRequestException
-        or IOException or UriFormatException) {
+    catch (Exception ex) when (ex is not OperationCanceledException) {
+      // Not known; the cached answer must not be a fault.
       return null;
     }
   }

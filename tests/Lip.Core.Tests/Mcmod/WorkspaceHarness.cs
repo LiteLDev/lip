@@ -266,6 +266,9 @@ internal sealed class WorkspaceHarness {
           : throw new InvalidOperationException($"No commit {commitish}");
     }
 
+    /// Where a repository answers. GitHub tells a transferred repository by redirecting its web
+    /// page, while it serves the git endpoints at the old path (as ListRefs does here); this
+    /// answer stands for either.
     public Task<Url> GetRepositoryUrl(Url repoUrl) {
       string repo = repoUrl.ToString();
       return Task.FromResult(Url.Parse(

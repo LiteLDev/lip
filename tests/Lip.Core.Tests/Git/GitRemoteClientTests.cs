@@ -227,25 +227,39 @@ public class GitRemoteClientTests {
   public async Task GetRepositoryUrl_WebPageNotFound_ReturnsTheUrl(int status) {
     using HttpTest httpTest = new();
     httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
-    httpTest.ForCallsTo("https://example.com/owner/repo").WithVerb(HttpMethod.Head)
+    httpTest.ForCallsTo("https://github.com/Owner/Repo").WithVerb(HttpMethod.Head)
         .RespondWith("", status);
     GitRemoteClient client = new(githubProxy: null);
 
-    Url url = await client.GetRepositoryUrl(new Url(RepoUrl));
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Owner/Repo.git"));
 
-    Assert.Equal(RepoUrl, url.ToString());
+    Assert.Equal("https://github.com/Owner/Repo.git", url.ToString());
   }
 
   [Fact]
   public async Task GetRepositoryUrl_WebPageUnreachable_ReturnsTheUrl() {
     using HttpTest httpTest = new();
     httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
-    httpTest.ForCallsTo("https://example.com/owner/repo").WithVerb(HttpMethod.Head).SimulateTimeout();
+    httpTest.ForCallsTo("https://github.com/Owner/Repo").WithVerb(HttpMethod.Head).SimulateTimeout();
+    GitRemoteClient client = new(githubProxy: null);
+
+    Url url = await client.GetRepositoryUrl(new Url("https://github.com/Owner/Repo.git"));
+
+    Assert.Equal("https://github.com/Owner/Repo.git", url.ToString());
+  }
+
+  [Fact]
+  public async Task GetRepositoryUrl_OtherHost_DoesNotAskForTheWebPage() {
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("https://example.com/owner/repo").WithVerb(HttpMethod.Head)
+        .RespondWith("", 301, new { Location = "https://github.com/Owner/Repo" });
     GitRemoteClient client = new(githubProxy: null);
 
     Url url = await client.GetRepositoryUrl(new Url(RepoUrl));
 
     Assert.Equal(RepoUrl, url.ToString());
+    httpTest.ShouldNotHaveCalled("https://example.com/owner/repo");
   }
 
   [Fact]
