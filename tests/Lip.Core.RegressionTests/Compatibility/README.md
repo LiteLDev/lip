@@ -918,7 +918,7 @@ git (`git`) and/or no versions via today's goproxy -> lipr -> git chain (`today`
    (old path -> new path [+ variant], or "drop") and apply it to dependency keys after manifest parsing. Without it,
    accept these as known regressions.
 2. **Do not require `manifest.tooth == requested path`.** 11 entries declare a different `tooth`
-   (renames/transfers: `HuHoBot/BDSAdapter`, `LiteLDev/iListenAttentively`, `LiteLDev/BarelyEnoughItems`, ...).
+   (renames/transfers: `HuHoBot/BDSAdapter`, `LiteLDev/iListenAttentively`, `LiteLDev/BarelyEnoughItems` -> `MiracleForest/BarelyEnoughItems`, ...).
    Keep the *requested* path as the package identity; at most warn. Note that `{{tooth}}` in v3 asset URLs renders
    from the manifest's own `tooth`, so such URLs rely on GitHub's rename redirects.
 3. **Follow GitHub redirects and be case-insensitive for `github.com`.** 25 paths are renamed/transferred repos

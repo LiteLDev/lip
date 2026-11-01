@@ -21,6 +21,13 @@ namespace Lip.Core.Mcmod.Resolution;
 /// between versions); the search then meets the member while walking the candidates, and takes
 /// it there as satisfying the requirement.
 ///
+/// A tooth.json package renamed between versions (a repository that moved names its new path in
+/// "tooth") is one package: a candidate converted from the same repository and label as a member
+/// of another identity is blocked by it, as if it had its identity (IsRenamed). A member from a
+/// git archive also satisfies a ref to another spec that reaches the same commit, so the same
+/// tag reached through the old and the new path of a moved repository is one package
+/// (IsMember).
+///
 /// A member resolved from a pinned spec ref stands in for the versions of that spec (spec §6),
 /// but pinned candidates are not candidates of an unpinned requirement. When an unpinned
 /// requirement is decided before a pinned one for the same spec, its choice clashes with the
@@ -232,6 +239,29 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
           candidate.Archive.Key,
           candidate.Package.Variant);
     }
+  }
+
+  /// Whether a member is the package a candidate (with key) is: the same package key, or the
+  /// same package from the same commit of a git repository reached through another spec. The
+  /// same tag of a moved repository, whose old path redirects to the new one, has archive keys
+  /// that differ only in the spec they start with ("spec@..."), so a package installed from either
+  /// path satisfies a ref to the other. What follows the spec still tells a tag version from a
+  /// pinned commit (spec §6).
+  private static bool IsMember(Member member, PackageKey key, Candidate candidate) {
+    if (member.Key == key) {
+      return true;
+    }
+
+    ArchiveHandle a = member.Candidate.Archive;
+    ArchiveHandle b = candidate.Archive;
+    int i = a.Key.IndexOf('@', StringComparison.Ordinal);
+    int j = b.Key.IndexOf('@', StringComparison.Ordinal);
+    return (member.Key with { Archive = "" }) == (key with { Archive = "" })
+        && a.Identity is GitArchiveIdentity { Commit.Length: > 0 } x
+        && b.Identity is GitArchiveIdentity y
+        && string.Equals(x.Commit, y.Commit, StringComparison.OrdinalIgnoreCase)
+        && x.Path == y.Path
+        && i > 0 && j > 0 && a.Key.AsSpan(i).SequenceEqual(b.Key.AsSpan(j));
   }
 
   private readonly record struct ResolveKey(string Ref, string Base, object Range, bool Compat);
@@ -540,7 +570,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
               + $"last open requirement: {requirement.Description}.");
         }
 
-        if (_members.TryGetValue(key.Identity, out Member? existing) && existing.Key == key) {
+        if (_members.TryGetValue(key.Identity, out Member? existing)
+            && IsMember(existing, key, candidate)) {
           // A member the shortcut of SatisfyingMember missed (see the class remarks). Nothing is
           // decided here, so no nogood of the rest contains this level.
           HashSet<int>? rest = await Solve(index + 1, level + 1);
@@ -642,6 +673,14 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
             + $"{ShowSource(same.Candidate)}{(same.Level < 0 ? " (installed)" : "")}");
       }
 
+      foreach (Member member in _members.Values) {
+        if (IsRenamed(member.Candidate, candidate)) {
+          return (member.Level, $"{ShowSource(candidate)} is "
+              + $"{ShowSource(member.Candidate)}{(member.Level < 0 ? " (installed)" : "")}"
+              + " under another identity");
+        }
+      }
+
       if (Conflicts(candidate.Package, candidate.Package)) {
         return (-1, $"{Show(candidate)} conflicts with itself");
       }
@@ -672,7 +711,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
       for (int i = 0; i < choices.Candidates.Count; i++) {
         if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
-            && member.Key == choices.CandidateKeys[i]) {
+            && IsMember(member, choices.CandidateKeys[i], choices.Candidates[i])) {
           return member.Candidate;
         }
       }
@@ -693,7 +732,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       if (requirement.Refs.All(r => r.Kind != RefKind.Spec)) {
         for (int i = choices.Candidates.Count; await choices.Has(i); i++) {
           if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
-              && member.Key == choices.CandidateKeys[i]) {
+              && IsMember(member, choices.CandidateKeys[i], choices.Candidates[i])) {
             return member.Candidate;
           }
         }
@@ -721,12 +760,27 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     private async Task<Candidate?> MemberAmongCandidates(Choices choices) {
       for (int i = 0; await choices.Has(i); i++) {
         if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
-            && member.Key == choices.CandidateKeys[i]) {
+            && IsMember(member, choices.CandidateKeys[i], choices.Candidates[i])) {
           return member.Candidate;
         }
       }
 
       return null;
+    }
+
+    /// Whether two tooth.json packages of different identities are one package renamed between
+    /// versions: converted from the same variant label of the tooth.json at the root of one
+    /// repository. A tooth.json names its own path in "tooth", so a repository that moved names
+    /// the new path in its newer tags (spec §9.1); its versions are still one package, of which
+    /// S holds one (spec §6.3), and installing a newer one replaces the installed one.
+    private static bool IsRenamed(Candidate a, Candidate b) {
+      return a.Package.Kind == ToothCompat.KindName && b.Package.Kind == ToothCompat.KindName
+          && a.Package.Variant == b.Package.Variant
+          && !SameIdentity(a.Package.Identity, b.Package.Identity)
+          && a.Archive.Identity is GitArchiveIdentity x
+          && b.Archive.Identity is GitArchiveIdentity y
+          && x.Path == y.Path
+          && string.Equals(x.RepoUrl, y.RepoUrl, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsPinned(Candidate candidate) {
@@ -788,7 +842,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
                 : requirement.Range,
             requirement.Compat);
         for (int i = 0; await sequence.Has(i); i++) {
-          if (PackageKey.Of(sequence.Items[i]) == member.Key) {
+          if (IsMember(member, PackageKey.Of(sequence.Items[i]), sequence.Items[i])) {
             return true;
           }
         }

@@ -50,6 +50,12 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 /// identities (spec §9.1), but a lock may still hold two entries of one identity (e.g. a v3 lock
 /// with tooth paths differing only in case); they are kept, listed and uninstalled as separate
 /// entries, while the solver sees the identity once (spec §6.3 applies to new solves).
+///
+/// A package can change identity between versions: a tooth.json names its own path in "tooth",
+/// so when its repository moves (GitHub redirects the old path), the newer tags name the new
+/// path. Updating such a package replaces it under its new identity, and installing it under
+/// either path does not add a second copy (see MovedFrom); the graph solver treats both
+/// identities as one package (GraphSolver.IsRenamed) and both paths as one repository.
 public class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
@@ -87,18 +93,35 @@ public class McmodService(
       return;
     }
 
-    List<string> identities = await RequestedIdentities(workspace, requests);
-    foreach (string identity in identities) {
+    List<Candidate> candidates = await RequestedCandidates(workspace, requests);
+    List<string> identities = [.. candidates.Select(c => c.Package.Identity)];
+    List<string> moved = [];
+    foreach (Candidate candidate in candidates) {
+      string identity = candidate.Package.Identity;
       if (workspace.Lock.Packages.Any(p => p.Explicit && SameIdentity(p.Identity, identity))) {
         throw new InvalidOperationException(
             $"Cannot install package '{identity}' because it is already explicitly installed.");
+      }
+
+      // A package installed under the identity it had before its repository moved is the same
+      // package: installing it under the new identity replaces it instead of adding a copy.
+      if (await MovedFrom(workspace, candidate) is LockedPackage from) {
+        if (from.Explicit) {
+          throw new InvalidOperationException(
+              $"Cannot install package '{identity}' because it is already explicitly installed"
+              + $" as '{from.Identity}'. Run 'lip update {from.Chain[0].Ref}' to replace it with"
+              + $" '{identity}'.");
+        }
+
+        await ReportMoved(from, candidate, options);
+        moved.Add(from.Identity);
       }
     }
 
     await Execute(workspace, options, Changes(workspace, options, await MakePlan(
         workspace,
         [.. requests.Select(r => r.Request)],
-        unpinned: identities,
+        unpinned: [.. identities, .. moved],
         explicitIdentities: ExplicitIdentities(workspace.Lock))));
   }
 
@@ -178,6 +201,8 @@ public class McmodService(
     Workspace workspace = await OpenWorkspace(options);
 
     List<(string Argument, PackageRequest Request)> requests;
+    // Without arguments, the installed package each request comes from.
+    List<LockedPackage> sources = [];
     if (packages.Count == 0) {
       // Every explicitly installed package, requested again by the ref it was installed from: a
       // spec ref at its newest version, a branch at its head, a tag where it points now, a rev
@@ -202,25 +227,55 @@ public class McmodService(
         }
 
         requests.Add((package.Identity, new PackageRequest(reference, null)));
+        sources.Add(package);
       }
     } else {
       requests = ParseRequests(packages);
     }
 
-    List<string> identities = await RequestedIdentities(workspace, requests);
-    for (int i = 0; i < identities.Count; i++) {
-      if (!workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, identities[i]))) {
-        throw new InvalidOperationException(
-            $"Cannot update package '{requests[i].Argument}' because it is not currently "
-            + "installed.");
+    List<Candidate> candidates = await RequestedCandidates(
+        workspace, requests, allowSameIdentity: packages.Count == 0);
+    List<string> identities = [];
+    List<PackageRequest> requested = [];
+    List<string> moved = [];
+    for (int i = 0; i < candidates.Count; i++) {
+      Candidate candidate = candidates[i];
+      string identity = candidate.Package.Identity;
+      // The newest version may have another identity (spec §8, "Updating": the package is then
+      // replaced), e.g. a tooth.json whose repository moved and whose "tooth" now names the new
+      // path. Without arguments, the request comes from the installed package it replaces;
+      // otherwise that package is found by MovedFrom.
+      LockedPackage? from = packages.Count == 0
+          ? (SameIdentity(sources[i].Identity, identity) ? null : sources[i])
+          : workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, identity))
+              ? null
+              : await MovedFrom(workspace, candidate)
+                  ?? throw new InvalidOperationException(
+                      $"Cannot update package '{requests[i].Argument}' because it is not"
+                      + " currently installed.");
+      if (from is not null) {
+        await ReportMoved(from, candidate, options);
+        moved.Add(from.Identity);
       }
+
+      // Without arguments, a package installed under its old identity and the same package
+      // installed under its new one are requested again as one package.
+      if (identities.Any(other => SameIdentity(other, identity))) {
+        continue;
+      }
+
+      identities.Add(identity);
+      requested.Add(requests[i].Request);
     }
 
+    HashSet<string> replaced = [.. moved.Select(Fold)];
     await Execute(workspace, options, Changes(workspace, options, await MakePlan(
         workspace,
-        [.. requests.Select(r => r.Request)],
-        unpinned: identities,
-        explicitIdentities: ExplicitIdentities(workspace.Lock))));
+        requested,
+        unpinned: [.. identities, .. moved],
+        explicitIdentities: [
+          .. ExplicitIdentities(workspace.Lock).Where(i => !replaced.Contains(Fold(i))),
+        ])));
   }
 
   public async Task<IReadOnlyList<InstalledPackage>> List() {
@@ -382,23 +437,25 @@ public class McmodService(
     return [.. packages.Select(p => (p, PackageArguments.Parse(p, root, _fs)))];
   }
 
-  /// The identity of the first candidate of every request: the package the request names. Fails
-  /// when a request has no candidate or two requests name the same package.
-  private async Task<List<string>> RequestedIdentities(
-      Workspace workspace, List<(string Argument, PackageRequest Request)> requests) {
-    List<string> identities = [];
+  /// The first candidate of every request: the package the request names. Fails when a request
+  /// has no candidate, or, unless allowSameIdentity, when two requests name the same package.
+  private async Task<List<Candidate>> RequestedCandidates(
+      Workspace workspace,
+      List<(string Argument, PackageRequest Request)> requests,
+      bool allowSameIdentity = false) {
+    List<Candidate> candidates = [];
     foreach ((string argument, PackageRequest request) in requests) {
       Candidate candidate = await FirstCandidate(workspace, argument, request);
       string identity = candidate.Package.Identity;
-      if (identities.Any(i => SameIdentity(i, identity))) {
+      if (!allowSameIdentity && candidates.Any(c => SameIdentity(c.Package.Identity, identity))) {
         throw new InvalidOperationException(
             $"Multiple requested packages are '{identity}'. Please request each package once.");
       }
 
-      identities.Add(identity);
+      candidates.Add(candidate);
     }
 
-    return identities;
+    return candidates;
   }
 
   private async Task<Candidate> FirstCandidate(
@@ -408,6 +465,18 @@ public class McmodService(
     await foreach (Candidate candidate in workspace.Resolver.ResolveLazy(
         request.Ref, request.Base, request.Range, workspace.Environment,
         onDiagnostic: diagnostics.Add)) {
+      // A tooth.json package is identified by its "tooth" path (spec §9.1), whatever path it is
+      // requested by: a repository that moved still answers at its old path (GitHub redirects
+      // it) while its tooth.json names the new one, or the other way round at its older tags.
+      string tooth = ToothPath(candidate.Package.Identity);
+      if (candidate.Package.Kind == ToothCompat.KindName && candidate.Chain.Count == 1
+          && request.Ref.Kind == RefKind.Spec
+          && !string.Equals(tooth, request.Ref.Target, StringComparison.OrdinalIgnoreCase)) {
+        await _ui.PrintWarning(
+            $"The tooth.json of {request.Ref.Target} declares the package path '{tooth}'; the"
+            + $" package is identified as '{candidate.Package.Identity}'.");
+      }
+
       return candidate;
     }
 
@@ -610,6 +679,11 @@ public class McmodService(
         .. workspace.Lock.Packages.Where(
             p => SameIdentity(p.Identity, candidate.Package.Identity)),
       ];
+      if (existing.Count == 0 && await MovedFrom(workspace, candidate) is LockedPackage from) {
+        await ReportMoved(from, candidate, options);
+        existing.Add(from);
+      }
+
       if (existing.Count > 0 && existing.All(p => IsSamePackage(p, candidate))) {
         changes.Add(new MarkExplicitChange(existing[0]));
         continue;
@@ -939,6 +1013,96 @@ public class McmodService(
       }),
     ];
   }
+
+  /// The installed package a requested candidate is a later version of under another identity,
+  /// when no installed package has the candidate's identity; null when there is none. This is
+  /// how lip recognises a tooth.json package whose repository moved (e.g. a transfer to another
+  /// GitHub organisation, whose old path GitHub redirects): its newer tags name the new path in
+  /// "tooth", so they have another identity (spec §9.1) than the version installed. The
+  /// installed package must have the candidate's variant and be either
+  /// - installed from the same spec ref as the candidate (same spec, ignoring ASCII case, and
+  ///   variant): resolving that ref again led to the candidate, whatever its identity; or
+  /// - a tooth.json package whose version's tag is at the same commit in the repository the
+  ///   candidate comes from as in its own: the two paths name one repository. Only installed
+  ///   packages whose repository has the candidate's repository name are asked, so that
+  ///   installing another package does not contact the repositories of the installed ones.
+  private async Task<LockedPackage?> MovedFrom(Workspace workspace, Candidate candidate) {
+    if (candidate.Chain.Count == 0 || candidate.Chain[0].Ref.Kind != RefKind.Spec
+        || workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, candidate.Package.Identity))) {
+      return null;
+    }
+
+    Ref first = candidate.Chain[0].Ref;
+    List<(LockedPackage Package, Ref From)> installed = [];
+    foreach (LockedPackage package in workspace.Lock.Packages) {
+      if (package.Chain.Count > 0
+          && Ref.TryParse(package.Chain[0].Ref, allowFile: true, out Ref? from, out _)) {
+        if (from.Kind == first.Kind && from.Variant == first.Variant
+            && string.Equals(from.Target, first.Target, StringComparison.OrdinalIgnoreCase)) {
+          return package;
+        }
+
+        installed.Add((package, from));
+      }
+    }
+
+    if (candidate.Package.Kind != ToothCompat.KindName) {
+      return null;
+    }
+
+    string label = Label(candidate.Package.Identity);
+    HashSet<string> names = new(StringComparer.OrdinalIgnoreCase) {
+      RepositoryName(first.Target),
+      RepositoryName(ToothPath(candidate.Package.Identity)),
+    };
+    foreach ((LockedPackage package, Ref from) in installed) {
+      if (package.Kind != ToothCompat.KindName || from.Kind != RefKind.Spec
+          || Label(package.Identity) != label
+          || !(names.Contains(RepositoryName(from.Target))
+              || names.Contains(RepositoryName(ToothPath(package.Identity))))
+          || !GitRef.TryParse($"tag:v{package.Version}", out GitRef? tag, out _)) {
+        continue;
+      }
+
+      try {
+        string commit = (from.GitRef is null ? package.Chain[0].Commit : null)
+            ?? await _archiveProvider.ResolveGitRef(from.Target, tag);
+        if (string.Equals(
+            commit,
+            await _archiveProvider.ResolveGitRef(first.Target, tag),
+            StringComparison.OrdinalIgnoreCase)) {
+          return package;
+        }
+      }
+      catch (ArchiveUnavailableException) {
+        // Not the same repository as far as lip can tell.
+      }
+    }
+
+    return null;
+  }
+
+  private async Task ReportMoved(
+      LockedPackage from, Candidate candidate, OperationOptions options) {
+    await _ui.PrintInfo(
+        $"Package '{from.Identity}' is now '{candidate.Package.Identity}'"
+        + (candidate.Package.Kind == ToothCompat.KindName && from.Kind == ToothCompat.KindName
+            ? " (its tooth.json declares a new path)"
+            : "")
+        + (options.DryRun ? "; it would be replaced by " : "; replacing it with ")
+        + $"'{candidate.Package.Identity}' version {candidate.Package.Version}.");
+  }
+
+  /// The tooth path of an identity: the identity without its "#label" (spec §9.1). Other
+  /// identities have no '#'.
+  private static string ToothPath(string identity) => identity.Split('#')[0];
+
+  /// The v3 label of a tooth.json identity; "" for other identities.
+  private static string Label(string identity) =>
+      identity.Contains('#') ? identity[(identity.IndexOf('#') + 1)..] : "";
+
+  /// The last segment of a path.
+  private static string RepositoryName(string path) => path[(path.LastIndexOf('/') + 1)..];
 
   #endregion
 

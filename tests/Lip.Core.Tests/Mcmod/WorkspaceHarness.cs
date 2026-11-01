@@ -186,6 +186,7 @@ internal sealed class WorkspaceHarness {
     private readonly Dictionary<string, Dictionary<string, string>> _refs = [];
     private readonly Dictionary<string, List<GitTreeEntry>> _trees = [];
     private readonly Dictionary<string, byte[]> _blobs = [];
+    private readonly Dictionary<string, string> _redirects = [];
 
     public List<string> ListedTrees { get; } = [];
 
@@ -197,10 +198,16 @@ internal sealed class WorkspaceHarness {
     public string AddBranch(string spec, string branch, Dictionary<string, string> files) =>
         SetRef(spec, $"refs/heads/{branch}", files);
 
+    /// Makes the repository of one spec answer for another, like GitHub does for a repository
+    /// that was transferred or renamed: the old path redirects to the new one.
+    public void AddRedirect(string fromSpec, string toSpec) =>
+        _redirects[ArchiveProvider.GetRepoUrl(fromSpec)] = ArchiveProvider.GetRepoUrl(toSpec);
+
     public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
       List<string> prefixes = [.. refPrefixes];
+      string repo = repoUrl.ToString();
       IReadOnlyList<GitRemoteRef> refs = [
-        .. _refs.GetValueOrDefault(repoUrl.ToString(), [])
+        .. _refs.GetValueOrDefault(_redirects.GetValueOrDefault(repo, repo), [])
             .Where(r => prefixes.Any(p => r.Key.StartsWith(p, StringComparison.Ordinal)))
             .Select(r => new GitRemoteRef(r.Key, r.Value, null)),
       ];

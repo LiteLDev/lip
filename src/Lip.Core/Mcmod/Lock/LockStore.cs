@@ -319,6 +319,12 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     return best;
   }
 
+  /// The identity, the chain and the archive key all come from the recorded "tooth", so they
+  /// agree with each other and with the package FromLocked rebuilds from the recorded manifest.
+  /// lip v0.34.9 and earlier only installed a package by the path its tooth.json declares; v0.35.0
+  /// recorded the path it was requested by in "tooth" instead (e.g. the old path of a repository
+  /// that moved), which still resolves to the repository. When a later version declares another
+  /// path, updating the package replaces it under its new identity (see McmodService.Update).
   private LockedPackage MigratePackage(
       WorkspaceStatePackage package, string root, string? movedRoot) {
     string path = package.Manifest.Path;
