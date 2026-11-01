@@ -79,6 +79,14 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
         : [.. refs.Where(r => prefixes.Any(p => r.Name.StartsWith(p, StringComparison.Ordinal)))];
   }
 
+  public Task<Url> GetRepositoryUrl(Url repoUrl) {
+    // Discovery follows the redirects and is cached, so after ListRefs this sends nothing.
+    return WithProxyFallback(repoUrl, async url => {
+      Url endpoint = (await Discover(url)).Endpoint;
+      return FromProxy(endpoint) ?? endpoint;
+    });
+  }
+
   public async Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {
     string objectId = NormalizeObjectId(commitish);
 
@@ -307,6 +315,20 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
         .Clone()
         .AppendPathSegments(repoUrl.PathSegments);
     return proxied.ToString() == repoUrl.ToString() ? null : proxied;
+  }
+
+  /// The github.com URL of a URL of the GitHub proxy (the inverse of RewriteUrl), or null when
+  /// the URL is not below the proxy.
+  private Url? FromProxy(Url url) {
+    if (_githubProxy is null) {
+      return null;
+    }
+
+    string proxy = _githubProxy.ToString().TrimEnd('/') + "/";
+    string value = url.ToString();
+    return value.StartsWith(proxy, StringComparison.OrdinalIgnoreCase)
+        ? Url.Parse("https://github.com/" + value[proxy.Length..])
+        : null;
   }
 
   /// Identifies a repository for caches. GitHub resolves owner and repository names

@@ -439,13 +439,18 @@ public class McmodService(
 
   /// The first candidate of every request: the package the request names. Fails when a request
   /// has no candidate, or, unless allowSameIdentity, when two requests name the same package.
+  /// A request for the old path of a repository that moved is replaced by the request for its
+  /// new path (see FirstCandidate).
   private async Task<List<Candidate>> RequestedCandidates(
       Workspace workspace,
       List<(string Argument, PackageRequest Request)> requests,
       bool allowSameIdentity = false) {
     List<Candidate> candidates = [];
-    foreach ((string argument, PackageRequest request) in requests) {
-      Candidate candidate = await FirstCandidate(workspace, argument, request);
+    for (int i = 0; i < requests.Count; i++) {
+      (string argument, PackageRequest request) = requests[i];
+      (Candidate candidate, PackageRequest requested) =
+          await FirstCandidate(workspace, argument, request);
+      requests[i] = (argument, requested);
       string identity = candidate.Package.Identity;
       if (!allowSameIdentity && candidates.Any(c => SameIdentity(c.Package.Identity, identity))) {
         throw new InvalidOperationException(
@@ -458,32 +463,90 @@ public class McmodService(
     return candidates;
   }
 
-  private async Task<Candidate> FirstCandidate(
+  /// The first candidate of a request, and the request it comes from: the given one, or, when
+  /// the request names the old path of a tooth.json repository that moved, the same request for
+  /// the path the tooth.json declares (see MovedRequest).
+  private async Task<(Candidate Candidate, PackageRequest Request)> FirstCandidate(
       Workspace workspace, string argument, PackageRequest request) {
     await _ui.PrintInfo($"Resolving {argument}...");
     List<string> diagnostics = [];
-    await foreach (Candidate candidate in workspace.Resolver.ResolveLazy(
-        request.Ref, request.Base, request.Range, workspace.Environment,
-        onDiagnostic: diagnostics.Add)) {
-      // A tooth.json package is identified by its "tooth" path (spec §9.1), whatever path it is
-      // requested by: a repository that moved still answers at its old path (GitHub redirects
-      // it) while its tooth.json names the new one, or the other way round at its older tags.
-      string tooth = ToothPath(candidate.Package.Identity);
-      if (candidate.Package.Kind == ToothCompat.KindName && candidate.Chain.Count == 1
-          && request.Ref.Kind == RefKind.Spec
-          && !string.Equals(tooth, request.Ref.Target, StringComparison.OrdinalIgnoreCase)) {
-        await _ui.PrintWarning(
-            $"The tooth.json of {request.Ref.Target} declares the package path '{tooth}'; the"
-            + $" package is identified as '{candidate.Package.Identity}'.");
+    Candidate candidate = await FirstCandidateOrDefault(workspace, request, diagnostics.Add)
+        ?? throw new InvalidOperationException(
+            $"No package found for '{argument}'"
+            + (diagnostics.Count == 0 ? "." : ":" + string.Concat(
+                diagnostics.Take(10).Select(d => $"\n  - {d}"))));
+
+    // A tooth.json package is identified by its "tooth" path (spec §9.1), whatever path it is
+    // requested by: a repository that moved still answers at its old path (GitHub redirects
+    // it) while its tooth.json names the new one, or the other way round at its older tags.
+    string tooth = ToothPath(candidate.Package.Identity);
+    if (candidate.Package.Kind == ToothCompat.KindName && candidate.Chain.Count == 1
+        && request.Ref.Kind == RefKind.Spec
+        && !string.Equals(tooth, request.Ref.Target, StringComparison.OrdinalIgnoreCase)) {
+      if (await MovedRequest(workspace, request, candidate, tooth)
+          is (Candidate moved, PackageRequest movedRequest)) {
+        await _ui.PrintInfo(
+            $"{request.Ref.Target} redirects to {tooth}, the package path its tooth.json"
+            + $" declares; requesting {movedRequest.Ref} instead.");
+        return (moved, movedRequest);
       }
 
+      await _ui.PrintWarning(
+          $"The tooth.json of {request.Ref.Target} declares the package path '{tooth}'; the"
+          + $" package is identified as '{candidate.Package.Identity}'.");
+    }
+
+    return (candidate, request);
+  }
+
+  private static async Task<Candidate?> FirstCandidateOrDefault(
+      Workspace workspace, PackageRequest request, Action<string>? onDiagnostic = null) {
+    await foreach (Candidate candidate in workspace.Resolver.ResolveLazy(
+        request.Ref, request.Base, request.Range, workspace.Environment,
+        onDiagnostic: onDiagnostic)) {
       return candidate;
     }
 
-    throw new InvalidOperationException(
-        $"No package found for '{argument}'"
-        + (diagnostics.Count == 0 ? "." : ":" + string.Concat(
-            diagnostics.Take(10).Select(d => $"\n  - {d}"))));
+    return null;
+  }
+
+  /// The request for the declared path of a tooth.json package requested by another path, with
+  /// its first candidate, when the requested path is the old path of the repository: asked at
+  /// the requested path, the repository answers at the declared one (GitHub redirects the old
+  /// path of a repository that was transferred or renamed), and the declared path yields the
+  /// same package from the same commit. Requested by its own path, the package and its updates
+  /// no longer depend on the redirect, which stops when someone takes the old path again. The
+  /// variant, the git ref (a pinned ref stays pinned) and the range are kept. A fork, or another
+  /// repository whose tooth.json names some path, does not redirect there; nor does the new path
+  /// of a moved repository to the old path that its older versions declare. Null otherwise.
+  private async Task<(Candidate, PackageRequest)?> MovedRequest(
+      Workspace workspace, PackageRequest request, Candidate candidate, string tooth) {
+    if (!Ref.TryParse(tooth, out Ref? path, out _) || path.Kind != RefKind.Spec
+        || path.GitRef is not null || path.Variant != ""
+        || candidate.Archive.Identity is not GitArchiveIdentity { Commit.Length: > 0 } from
+        || !await _archiveProvider.RedirectsTo(request.Ref.Target, tooth)) {
+      return null;
+    }
+
+    PackageRequest moved = request with {
+      Ref = path.WithVariant(request.Ref.Variant).WithGitRef(request.Ref.GitRef),
+    };
+    Candidate? atPath;
+    try {
+      atPath = await FirstCandidateOrDefault(workspace, moved);
+    }
+    catch (ArchiveUnavailableException) {
+      return null;
+    }
+
+    return atPath is { Package.Kind: ToothCompat.KindName, Chain.Count: 1 }
+        && SameIdentity(atPath.Package.Identity, candidate.Package.Identity)
+        && atPath.Package.Version.ToString() == candidate.Package.Version.ToString()
+        && atPath.Archive.Identity is GitArchiveIdentity to
+        && string.Equals(to.Commit, from.Commit, StringComparison.OrdinalIgnoreCase)
+        && to.Path == from.Path
+        ? (atPath, moved)
+        : null;
   }
 
   private async Task<Plan> MakePlan(
@@ -663,7 +726,7 @@ public class McmodService(
 
     List<Candidate> candidates = [];
     foreach ((string argument, PackageRequest request) in requests) {
-      Candidate candidate = await FirstCandidate(workspace, argument, request);
+      (Candidate candidate, _) = await FirstCandidate(workspace, argument, request);
       if (candidates.Any(c => SameIdentity(c.Package.Identity, candidate.Package.Identity))) {
         throw new InvalidOperationException(
             $"Multiple requested packages are '{candidate.Package.Identity}'. Please request "

@@ -721,6 +721,8 @@ public class ResolverTests {
         : _gitRefs.TryGetValue($"{spec}@{gitRef}", out string? commit) ? Task.FromResult(commit)
         : throw new ArchiveUnavailableException($"no {gitRef} in {spec}");
 
+    public Task<bool> RedirectsTo(string spec, string target) => Task.FromResult(false);
+
     public Task<ArchiveHandle> OpenCommit(string spec, string commit) {
       string key = $"{spec}@rev:{commit}";
       OpenedVersions.Add(key);

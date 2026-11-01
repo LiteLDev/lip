@@ -190,6 +190,37 @@ public class ArchiveProviderTests {
         It.Is<IEnumerable<string>>(p => p.SequenceEqual(new[] { refName }))));
   }
 
+  [Theory]
+  [InlineData("https://github.com/New/Repo.git", true)]
+  [InlineData("https://github.com/new/repo", true)]
+  [InlineData("https://github.com/Old/Repo.git", false)]
+  [InlineData("https://github.com/Other/Repo.git", false)]
+  public async Task RedirectsTo_ComparesWhereTheRepositoryAnswers(string answersAt, bool expected) {
+    _git.Setup(c => c.GetRepositoryUrl(
+            It.Is<Url>(u => u.ToString() == "https://github.com/Old/Repo.git")))
+        .ReturnsAsync(new Url(answersAt));
+
+    Assert.Equal(
+        expected,
+        await CreateProvider().RedirectsTo("github.com/Old/Repo", "github.com/New/Repo"));
+  }
+
+  [Fact]
+  public async Task RedirectsTo_SamePathIgnoringGithubCase_IsFalseWithoutNetwork() {
+    Assert.False(
+        await CreateProvider().RedirectsTo("github.com/Owner/Repo", "github.com/owner/repo"));
+    _git.Verify(c => c.GetRepositoryUrl(It.IsAny<Url>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task RedirectsTo_UnreachableRepository_IsFalse() {
+    _git.Setup(c => c.GetRepositoryUrl(It.IsAny<Url>()))
+        .ThrowsAsync(new HttpRequestException("offline"));
+
+    Assert.False(
+        await CreateProvider().RedirectsTo("github.com/Old/Repo", "github.com/New/Repo"));
+  }
+
   [Fact]
   public async Task ResolveGitRef_MissingBranch_ThrowsArchiveUnavailable() {
     // Arrange

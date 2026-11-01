@@ -313,6 +313,8 @@ public class CorpusTests {
     public Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) =>
         inner.ListTree(repoUrl, commitish);
 
+    public Task<Url> GetRepositoryUrl(Url repoUrl) => inner.GetRepositoryUrl(repoUrl);
+
     public Task FetchBlobs(Url repoUrl, IReadOnlyCollection<string> blobObjectIds, Func<string, Stream, Task> onBlob) =>
         inner.FetchBlobs(repoUrl, blobObjectIds, onBlob);
   }
@@ -328,6 +330,8 @@ public class CorpusTests {
 
     public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) =>
         inner.ListRefs(repoUrl, refPrefixes);
+
+    public Task<Url> GetRepositoryUrl(Url repoUrl) => inner.GetRepositoryUrl(repoUrl);
 
     public async Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {
       IReadOnlyList<GitTreeEntry> tree = await inner.ListTree(repoUrl, commitish);

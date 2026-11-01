@@ -84,6 +84,22 @@ public class ArchiveProvider(
     return found.PeeledObjectId ?? found.ObjectId;
   }
 
+  public async Task<bool> RedirectsTo(string spec, string target) {
+    string from = GitRemoteClient.GetRepoKey(GetRepoUrl(spec));
+    string to = GitRemoteClient.GetRepoKey(GetRepoUrl(target));
+    if (from == to) {
+      return false;
+    }
+
+    try {
+      Url? url = await _gitRemoteClient.GetRepositoryUrl(GetRepoUrl(spec));
+      return url is not null && GitRemoteClient.GetRepoKey(url) == to;
+    }
+    catch (Exception ex) when (IsUnavailable(ex)) {
+      return false;
+    }
+  }
+
   public Task<ArchiveHandle> OpenCommit(string spec, string commit) {
     string normalized = GitRef.Rev(commit).Name;
     return OpenGit(

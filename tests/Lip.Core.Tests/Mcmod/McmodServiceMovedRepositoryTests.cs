@@ -32,13 +32,180 @@ public class McmodServiceMovedRepositoryTests {
     // Act
     await _ws.Service.Update([], s_options);
 
-    // Assert
+    // Assert: the package is requested by its new path from now on.
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal((New, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
-    Assert.Equal(Old, package.Chain[0].Ref);
+    AssertRecordedFrom(New, package);
+    Assert.Equal($"{New}@1.1.0", package.ArchiveKey);
     Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
     Assert.Equal("edited by the user", _ws.Fs.File.ReadAllText(_ws.Path("mod/config.json")));
     VerifyInfo($"Package '{Old}' is now '{New}'");
+    VerifyInfo($"{Old} redirects to {New}");
+    Assert.Empty(_ws.Warnings);
+  }
+
+  [Fact]
+  public async Task Update_AfterTheReplacement_ResolvesTheNewPathWithoutWarningAndKeepsThePackage() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Update([], s_options);
+    LockFile before = await _ws.Lock();
+    _ws.Ui.Invocations.Clear();
+
+    // Act
+    await _ws.Service.Update([], s_options);
+
+    // Assert
+    Assert.Equal(
+        before.Packages.Select(p => (p.Identity, p.Version, p.ArchiveKey, p.Chain[0].Ref)),
+        (await _ws.Lock()).Packages.Select(
+            p => (p.Identity, p.Version, p.ArchiveKey, p.Chain[0].Ref)));
+    Assert.Empty(_ws.Warnings);
+    _ws.Ui.Verify(u => u.PrintInfo(It.Is<string>(m => m.Contains("redirects"))), Times.Never);
+    _ws.Ui.Verify(u => u.PrintInfo(It.Is<string>(m => m.StartsWith("Installing"))), Times.Never);
+  }
+
+  [Fact]
+  public async Task Update_LockOfV036RecordingTheOldPath_RecordsTheNewPathKeepingPreservedFiles() {
+    // Arrange: lip v0.36.0 replaced the package under its new identity, but kept requesting it
+    // by the old path, which only works through the redirect.
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    _ws.Git.ReportsRedirects = false;
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Update([], s_options);
+    LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0", $"{Old}@1.1.0"),
+        (installed.Identity, installed.Version, installed.ArchiveKey));
+    AssertRecordedFrom(Old, installed);
+    _ws.AddFile("mod/config.json", "edited by the user");
+    _ws.Git.ReportsRedirects = true;
+    _ws.Warnings.Clear();
+
+    // Act
+    await _ws.Service.Update([], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
+    AssertRecordedFrom(New, package);
+    Assert.Equal($"{New}@1.1.0", package.ArchiveKey);
+    Assert.Equal(installed.Files, package.Files);
+    Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
+    Assert.Equal("edited by the user", _ws.Fs.File.ReadAllText(_ws.Path("mod/config.json")));
+    Assert.Empty(_ws.Warnings);
+  }
+
+  [Fact]
+  public async Task Update_LockOfV036RecordingTheOldPath_DryRunChangesNothing() {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    _ws.Git.ReportsRedirects = false;
+    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Update([], s_options);
+    _ws.Git.ReportsRedirects = true;
+    List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
+
+    // Act
+    await _ws.Service.Update([], s_options with { DryRun = true });
+
+    // Assert
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Theory]
+  [InlineData("tag:v1.1.0")]
+  [InlineData("branch:main")]
+  public async Task Update_PinnedToTheOldPath_StaysPinnedAtTheNewPath(string gitRef) {
+    // Arrange
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+    _ws.Git.AddBranch(New, "main", VersionFiles("1.1.0", New));
+    _ws.Git.ReportsRedirects = false;
+    await _ws.Service.Install([$"{Old}@{gitRef}"], s_options);
+    _ws.Git.ReportsRedirects = true;
+
+    // Act
+    await _ws.Service.Update([], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+    AssertRecordedFrom($"{New}@{gitRef}", package);
+    Assert.StartsWith($"{New}@rev:", package.ArchiveKey, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public async Task Install_PinnedRevByTheOldPath_RecordsTheRevAtTheNewPath() {
+    // Arrange
+    AddVersion("1.0.0", New);
+    string commit = Assert.Single(
+        await _ws.Git.ListRefs(ArchiveProvider.GetRepoUrl(New), ["refs/tags/v1.0.0"])).ObjectId;
+
+    // Act
+    await _ws.Service.Install([$"{Old}@rev:{commit}"], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((New, "1.0.0"), (package.Identity, package.Version));
+    AssertRecordedFrom($"{New}@rev:{commit}", package);
+    Assert.Equal($"{New}@rev:{commit}", package.ArchiveKey);
+  }
+
+  [Fact]
+  public async Task Install_OldVersionByTheNewPath_KeepsTheNewPath() {
+    // Arrange: the old path redirects to the new one, not the other way round, so an older
+    // version that still declares the old path is not requested by it.
+    AddVersion("1.0.0", Old);
+    AddVersion("1.1.0", New);
+
+    // Act
+    await _ws.Service.Install([$"{New}@1.0.0"], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((Old, "1.0.0"), (package.Identity, package.Version));
+    AssertRecordedFrom(New, package);
+    Assert.Equal($"{New}@1.0.0", package.ArchiveKey);
+    Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{Old}'"));
+  }
+
+  [Fact]
+  public async Task Install_ForkWhoseToothDeclaresTheOriginal_KeepsTheFork() {
+    // Arrange: a fork has the tag of the original at the same commit, whose tooth.json names
+    // the original path; the fork does not redirect there.
+    AddVersion("1.0.0", New);
+    _ws.Git.CopyRef(New, Fork, "refs/tags/v1.0.0");
+
+    // Act
+    await _ws.Service.Install([Fork], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(New, package.Identity);
+    AssertRecordedFrom(Fork, package);
+    Assert.Equal($"{Fork}@1.0.0", package.ArchiveKey);
+    Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{New}'"));
+  }
+
+  [Fact]
+  public async Task Install_UnrelatedRepositoryWhoseToothDeclaresAnotherPath_KeepsThePath() {
+    // Arrange
+    const string other = "example.com/someone/Mod";
+    AddVersion("1.0.0", New);
+    AddVersion("1.0.0", New, repository: other);
+
+    // Act
+    await _ws.Service.Install([other], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(New, package.Identity);
+    AssertRecordedFrom(other, package);
+    Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{New}'"));
   }
 
   [Theory]
@@ -72,7 +239,8 @@ public class McmodServiceMovedRepositoryTests {
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal(($"{New}#server", "1.1.0"), (package.Identity, package.Version));
-    Assert.Equal($"{Old}#server", package.Chain[0].Ref);
+    AssertRecordedFrom($"{New}#server", package);
+    Assert.Equal($"{New}@1.1.0", package.ArchiveKey);
   }
 
   [Fact]
@@ -142,7 +310,7 @@ public class McmodServiceMovedRepositoryTests {
   }
 
   [Fact]
-  public async Task Install_OldPath_IdentifiesThePackageByItsToothAndWarns() {
+  public async Task Install_OldPath_RequestsThePackageByThePathItsToothDeclares() {
     // Arrange
     AddVersion("1.0.0", New);
 
@@ -152,7 +320,25 @@ public class McmodServiceMovedRepositoryTests {
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal(New, package.Identity);
-    Assert.Equal(Old, package.Chain[0].Ref);
+    AssertRecordedFrom(New, package);
+    Assert.Equal($"{New}@1.0.0", package.ArchiveKey);
+    VerifyInfo($"{Old} redirects to {New}");
+    Assert.Empty(_ws.Warnings);
+  }
+
+  [Fact]
+  public async Task Install_OldPathWithoutRedirectInformation_IdentifiesThePackageByItsToothAndWarns() {
+    // Arrange: lip cannot tell that the old path redirects (as lip v0.36.0 did not ask).
+    AddVersion("1.0.0", New);
+    _ws.Git.ReportsRedirects = false;
+
+    // Act
+    await _ws.Service.Install([Old], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(New, package.Identity);
+    AssertRecordedFrom(Old, package);
     Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{New}'"));
   }
 
@@ -240,12 +426,32 @@ public class McmodServiceMovedRepositoryTests {
     // Act
     await _ws.Service.Install([App], s_options);
 
-    // Assert: the installed package stays as it is.
+    // Assert: the installed package stays as it is (requested by the path its tooth.json
+    // declares, whichever path it was installed by).
     LockFile lockFile = await _ws.Lock();
     Assert.Equal(2, lockFile.Packages.Count);
     LockedPackage kept = Assert.Single(lockFile.Packages, p => p.Identity == New);
     Assert.Equal(installed.ArchiveKey, kept.ArchiveKey);
-    Assert.Equal(installedFrom, kept.Chain[0].Ref);
+    AssertRecordedFrom(New, kept);
+  }
+
+  [Fact]
+  public async Task Install_DependencyOnTheNewPath_IsSatisfiedByThePackageOfV036FromTheOldPath() {
+    // Arrange: lip v0.36.0 recorded the old path.
+    AddVersion("1.0.0", New);
+    _ws.Git.ReportsRedirects = false;
+    await _ws.Service.Install([Old], s_options);
+    _ws.Git.ReportsRedirects = true;
+    LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
+    AddApp($$"""{ "{{New}}": ">=1.0.0" }""");
+
+    // Act
+    await _ws.Service.Install([App], s_options);
+
+    // Assert: the installed package stays as it is.
+    LockedPackage kept = Assert.Single((await _ws.Lock()).Packages, p => p.Identity == New);
+    Assert.Equal(installed.ArchiveKey, kept.ArchiveKey);
+    AssertRecordedFrom(Old, kept);
   }
 
   [Fact]
@@ -284,6 +490,16 @@ public class McmodServiceMovedRepositoryTests {
     Assert.False(_ws.Exists(LockStore.LegacyFileName));
   }
 
+  /// Asserts that a package is requested again (lip update) by the given ref, and that its
+  /// archive comes from that ref's repository.
+  private static void AssertRecordedFrom(string reference, LockedPackage package) {
+    Assert.Equal(reference, Assert.Single(package.Chain).Ref);
+    string spec = Ref.Parse(reference).Target;
+    Assert.Equal(
+        ArchiveProvider.GetRepoUrl(spec),
+        Assert.IsType<GitArchiveIdentity>(package.Archive).RepoUrl);
+  }
+
   /// A fork of the new repository: tag v1.0.0 at the commit of the original, and its own v1.1.0
   /// whose tooth.json names the fork's path.
   private void AddFork() {
@@ -294,9 +510,12 @@ public class McmodServiceMovedRepositoryTests {
   /// Adds tag v&lt;version&gt; to a repository (the new one by default), whose tooth.json names
   /// the given path. It places mod/mod.dll and mod/config.json, which it preserves.
   private void AddVersion(
-      string version, string tooth, string label = "", string repository = New) {
-    _ws.AddTag(repository, version, new() {
-      ["tooth.json"] = $$"""
+      string version, string tooth, string label = "", string repository = New) =>
+      _ws.AddTag(repository, version, VersionFiles(version, tooth, label));
+
+  private static Dictionary<string, string> VersionFiles(
+      string version, string tooth, string label = "") => new() {
+        ["tooth.json"] = $$"""
           {
             "format_version": 3,
             "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
@@ -319,10 +538,9 @@ public class McmodServiceMovedRepositoryTests {
             ]
           }
           """,
-      ["file.dll"] = $"mod {version}",
-      ["config.json"] = "{}",
-    });
-  }
+        ["file.dll"] = $"mod {version}",
+        ["config.json"] = "{}",
+      };
 
   private void AddApp(string dependencies) {
     _ws.AddTag(App, "1.0.0", new() {
