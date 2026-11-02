@@ -132,7 +132,7 @@ public class PackerTests {
     using StreamReader reader = new(zip.GetEntry("manifest.json")!.Open());
     Assert.Equal(
         "{\n  \"format\": \"bf45b1\",\n  \"id\": \"m\",\n  \"version\": \"1.0.0\"\n}\n",
-        await reader.ReadToEndAsync());
+        await reader.ReadToEndAsync(TestContext.Current.CancellationToken));
     Assert.False(fs.File.Exists(fs.Path.Join(root, "out.mcmod.tmp")));
   }
 }
