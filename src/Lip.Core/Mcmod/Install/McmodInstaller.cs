@@ -292,7 +292,7 @@ public partial class McmodInstaller(
       return "";
     }
     if (!NamePattern().IsMatch(document.Id)) {
-      // The parser enforces this (spec §4.1); the id becomes a path segment here.
+      // The parser enforces this (spec §1 "id"); the id becomes a path segment here.
       throw new McmodInstallException($"Invalid package id '{document.Id}'.");
     }
     return $"{environment.Platform.ModsDirectory()}/{document.Id}/";

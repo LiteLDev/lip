@@ -50,7 +50,7 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 /// their tag again (archive key "path@version"). The variants of one tooth have distinct
 /// identities (spec §10.2 rule 1), but a lock may still hold two entries of one identity (e.g. a
 /// v3 lock with tooth paths differing only in case); they are kept, listed and uninstalled as
-/// separate entries, while the solver sees the identity once (spec §6.3 applies to new solves).
+/// separate entries, while the solver sees the identity once (spec §6 condition 3 applies to new solves).
 ///
 /// A package can change identity between versions: a tooth.json names its own path in "tooth",
 /// so when its repository moves (GitHub redirects the old path), the newer tags name the new

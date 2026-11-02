@@ -1,326 +1,383 @@
-# lip Package Specification (manifest.json / .mcmod)
+# lip Package Specification
 
-This specification defines `manifest.json` documents, how lip resolves them to packages, and how it installs, uninstalls, packs and locks packages. It also defines how lip reads the legacy formats: LeviLamina manifests without the format marker, and `tooth.json` (§10).
-"must / must not / may / should" correspond to MUST / MUST NOT / MAY / SHOULD of RFC 2119.
-In every case this specification calls a "failure", lip must abort the current operation and must not modify the workspace: a failure detected after the operation started to change the workspace undoes its changes (§7, "Atomicity"; what commands did is the exception).
+This specification defines [documents][document] of format `bf45b1`, how [lip] resolves them to [packages][package], and how [lip] installs, uninstalls, packs and locks [packages][package]. It also defines how [lip] reads the legacy formats [LeviLamina manifest] and [tooth.json] (§10).
+
+## Conventions
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY" and "OPTIONAL" are to be interpreted as described in BCP 14 ([RFC 2119], [RFC 8174]) when, and only when, they appear in all capitals.
+
+Grammars use ABNF ([RFC 5234]). A rule written as `<...>` is defined by the prose inside the brackets.
+
+A reference "§N" names section N of this specification.
 
 ## 1. Terms
 
-- **Archive**: a file tree, in one of three forms:
-  - **ZIP archive**: a ZIP file; called an mcmod when its extension is `.mcmod`.
-  - **git archive**: the tree of a commit.
-  - **directory archive**: a directory inside another archive (a relative ref ending with `/`, §3).
-- **Document**: the `manifest.json` at the root of an archive. It must be strict JSON (RFC 8259, no comments) encoded in UTF-8, no object in it may have two members with the same name, and its top level must be an object.
-- **Meta document**: a document with the `targets` key. It only points to other packages (§5.2); its other keys are a template for packing (§8).
-- **Package document**: a document without the `targets` key. An archive whose root is a package document is a **package**. A package is a **mod** when its document has the `mod` key, and a **file package** otherwise.
-- **Identity**: the `id` of a package. Identities are compared ignoring ASCII case.
-- **Workspace**: the root directory lip operates on.
-- **Environment**: a pair of values `(platform, runtime)`, see §5.1.
+Each term below is defined using only the terms before it.
+
+- <a id="t-lip"></a>**lip**: a program that implements this specification.
+- <a id="t-user"></a>**user**: the person or program that invokes [lip].
+- <a id="t-ascii-ci"></a>**ASCII case-insensitive**: two strings are equal ASCII case-insensitively when they are equal after every character `A`–`Z` in both is replaced by the corresponding character `a`–`z`.
+- <a id="t-archive"></a>**archive**: a tree of regular files and directories, each named by its path from the root of the tree. An [archive] has one of these forms:
+  - <a id="t-zip-archive"></a>**ZIP archive**: a file in the ZIP format ([APPNOTE]). A [ZIP archive] whose file name ends with `.mcmod` is an <a id="t-mcmod"></a>**mcmod**.
+  - <a id="t-git-archive"></a>**git archive**: the tree of a [git commit][git-objects].
+  - <a id="t-directory-archive"></a>**directory archive**: a directory of another [archive], taken as an [archive] of its own.
+- <a id="t-document"></a>**document**: the file `manifest.json` at the root of an [archive]. A [document] MUST be JSON ([RFC 8259]) without comments, encoded in UTF-8 ([RFC 3629]); its top-level value MUST be an object; no object in it may have two members with the same name.
+- <a id="t-leviLamina-manifest"></a>**LeviLamina manifest**: a [document] without the key `format`. It is the mod manifest of [LeviLamina].
+- <a id="t-tooth-json"></a>**tooth.json**: the file `tooth.json` at the root of an [archive], in format 1, 2 or 3 as defined by the schemas [v1][tooth-v1], [v2][tooth-v2] and [v3][tooth-v3].
+- <a id="t-root-document"></a>**root document**: the [tooth.json] of an [archive] when the [archive] has one; otherwise the [document] of the [archive].
+- <a id="t-meta-document"></a>**meta document**: a [document] with the key `format` and the key `targets`.
+- <a id="t-package-document"></a>**package document**: a [document] with the key `format` and without the key `targets`, or a [LeviLamina manifest] or [tooth.json] read as defined by §10.
+- <a id="t-package"></a>**package**: an [archive] whose [root document] is a [package document].
+- <a id="t-mod"></a>**mod**: a [package] whose [package document] has the key `mod`, or that is read from a [LeviLamina manifest].
+- <a id="t-file-package"></a>**file package**: a [package] that is not a [mod].
+- <a id="t-id"></a>**id**: a string that matches the regular expression `^[A-Za-z0-9][A-Za-z0-9._-]*$`.
+- <a id="t-identity"></a>**identity**: the [id] that names a [package] (§4.1, §10). Two [identities][identity] are equal when they are equal [ASCII case-insensitively][ASCII case-insensitive].
+- <a id="t-version"></a>**version**: a string that is a version of [SemVer 2.0.0], without a leading `v`.
+- <a id="t-range"></a>**range**: a string with the syntax and the matching semantics of a [node-semver] range, as `semver.satisfies` applies it without the options `loose` and `includePrerelease`: `*`, X-ranges, `~`, `^`, the comparators `<`, `<=`, `>`, `>=` and `=`, hyphen ranges `A - B`, whitespace for AND, and `||` for OR. A [version] without an operator matches exactly that [version]. A [version] with a prerelease matches only a comparator set that has a prerelease on the same `major.minor.patch`. A [version] *satisfies* a [range] when the [range] matches it.
+- <a id="t-variant"></a>**variant**: the string `""`, or a string that matches the regular expression `^[a-z0-9_]+(/[a-z0-9_]+)?$`.
+- <a id="t-glob"></a>**glob**: a path pattern. A [glob] MUST NOT be empty, MUST NOT start with `/`, MUST NOT contain `\` or an empty segment other than one after a trailing `/`, and every bracket expression in it MUST be closed. A [glob] matches a path as follows:
+  - Each segment of the [glob] matches the corresponding segment of the path by the pattern matching notation of POSIX ([POSIX.2.13], §2.13.1–2.13.2), as `fnmatch` applies it with `FNM_PATHNAME` and without `FNM_PERIOD`: `*` matches any sequence of characters other than `/`, including a leading `.`; `?` matches one character other than `/`; a bracket expression `[...]` matches one character of its set, and `[!...]` one character outside it, with ranges, character classes such as `[:alpha:]`, collating symbols such as `[.c.]` and equivalence classes such as `[=c=]` of the POSIX locale. A bracket expression that starts with `^` is invalid. There is no escape character.
+  - A segment that is exactly `**` matches zero or more segments.
+  - A [glob] that ends with `/` matches directories, and also matches every file below a directory it matches.
+- <a id="t-platform"></a>**platform**: the string `"server"` or the string `"client"`.
+- <a id="t-runtime"></a>**runtime**: a .NET runtime identifier ([RID]).
+- <a id="t-environment"></a>**environment**: a pair `(platform, runtime)` of a [platform] and a [runtime] (§5.1).
+- <a id="t-workspace"></a>**workspace**: the root directory that [lip] operates on.
+- <a id="t-operation"></a>**operation**: one installation, uninstallation or update of [packages][package] in a [workspace], together with every [package] it installs, replaces or uninstalls as a dependency (§6, §7).
+- <a id="t-failure"></a>**failure**: when this specification calls a condition a [failure], [lip] MUST abort the action in progress and report the cause. When the action is an [operation], §7 "Atomicity" defines what is left of its changes.
 
 ## 2. Archives
 
-1. Entry paths in a ZIP archive are separated by `/`, must not start with `/`, must not contain a `..` segment or `\`, and are interpreted as UTF-8. Only two kinds of entries are allowed: regular files and directories.
-2. A git archive contains only regular files (mode `100644` / `100755`) and trees. Symbolic links and submodules are not part of the archive.
-3. Whether a file is a ZIP archive depends only on its content, not its extension. An mcmod file should use the `.mcmod` extension.
-4. When the root of an archive has a `tooth.json`, it is read according to §10.2. Otherwise, when it has a `manifest.json` without the `format` key, it is read according to §10.1. When it has neither `tooth.json` nor `manifest.json`, the archive is invalid.
+1. The entry paths of a [ZIP archive] MUST be separated by `/`, MUST NOT start with `/`, MUST NOT contain a `..` segment or `\`, and are decoded as UTF-8. Each entry MUST be a regular file or a directory.
+2. A [git archive] contains only the regular files (modes `100644` and `100755`) and the trees of its commit. Symbolic links and submodules are not part of the [git archive].
+3. Whether a file is a [ZIP archive] depends only on its content, not on its file name. A [ZIP archive] meant to be a [package] SHOULD be an [mcmod].
+4. A [root document] that is a [tooth.json] is read as defined by §10.2. A [root document] that is a [LeviLamina manifest] is read as defined by §10.1. An [archive] that has neither a [tooth.json] nor a [document] is invalid.
 
 ## 3. Refs
 
+<a id="t-ref"></a>A **ref** is a string that names [archives][archive]. Its syntax is:
+
 ```
-ref     = target [ "#" variant ]                    ; relative and url targets
-        / spec [ "#" variant ] [ "@" git-ref ]      ; spec targets
-variant = matches ^[a-z0-9_]+(/[a-z0-9_]+)?$
-target  = relative / url / spec
-git-ref = "branch:" name / "tag:" name / "rev:" commit
-commit  = 40 hexadecimal digits (case-insensitive)
+ref       = relative-ref / url-ref / spec-ref
+relative-ref = relative [ "#" variant ]
+url-ref   = url [ "#" variant ]
+spec-ref  = spec [ "#" variant ] [ "@" git-ref ]
+relative  = "./" <a path, see below>
+url       = "https://" <the rest of an absolute URI, RFC 3986>
+spec      = <any other string; see below>
+variant   = <a variant other than "">
+git-ref   = "branch:" name / "tag:" name / "rev:" commit
+name      = <a git ref name, see below>
+commit    = 40HEXDIG
 ```
 
-A relative or url ref is split at the first `#`. A spec ref is first split at the first `@`, everything after which is the git ref, and the part before it is split at the first `#`. A ref without `#` has the variant `""`. A ref with `#` followed by nothing is invalid.
+<a id="t-target"></a>The part of a [ref] before its `#` (and before its `@`, for a [spec ref][spec-ref]) is its **target**. The form of a [ref] is decided by its [target], in this order:
 
-| Target form | Recognized by | Points to |
+| Form | Recognized by | Names |
 |---|---|---|
-| **relative** | Starts with `./` | A path inside the archive of the current document, see below |
-| **url** | Starts with `https://` | An absolute URL (RFC 3986). lip follows redirects; the response body must be a ZIP archive |
-| **spec** | Everything else | Must be a valid Go module path (`golang.org/x/mod/module.CheckPath`). Points to the git repository `https://<spec>.git` |
+| <a id="t-relative-ref"></a>**relative ref** | The [target] starts with `./` | A path inside the [archive] that contains the [document] holding the [ref], see below |
+| <a id="t-url-ref"></a>**url ref** | The [target] starts with `https://` | The [ZIP archive] that is the response body of an HTTPS GET of the [target], an absolute URI ([RFC 3986]); [lip] follows redirects |
+| <a id="t-spec-ref"></a>**spec ref** | Any other [target] | The git repository `https://<target>.git`; the [target] MUST be a valid Go module path ([module.CheckPath]) |
 
-**Rules for relative:**
-- After `./` comes a non-empty path separated by `/`; empty segments, `.` segments, `..` segments and `\` must not appear.
-- When it ends with `/`, it points to a directory, which is used as a directory archive.
-- Otherwise it points to a file, which must be a ZIP archive.
+**Splitting.** A [relative ref] or [url ref] is split at its first `#`. A [spec ref][spec-ref] is first split at its first `@`, <a id="t-git-ref"></a>everything after which is its **git-ref**, and the part before that `@` is split at its first `#`. <a id="t-ref-variant"></a>The part after the `#` is the **variant of the ref**; a [ref] without `#` has the [variant] `""`. A [ref] with `#` followed by nothing is invalid.
 
-**Rules for spec:**
-- Only tags named `v<SemVer 2.0.0>` are versions of the package; all other tags are ignored.
-- The archive of a version is the git archive of the commit the tag points to.
+**Relative refs.**
+- After `./` comes a non-empty path of segments separated by `/`. It MUST NOT contain an empty segment, a `.` segment, a `..` segment or `\`.
+- When the path ends with `/`, it names a directory, which is used as a [directory archive].
+- Otherwise it names a file, which MUST be a [ZIP archive].
 
-**Rules for git-ref** (a spec ref **pinned** to one commit instead of its versions):
-- `branch:<name>` names the commit `refs/heads/<name>` points to; `tag:<name>` names the commit `refs/tags/<name>` points to (an annotated tag is peeled to its commit), for any tag name; `rev:<commit>` names that commit. `<name>` must be a valid git ref name component sequence (`git check-ref-format`): non-empty, without control characters, space, `~`, `^`, `:`, `?`, `*`, `[`, `\`, `..` or `@{`, not `@`, not starting or ending with `/`, not ending with `.`, without `//`, and without a `/`-separated component starting with `.` or ending with `.lock`.
-- An abbreviated commit id is invalid: resolving one would require the history of the repository.
-- When `@` in a spec ref is not followed by a valid git-ref, the ref is invalid; in particular a version is never written after `@` (versions are constrained by `range`, §5.2).
-- Only spec refs may have a git-ref: a relative or url ref containing `@branch:`, `@tag:` or `@rev:` is invalid.
+**Spec refs.**
+- <a id="t-spec-version"></a>A **spec version** of a [spec ref][spec-ref] is a [version] V such that the repository has a tag named `v` followed by V. Tags of any other name are ignored.
+- The [archive] of a [spec version] is the [git archive] of the commit its tag points to.
 
-Other schemes, including `http:`, `file:` and so on, must not appear in a document.
+<a id="t-pinned-spec-ref"></a>**Pinned spec refs.** A [spec ref][spec-ref] with a [git-ref] is a **pinned spec ref**. Its [git-ref] names one commit:
+- `branch:<name>` names the commit `refs/heads/<name>` points to.
+- `tag:<name>` names the commit `refs/tags/<name>` points to, for a tag of any name; an annotated tag is peeled to its commit.
+- `rev:<commit>` names the commit with that id, compared case-insensitively. An abbreviated commit id is invalid.
+- `<name>` MUST be a valid ref name as defined by [git check-ref-format]: non-empty; without control characters, space, `~`, `^`, `:`, `?`, `*`, `[`, `\`, `..` or `@{`; not `@`; not starting or ending with `/`; not ending with `.`; without `//`; and without a `/`-separated component that starts with `.` or ends with `.lock`.
+- When `@` in a [spec ref][spec-ref] is not followed by a valid [git-ref], the [ref] is invalid. In particular, a [version] after `@` is invalid; [versions][version] are constrained by a [range] (§5.2).
+- A [relative ref] or [url ref] that contains `@branch:`, `@tag:` or `@rev:` is invalid.
+
+<a id="t-local-file-ref"></a>**Local file refs.** A **local file ref** is the absolute path of a [ZIP archive] on the local file system, optionally followed by `#` and a [variant]. It is split at its last `#`. It names the [ZIP archive] read from that file. A directory on the local file system is not an [archive] and cannot be named by a [local file ref]. A [document] MUST NOT contain a [local file ref]; only [requests][request] (§6) can.
+
+A [document] MUST NOT contain a [ref] with any other URI scheme, such as `http:` or `file:`.
 
 ## 4. Documents
 
-A document of this format has the key `"format": "bf45b1"`. A `manifest.json` without the `format` key is a legacy LeviLamina manifest (§10.1). A document whose `format` has any other value is invalid.
+A [document] of this format has the member `"format": "bf45b1"`. A [document] whose `format` has any other value is invalid. A [document] without `format` is a [LeviLamina manifest] (§10.1).
 
-Keys not defined by this specification are ignored. When the value of a key does not have the defined type, the document is invalid.
+Members not defined by this specification are ignored. A [document] in which a member defined by this specification has a value of another type than defined is invalid.
 
 ### 4.1 Keys
 
 | Key | Type | Required | Definition |
 |---|---|---|---|
 | `format` | string | Yes | `"bf45b1"` |
-| `id` | id | In package documents | The identity |
-| `version` | string | In package documents | SemVer 2.0.0 |
-| `platform` | `"server"` \| `"client"` | No | The platform the package is for; omitted means both |
-| `runtime` | string | No | The .NET RID the package is for; omitted means any |
-| `info` | Info | No | Information for people; lip does not use it |
-| `dependencies` | object mapping id to Dependency | No | See §6 |
-| `conflicts` | object mapping id to range | No | See §6 |
-| `mod` | Mod | No | Makes the package a mod (§7) |
-| `files` | File[] | No | The files of a file package (§7) |
-| `archives` | object mapping name to Archive | No | Downloaded archives that `files` take files from (§7) |
-| `preserve` | glob[] | No | See §7 |
-| `remove` | glob[] | No | See §7 |
-| `hooks` | Hooks | No | See §7 |
-| `targets` | Target[] | No | Non-empty; makes the document a meta document (§4.2) |
+| `id` | [id] | In a [package document] | The [identity] of the [package] |
+| `version` | [version] | In a [package document] | The [version] of the [package] |
+| `platform` | [platform] | No | The [platform] the [package] is for; omitted means every [platform] |
+| `runtime` | [runtime] | No | The [runtime] the [package] is for; omitted means every [runtime] |
+| `info` | [Info] | No | Information for people; [lip] does not use it |
+| `dependencies` | object mapping [id] to [Dependency] | No | §6 |
+| `conflicts` | object mapping [id] to [range] | No | §6 |
+| `mod` | [Mod] | No | Makes the [package] a [mod] (§7) |
+| `files` | array of [File] | No | The files of a [file package] (§7) |
+| `archives` | object mapping an [archive name] to [Archive][archive-object] | No | Downloaded [archives][archive] that `files` take files from (§7) |
+| `preserve` | array of [glob] | No | §7 |
+| `remove` | array of [glob] | No | §7 |
+| `hooks` | [Hooks] | No | §7 |
+| `targets` | non-empty array of [Target] | No | Makes the [document] a [meta document] (§4.2) |
 
-- **id**: a string matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`. The keys of `dependencies` and `conflicts` must be ids too.
-- In a package document, `mod` must not appear together with `files` or `archives`, and the `from` of every File must be a key of `archives`.
-- **Info** = `{ "name"?: string, "description"?: string, "authors"?: string[], "tags"?: string[], "icon"?: string }`. `icon` is an https URL.
-- **Dependency** = a range, or `{ "version"?: range, "source"?: ref | ref[], "mod"?: boolean }`. An array `source` must not be empty; its refs are alternatives in order. A range alone is the same as `{ "version": range }`. `"mod": false` is allowed only together with `source`.
-- **Mod** = `{ "loader": string, "entry": string, "passive"?: boolean, "loadAfter"?: (id | "*")[], "loadBefore"?: (id | "*")[], "extra"?: object }`. `loader` and `entry` must not be empty.
-- **File** = `{ "from"?: string, "src": string, "dest": string }`. `src` is a path in the package's archive, or in the archive named by `from`; `dest` is a path in the workspace.
-  - Both must not start with `/`, and must not contain an empty segment (other than the whole value `""` or a trailing `/`), a `..` segment, `\` or a drive letter.
-  - When `src` contains `*`, `?` or `[`, the File is in **glob form**: `src` must be a glob (§4.4) and `dest` must be `""` or end with `/`.
-  - Otherwise, when `src` is `""` or ends with `/`, the File is in **directory form**, and `dest` must be `""` or end with `/`.
-  - Otherwise the File is in **file form**, and `dest` must not be `""` and must not end with `/`.
-- **Archive** = `{ "url": string | string[], "sha256"?: string, "format"?: "zip" | "tar" | "tgz" | "file" }`. Every `url` is an https URL, and an array must not be empty; they are alternatives in order. `sha256` is 64 hexadecimal digits (case-insensitive). The names of archives match `^[A-Za-z0-9][A-Za-z0-9._-]*$`.
-- **Hooks** = `{ "preInstall"?, "postInstall"?, "preUninstall"?, "postUninstall"? }`, each value being a `string[]` of commands.
-- **range**: a version range with the syntax and matching semantics of node-semver ranges (`semver.satisfies` without the `loose` and `includePrerelease` options): `*`, `x` ranges, `~`, `^`, comparators `<`, `<=`, `>`, `>=`, `=`, hyphen ranges `A - B`, whitespace for AND and `||` for OR. A full version without an operator matches exactly that version, and a prerelease version matches only a comparator set with a prerelease on the same `major.minor.patch`.
+In a [package document], `mod` MUST NOT appear together with `files` or `archives`, and the `from` of every [File] MUST be a key of `archives`.
 
-LeviLamina reads `id`, `version`, `platform`, `dependencies`, `conflicts` and `mod` of a mod: a dependency without `"mod": false` must be a loaded mod, `loadAfter` and `loadBefore` order the loading, and `"*"` stands for every mod. lip does not use `mod` beyond its presence.
+The object types are:
+
+- <a id="t-info"></a>**Info** = `{ "name"?: string, "description"?: string, "authors"?: string[], "tags"?: string[], "icon"?: string }`. `icon` is an `https` URI ([RFC 3986]).
+- <a id="t-dependency"></a>**Dependency** = a [range], or `{ "version"?: range, "source"?: ref | ref[], "mod"?: boolean }`. A [range] R alone is equivalent to `{ "version": R }`. An omitted `version` means every [version]. An array `source` MUST NOT be empty; its [refs][ref] are alternatives, in order. `"mod": false` is allowed only together with `source`.
+- <a id="t-mod-object"></a>**Mod** = `{ "loader": string, "entry": string, "passive"?: boolean, "loadAfter"?: (id | "*")[], "loadBefore"?: (id | "*")[], "extra"?: object }`. `loader` and `entry` MUST NOT be empty.
+- <a id="t-file"></a>**File** = `{ "from"?: string, "src": string, "dest": string }`. `src` is a path in the [archive] of the [package], or in the [Archive][archive-object] named by `from`; `dest` is a path in the [workspace]. `src` and `dest` MUST NOT start with `/`, and MUST NOT contain `\`, a drive letter, a `..` segment, or an empty segment other than the whole value `""` or one after a trailing `/`. A [File] has exactly one of these forms:
+  - <a id="t-glob-form"></a>**glob form**, when `src` contains `*`, `?` or `[`: `src` MUST be a [glob], and `dest` MUST be `""` or end with `/`.
+  - <a id="t-directory-form"></a>**directory form**, otherwise, when `src` is `""` or ends with `/`: `dest` MUST be `""` or end with `/`.
+  - <a id="t-file-form"></a>**file form**, otherwise: `dest` MUST NOT be `""` and MUST NOT end with `/`.
+- <a id="t-archive-object"></a>**Archive** = `{ "url": string | string[], "sha256"?: string, "format"?: "zip" | "tar" | "tgz" | "file" }`. Every `url` is an `https` URI ([RFC 3986]); an array MUST NOT be empty, and its URIs are alternatives, in order. `sha256` is 64 hexadecimal digits, compared case-insensitively. <a id="t-archive-name"></a>An **archive name**, a key of `archives`, MUST match `^[A-Za-z0-9][A-Za-z0-9._-]*$`.
+- <a id="t-hooks"></a>**Hooks** = `{ "preInstall"?: string[], "postInstall"?: string[], "preUninstall"?: string[], "postUninstall"?: string[] }`. Each string is a [command] (§7).
+
+[LeviLamina] reads `id`, `version`, `platform`, `dependencies`, `conflicts` and `mod` of a [mod]: a [Dependency] without `"mod": false` names a [mod] that MUST be loaded, `loadAfter` and `loadBefore` order the loading, and `"*"` stands for every [mod]. [lip] uses `mod` only through its presence.
 
 ### 4.2 Meta Documents
 
-In a meta document, only `format`, `targets`, `id` and `version` are used in resolution: `id` and `version` take part in templates (§5.2). `id` and `version`, when present, must still be an id and SemVer 2.0.0. All other keys of a meta document are its **template**, used and checked only by packing (§8).
+Resolution (§5) uses only the members `format`, `targets`, `id` and `version` of a [meta document]; `id` and `version` take part only in [templates][template]. When present, `id` MUST be an [id] and `version` a [version]. <a id="t-meta-template"></a>All other members of a [meta document] are its **packing template**, used and checked only by packing (§8).
 
-**Target:**
+<a id="t-target-object"></a>**Target** = an object with these members:
 
 | Key | Type | Required | Definition |
 |---|---|---|---|
-| `variant` | string | No | Defaults to `""`; when non-empty, it must match the variant regex of §3 |
-| `platform` | `"server"` \| `"client"` \| a non-empty array of them | No | Omitted means any |
-| `runtime` | string \| non-empty string array | No | .NET RID; omitted means any |
-| `source` | ref \| ref[] | Yes | An array must not be empty; alternatives in order |
-| any key of §4.1 except `format` and `targets` | its type, or `null` | No | Overrides the template when packing (§8); `null` removes the key |
+| `variant` | [variant] | No | Default `""` |
+| `platform` | [platform] or non-empty array of [platform] | No | Omitted means every [platform] |
+| `runtime` | [runtime] or non-empty array of [runtime] | No | Omitted means every [runtime] |
+| `source` | [ref] or non-empty array of [ref] | Yes | Alternatives, in order |
+| any key of §4.1 other than `format` and `targets` | the type of that key, or `null` | No | Replaces the member of the [packing template][meta-template] in packing (§8); `null` removes it |
 
-The selector keys of a Target are `platform` and `runtime`.
+<a id="t-selector-key"></a>The **selector keys** of a [Target] are `platform` and `runtime`. <a id="t-value-set"></a>The **value set** of a selector key a [Target] writes is its value when that is an array, and otherwise the set holding its value.
 
-**Templates**: refs in `source` may contain `{{id}}`, `{{version}}`, `{{platform}}` and `{{runtime}}`, substituted as follows:
-- `{{id}}` and `{{version}}` take the value of the key of the same name in the Target, or else in the document; a `null` in the Target removes it. When there is no value, the ref produces no candidates (§5.2) instead of failing the whole operation.
-- `{{platform}}` and `{{runtime}}` take the value of the current environment.
-- Templates are substituted first, then the ref is parsed according to §3.
-- When any other `{{`…`}}` appears, the document is invalid.
+<a id="t-template"></a>**Templates.** A [ref] in `source` MAY contain the **templates** `{{id}}`, `{{version}}`, `{{platform}}` and `{{runtime}}`:
+- `{{id}}` and `{{version}}` are replaced by the value of the member of the same name in the [Target], or else in the [meta document]. A `null` member in the [Target] means no value. When there is no value, the [ref] produces no [candidate] (§5.2); this is not a [failure].
+- `{{platform}}` and `{{runtime}}` are replaced by the [platform] and the [runtime] of the [environment].
+- [Templates][template] are replaced before the [ref] is parsed (§3).
+- A [meta document] in which any other `{{`…`}}` appears is invalid.
 
-**Validity**: let A and B be two Targets with the same `variant`. The document is invalid if both of the following hold:
-1. A and B write the same set of selector keys (`platform` and `runtime` are each written in both or in neither);
-2. for every written key, the value sets of A and B intersect.
+**Validity.** A [meta document] is invalid when two of its [Targets][Target] A and B have the same `variant` and both of the following hold:
+1. A and B write the same [selector keys][selector key];
+2. for every [selector key] they write, the [value sets][value set] of A and B intersect.
 
 ### 4.3 Documents from Tags
 
-When a document is at the root of the git archive of a spec version and has the `version` key, `version` must equal the version of that tag.
-The archive of a pinned spec ref (§3) has a tag version only when its git-ref is `tag:v<SemVer 2.0.0>`; at a branch, a rev or any other tag there is no tag version, and the document's own `version` is used.
+<a id="t-tag-version"></a>The **tag version** of a [git archive] is:
+- for the [archive] of a [spec version], that [spec version];
+- for the [archive] of a [pinned spec ref] whose [git-ref] is `tag:v` followed by a [version] V, the [version] V;
+- otherwise, none.
 
-### 4.4 Globs
+When a [git archive] has a [tag version] and its [document] has the member `version`, that member MUST equal the [tag version]. When there is no [tag version], the `version` of the [document] is used.
 
-A glob is a path pattern. It must not be empty, must not start with `/`, must not contain an empty segment (other than a trailing `/`) or `\`, and its bracket expressions must be complete.
+### 4.4 Glob Bases
 
-- A glob is matched against a path segment by segment, with the pattern matching notation of POSIX (IEEE Std 1003.1-2017, Shell Command Language §2.13.1–2.13.2) as `fnmatch` applies it with `FNM_PATHNAME` and without `FNM_PERIOD`: `*` matches any sequence of characters other than `/`, including a leading `.`; `?` matches one character other than `/`; a bracket expression `[...]` matches one character of its set (`[!...]` of the complement), with ranges, character classes (`[:alpha:]` …), collating symbols (`[.c.]`) and equivalence classes (`[=c=]`) of the POSIX locale. A bracket expression starting with `^` is invalid. There is no escape character.
-- A segment that is exactly `**` matches zero or more segments.
-- A glob ending with `/` matches directories; files below a matched directory are also matched by it.
-
-The globs of `preserve` and `remove` are relative to the mod directory `mods/<id>/` for a mod, and to the workspace root for a file package.
+The [globs][glob] of `preserve` and `remove` are matched against paths relative to `mods/<id>/` for a [mod], `<id>` being its [identity], and relative to the [workspace] for a [file package].
 
 ## 5. Resolution
 
 ### 5.1 Environment
 
-The environment `(platform, runtime)` belongs to the workspace and is determined in the following order:
+Each [workspace] has one [environment]. Each component is the first value that exists in this order:
 
 | Component | Order |
 |---|---|
-| `platform` | 1. Explicitly specified by the user<br>2. The value recorded in the lock<br>3. `"server"` when `bedrock_server.exe` exists at the workspace root<br>4. `"client"` when `Minecraft.Windows.exe` exists<br>5. A failure when none of the above holds |
-| `runtime` | 1. Explicitly specified by the user<br>2. The value recorded in the lock<br>3. The RID lip itself runs on |
+| [platform] | 1. The value the [user] specifies explicitly.<br>2. The value recorded in the [lock].<br>3. `"server"`, when the file `bedrock_server.exe` exists at the root of the [workspace].<br>4. `"client"`, when the file `Minecraft.Windows.exe` exists at the root of the [workspace].<br>5. Otherwise, a [failure]. |
+| [runtime] | 1. The value the [user] specifies explicitly.<br>2. The value recorded in the [lock].<br>3. The [RID] that [lip] itself runs on. |
 
-### 5.2 Resolve(ref, base, range) → Candidate Sequence
+### 5.2 Resolve
 
-`base` is the archive of the document containing the ref. `range` is the version constraint given by the caller; omitted means any version.
-Resolve produces an **ordered sequence of package candidates**. Below, "no candidate" means this path produces no candidate; it is **not** a failure of the whole operation. lip should report paths with no candidate and the reason.
+<a id="t-candidate"></a>A **candidate** is a [package] that a [ref] can resolve to. <a id="t-chain"></a>The **chain** of a [candidate] is the sequence of [refs][ref] followed to reach it, starting with the [ref] given to Resolve; each [ref] of a [chain] is a <a id="t-hop"></a>**hop**.
 
-1. **Get the archive by target.**
-   - relative: obtained inside `base` according to §3.
-   - url: obtained by downloading.
-   - spec: take all tag versions satisfying `range`, ordered by SemVer precedence from highest to lowest; at equal precedence, the lexicographically greater tag name comes first. Run steps 2–4 on the archive of each version in turn, and concatenate the candidates each produces in that order.
-   - pinned spec: the git-ref names a commit (§3); within one operation a git-ref names the same commit throughout, even if its branch or tag moves meanwhile. Run steps 2–4 on the git archive of that commit. When the repository has no such branch or tag, or no such commit, there is no candidate. `range` is not used to select the archive; it still applies in step 4.
-   - When the archive cannot be obtained, or is invalid (§2), there is no candidate.
-2. **Read the document.** When the document is invalid, there is no candidate.
-3. **If it is a meta document:**
-   - First select the Targets whose `variant` equals the variant of the ref, then keep those matching the environment. A Target matches the environment when the value set of each selector key it writes contains the corresponding value of the environment.
-   - Among the matching Targets, select the one that writes the most selector keys. When no Target matches, or the Target with the most keys is not unique, there is no candidate.
-   - For each r in that Target's `source`, run Resolve(r, this archive, range) in order, and concatenate their candidates in that order.
-4. **If it is a package document:** when all of the following hold, produce the single candidate "this package"; when any does not hold, there is no candidate.
-   - the variant of the ref is `""`;
-   - `platform` is omitted, or equals the `platform` of the environment;
-   - `runtime` is omitted, or equals the `runtime` of the environment;
+Resolve(ref, base, range) produces an ordered sequence of [candidates][candidate]. `base` is the [archive] that contains the [document] holding the [ref]. `range` is a [range] given by the caller; an omitted `range` matches every [version]. "No [candidate]" below means that the path being followed produces no [candidate]; it is not a [failure]. [lip] SHOULD report each path that produces no [candidate], with the reason.
+
+1. **Obtain the [archive].**
+   - [Relative ref]: the path inside `base` (§3).
+   - [URL ref][url ref]: downloaded.
+   - [Local file ref]: read from the local file system.
+   - [Spec ref][spec-ref] that is not a [pinned spec ref]: take every [spec version] that satisfies `range`, ordered from the highest to the lowest [SemVer 2.0.0] precedence, and at equal precedence by tag name, the lexicographically greater first. Run steps 2–4 on the [archive] of each in turn, and concatenate the [candidates][candidate] in that order.
+   - [Pinned spec ref]: run steps 2–4 on the [git archive] of the commit its [git-ref] names. Within one [operation], a [git-ref] names the same commit throughout, even when its branch or tag moves. When the repository has no such branch, tag or commit, there is no [candidate]. `range` does not select the [archive]; it applies in step 4.
+   - When the [archive] cannot be obtained, or is invalid (§2), there is no [candidate].
+2. **Read the [root document].** When it is invalid, there is no [candidate].
+3. **[Meta document].**
+   - Select the [Targets][Target] whose `variant` equals the [variant of the ref][ref-variant]. Of those, keep each [Target] whose [value set] of every [selector key] it writes contains the corresponding component of the [environment].
+   - Of those, select the [Target] that writes the most [selector keys][selector key]. When none is left, or more than one writes the most, there is no [candidate].
+   - For each [ref] r of the `source` of the selected [Target], in order, run Resolve(r, this [archive], range), and concatenate the [candidates][candidate] in that order.
+4. **[Package document].** When all of the following hold, the single [candidate] is this [package]; otherwise there is no [candidate]:
+   - the [variant of the ref][ref-variant] is `""`;
+   - `platform` is omitted, or equals the [platform] of the [environment];
+   - `runtime` is omitted, or equals the [runtime] of the [environment];
    - `version` satisfies `range`.
 
-**Additional no-candidate conditions:**
-- The chain exceeds 8 hops.
-- The same `(archive key, variant)` appears twice in one chain. Archive keys are defined as follows:
+**Loops.** There is also no [candidate] when:
+- a [chain] has more than 8 [hops][hop];
+- the same pair ([archive key], [variant of the ref][ref-variant]) occurs twice in one [chain].
 
-| Archive source | Archive key |
+<a id="t-archive-key"></a>The **archive key** of an [archive] is:
+
+| [Archive] obtained from | [Archive key] |
 |---|---|
-| url | The URL without its fragment |
-| spec | `spec@version` |
-| pinned spec | `spec@rev:<commit>`, with the commit the git-ref resolved to in lowercase |
-| relative | `archive key of base` + `!` + path |
-| local file (requests only, see §6) | Its absolute `file:` URI (RFC 8089) |
+| [URL ref][url ref] | The [target] |
+| [Spec ref][spec-ref] | `<spec>@<spec version>` |
+| [Pinned spec ref] | `<spec>@rev:<commit>`, `<commit>` being the commit its [git-ref] names, in lowercase |
+| [Relative ref] | The [archive key] of `base`, then `!`, then the path |
+| [Local file ref] | The `file` URI ([RFC 8089]) of its absolute path |
 
-The identity is always the `id` of the final package, regardless of the meta documents the chain passes through.
+The [identity] of a [candidate] is the `id` of its [package document], whatever [meta documents][meta document] its [chain] passes through.
 
 ## 6. Dependency Graph
 
-The **requests** of an operation are a number of `(ref, range)` pairs given by the user. Requests are inside no archive, so they have no `base`: a relative ref in a request has no candidate. Besides the targets of §3, the target of a request may be a **local file**: a ZIP archive on the local file system, named by its absolute path, which may be followed by `#` variant. It is resolved like a url target whose archive is read from that file instead of downloaded. A local directory is not an archive and cannot be requested. Local files never appear in documents.
-lip must find, for the requests, a set S of packages satisfying all of the following conditions; when it cannot, it is a failure.
+<a id="t-request"></a>A **request** is a pair ([ref], [range]) the [user] gives to an [operation]. A [request] is inside no [archive], so it has no `base`: a [relative ref] in a [request] has no [candidate]. The [ref] of a [request] MAY be a [local file ref].
 
-1. Every request is satisfied by some package in S: that package is one of the candidates obtained by running Resolve on the request (or stands in for one, see below).
-2. For each **install edge** of each package in S, some package in S satisfies it. The install edges of a package document are its `dependencies` entries with `source`. Satisfying an install edge means both:
-   - the package is one of the candidates obtained by Resolve(r, the archive of the package holding the entry, the entry's `version`), where r is one of the refs in the entry's `source`, or stands in for one (see below);
-   - the identity of the package equals the key of the entry.
+<a id="t-install-edge"></a>The **install edges** of a [package] are the members of its `dependencies` whose [Dependency] has `source`. Members without `source` take no part in this section.
 
-   **Pinned packages stand in for versions**: a package whose chain starts with a pinned spec ref `s#v@g` stands in for the candidates of an unpinned spec ref `s#v` (same spec, compared ignoring ASCII case, and same variant) whose `range` its version satisfies. A pinned ref is satisfied only by its own candidates: a package from `s@branch:a` does not satisfy `s@branch:b`, and a package from a tag version does not satisfy `s@branch:a`. Thus a dependency's `range` constrains the `version` declared at the pinned commit: a pinned package whose version is outside the range does not satisfy the dependency.
-3. No two packages in S have the same identity.
-4. For each `conflicts` entry of each package in S, S contains no package whose identity equals the key of the entry and whose version satisfies its range.
+<a id="t-stands-in"></a>**Standing in.** A [package] whose [chain] starts with a [pinned spec ref] `s#v@g` **stands in for** every [candidate] of the [spec ref][spec-ref] `s#v` without [git-ref] (same `s`, compared [ASCII case-insensitively][ASCII case-insensitive], and same `v`) for a `range` its [version] satisfies. A [pinned spec ref] is satisfied only by its own [candidates][candidate]: a [package] from `s@branch:a` does not satisfy `s@branch:b`, and a [package] from a [spec version] does not satisfy `s@branch:a`.
 
-When more than one S satisfies the conditions, lip should prefer packages that come earlier in the candidate sequences. `dependencies` entries without `source` take no part in the dependency graph.
+[lip] MUST find, for the [requests][request] of an [operation], a set S of [packages][package] that satisfies all of the following conditions. When no such S exists, it is a [failure].
+
+1. For every [request] (r, range), S contains a [package] that is a [candidate] of Resolve(r, none, range), or that [stands in][stands-in] for one.
+2. For every [install edge] (key k, [Dependency] d) of every [package] P in S, S contains a [package] Q such that both hold:
+   - for some [ref] r of the `source` of d, Q is a [candidate] of Resolve(r, the [archive] of P, the `version` of d), or [stands in][stands-in] for one;
+   - the [identity] of Q equals k.
+3. No two [packages][package] in S have the same [identity].
+4. For every member (key k, [range] R) of the `conflicts` of every [package] in S, S contains no [package] whose [identity] equals k and whose [version] satisfies R.
+
+When more than one S satisfies the conditions, [lip] SHOULD prefer [packages][package] that come earlier in the sequences of [candidates][candidate].
 
 ## 7. Installation and Uninstallation
 
-**Installation order**: dependencies are installed before their dependents. When dependencies form a cycle, the packages in the cycle are installed in ascending order of the ASCII lowercase form of their identities.
+<a id="t-installation-order"></a>**Installation order.** A [package] is installed after the [packages][package] its [install edges][install edge] are satisfied by. The [packages][package] of a cycle of [install edges][install edge] are installed in ascending order of their [identities][identity] with `A`–`Z` replaced by `a`–`z`.
 
-Steps to install a package P:
+<a id="t-command"></a>**Commands.** A **command** is a string of [Hooks]. [lip] runs it with the shell of the operating system (`cmd /c` on Windows, `sh -c` on other operating systems), with the [workspace] as the working directory. A [command] that exits with a non-zero code is a [failure].
 
-1. Run each command in `hooks.preInstall` in turn (see "Commands" below).
-2. Write files:
-   - **mod**: write the whole archive of P into `mods/<id>/`.
-   - **file package**: execute the `files` one by one in order. The source of a File is the archive named by its `from`, or else the archive of P.
-     - File form: write the `src` file to `dest`. If the source has no such file, it is a failure.
-     - Directory form: write all files under the `src` directory into `dest`, keeping their paths relative to `src`. If the source has no file under `src`, it is a failure.
-     - Glob form: write every file of the source whose path matches `src` into `dest`, keeping its path relative to the **fixed prefix** of `src`: its leading segments that contain none of `*`, `?` and `[`. A glob matching no file writes nothing.
-     - The `manifest.json` at the root of the archive of P is never written.
-     - When two Files write the same path, the later one wins.
-3. Run each command in `hooks.postInstall` in turn.
+<a id="t-own"></a>**Ownership.** A [package] **owns** every file it writes to the [workspace] by the steps below.
 
-**Archives**: an Archive is downloaded from the first of its `url` that can be downloaded and, when `sha256` is given, whose content has that SHA-256; when none can, it is a failure. With `format` `"zip"`, `"tar"` (POSIX tar) or `"tgz"` (gzip-compressed tar), the content must be an archive of that format, and its files are the source. Without `format`, the content must be one of these three formats, detected from the content. With `"file"`, the source is the single file whose path is the name of the Archive. §2.1 applies to the paths of ZIP and tar archives, and entries other than regular files and directories are not part of them.
+To install a [package] P:
 
-**Write rules:**
-- When a file to be written is `.lip` at the workspace root or below it, where lip keeps the lock, it is a failure.
-- When a file to be written is already owned by another installed package, it is a failure.
-- When a file to be written already exists and matches P's `preserve`, the original file is kept and not written.
-- Otherwise it is overwritten.
-- Files written by P are owned by P.
+1. Run each [command] of `hooks.preInstall`, in order.
+2. Write the files:
+   - [Mod]: write every file of the [archive] of P to `mods/<id>/`, `<id>` being the [identity] of P.
+   - [File package]: carry out every [File] of `files`, in order. The source of a [File] is the [Archive][archive-object] named by its `from`, or else the [archive] of P.
+     - [File form][file-form]: write the file `src` of the source to `dest`. When the source has no such file, it is a [failure].
+     - [Directory form][directory-form]: write every file below the directory `src` of the source into `dest`, at its path relative to `src`. When the source has no file below `src`, it is a [failure].
+     - [Glob form][glob-form]: write every file of the source whose path matches the [glob] `src` into `dest`, at its path relative to the **fixed prefix** of `src`: the leading segments of `src` that contain none of `*`, `?` and `[`. A [glob] that matches no file writes nothing.
+     - The [document] of P is never written.
+     - When two [Files][File] write the same path, the later one wins.
+3. Run each [command] of `hooks.postInstall`, in order.
 
-Steps to uninstall P:
-1. Run `hooks.preUninstall`.
-2. Delete the files owned by P that do not match `preserve`.
-3. Delete the paths matching `remove` that are not owned by another package. Directory patterns are deleted recursively. `mods` and `plugins` themselves never match a pattern, so nothing below them is deleted through them. `.lip` at the workspace root and everything below it never match a pattern.
-4. Delete the directories left empty by steps 2 and 3, but never `mods` or `plugins` themselves.
-5. Run `hooks.postUninstall`.
+**Downloaded archives.** An [Archive][archive-object] is downloaded from the first of its `url` that can be downloaded and, when `sha256` is given, whose content has that SHA-256 ([FIPS 180-4]). When there is none, it is a [failure]. The files of the source are:
+- `format` `"zip"`, `"tar"` or `"tgz"`: the content MUST be a [ZIP archive], a POSIX tar archive ([POSIX.pax]), or a tar archive compressed with gzip ([RFC 1952]), respectively; the source is its files.
+- `format` omitted: the content MUST be one of those three formats, detected from the content.
+- `format` `"file"`: the source holds one file, the content, at the path that is the [archive name].
 
-**Update**: equivalent to uninstalling the old version, then installing the new version.
+§2 rule 1 applies to the entry paths of ZIP and tar archives; entries other than regular files and directories are not part of the source.
 
-**Server layout**: in a server workspace, `plugins` must be a link to `mods`, so that software still looking in `plugins` keeps working (lip creates a directory junction on Windows and a relative symbolic link on other platforms). A path through `plugins/` and the corresponding path through `mods/` are the same file: ownership is compared, and files are recorded in the lock, in the `mods/` form. Before an operation that modifies the workspace (install, uninstall, update), lip must establish this layout by the following rules:
+**Write rules.** When [lip] writes a file to the [workspace]:
+- When the file is `.lip` at the root of the [workspace], or below it, it is a [failure].
+- When the file is [owned][own] by another installed [package], it is a [failure].
+- When the file exists and matches a [glob] of the `preserve` of P (§4.4), the existing file is kept.
+- Otherwise the file is written, replacing an existing one.
 
-- When `mods` does not exist, create it.
-- When `plugins` does not exist, create a link to `mods`.
-- When `plugins` is already a link to `mods`, do nothing.
-- When `plugins` is a link to anywhere else, it is a failure.
-- When `plugins` is a regular directory, move its entries into `mods`, then delete `plugins` and create the link. When any entry has a namesake in `mods`, it is a failure before any entry is moved.
+To uninstall a [package] P:
 
-When establishing the layout fails, the workspace must be left unchanged. Establishing the layout is part of the operation: when a later step of the operation fails, it is undone too.
+1. Run each [command] of `hooks.preUninstall`, in order.
+2. Delete each file [owned][own] by P that matches no [glob] of its `preserve`.
+3. Delete each path that matches a [glob] of its `remove` and is not [owned][own] by another [package]. A directory is deleted with everything below it. The directories `mods` and `plugins` at the root of the [workspace] never match, so nothing below them is deleted through them. `.lip` at the root of the [workspace], and everything below it, never match.
+4. Delete each directory that steps 2 and 3 left empty, except `mods` and `plugins`.
+5. Run each [command] of `hooks.postUninstall`, in order.
 
-**Commands**: each command is run by the platform shell (`cmd /c` on Windows, `sh -c` on other platforms), with the workspace root as working directory. When any command exits with a non-zero code, it is a failure.
+**Update.** Updating a [package] uninstalls the old [package], then installs the new [package].
 
-**Atomicity**: an operation (install, uninstall or update, together with every dependency it installs, replaces or removes) succeeds or fails as a whole.
+<a id="t-server-layout"></a>**Server layout.** In a [workspace] whose [platform] is `"server"`, `plugins` at the root of the [workspace] MUST be a link to `mods`, so that software that looks in `plugins` keeps working: a directory junction on Windows, a relative symbolic link on other operating systems. A path through `plugins/` and the corresponding path through `mods/` are the same file; ownership is compared, and files are recorded in the [lock], in the `mods/` form. Before an [operation] changes the [workspace], [lip] MUST establish this layout:
 
-1. **Early failures change nothing**: when an operation fails for a reason that does not depend on changing the workspace — a resolution or dependency-graph failure (§5, §6), an archive that cannot be obtained, a missing `src`, a file owned by another package, a server layout that cannot be established — no command of the operation runs, and the workspace and the lock are left unchanged. Each step is checked against the workspace as the steps before it leave it (for example, an update installs the new version into the workspace the uninstallation of the old version leaves).
-2. **Later failures are undone**: when a step fails while the workspace is being changed (a file cannot be written or deleted, a command exits with a non-zero code, the user cancels the operation), every change the operation made to the workspace is undone: files it created are deleted, files it overwrote or deleted are restored, and directories and the server layout are restored. The lock is left unchanged. The lock reflects an operation only once every step of it has succeeded.
-3. **Commands are not undone**: lip cannot undo what a command did. A failing command (`preInstall`, `postInstall`, `preUninstall` or `postUninstall`) fails the operation like any other step, and lip undoes its own changes, including those made before earlier commands of the operation ran; the commands that already ran are neither run again nor reversed. Commands should therefore be safe to run again, and should not assume that the files of the operation stay in place.
-4. The paths that uninstallation steps 2–4 delete are those that match before any command of the operation runs: files a command creates are not deleted by `remove`.
-5. **Interruption**: when lip is interrupted while changing the workspace (for example, the process is killed), the next operation on the workspace first brings it back to a consistent state: the interrupted operation is either completed, when the lock already reflects it, or undone otherwise.
-6. **Concurrency**: two operations must not apply to the same workspace at the same time.
+- When `mods` does not exist, create it as a directory.
+- When `plugins` does not exist, create it as a link to `mods`.
+- When `plugins` is a link to `mods`, do nothing.
+- When `plugins` is a link to anything else, it is a [failure].
+- When `plugins` is a directory, move its entries into `mods`, delete `plugins` and create it as a link to `mods`. When an entry has the same name as an entry of `mods`, it is a [failure], before any entry is moved.
+
+Establishing the layout is part of the [operation].
+
+**Atomicity.** An [operation] succeeds or fails as a whole.
+
+1. **Early failures change nothing.** When an [operation] fails for a reason that does not depend on changing the [workspace] — a [failure] of §5 or §6, an [archive] that cannot be obtained, a missing `src`, a file [owned][own] by another [package], a [server layout] that cannot be established — no [command] of the [operation] runs, and neither the [workspace] nor the [lock] changes. Each step is checked against the [workspace] as the steps before it leave it; for example, an update installs the new [package] into the [workspace] that the uninstallation of the old [package] leaves.
+2. **Later failures are undone.** When a step fails while the [workspace] is being changed (a file cannot be written or deleted, a [command] exits with a non-zero code, the [user] cancels the [operation]), every change the [operation] made to the [workspace] is undone: files it created are deleted; files it replaced or deleted are restored; directories and the [server layout] are restored. The [lock] does not change. The [lock] records an [operation] only once every step of it has succeeded.
+3. **Commands are not undone.** [lip] cannot undo what a [command] did. A failing [command] fails the [operation] like any other step, and [lip] undoes its own changes, including those made before earlier [commands][command] ran; the [commands][command] that already ran are neither run again nor reversed. [Commands][command] SHOULD be safe to run again, and SHOULD NOT assume that the files of the [operation] stay in place.
+4. The paths that uninstallation steps 2–4 delete are those that match before any [command] of the [operation] runs: files a [command] creates are not deleted through `remove`.
+5. **Interruption.** When [lip] is interrupted while changing the [workspace] (for example, its process is killed), the next [operation] on the [workspace] first completes the interrupted [operation] when the [lock] already records it, and undoes it otherwise.
+6. **Concurrency.** Two [operations][operation] MUST NOT apply to the same [workspace] at the same time.
 
 ## 8. Packing
 
-Packing turns a meta document M into the package document of one of its Targets T, for a platform p and a runtime r. Pack(M, T, p, r) is the document obtained as follows:
+Packing turns a [meta document] M into the [package document] of one of its [Targets][Target] T, for a [platform] p and a [runtime] r. Pack(M, T, p, r) is the [document] obtained by these steps:
 
 1. Start from M without `targets`.
-2. For each key of T other than `variant`, `platform`, `runtime` and `source`: when its value is `null`, remove the key; otherwise set the key to the value of T, replacing the whole value.
-3. When T writes `platform`, set `platform` to p; when T writes `runtime`, set `runtime` to r.
-4. The result must be a valid package document (§4); otherwise packing fails.
+2. For each member of T other than `variant`, `platform`, `runtime` and `source`: when its value is `null`, remove the member; otherwise set the member to the value in T, replacing the whole value.
+3. When T writes `platform`, set `platform` to p. When T writes `runtime`, set `runtime` to r.
+4. When the result is not a valid [package document] (§4), packing fails.
 
-A Target writing `platform` or `runtime` as arrays stands for one package for each combination of their values, and p and r must be among those values. The package of T for p and r should be published where the first ref of `source` points after template substitution (§4.2) with the environment (p, r). Packing a package document gives the document itself.
+A [Target] stands for one [package] for each combination of p and r. When T writes `platform`, p MUST be in its [value set]; when T writes `runtime`, r MUST be in its [value set]. The [package] of T for p and r SHOULD be published where the first [ref] of the `source` of T names after its [templates][template] are replaced (§4.2) with the [environment] (p, r). Packing a [package document] gives the [package document] itself.
 
 ## 9. Lock
 
-For each installed package, lip must record the following in the workspace lock:
+<a id="t-lock"></a>The **lock** of a [workspace] records, for each installed [package]:
 
-- the identity and `version`;
-- the environment;
-- the resolution chain: the ref of each hop (including its git-ref, if any), the index of the Target selected at that hop, and for a spec hop the commit its archive was at;
-- the identifier of the final archive: the SHA-256 (and the URL or local file it was read from) for a ZIP archive, the SHA-256 and the identifier of the archive containing it for a ZIP archive inside another archive, the commit id and path for a git archive;
-- the list of files owned by the package (workspace-relative paths; files under `plugins/` are recorded in the `mods/` form, see §7).
+- its [identity] and [version];
+- the [environment];
+- <a id="t-explicitly-installed"></a>whether the [user] requested it: such a [package] is **explicitly installed**; any other is a <a id="t-dependency-package"></a>**dependency package**;
+- its [chain]: the [ref] of each [hop], including its [git-ref], the index of the [Target] selected at that [hop], and for a [hop] that is a [spec ref][spec-ref], the commit its [archive] was at;
+- <a id="t-archive-identifier"></a>the **archive identifier** of the [package]: for a [ZIP archive], its SHA-256 and the URI or local file it was read from; for a [ZIP archive] inside another [archive], its SHA-256 and the [archive identifier] of that [archive]; for a [git archive], the commit id and the path;
+- the paths, relative to the [workspace], of the files the [package] [owns][own], in the `mods/` form of §7 "Server layout".
 
-When reinstalling from the lock, lip installs the final archive recorded in the lock, and fails when its identifier does not match; the result does not depend on where the refs of the resolution chain point now. In particular a package from a pinned spec ref is reinstalled at the recorded commit, wherever its branch or tag points now.
+**Reinstalling.** To reinstall a [package] from the [lock], [lip] installs the [archive] the [lock] records, and fails when its [archive identifier] differs. The result does not depend on where the [refs][ref] of the [chain] point now: a [package] from a [pinned spec ref] is reinstalled at the recorded commit, wherever its branch or tag points now.
 
-**Updating** an explicitly installed package requests the first ref of its chain again: an unpinned spec ref takes its newest version, a `branch:` takes the current head, a `tag:` the commit the tag points to now, and a `rev:` the same commit; a url is requested again (lip may serve it from its download cache, so the content behind a URL should not change), and a local file is read again. The package is replaced when the result differs in identity, version, archive key or archive identifier.
+**Updating.** Updating an [explicitly installed] [package] makes a [request] of the first [ref] of its [chain] again: a [spec ref][spec-ref] without [git-ref] gives its highest [spec version]; `branch:` the commit the branch points to now; `tag:` the commit the tag points to now; `rev:` the same commit; a [url ref] is downloaded again ([lip] MAY serve it from a download cache, so the content behind a URI SHOULD NOT change); a [local file ref] is read again. The [package] is replaced when the result differs in [identity], [version], [archive key] or [archive identifier].
 
-**Earlier formats**: lip accepts the `tooth_lock.json` that lip v0.x left in a workspace, and keeps managing the packages it records: they can be listed, uninstalled and updated. How it does so is not specified; the rest of this section applies to the entries lip records itself.
+**Earlier formats.** [lip] accepts the `tooth_lock.json` ([schema][tooth-lock-v3]) that lip v0.x left in a [workspace], and keeps managing the [packages][package] it records: they can be listed, uninstalled and updated. How is not specified; the rest of this section applies to the entries [lip] records itself.
 
 ## 10. Legacy Formats
 
-lip reads the documents below as package documents. It does not write them.
+[lip] reads the [documents][document] of this section as [package documents][package document]. It does not write them.
 
 ### 10.1 LeviLamina Manifests
 
-A `manifest.json` without the `format` key is a LeviLamina manifest. It is read as a mod with:
+A [LeviLamina manifest] is read as a [mod] with:
 
-- identity: its `name`, which must be an id (§4.1);
-- version: its `version`, which must be SemVer 2.0.0;
-- `platform`: its `platform` when it is `"server"` or `"client"`; omitted otherwise;
-- `conflicts`: its `conflicts` entries, each `{ "name": string, "version"?: range }` (§4.1), an omitted `version` meaning any version;
-- no install edges, no `runtime`, no `preserve`, no `remove` and no `hooks`.
+- [identity]: its `name`, which MUST be an [id];
+- [version]: its `version`, which MUST be a [version];
+- `platform`: its `platform` when that is a [platform]; omitted otherwise;
+- `conflicts`: its `conflicts` entries, each `{ "name": id, "version"?: range }`, an omitted `version` meaning every [version];
+- no [install edges][install edge], no `runtime`, no `preserve`, no `remove` and no `hooks`.
 
-When `name` or `version` is missing or not as above, or a `conflicts` entry is not as above, the document is invalid. Its other keys are ignored.
+When `name`, `version` or a `conflicts` entry is not as above, the [LeviLamina manifest] is invalid. Its other members are ignored.
 
 ### 10.2 tooth.json
 
-When `tooth.json` exists at the root of an archive, lip ignores `manifest.json` and reads the tooth.json as a file package by the mapping below. From then on the package is resolved, installed, uninstalled and locked like any other package (§5–§9). tooth.json formats 1 and 2 are first migrated to format 3 as the tooth.json specifications define (including their template substitution); the mapping is defined on format 3.
+When an [archive] has a [tooth.json], [lip] ignores its [document] and reads the [tooth.json] as a [file package] by the rules below; from then on it is resolved, installed, uninstalled and locked like any other [package] (§5–§9). A [tooth.json] of format 1 or 2 is first migrated to format 3 as the [tooth.json] specifications define, including their template substitution; the rules below apply to format 3.
 
-1. **Identity and version**: the identity is the **tooth name**, followed by `-<label>` with every `/` of the label replaced by `-` when the label selected by rule 2 is not `""`. The tooth name is the last `/`-separated element of the `tooth` path, or the element before it when the last element is a major version suffix (`v` followed by digits, as in `github.com/o/r/v2`). When the identity is not an id (§4.1), there is no candidate. tooth.json installed each labelled variant as a package of its own, and a variant may depend on its sibling variants (a default variant depending on `<tooth>#<label>`), so the variants of one tooth.json have different identities. The version is the value of `version`. In the archive of a spec version (including that of a pinned `tag:v<SemVer 2.0.0>`, §4.3), the version of the tag is used instead and §4.3 does not apply; lip should warn when the two differ. At a branch, a rev or another tag, the value of `version` is used.
-2. **Variant selection** (in place of step 4 of §5.2): the variant of the ref is a v3 label, except that `""` means `client` when the environment `platform` is `"client"` and a variant labeled `client` exists. The variants with that label whose `platform` is empty, equals the environment `runtime` or matches it as a glob are merged in order: their `dependencies`, `assets`, `preserve_files` and `remove_files` are concatenated, and each script hook is taken from the one variant that has it. When no variant matches, there is no candidate; when two merged variants declare the same dependency key or the same script hook, it is a failure. The result is a file package without `platform` and `runtime`; when its version satisfies `range`, it is the single candidate, otherwise there is no candidate.
-3. **Dependencies**: each dependency `"<path>[#label]": range` becomes an install edge with the single ref `<path>[#label]`, whose range has the v3 semantics, and which any identity satisfies. When the archive the ref points to uses `manifest.json` and the label is `client`, the variant is treated as `""`.
-4. **Assets**: asset i of the variant (counting from 0) is mounted at the directory `i` of the package's archive. A `self` asset is the archive of the tooth.json itself. A `zip`, `tar` or `tgz` asset is an archive downloaded from the first of its `urls` that can be downloaded; its format is detected from its content and §2.1 does not apply. An `uncompressed` asset is a single file downloaded the same way, mounted as the file `i`.
-5. **Placements**: at install time, every placement of asset i becomes one file-form File for each file of the asset it matches, ordered by asset, then by the file's position in the asset, then by placement. A `file` placement takes the file whose path equals `src`, placed at `dest`; when there is none, every file matching the glob `src` (tooth.json glob syntax), placed at `dest/<file name>`. A `dir` placement takes every file below the directory `src` (`""` and `"."` meaning every file), placed at `dest/<path relative to src>`. `\` in `dest` is read as `/`, and `.` and `..` segments are applied. A placement matching no file places nothing; when two placements write the same path, the later one wins. The rule of §7 that the root `manifest.json` is never written does not apply.
-6. **preserve_files and remove_files** become `preserve` and `remove`, with `\` replaced by `/`. A `preserve_files` pattern without `/` is prefixed with `**/`, since v3 also matched it against the file name alone. A `remove_files` pattern not ending with `/` also yields the same pattern followed by `/`, since v3 also removed matching directories. A pattern that is not a valid glob (§4.4), such as one starting with `/`, is dropped.
-7. **Scripts**: `pre_install` becomes `preInstall`; `install` followed by `post_install` becomes `postInstall`; `pre_uninstall` followed by `uninstall` becomes `preUninstall`; `post_uninstall` becomes `postUninstall`. Other scripts are not used.
-8. **Lock**: the lock records the tooth.json (in format 3, with the version installed) in place of a document. Reinstalling or uninstalling the package from the lock treats it as the file package that recorded tooth.json maps to by this mapping, with the variant of the last hop of the chain and the environment of the lock.
+<a id="t-tooth-variant"></a>A **tooth variant** is an element of `variants` of a format 3 [tooth.json]. <a id="t-label"></a>The **label** of a [tooth variant] is its `label`, or `""` when absent. <a id="t-tooth-range"></a>A **tooth range** is the value of a dependency of a [tooth variant], with the format 3 semantics. <a id="t-tooth-name"></a>The **tooth name** is the last `/`-separated element of the `tooth` path, or the element before it when the last element is a major version suffix (`v` followed by digits, as in `github.com/o/r/v2`).
+
+1. **[Identity] and [version].** The [identity] is the [tooth name], followed by `-` and the [label] selected by rule 2 with every `/` replaced by `-` when that [label] is not `""`. When the [identity] is not an [id], there is no [candidate]. (tooth.json installed each labelled [tooth variant] as a [package] of its own, and a [tooth variant] could depend on its sibling [tooth variants][tooth variant], so the [tooth variants][tooth variant] of one [tooth.json] have different [identities][identity].) The [version] is the [tag version] (§4.3) when there is one, and the value of `version` otherwise; §4.3 does not apply. [lip] SHOULD warn when a [tag version] differs from `version`.
+2. **Variant selection**, in place of step 4 of §5.2. The [variant of the ref][ref-variant] is a [label], except that `""` means `client` when the [platform] of the [environment] is `"client"` and a [tooth variant] with the [label] `client` exists. The [tooth variants][tooth variant] with that [label] whose `platform` is empty, equals the [runtime] of the [environment] or matches it as a [tooth.json] glob are merged, in order: their `dependencies`, `assets`, `preserve_files` and `remove_files` are concatenated, and each script hook is taken from the one [tooth variant] that has it. When no [tooth variant] is selected, there is no [candidate]. When two merged [tooth variants][tooth variant] declare the same dependency key or the same script hook, it is a [failure]. The result is a [file package] without `platform` and `runtime`; when its [version] satisfies `range`, it is the single [candidate], and otherwise there is no [candidate].
+3. **Dependencies.** Each dependency `"<path>[#label]": range` becomes an [install edge] with the single [ref] `<path>[#label]`, whose `range` is the [tooth range], and which a [package] of any [identity] satisfies. When the [archive] that [ref] names has no [tooth.json] and the [label] is `client`, the [variant of the ref][ref-variant] is taken as `""`.
+4. **Assets.** Asset i of the [tooth variant], counting from 0, is mounted at the directory `i` of the [archive] of the [package]. A `self` asset is the [archive] of the [tooth.json] itself. A `zip`, `tar` or `tgz` asset is an [archive] downloaded from the first of its `urls` that can be downloaded; its format is detected from its content, and §2 rule 1 does not apply. An `uncompressed` asset is a single file downloaded the same way, mounted as the file `i`.
+5. **Placements.** At installation, every placement of asset i becomes one [File] in [file form][file-form] for each file of the asset it matches, ordered by asset, then by the position of the file in the asset, then by placement. A `file` placement takes the file whose path equals `src`, placed at `dest`; when there is none, every file that matches `src` as a [tooth.json] glob, placed at `dest/<file name>`. A `dir` placement takes every file below the directory `src` (`""` and `"."` meaning every file), placed at `dest/<path relative to src>`. `\` in `dest` is read as `/`, and `.` and `..` segments are applied. A placement that matches no file places nothing. When two placements write the same path, the later one wins. The rule of §7 that the [document] of P is never written does not apply.
+6. **preserve_files and remove_files** become `preserve` and `remove`, with `\` replaced by `/`. A `preserve_files` pattern without `/` is prefixed with `**/`, since format 3 also matched it against the file name alone. A `remove_files` pattern that does not end with `/` also yields the same pattern followed by `/`, since format 3 also removed matching directories. A pattern that is not a valid [glob], such as one starting with `/`, is dropped.
+7. **Scripts.** `pre_install` becomes `preInstall`; `install` followed by `post_install` becomes `postInstall`; `pre_uninstall` followed by `uninstall` becomes `preUninstall`; `post_uninstall` becomes `postUninstall`. Other scripts are not used.
+8. **Lock.** The [lock] records the [tooth.json], in format 3 with the [version] installed, in place of a [document]. Reinstalling or uninstalling the [package] from the [lock] treats it as the [file package] that the recorded [tooth.json] maps to by these rules, with the [variant of the ref][ref-variant] of the last [hop] of the [chain] and the [environment] of the [lock].
 
 ## Appendix: Examples (Non-normative)
 
-The meta document of the repository `github.com/LiteLDev/LegacyMoney` at tag `v0.22.0`:
+The [meta document] of the repository `github.com/LiteLDev/LegacyMoney` at tag `v0.22.0`:
 
 ```json
 {
@@ -343,7 +400,7 @@ The meta document of the repository `github.com/LiteLDev/LegacyMoney` at tag `v0
 }
 ```
 
-The package document that packing it for `("server", "win-x64")` puts at the root of `LegacyMoney-server-win-x64.mcmod`:
+The [package document] that packing it for `("server", "win-x64")` puts at the root of `LegacyMoney-server-win-x64.mcmod`:
 
 ```json
 {
@@ -362,7 +419,7 @@ The package document that packing it for `("server", "win-x64")` puts at the roo
 }
 ```
 
-A file package taking files from a downloaded archive and from itself:
+A [file package] that takes files from a downloaded [archive] and from itself:
 
 ```json
 {
@@ -382,7 +439,7 @@ A file package taking files from a downloaded archive and from itself:
 }
 ```
 
-A repository pointing to sub-packages by variant:
+A [meta document] that names sub-[packages][package] by [variant]:
 
 ```json
 {
@@ -393,3 +450,123 @@ A repository pointing to sub-packages by variant:
   ]
 }
 ```
+
+## References
+
+- [RFC 2119]: Key words for use in RFCs to Indicate Requirement Levels.
+- [RFC 8174]: Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words.
+- [RFC 5234]: Augmented BNF for Syntax Specifications: ABNF.
+- [RFC 8259]: The JavaScript Object Notation (JSON) Data Interchange Format.
+- [RFC 3629]: UTF-8, a transformation format of ISO 10646.
+- [RFC 3986]: Uniform Resource Identifier (URI): Generic Syntax.
+- [RFC 8089]: The "file" URI Scheme.
+- [RFC 1952]: GZIP file format specification version 4.3.
+- [FIPS 180-4]: Secure Hash Standard (SHA-256).
+- [APPNOTE]: ZIP File Format Specification.
+- [POSIX.2.13]: IEEE Std 1003.1-2017, Shell Command Language, §2.13 Pattern Matching Notation.
+- [POSIX.pax]: IEEE Std 1003.1-2017, pax, tar interchange format.
+- [SemVer 2.0.0]: Semantic Versioning 2.0.0.
+- [node-semver]: npm semver, Ranges.
+- [module.CheckPath]: `golang.org/x/mod/module.CheckPath`.
+- [git check-ref-format]: git-check-ref-format(1).
+- [git-objects]: Git Objects (commits and trees).
+- [RID]: .NET Runtime Identifier catalog.
+- [LeviLamina]: LeviLamina.
+- tooth.json schemas: [format 1][tooth-v1], [format 2][tooth-v2], [format 3][tooth-v3]; tooth_lock.json schema: [format 3][tooth-lock-v3].
+
+[lip]: #t-lip
+[user]: #t-user
+[ASCII case-insensitive]: #t-ascii-ci
+[archive]: #t-archive
+[ZIP archive]: #t-zip-archive
+[mcmod]: #t-mcmod
+[git archive]: #t-git-archive
+[directory archive]: #t-directory-archive
+[document]: #t-document
+[LeviLamina manifest]: #t-leviLamina-manifest
+[tooth.json]: #t-tooth-json
+[meta document]: #t-meta-document
+[package document]: #t-package-document
+[package]: #t-package
+[mod]: #t-mod
+[file package]: #t-file-package
+[id]: #t-id
+[identity]: #t-identity
+[version]: #t-version
+[range]: #t-range
+[variant]: #t-variant
+[glob]: #t-glob
+[platform]: #t-platform
+[runtime]: #t-runtime
+[environment]: #t-environment
+[workspace]: #t-workspace
+[operation]: #t-operation
+[failure]: #t-failure
+[root document]: #t-root-document
+[ref]: #t-ref
+[target]: #t-target
+[relative ref]: #t-relative-ref
+[url ref]: #t-url-ref
+[spec-ref]: #t-spec-ref
+[ref-variant]: #t-ref-variant
+[spec version]: #t-spec-version
+[pinned spec ref]: #t-pinned-spec-ref
+[git-ref]: #t-git-ref
+[local file ref]: #t-local-file-ref
+[Info]: #t-info
+[Dependency]: #t-dependency
+[Mod]: #t-mod-object
+[File]: #t-file
+[glob-form]: #t-glob-form
+[directory-form]: #t-directory-form
+[file-form]: #t-file-form
+[archive-object]: #t-archive-object
+[archive name]: #t-archive-name
+[Hooks]: #t-hooks
+[meta-template]: #t-meta-template
+[Target]: #t-target-object
+[selector key]: #t-selector-key
+[value set]: #t-value-set
+[template]: #t-template
+[tag version]: #t-tag-version
+[candidate]: #t-candidate
+[chain]: #t-chain
+[hop]: #t-hop
+[archive key]: #t-archive-key
+[request]: #t-request
+[install edge]: #t-install-edge
+[stands-in]: #t-stands-in
+[command]: #t-command
+[own]: #t-own
+[server layout]: #t-server-layout
+[lock]: #t-lock
+[archive identifier]: #t-archive-identifier
+[label]: #t-label
+[explicitly installed]: #t-explicitly-installed
+[tooth name]: #t-tooth-name
+[tooth variant]: #t-tooth-variant
+[tooth range]: #t-tooth-range
+
+[RFC 2119]: https://www.rfc-editor.org/rfc/rfc2119
+[RFC 8174]: https://www.rfc-editor.org/rfc/rfc8174
+[RFC 5234]: https://www.rfc-editor.org/rfc/rfc5234
+[RFC 8259]: https://www.rfc-editor.org/rfc/rfc8259
+[RFC 3629]: https://www.rfc-editor.org/rfc/rfc3629
+[RFC 3986]: https://www.rfc-editor.org/rfc/rfc3986
+[RFC 8089]: https://www.rfc-editor.org/rfc/rfc8089
+[RFC 1952]: https://www.rfc-editor.org/rfc/rfc1952
+[FIPS 180-4]: https://csrc.nist.gov/pubs/fips/180-4/upd1/final
+[APPNOTE]: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+[POSIX.2.13]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_13
+[POSIX.pax]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html
+[SemVer 2.0.0]: https://semver.org/spec/v2.0.0.html
+[node-semver]: https://github.com/npm/node-semver#ranges
+[module.CheckPath]: https://pkg.go.dev/golang.org/x/mod/module#CheckPath
+[git check-ref-format]: https://git-scm.com/docs/git-check-ref-format
+[git-objects]: https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+[RID]: https://learn.microsoft.com/dotnet/core/rid-catalog
+[LeviLamina]: https://github.com/LiteLDev/LeviLamina
+[tooth-v1]: files/legacy/v1/tooth.schema.yaml
+[tooth-v2]: files/legacy/v2/tooth.schema.yaml
+[tooth-v3]: files/legacy/v3/tooth.schema.yaml
+[tooth-lock-v3]: files/legacy/v3/tooth_lock.schema.yaml

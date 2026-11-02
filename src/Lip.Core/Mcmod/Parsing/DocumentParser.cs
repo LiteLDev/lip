@@ -68,7 +68,7 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
     }
   }
 
-  /// Whether a string is an id (spec §4.1): ^[A-Za-z0-9][A-Za-z0-9._-]*$.
+  /// Whether a string is an id (spec §1): ^[A-Za-z0-9][A-Za-z0-9._-]*$.
   public static bool IsId(string value) => IdRegex().IsMatch(value);
 
   #region LeviLamina manifests (spec §10.1)
@@ -487,7 +487,7 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
           ? ReadArray(element, path, nonEmpty: true, readItem)
           : [readItem(element, path)];
 
-  /// An object whose member names are ids (spec §4.1), in document order.
+  /// An object whose member names are ids (spec §1), in document order.
   private static List<T> ReadMap<T>(
       JsonElement element, string path, Func<string, JsonElement, string, T> readValue) {
     RequireObject(element, path);

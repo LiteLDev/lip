@@ -206,7 +206,7 @@ public partial class ToothCompat : IToothCompat {
     PostUninstall = scripts.PostUninstall,
   };
 
-  /// The glob (spec §4.4) of a converted pattern, or null for a pattern that is not a valid glob
+  /// The glob (spec §1) of a converted pattern, or null for a pattern that is not a valid glob
   /// (empty segments, a leading '/', an incomplete bracket expression), which the conversion
   /// drops.
   public static PathGlob? TryParseGlob(string pattern) {

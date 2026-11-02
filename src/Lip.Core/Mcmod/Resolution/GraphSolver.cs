@@ -226,7 +226,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
   /// The "same package" identity of a candidate. The variant tells apart the packages of one
   /// archive (the variants of a tooth.json), so that a member never satisfies a requirement for
-  /// another package of its archive; two such packages of one identity clash (spec §6.3).
+  /// another package of its archive; two such packages of one identity clash (spec §6 condition 3).
   private readonly record struct PackageKey(
       string Identity,
       SemVersion Version,
@@ -772,7 +772,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     /// versions: converted from the same variant label of the tooth.json at the root of one
     /// repository. A tooth.json names its own path in "tooth", so a repository that moved names
     /// the new path in its newer tags (spec §10.2 rule 1); its versions are still one package, of which
-    /// S holds one (spec §6.3), and installing a newer one replaces the installed one.
+    /// S holds one (spec §6 condition 3), and installing a newer one replaces the installed one.
     private static bool IsRenamed(Candidate a, Candidate b) {
       return a.Package.Kind == ToothCompat.KindName && b.Package.Kind == ToothCompat.KindName
           && a.Package.Variant == b.Package.Variant

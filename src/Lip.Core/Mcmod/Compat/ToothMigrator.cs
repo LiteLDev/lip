@@ -640,7 +640,7 @@ public static partial class ToothMigrator {
     }
   }
 
-  /// Converts a v3 range to the node-semver syntax (spec §4.1), or returns null with a note when
+  /// Converts a v3 range to the node-semver syntax (spec §1 "range"), or returns null with a note when
   /// it cannot be expressed. A note also tells when the converted range accepts a different set
   /// of versions, as far as probing versions around its bounds tells.
   private static string? ConvertRange(SemVersionRange range, List<string> notes, string field) {

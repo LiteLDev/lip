@@ -2,7 +2,7 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// A version range of a manifest.json (spec §4.1 "range"): the syntax and matching semantics of
+/// A version range of a manifest.json (spec §1 "range"): the syntax and matching semantics of
 /// node-semver ranges, as semver.satisfies applies them without the loose and includePrerelease
 /// options. A full version without an operator matches exactly that version, and a prerelease
 /// version matches only a comparator set with a prerelease on the same major.minor.patch.

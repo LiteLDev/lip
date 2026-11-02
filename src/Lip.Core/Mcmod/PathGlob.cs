@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Lip.Core.Mcmod;
 
-/// A path pattern (spec §4.4), matched segment by segment with the POSIX pattern matching
+/// A path pattern (spec §1 "glob"), matched segment by segment with the POSIX pattern matching
 /// notation as fnmatch applies it with FNM_PATHNAME and without FNM_PERIOD: '*' matches any run of
 /// characters other than '/' (a leading '.' included), '?' one character other than '/', and a
 /// bracket expression one character of its set ('[!...]' of the complement), with ranges,
