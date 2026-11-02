@@ -1,4 +1,4 @@
-# A squash merge commits the pull request title, and release-please reads versions and release notes from it.
+# A squash merge commits the pull request title, and the release notes list it.
 on:
   pull_request:
     types:

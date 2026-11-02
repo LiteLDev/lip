@@ -13,13 +13,13 @@
 
 ## Pull requests
 
-- The title follows [Conventional Commits](https://www.conventionalcommits.org/) (`feat: ...`, `fix(solver): ...`, `feat!: ...` for breaking changes). The squash commit takes the title, and release notes and versions come from it.
+- The title follows [Conventional Commits](https://www.conventionalcommits.org/) (`feat: ...`, `fix(solver): ...`, `feat!: ...` for breaking changes). The squash commit and the release notes take the title, and it tells whether the next version is a feature or a bugfix release.
 - `main` takes pull requests through the merge queue: the build and tests run again on top of everything queued before, so pull requests that pass alone cannot break `main` together.
 - A fix that the current release line also needs gets the `backport release/X.Y` label (before or after merging). Once it is merged, a bot cherry-picks it onto `release/X.Y` and opens a pull request there; conflicts are left as a comment for you to backport by hand.
 
 ## Releases
 
-Run the [release-please workflow](https://github.com/LiteLDev/lip/actions/workflows/release-please.yml) from `main` with a version and a branch:
+Run the [create-release workflow](https://github.com/LiteLDev/lip/actions/workflows/create-release.yml) from `main` with a version and a branch:
 
 | Release | Version | Branch | Result |
 | --- | --- | --- | --- |
@@ -28,4 +28,4 @@ Run the [release-please workflow](https://github.com/LiteLDev/lip/actions/workfl
 | Bugfix | `X.Y.Z` | `release/X.Y` | Releases the line |
 | Prerelease | `X.Y.0-beta.N` | `main` | Releases `main` as a prerelease |
 
-The workflow refuses a version that already exists, a bugfix from another branch than its line, and a feature release that is not newer than every release. It then builds and publishes the tag with that tag's own `release.yml`: the newest stable version becomes Latest on GitHub, `latest` on npm and the winget version; a bugfix of an older line goes to npm under `release-X.Y`; a prerelease goes to npm under its identifier (`beta`).
+The workflow refuses a version that already exists, a bugfix from another branch than its line, and a feature release that is not newer than every release. It tags the branch tip, drafts a release whose notes list the pull requests since the previous release on that branch, then builds and publishes the tag with that tag's own `release.yml`: the newest stable version becomes Latest on GitHub, `latest` on npm and the winget version; a bugfix of an older line goes to npm under `release-X.Y`; a prerelease goes to npm under its identifier (`beta`).
