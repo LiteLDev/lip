@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-02
+
+### Changed
+
+- Rolled back to the code of 0.35.0. lip 0.36.0, 0.36.1 and 0.36.2 were released by mistake with unfinished work (package format 4, the `.lip/lock.json` lock, per-user paths, and the WiX installer). Workspaces that 0.36.x changed have no `tooth_lock.json` anymore, so their packages need to be installed again.
+
+### Fixed
+
+- Redirected git requests (e.g. GitLab's `repo` to `repo.git`, or `http` to `https`) failing with "does not support git protocol version 2".
+
 ## [0.35.0] - 2026-10-26
 
 ### Changed
@@ -848,7 +858,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#282]: https://github.com/futrime/lip/issues/282
 [#347]: https://github.com/futrime/lip/issues/347
 
-[Unreleased]: https://github.com/LiteLDev/lip/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/LiteLDev/lip/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/LiteLDev/lip/compare/v0.35.0...v0.37.0
 [0.35.0]: https://github.com/LiteLDev/lip/compare/v0.34.9...v0.35.0
 [0.34.9]: https://github.com/futrime/lip/compare/v0.34.8...v0.34.9
 [0.34.8]: https://github.com/futrime/lip/compare/v0.34.7...v0.34.8
