@@ -1,9 +1,21 @@
+# Releases a version: run it from main (the workflow file on main drives every release line).
+#
+# - X.Y.0 from main: releases main and starts the release/X.Y line at the release commit.
+# - X.Y.0 from a release/A.B branch: starts the release/X.Y line from that branch and releases it, for a feature
+#   release while main is not ready to ship.
+# - X.Y.Z (Z > 0) from release/X.Y: a bugfix release of that line.
+#
+# The build and publishing run with the release.yml of the released tag, so each line keeps its own pipeline.
 on:
   workflow_dispatch:
     inputs:
       version:
         description: Version to release, without the leading v (e.g. 1.2.3)
         required: true
+      branch:
+        description: Branch to release from (main, or a release/X.Y branch)
+        required: true
+        default: main
 
 concurrency:
   group: release-please
@@ -17,19 +29,88 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      - id: plan
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+
+          [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]] \
+            || fail "$VERSION is not a version like 1.2.3 or 1.2.3-beta.1"
+          minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          prerelease="${BASH_REMATCH[4]}"
+          line="release/$minor"
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --silent 2>/dev/null; then
+            fail "v$VERSION already exists"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/branches/$BRANCH" --silent 2>/dev/null \
+            || fail "Branch $BRANCH does not exist"
+          line_exists=$(gh api "repos/$GITHUB_REPOSITORY/branches/$line" --silent 2>/dev/null && echo true || echo false)
+
+          newest=$(
+            gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' \
+              | sed -n 's/^v\([0-9]*\.[0-9]*\.[0-9]*\)$/\1/p' \
+              | sort -V \
+              | tail -1
+          )
+
+          target="$BRANCH"
+          start_line_from=""
+          start_line_at_release=false
+          if [[ "$patch" != 0 ]]; then
+            [[ "$BRANCH" == "$line" ]] || fail "A bugfix release of $minor is made from $line, not $BRANCH"
+          elif [[ "$BRANCH" != main && "$BRANCH" != "$line" ]]; then
+            [[ "$BRANCH" == release/* ]] || fail "Release from main or a release/X.Y branch, not $BRANCH"
+            [[ -z "$prerelease" ]] || fail "A prerelease of a new line is made from main"
+            [[ "$line_exists" == false ]] || fail "$line already exists: release $minor.0 from it"
+            target="$line"
+            start_line_from="$BRANCH"
+          elif [[ "$BRANCH" == main && -z "$prerelease" ]]; then
+            [[ "$line_exists" == false ]] || fail "$line already exists: release $minor.0 from it"
+            start_line_at_release=true
+          fi
+
+          if [[ "$patch" == 0 && -z "$prerelease" && -n "$newest" ]]; then
+            [[ "$(printf '%s\n' "$newest" "$VERSION" | sort -V | tail -1)" == "$VERSION" ]] \
+              || fail "$VERSION is not newer than the newest release $newest"
+          fi
+
+          {
+            echo "line=$line"
+            echo "target=$target"
+            echo "start-line-from=$start_line_from"
+            echo "start-line-at-release=$start_line_at_release"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          BRANCH: ${{ inputs.branch }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+
+      - if: steps.plan.outputs.start-line-from
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/branches/$FROM" --jq .commit.sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$LINE" -f sha="$sha" --silent
+        env:
+          FROM: ${{ steps.plan.outputs.start-line-from }}
+          GH_TOKEN: ${{ github.token }}
+          LINE: ${{ steps.plan.outputs.line }}
+
       - id: release-pr
         uses: googleapis/release-please-action@v5
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/release-please-manifest.json
+          target-branch: ${{ steps.plan.outputs.target }}
           skip-github-release: true
           release-as: ${{ inputs.version }}
 
+      # --admin merges main's release PR past the merge queue: GitHub Actions bypasses the main ruleset.
       - if: steps.release-pr.outputs.pr
         run: |
           gh pr merge "${{ fromJSON(steps.release-pr.outputs.pr).number }}" \
             --repo "$GITHUB_REPOSITORY" \
-            --squash
+            --squash \
+            --admin
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -38,12 +119,33 @@ jobs:
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/release-please-manifest.json
+          target-branch: ${{ steps.plan.outputs.target }}
           skip-github-pull-request: true
+
+      - if: steps.release.outputs.release_created && steps.plan.outputs.start-line-at-release == 'true'
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$LINE" -f sha="$SHA" --silent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINE: ${{ steps.plan.outputs.line }}
+          SHA: ${{ steps.release.outputs.sha }}
+
+      - if: steps.release.outputs.release_created && (steps.plan.outputs.start-line-from || steps.plan.outputs.start-line-at-release == 'true')
+        run: |
+          gh label create "backport $LINE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --color c5def5 \
+            --description "Backport to $LINE after merging" \
+            --force
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINE: ${{ steps.plan.outputs.line }}
 
       - if: steps.release.outputs.release_created
         run: |
           gh workflow run release.yml \
             --repo "$GITHUB_REPOSITORY" \
+            --ref "${{ steps.release.outputs.tag_name }}" \
             -f tag="${{ steps.release.outputs.tag_name }}"
         env:
           GH_TOKEN: ${{ github.token }}
