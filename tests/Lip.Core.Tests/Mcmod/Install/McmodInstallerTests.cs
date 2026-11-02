@@ -19,7 +19,7 @@ public class McmodInstallerTests {
   private readonly MockFileSystem _fs = new();
   private readonly Mock<ICommandRunner> _commandRunner = new();
   private readonly Mock<IUserInteraction> _ui = new();
-  private readonly Dictionary<string, ConcreteDocument> _documents = [];
+  private readonly Dictionary<string, PackageDocument> _documents = [];
   private readonly McmodInstaller _installer;
 
   public McmodInstallerTests() {
@@ -31,13 +31,12 @@ public class McmodInstallerTests {
   }
 
   // LegacyMoney from the spec appendix.
-  private static ConcreteDocument LegacyMoney(string version = "0.22.0") => new() {
-    IsMarked = true,
-    Name = "LegacyMoney",
+  private static PackageDocument LegacyMoney(string version = "0.22.0") => new() {
+    Id = "LegacyMoney",
     Version = SemVersion.Parse(version),
-    Type = "native",
-    Platform = PackagePlatform.Server,
-    Rid = "win-x64",
+    IsMod = true,
+    Platform = McmodPlatform.Server,
+    Runtime = "win-x64",
   };
 
   private static readonly Dictionary<string, string> _legacyMoneyFiles = new() {
@@ -46,12 +45,11 @@ public class McmodInstallerTests {
     ["lang/en_US.json"] = "{}",
   };
 
-  private static ConcreteDocument FilePackage(string name, params Placement[] placements) => new() {
-    IsMarked = true,
-    Name = name,
+  private static PackageDocument FilePackage(string name, params PackageFile[] files) => new() {
+    Id = name,
     Version = SemVersion.Parse("1.0.0"),
-    Type = "files",
-    Placements = placements,
+    IsMod = false,
+    Files = files,
   };
 
   private string Full(string relative) =>
@@ -64,7 +62,7 @@ public class McmodInstallerTests {
 
   private static InMemorySource Source(Dictionary<string, string> files) => new(files);
 
-  private Candidate Candidate(ConcreteDocument document, ISource source) {
+  private Candidate Candidate(PackageDocument document, ISource source) {
     string manifest = ManifestJson(document);
     return new Candidate(
         new McmodPackage(document, JsonDocument.Parse(manifest).RootElement),
@@ -72,14 +70,14 @@ public class McmodInstallerTests {
         []);
   }
 
-  private string ManifestJson(ConcreteDocument document) {
-    string json = $"{{\"name\":\"{document.Name}\",\"version\":\"{document.Version}\"}}";
+  private string ManifestJson(PackageDocument document) {
+    string json = $"{{\"name\":\"{document.Id}\",\"version\":\"{document.Version}\"}}";
     _documents[json] = document;
     return json;
   }
 
-  private LockedPackage Locked(ConcreteDocument document, IEnumerable<string> files) => new() {
-    Identity = document.Name,
+  private LockedPackage Locked(PackageDocument document, IEnumerable<string> files) => new() {
+    Identity = document.Id,
     Version = document.Version.ToString(),
     Kind = McmodPackage.KindName,
     Explicit = true,
@@ -146,8 +144,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_FilePackage_WritesPlacementOnly() {
     // Arrange: PeEditor from the spec appendix.
-    ConcreteDocument document =
-        FilePackage("PeEditor", new Placement("PeEditor.exe", "PeEditor.exe"));
+    PackageDocument document =
+        FilePackage("PeEditor", new PackageFile(null, "PeEditor.exe", "PeEditor.exe"));
     InMemorySource source = Source(new() {
       ["manifest.json"] = "{}",
       ["PeEditor.exe"] = "exe",
@@ -166,12 +164,104 @@ public class McmodInstallerTests {
   }
 
   [Fact]
+  public async Task Install_GlobFile_KeepsPathsBelowTheFixedPrefix() {
+    // Arrange
+    PackageDocument document = FilePackage(
+        "Pack", new PackageFile(null, "bin/**/*.dll", "tools/pack/"));
+    InMemorySource source = Source(new() {
+      ["manifest.json"] = "{}",
+      ["bin/a.dll"] = "a",
+      ["bin/x/b.dll"] = "b",
+      ["bin/c.pdb"] = "c",
+    });
+
+    // Act
+    IReadOnlyList<string> owned =
+        await _installer.Install(Candidate(document, source), Context(_server));
+
+    // Assert
+    Assert.Equal(["tools/pack/a.dll", "tools/pack/x/b.dll"], owned.Order());
+    Assert.Equal("b", Read("tools/pack/x/b.dll"));
+  }
+
+  [Fact]
+  public async Task Install_GlobFileMatchingNothing_WritesNothing() {
+    // Arrange
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "*.dll", ""));
+    InMemorySource source = Source(new() { ["manifest.json"] = "{}", ["a.txt"] = "a" });
+
+    // Act
+    IReadOnlyList<string> owned =
+        await _installer.Install(Candidate(document, source), Context(_server));
+
+    // Assert
+    Assert.Empty(owned);
+  }
+
+  [Fact]
+  public async Task Install_DirectoryFileWithoutFiles_Throws() {
+    // Arrange
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "missing/", "x/"));
+    InMemorySource source = Source(new() { ["manifest.json"] = "{}", ["a.txt"] = "a" });
+
+    // Act & Assert
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => _installer.Install(Candidate(document, source), Context(_server)));
+    Assert.Contains("'missing/' has no file", ex.Message);
+  }
+
+  [Fact]
+  public async Task Install_FilesFromArchives_DownloadsAndPlacesThem() {
+    // Arrange
+    Mock<IArchiveProvider> provider = new();
+    provider
+        .Setup(p => p.OpenAsset(
+            It.Is<IReadOnlyList<string>>(u => u.Single() == "https://example.com/bds.zip"),
+            PackageArchiveFormat.Detect, "ab"))
+        .ReturnsAsync(Source(new() { ["bedrock_server.exe"] = "bds", ["worlds/a.mcworld"] = "w" }));
+    provider
+        .Setup(p => p.OpenAsset(
+            It.IsAny<IReadOnlyList<string>>(), PackageArchiveFormat.File, null))
+        .ReturnsAsync(Source(new() { [""] = "tool" }));
+    Mock<IDocumentParser> parser = new();
+    parser.Setup(p => p.Parse(It.IsAny<byte[]>()))
+        .Returns((byte[] bytes) => _documents[Encoding.UTF8.GetString(bytes)]);
+    McmodInstaller installer = new(_fs, _commandRunner.Object, parser.Object, _ui.Object, provider.Object);
+    PackageDocument document = FilePackage(
+        "bedrock-server",
+        new PackageFile("bds", "", ""),
+        new PackageFile("tool", "tool", "tools/tool.exe"),
+        new PackageFile(null, "defaults/", "")) with {
+      Archives = [
+        new PackageArchive("bds", ["https://example.com/bds.zip"], "ab", PackageArchiveFormat.Detect),
+        new PackageArchive("tool", ["https://example.com/tool.exe"], null, PackageArchiveFormat.File),
+      ],
+    };
+    InMemorySource source = Source(new() {
+      ["manifest.json"] = "{}",
+      ["defaults/server.properties"] = "props",
+    });
+
+    // Act
+    IReadOnlyList<string> owned =
+        await installer.Install(Candidate(document, source), Context(_server));
+
+    // Assert
+    Assert.Equal(
+        ["bedrock_server.exe", "server.properties", "tools/tool.exe", "worlds/a.mcworld"],
+        owned.Order(StringComparer.Ordinal));
+    Assert.Equal("bds", Read("bedrock_server.exe"));
+    Assert.Equal("tool", Read("tools/tool.exe"));
+    Assert.Equal("props", Read("server.properties"));
+  }
+
+  [Fact]
   public async Task Install_DirectoryPlacements_CopyRelativePathsAndNeverRootManifest() {
     // Arrange
-    ConcreteDocument document = FilePackage(
+    PackageDocument document = FilePackage(
         "Pack",
-        new Placement("assets/", "resource_packs/pack/"),
-        new Placement("", "copy/"));
+        new PackageFile(null, "assets/", "resource_packs/pack/"),
+        new PackageFile(null, "", "copy/"));
     InMemorySource source = Source(new() {
       ["manifest.json"] = "{}",
       ["assets/a.txt"] = "a",
@@ -195,8 +285,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_LaterPlacementSameDest_Overwrites() {
     // Arrange
-    ConcreteDocument document = FilePackage(
-        "Pack", new Placement("one.txt", "out.txt"), new Placement("two.txt", "out.txt"));
+    PackageDocument document = FilePackage(
+        "Pack", new PackageFile(null, "one.txt", "out.txt"), new PackageFile(null, "two.txt", "out.txt"));
     InMemorySource source = Source(new() { ["one.txt"] = "1", ["two.txt"] = "2" });
 
     // Act
@@ -213,8 +303,8 @@ public class McmodInstallerTests {
   [InlineData("missing/", "out/")]
   public async Task Install_SrcNotInArchive_ThrowsWithoutChanges(string src, string dest) {
     // Arrange
-    ConcreteDocument document = FilePackage(
-        "Pack", new Placement("a.txt", "a.txt"), new Placement(src, dest));
+    PackageDocument document = FilePackage(
+        "Pack", new PackageFile(null, "a.txt", "a.txt"), new PackageFile(null, src, dest));
     SortedDictionary<string, string> before = Snapshot();
 
     // Act & Assert
@@ -232,7 +322,7 @@ public class McmodInstallerTests {
     if (!OperatingSystem.IsWindows() && dest.StartsWith(".LIP")) {
       return;
     }
-    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", dest));
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "a.txt", dest));
     SortedDictionary<string, string> before = Snapshot();
 
     // Act
@@ -251,7 +341,7 @@ public class McmodInstallerTests {
   [InlineData("C:/escape.txt")]
   public async Task Install_DestOutsideWorkspace_Throws(string dest) {
     // Arrange
-    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", dest));
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "a.txt", dest));
     SortedDictionary<string, string> before = Snapshot();
 
     // Act & Assert
@@ -265,7 +355,7 @@ public class McmodInstallerTests {
   [InlineData("a.txt ")]
   public async Task Install_AliasingDest_Throws(string dest) {
     // Arrange
-    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", dest));
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "a.txt", dest));
     SortedDictionary<string, string> before = Snapshot();
 
     // Act & Assert
@@ -281,7 +371,7 @@ public class McmodInstallerTests {
   [InlineData(".git/hooks/pre-commit")]
   public async Task Install_DestNamedLikeLipOrGitFile_Writes(string dest) {
     // Arrange
-    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", dest));
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "a.txt", dest));
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(
@@ -295,8 +385,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_OverwritesExistingFile_BacksItUpAsHiddenSibling() {
     // Arrange
-    ConcreteDocument document = FilePackage(
-        "Pack", new Placement("a.txt", "dir/existing.txt"), new Placement("b.txt", "dir/b.txt"));
+    PackageDocument document = FilePackage(
+        "Pack", new PackageFile(null, "a.txt", "dir/existing.txt"), new PackageFile(null, "b.txt", "dir/b.txt"));
     AddFile("dir/existing.txt", "original");
     AddFile("dir/.existing.txt.bak", "someone else's");
     InMemorySource source = Source(new() { ["a.txt"] = "a", ["b.txt"] = "b" });
@@ -328,8 +418,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PackageWritesBackupName_BackupAvoidsIt() {
     // Arrange
-    ConcreteDocument document = FilePackage(
-        "Pack", new Placement("a.txt", "foo"), new Placement("b.txt", ".foo.bak"));
+    PackageDocument document = FilePackage(
+        "Pack", new PackageFile(null, "a.txt", "foo"), new PackageFile(null, "b.txt", ".foo.bak"));
     AddFile("foo", "original");
     InMemorySource source = Source(new() { ["a.txt"] = "a", ["b.txt"] = "b" });
 
@@ -345,7 +435,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_InvalidModName_ThrowsWithoutChanges() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with { Name = ".." };
+    PackageDocument document = LegacyMoney() with { Id = ".." };
     SortedDictionary<string, string> before = Snapshot();
 
     // Act & Assert
@@ -357,8 +447,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PrefetchFails_ThrowsBeforeScripts() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreInstall = ["pre"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PreInstall = ["pre"] },
     };
     InMemorySource source = Source(_legacyMoneyFiles);
     source.FailPrefetch = true;
@@ -373,15 +463,15 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_FileOwnedByAnotherPackage_ThrowsAndLeavesWorkspaceIdentical() {
     // Arrange
-    ConcreteDocument other = FilePackage("Other", new Placement("x", "x"));
+    PackageDocument other = FilePackage("Other", new PackageFile(null, "x", "x"));
     AddFile("PeEditor.exe", "other's");
     AddFile("unrelated.txt", "keep");
     LockFile lockFile = new() { Packages = [Locked(other, ["PeEditor.exe"])] };
-    ConcreteDocument document = FilePackage(
+    PackageDocument document = FilePackage(
         "PeEditor",
-        new Placement("new.txt", "new.txt"),
-        new Placement("PeEditor.exe", "PeEditor.exe")) with {
-      Scripts = new Scripts { PreInstall = ["echo pre"] },
+        new PackageFile(null, "new.txt", "new.txt"),
+        new PackageFile(null, "PeEditor.exe", "PeEditor.exe")) with {
+      Hooks = new Hooks { PreInstall = ["echo pre"] },
     };
     InMemorySource source = Source(new() { ["PeEditor.exe"] = "exe", ["new.txt"] = "n" });
     SortedDictionary<string, string> before = Snapshot();
@@ -399,7 +489,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_OwnershipComparedOnNormalizedPaths() {
     // Arrange: the lock spells the path with backslashes and, on Windows, another case.
-    ConcreteDocument other = FilePackage("Other", new Placement("x", "x"));
+    PackageDocument other = FilePackage("Other", new PackageFile(null, "x", "x"));
     string lockedPath = OperatingSystem.IsWindows() ? @"Plugins\LegacyMoney\LegacyMoney.DLL"
         : @"plugins\LegacyMoney\LegacyMoney.dll";
     LockFile lockFile = new() { Packages = [Locked(other, [lockedPath])] };
@@ -413,8 +503,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PreservedExistingFile_KeepsItAndDoesNotOwnIt() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      PreserveFiles = [new PathGlob("config/")],
+    PackageDocument document = LegacyMoney() with {
+      Preserve = [new PathGlob("config/")],
     };
     AddFile("mods/LegacyMoney/config/config.json", "user");
     InMemorySource source = Source(new() {
@@ -438,8 +528,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PreservedFileAlreadyOwnedBySamePackage_StaysOwned() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      PreserveFiles = [new PathGlob("config/*.json")],
+    PackageDocument document = LegacyMoney() with {
+      Preserve = [new PathGlob("config/*.json")],
     };
     AddFile("mods/LegacyMoney/config/config.json", "user");
     LockFile lockFile = new() {
@@ -459,8 +549,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PreserveFilesForFilePackage_RelativeToWorkspaceRoot() {
     // Arrange
-    ConcreteDocument document = FilePackage("Pack", new Placement("cfg/", "cfg/")) with {
-      PreserveFiles = [new PathGlob("cfg/*.ini")],
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "cfg/", "cfg/")) with {
+      Preserve = [new PathGlob("cfg/*.ini")],
     };
     AddFile("cfg/a.ini", "user");
     InMemorySource source = Source(new() { ["cfg/a.ini"] = "default", ["cfg/b.ini"] = "b" });
@@ -477,8 +567,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_Scripts_RunInWorkspaceRootAroundWrites() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreInstall = ["pre1", "pre2"], PostInstall = ["post"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PreInstall = ["pre1", "pre2"], PostInstall = ["post"] },
     };
     string dll = Full("mods/LegacyMoney/LegacyMoney.dll");
     List<(string Command, string Cwd, bool DllExists)> calls = [];
@@ -497,8 +587,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_IgnoreScripts_RunsNoScripts() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreInstall = ["pre"], PostInstall = ["post"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PreInstall = ["pre"], PostInstall = ["post"] },
     };
 
     // Act
@@ -513,8 +603,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PreInstallFails_ThrowsWithoutWriting() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreInstall = ["fail"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PreInstall = ["fail"] },
     };
     _commandRunner.Setup(r => r.Run("fail", It.IsAny<string>()))
         .ThrowsAsync(new InvalidOperationException("Command failed with exit code 1"));
@@ -528,11 +618,11 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_WriteFailsMidway_RollsBackWrittenFiles() {
     // Arrange
-    ConcreteDocument document = FilePackage(
+    PackageDocument document = FilePackage(
         "Pack",
-        new Placement("a.txt", "existing.txt"),
-        new Placement("b.txt", "new/dir/b.txt"),
-        new Placement("c.txt", "c.txt"));
+        new PackageFile(null, "a.txt", "existing.txt"),
+        new PackageFile(null, "b.txt", "new/dir/b.txt"),
+        new PackageFile(null, "c.txt", "c.txt"));
     AddFile("existing.txt", "original");
     InMemorySource source = Source(new() { ["a.txt"] = "a", ["b.txt"] = "b", ["c.txt"] = "c" });
     source.Failing.Add("c.txt");
@@ -547,8 +637,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PostInstallFails_RollsBackWrittenFiles() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PostInstall = ["fail"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PostInstall = ["fail"] },
     };
     _commandRunner.Setup(r => r.Run("fail", It.IsAny<string>()))
         .ThrowsAsync(new InvalidOperationException("Command failed with exit code 1"));
@@ -575,8 +665,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_DryRun_ReportsPlanWithoutChanges() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreInstall = ["pre"], PostInstall = ["post"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PreInstall = ["pre"], PostInstall = ["post"] },
     };
     SortedDictionary<string, string> before = Snapshot();
 
@@ -609,10 +699,10 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_FilePackagePlacingUnderPlugins_WritesAndOwnsUnderMods() {
     // Arrange
-    ConcreteDocument document = FilePackage(
+    PackageDocument document = FilePackage(
         "Patch",
-        new Placement("a.dll", "plugins/X/a.dll"),
-        new Placement("b.dll", "mods/X/a.dll"));
+        new PackageFile(null, "a.dll", "plugins/X/a.dll"),
+        new PackageFile(null, "b.dll", "mods/X/a.dll"));
     InMemorySource source = Source(new() { ["a.dll"] = "a", ["b.dll"] = "b" });
 
     // Act
@@ -628,12 +718,12 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_FilePackageGlobsThroughPlugins_MatchFilesUnderMods() {
     // Arrange
-    ConcreteDocument document = FilePackage(
+    PackageDocument document = FilePackage(
         "Patch",
-        new Placement("a.dll", "plugins/X/a.dll"),
-        new Placement("c.json", "plugins/X/c.json")) with {
-      PreserveFiles = [new PathGlob("plugins/X/*.json")],
-      RemoveFiles = [new PathGlob("plugins/X/logs/")],
+        new PackageFile(null, "a.dll", "plugins/X/a.dll"),
+        new PackageFile(null, "c.json", "plugins/X/c.json")) with {
+      Preserve = [new PathGlob("plugins/X/*.json")],
+      Remove = [new PathGlob("plugins/X/logs/")],
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(new() { ["a.dll"] = "a", ["c.json"] = "c" })),
@@ -652,7 +742,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_FilePackageEmptyingMods_KeepsModsDirectory() {
     // Arrange
-    ConcreteDocument document = FilePackage("Patch", new Placement("a.dll", "mods/X/a.dll"));
+    PackageDocument document = FilePackage("Patch", new PackageFile(null, "a.dll", "mods/X/a.dll"));
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(new() { ["a.dll"] = "a" })), Context(_server));
 
@@ -698,8 +788,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_PreserveFiles_KeepsMatchingOwnedFiles() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      PreserveFiles = [new PathGlob("config/")],
+    PackageDocument document = LegacyMoney() with {
+      Preserve = [new PathGlob("config/")],
     };
     InMemorySource source = Source(new() {
       ["LegacyMoney.dll"] = "dll",
@@ -719,8 +809,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_RemoveFilesDirectoryPattern_DeletesRecursivelyExceptOthers() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      RemoveFiles = [new PathGlob("data/"), new PathGlob("*.log")],
+    PackageDocument document = LegacyMoney() with {
+      Remove = [new PathGlob("data/"), new PathGlob("*.log")],
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(new() { ["LegacyMoney.dll"] = "dll" })), Context(_server));
@@ -730,7 +820,7 @@ public class McmodInstallerTests {
     AddFile("mods/LegacyMoney/data/foreign.txt", "f");
     AddFile("mods/LegacyMoney/run.log", "log");
     AddFile("mods/LegacyMoney/keep.txt", "k");
-    ConcreteDocument other = FilePackage("Other", new Placement("x", "x"));
+    PackageDocument other = FilePackage("Other", new PackageFile(null, "x", "x"));
     LockFile lockFile = new() {
       Packages = [
         Locked(document, owned),
@@ -754,9 +844,9 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_FilePackageRemoveFiles_RelativeToWorkspaceRoot() {
     // Arrange
-    ConcreteDocument document =
-        FilePackage("PeEditor", new Placement("PeEditor.exe", "PeEditor.exe")) with {
-          RemoveFiles = [new PathGlob("PeEditor.log"), new PathGlob("cache/")],
+    PackageDocument document =
+        FilePackage("PeEditor", new PackageFile(null, "PeEditor.exe", "PeEditor.exe")) with {
+          Remove = [new PathGlob("PeEditor.log"), new PathGlob("cache/")],
         };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(new() { ["PeEditor.exe"] = "exe" })), Context(_server));
@@ -778,8 +868,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_RemoveFilesMatchingLipDirectory_LeavesIt() {
     // Arrange
-    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", "a.txt")) with {
-      RemoveFiles = [
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "a.txt", "a.txt")) with {
+      Remove = [
         new PathGlob(".lip/"), new PathGlob(".lip/lock.json"), new PathGlob("*/"),
         new PathGlob("**/*.json"),
       ],
@@ -802,8 +892,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_RemoveFilesGlobs_MatchOnlyAsDeepAsThePattern() {
     // Arrange
-    ConcreteDocument document = FilePackage("Pack", new Placement("a.txt", "a.txt")) with {
-      RemoveFiles = [new PathGlob("*.log"), new PathGlob("logs/**/*.txt")],
+    PackageDocument document = FilePackage("Pack", new PackageFile(null, "a.txt", "a.txt")) with {
+      Remove = [new PathGlob("*.log"), new PathGlob("logs/**/*.txt")],
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(new() { ["a.txt"] = "a" })), Context(_server));
@@ -827,8 +917,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_Scripts_RunInWorkspaceRootAroundDeletion() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreUninstall = ["pre"], PostUninstall = ["post"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PreUninstall = ["pre"], PostUninstall = ["post"] },
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(_legacyMoneyFiles)), Context(_server));
@@ -848,8 +938,8 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_DryRun_ReportsWithoutChanges() {
     // Arrange
-    ConcreteDocument document = LegacyMoney() with {
-      Scripts = new Scripts { PreUninstall = ["pre"] },
+    PackageDocument document = LegacyMoney() with {
+      Hooks = new Hooks { PreUninstall = ["pre"] },
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(_legacyMoneyFiles)), Context(_server));
@@ -867,11 +957,11 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Update_UninstallOldThenInstallNew_PreservesConfigAndReplacesFiles() {
     // Arrange
-    ConcreteDocument v1 = LegacyMoney("0.21.0") with {
-      PreserveFiles = [new PathGlob("config/config.json")],
+    PackageDocument v1 = LegacyMoney("0.21.0") with {
+      Preserve = [new PathGlob("config/config.json")],
     };
-    ConcreteDocument v2 = LegacyMoney("0.22.0") with {
-      PreserveFiles = [new PathGlob("config/config.json")],
+    PackageDocument v2 = LegacyMoney("0.22.0") with {
+      Preserve = [new PathGlob("config/config.json")],
     };
     IReadOnlyList<string> ownedV1 = await _installer.Install(
         Candidate(v1, Source(new() {
@@ -902,12 +992,12 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Update_OwnedFileOverwrittenByNewVersion_IsOwnedAgain() {
     // Arrange
-    ConcreteDocument v1 = FilePackage("Pack", new Placement("a.txt", "a.txt"));
+    PackageDocument v1 = FilePackage("Pack", new PackageFile(null, "a.txt", "a.txt"));
     IReadOnlyList<string> ownedV1 =
         await _installer.Install(
             Candidate(v1, Source(new() { ["a.txt"] = "1" })), Context(_server));
     LockedPackage lockedV1 = Locked(v1, ownedV1);
-    ConcreteDocument v2 = v1 with { Version = SemVersion.Parse("2.0.0") };
+    PackageDocument v2 = v1 with { Version = SemVersion.Parse("2.0.0") };
 
     // Act
     await _installer.Uninstall(lockedV1, Context(_server, new LockFile { Packages = [lockedV1] }));

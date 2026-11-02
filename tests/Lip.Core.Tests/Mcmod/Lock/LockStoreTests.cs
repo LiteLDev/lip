@@ -56,7 +56,7 @@ public class LockStoreTests {
   private static LockedPackage SamplePackage(
       string name,
       ArchiveIdentity? archive,
-      string manifestJson = """{"name":"x","version":"1.0.0","type":"native"}""") => new() {
+      string manifestJson = """{"name":"x","version":"1.0.0"}""") => new() {
         Identity = name,
         Version = "1.0.0",
         Kind = "mcmod",
@@ -79,10 +79,9 @@ public class LockStoreTests {
     LockFile lockFile = await _store.Load(_root);
 
     // Assert
-    Assert.Equal(ManifestFormat.Version, lockFile.FormatVersion);
-    Assert.Equal(ManifestFormat.Uuid, lockFile.FormatUuid);
+    Assert.Equal(ManifestFormat.Format, lockFile.Format);
     Assert.Null(lockFile.Platform);
-    Assert.Null(lockFile.Rid);
+    Assert.Null(lockFile.Runtime);
     Assert.Empty(lockFile.Packages);
   }
 
@@ -95,29 +94,29 @@ public class LockStoreTests {
     LockFile lockFile = await _store.Load(_root);
 
     // Assert
-    Assert.Equal(ManifestFormat.Version, lockFile.FormatVersion);
-    Assert.Equal(ManifestFormat.Uuid, lockFile.FormatUuid);
+    Assert.Equal(ManifestFormat.Format, lockFile.Format);
     Assert.Null(lockFile.Platform);
-    Assert.Null(lockFile.Rid);
+    Assert.Null(lockFile.Runtime);
     Assert.Equal(
         [
-          ("github.com/LiteLDev/bdsdown", "1.2.1"),
-          ("github.com/LiteLDev/bds", "1.26.51"),
-          ("github.com/LiteLDev/CrashLogger", "1.3.3"),
-          ("github.com/LiteLDev/levilamina-loc", "1.6.4"),
-          ("github.com/LiteLDev/PeEditor", "3.9.2"),
-          ("github.com/LiteLDev/PreLoader", "1.16.5"),
-          ("github.com/LiteLDev/bedrock-runtime-data", "26.51.1-server.11"),
-          ("github.com/LiteLDev/LeviLamina", "26.51.8"),
+          ("bdsdown", "1.2.1"),
+          ("bds", "1.26.51"),
+          ("CrashLogger", "1.3.3"),
+          ("levilamina-loc", "1.6.4"),
+          ("PeEditor", "3.9.2"),
+          ("PreLoader", "1.16.5"),
+          ("bedrock-runtime-data", "26.51.1-server.11"),
+          ("LeviLamina", "26.51.8"),
         ],
         lockFile.Packages.Select(p => (p.Identity, p.Version)));
 
     foreach (LockedPackage package in lockFile.Packages) {
+      string tooth = package.Manifest.GetProperty("tooth").GetString()!;
       Assert.Equal("tooth", package.Kind);
-      Assert.Equal([new LockedHop(package.Identity, null)], package.Chain);
-      Assert.Equal($"{package.Identity}@{package.Version}", package.ArchiveKey);
+      Assert.Equal($"github.com/LiteLDev/{package.Identity}", tooth);
+      Assert.Equal([new LockedHop(tooth, null)], package.Chain);
+      Assert.Equal($"{tooth}@{package.Version}", package.ArchiveKey);
       Assert.Null(package.Archive);
-      Assert.Equal(package.Identity, package.Manifest.GetProperty("tooth").GetString());
       Assert.Equal(package.Version, package.Manifest.GetProperty("version").GetString());
       Assert.Equal(3, package.Manifest.GetProperty("format_version").GetInt32());
       Assert.All(package.Files, f => {
@@ -127,11 +126,10 @@ public class LockStoreTests {
     }
 
     Assert.Equal(
-        ["github.com/LiteLDev/LeviLamina"],
+        ["LeviLamina"],
         lockFile.Packages.Where(p => p.Explicit).Select(p => p.Identity));
 
-    LockedPackage leviLamina = lockFile.Packages.Single(
-        p => p.Identity == "github.com/LiteLDev/LeviLamina");
+    LockedPackage leviLamina = lockFile.Packages.Single(p => p.Identity == "LeviLamina");
     Assert.Equal(
         [
           "mods/LeviLamina/manifest.json",
@@ -183,7 +181,7 @@ public class LockStoreTests {
 
     // Assert
     LockedPackage package = Assert.Single(lockFile.Packages);
-    Assert.Equal("github.com/LiteLDev/LeviLamina#client", package.Identity);
+    Assert.Equal("LeviLamina-client", package.Identity);
     Assert.Equal("1.0.0-rc.1", package.Version);
     Assert.True(package.Explicit);
     Assert.Equal([new LockedHop("github.com/LiteLDev/LeviLamina#client", null)], package.Chain);
@@ -194,14 +192,14 @@ public class LockStoreTests {
   [Fact]
   public async Task Load_BothLocksExist_PrefersLipLock() {
     // Arrange
-    await _store.Save(_root, new LockFile { Rid = "win-x64" });
+    await _store.Save(_root, new LockFile { Runtime = "win-x64" });
     _fs.AddFile(ToothLockPath, new MockFileData("not json"));
 
     // Act
     LockFile lockFile = await _store.Load(_root);
 
     // Assert
-    Assert.Equal("win-x64", lockFile.Rid);
+    Assert.Equal("win-x64", lockFile.Runtime);
   }
 
   [Fact]
@@ -209,7 +207,7 @@ public class LockStoreTests {
     // Arrange
     LockFile original = new() {
       Platform = "server",
-      Rid = "win-x64",
+      Runtime = "win-x64",
       Packages = [
         SamplePackage("Zip", new ZipArchiveIdentity(new string('a', 64), "https://example.com/z")),
         SamplePackage("ZipNoUrl", new ZipArchiveIdentity(new string('b', 64), null)),
@@ -230,7 +228,7 @@ public class LockStoreTests {
 
     // Assert
     Assert.Equal(original.Platform, loaded.Platform);
-    Assert.Equal(original.Rid, loaded.Rid);
+    Assert.Equal(original.Runtime, loaded.Runtime);
     Assert.Equal(original.Packages.Count, loaded.Packages.Count);
     for (int i = 0; i < original.Packages.Count; i++) {
       LockedPackage expected = original.Packages[i];
@@ -295,9 +293,7 @@ public class LockStoreTests {
     string text = _fs.File.ReadAllText(LipLockPath);
     Assert.Contains('\n', text);
     JsonElement root = JsonDocument.Parse(text).RootElement;
-    Assert.Equal(4, root.GetProperty("formatVersion").GetInt32());
-    Assert.Equal(
-        "0c6b977a-64ad-441f-9a29-c7f4b196882f", root.GetProperty("formatUuid").GetString());
+    Assert.Equal("bf45b1", root.GetProperty("format").GetString());
     JsonElement archive = root.GetProperty("packages")[0].GetProperty("archive");
     Assert.Equal("git", archive.GetProperty("kind").GetString());
     Assert.Equal("abc", archive.GetProperty("commit").GetString());
@@ -449,7 +445,7 @@ public class LockStoreTests {
     _fs.AddFile(ToothLockPath, new MockFileData("a package's file"));
 
     // Act
-    await _store.Save(_root, new LockFile { Rid = "win-x64" });
+    await _store.Save(_root, new LockFile { Runtime = "win-x64" });
 
     // Assert
     Assert.True(_fs.File.Exists(ToothLockPath));
@@ -460,11 +456,10 @@ public class LockStoreTests {
     // Arrange
     _fs.AddFile(LipLockPath, new MockFileData("""
         {
-          "formatVersion": 4,
-          "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+          "format": "bf45b1",
           "packages": [{
-            "name": "A", "version": "1.0.0", "kind": "mcmod", "explicit": false,
-            "chain": [{ "ref": "./a.mcmod", "artifact": null }], "archiveKey": "k", "manifest": {},
+            "id": "A", "version": "1.0.0", "kind": "mcmod", "explicit": false,
+            "chain": [{ "ref": "./a.mcmod", "target": null }], "archiveKey": "k", "manifest": {},
             "archive": { "sha256": "ab", "url": null, "kind": "zip" }
           }]
         }
@@ -481,10 +476,9 @@ public class LockStoreTests {
   }
 
   public static TheoryData<LockFile> InvalidLocks() => [
-    new LockFile { FormatVersion = 3 },
-    new LockFile { FormatUuid = "289f771f-2c9a-4d73-9f3f-8492495a924d" },
+    new LockFile { Format = "bf45b2" },
     new LockFile { Platform = "Server" },
-    new LockFile { Rid = "" },
+    new LockFile { Runtime = "" },
     new LockFile { Packages = [SamplePackage("A", null) with { Manifest = default }] },
   ];
 
@@ -526,10 +520,10 @@ public class LockStoreTests {
 
   public static TheoryData<string> CorruptLipLocks() {
     const string head = """
-        "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f"
+        "format": "bf45b1"
         """;
     const string package = """
-        "name": "A", "version": "1.0.0", "kind": "mcmod", "explicit": true,
+        "id": "A", "version": "1.0.0", "kind": "mcmod", "explicit": true,
         "chain": [], "archiveKey": "k", "files": []
         """;
     return [
@@ -537,20 +531,19 @@ public class LockStoreTests {
       "not json",
       "[]",
       "null",
-      """{ "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f", "packages": [] }""",
-      """{ "formatVersion": 3, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f" }""",
-      """{ "formatVersion": "4", "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f" }""",
-      """{ "formatVersion": 4, "formatUuid": "289f771f-2c9a-4d73-9f3f-8492495a924d" }""",
-      """{ "formatVersion": 4 }""",
+      """{ "packages": [] }""",
+      """{ "format": "bf45b2", "packages": [] }""",
+      """{ "format": 1, "packages": [] }""",
+      """{ "formatVersion": 4, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f" }""",
       $$"""{ {{head}}, "packages": null }""",
       $$"""{ {{head}}, "packages": [null] }""",
       $$"""{ {{head}}, "platform": "universal", "packages": [] }""",
-      $$"""{ {{head}}, "rid": "", "packages": [] }""",
+      $$"""{ {{head}}, "runtime": "", "packages": [] }""",
       $$"""{ {{head}}, "packages": [{ {{package}} }] }""",
       $$"""{ {{head}}, "packages": [{ {{package}}, "manifest": [] }] }""",
       $$"""{ {{head}}, "packages": [{ {{package}}, "manifest": {}, "chain": [null] }] }""",
       $$"""{ {{head}}, "packages": [{ {{package}}, "manifest": {}, "files": null }] }""",
-      $$"""{ {{head}}, "packages": [{ {{package}}, "manifest": {}, "name": null }] }""",
+      $$"""{ {{head}}, "packages": [{ {{package}}, "manifest": {}, "id": null }] }""",
       $$"""
       { {{head}}, "packages": [{ {{package}}, "manifest": {}, "archive": { "kind": "tar" } }] }
       """,
@@ -571,18 +564,17 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Load_WrongFormatVersion_MessageNamesVersions() {
+  public async Task Load_WrongFormat_MessageNamesFormats() {
     // Arrange
-    _fs.AddFile(LipLockPath, new MockFileData(
-        """{ "formatVersion": 5, "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f" }"""));
+    _fs.AddFile(LipLockPath, new MockFileData("""{ "format": "abcdef", "packages": [] }"""));
 
     // Act
     LockFormatException ex =
         await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
 
     // Assert
-    Assert.Contains("formatVersion 5", ex.Message);
-    Assert.Contains("expected 4", ex.Message);
+    Assert.Contains("format \"abcdef\"", ex.Message);
+    Assert.Contains("expected \"bf45b1\"", ex.Message);
   }
 
   [Theory]

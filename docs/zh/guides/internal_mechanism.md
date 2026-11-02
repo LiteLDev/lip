@@ -19,13 +19,13 @@ Daemon（`lipd`）通过 **stdio 上的 JSON-RPC** 通信，使工具无需为�
 
 1. **锁**：从 `.lip/lock.json` 加载该工作区的锁，或迁移 lip v0.x 留下的旧 `tooth_lock.json`（参见[锁文件](../concepts/lockfiles.md)）。
 2. **环境**：确定平台和 RID（参见[环境](../concepts/package_manifest.md#环境)）。
-3. **解析器**：把每个 ref 转换为一个具体包候选序列，途中跟随路由文档。
+3. **解析器**：把每个 ref 转换为一个包候选序列，途中跟随元文档。
 4. **依赖图求解器**：为每个请求和每条安装边各选出一个候选，使每个身份只出现一次，且不违反任何 `conflicts` 条目。
-5. **规划**：规划按安装顺序的逆序卸载离开集合的包、再按依赖优先的顺序安装进入集合的包，每一步都基于之前各步完成后的工作区。规划会下载所有要写入的文件，并检查一切可能失败的情形：文件所有权、`preserveFiles`、路径、放置来源以及 `plugins`/`mods` 目录布局。`tooth.json` 包在解析时已被转换为第 4 版的文件包（参见[旧格式：tooth.json](../concepts/package_manifest.md#旧格式-tooth-json)），因此所有包都由同一个安装器处理。
-6. **执行**：必要时让 `plugins` 成为指向 `mods` 的链接（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的脚本与文件修改。放到 `plugins/` 下的文件会写入 `mods/` 并按 `mods/` 记录。
+5. **规划**：规划按安装顺序的逆序卸载离开集合的包、再按依赖优先的顺序安装进入集合的包，每一步都基于之前各步完成后的工作区。规划会下载所有要写入的文件，并检查一切可能失败的情形：文件所有权、`preserve`、路径、`files` 的来源以及 `plugins`/`mods` 目录布局。`tooth.json` 包在解析时已被转换为文件包（参见 [tooth.json](../concepts/package_manifest.md#tooth-json)），因此所有包都由同一个安装器处理。
+6. **执行**：必要时让 `plugins` 成为指向 `mods` 的链接（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的钩子与文件修改。放到 `plugins/` 下的文件会写入 `mods/` 并按 `mods/` 记录。
 7. **锁**：所有步骤成功之后，保存一次锁。
 
-操作要么全部完成，要么全部不做（规范 §7"原子性"）。第 6 步之前的任何失败都不会修改工作区。执行时某一步失败（文件无法写入、脚本以非零码退出，或按下 Ctrl+C），lip 会撤销该操作的全部修改（包括目录布局），锁保持原样。脚本所做的事无法撤销：`postInstall` 或 `preUninstall` 脚本失败时，操作同样失败并撤销 lip 的文件修改，但已运行脚本的效果不会被撤销。
+操作要么全部完成，要么全部不做（规范 §7"原子性"）。第 6 步之前的任何失败都不会修改工作区。执行时某一步失败（文件无法写入、钩子命令以非零码退出，或按下 Ctrl+C），lip 会撤销该操作的全部修改（包括目录布局），锁保持原样。钩子命令所做的事无法撤销：`postInstall` 或 `preUninstall` 命令失败时，操作同样失败并撤销 lip 的文件修改，但已运行命令的效果不会被撤销。
 
 ## 包解析
 
@@ -35,8 +35,8 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 - **git 引用**：带 git 引用的包路径只有一个候选。`@branch:<name>` 和 `@tag:<name>` 通过 `ls-refs` 恰好请求 `refs/heads/<name>` 或 `refs/tags/<name>` 来解析（附注标签会被解析到其提交），每条命令只解析一次；`@rev:<commit>` 无需请求，提交按其 ID 获取。不接受缩写的提交 ID：解析缩写需要仓库的全部历史，而 lip 从不下载全部历史。
 - **惰性候选**：包路径的候选从最新标签开始按需产出，因此 lip 只会打开求解器实际需要的标签。
 - **文档**：读取某个版本的 `manifest.json`（或 `tooth.json`）时，lip 只获取该标签提交的树对象（使用 `filter blob:none` 的浅层部分获取，不传输任何文件内容），然后只下载这一个文件。因此无论仓库多大，解析依赖时每个版本只需几 KB 流量。
-- **路由**：路由文档按 variant 和环境选出一个条目，并按顺序解析其 refs。超过 8 跳的链，或两次经过同一归档和 variant 的链，不产出候选。
-- **安装**：只有安装器需要时才下载文件：mod 下载整棵树，文件包只下载要放置的文件。`tooth.json` 包的发布资源在安装时下载，与其他 HTTP 下载相同。
+- **元文档**：元文档按 variant 和环境选出一个 target，并按顺序解析其 `source` 中的 ref。超过 8 跳的链，或两次经过同一归档和 variant 的链，不产出候选。
+- **安装**：只有安装器需要时才下载文件：mod 下载整棵树，文件包只下载从其自身归档中取用的文件。文件包的 `archives` 和 `tooth.json` 包的资源在安装时下载，与其他 HTTP 下载相同。
 - **完整性**：每个下载的 git 对象都会按其 git 对象 ID（SHA-1）校验。ZIP 归档以其 SHA-256 标识。
 - **缓存**：全局缓存按数据的传输方式命名每个条目。下载的 git 文件存为 `git-<对象 ID>`，相同的文件只下载一次，可在不同版本和不同包之间复用。通过 HTTP(S) 下载的内容一律存为 `http-<URL 的 SHA-256>`，因此同一 URL 只下载一次；重新打开锁中记录的 ZIP 归档时，lip 会用锁中的 SHA-256 校验缓存文件，缺失或不一致时重新下载。位于另一个归档中的 ZIP 归档不单独缓存：lip 会再次从其父归档中读取。下载内容先写入缓存中隐藏的 `.staging` 目录，完成后再移动到位；lip 不向系统临时目录写入任何内容。标签列表和树对象仅在单次命令执行期间缓存在内存中；每次运行都会重新查询标签，因此被移动的标签会立即生效。
 - **重定向**：已重命名或转移的 GitHub 仓库会通过 GitHub 的 HTTP 重定向自动跟随。`github.com` 的所有者和仓库名不区分大小写。
@@ -49,8 +49,8 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 ## 求解
 
 - **固定**：已安装的包按原样进入求解器，从锁中重建，无需访问网络。若这样无法满足请求，lip 会只固定显式安装的包重新求解，此时依赖可以改变版本。
-- **优先级**：靠前的候选优先：包路径的最新版本，以及条目或依赖中的第一个 ref。
-- **顺序**：先安装依赖；依赖成环的包按名称排序。
+- **优先级**：靠前的候选优先：包路径的最新版本，以及 target 或依赖的 `source` 中的第一个 ref。
+- **顺序**：先安装依赖；依赖成环的包按身份排序。
 - **清理**：不再被任何显式安装的包需要的依赖会被卸载。
 - **按锁重装**：当 lip 再次需要已安装包的文件时，会打开锁中记录的归档并校验其标识（SHA-256 或提交），而不是重新解析该包。
 
@@ -58,8 +58,8 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 各格式由仓库 `refs/files/` 目录中以 YAML 编写的 JSON Schema 描述：`manifest.json` 为 `manifest.schema.yaml`，锁为 `lock.schema.yaml`。旧格式位于 `refs/files/legacy/v<格式>/`：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
 
-- **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `name`、`version`、ref、范围或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
-- **版本**：带有 `formatVersion` 4 和格式 UUID 的 `manifest.json` 是第 4 版文档；两者都没有的是普通 LeviLamina 清单。格式版本为 1 或 2 的 `tooth.json` 会在读取时于内存中转换为版本 3，再转换为第 4 版的文件包（规范 §9）；如需把包仓库从 `tooth.json` 迁移到 `manifest.json`，请在仓库中运行 `lip migrate`。
+- **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `id`、`version`、ref、范围、glob 或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
+- **版本**：带有 `"format": "bf45b1"` 的 `manifest.json` 是当前格式的文档；不带 `format` 的是 LeviLamina 清单，按 mod 读取（规范 §10.1）。格式版本为 1 或 2 的 `tooth.json` 会在读取时于内存中转换为版本 3，再转换为文件包（规范 §10.2）；如需把包仓库从 `tooth.json` 或 LeviLamina 清单迁移到 `manifest.json`，请在仓库中运行 `lip migrate`。
 
 ## 工作区状态
 
@@ -80,8 +80,8 @@ lip 在保存于工作区中 `.lip/lock.json` 的锁文件里维护已安装包�
 
 lip 只管理服务端工作区：它从不从工作区判断平台，而是总是使用 `server`，如同由用户显式指定（[CLI 规范](https://github.com/LiteLDev/lip/blob/main/refs/cli.md) §3，规范 §5.1）。客户端工作区交由实现同一规范的启动器（如 LeviLauncher）处理。
 
-lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)（格式版本 4）。规范没有规定 lip 如何继续管理旧版本写入的锁（规范 §8 "Earlier formats"），并允许通过包含嵌套 ZIP 归档的归档来标识它（规范 §8）。lip 的做法如下：
+lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)（格式 `bf45b1`）。规范没有规定 lip 如何继续管理旧版本写入的锁（规范 §9 "Earlier formats"），并允许通过包含嵌套 ZIP 归档的归档来标识它（规范 §9）。lip 的做法如下：
 
 1. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。
 2. **嵌套的 ZIP 归档**：位于另一个归档中的 ZIP 归档只按 SHA-256 锁定，且不单独缓存。要再次打开它，lip 会重新解析记录的解析链，从而重新打开父归档并解出该 ZIP 文件，并且只接受 SHA-256 一致的结果。
-3. **同一身份的多个条目**：同一个 `tooth.json` 包的各变体身份不同（`path` 与 `path#label`，规范 §9.1），从 `tooth_lock.json` 迁移时也是如此。若锁中仍有同一身份的两个条目，两者都会保留并列出，并可分别用 `path#variant` 卸载。新的求解要求身份唯一。
+3. **同一身份的多个条目**：同一个 `tooth.json` 包的各变体身份不同（tooth 名称与 `<tooth 名称>-<label>`，规范 §10.2），从 `tooth_lock.json` 迁移时也是如此。若锁中仍有同一身份的两个条目，两者都会保留并列出，并可分别用 `path#variant` 卸载。新的求解要求身份唯一。

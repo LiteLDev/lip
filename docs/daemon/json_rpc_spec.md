@@ -26,6 +26,8 @@ Parameters may be given by position, in the order of the schema, or by name.
 
 The `packages` parameter of `Update` may be empty to update every explicitly installed package.
 
+`Migrate` asks no questions: where [`lip migrate`](../cli/commands/migrate.md) would ask for a value on the terminal, the method fails, naming the value.
+
 ## Errors and Cancellation
 
 A method that fails responds with a JSON-RPC error whose `message` describes the cause, and leaves the workspace as the failing `lip` command would. The client may cancel a pending request with the notification `$/cancelRequest` `{ "id": <request id> }`: a cancelled `Install`, `Uninstall` or `Update` undoes its changes and responds with an error. The client may send further requests before earlier ones are answered, but an `Install`, `Uninstall` or `Update` that finds another one running on the same workspace fails at once.

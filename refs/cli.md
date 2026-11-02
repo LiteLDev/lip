@@ -49,21 +49,21 @@ An invalid argument fails the command before the workspace is changed.
 lip manages server workspaces only. The environment (PF §5.1) of every workspace operation is:
 
 - `platform`: always `"server"`, as if explicitly specified by the user. When the lock records another platform, the operation fails.
-- `rid`: the `--rid` option when given, otherwise the value recorded in the lock, otherwise the RID lip itself runs on.
+- `runtime`: the `--rid` option when given, otherwise the value recorded in the lock, otherwise the RID lip itself runs on.
 
 Client workspaces are out of scope of lip.
 
 ## 4. Workspace Operations
 
-`install`, `uninstall` and `update` are **workspace operations**. Each is one operation in the sense of PF §7: it succeeds or fails as a whole, and on success the lock (PF §8) records the result.
+`install`, `uninstall` and `update` are **workspace operations**. Each is one operation in the sense of PF §7: it succeeds or fails as a whole, and on success the lock (PF §9) records the result.
 
 Common options:
 
 | Option | Behavior |
 |---|---|
 | `-n`, `--dry-run` | Performs every step that does not change anything and reports the changes the operation would make (packages it would install, uninstall or mark as explicitly installed). Neither the workspace nor the lock changes, and no command (PF §7) runs. |
-| `--ignore-scripts` | Commands (`scripts`, PF §4.2, and the scripts of tooth.json packages, PF §9.7) are not run. Everything else is unchanged. |
-| `--rid <RID>` | Sets the `rid` of the environment (§3). |
+| `--ignore-scripts` | Commands (`hooks`, PF §4.1, and the scripts of tooth.json packages, PF §10.2) are not run. Everything else is unchanged. |
+| `--rid <RID>` | Sets the `runtime` of the environment (§3). |
 
 **Cancellation**: when the user interrupts lip (Ctrl+C) while an operation is changing the workspace, the operation is cancelled and its changes are undone (PF §7, "Atomicity" 2). A second interruption ends lip at once; the next workspace operation then undoes or completes the interrupted one (PF §7, "Atomicity" 5). Before the workspace starts to change, an interruption ends lip at once.
 
@@ -95,7 +95,7 @@ Options: the common options of §4, and `--no-dependencies`.
 Each argument names installed packages by one of:
 
 1. an identity, compared ignoring ASCII case;
-2. otherwise, the first ref of the resolution chain the package was installed from (PF §8), compared ignoring ASCII case in the target: a ref without a variant matches every variant, and a ref without a git-ref matches every git-ref. A local file path is resolved as in §2.
+2. otherwise, the first ref of the resolution chain the package was installed from (PF §9), compared ignoring ASCII case in the target: a ref without a variant matches every variant, and a ref without a git-ref matches every git-ref. A local file path is resolved as in §2.
 
 When an argument names no installed package, the command fails.
 
@@ -111,9 +111,9 @@ Options: the common options of §4.
 
 With arguments, each argument (§2) is requested again: without `@`, its newest version; with `@<version>`, that version; with a git-ref, the commit it names now. Every requested package must already be installed (as explicitly installed or as a dependency); otherwise the command fails. The requested packages become explicitly installed.
 
-Without arguments, every explicitly installed package is requested again by the first ref of its resolution chain, as defined in PF §8 ("Updating"). When that ref is a local file that no longer exists, the package is kept as it is and lip warns.
+Without arguments, every explicitly installed package is requested again by the first ref of its resolution chain, as defined in PF §9 ("Updating"). When that ref is a local file that no longer exists, the package is kept as it is and lip warns.
 
-A package is replaced only when the new candidate differs from the installed one (PF §8). Dependencies are updated as the dependency graph requires. A package installed from a git-ref is moved back to released versions by updating it with its package path without `@`.
+A package is replaced only when the new candidate differs from the installed one (PF §9). Dependencies are updated as the dependency graph requires. A package installed from a git-ref is moved back to released versions by updating it with its package path without `@`.
 
 ### 5.4 `lip list [--json]`
 
@@ -133,29 +133,64 @@ With `--json`, the result is a JSON array of strings.
 
 ### 5.6 `lip view <PACKAGE>`
 
-`<PACKAGE>` is a package argument (§2). Writes the root document of the archive it points to as JSON: `tooth.json` when the archive has one, otherwise `manifest.json`. For a package path the archive is that of its newest version, of the given version, or of the commit the git-ref names. A routing document is shown as it is and not followed. It changes nothing.
+`<PACKAGE>` is a package argument (§2). Writes the root document of the archive it points to as JSON: `tooth.json` when the archive has one, otherwise `manifest.json`. For a package path the archive is that of its newest version, of the given version, or of the commit the git-ref names. A meta document is shown as it is and not followed. It changes nothing.
 
 ### 5.7 `lip init`
 
-Writes `manifest.json` in the current directory: a concrete document (PF §4.2) with the format markers (PF §4.4) and
+Writes `manifest.json` in the current directory: a package document (PF §4) describing a mod:
 
-- `name`: the name of the current directory, with every character other than ASCII letters, digits, `.`, `_` and `-` replaced by `-`;
-- `entry`: `"<name>.dll"`;
-- `type`: `"native"`;
+- `format`: `"bf45b1"`;
+- `id`: the name of the current directory, with every character other than ASCII letters, digits, `.`, `_` and `-` replaced by `-`;
 - `version`: `"0.1.0"`;
-- `dependencies`: `[]`.
+- `dependencies`: `{}`;
+- `mod`: `{ "loader": "native", "entry": "<id>.dll" }`.
 
-When `manifest.json` already exists, or the resulting `name` is not a valid name (PF §4.2), the command fails and writes nothing.
+When `manifest.json` already exists, or the resulting `id` is not a valid id (PF §4.1), the command fails and writes nothing.
 
 ### 5.8 `lip migrate`
 
-Converts the package repository in the current directory from `tooth.json` (format 1, 2 or 3) to a format 4 `manifest.json`:
+Converts the package repository in the current directory to a `manifest.json` of format `bf45b1` (PF §4): from `tooth.json` (format 1, 2 or 3) when it exists, otherwise from a LeviLamina manifest (PF §10.1) in `manifest.json`. The result is written with an indentation of two spaces.
 
-1. A `tooth.json` with a single unlabeled variant whose assets are all `self` becomes a file package (`"type": "files"`). Any other `tooth.json` becomes a routing document with one artifact per variant.
-2. When `manifest.json` already exists, the converted keys it lacks (including the format markers) are added to it; keys it has are never changed, and lip warns for each one whose value differs from the converted value. The rest of the file is kept as it is.
-3. `tooth.json` is deleted, only after `manifest.json` has been written.
+**Questions**: when a value the result needs is missing or invalid, lip asks for it on the terminal, again until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
 
-Everything that cannot be expressed in `manifest.json` is reported as a warning naming the tooth.json field; warnings do not fail the command. When `tooth.json` is missing, or `tooth.json` or the existing `manifest.json` cannot be read, the command fails and changes nothing.
+**Warnings**: everything that is dropped or converted with another meaning is reported as a warning naming the field it comes from; warnings do not fail the command.
+
+**From tooth.json** (formats 1 and 2 are first migrated to format 3, PF §10.2). When `manifest.json` also exists, the command fails and changes nothing. `tooth.json` is deleted after `manifest.json` has been written.
+
+1. The document has `id`, the identity PF §10.2 rule 1 gives the unlabeled variant (lip asks for it when it is not an id); `version`; and `info` with `name`, `description`, `tags` and, as `icon`, `avatar_url` of the tooth.json, each only when not empty.
+2. When the tooth.json has a single variant, it is unlabeled, its assets are all `self`, and its `platform` is empty or contains none of `*`, `?` and `[`, the document is a package document: the content of that variant (rule 4) is written at its top level, and its `platform`, when not empty, as `runtime`.
+3. Otherwise the document is a meta document whose Targets hold the content:
+   - For every variant whose `platform` contains `*`, `?` or `[`, lip asks for the runtimes (RIDs) it stands for, as a comma-separated list.
+   - For every label L, the runtimes of L are the non-empty `platform` values of its variants, a pattern standing for the runtimes given for it. For every runtime R of L, the variants labeled L whose `platform` is empty or stands for R are merged as PF §10.2 rule 2 merges them; runtimes whose merged content is the same make one Target, with `runtime` the list of them. When L has variants with an empty `platform`, they make one more Target, without `runtime`, holding their merged content.
+   - A Target has `variant` L (omitted when L is `""`), the merged content (rule 4), and for L other than `""` the `id` PF §10.2 rule 1 gives L.
+   - When the tooth.json has a variant labeled `client`, every Target with the variant `""` also has `"platform": "server"`, and every Target with the variant `client` is written once more, keeping its `id`, with the variant `""` and `"platform": "client"` (PF §10.2 rule 2).
+   - The `source` of a Target is `https://github.com/<owner>/<repo>/releases/download/v{{version}}/<file>` for a tooth path `github.com/<owner>/<repo>[/...]`; for other tooth paths lip asks for the URL prefix the packages will be published under, and the `source` is `<prefix>/<file>`. `<file>` is `{{id}}`, followed by `-{{platform}}` when the Target has `platform` and by `-{{runtime}}` when it has `runtime`, and `.mcmod`.
+4. The content of a (merged) variant:
+   - `dependencies`: every `"<path>[#label]": range` becomes the key the identity of that package would have by PF §10.2 rule 1, with `{ "version": range, "source": "<path>[#label]" }`. The range is written in node-semver syntax; a range that cannot be, or that then accepts other versions, is reported, and a range accepting every version is omitted.
+   - `archives`: every asset other than `self` becomes an Archive named `asset<i>`, i being its index, with its `urls` as `url` and its type as `format` (`"file"` for `uncompressed`).
+   - `files`: every placement becomes a File, with `from` naming the Archive of its asset (none for a `self` asset). A `dir` placement becomes the directory form (`src` `""` for `""` and `"."`, otherwise `src` followed by `/`). A `file` placement becomes the file form when its `src` names a file, and the glob form when `src` is a pattern; lip warns when the glob form places files at other paths than tooth.json did (tooth.json kept only the file name), checking `self` assets against the files of the repository. For an `uncompressed` asset, `src` is the name of its Archive. `\` in `dest` becomes `/`, and `.` and `..` segments are applied.
+   - `preserve` and `remove`: `preserve_files` and `remove_files` mapped as PF §10.2 rule 6.
+   - `hooks`: the scripts mapped as PF §10.2 rule 7; other scripts are dropped.
+   - Empty values are omitted.
+
+**From a LeviLamina manifest**: `manifest.json` is rewritten with `format` and:
+
+| LeviLamina key | Becomes |
+|---|---|
+| `name` | `id` |
+| `version` | `version` |
+| `platform` | `platform` when it is `"server"` or `"client"` |
+| `description` | `info.description` |
+| `author` | `info.authors`: `[author]` |
+| `type`, `entry`, `passive`, `extraInfo` | `mod.loader`, `mod.entry`, `mod.passive`, `mod.extra` |
+| `dependencies` | `dependencies`: `name` mapped to its `version`, or `"*"` |
+| `conflicts` | `conflicts`: `name` mapped to its `version`, or `"*"` |
+| `optionalDependencies`, `loadAfter` | `mod.loadAfter`: their `name`s, without duplicates |
+| `loadBefore` | `mod.loadBefore`: their `name`s, `__before_all_mods__` becoming `"*"` |
+
+Versions in `optionalDependencies`, `loadAfter` and `loadBefore` are dropped. In all of these keys, entries whose name is not an id are dropped, and a `version` that is not a node-semver range becomes `"*"`. Other keys are moved into `mod.extra`. lip asks for `id`, `version` (SemVer 2.0.0), `mod.loader` and `mod.entry` when they would be missing or invalid.
+
+When neither `tooth.json` nor `manifest.json` exists, when `manifest.json` already has the `format` key, or when a file cannot be read, the command fails and changes nothing.
 
 ### 5.9 `lip cache clean`
 
@@ -177,6 +212,21 @@ lip config delete <KEY>
 
 When `<KEY>` is not a key of §6, the command fails.
 
+### 5.11 `lip pack`
+
+```
+lip pack [<DIR>] [--variant <VARIANT>] [--platform <PLATFORM>] [--rid <RID>] [-o, --output <FILE>]
+```
+
+Packs the `manifest.json` of format `bf45b1` (PF §4) in the current directory into the package document of one environment (PF §8):
+
+- For a meta document, the Target is selected as in PF §5.2 step 3, for the variant `--variant` (default `""`) and the environment of `--platform` (`server` or `client`, default `server`) and `--rid` (default: the RID lip runs on). The result is Pack(document, Target, platform, runtime).
+- For a package document, `--variant` must be `""`, `--platform` and `--rid` are not used, and the result is the document itself.
+
+Without `--output`, the result is written to standard output as JSON. With `--output`, lip writes a ZIP archive to `<FILE>`, replacing it: the result as `manifest.json` at its root, and every regular file below `<DIR>` (default: the current directory) at its path relative to `<DIR>`, except `manifest.json` at the root of `<DIR>`, everything below `.git/` and `.lip/` at the root of `<DIR>`, and `<FILE>` itself.
+
+The command fails, writing nothing, when `manifest.json` is missing, is not a valid document of format `bf45b1`, has no Target or more than one for the variant and environment, or when packing fails (PF §8).
+
 ## 6. Configuration
 
 The configuration is per user and is stored in `config.yaml`:
@@ -196,6 +246,6 @@ The file is a YAML mapping of keys to values. A key absent from the file has its
 
 ## 7. The Lock
 
-The lock of a workspace (PF §8) is the file `.lip/lock.json` in the workspace. It belongs to the directory, not to its path: a workspace that is moved, renamed or copied keeps its lock, and so its installed packages.
+The lock of a workspace (PF §9) is the file `.lip/lock.json` in the workspace. It belongs to the directory, not to its path: a workspace that is moved, renamed or copied keeps its lock, and so its installed packages.
 
-**Legacy**: a `tooth_lock.json` that lip v0.x left in the workspace keeps working (PF §8, "Earlier formats").
+**Legacy**: a `tooth_lock.json` that lip v0.x left in the workspace keeps working (PF §9, "Earlier formats").

@@ -152,17 +152,20 @@ internal sealed class WorkspaceHarness {
       }
       """;
 
-  /// A marked concrete manifest.json.
-  public static string Concrete(string name, string version, string type, string extra = "") =>
+  /// A package document: a mod with the loader type and the entry "&lt;name&gt;.dll", or a file
+  /// package for the type "files"; extra holds further keys.
+  public static string Package(string name, string version, string type, string extra = "") =>
       $$"""
       {
-        "formatVersion": 4,
-        "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-        "name": "{{name}}",
-        "version": "{{version}}",
-        "type": "{{type}}"{{(extra == "" ? "" : ",\n" + extra)}}
+        "format": "bf45b1",
+        "id": "{{name}}",
+        "version": "{{version}}"{{ModKey(name, type)}}{{(extra == "" ? "" : ",\n" + extra)}}
       }
       """;
+
+  private static string ModKey(string name, string type) => type == "files"
+      ? ""
+      : $",\n  \"mod\": {{ \"loader\": \"{type}\", \"entry\": \"{name}.dll\" }}";
 
   /// The bytes of a ZIP file holding the given files.
   public static byte[] Zip(Dictionary<string, string> files) =>

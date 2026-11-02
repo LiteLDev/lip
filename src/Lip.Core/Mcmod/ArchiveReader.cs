@@ -19,9 +19,9 @@ public class ArchiveReader(IDocumentParser documentParser) : IArchiveReader {
       if (keys.Contains(ManifestFormat.ManifestFileName)) {
         byte[] bytes = await ReadAll(archive, ManifestFormat.ManifestFileName);
         return _documentParser.Parse(bytes) switch {
-          RoutingDocument routing => new RoutingArchiveDocument(routing),
-          ConcreteDocument concrete => new ConcreteArchiveDocument(
-              concrete, JsonDocument.Parse(bytes).RootElement.Clone()),
+          MetaDocument meta => new MetaArchiveDocument(meta),
+          PackageDocument package => new PackageArchiveDocument(
+              package, JsonDocument.Parse(bytes).RootElement.Clone()),
           _ => throw new InvalidOperationException("Unknown document type."),
         };
       }

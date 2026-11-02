@@ -110,10 +110,10 @@ public class GraphSolverTests {
     // Arrange
     FakeResolver resolver = new();
     resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        conflicts: [new Dep { Name = "b", Version = Between("2.0.0", "99.0.0") }]));
+        conflicts: [new Dep { Id = "b", Version = Between("2.0.0", "99.0.0") }]));
     resolver.AddVersions("github.com/b/b", "B", ["3.0.0", "2.0.0", "1.0.0"]);
     resolver.Add("github.com/c/c", Package("C", "2.0.0", "github.com/c/c",
-        conflicts: [new Dep { Name = "A" }]));
+        conflicts: [new Dep { Id = "A" }]));
     resolver.Add("github.com/c/c", Package("C", "1.0.0", "github.com/c/c"));
     GraphSolver solver = new(resolver);
 
@@ -135,7 +135,7 @@ public class GraphSolverTests {
         edges: [Edge("github.com/y/y")]));
     resolver.Add("github.com/x/x", Package("X", "1.0.0", "github.com/x/x"));
     resolver.Add("github.com/y/y", Package("Y", "1.0.0", "github.com/y/y",
-        conflicts: [new Dep { Name = "Z" }]));
+        conflicts: [new Dep { Id = "Z" }]));
     resolver.Add("github.com/z/z", Package("Z", "1.0.0", "github.com/z/z"));
     GraphSolver solver = new(resolver);
 
@@ -172,7 +172,7 @@ public class GraphSolverTests {
     // Arrange
     FakeResolver resolver = new();
     resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        conflicts: [new Dep { Name = "B" }]));
+        conflicts: [new Dep { Id = "B" }]));
     resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b"));
     GraphSolver solver = new(resolver);
 
@@ -265,7 +265,7 @@ public class GraphSolverTests {
 
   [Fact]
   public async Task Solve_PinnedToothDefaultVariant_DoesNotStandInForClientVariant() {
-    // Arrange: "client" means "" only for archives that use manifest.json (spec §9.3).
+    // Arrange: "client" means "" only for archives that use manifest.json (spec §10.2 rule 3).
     FakeResolver resolver = new();
     resolver.Add("github.com/t/t#client", Variant("t#client", "client"));
     resolver.Add("github.com/r/r", Package("R", "1.0.0", "github.com/r/r", edges: [
@@ -348,7 +348,7 @@ public class GraphSolverTests {
 
   [Fact]
   public async Task Solve_MemberRoutedFromTagOfOtherVersion_SatisfiesEdge() {
-    // Arrange: the routing document at tag v1.0.0 has no version and routes to R 1.0.1, which
+    // Arrange: the meta document at tag v1.0.0 has no version and routes to R 1.0.1, which
     // is installed; Mod's edge must accept it although no tag is named v1.0.1 (spec §5.2, §6).
     FakeResolver resolver = new();
     resolver.Add("github.com/r/r", Package("R", "2.0.0", "github.com/r/r"));
@@ -374,7 +374,7 @@ public class GraphSolverTests {
     // conflicts with it, so Mod's edge is satisfied only by the installed Old (spec §6).
     FakeResolver resolver = new();
     resolver.Add("github.com/n/n", Package("New", "2.0.0", "github.com/n/n",
-        conflicts: [new Dep { Name = "Old" }]));
+        conflicts: [new Dep { Id = "Old" }]));
     FakePackage old = Package("Old", "1.0.0", "github.com/n/n");
     resolver.Add("github.com/n/n", old);
     resolver.Add("github.com/mod/mod", Package("Mod", "1.0.0", "github.com/mod/mod",
@@ -437,7 +437,7 @@ public class GraphSolverTests {
     // Arrange
     FakeResolver resolver = new();
     Candidate a = ToCandidate(Package("A", "1.0.0", "github.com/a/a",
-        conflicts: [new Dep { Name = "B" }]));
+        conflicts: [new Dep { Id = "B" }]));
     Candidate b = ToCandidate(Package("B", "1.0.0", "github.com/b/b"));
     GraphSolver solver = new(resolver);
 
@@ -554,7 +554,7 @@ public class GraphSolverTests {
     FakeResolver resolver = new();
     resolver.AddVersions("github.com/a/a", "A", ["3.0.0", "2.0.0", "1.0.0"]);
     resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b",
-        conflicts: [new Dep { Name = "A" }]));
+        conflicts: [new Dep { Id = "A" }]));
     GraphSolver solver = new(resolver, maxSteps: 2);
 
     // Act
@@ -755,7 +755,7 @@ public class GraphSolverTests {
     public List<ResolveCall> Calls { get; } = [];
 
     /// Adds a candidate; tag is the version of the tag it is reached from when that differs
-    /// from the package's (a routing document without a version), which the range must accept
+    /// from the package's (a meta document without a version), which the range must accept
     /// as well (spec §5.2 step 1).
     public void Add(string location, FakePackage package, string? tag = null) {
       if (!_packages.TryGetValue(location, out List<(FakePackage, SemVersion?)>? list)) {

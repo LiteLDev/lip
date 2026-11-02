@@ -14,30 +14,36 @@ public class McmodInstallException(string message, Exception? inner = null)
     : Exception(message, inner);
 
 /// Installs and uninstalls manifest.json packages: mods and file packages (spec §7), and the
-/// file packages tooth.json archives are converted to (spec §9; lock kind "tooth", whose recorded
-/// manifest is the tooth.json, converted again to uninstall).
+/// file packages tooth.json archives are read as (spec §10.2; lock kind "tooth", whose recorded
+/// manifest is the tooth.json, read again to uninstall).
 ///
 /// Ownership: a file is owned by a package when the package wrote it. A file that already
-/// exists and matches preserveFiles is kept and not written, so it is not owned by the package,
+/// exists and matches preserve is kept and not written, so it is not owned by the package,
 /// unless the lock already records it as owned by a package of the same identity (reinstall or
 /// update while the old entry is still in the lock), in which case ownership carries over.
 ///
 /// Paths are recorded and compared in their canonical form (WorkspaceLayout.CanonicalPath):
 /// a file package placing a file under plugins/ writes and owns it under mods/. Globs relative to
 /// the workspace root match both forms. The mods and plugins directories are never deleted, and
-/// removeFiles never matches them (so a directory pattern naming them removes nothing). .lip,
+/// remove never matches them (so a directory pattern naming them removes nothing). .lip,
 /// where lip keeps the lock, is never written, deleted or matched.
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
     IDocumentParser parser,
-    IUserInteraction userInteraction) : IMcmodInstaller {
+    IUserInteraction userInteraction,
+    IArchiveProvider? archiveProvider = null) : IMcmodInstaller {
   private const string RootManifest = "manifest.json";
+
+  /// Where a file package with archives mounts its own archive (spec §7 "Archives"): archive
+  /// names are ids, which never start with '.'.
+  private const string SelfMount = ".";
 
   private readonly IFileSystem _fs = fileSystem;
   private readonly ICommandRunner _commandRunner = commandRunner;
   private readonly IDocumentParser _parser = parser;
   private readonly IUserInteraction _ui = userInteraction;
+  private readonly IArchiveProvider? _archiveProvider = archiveProvider;
 
   /// How workspace paths are compared: ignoring case on Windows, ordinal elsewhere.
   public static StringComparer PathComparer => WorkspaceLayout.PathComparer;
@@ -93,10 +99,10 @@ public partial class McmodInstaller(
           nameof(candidate));
     }
 
-    ConcreteDocument document = package.Document;
+    PackageDocument document = package.Document;
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
     string baseDir = BaseDirectory(document, context.Environment);
-    ISource source = candidate.Archive.Source;
+    ISource source = Mount(document, candidate.Archive.Source);
 
     // Every check happens before anything is written or run.
     List<PlannedWrite> plan = Plan(document, baseDir, source, root, context.Lock, view);
@@ -118,27 +124,27 @@ public partial class McmodInstaller(
       }
       catch (Exception ex) {
         throw new McmodInstallException(
-            $"{document.Name}: cannot fetch the archive content: {ex.Message}", ex);
+            $"{document.Id}: cannot fetch the archive content: {ex.Message}", ex);
       }
     }
 
     // preInstall, the writes, postInstall.
     List<PlannedStep> steps = [];
-    if (!context.IgnoreScripts && document.Scripts.PreInstall.Count > 0) {
-      steps.Add(new ScriptStep("preInstall", document.Scripts.PreInstall));
+    if (!context.IgnoreScripts && document.Hooks.PreInstall.Count > 0) {
+      steps.Add(new ScriptStep("preInstall", document.Hooks.PreInstall));
     }
 
     steps.AddRange(writes.Select(w => new WriteStep(w.Target, w.FullPath, source, w.SourceKey)));
-    if (!context.IgnoreScripts && document.Scripts.PostInstall.Count > 0) {
-      steps.Add(new ScriptStep("postInstall", document.Scripts.PostInstall));
+    if (!context.IgnoreScripts && document.Hooks.PostInstall.Count > 0) {
+      steps.Add(new ScriptStep("postInstall", document.Hooks.PostInstall));
     }
 
-    return new PackagePlan(document.Name, root, OwnedFiles(plan), steps);
+    return new PackagePlan(document.Id, root, OwnedFiles(plan), steps);
   }
 
   public async Task<PackagePlan> PlanUninstall(
       LockedPackage package, InstallContext context, WorkspaceView view) {
-    ConcreteDocument document = await LockedDocument(package, context.Environment);
+    PackageDocument document = await LockedDocument(package, context.Environment);
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
     string baseDir = BaseDirectory(document, context.Environment);
     string stopDir = document.IsFilePackage
@@ -153,7 +159,7 @@ public partial class McmodInstaller(
             .Select(NormalizeRelative),
         PathComparer);
 
-    // 2. Owned files not matching preserveFiles.
+    // 2. Owned files not matching preserve.
     List<string> files = [];
     HashSet<string> fileSet = new(PathComparer);
     foreach (string file in package.Files.Select(NormalizeRelative)) {
@@ -161,7 +167,7 @@ public partial class McmodInstaller(
           || ownedByOthers.Contains(file)) {
         continue;
       }
-      if (MatchesAny(document.PreserveFiles, file, baseDir)) {
+      if (MatchesAny(document.Preserve, file, baseDir)) {
         continue;
       }
       if (view.FileExists(ToFullPath(root, file)) && fileSet.Add(file)) {
@@ -169,10 +175,10 @@ public partial class McmodInstaller(
       }
     }
 
-    // Paths matching removeFiles that no other package owns.
+    // Paths matching remove that no other package owns.
     List<string> directories = [];
     HashSet<string> directorySet = new(PathComparer);
-    foreach (PathGlob glob in document.RemoveFiles) {
+    foreach (PathGlob glob in document.Remove) {
       foreach ((string path, bool isDirectory) in EnumerateMatches(root, baseDir, glob, view)) {
         if (isDirectory) {
           if (!WorkspaceLayout.IsLayoutDirectory(path) && directorySet.Add(path)) {
@@ -194,8 +200,8 @@ public partial class McmodInstaller(
     }
 
     List<PlannedStep> steps = [];
-    if (!context.IgnoreScripts && document.Scripts.PreUninstall.Count > 0) {
-      steps.Add(new ScriptStep("preUninstall", document.Scripts.PreUninstall));
+    if (!context.IgnoreScripts && document.Hooks.PreUninstall.Count > 0) {
+      steps.Add(new ScriptStep("preUninstall", document.Hooks.PreUninstall));
     }
 
     foreach (string file in files) {
@@ -231,11 +237,11 @@ public partial class McmodInstaller(
       }
     }
 
-    if (!context.IgnoreScripts && document.Scripts.PostUninstall.Count > 0) {
-      steps.Add(new ScriptStep("postUninstall", document.Scripts.PostUninstall));
+    if (!context.IgnoreScripts && document.Hooks.PostUninstall.Count > 0) {
+      steps.Add(new ScriptStep("postUninstall", document.Hooks.PostUninstall));
     }
 
-    return new PackagePlan(document.Name, root, [], steps);
+    return new PackagePlan(document.Id, root, [], steps);
   }
 
   public async Task Apply(
@@ -281,24 +287,39 @@ public partial class McmodInstaller(
 
   /// The directory globs are relative to, workspace-relative with a trailing '/' ("" for the
   /// workspace root).
-  private static string BaseDirectory(ConcreteDocument document, LipEnvironment environment) {
+  private static string BaseDirectory(PackageDocument document, LipEnvironment environment) {
     if (document.IsFilePackage) {
-      // The name of a file package converted from a tooth.json is its tooth path (with
-      // "#label" for a labelled variant), never a path segment.
       return "";
     }
-    if (!NamePattern().IsMatch(document.Name)) {
-      // The parser enforces this (spec §4.2); the name becomes a path segment here.
-      throw new McmodInstallException($"Invalid package name '{document.Name}'.");
+    if (!NamePattern().IsMatch(document.Id)) {
+      // The parser enforces this (spec §4.1); the id becomes a path segment here.
+      throw new McmodInstallException($"Invalid package id '{document.Id}'.");
     }
-    return $"{environment.Platform.ModsDirectory()}/{document.Name}/";
+    return $"{environment.Platform.ModsDirectory()}/{document.Id}/";
   }
 
   [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*\z")]
   private static partial Regex NamePattern();
 
+  /// The source a package's files are taken from: its archive, or, for a file package with
+  /// archives, its archive mounted at SelfMount and each archive at its name, downloaded when
+  /// first read (spec §7 "Archives").
+  private ISource Mount(PackageDocument document, ISource self) {
+    if (document.Archives.Count == 0) {
+      return self;
+    }
+
+    IArchiveProvider provider = _archiveProvider ?? throw new McmodInstallException(
+        $"{document.Id}: archives cannot be downloaded here.");
+    return new MountSource([
+      (SelfMount, self),
+      .. document.Archives.Select(a => (a.Name, (ISource)new DeferredSource(
+          () => provider.OpenAsset(a.Urls, a.Format, a.Sha256)))),
+    ]);
+  }
+
   private List<PlannedWrite> Plan(
-      ConcreteDocument document,
+      PackageDocument document,
       string baseDir,
       ISource source,
       string root,
@@ -312,12 +333,12 @@ public partial class McmodInstaller(
           // Windows drops trailing dots and spaces, which would alias another path.
           || target.Split('/').Any(s => s.EndsWith('.') || s.EndsWith(' '))) {
         throw new McmodInstallException(
-            $"{document.Name}: '{target}' is not a valid path inside the workspace.");
+            $"{document.Id}: '{target}' is not a valid path inside the workspace.");
       }
       target = WorkspaceLayout.CanonicalPath(target);
       if (WorkspaceLayout.IsLipPath(target)) {
         throw new McmodInstallException(
-            $"{document.Name}: '{target}' is inside {LockStore.LipDirectory}, which is reserved"
+            $"{document.Id}: '{target}' is inside {LockStore.LipDirectory}, which is reserved"
             + " for lip.");
       }
       if (!targets.ContainsKey(target)) {
@@ -327,45 +348,23 @@ public partial class McmodInstaller(
     }
 
     List<string> keys = [.. source.Keys];
-    HashSet<string> keySet = new(keys, StringComparer.Ordinal);
-    // In key order: a later placement of the same target wins.
+    // In key order: a later file of the same target wins.
     document = ToothPlacements.Expand(document, keys);
-    if (!document.IsFilePackage) {
-      if (document.Placements.Count > 0) {
-        throw new McmodInstallException(
-            $"{document.Name}: placements are only allowed in file packages.");
-      }
+    if (document.IsMod) {
       foreach (string key in keys) {
         Add(baseDir + key, key);
       }
     } else {
-      foreach (Placement placement in document.Placements) {
-        if (placement.IsDirectory) {
-          List<string> matched = [.. keys.Where(
-              k => k.StartsWith(placement.Src, StringComparison.Ordinal))];
-          if (placement.Src != "" && matched.Count == 0) {
-            throw new McmodInstallException(
-                $"{document.Name}: placement source '{placement.Src}' is not in the archive.");
-          }
-          foreach (string key in matched.Where(k => k != RootManifest)) {
-            Add(placement.Dest + key[placement.Src.Length..], key);
-          }
-        } else {
-          if (!keySet.Contains(placement.Src)) {
-            throw new McmodInstallException(
-                $"{document.Name}: placement source '{placement.Src}' is not in the archive.");
-          }
-          if (placement.Src != RootManifest) {
-            Add(placement.Dest, placement.Src);
-          }
-        }
+      bool mounted = document.Archives.Count > 0;
+      foreach (PackageFile file in document.Files) {
+        PlanFile(document, file, keys, mounted, Add);
       }
     }
 
     Dictionary<string, string> owners = new(PathComparer);
     HashSet<string> ownedBySelf = new(PathComparer);
     foreach (LockedPackage locked in lockFile.Packages) {
-      bool self = PackageNames.AreEqual(locked.Identity, document.Name);
+      bool self = PackageNames.AreEqual(locked.Identity, document.Id);
       foreach (string file in locked.Files.Select(NormalizeRelative)) {
         if (self) {
           ownedBySelf.Add(file);
@@ -380,7 +379,7 @@ public partial class McmodInstaller(
         .Select(t => $"{t} (owned by {owners[t]})")];
     if (conflicts.Count > 0) {
       throw new McmodInstallException(
-          $"{document.Name}: files already owned by other packages: "
+          $"{document.Id}: files already owned by other packages: "
           + string.Join(", ", conflicts));
     }
 
@@ -390,24 +389,91 @@ public partial class McmodInstaller(
       (string target, string key) = targets[normalized];
       string full = ToFullPath(root, target);
       if (!IsInside(root, full)) {
-        throw new McmodInstallException($"{document.Name}: '{target}' escapes the workspace.");
+        throw new McmodInstallException($"{document.Id}: '{target}' escapes the workspace.");
       }
       if (view.DirectoryExists(full)) {
-        throw new McmodInstallException($"{document.Name}: '{target}' is an existing directory.");
+        throw new McmodInstallException($"{document.Id}: '{target}' is an existing directory.");
       }
       for (string? parent = _fs.Path.GetDirectoryName(full);
           parent is not null && IsInside(root, parent) && checkedDirectories.Add(parent);
           parent = _fs.Path.GetDirectoryName(parent)) {
         if (view.FileExists(parent)) {
           throw new McmodInstallException(
-              $"{document.Name}: cannot write '{target}': a parent path is an existing file.");
+              $"{document.Id}: cannot write '{target}': a parent path is an existing file.");
         }
       }
 
-      bool keep = view.FileExists(full) && MatchesAny(document.PreserveFiles, target, baseDir);
+      bool keep = view.FileExists(full) && MatchesAny(document.Preserve, target, baseDir);
       plan.Add(new PlannedWrite(target, key, full, keep, keep && ownedBySelf.Contains(target)));
     }
     return plan;
+  }
+
+  /// Plans the writes of one file of a file package (spec §7). keys are the source's keys; with
+  /// mounted archives, the package's own files are under SelfMount and each archive's under its
+  /// name (a "file" archive is the single key equal to its name).
+  private static void PlanFile(
+      PackageDocument document,
+      PackageFile file,
+      IReadOnlyList<string> keys,
+      bool mounted,
+      Action<string, string> add) {
+    string mount = file.From ?? (mounted ? SelfMount : "");
+    string prefix = mount == "" ? "" : mount + "/";
+
+    // (path in the file's source, key), in key order. The root manifest.json of the package's
+    // own archive is never written.
+    List<(string Path, string Key)> entries = [
+      .. keys
+          .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+          .Select(k => (k[prefix.Length..], k))
+          .Where(e => file.From is not null || e.Item1 != RootManifest),
+    ];
+    if (file.From is not null && keys.Contains(file.From)) {
+      entries.Add((file.From, file.From));
+    }
+
+    switch (file.Form) {
+      case PackageFileForm.File: {
+          (string Path, string Key)? entry = entries
+              .Cast<(string Path, string Key)?>()
+              .FirstOrDefault(e => e!.Value.Path == file.Src);
+          if (entry is null) {
+            if (file.From is null && file.Src == RootManifest) {
+              return;
+            }
+            throw new McmodInstallException(
+                $"{document.Id}: file source '{file.Src}' is not in "
+                + (file.From is null ? "the archive." : $"the archive '{file.From}'."));
+          }
+          add(file.Dest, entry.Value.Key);
+          break;
+        }
+
+      case PackageFileForm.Directory: {
+          List<(string Path, string Key)> matched = [
+            .. entries.Where(e => e.Path.StartsWith(file.Src, StringComparison.Ordinal)),
+          ];
+          if (matched.Count == 0) {
+            throw new McmodInstallException(
+                $"{document.Id}: file source '{file.Src}' has no file in "
+                + (file.From is null ? "the archive." : $"the archive '{file.From}'."));
+          }
+          foreach ((string path, string key) in matched) {
+            add(file.Dest + path[file.Src.Length..], key);
+          }
+          break;
+        }
+
+      case PackageFileForm.Glob: {
+          PathGlob glob = new(file.Src);
+          string fixedPrefix = PathGlob.FixedPrefix(file.Src);
+          foreach ((string path, string key) in entries.Where(e => glob.IsMatch(e.Path))) {
+            add(file.Dest + path[fixedPrefix.Length..], key);
+          }
+          break;
+        }
+    }
   }
 
   private static List<string> OwnedFiles(List<PlannedWrite> plan) =>
@@ -429,7 +495,7 @@ public partial class McmodInstaller(
     }
   }
 
-  private async Task<ConcreteDocument> LockedDocument(
+  private async Task<PackageDocument> LockedDocument(
       LockedPackage package, LipEnvironment environment) {
     ManifestDocument? document;
     try {
@@ -437,15 +503,15 @@ public partial class McmodInstaller(
           ? (await ToothCompat.FromLocked(package, environment))?.Package.Document
               ?? throw new McmodInstallException(
                   $"{package.Identity}: the tooth.json recorded in the lock has no variant "
-                  + $"for the locked ref in {environment.Rid}.")
+                  + $"for the locked ref in {environment.Runtime}.")
           : _parser.Parse(Encoding.UTF8.GetBytes(package.Manifest.GetRawText()));
     }
     catch (Exception ex) when (ex is not McmodInstallException) {
       throw new McmodInstallException(
           $"{package.Identity}: the manifest recorded in the lock is invalid: {ex.Message}", ex);
     }
-    return document as ConcreteDocument ?? throw new McmodInstallException(
-        $"{package.Identity}: the manifest recorded in the lock is not a concrete document.");
+    return document as PackageDocument ?? throw new McmodInstallException(
+        $"{package.Identity}: the manifest recorded in the lock is not a package document.");
   }
 
   /// Workspace paths matching the glob, as (workspace-relative path, is directory); everything

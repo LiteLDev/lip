@@ -10,7 +10,7 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Obtains archives for ref targets (spec §2, §3, §5.2 step 1, §8).
+/// Obtains archives for ref targets (spec §2, §3, §5.2 step 1, §7, §9).
 ///
 /// Downloaded ZIP archives are cached under the key of their URL (CacheKeys.Http), so a URL is
 /// downloaded once; the lock records their SHA-256, which is verified when they are reopened.
@@ -198,6 +198,82 @@ public class ArchiveProvider(
         ? "The asset has no URLs."
         : $"Failed to download the asset: {string.Join("; ", errors)}");
   }
+
+  public async Task<ISource> OpenAsset(
+      IReadOnlyList<string> urls, PackageArchiveFormat format, string? sha256) {
+    List<string> errors = [];
+    foreach (string url in urls) {
+      try {
+        // A cached copy with other content (e.g. corrupted, or another version behind the URL)
+        // is downloaded again once.
+        IFileInfo? cached = await _cacheService.TryGetFile(CacheKeys.Http(url));
+        if (cached is not null && CheckAsset(cached, url, format, sha256) is not null) {
+          cached.Delete();
+        }
+
+        IFileInfo file = await Download(url, url, validate: (f, key) => {
+          if (CheckAsset(f, key, format, sha256) is string error) {
+            throw new ArchiveUnavailableException(error);
+          }
+        });
+        if (format == PackageArchiveFormat.File) {
+          return new SingleFileSource(file);
+        }
+
+        ArchiveSource source = new(file);
+        if (source.Keys.FirstOrDefault(k => !IsValidEntryPath(k)) is string invalid) {
+          throw new ArchiveUnavailableException($"{url}: invalid entry path '{invalid}'.");
+        }
+
+        return source;
+      }
+      catch (ArchiveUnavailableException ex) {
+        errors.Add(ex.Message);
+      }
+    }
+
+    throw new ArchiveUnavailableException(
+        $"Failed to download the archive: {string.Join("; ", errors)}");
+  }
+
+  /// Why a downloaded file is not the archive an "archives" entry describes, or null.
+  private static string? CheckAsset(
+      IFileInfo file, string key, PackageArchiveFormat format, string? sha256) {
+    if (sha256 is not null) {
+      using Stream stream = file.OpenRead();
+      string actual = Convert.ToHexStringLower(SHA256.HashData(stream));
+      if (actual != sha256) {
+        return $"{key} has SHA-256 {actual}, not {sha256}.";
+      }
+    }
+
+    if (format == PackageArchiveFormat.File) {
+      return null;
+    }
+
+    byte[] magic = new byte[2];
+    using (Stream stream = file.OpenRead()) {
+      _ = stream.ReadAtLeast(magic, magic.Length, throwOnEndOfStream: false);
+    }
+
+    bool isZip = magic[0] == (byte)'P' && magic[1] == (byte)'K';
+    bool isGzip = magic[0] == 0x1f && magic[1] == 0x8b;
+    bool matches = format switch {
+      PackageArchiveFormat.Zip => isZip,
+      PackageArchiveFormat.Tgz => isGzip,
+      PackageArchiveFormat.Tar => !isZip && !isGzip,
+      _ => true,
+    };
+    return matches && IsArchive(file)
+        ? null
+        : $"{key} is not {(format == PackageArchiveFormat.Detect ? "a zip, tar or tgz archive" : $"a {format.ToString().ToLowerInvariant()} archive")}.";
+  }
+
+  /// Whether an entry path obeys spec §2.1: '/'-separated, relative, without "..", "\\" or
+  /// empty segments.
+  private static bool IsValidEntryPath(string path) =>
+      path != "" && !path.StartsWith('/') && !path.Contains('\\')
+      && path.Split('/').All(s => s is not ("" or ".."));
 
   /// Gets the git repository URL of a spec (spec §3), without any GitHub proxy applied.
   public static string GetRepoUrl(string spec) => $"https://{spec}.git";

@@ -83,7 +83,10 @@ app.Configure(config => {
       .WithDescription("Lists installed packages");
 
   config.AddCommand<MigrateCommand>("migrate")
-      .WithDescription("Migrates the package repository in the current directory from tooth.json to manifest.json");
+      .WithDescription("Migrates the package repository in the current directory to the current manifest.json format");
+
+  config.AddCommand<PackCommand>("pack")
+      .WithDescription("Packs manifest.json into the package document of one target, or into a ZIP archive");
 
   config.AddCommand<UninstallCommand>("uninstall")
       .WithDescription("Uninstalls packages");

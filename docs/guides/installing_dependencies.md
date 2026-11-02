@@ -60,7 +60,7 @@ lip install https://example.com/package.mcmod
 
 ## Server Workspaces Only
 
-lip manages server workspaces: mods are installed to `mods/<name>/` (see [Environment](../concepts/package_manifest.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
+lip manages server workspaces: mods are installed to `mods/<id>/` (see [Environment](../concepts/package_manifest.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
 In a server workspace, `plugins` is a link to `mods` (a directory junction on Windows, a symbolic link elsewhere), so software that looks in `plugins/` keeps working, and a path under `plugins/` is the same file as the path under `mods/`. Before `lip install`, `lip uninstall` or `lip update` changes any package, lip sets this up:
 
@@ -74,5 +74,5 @@ With `--dry-run`, lip only prints what it would do.
 
 -   `-n, --dry-run`: Simulate the installation without making any changes. Useful to see what would happen.
 -   `--no-dependencies`: Install only the specified package, ignoring its dependencies, and uninstall no other package. This may leave the workspace broken.
--   `--ignore-scripts`: Do not run any package scripts, including the uninstall scripts of packages the installation removes or replaces.
+-   `--ignore-scripts`: Do not run any package hooks, including the uninstall hooks of packages the installation removes or replaces.
 -   `--rid <RID>`: Set the .NET RID of the workspace, e.g. `win-x64`.

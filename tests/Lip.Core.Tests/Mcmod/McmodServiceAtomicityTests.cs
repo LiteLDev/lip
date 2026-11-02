@@ -14,7 +14,7 @@ public class McmodServiceAtomicityTests {
   private WorkspaceHarness _ws = new();
 
   private static string Scripts(string stage, params string[] commands) =>
-      $"\"scripts\": {{ \"{stage}\": [{string.Join(", ", commands.Select(c => $"\"{c}\""))}] }}";
+      $"\"hooks\": {{ \"{stage}\": [{string.Join(", ", commands.Select(c => $"\"{c}\""))}] }}";
 
   private void AddMod(
       string file,
@@ -24,7 +24,7 @@ public class McmodServiceAtomicityTests {
       Dictionary<string, string>? files = null) {
     Dictionary<string, string> content =
         new(files ?? new() { [$"{name}.dll"] = $"{name} {version}" }) {
-          ["manifest.json"] = WorkspaceHarness.Concrete(name, version, "native", extra),
+          ["manifest.json"] = WorkspaceHarness.Package(name, version, "native", extra),
         };
     _ws.AddZip(file, content);
   }
@@ -61,8 +61,8 @@ public class McmodServiceAtomicityTests {
     await _ws.Service.Install(["base.mcmod"], s_options);
     AddMod("a.mcmod", "A", extra: Scripts("preInstall", "a-pre"));
     _ws.AddZip("patch.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Patch", "1.0.0", "files", """
-            "placements": [ { "src": "x.dll", "dest": "mods/Base/Base.dll" } ]
+      ["manifest.json"] = WorkspaceHarness.Package("Patch", "1.0.0", "files", """
+            "files": [ { "src": "x.dll", "dest": "mods/Base/Base.dll" } ]
           """),
       ["x.dll"] = "x",
     });
@@ -91,7 +91,7 @@ public class McmodServiceAtomicityTests {
     });
     await _ws.Service.Install(["demo.mcmod"], s_options);
     _ws.AddFile("mods/Demo/config.json", "user");
-    AddMod("demo.mcmod", "Demo", "2.0.0", "\"preserveFiles\": [\"config.json\"]", new() {
+    AddMod("demo.mcmod", "Demo", "2.0.0", "\"preserve\": [\"config.json\"]", new() {
       ["Demo.dll"] = "dll 2",
       ["data/a.txt"] = "a 2",
       ["new/c.txt"] = "c 2",

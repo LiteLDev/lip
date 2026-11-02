@@ -72,12 +72,12 @@ public class ToothCompatTests {
 
     // Assert
     Assert.NotNull(conversion);
-    ConcreteDocument converted = conversion.Package.Document;
+    PackageDocument converted = conversion.Package.Document;
     Assert.Equal(
         ["github.com/user/common", "github.com/user/windows#client"],
         EdgeRefs(conversion.Package));
-    Assert.Equal(["config/*.json"], converted.PreserveFiles.Select(g => g.Pattern));
-    Assert.Equal(["echo win"], converted.Scripts.PostInstall);
+    Assert.Equal(["config/*.json"], converted.Preserve.Select(g => g.Pattern));
+    Assert.Equal(["echo win"], converted.Hooks.PostInstall);
     Assert.Equal(
         [new AssetPlacement("0", false, "a.dll", "plugins/a/a.dll")],
         converted.AssetPlacements);
@@ -97,12 +97,11 @@ public class ToothCompatTests {
 
     // Assert
     Assert.Equal("tooth", package.Kind);
-    Assert.Equal("github.com/user/repo", package.Identity);
+    Assert.Equal("repo", package.Identity);
     Assert.Equal(SemVersion.Parse("1.2.3"), package.Version);
-    Assert.True(package.Document.IsMarked);
     Assert.True(package.Document.IsFilePackage);
-    Assert.Equal(PackagePlatform.Universal, package.Document.Platform);
-    Assert.Null(package.Document.Rid);
+    Assert.Null(package.Document.Platform);
+    Assert.Null(package.Document.Runtime);
     Assert.Empty(package.Conflicts);
 
     InstallEdge edge = package.InstallEdges[1];
@@ -236,9 +235,9 @@ public class ToothCompatTests {
 
     // Assert
     Assert.NotNull(conversion);
-    Assert.Equal("github.com/LiteLScript-Dev/HelperLib", conversion.Package.Identity);
+    Assert.Equal("HelperLib", conversion.Package.Identity);
     Assert.Equal(3, conversion.Package.Manifest.GetProperty("format_version").GetInt32());
-    Assert.Equal(["echo install"], conversion.Package.Document.Scripts.PostInstall);
+    Assert.Equal(["echo install"], conversion.Package.Document.Hooks.PostInstall);
     Assert.Equal(["github.com/user/dep"], EdgeRefs(conversion.Package));
   }
 
@@ -278,8 +277,8 @@ public class ToothCompatTests {
     Assert.Equal(["https://example.com/v1.1.0/levilamina.zip"], asset.Urls);
     Assert.Equal(
         ["bedrock_server_mod.exe", "bedrock_server_mod.exe/"],
-        package.Document.RemoveFiles.Select(g => g.Pattern));
-    Assert.Equal([".\\PeEditor.exe -mb"], package.Document.Scripts.PostInstall);
+        package.Document.Remove.Select(g => g.Pattern));
+    Assert.Equal([".\\PeEditor.exe -mb"], package.Document.Hooks.PostInstall);
   }
 
   [Fact]
@@ -332,7 +331,7 @@ public class ToothCompatTests {
     };
 
     // Act
-    Scripts converted = ToothCompat.ConvertScripts(scripts);
+    Hooks converted = ToothCompat.ConvertScripts(scripts);
 
     // Assert
     Assert.Equal(["pre"], converted.PreInstall);
@@ -402,15 +401,15 @@ public class ToothCompatTests {
     // Assert
     Assert.NotNull(package);
     Assert.Equal("tooth", package.Kind);
-    Assert.Equal("github.com/user/repo#client", package.Identity);
+    Assert.Equal("repo-client", package.Identity);
     Assert.Equal(SemVersion.Parse("1.2.5"), package.Version);
     Assert.Equal(["github.com/user/clientdep"], EdgeRefs(package));
   }
 
   [Theory]
-  [InlineData("", "server", "github.com/user/repo")]
-  [InlineData("client", "server", "github.com/user/repo#client")]
-  [InlineData("", "client", "github.com/user/repo#client")]
+  [InlineData("", "server", "repo")]
+  [InlineData("client", "server", "repo-client")]
+  [InlineData("", "client", "repo-client")]
   public async Task Convert_Variant_IdentityCarriesSelectedLabel(
       string variant, string platform, string identity) {
     // Arrange
@@ -424,8 +423,7 @@ public class ToothCompatTests {
     // Assert
     Assert.NotNull(package);
     Assert.Equal(identity, package.Identity);
-    Assert.Equal(identity == "github.com/user/repo" ? "" : identity.Split('#')[1],
-        package.Variant);
+    Assert.Equal(identity == "repo" ? "" : "client", package.Variant);
   }
 
   [Fact]

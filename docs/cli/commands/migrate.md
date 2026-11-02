@@ -1,6 +1,6 @@
 # lip migrate
 
-Migrate the package repository in the current directory from `tooth.json` to `manifest.json`.
+Migrate the package repository in the current directory from `tooth.json` or a LeviLamina manifest to `manifest.json`.
 
 ## Synopsis
 
@@ -10,14 +10,16 @@ lip migrate
 
 ## Description
 
-Run it in the root directory of your package repository, the one that contains `tooth.json` (format version 1, 2 or 3). It:
+Run it in the root directory of your package repository. It writes a `manifest.json` with `"format": "bf45b1"`, indented with two spaces:
 
-1. converts `tooth.json` to a format 4 `manifest.json`, as far as the formats allow:
-    - A `tooth.json` with a single unlabeled variant whose assets are all `self` becomes a file package (`"type": "files"`).
-    - Any other `tooth.json` becomes a routing document with one artifact per variant (an unlabeled and a `client` variant become server and client artifacts). You still have to publish the concrete package of each variant.
-2. writes `manifest.json`. If the repository already has one (for example the LeviLamina manifest of your mod), the converted keys are merged into it: keys it does not have yet, including the format markers, are appended in its own indentation; keys it already has are never overwritten, and lip warns for each one whose value differs from the converted value. Everything else in the file is left as it is.
-3. deletes `tooth.json`, only once `manifest.json` has been written.
+- **From `tooth.json`** (format version 1, 2 or 3), when the directory contains one:
+    - A `tooth.json` with a single unlabeled variant whose assets are all `self` and whose `platform` is not a pattern becomes a file package; its `platform` becomes `runtime`.
+    - Any other `tooth.json` becomes a meta document whose `targets` hold the content of the variants (an unlabeled and a `client` variant become server and client targets). Each target points to a `.mcmod` file to publish, which you build with [`lip pack`](pack.md).
+    - The `tooth.json` must be the only manifest: if `manifest.json` also exists, the command fails and changes nothing. `tooth.json` is deleted, only once `manifest.json` has been written.
+- **From a LeviLamina manifest**, otherwise: the `manifest.json` without `format` is rewritten in place as a mod. `name` becomes `id`, `type` and `entry` become `mod.loader` and `mod.entry`, `description` and `author` move to `info`, `dependencies` and `conflicts` become maps from id to range, and `optionalDependencies`, `loadAfter` and `loadBefore` become `mod.loadAfter` and `mod.loadBefore`. Entries whose name is not an id are dropped, and a `version` that is not a node-semver range becomes `"*"`. Other keys are moved into `mod.extra`.
 
-If there is no `tooth.json` in the current directory, or `tooth.json` or the existing `manifest.json` cannot be read, `lip migrate` fails and changes nothing.
+When a value the result needs is missing or invalid (for example a `version` that is a build placeholder, or the RIDs a `tooth.json` platform pattern stands for), lip asks for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, it fails instead, naming the value it would ask for, and changes nothing.
 
-Everything that cannot be expressed in `manifest.json`, or needs a decision, is printed as a warning naming the `tooth.json` field (in its format 3 form). Warnings do not make the command fail. The output is a starting point, not a guarantee: review it before publishing, and commit the result. See [Migrating Packages](../../guides/migrating_packages.md) for the details and limitations.
+If neither `tooth.json` nor `manifest.json` exists, `manifest.json` already has the `format` key, or a file cannot be read, `lip migrate` fails and changes nothing.
+
+Everything that is dropped or converted with another meaning is printed as a warning naming the field it comes from (for `tooth.json`, in its format 3 form). Warnings do not make the command fail. The output is a starting point, not a guarantee: review it before publishing, and commit the result. See [Migrating Packages](../../guides/migrating_packages.md) for the details and limitations.

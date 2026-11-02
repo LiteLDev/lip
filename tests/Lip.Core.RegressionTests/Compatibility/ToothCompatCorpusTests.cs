@@ -15,7 +15,7 @@ using Semver;
 
 namespace Lip.Core.RegressionTests.Compatibility;
 
-/// Checks that the tooth.json conversion (spec §9) converts and installs real tooth packages like
+/// Checks that the tooth.json conversion (spec §10.2) converts and installs real tooth packages like
 /// lip v3: ToothCompat.Convert must map the same merged variant PackageManifest.GetVariant picks,
 /// and McmodInstaller must write exactly the files it reports for the converted package.
 public class ToothCompatCorpusTests {
@@ -66,7 +66,7 @@ public class ToothCompatCorpusTests {
         await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
     PackageManifestVariant? expected;
     try {
-      expected = document.Manifest.GetVariant(reference.Variant, _environment.Rid);
+      expected = document.Manifest.GetVariant(reference.Variant, _environment.Runtime);
     }
     catch (KeyNotFoundException) {
       expected = null;
@@ -76,18 +76,16 @@ public class ToothCompatCorpusTests {
     ToothConversion? actual = new ToothCompat().Convert(
         document, reference.Variant, _environment, null);
 
-    // Assert
-    if (expected is null) {
+    // Assert: a tooth.json whose identity is not an id has no candidate (spec §10.2 rule 1).
+    string identity = ToothCompat.GetIdentity(document.Manifest.Path, reference.Variant);
+    if (expected is null || !PackageNames.IsValid(identity)) {
       Assert.Null(actual);
       return;
     }
 
     Assert.NotNull(actual);
-    ConcreteDocument converted = actual.Package.Document;
-    Assert.Equal(
-        reference.Variant == "" ? document.Manifest.Path
-            : $"{document.Manifest.Path}#{reference.Variant}",
-        actual.Package.Identity);
+    PackageDocument converted = actual.Package.Document;
+    Assert.Equal(identity, actual.Package.Identity);
     Assert.Equal(
         expected.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))),
         actual.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))));
@@ -106,13 +104,13 @@ public class ToothCompatCorpusTests {
     Assert.All(actual.Package.InstallEdges, e => Assert.True(e.ToothClientCompat));
     Assert.Equal(
         ToothCompat.PreserveFiles(expected.PreserveFiles.Select(GlobListJsonConverter.Format)),
-        converted.PreserveFiles.Select(g => g.Pattern));
+        converted.Preserve.Select(g => g.Pattern));
     Assert.Equal(
         ToothCompat.RemoveFiles(expected.RemoveFiles.Select(GlobListJsonConverter.Format)),
-        converted.RemoveFiles.Select(g => g.Pattern));
+        converted.Remove.Select(g => g.Pattern));
     Assert.Equal(
         JsonSerializer.Serialize(ToothCompat.ConvertScripts(expected.Scripts)),
-        JsonSerializer.Serialize(converted.Scripts));
+        JsonSerializer.Serialize(converted.Hooks));
   }
 
   [WinX64Theory]

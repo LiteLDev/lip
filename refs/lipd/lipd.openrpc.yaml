@@ -71,10 +71,10 @@ methods:
         type: 'null'
   - name: Init
     description: >-
-      Writes a format 4 concrete manifest.json in the daemon working directory, as lip init: named
-      after the directory, entry "<name>.dll", type "native", version "0.1.0", no dependencies.
-      Fails, writing nothing, when manifest.json exists or the resulting name is not a valid package
-      name.
+      Writes a manifest.json package document of format "bf45b1" in the daemon working directory,
+      as lip init: its id named after the directory, version "0.1.0", no dependencies, and a native
+      mod with entry "<id>.dll". Fails, writing nothing, when manifest.json exists or the resulting
+      id is not a valid id.
     params: []
     result:
       name: result
@@ -150,12 +150,13 @@ methods:
         maxItems: 2
   - name: Migrate
     description: >-
-      Converts the package repository in the daemon working directory from tooth.json (format 1, 2
-      or 3) to a format 4 manifest.json, as lip migrate: the converted keys an existing
-      manifest.json lacks are added to it without changing the keys it has, then tooth.json is
-      deleted. What cannot be converted, and each existing key whose value differs from the
-      converted value, is reported through PrintWarning. Fails, changing nothing, when tooth.json is
-      missing or tooth.json or an existing manifest.json cannot be read.
+      Converts the package repository in the daemon working directory to a manifest.json of format
+      "bf45b1", as lip migrate: from tooth.json (format 1, 2 or 3), then deleted, or else from a
+      LeviLamina manifest.json. What is dropped or converted with another meaning is reported
+      through PrintWarning. lipd asks no questions: when lip migrate would ask for a value, the
+      method fails, naming the value. Fails, changing nothing, also when tooth.json and
+      manifest.json both exist, when neither exists, when manifest.json already has the format key,
+      or when a file cannot be read.
     params: []
     result:
       name: result
@@ -274,7 +275,7 @@ methods:
     description: >-
       Returns the root document of the archive a package argument points to, as lip view: tooth.json
       when the archive has one, otherwise manifest.json. For a package path the archive is that of
-      its newest version, of the given version, or of the commit the git ref names. A routing
+      its newest version, of the given version, or of the commit the git ref names. A meta
       document is returned as it is and not followed. Changes nothing.
     params:
       - name: package

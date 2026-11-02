@@ -5,14 +5,13 @@ using Semver;
 namespace Lip.Core.Tests.Mcmod;
 
 public class McmodPackageTests {
-  private static ConcreteDocument CreateDocument(bool isMarked) => new() {
-    IsMarked = isMarked,
-    Name = "LegacyMoney",
+  private static PackageDocument CreateDocument() => new() {
+    Id = "LegacyMoney",
     Version = SemVersion.Parse("0.22.0"),
-    Type = "native",
+    IsMod = true,
     Dependencies = [
-      new Dep { Name = "iListenAttentively", Refs = [Ref.Parse("github.com/MiracleForest/iListenAttentively")] },
-      new Dep { Name = "NoRefs" },
+      new Dep { Id = "iListenAttentively", Refs = [Ref.Parse("github.com/MiracleForest/iListenAttentively")] },
+      new Dep { Id = "NoSource" },
     ],
     InstallDependencies = [
       new InstallDep { Refs = [Ref.Parse("github.com/LiteLDev/LeviLamina")] },
@@ -20,9 +19,9 @@ public class McmodPackageTests {
   };
 
   [Fact]
-  public void InstallEdges_Marked_IncludesDependenciesWithRefsAndInstallDependencies() {
+  public void InstallEdges_IncludeDependenciesWithSourceAndToothDependencies() {
     // Arrange
-    McmodPackage package = new(CreateDocument(isMarked: true), JsonDocument.Parse("{}").RootElement);
+    McmodPackage package = new(CreateDocument(), JsonDocument.Parse("{}").RootElement);
 
     // Act
     IReadOnlyList<InstallEdge> edges = package.InstallEdges;
@@ -35,22 +34,13 @@ public class McmodPackageTests {
   }
 
   [Fact]
-  public void InstallEdges_Unmarked_IsEmpty() {
+  public void MetaTarget_Matches_ChecksWrittenSelectorsOnly() {
     // Arrange
-    McmodPackage package = new(CreateDocument(isMarked: false), JsonDocument.Parse("{}").RootElement);
+    MetaTarget target = new() { Runtimes = ["win-x64"], Source = ["./a/"] };
 
     // Act & Assert
-    Assert.Empty(package.InstallEdges);
-  }
-
-  [Fact]
-  public void Artifact_Matches_ChecksWrittenSelectorsOnly() {
-    // Arrange
-    Artifact artifact = new() { Rids = ["win-x64"], Refs = ["./a/"] };
-
-    // Act & Assert
-    Assert.True(artifact.Matches(new(McmodPlatform.Server, "win-x64")));
-    Assert.False(artifact.Matches(new(McmodPlatform.Server, "linux-x64")));
-    Assert.Equal(1, artifact.SelectorCount);
+    Assert.True(target.Matches(new(McmodPlatform.Server, "win-x64")));
+    Assert.False(target.Matches(new(McmodPlatform.Server, "linux-x64")));
+    Assert.Equal(1, target.SelectorCount);
   }
 }

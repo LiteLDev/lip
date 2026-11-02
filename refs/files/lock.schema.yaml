@@ -1,20 +1,17 @@
 $schema: https://json-schema.org/draft-07/schema#
-title: lip workspace lock (<workspace>/.lip/lock.json), format 4
+title: lip workspace lock (<workspace>/.lip/lock.json), format bf45b1
 type: object
 properties:
-  formatVersion:
-    type: integer
-    const: 4
-  formatUuid:
+  format:
     type: string
-    const: 0c6b977a-64ad-441f-9a29-c7f4b196882f
+    const: bf45b1
   platform:
     description: >-
       Environment platform. lip manages server workspaces only and writes "server"; null in a lock
       migrated from tooth_lock.json. A lock recording another platform makes workspace operations
       fail.
     enum: [server, client, null]
-  rid:
+  runtime:
     description: .NET RID of the environment; null until known.
     type: [string, 'null']
     minLength: 1
@@ -22,28 +19,30 @@ properties:
     type: array
     items:
       $ref: '#/definitions/package'
-required: [formatVersion, formatUuid, packages]
+required: [format, packages]
 definitions:
   package:
     type: object
     properties:
-      name:
+      id:
         description: >-
-          Identity: the name of the concrete package; for a tooth.json package, the tooth path,
-          followed by "#<label>" for a labelled variant.
+          Identity: the id of the package; for a tooth.json package, the tooth name followed by
+          "-<label>" for a labelled variant.
         type: string
       version:
         type: string
       kind:
-        description: 'Package kind: "mcmod" or "tooth".'
+        description: >-
+          Package kind: "mcmod" for a manifest.json (of format bf45b1, or a LeviLamina manifest),
+          "tooth" for a tooth.json.
         type: string
       explicit:
         description: Whether the user asked for the package (as opposed to a dependency).
         type: boolean
       chain:
         description: >-
-          Resolution chain: the ref of every hop and the Artifact index chosen at that hop. The
-          first ref is what `lip update` requests again.
+          Resolution chain: the ref of every hop and the target index chosen at that hop. The first
+          ref is what `lip update` requests again.
         type: array
         items:
           type: object
@@ -53,10 +52,10 @@ definitions:
                 The ref as resolved, including a git ref (e.g. "github.com/o/r@branch:main"); the
                 first hop may also be the file: URI of a local ZIP file requested by the user.
               type: string
-            artifact:
+            target:
               description: >-
-                Index of the Artifact selected in the routing document at this hop; null when the
-                hop reaches a concrete document.
+                Index of the target selected in the meta document at this hop; null when the hop
+                reaches a package document.
               type: [integer, 'null']
               minimum: 0
             commit:
@@ -66,11 +65,11 @@ definitions:
                 tooth_lock.json.
               type: string
               pattern: ^[0-9a-f]{40}$
-          required: [ref, artifact]
+          required: [ref, target]
       archiveKey:
         type: string
       archive:
-        description: Identity of the final archive; null for packages migrated from a v3 lock.
+        description: Identity of the final archive; null for packages migrated from tooth_lock.json.
         oneOf:
           - type: 'null'
           - $ref: '#/definitions/zipArchive'
@@ -84,10 +83,10 @@ definitions:
           type: string
       manifest:
         description: >-
-          The package document: manifest.json, or for a tooth.json package the tooth.json in format
-          3 with the version installed.
+          The package document: the manifest.json (of format bf45b1, or a LeviLamina manifest), or
+          for a tooth.json package the tooth.json in format 3 with the version installed.
         type: object
-    required: [name, version, kind, explicit, chain, archiveKey, manifest]
+    required: [id, version, kind, explicit, chain, archiveKey, manifest]
   zipArchive:
     type: object
     properties:

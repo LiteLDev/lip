@@ -19,7 +19,7 @@ public class WorkspaceLayoutTests {
 
   private void AddMod(string name = "Demo") {
     _ws.AddZip("pkg.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete(name, "1.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package(name, "1.0.0", "native"),
       [$"{name}.dll"] = "dll",
     });
   }
@@ -266,7 +266,7 @@ public class WorkspaceLayoutTests {
   [Fact]
   public async Task Uninstall_LockWithPluginsPaths_MigratesLayoutAndRemovesFiles() {
     // Arrange: a mod installed while plugins was the server mod directory.
-    string manifest = WorkspaceHarness.Concrete("Demo", "1.0.0", "native");
+    string manifest = WorkspaceHarness.Package("Demo", "1.0.0", "native");
     _ws.AddFile("plugins/Demo/Demo.dll", "dll");
     _ws.AddFile("plugins/Demo/manifest.json", manifest);
     _ws.AddFile("plugins/Other/Other.dll", "other");
@@ -303,8 +303,8 @@ public class WorkspaceLayoutTests {
     AddMod();
     await _ws.Service.Install(["pkg.mcmod"], s_options);
     _ws.AddZip("files.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Patch", "1.0.0", "files", """
-            "placements": [ { "src": "Demo.dll", "dest": "plugins/Demo/Demo.dll" } ]
+      ["manifest.json"] = WorkspaceHarness.Package("Patch", "1.0.0", "files", """
+            "files": [ { "src": "Demo.dll", "dest": "plugins/Demo/Demo.dll" } ]
           """),
       ["Demo.dll"] = "patched",
     });

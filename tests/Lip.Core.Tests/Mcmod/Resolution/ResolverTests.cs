@@ -12,7 +12,7 @@ namespace Lip.Core.Tests.Mcmod.Resolution;
 public class ResolverTests {
   private const string _legacyMoney = "github.com/LiteLDev/LegacyMoney";
   private const string _legacyMoneyTemplate = "https://github.com/LiteLDev/LegacyMoney/releases/"
-      + "download/v{{version}}/{{name}}-{{platform}}-{{rid}}.mcmod";
+      + "download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod";
 
   private static readonly LipEnvironment _server = new(McmodPlatform.Server, "win-x64");
   private static readonly LipEnvironment _client = new(McmodPlatform.Client, "win-x64");
@@ -25,35 +25,36 @@ public class ResolverTests {
   private static ArchiveHandle Workspace => new(
       "/workspace", Mock.Of<ISource>(), new ZipArchiveIdentity(TestIdentity.Sha256, "/workspace"));
 
-  private static ConcreteArchiveDocument Concrete(
+  private static PackageArchiveDocument PackageDoc(
       string name,
       string version,
-      PackagePlatform platform = PackagePlatform.Universal,
-      string? rid = null) => new(
-      new ConcreteDocument {
-        IsMarked = true,
-        Name = name,
+      McmodPlatform? platform = null,
+      string? runtime = null) => new(
+      new PackageDocument {
+        Id = name,
         Version = SemVersion.Parse(version),
-        Type = "native",
+        IsMod = true,
         Platform = platform,
-        Rid = rid,
+        Runtime = runtime,
       },
-      JsonDocument.Parse($"{{\"name\":\"{name}\"}}").RootElement.Clone());
+      JsonDocument.Parse($"{{\"id\":\"{name}\"}}").RootElement.Clone());
 
-  private static RoutingArchiveDocument Routing(
-      params Artifact[] artifacts) => Routing(null, null, artifacts);
+  private static MetaArchiveDocument Meta(
+      params MetaTarget[] targets) => Meta(null, null, targets);
 
-  private static RoutingArchiveDocument Routing(
+  private static MetaArchiveDocument Meta(
       string? name,
       string? version,
-      params Artifact[] artifacts) => new(new RoutingDocument {
-        IsMarked = true,
-        Name = name,
+      params MetaTarget[] targets) => new(new MetaDocument {
+        Id = name,
         Version = version is null ? null : SemVersion.Parse(version),
-        Artifacts = artifacts,
+        Targets = [.. targets.Select(t => t with {
+          TemplateId = t.TemplateId ?? name,
+          TemplateVersion = t.TemplateVersion ?? (version is null ? null : SemVersion.Parse(version)),
+        })],
       });
 
-  private static Artifact Art(params string[] refs) => new() { Refs = refs };
+  private static MetaTarget Art(params string[] refs) => new() { Source = refs };
 
   /// A tooth.json with one variant per label, for every platform.
   private static ToothArchiveDocument Tooth(string path, string version, params string[] labels) =>
@@ -69,20 +70,20 @@ public class ResolverTests {
       new SemVersionRangeConstraint(SemVersionRange.Parse(range));
 
   private void AddLegacyMoney() {
-    _archives.AddTag(_legacyMoney, "v0.22.0", Routing("LegacyMoney", "0.22.0", new Artifact {
+    _archives.AddTag(_legacyMoney, "v0.22.0", Meta("LegacyMoney", "0.22.0", new MetaTarget {
       Platforms = [McmodPlatform.Server, McmodPlatform.Client],
-      Rids = ["win-x64"],
-      Refs = [_legacyMoneyTemplate],
+      Runtimes = ["win-x64"],
+      Source = [_legacyMoneyTemplate],
     }));
     const string download = "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/";
     _archives.AddUrl(download + "LegacyMoney-server-win-x64.mcmod",
-        Concrete("LegacyMoney", "0.22.0", PackagePlatform.Server, "win-x64"));
+        PackageDoc("LegacyMoney", "0.22.0", McmodPlatform.Server, "win-x64"));
     _archives.AddUrl(download + "LegacyMoney-client-win-x64.mcmod",
-        Concrete("LegacyMoney", "0.22.0", PackagePlatform.Client, "win-x64"));
+        PackageDoc("LegacyMoney", "0.22.0", McmodPlatform.Client, "win-x64"));
   }
 
   [Fact]
-  public async Task Resolve_SpecRoutingToUrlTemplate_ProducesConcreteWithChain() {
+  public async Task Resolve_SpecMetaToUrlTemplate_ProducesPackageWithChain() {
     // Arrange
     AddLegacyMoney();
     Ref reference = Ref.Parse(_legacyMoney);
@@ -100,7 +101,7 @@ public class ResolverTests {
     Assert.Equal(2, candidate.Chain.Count);
     Assert.Equal(new ChainHop(reference, 0), candidate.Chain[0]);
     Assert.Equal(candidate.Archive.Key, candidate.Chain[1].Ref.Target);
-    Assert.Null(candidate.Chain[1].ArtifactIndex);
+    Assert.Null(candidate.Chain[1].TargetIndex);
     Assert.Empty(result.Diagnostics);
   }
 
@@ -131,13 +132,13 @@ public class ResolverTests {
     // Assert
     Assert.Empty(result.Candidates);
     string diagnostic = Assert.Single(result.Diagnostics);
-    Assert.StartsWith("github.com/LiteLDev/LegacyMoney@v0.22.0: no artifact", diagnostic);
+    Assert.StartsWith("github.com/LiteLDev/LegacyMoney@v0.22.0: no target", diagnostic);
   }
 
   [Fact]
   public async Task Resolve_TransientOpenFailure_IsRetriedByLaterResolve() {
     // Arrange
-    _archives.AddUrl("https://example.com/a.mcmod", Concrete("A", "1.0.0"));
+    _archives.AddUrl("https://example.com/a.mcmod", PackageDoc("A", "1.0.0"));
     _archives.FailOnce.Add("https://example.com/a.mcmod");
     Resolver resolver = CreateResolver();
 
@@ -153,9 +154,9 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_ConcretePlatformDiffers_NoCandidate() {
+  public async Task Resolve_PackagePlatformDiffers_NoCandidate() {
     // Arrange
-    _archives.AddUrl("https://example.com/a.mcmod", Concrete("A", "1.0.0", PackagePlatform.Client));
+    _archives.AddUrl("https://example.com/a.mcmod", PackageDoc("A", "1.0.0", McmodPlatform.Client));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -169,14 +170,14 @@ public class ResolverTests {
   [Theory]
   [InlineData("quickjs")]
   [InlineData("lua")]
-  public async Task Resolve_VariantRouting_FollowsRelativeDirectory(string variant) {
+  public async Task Resolve_VariantMeta_FollowsRelativeDirectory(string variant) {
     // Arrange
     const string spec = "github.com/LiteLDev/LegacyScriptEngine";
-    _archives.AddTag(spec, "v1.0.0", Routing(
-        new Artifact { Variant = "quickjs", Refs = ["./quickjs/"] },
-        new Artifact { Variant = "lua", Refs = ["./lua/"] }));
-    _archives.AddRelative($"{spec}@1.0.0", "./quickjs/", Concrete("lse-quickjs", "1.0.0"));
-    _archives.AddRelative($"{spec}@1.0.0", "./lua/", Concrete("lse-lua", "1.0.0"));
+    _archives.AddTag(spec, "v1.0.0", Meta(
+        new MetaTarget { Variant = "quickjs", Source = ["./quickjs/"] },
+        new MetaTarget { Variant = "lua", Source = ["./lua/"] }));
+    _archives.AddRelative($"{spec}@1.0.0", "./quickjs/", PackageDoc("lse-quickjs", "1.0.0"));
+    _archives.AddRelative($"{spec}@1.0.0", "./lua/", PackageDoc("lse-lua", "1.0.0"));
     Ref reference = Ref.Parse($"{spec}#{variant}");
 
     // Act
@@ -196,7 +197,7 @@ public class ResolverTests {
   public async Task Resolve_UnknownVariant_NoCandidate() {
     // Arrange
     _archives.AddUrl("https://example.com/r.mcmod",
-        Routing(new Artifact { Variant = "lua", Refs = ["./lua/"] }));
+        Meta(new MetaTarget { Variant = "lua", Source = ["./lua/"] }));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -208,9 +209,9 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_VariantOnConcrete_NoCandidate() {
+  public async Task Resolve_VariantOnPackage_NoCandidate() {
     // Arrange
-    _archives.AddUrl("https://example.com/a.mcmod", Concrete("A", "1.0.0"));
+    _archives.AddUrl("https://example.com/a.mcmod", PackageDoc("A", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -224,11 +225,11 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_MostSpecificArtifact_Wins() {
     // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod", Routing(
+    _archives.AddUrl("https://example.com/r.mcmod", Meta(
         Art("https://example.com/generic.mcmod"),
-        new Artifact { Rids = ["win-x64"], Refs = ["https://example.com/win.mcmod"] }));
-    _archives.AddUrl("https://example.com/generic.mcmod", Concrete("Generic", "1.0.0"));
-    _archives.AddUrl("https://example.com/win.mcmod", Concrete("Win", "1.0.0"));
+        new MetaTarget { Runtimes = ["win-x64"], Source = ["https://example.com/win.mcmod"] }));
+    _archives.AddUrl("https://example.com/generic.mcmod", PackageDoc("Generic", "1.0.0"));
+    _archives.AddUrl("https://example.com/win.mcmod", PackageDoc("Win", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -237,17 +238,17 @@ public class ResolverTests {
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
     Assert.Equal("Win", candidate.Package.Identity);
-    Assert.Equal(1, candidate.Chain[0].ArtifactIndex);
+    Assert.Equal(1, candidate.Chain[0].TargetIndex);
   }
 
   [Fact]
   public async Task Resolve_TiedArtifacts_NoCandidate() {
     // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod", Routing(
-        new Artifact { Rids = ["win-x64"], Refs = ["https://example.com/a.mcmod"] },
-        new Artifact {
+    _archives.AddUrl("https://example.com/r.mcmod", Meta(
+        new MetaTarget { Runtimes = ["win-x64"], Source = ["https://example.com/a.mcmod"] },
+        new MetaTarget {
           Platforms = [McmodPlatform.Server],
-          Refs = ["https://example.com/b.mcmod"],
+          Source = ["https://example.com/b.mcmod"],
         }));
 
     // Act
@@ -262,12 +263,12 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_SeveralRefs_ConcatenatesInOrderAndSkipsFailures() {
     // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod", Routing(Art(
+    _archives.AddUrl("https://example.com/r.mcmod", Meta(Art(
         "https://example.com/missing.mcmod",
         "https://example.com/b.mcmod",
         "https://example.com/a.mcmod")));
-    _archives.AddUrl("https://example.com/a.mcmod", Concrete("A", "1.0.0"));
-    _archives.AddUrl("https://example.com/b.mcmod", Concrete("B", "1.0.0"));
+    _archives.AddUrl("https://example.com/a.mcmod", PackageDoc("A", "1.0.0"));
+    _archives.AddUrl("https://example.com/b.mcmod", PackageDoc("B", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -277,7 +278,7 @@ public class ResolverTests {
     Assert.Equal(["B", "A"], result.Candidates.Select(c => c.Package.Identity));
     string diagnostic = Assert.Single(result.Diagnostics);
     Assert.StartsWith(
-        "https://example.com/r.mcmod[artifact 0] → https://example.com/missing.mcmod: ",
+        "https://example.com/r.mcmod[target 0] → https://example.com/missing.mcmod: ",
         diagnostic);
   }
 
@@ -285,7 +286,7 @@ public class ResolverTests {
   public async Task Resolve_MissingTemplateKey_NoCandidate() {
     // Arrange
     _archives.AddUrl("https://example.com/r.mcmod",
-        Routing(Art("https://example.com/{{version}}.mcmod")));
+        Meta(Art("https://example.com/{{version}}.mcmod")));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -313,8 +314,8 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_Cycle_NoCandidate() {
     // Arrange
-    _archives.AddUrl("https://example.com/a.mcmod", Routing(Art("https://example.com/b.mcmod")));
-    _archives.AddUrl("https://example.com/b.mcmod", Routing(Art("https://example.com/a.mcmod")));
+    _archives.AddUrl("https://example.com/a.mcmod", Meta(Art("https://example.com/b.mcmod")));
+    _archives.AddUrl("https://example.com/b.mcmod", Meta(Art("https://example.com/a.mcmod")));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -328,10 +329,10 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_SameArchiveDifferentVariant_IsNotACycle() {
     // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod", Routing(
-        new Artifact { Refs = ["https://example.com/r.mcmod#lua"] },
-        new Artifact { Variant = "lua", Refs = ["./lua/"] }));
-    _archives.AddRelative("https://example.com/r.mcmod", "./lua/", Concrete("Lua", "1.0.0"));
+    _archives.AddUrl("https://example.com/r.mcmod", Meta(
+        new MetaTarget { Source = ["https://example.com/r.mcmod#lua"] },
+        new MetaTarget { Variant = "lua", Source = ["./lua/"] }));
+    _archives.AddRelative("https://example.com/r.mcmod", "./lua/", PackageDoc("Lua", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -348,10 +349,10 @@ public class ResolverTests {
     // Arrange
     for (int i = 1; i < hops; i++) {
       _archives.AddUrl($"https://example.com/{i}.mcmod",
-          Routing(Art($"https://example.com/{i + 1}.mcmod")));
+          Meta(Art($"https://example.com/{i + 1}.mcmod")));
     }
 
-    _archives.AddUrl($"https://example.com/{hops}.mcmod", Concrete("End", "1.0.0"));
+    _archives.AddUrl($"https://example.com/{hops}.mcmod", PackageDoc("End", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -381,7 +382,7 @@ public class ResolverTests {
     Candidate candidate = Assert.Single(result.Candidates);
     McmodPackage package = Assert.IsType<McmodPackage>(candidate.Package);
     Assert.Equal(ToothCompat.KindName, package.Kind);
-    Assert.Equal("github.com/user/tooth#client", package.Identity);
+    Assert.Equal("tooth-client", package.Identity);
     Assert.Equal("client", package.Variant);
     Assert.True(package.Document.IsFilePackage);
     Assert.Equal("github.com/user/tooth@1.2.0", candidate.Archive.Key);
@@ -449,21 +450,21 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_TagVersionMismatch_NoCandidate() {
     // Arrange
-    _archives.AddTag("github.com/user/pkg", "v1.0.0", Concrete("Pkg", "1.0.1"));
+    _archives.AddTag("github.com/user/pkg", "v1.0.0", PackageDoc("Pkg", "1.0.1"));
     _archives.AddTag("github.com/user/routed", "v1.0.0",
-        Routing("Routed", "1.0.1", Art("https://example.com/x.mcmod")));
+        Meta("Routed", "1.0.1", Art("https://example.com/x.mcmod")));
 
     // Act
-    ResolveResult concrete = await CreateResolver()
+    ResolveResult package = await CreateResolver()
         .Resolve(Ref.Parse("github.com/user/pkg"), Workspace, null, _server);
-    ResolveResult routing = await CreateResolver()
+    ResolveResult meta = await CreateResolver()
         .Resolve(Ref.Parse("github.com/user/routed"), Workspace, null, _server);
 
     // Assert
-    Assert.Empty(concrete.Candidates);
-    Assert.Contains("differs from the tag version", Assert.Single(concrete.Diagnostics));
-    Assert.Empty(routing.Candidates);
-    Assert.Contains("differs from the tag version", Assert.Single(routing.Diagnostics));
+    Assert.Empty(package.Candidates);
+    Assert.Contains("differs from the tag version", Assert.Single(package.Diagnostics));
+    Assert.Empty(meta.Candidates);
+    Assert.Contains("differs from the tag version", Assert.Single(meta.Diagnostics));
   }
 
   [Fact]
@@ -485,8 +486,8 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_RelativeArchiveInsideTag_SkipsTagVersionCheck() {
     // Arrange
-    _archives.AddTag("github.com/user/pkg", "v1.0.0", Routing(Art("./sub/")));
-    _archives.AddRelative("github.com/user/pkg@1.0.0", "./sub/", Concrete("Sub", "9.0.0"));
+    _archives.AddTag("github.com/user/pkg", "v1.0.0", Meta(Art("./sub/")));
+    _archives.AddRelative("github.com/user/pkg@1.0.0", "./sub/", PackageDoc("Sub", "9.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver()
@@ -500,7 +501,7 @@ public class ResolverTests {
   public async Task Resolve_RangeAcrossTags_FiltersAndOrdersByPrecedence() {
     // Arrange
     foreach (string version in new[] { "2.0.0", "1.5.0", "1.0.0", "0.9.0" }) {
-      _archives.AddTag("github.com/user/pkg", $"v{version}", Concrete("Pkg", version));
+      _archives.AddTag("github.com/user/pkg", $"v{version}", PackageDoc("Pkg", version));
     }
 
     // Act
@@ -514,11 +515,11 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_RangeAppliesThroughRouting() {
+  public async Task Resolve_RangeAppliesThroughMeta() {
     // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod", Routing(Art("github.com/user/pkg")));
-    _archives.AddTag("github.com/user/pkg", "v2.0.0", Concrete("Pkg", "2.0.0"));
-    _archives.AddTag("github.com/user/pkg", "v1.0.0", Concrete("Pkg", "1.0.0"));
+    _archives.AddUrl("https://example.com/r.mcmod", Meta(Art("github.com/user/pkg")));
+    _archives.AddTag("github.com/user/pkg", "v2.0.0", PackageDoc("Pkg", "2.0.0"));
+    _archives.AddTag("github.com/user/pkg", "v1.0.0", PackageDoc("Pkg", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
@@ -531,7 +532,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_NoTagSatisfiesRange_NoCandidate() {
     // Arrange
-    _archives.AddTag("github.com/user/pkg", "v1.0.0", Concrete("Pkg", "1.0.0"));
+    _archives.AddTag("github.com/user/pkg", "v1.0.0", PackageDoc("Pkg", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
@@ -546,7 +547,7 @@ public class ResolverTests {
   public async Task ResolveLazy_FirstCandidateOnly_OpensOnlyFirstTag() {
     // Arrange
     for (int i = 100; i >= 1; i--) {
-      _archives.AddTag("github.com/user/pkg", $"v1.0.{i}", Concrete("Pkg", $"1.0.{i}"));
+      _archives.AddTag("github.com/user/pkg", $"v1.0.{i}", PackageDoc("Pkg", $"1.0.{i}"));
     }
 
     // Act
@@ -583,8 +584,8 @@ public class ResolverTests {
     // Arrange: the branch routes to the release of the version it declares.
     const string commit = "0123456789abcdef0123456789abcdef01234567";
     AddLegacyMoney();
-    _archives.AddGitRef(_legacyMoney, "branch:main", commit, Routing(
-        "LegacyMoney", "0.22.0", new Artifact { Refs = [_legacyMoneyTemplate] }));
+    _archives.AddGitRef(_legacyMoney, "branch:main", commit, Meta(
+        "LegacyMoney", "0.22.0", new MetaTarget { Source = [_legacyMoneyTemplate] }));
     Ref reference = Ref.Parse($"{_legacyMoney}@branch:main");
 
     // Act
@@ -606,7 +607,7 @@ public class ResolverTests {
       string gitRef, string documentVersion, bool expectCandidate) {
     // Arrange
     const string spec = "example.com/x";
-    _archives.AddGitRef(spec, gitRef, new string('a', 40), Concrete("X", documentVersion));
+    _archives.AddGitRef(spec, gitRef, new string('a', 40), PackageDoc("X", documentVersion));
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
@@ -620,7 +621,7 @@ public class ResolverTests {
   public async Task Resolve_GitRefOutsideRange_NoCandidate() {
     // Arrange
     const string spec = "example.com/x";
-    _archives.AddGitRef(spec, "branch:main", new string('a', 40), Concrete("X", "1.0.0"));
+    _archives.AddGitRef(spec, "branch:main", new string('a', 40), PackageDoc("X", "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(

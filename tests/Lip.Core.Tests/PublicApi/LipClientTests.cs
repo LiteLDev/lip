@@ -1,5 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
+using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
 using Lip.Core.Services;
@@ -60,16 +61,16 @@ public class LipClientTests {
   }
 
   [Fact]
-  public async Task Init_WritesMarkedConcreteManifest() {
+  public async Task Init_WritesModPackageDocument() {
     // Act
     await _client.Init();
 
     // Assert
     byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("manifest.json"));
-    ConcreteDocument document = Assert.IsType<ConcreteDocument>(new DocumentParser().Parse(bytes));
-    Assert.True(document.IsMarked);
-    Assert.Equal("ws", document.Name);
-    Assert.Equal("native", document.Type);
+    PackageDocument document = Assert.IsType<PackageDocument>(new DocumentParser().Parse(bytes));
+    Assert.Equal("ws", document.Id);
+    Assert.True(document.IsMod);
+    Assert.Equal("0.1.0", document.Version.ToString());
     Assert.False(_ws.Exists("tooth.json"));
   }
 
@@ -93,7 +94,7 @@ public class LipClientTests {
   }
 
   [Fact]
-  public async Task Migrate_SingleSelfVariant_WritesConcreteFilePackage() {
+  public async Task Migrate_SingleSelfVariant_WritesFilePackage() {
     // Arrange
     _ws.AddFile("tooth.json", """
         {
@@ -122,23 +123,23 @@ public class LipClientTests {
     // Assert
     Assert.False(_ws.Exists("tooth.json"));
     byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("manifest.json"));
-    ConcreteDocument document = Assert.IsType<ConcreteDocument>(new DocumentParser().Parse(bytes));
-    Assert.True(document.IsMarked);
-    Assert.Equal("repo", document.Name);
-    Assert.Equal("files", document.Type);
-    Assert.Equal("win-x64", document.Rid);
+    PackageDocument document = Assert.IsType<PackageDocument>(new DocumentParser().Parse(bytes));
+    Assert.Equal("repo", document.Id);
+    Assert.True(document.IsFilePackage);
+    Assert.Equal("win-x64", document.Runtime);
     Assert.Equal(
-        [new Placement("bin/", "plugins/repo/"), new Placement("a.txt", "a.txt")],
-        document.Placements);
-    InstallDep dependency = Assert.Single(document.InstallDependencies);
-    Assert.Equal("github.com/LiteLDev/LeviLamina", Assert.Single(dependency.Refs).ToString());
+        [new PackageFile(null, "bin/", "plugins/repo/"), new PackageFile(null, "a.txt", "a.txt")],
+        document.Files);
+    Dep dependency = Assert.Single(document.Dependencies);
+    Assert.Equal("LeviLamina", dependency.Id);
+    Assert.Equal("github.com/LiteLDev/LeviLamina", Assert.Single(dependency.Refs!).ToString());
     Assert.True(dependency.Version!.IsSatisfiedBy(Semver.SemVersion.Parse("1.9.5")));
     Assert.False(dependency.Version.IsSatisfiedBy(Semver.SemVersion.Parse("1.10.0")));
-    Assert.Equal(["echo install", "echo post"], document.Scripts.PostInstall);
+    Assert.Equal(["echo install", "echo post"], document.Hooks.PostInstall);
   }
 
   [Fact]
-  public async Task Migrate_SeveralVariants_WritesRoutingDocumentAndWarns() {
+  public async Task Migrate_SeveralVariants_WritesMetaDocument() {
     // Arrange
     _ws.AddFile("tooth.json", """
         {
@@ -159,22 +160,33 @@ public class LipClientTests {
     // Assert
     Assert.False(_ws.Exists("tooth.json"));
     byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("manifest.json"));
-    RoutingDocument document = Assert.IsType<RoutingDocument>(new DocumentParser().Parse(bytes));
-    Assert.Equal(2, document.Artifacts.Count);
-    Assert.NotEmpty(_ws.Warnings);
+    MetaDocument document = Assert.IsType<MetaDocument>(new DocumentParser().Parse(bytes));
+    MetaTarget target = Assert.Single(document.Targets);
+    Assert.Equal(["win-x64", "linux-x64"], target.Runtimes);
   }
 
   [Fact]
-  public async Task Migrate_NoToothJson_ThrowsAndChangesNothing() {
-    // Arrange
-    _ws.AddFile("manifest.json", "{}");
-
+  public async Task Migrate_NothingToMigrate_ThrowsAndChangesNothing() {
     // Act
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
         _client.Migrate);
 
     // Assert
-    Assert.Contains("tooth.json", ex.Message);
+    Assert.Contains("neither tooth.json nor manifest.json", ex.Message);
+    Assert.False(_ws.Exists("manifest.json"));
+  }
+
+  [Fact]
+  public async Task Migrate_LeviLaminaManifestNeedingAnswers_ThrowsAndChangesNothing() {
+    // Arrange
+    _ws.AddFile("manifest.json", "{}");
+
+    // Act
+    InvalidOperationException ex = await Assert.ThrowsAsync<CannotAskException>(
+        _client.Migrate);
+
+    // Assert
+    Assert.Contains("the package id", ex.Message);
     Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("manifest.json")));
   }
 

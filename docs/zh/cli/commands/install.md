@@ -22,7 +22,7 @@ lip install <PACKAGES> [options]
 4. **远程归档** — `.mcmod` 或 `.zip` 文件的 `https://` URL（例如 `https://example.com/package.mcmod`），后面可跟 `#<variant>`。下载内容按 URL 缓存。
 5. **本地归档** — `.mcmod` 或 `.zip` 文件，使用绝对路径或相对于当前目录的路径（例如 `./package.mcmod` 或 `C:\Downloads\package.zip`），后面可跟 `#<variant>`。以 `./`、`../`、`.\` 或 `..\` 开头、为 `.` 或 `..`、为绝对路径，或不含 `@` 且以 `.mcmod` 或 `.zip` 结尾（不区分大小写）或指向已存在的文件或目录的参数，都按本地处理。文件是否为 ZIP 归档只取决于其内容，与扩展名无关。
 
-本地目录不是包：`lip install ./some/dir` 会失败，且不改动工作区。请先把目录打包为 `.mcmod` 文件（根目录含 `manifest.json` 的 ZIP 归档）。包内部的相对引用（`./...`），例如路由文档的路由、或嵌套在归档中的 `.mcmod`，仍然照常工作。
+本地目录不是包：`lip install ./some/dir` 会失败，且不改动工作区。请先把目录打包为 `.mcmod` 文件（根目录含 `manifest.json` 的 ZIP 归档）。[`lip pack`](pack.md) 可以完成这一步。包内部的相对引用（`./...`），例如元文档中 target 的 `source`、或嵌套在归档中的 `.mcmod`，仍然照常工作。
 
 包的依赖也会一并安装。安装一个已被显式安装的包会报错；如需改变其版本，请使用 [`lip update`](update.md)。作为依赖安装的包会变为显式安装。
 
@@ -43,7 +43,7 @@ git 引用把包路径固定到其仓库的某个提交：
 | 选项 | 说明 |
 | --- | --- |
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
-| `--ignore-scripts` | 不执行任何包脚本，包括操作所移除或替换的包的卸载脚本（以及 `tooth.json` 包的脚本）。 |
+| `--ignore-scripts` | 不执行包的 `hooks`，包括操作所移除或替换的包的卸载钩子（以及 `tooth.json` 包的脚本）。 |
 | `--no-dependencies` | 对每个参数恰好安装其第一个候选，替换同一身份的已安装包；不安装任何依赖，也不卸载其他包。这可能导致工作区损坏。 |
 | `--rid <RID>` | 工作区的 .NET RID，例如 `win-x64`。 |
 

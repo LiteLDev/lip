@@ -4,7 +4,7 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// How the final archive of a package is identified in the lock (spec §8).
+/// How the final archive of a package is identified in the lock (spec §9).
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(ZipArchiveIdentity), "zip")]
 [JsonDerivedType(typeof(GitArchiveIdentity), "git")]
@@ -70,13 +70,22 @@ public interface IArchiveProvider {
   /// Opens the git archive of a commit of a spec target. Its key is "spec@rev:commit".
   public Task<ArchiveHandle> OpenCommit(string spec, string commit);
 
-  /// Re-opens an archive recorded in the lock and verifies its identity (spec §8).
+  /// Re-opens an archive recorded in the lock and verifies its identity (spec §9).
   public Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity);
 
-  /// Downloads a tooth.json asset (spec §9.4) from the first of its URLs that works, cached
+  /// Downloads a tooth.json asset (spec §10.2 rule 4) from the first of its URLs that works, cached
   /// under the key of that URL like url archives. An archive asset (ZIP, tar or gzipped tar, told
   /// apart by content) is opened as its files; any other asset is a single file with the key "".
   /// Unlike url archives, the files are not checked against §2, as lip v3 did not check them.
   /// Throws ArchiveUnavailableException when no URL works.
   public Task<ISource> OpenAsset(IReadOnlyList<string> urls, bool isArchive);
+
+  /// Downloads an "archives" entry of a file package (spec §7 "Archives") from the first of its
+  /// URLs that can be downloaded and, when sha256 is given, has that SHA-256 (lowercase hex). A
+  /// "file" archive is a single file with the key ""; any other is opened as its files, which
+  /// must have the given format (or any of zip, tar and tgz for Detect) and whose paths must obey
+  /// spec §2.1. Throws ArchiveUnavailableException when no URL works.
+  public Task<ISource> OpenAsset(
+      IReadOnlyList<string> urls, PackageArchiveFormat format, string? sha256) =>
+      throw new NotSupportedException("This provider does not download archives.");
 }

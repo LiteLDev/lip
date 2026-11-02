@@ -58,7 +58,7 @@ public class WorkspaceLayout(
       string.Equals(CanonicalPath(path.TrimEnd('/')), ModsDirectory, PathComparison);
 
   /// Whether a workspace-relative path is .lip or below it, where lip keeps its own files (the
-  /// lock): packages never write there, and removeFiles never matches it.
+  /// lock): packages never write there, and remove never matches it.
   public static bool IsLipPath(string path) =>
       string.Equals(path.TrimEnd('/'), LockStore.LipDirectory, PathComparison)
       || path.StartsWith(LockStore.LipDirectory + "/", PathComparison);

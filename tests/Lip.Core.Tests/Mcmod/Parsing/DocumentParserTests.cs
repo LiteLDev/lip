@@ -4,79 +4,70 @@ using Lip.Core.Mcmod;
 namespace Lip.Core.Tests.Mcmod.Parsing;
 
 public class DocumentParserTests {
-  private const string Markers =
-      "\"formatVersion\": 4, \"formatUuid\": \"0c6b977a-64ad-441f-9a29-c7f4b196882f\"";
+  private const string Format = "\"format\": \"bf45b1\"";
 
   private readonly DocumentParser _parser = new(FakeVersionRange.Parse);
 
   private ManifestDocument Parse(string json) => _parser.Parse(Encoding.UTF8.GetBytes(json));
 
   [Fact]
-  public void Parse_UnmarkedLeviLaminaManifest_ReturnsUnmarkedConcreteDocument() {
+  public void Parse_LeviLaminaManifest_ReadsModWithConflictsOnly() {
     // Arrange
     string json = """
         {
           "name": "my-mod", "entry": "my-mod.dll", "version": "1.0.0", "type": "native",
-          "description": "d", "author": "a", "extraInfo": { "x": 1 },
-          "dependencies": [ { "name": "LeviLamina", "version": ">=1.0.0" } ]
+          "description": "d", "author": "a", "extraInfo": { "x": 1 }, "platform": "x",
+          "dependencies": [ { "name": "LeviLamina", "version": ">=1.0.0", "refs": 5 } ],
+          "conflicts": [ { "name": "Other", "version": "<2.0.0" }, { "name": "Any" } ],
+          "artifacts": "ignored", "formatVersion": 4
         }
         """;
 
     // Act
-    ConcreteDocument doc = Assert.IsType<ConcreteDocument>(Parse(json));
+    PackageDocument doc = Assert.IsType<PackageDocument>(Parse(json));
 
     // Assert
-    Assert.False(doc.IsMarked);
-    Assert.Equal("my-mod", doc.Name);
+    Assert.Equal("my-mod", doc.Id);
     Assert.Equal("1.0.0", doc.Version.ToString());
-    Assert.Equal("native", doc.Type);
-    Assert.Equal(PackagePlatform.Universal, doc.Platform);
-    Dep dep = Assert.Single(doc.Dependencies);
-    Assert.Equal("LeviLamina", dep.Name);
-    Assert.Equal(new FakeVersionRange(">=1.0.0"), dep.Version);
-    Assert.Null(dep.Refs);
+    Assert.True(doc.IsMod);
+    Assert.Null(doc.Platform);
+    Assert.Empty(doc.Dependencies);
+    Assert.Equal(["Other", "Any"], doc.Conflicts.Select(c => c.Id));
+    Assert.Equal(new FakeVersionRange("<2.0.0"), doc.Conflicts[0].Version);
+    Assert.Null(doc.Conflicts[1].Version);
+    Assert.Empty(new McmodPackage(doc, default).InstallEdges);
   }
 
   [Fact]
-  public void Parse_UnmarkedWithInstallKeys_IgnoresDependencyRefsAndInstallDependencies() {
-    // Arrange
-    string json = """
-        {
-          "name": "m", "version": "1.0.0", "type": "native",
-          "dependencies": [ { "name": "x", "refs": 5 } ],
-          "installDependencies": "anything"
-        }
-        """;
-
-    // Act
-    ConcreteDocument doc = Assert.IsType<ConcreteDocument>(Parse(json));
-
-    // Assert
-    Assert.Null(Assert.Single(doc.Dependencies).Refs);
-    Assert.Empty(doc.InstallDependencies);
-  }
-
-  [Fact]
-  public void Parse_MarkedConcrete_ReadsAllKeys() {
+  public void Parse_PackageDocument_ReadsAllKeys() {
     // Arrange
     string json = $$"""
         {
-          {{Markers}},
-          "name": "Pkg.Name_1-x", "version": "1.2.3-rc.1+build.5", "type": "files",
-          "platform": "client", "rid": "win-x64",
-          "refs": ["github.com/a/b"],
-          "dependencies": [ { "name": "d", "version": "^1.0.0", "refs": ["./d/#v1"] } ],
-          "optionalDependencies": [ { "name": "o" } ],
-          "conflicts": [ { "name": "c", "version": "<2.0.0" } ],
-          "installDependencies": [ { "name": "i", "refs": ["https://example.com/i.mcmod"] } ],
-          "placements": [
+          {{Format}},
+          "id": "Pkg.Name_1-x", "version": "1.2.3-rc.1+build.5",
+          "platform": "client", "runtime": "win-x64",
+          "info": { "name": "N", "description": "D", "authors": ["a"], "tags": ["t"],
+                    "icon": "https://example.com/i.png" },
+          "dependencies": {
+            "d": { "version": "^1.0.0", "source": "./d/#v1" },
+            "e": ">=2.0.0",
+            "f": { "source": ["https://example.com/f.mcmod", "github.com/o/f"], "mod": false }
+          },
+          "conflicts": { "c": "<2.0.0" },
+          "archives": {
+            "bin": { "url": ["https://example.com/a.zip", "https://example.com/b.zip"],
+                     "sha256": "{{new string('A', 64)}}", "format": "zip" },
+            "tool": { "url": "https://example.com/tool.exe", "format": "file" }
+          },
+          "files": [
             { "src": "", "dest": "" },
-            { "src": "bin/", "dest": "tools/bin/" },
-            { "src": "a.exe", "dest": "b/a.exe" }
+            { "from": "bin", "src": "bin/", "dest": "tools/bin/" },
+            { "src": "a.exe", "dest": "b/a.exe" },
+            { "src": "cfg/**/*.json", "dest": "config/" }
           ],
-          "preserveFiles": ["config/"],
-          "removeFiles": ["logs/**/*.log"],
-          "scripts": {
+          "preserve": ["config/"],
+          "remove": ["logs/**/*.log"],
+          "hooks": {
             "preInstall": ["a"], "postInstall": ["b", "c"],
             "preUninstall": [], "postUninstall": ["d"], "install": 5
           }
@@ -84,92 +75,128 @@ public class DocumentParserTests {
         """;
 
     // Act
-    ConcreteDocument doc = Assert.IsType<ConcreteDocument>(Parse(json));
+    PackageDocument doc = Assert.IsType<PackageDocument>(Parse(json));
 
     // Assert
-    Assert.True(doc.IsMarked);
     Assert.True(doc.IsFilePackage);
     Assert.Equal("1.2.3-rc.1+build.5", doc.Version.ToString());
-    Assert.Equal(PackagePlatform.Client, doc.Platform);
-    Assert.Equal("win-x64", doc.Rid);
-    Assert.Equal("github.com/a/b", Assert.Single(doc.Refs).Target);
-    Ref depRef = Assert.Single(Assert.Single(doc.Dependencies).Refs!);
+    Assert.Equal(McmodPlatform.Client, doc.Platform);
+    Assert.Equal("win-x64", doc.Runtime);
+    Assert.Equal(["d", "e", "f"], doc.Dependencies.Select(d => d.Id));
+    Ref depRef = Assert.Single(doc.Dependencies[0].Refs!);
     Assert.Equal(RefKind.Relative, depRef.Kind);
     Assert.Equal("v1", depRef.Variant);
-    Assert.Null(Assert.Single(doc.OptionalDependencies).Version);
+    Assert.Equal(new FakeVersionRange(">=2.0.0"), doc.Dependencies[1].Version);
+    Assert.Null(doc.Dependencies[1].Refs);
+    Assert.Equal(2, doc.Dependencies[2].Refs!.Count);
     Assert.Equal(new FakeVersionRange("<2.0.0"), Assert.Single(doc.Conflicts).Version);
-    InstallDep install = Assert.Single(doc.InstallDependencies);
-    Assert.Equal("i", install.Name);
-    Assert.Equal(RefKind.Url, Assert.Single(install.Refs).Kind);
     Assert.Equal(
-        [new Placement("", ""), new Placement("bin/", "tools/bin/"), new("a.exe", "b/a.exe")],
-        doc.Placements);
-    Assert.Equal("config/", Assert.Single(doc.PreserveFiles).Pattern);
-    Assert.Equal("logs/**/*.log", Assert.Single(doc.RemoveFiles).Pattern);
-    Assert.Equal(["a"], doc.Scripts.PreInstall);
-    Assert.Equal(["b", "c"], doc.Scripts.PostInstall);
-    Assert.Empty(doc.Scripts.PreUninstall);
-    Assert.Equal(["d"], doc.Scripts.PostUninstall);
+        [
+          new PackageArchive(
+              "bin", ["https://example.com/a.zip", "https://example.com/b.zip"],
+              new string('a', 64), PackageArchiveFormat.Zip),
+          new PackageArchive(
+              "tool", ["https://example.com/tool.exe"], null, PackageArchiveFormat.File),
+        ],
+        doc.Archives,
+        new PackageArchiveComparer());
+    Assert.Equal(
+        [
+          PackageFileForm.Directory, PackageFileForm.Directory, PackageFileForm.File,
+          PackageFileForm.Glob,
+        ],
+        doc.Files.Select(f => f.Form));
+    Assert.Equal("bin", doc.Files[1].From);
+    Assert.Equal("config/", Assert.Single(doc.Preserve).Pattern);
+    Assert.Equal("logs/**/*.log", Assert.Single(doc.Remove).Pattern);
+    Assert.Equal(["a"], doc.Hooks.PreInstall);
+    Assert.Equal(["b", "c"], doc.Hooks.PostInstall);
+    Assert.Empty(doc.Hooks.PreUninstall);
+    Assert.Equal(["d"], doc.Hooks.PostUninstall);
+    Assert.Equal(
+        ["d", "f"],
+        new McmodPackage(doc, default).InstallEdges.Select(e => e.Name));
   }
 
   [Fact]
-  public void Parse_Routing_ReadsArtifacts() {
+  public void Parse_Mod_ReadsModAndIgnoresItsKeys() {
+    // Arrange
+    string json = $$"""
+        {
+          {{Format}}, "id": "m", "version": "1.0.0",
+          "mod": { "loader": "preload-native", "entry": "m.dll", "passive": true,
+                   "loadAfter": ["a", "*"], "loadBefore": ["*"], "extra": { "x": 1 } }
+        }
+        """;
+
+    // Act
+    PackageDocument doc = Assert.IsType<PackageDocument>(Parse(json));
+
+    // Assert
+    Assert.True(doc.IsMod);
+    Assert.Empty(doc.Files);
+  }
+
+  [Fact]
+  public void Parse_Meta_ReadsTargetsAndTemplateValues() {
     // Arrange
     string json = $$$"""
         {
-          {{{Markers}}},
-          "name": "n", "version": "1.0.0", "refs": ["github.com/a/b"], "dependencies": 5,
-          "artifacts": [
-            { "platform": "server", "rid": ["win-x64", "linux-x64"], "refs": ["./s/{{rid}}/"] },
-            { "platform": "client", "refs": ["./c.mcmod", "https://example.com/c.mcmod#x"] },
-            { "variant": "", "refs": ["github.com/a/b#lua"] },
-            { "variant": "lua/x", "refs": ["./lua/"] }
+          {{{Format}}},
+          "id": "n", "version": "1.0.0", "dependencies": 5, "mod": "template only",
+          "targets": [
+            { "platform": "server", "runtime": ["win-x64", "linux-x64"], "source": "./s/{{runtime}}/" },
+            { "platform": "client", "source": ["./c.mcmod", "https://example.com/c.mcmod#x"],
+              "id": "n-client", "version": "2.0.0" },
+            { "variant": "", "source": "github.com/a/b#lua", "id": null, "version": null },
+            { "variant": "lua/x", "source": "./lua/", "files": "anything" }
           ]
         }
         """;
 
     // Act
-    RoutingDocument doc = Assert.IsType<RoutingDocument>(Parse(json));
+    MetaDocument doc = Assert.IsType<MetaDocument>(Parse(json));
 
     // Assert
-    Assert.True(doc.IsMarked);
-    Assert.Equal("n", doc.Name);
+    Assert.Equal("n", doc.Id);
     Assert.Equal("1.0.0", doc.Version!.ToString());
-    Assert.Single(doc.Refs);
-    Assert.Equal(4, doc.Artifacts.Count);
-    Assert.Equal([McmodPlatform.Server], doc.Artifacts[0].Platforms);
-    Assert.Equal(["win-x64", "linux-x64"], doc.Artifacts[0].Rids);
-    Assert.Equal(["./s/{{rid}}/"], doc.Artifacts[0].Refs);
-    Assert.Null(doc.Artifacts[1].Rids);
-    Assert.Equal(2, doc.Artifacts[1].Refs.Count);
-    Assert.Null(doc.Artifacts[2].Platforms);
-    Assert.Equal("", doc.Artifacts[2].Variant);
-    Assert.Equal("lua/x", doc.Artifacts[3].Variant);
+    Assert.Equal(4, doc.Targets.Count);
+    Assert.Equal([McmodPlatform.Server], doc.Targets[0].Platforms);
+    Assert.Equal(["win-x64", "linux-x64"], doc.Targets[0].Runtimes);
+    Assert.Equal(["./s/{{runtime}}/"], doc.Targets[0].Source);
+    Assert.Equal(("n", "1.0.0"), (doc.Targets[0].TemplateId, doc.Targets[0].TemplateVersion!.ToString()));
+    Assert.Null(doc.Targets[1].Runtimes);
+    Assert.Equal(2, doc.Targets[1].Source.Count);
+    Assert.Equal(("n-client", "2.0.0"), (doc.Targets[1].TemplateId, doc.Targets[1].TemplateVersion!.ToString()));
+    Assert.Null(doc.Targets[2].Platforms);
+    Assert.Null(doc.Targets[2].TemplateId);
+    Assert.Null(doc.Targets[2].TemplateVersion);
+    Assert.Equal("lua/x", doc.Targets[3].Variant);
   }
 
   [Theory]
-  [InlineData("""{ "platform": "server", "refs": ["./a/"] }, { "refs": ["./b/"] }""")]
-  [InlineData("""{ "platform": "server", "refs": ["./a/"] }, { "rid": "x", "refs": ["./b/"] }""")]
+  [InlineData("""{ "platform": "server", "source": "./a/" }, { "source": "./b/" }""")]
+  [InlineData("""{ "platform": "server", "source": "./a/" }, { "runtime": "x", "source": "./b/" }""")]
   [InlineData(
-      """{ "platform": "server", "refs": ["./a/"] }, { "platform": "client", "refs": ["./b/"] }""")]
-  [InlineData("""{ "rid": ["a", "b"], "refs": ["./a/"] }, { "rid": "c", "refs": ["./b/"] }""")]
-  [InlineData("""{ "refs": ["./a/"] }, { "variant": "x", "refs": ["./b/"] }""")]
+      """{ "platform": "server", "source": "./a/" }, { "platform": "client", "source": "./b/" }""")]
+  [InlineData("""{ "runtime": ["a", "b"], "source": "./a/" }, { "runtime": "c", "source": "./b/" }""")]
+  [InlineData("""{ "source": "./a/" }, { "variant": "x", "source": "./b/" }""")]
   [InlineData(
-      """{ "platform": "server", "rid": "a", "refs": ["./a/"] }, """
-      + """{ "platform": ["server", "client"], "rid": "b", "refs": ["./b/"] }""")]
-  public void Parse_UnambiguousArtifacts_Succeeds(string artifacts) {
+      """{ "platform": "server", "runtime": "a", "source": "./a/" }, """
+      + """{ "platform": ["server", "client"], "runtime": "b", "source": "./b/" }""")]
+  public void Parse_UnambiguousTargets_Succeeds(string targets) {
     // Arrange
-    string json = $$"""{ {{Markers}}, "artifacts": [ {{artifacts}} ] }""";
+    string json = $$"""{ {{Format}}, "targets": [ {{targets}} ] }""";
 
     // Act & Assert
-    Assert.IsType<RoutingDocument>(Parse(json));
+    Assert.IsType<MetaDocument>(Parse(json));
   }
 
   [Fact]
-  public void Parse_NameWithTrailingNewline_ThrowsManifestFormatException() {
-    // Arrange: a name must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ in full (refs/package_format.md
-    // §4.2); .NET's '$' alone would accept a trailing line break.
-    string json = """{ "name": "my-mod\n", "version": "1.0.0", "type": "native" }""";
+  public void Parse_IdWithTrailingNewline_ThrowsManifestFormatException() {
+    // Arrange: an id must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ in full (refs/package_format.md
+    // §4.1); .NET's '$' alone would accept a trailing line break.
+    string json = $$"""{ {{Format}}, "id": "my-mod\n", "version": "1.0.0" }""";
 
     // Act & Assert
     Assert.Throws<ManifestFormatException>(() => Parse(json));
@@ -180,18 +207,18 @@ public class DocumentParserTests {
     // Arrange
     byte[] bytes = [
       .. Encoding.UTF8.Preamble,
-      .. Encoding.UTF8.GetBytes("""{ "name": "m", "version": "1.0.0", "type": "native" }"""),
+      .. Encoding.UTF8.GetBytes($$"""{ {{Format}}, "id": "m", "version": "1.0.0" }"""),
     ];
 
     // Act & Assert
-    Assert.IsType<ConcreteDocument>(_parser.Parse(bytes));
+    Assert.IsType<PackageDocument>(_parser.Parse(bytes));
   }
 
   [Fact]
   public void Parse_InvalidUtf8_ThrowsManifestFormatException() {
     // Arrange
     byte[] bytes = [
-      .. Encoding.UTF8.GetBytes("""{ "name": "m", "version": "1.0.0", "type": "native", "x": " """),
+      .. Encoding.UTF8.GetBytes($$"""{ {{Format}}, "id": "m", "version": "1.0.0", "x": " """),
       0xC3, 0x28,
       .. Encoding.UTF8.GetBytes("\" }"),
     ];
@@ -206,16 +233,15 @@ public class DocumentParserTests {
   [Fact]
   public void Parse_InvalidRange_ReportsPath() {
     // Arrange
-    string json = """
-        { "name": "m", "version": "1.0.0", "type": "native",
-          "conflicts": [ { "name": "a" }, { "name": "b", "version": "invalid" } ] }
+    string json = $$"""
+        { {{Format}}, "id": "m", "version": "1.0.0", "conflicts": { "a": "*", "b": "invalid" } }
         """;
 
     // Act
     ManifestFormatException ex = Assert.Throws<ManifestFormatException>(() => Parse(json));
 
     // Assert
-    Assert.Contains("$.conflicts[1].version", ex.Message);
+    Assert.Contains("$.conflicts[\"b\"]", ex.Message);
     Assert.Contains("fake parse error", ex.Message);
   }
 
@@ -223,14 +249,12 @@ public class DocumentParserTests {
   public void Parse_DependencyWithGitRef_KeepsGitRefAndRange() {
     // Arrange
     string json = $$"""
-        { {{Markers}}, "name": "m", "version": "1.0.0", "type": "native",
-          "dependencies": [
-            { "name": "a", "version": ">=1.0.0", "refs": ["github.com/o/a#lua@branch:main"] }
-          ] }
+        { {{Format}}, "id": "m", "version": "1.0.0",
+          "dependencies": { "a": { "version": ">=1.0.0", "source": "github.com/o/a#lua@branch:main" } } }
         """;
 
     // Act
-    ConcreteDocument doc = Assert.IsType<ConcreteDocument>(Parse(json));
+    PackageDocument doc = Assert.IsType<PackageDocument>(Parse(json));
 
     // Assert
     Ref reference = Assert.Single(doc.Dependencies[0].Refs!);
@@ -245,11 +269,11 @@ public class DocumentParserTests {
   [InlineData("https://example.com/a.mcmod@tag:v1")]
   [InlineData("github.com/o/a@1.0.0")]
   [InlineData("file:///C:/a.mcmod")]
-  public void Parse_InvalidRefInInstallDependency_ThrowsManifestFormatException(string reference) {
+  public void Parse_InvalidRefInDependency_ThrowsManifestFormatException(string reference) {
     // Arrange
     string json = $$"""
-        { {{Markers}}, "name": "m", "version": "1.0.0", "type": "native",
-          "installDependencies": [ { "refs": ["{{reference}}"] } ] }
+        { {{Format}}, "id": "m", "version": "1.0.0",
+          "dependencies": { "a": { "source": "{{reference}}" } } }
         """;
 
     // Act & Assert
@@ -259,12 +283,20 @@ public class DocumentParserTests {
   [Fact]
   public void Parse_EscapedLoneSurrogate_ThrowsManifestFormatException() {
     // Arrange
-    string json = """{ "name": "\uD800", "version": "1.0.0", "type": "native" }""";
+    string json = $$"""{ {{Format}}, "id": "\uD800", "version": "1.0.0" }""";
 
     // Act
     ManifestFormatException ex = Assert.Throws<ManifestFormatException>(() => Parse(json));
 
     // Assert
-    Assert.Contains("$.name: is not a valid Unicode string", ex.Message);
+    Assert.Contains("$.id: is not a valid Unicode string", ex.Message);
+  }
+
+  private sealed class PackageArchiveComparer : IEqualityComparer<PackageArchive> {
+    public bool Equals(PackageArchive? x, PackageArchive? y) =>
+        x is not null && y is not null && x.Name == y.Name && x.Urls.SequenceEqual(y.Urls)
+        && x.Sha256 == y.Sha256 && x.Format == y.Format;
+
+    public int GetHashCode(PackageArchive obj) => obj.Name.GetHashCode(StringComparison.Ordinal);
   }
 }

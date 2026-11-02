@@ -1,0 +1,7 @@
+{
+  "format": "bf45b1",
+  "targets": [
+    { "variant": "quickjs", "source": "./quickjs/" },
+    { "variant": "lua", "source": "./lua/" }
+  ]
+}

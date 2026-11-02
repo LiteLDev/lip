@@ -35,7 +35,7 @@ The workspace (CLI §1.1) of every method is the current working directory of th
 | `Versions` | `package: string` | `string[]` | `lip versions` (CLI §5.5) |
 | `View` | `package: string` | `string`: the document as JSON text | `lip view` (CLI §5.6) |
 | `Init` | — | `null` | `lip init` (CLI §5.7) |
-| `Migrate` | — | `null` | `lip migrate` (CLI §5.8) |
+| `Migrate` | — | `null` | `lip migrate` (CLI §5.8), asking no questions: where `lip migrate` would ask for a value, the method fails |
 | `CacheClean` | — | `null` | `lip cache clean` (CLI §5.9) |
 | `ConfigGet` | `key: string` | `string` | `lip config get` (CLI §5.10) |
 | `ConfigSet` | `key: string`, `value: string` | `null` | `lip config set` |

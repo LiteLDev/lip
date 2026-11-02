@@ -1,63 +1,67 @@
 $schema: https://json-schema.org/draft-07/schema#
 $id: https://github.com/LiteLDev/lip/raw/main/refs/files/manifest.schema.yaml
-title: lip manifest.json (format version 4)
+title: lip manifest.json (format bf45b1)
 description: >-
-  A LeviLamina manifest.json extended with the keys of lip package format version 4. Keys not
-  described here are ignored. Plain LeviLamina manifests without the format markers are also
-  accepted by lip as self-contained packages, but they are outside this schema. Not expressible
-  here: two artifacts with the same variant must not write the same selector keys with intersecting
-  values.
+  A manifest.json of format "bf45b1": a package document, or a meta document (with "targets")
+  pointing to other packages. Keys not described here are ignored. LeviLamina manifests without
+  the "format" key are also read by lip, but they are outside this schema. Not expressible here:
+  two targets with the same variant must not write the same selector keys with intersecting
+  values; the keys of a package document must not be null; and the "from" of every file must be
+  a key of "archives".
 type: object
+properties:
+  format:
+    type: string
+    const: bf45b1
+required: [format]
 oneOf:
-  - $ref: '#/definitions/routingDocument'
-  - $ref: '#/definitions/concreteDocument'
+  - $ref: '#/definitions/metaDocument'
+  - $ref: '#/definitions/packageDocument'
 definitions:
-  markers:
-    type: object
-    properties:
-      formatVersion:
-        type: integer
-        const: 4
-      formatUuid:
-        type: string
-        const: 0c6b977a-64ad-441f-9a29-c7f4b196882f
-    required: [formatVersion, formatUuid]
   semVer:
     type: string
     pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+  id:
+    type: string
+    pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
   variant:
     type: string
     pattern: ^[a-z0-9_]+(/[a-z0-9_]+)?$
+  platform:
+    type: string
+    enum: [server, client]
   ref:
     description: >-
       target [ "#" variant ], where target is a relative path starting with "./" (pointing to a
       directory when it ends with "/"), an https URL, or a Go module path
-      (golang.org/x/mod/module.CheckPath; the pattern checks only its general shape). Refs in
-      artifacts may contain {{name}}, {{version}}, {{platform}} and {{rid}} templates (substituted
-      before parsing). A Go module path may be followed by [ "@" git-ref ] after the variant,
-      pinning it to one commit: "branch:<name>", "tag:<name>" or "rev:<40-digit commit id>".
+      (golang.org/x/mod/module.CheckPath; the pattern checks only its general shape). A Go module
+      path may be followed by [ "@" git-ref ] after the variant, pinning it to one commit:
+      "branch:<name>", "tag:<name>" or "rev:<40-digit commit id>".
     type: string
-    pattern: ^(?:\./(?!.*@(?:branch|tag|rev):)(?!\.\.?(?:/|#|$))[^/#\\]+(?:/(?!\.\.?(?:/|#|$))[^/#\\]+)*/?(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|https://(?!.*@(?:branch|tag|rev):)[^#]+(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|(?=[a-z0-9.-]*\.)[a-z0-9](?:[a-z0-9.-]*[a-z0-9-])?(?:/[A-Za-z0-9_~{}-](?:[A-Za-z0-9._~{}-]*[A-Za-z0-9_~{}-])?)*(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?(?:@(?:branch:(?!/|@$)(?!.*(?:\.\.|@\{|//|/\.|\.lock(?:/|$)|[/.]$))[^\u0000-\u0020\u007f~^:?*\[\\]+|tag:(?!/|@$)(?!.*(?:\.\.|@\{|//|/\.|\.lock(?:/|$)|[/.]$))[^\u0000-\u0020\u007f~^:?*\[\\]+|rev:[0-9a-fA-F]{40}))?)$
-  refs:
-    type: array
-    items:
-      $ref: '#/definitions/ref'
-  nonEmptyRefs:
-    type: array
-    minItems: 1
-    items:
-      $ref: '#/definitions/ref'
-  range:
-    description: >-
-      A version requirement with LeviLamina's ll::data::VersionRequirement syntax. A bare full
-      version without an operator is not allowed.
+    pattern: ^(?:\./(?!.*@(?:branch|tag|rev):)(?!\.\.?(?:/|#|$))[^/#\\]+(?:/(?!\.\.?(?:/|#|$))[^/#\\]+)*/?(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|https://(?!.*@(?:branch|tag|rev):)[^#]+(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|(?=[a-z0-9.-]*\.)[a-z0-9](?:[a-z0-9.-]*[a-z0-9-])?(?:/[A-Za-z0-9_~{}-](?:[A-Za-z0-9._~{}-]*[A-Za-z0-9_~{}-])?)*(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?(?:@(?:branch:(?!/|@$)(?!.*(?:\.\.|@\{|//|/\.|\.lock(?:/|$)|[/.]$))[^\u0000- \u007f~^:?*\[\\]+|tag:(?!/|@$)(?!.*(?:\.\.|@\{|//|/\.|\.lock(?:/|$)|[/.]$))[^\u0000- \u007f~^:?*\[\\]+|rev:[0-9a-fA-F]{40}))?)$
+  source:
+    description: One ref, or alternatives in order.
+    oneOf:
+      - $ref: '#/definitions/ref'
+      - type: array
+        minItems: 1
+        items:
+          $ref: '#/definitions/ref'
+  templateRef:
+    description: A ref that may contain {{id}}, {{version}}, {{platform}} and {{runtime}}.
     type: string
     not:
-      $ref: '#/definitions/semVer'
+      pattern: \{\{(?!(id|version|platform|runtime)\}\})
+  range:
+    description: >-
+      A node-semver range (semver.satisfies without the loose and includePrerelease options). A
+      full version without an operator matches exactly that version.
+    type: string
   glob:
     description: >-
-      '*' matches any characters other than '/'; a '**' segment matches zero or more segments; a
-      trailing '/' matches directories and everything below them.
+      POSIX fnmatch patterns with FNM_PATHNAME and without FNM_PERIOD, matched segment by segment
+      ('*', '?', bracket expressions; no escape character); a '**' segment matches zero or more
+      segments; a trailing '/' matches directories and everything below them.
     type: string
     pattern: ^(?!/)(?!.*//)[^\\]+$
   globs:
@@ -68,10 +72,179 @@ definitions:
     type: array
     items:
       type: string
-  placementPath:
+  path:
     type: string
-    pattern: ^(?!/)(?![A-Za-z]:)(?!(.*/)?\.\.(/|$))[^\\]*$
-  artifact:
+    pattern: ^(?!/)(?![A-Za-z]:)(?!.*//)(?!(.*/)?\.\.(/|$))[^\\]*$
+  info:
+    type: object
+    properties:
+      name:
+        type: string
+      description:
+        type: string
+      authors:
+        type: array
+        items:
+          type: string
+      tags:
+        type: array
+        items:
+          type: string
+      icon:
+        type: string
+        pattern: ^https://
+  dependency:
+    oneOf:
+      - $ref: '#/definitions/range'
+      - type: object
+        properties:
+          version:
+            $ref: '#/definitions/range'
+          source:
+            $ref: '#/definitions/source'
+          mod:
+            type: boolean
+        if:
+          properties:
+            mod:
+              const: false
+          required: [mod]
+        then:
+          required: [source]
+  dependencies:
+    type: object
+    propertyNames:
+      $ref: '#/definitions/id'
+    additionalProperties:
+      $ref: '#/definitions/dependency'
+  conflicts:
+    type: object
+    propertyNames:
+      $ref: '#/definitions/id'
+    additionalProperties:
+      $ref: '#/definitions/range'
+  loadOrder:
+    type: array
+    items:
+      anyOf:
+        - const: '*'
+        - $ref: '#/definitions/id'
+  mod:
+    type: object
+    properties:
+      loader:
+        type: string
+        minLength: 1
+      entry:
+        type: string
+        minLength: 1
+      passive:
+        type: boolean
+      loadAfter:
+        $ref: '#/definitions/loadOrder'
+      loadBefore:
+        $ref: '#/definitions/loadOrder'
+      extra:
+        type: object
+    required: [loader, entry]
+  file:
+    type: object
+    properties:
+      from:
+        $ref: '#/definitions/id'
+      src:
+        $ref: '#/definitions/path'
+      dest:
+        $ref: '#/definitions/path'
+    required: [src, dest]
+    oneOf:
+      - description: 'Glob form: src contains "*", "?" or "[".'
+        properties:
+          src:
+            pattern: '[*?\[]'
+          dest:
+            pattern: (^|/)$
+      - description: 'Directory form: "" or a trailing "/".'
+        properties:
+          src:
+            pattern: ^[^*?\[]*$
+            not:
+              pattern: '[^/]$'
+          dest:
+            pattern: (^|/)$
+      - description: File form.
+        properties:
+          src:
+            pattern: ^[^*?\[]*[^/*?\[]$
+          dest:
+            pattern: '[^/]$'
+  archive:
+    type: object
+    properties:
+      url:
+        oneOf:
+          - type: string
+            pattern: ^https://
+          - type: array
+            minItems: 1
+            items:
+              type: string
+              pattern: ^https://
+      sha256:
+        type: string
+        pattern: ^[0-9a-fA-F]{64}$
+      format:
+        enum: [zip, tar, tgz, file]
+    required: [url]
+  archives:
+    type: object
+    propertyNames:
+      $ref: '#/definitions/id'
+    additionalProperties:
+      $ref: '#/definitions/archive'
+  hooks:
+    type: object
+    properties:
+      preInstall:
+        $ref: '#/definitions/commands'
+      postInstall:
+        $ref: '#/definitions/commands'
+      preUninstall:
+        $ref: '#/definitions/commands'
+      postUninstall:
+        $ref: '#/definitions/commands'
+  packageKeys:
+    description: The keys of a package document, all of which a target may override.
+    properties:
+      id:
+        $ref: '#/definitions/id'
+      version:
+        $ref: '#/definitions/semVer'
+      platform:
+        $ref: '#/definitions/platform'
+      runtime:
+        type: string
+      info:
+        $ref: '#/definitions/info'
+      dependencies:
+        $ref: '#/definitions/dependencies'
+      conflicts:
+        $ref: '#/definitions/conflicts'
+      mod:
+        $ref: '#/definitions/mod'
+      files:
+        type: array
+        items:
+          $ref: '#/definitions/file'
+      archives:
+        $ref: '#/definitions/archives'
+      preserve:
+        $ref: '#/definitions/globs'
+      remove:
+        $ref: '#/definitions/globs'
+      hooks:
+        $ref: '#/definitions/hooks'
+  target:
     type: object
     properties:
       variant:
@@ -80,147 +253,95 @@ definitions:
           - $ref: '#/definitions/variant'
       platform:
         oneOf:
-          - type: string
-            enum: [server, client]
+          - $ref: '#/definitions/platform'
           - type: array
             minItems: 1
             items:
-              type: string
-              enum: [server, client]
-      rid:
+              $ref: '#/definitions/platform'
+      runtime:
         oneOf:
           - type: string
           - type: array
             minItems: 1
             items:
               type: string
-      refs:
-        description: Alternatives in order. May contain {{name}}, {{version}}, {{platform}} and {{rid}}.
-        type: array
-        minItems: 1
-        items:
-          type: string
-          not:
-            pattern: \{\{(?!(name|version|platform|rid)\}\})
-    required: [refs]
-  dep:
-    type: object
-    properties:
-      name:
-        type: string
+      source:
+        description: Alternatives in order.
+        oneOf:
+          - $ref: '#/definitions/templateRef'
+          - type: array
+            minItems: 1
+            items:
+              $ref: '#/definitions/templateRef'
+      id:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/id'
       version:
-        $ref: '#/definitions/range'
-      refs:
-        $ref: '#/definitions/nonEmptyRefs'
-    required: [name]
-  deps:
-    type: array
-    items:
-      $ref: '#/definitions/dep'
-  installDep:
-    type: object
-    properties:
-      name:
-        type: string
-      version:
-        $ref: '#/definitions/range'
-      refs:
-        $ref: '#/definitions/nonEmptyRefs'
-    required: [refs]
-  placement:
-    type: object
-    properties:
-      src:
-        $ref: '#/definitions/placementPath'
-      dest:
-        $ref: '#/definitions/placementPath'
-    required: [src, dest]
-    anyOf:
-      - description: "Directory form: \"\" or a trailing '/'."
-        properties:
-          src:
-            pattern: (^|/)$
-          dest:
-            pattern: (^|/)$
-      - description: File form.
-        properties:
-          src:
-            pattern: '[^/]$'
-          dest:
-            pattern: '[^/]$'
-  routingDocument:
-    allOf:
-      - $ref: '#/definitions/markers'
-    properties:
-      name:
-        type: string
-      version:
-        $ref: '#/definitions/semVer'
-      refs:
-        $ref: '#/definitions/refs'
-      artifacts:
-        type: array
-        minItems: 1
-        items:
-          $ref: '#/definitions/artifact'
-    required: [artifacts]
-  concreteDocument:
-    allOf:
-      - $ref: '#/definitions/markers'
-      - if:
-          properties:
-            type:
-              not:
-                const: files
-        then:
-          not:
-            required: [placements]
-    not:
-      required: [artifacts]
-    properties:
-      name:
-        type: string
-        pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
-      version:
-        $ref: '#/definitions/semVer'
-      type:
-        description: '"files" for a file package; any other value is a LeviLamina mod type.'
-        type: string
-      platform:
-        type: string
-        enum: [server, client, universal]
-        default: universal
-      rid:
-        type: string
-      refs:
-        $ref: '#/definitions/refs'
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/semVer'
+      info:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/info'
       dependencies:
-        $ref: '#/definitions/deps'
-      optionalDependencies:
-        $ref: '#/definitions/deps'
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/dependencies'
       conflicts:
-        $ref: '#/definitions/deps'
-      installDependencies:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/conflicts'
+      mod:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/mod'
+      files:
+        oneOf:
+          - type: 'null'
+          - type: array
+            items:
+              $ref: '#/definitions/file'
+      archives:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/archives'
+      preserve:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/globs'
+      remove:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/globs'
+      hooks:
+        oneOf:
+          - type: 'null'
+          - $ref: '#/definitions/hooks'
+    required: [source]
+  metaDocument:
+    description: >-
+      Only id and version are used in resolution (in templates); the other keys are the template
+      packing completes with a target.
+    properties:
+      id:
+        $ref: '#/definitions/id'
+      version:
+        $ref: '#/definitions/semVer'
+      targets:
         type: array
+        minItems: 1
         items:
-          $ref: '#/definitions/installDep'
-      placements:
-        type: array
-        items:
-          $ref: '#/definitions/placement'
-      preserveFiles:
-        $ref: '#/definitions/globs'
-      removeFiles:
-        $ref: '#/definitions/globs'
-      scripts:
-        type: object
-        properties:
-          preInstall:
-            $ref: '#/definitions/commands'
-          postInstall:
-            $ref: '#/definitions/commands'
-          preUninstall:
-            $ref: '#/definitions/commands'
-          postUninstall:
-            $ref: '#/definitions/commands'
-    required: [name, version, type]
+          $ref: '#/definitions/target'
+    required: [targets]
+  packageDocument:
+    allOf:
+      - $ref: '#/definitions/packageKeys'
+      - not:
+          anyOf:
+            - required: [mod, files]
+            - required: [mod, archives]
+    not:
+      required: [targets]
+    required: [id, version]

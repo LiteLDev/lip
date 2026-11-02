@@ -4,14 +4,20 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// A tooth.json repository that moved (e.g. transferred from one GitHub organisation to
-/// another): the old path redirects to the new one, older tags name the old path in "tooth" and
-/// newer tags the new one, so the package changes identity between versions (spec §9.1).
+/// A tooth.json repository that moved (transferred from one GitHub organisation to another): the
+/// old path redirects to the new one, older tags name the old path in "tooth" and newer tags the
+/// new one. The package keeps its identity, its tooth name (spec §10.2 rule 1), but is requested
+/// by the new path from then on.
 public class McmodServiceMovedRepositoryTests {
   private const string Old = "github.com/LiteLDev/Mod";
   private const string New = "github.com/MiracleForest/Mod";
   private const string App = "example.com/app";
   private const string Fork = "github.com/Someone/Mod";
+
+  // The identities of the packages: their tooth names.
+  private const string OldId = "Mod";
+  private const string NewId = "Mod";
+  private const string AppId = "app";
 
   private static readonly OperationOptions s_options = new();
 
@@ -22,7 +28,7 @@ public class McmodServiceMovedRepositoryTests {
   }
 
   [Fact]
-  public async Task Update_NoArguments_ReplacesPackageUnderNewIdentityKeepingPreservedFiles() {
+  public async Task Update_NoArguments_ReplacesPackageByTheNewPathKeepingPreservedFiles() {
     // Arrange
     AddVersion("1.0.0", Old);
     AddVersion("1.1.0", New);
@@ -34,12 +40,11 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert: the package is requested by its new path from now on.
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
+    Assert.Equal((NewId, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
     AssertRecordedFrom(New, package);
     Assert.Equal($"{New}@1.1.0", package.ArchiveKey);
     Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
     Assert.Equal("edited by the user", _ws.Fs.File.ReadAllText(_ws.Path("mod/config.json")));
-    VerifyInfo($"Package '{Old}' is now '{New}'");
     VerifyInfo($"{Old} redirects to {New}");
     Assert.Empty(_ws.Warnings);
   }
@@ -77,7 +82,7 @@ public class McmodServiceMovedRepositoryTests {
     await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
     await _ws.Service.Update([], s_options);
     LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0", $"{Old}@1.1.0"),
+    Assert.Equal((NewId, "1.1.0", $"{Old}@1.1.0"),
         (installed.Identity, installed.Version, installed.ArchiveKey));
     AssertRecordedFrom(Old, installed);
     _ws.AddFile("mod/config.json", "edited by the user");
@@ -89,7 +94,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
+    Assert.Equal((NewId, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
     AssertRecordedFrom(New, package);
     Assert.Equal($"{New}@1.1.0", package.ArchiveKey);
     Assert.Equal(installed.Files, package.Files);
@@ -132,7 +137,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+    Assert.Equal((NewId, "1.1.0"), (package.Identity, package.Version));
     AssertRecordedFrom($"{Old}@{gitRef}", package);
     Assert.StartsWith($"{Old}@rev:", package.ArchiveKey, StringComparison.Ordinal);
   }
@@ -148,7 +153,7 @@ public class McmodServiceMovedRepositoryTests {
     await _ws.Service.Install([App], s_options);
 
     // Assert
-    LockedPackage kept = Assert.Single((await _ws.Lock()).Packages, p => p.Identity == New);
+    LockedPackage kept = Assert.Single((await _ws.Lock()).Packages, p => p.Identity == NewId);
     AssertRecordedFrom($"{Old}@branch:main", kept);
   }
 
@@ -164,7 +169,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.2.0", true), (package.Identity, package.Version, package.Explicit));
+    Assert.Equal((NewId, "1.2.0", true), (package.Identity, package.Version, package.Explicit));
     AssertRecordedFrom($"{Old}@branch:main", package);
   }
 
@@ -182,7 +187,7 @@ public class McmodServiceMovedRepositoryTests {
     // Assert: the installed package is the one installed from the requested path; MovedFrom
     // does not compare the tags of both paths (one listing of "refs/tags/v1.0.0" each).
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+    Assert.Equal((NewId, "1.1.0"), (package.Identity, package.Version));
     AssertRecordedFrom(New, package);
     Assert.DoesNotContain(_ws.Git.ListedRefs, r => r.EndsWith("refs/tags/v1.0.0"));
   }
@@ -197,7 +202,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.0.0", true), (package.Identity, package.Version, package.Explicit));
+    Assert.Equal((NewId, "1.0.0", true), (package.Identity, package.Version, package.Explicit));
     AssertRecordedFrom(New, package);
   }
 
@@ -240,7 +245,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((Old, "1.0.0"), (package.Identity, package.Version));
+    Assert.Equal((OldId, "1.0.0"), (package.Identity, package.Version));
     AssertRecordedFrom(New, package);
     Assert.Equal($"{New}@1.0.0", package.ArchiveKey);
     Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{Old}'"));
@@ -258,7 +263,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(New, package.Identity);
+    Assert.Equal(NewId, package.Identity);
     AssertRecordedFrom(Fork, package);
     Assert.Equal($"{Fork}@1.0.0", package.ArchiveKey);
     Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{New}'"));
@@ -276,7 +281,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(New, package.Identity);
+    Assert.Equal(NewId, package.Identity);
     AssertRecordedFrom(other, package);
     Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{New}'"));
   }
@@ -284,7 +289,7 @@ public class McmodServiceMovedRepositoryTests {
   [Theory]
   [InlineData(Old)]
   [InlineData(New)]
-  public async Task Update_NamedByEitherPath_ReplacesPackageUnderNewIdentity(string argument) {
+  public async Task Update_NamedByEitherPath_ReplacesPackageByTheNewPath(string argument) {
     // Arrange
     AddVersion("1.0.0", Old);
     AddVersion("1.1.0", New);
@@ -295,7 +300,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
+    Assert.Equal((NewId, "1.1.0", true), (package.Identity, package.Version, package.Explicit));
     Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
   }
 
@@ -311,7 +316,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(($"{New}#server", "1.1.0"), (package.Identity, package.Version));
+    Assert.Equal(($"{NewId}-server", "1.1.0"), (package.Identity, package.Version));
     AssertRecordedFrom($"{New}#server", package);
     Assert.Equal($"{New}@1.1.0", package.ArchiveKey);
   }
@@ -329,12 +334,11 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     Assert.Equal(before, WorkspaceSnapshot());
-    VerifyInfo("it would be replaced by");
   }
 
   [Fact]
-  public async Task Update_NamedPackageOfAnotherRepository_StillFailsAsNotInstalled() {
-    // Arrange: another repository of the same name, at other commits.
+  public async Task Update_NamedPackageOfAnotherRepositoryOfTheSameName_ReplacesThePackage() {
+    // Arrange: another repository of the same name has the same identity (spec §10.2 rule 1).
     AddVersion("1.0.0", Old);
     await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
     const string other = "example.com/someone/Mod";
@@ -343,26 +347,32 @@ public class McmodServiceMovedRepositoryTests {
       ["file.dll"] = "other",
     });
 
-    // Act & Assert
-    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Update([other], s_options));
-    Assert.Contains("not currently installed", ex.Message);
+    // Act
+    await _ws.Service.Update([other], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(NewId, package.Identity);
+    Assert.Equal(other, Assert.Single(package.Chain).Ref);
+    Assert.Equal("other", _ws.Fs.File.ReadAllText(_ws.Path("other/mod.dll")));
+    Assert.False(_ws.Exists("mod/mod.dll"));
   }
 
   [Fact]
-  public async Task Update_NamedForkSharingTheInstalledTag_StillFailsAsNotInstalled() {
+  public async Task Update_NamedForkOfTheSameName_ReplacesThePackageWithTheFork() {
     // Arrange: a fork made after v1.0.0 has that tag at the same commit, and released its own
-    // v1.1.0 naming the fork's path; the original repository did not publish that commit.
+    // v1.1.0 naming the fork's path; it has the same identity (spec §10.2 rule 1).
     AddVersion("1.0.0", Old);
     AddFork();
     await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
-    List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
 
-    // Act & Assert
-    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Update([Fork], s_options));
-    Assert.Contains("not currently installed", ex.Message);
-    Assert.Equal(before, WorkspaceSnapshot());
+    // Act
+    await _ws.Service.Update([Fork], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((NewId, "1.1.0"), (package.Identity, package.Version));
+    AssertRecordedFrom(Fork, package);
   }
 
   [Fact]
@@ -392,7 +402,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(New, package.Identity);
+    Assert.Equal(NewId, package.Identity);
     AssertRecordedFrom(New, package);
     Assert.Equal($"{New}@1.0.0", package.ArchiveKey);
     VerifyInfo($"{Old} redirects to {New}");
@@ -410,7 +420,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(New, package.Identity);
+    Assert.Equal(NewId, package.Identity);
     AssertRecordedFrom(Old, package);
     Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{New}'"));
   }
@@ -429,7 +439,7 @@ public class McmodServiceMovedRepositoryTests {
   [Theory]
   [InlineData(Old)]
   [InlineData(New)]
-  public async Task Install_EitherPathWhileInstalledUnderOldIdentity_FailsAsAlreadyInstalled(
+  public async Task Install_EitherPathWhileInstalledByTheOldPath_FailsAsAlreadyInstalled(
       string argument) {
     // Arrange
     AddVersion("1.0.0", Old);
@@ -440,13 +450,12 @@ public class McmodServiceMovedRepositoryTests {
     // Act & Assert
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
         () => _ws.Service.Install([argument], s_options));
-    Assert.Contains($"already explicitly installed as '{Old}'", ex.Message);
-    Assert.Contains($"lip update {Old}", ex.Message);
+    Assert.Contains($"Cannot install package '{NewId}' because it is already", ex.Message);
     Assert.Equal(before, WorkspaceSnapshot());
   }
 
   [Fact]
-  public async Task Install_NewPathWhileOldIdentityIsADependency_ReplacesTheDependency() {
+  public async Task Install_NewPathWhileInstalledAsADependency_ReplacesTheDependency() {
     // Arrange: app depends on the old path; the package is installed as a dependency under the
     // identity of its old version.
     AddVersion("1.0.0", Old);
@@ -456,7 +465,7 @@ public class McmodServiceMovedRepositoryTests {
     await _ws.Service.Install([App], s_options);
     await _ws.Service.Uninstall([Old], s_options);
     Assert.Equal(
-        [(App, "1.0.0", true), (Old, "1.0.0", false)],
+        [(AppId, "1.0.0", true), (OldId, "1.0.0", false)],
         (await _ws.Lock()).Packages.Select(p => (p.Identity, p.Version, p.Explicit)).Order());
 
     // Act
@@ -464,13 +473,13 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     Assert.Equal(
-        [(App, "1.0.0", true), (New, "1.1.0", true)],
+        [(AppId, "1.0.0", true), (NewId, "1.1.0", true)],
         (await _ws.Lock()).Packages.Select(p => (p.Identity, p.Version, p.Explicit)).Order());
     Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
   }
 
   [Fact]
-  public async Task Install_NoDependencies_ReplacesThePackageUnderTheOldIdentity() {
+  public async Task Install_NoDependencies_ReplacesTheInstalledPackage() {
     // Arrange
     AddVersion("1.0.0", Old);
     AddVersion("1.1.0", New);
@@ -481,7 +490,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+    Assert.Equal((NewId, "1.1.0"), (package.Identity, package.Version));
   }
 
   [Theory]
@@ -503,7 +512,7 @@ public class McmodServiceMovedRepositoryTests {
     // declares, whichever path it was installed by).
     LockFile lockFile = await _ws.Lock();
     Assert.Equal(2, lockFile.Packages.Count);
-    LockedPackage kept = Assert.Single(lockFile.Packages, p => p.Identity == New);
+    LockedPackage kept = Assert.Single(lockFile.Packages, p => p.Identity == NewId);
     Assert.Equal(installed.ArchiveKey, kept.ArchiveKey);
     AssertRecordedFrom(New, kept);
   }
@@ -522,7 +531,7 @@ public class McmodServiceMovedRepositoryTests {
     await _ws.Service.Install([App], s_options);
 
     // Assert: the installed package stays as it is.
-    LockedPackage kept = Assert.Single((await _ws.Lock()).Packages, p => p.Identity == New);
+    LockedPackage kept = Assert.Single((await _ws.Lock()).Packages, p => p.Identity == NewId);
     Assert.Equal(installed.ArchiveKey, kept.ArchiveKey);
     AssertRecordedFrom(Old, kept);
   }
@@ -549,7 +558,7 @@ public class McmodServiceMovedRepositoryTests {
         """);
     _ws.AddFile("mod/mod.dll", "mod 1.0.0");
     LockedPackage migrated = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((Old, Old, $"{Old}@1.0.0"),
+    Assert.Equal((OldId, Old, $"{Old}@1.0.0"),
         (migrated.Identity, migrated.Chain[0].Ref, migrated.ArchiveKey));
     AddVersion("1.1.0", New);
 
@@ -558,7 +567,7 @@ public class McmodServiceMovedRepositoryTests {
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((New, "1.1.0"), (package.Identity, package.Version));
+    Assert.Equal((NewId, "1.1.0"), (package.Identity, package.Version));
     Assert.Equal("mod 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("mod/mod.dll")));
     Assert.False(_ws.Exists(LockStore.LegacyFileName));
   }

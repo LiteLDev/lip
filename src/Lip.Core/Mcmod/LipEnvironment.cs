@@ -34,9 +34,9 @@ public static class McmodPlatformExtensions {
   };
 }
 
-/// The environment (platform, rid) of a workspace (spec §5.1).
+/// The environment (platform, runtime) of a workspace (spec §5.1). Runtime is a .NET RID.
 ///
 /// lip manages server workspaces only: its operations always use McmodPlatform.Server. Client
 /// workspaces are left to launchers implementing the same spec (LeviLauncher). The client
-/// platform is still part of the model, since documents select artifacts by platform.
-public record LipEnvironment(McmodPlatform Platform, string Rid);
+/// platform is still part of the model, since documents select targets by platform.
+public record LipEnvironment(McmodPlatform Platform, string Runtime);

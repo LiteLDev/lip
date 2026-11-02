@@ -8,7 +8,7 @@ The lockfile is `.lip/lock.json` in the workspace root. On Windows lip creates t
 
 Because the lock lives in the workspace directory rather than being tied to its path, a workspace that is moved, renamed or copied keeps its lock, and so its installed packages.
 
-`.lip` is reserved for lip: installing a package that would write a file to `.lip` at the workspace root, or anywhere below it, fails, and a `removeFiles` pattern never matches `.lip` or anything below it.
+`.lip` is reserved for lip: installing a package that would write a file to `.lip` at the workspace root, or anywhere below it, fails, and a `remove` pattern never matches `.lip` or anything below it.
 
 lip v0.x kept the lock in `tooth_lock.json` in the workspace root. When there is no `.lip/lock.json`, lip migrates it (see [below](#legacy-tooth-lock-json)).
 
@@ -30,10 +30,9 @@ The lockfile is a JSON file described by the JSON Schema [`lock.schema.yaml`](ht
 
 ```json
 {
-  "formatVersion": 4,
-  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
+  "format": "bf45b1",
   "platform": "server",
-  "rid": "win-x64",
+  "runtime": "win-x64",
   "packages": [
     ...
   ]
@@ -42,23 +41,22 @@ The lockfile is a JSON file described by the JSON Schema [`lock.schema.yaml`](ht
 
 ### Fields
 
-*   **`formatVersion`**: The version of the lockfile format (currently `4`).
-*   **`formatUuid`**: A unique identifier ensuring the file type is correct.
+*   **`format`**: The format of the lockfile, `"bf45b1"`.
 *   **`platform`**: The platform of the workspace. lip writes `"server"`; it is `null` in a lock migrated from `tooth_lock.json` until lip saves it.
-*   **`rid`**: The [.NET RID](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog) of the workspace.
+*   **`runtime`**: The [.NET RID](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog) of the workspace.
 *   **`packages`**: The installed packages, in install order.
 
 ### Package Entry
 
-*   **`name`**: The identity of the package: the `name` of its `manifest.json`, or for a `tooth.json` package its `tooth` path, followed by `#<label>` for a labeled variant (e.g. `github.com/LiteLDev/LegacyScriptEngine#lua`).
+*   **`id`**: The identity of the package: the `id` of its `manifest.json` (the `name` of a LeviLamina manifest), or for a `tooth.json` package its tooth name, followed by `-<label>` for a labeled variant (e.g. `LegacyScriptEngine-lua`).
 *   **`version`**: The installed version.
-*   **`kind`**: `"mcmod"` for a `manifest.json` package, `"tooth"` for a `tooth.json` package. Both are installed and uninstalled the same way; the kind says what `manifest` holds.
+*   **`kind`**: `"mcmod"` for a `manifest.json` package (of format `bf45b1`, or a LeviLamina manifest), `"tooth"` for a `tooth.json` package. Both are installed and uninstalled the same way; the kind says what `manifest` holds.
 *   **`explicit`**:
     *   `true`: The package was explicitly installed by the user (e.g., `lip install <package>`).
     *   `false`: The package was installed implicitly as a dependency of another package.
 *   **`chain`**: How the package was resolved: one entry per hop, with
     *   `ref`: the ref of the hop as it was resolved, e.g. `github.com/user/repo`, `github.com/user/repo@branch:main` for a [git ref](../cli/commands/install.md#git-refs), an `https://` URL, `./sub/` inside the previous archive, or the `file:///` URI of a local file given to `lip install`;
-    *   `artifact`: the index of the routing `artifact` chosen at that hop (`null` when the hop was not a routing document);
+    *   `target`: the index of the target chosen at that hop in a meta document (`null` when the hop reached a package document);
     *   `commit` (only for package paths): the commit the hop's repository was at: the commit of the version tag, or the commit the git ref resolved to. Entries migrated from `tooth_lock.json` have none.
 
     The first hop is what [`lip update`](../cli/commands/update.md) requests again: a branch is followed to its new head, a tag is resolved again, a rev stays.
@@ -70,21 +68,21 @@ The lockfile is a JSON file described by the JSON Schema [`lock.schema.yaml`](ht
 
     When lip needs the files of an installed package again, it opens this archive and checks its identity: a git archive is fetched at the recorded commit (even if it came from a branch that has moved on), and a downloaded or local ZIP file must still have the recorded SHA-256. Uninstalling needs neither.
 *   **`files`**: The files the package owns, relative to the workspace root and `/`-separated. Since `plugins` is a link to `mods` on a server, a file under `plugins/` is recorded under `mods/`; lip rewrites the `plugins/` paths of entries migrated from `tooth_lock.json`.
-*   **`manifest`**: The package's document (`manifest.json`, or `tooth.json` for `tooth` packages, which lip converts to format 4 again when it needs the package), so lip does not have to fetch it again.
+*   **`manifest`**: The package's document (`manifest.json`, or `tooth.json` for `tooth` packages, which lip converts to a file package again when it needs the package), so lip does not have to fetch it again.
 
 ## Example
 
 ```json
 {
-  "name": "LegacyMoney",
+  "id": "LegacyMoney",
   "version": "0.22.0",
   "kind": "mcmod",
   "explicit": true,
   "chain": [
-    { "ref": "github.com/LiteLDev/LegacyMoney", "artifact": 0 },
+    { "ref": "github.com/LiteLDev/LegacyMoney", "target": 0 },
     {
       "ref": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod",
-      "artifact": null
+      "target": null
     }
   ],
   "archiveKey": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod",

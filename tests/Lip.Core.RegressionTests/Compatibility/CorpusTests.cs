@@ -16,7 +16,7 @@ using Semver;
 namespace Lip.Core.RegressionTests.Compatibility;
 
 /// Checks that every corpus entry lip v3 could install (<c>baseline_installable && git_tag</c> in
-/// corpus.json) still resolves and solves on the format 4 pipeline:
+/// corpus.json) still resolves and solves on the manifest.json pipeline:
 /// - Resolve(package, workspace, =version, (server, win-x64)) yields a candidate, unless the
 ///   tooth.json at the tag declares the variant only for other platforms (not installable on
 ///   win-x64, with or without lip v4);

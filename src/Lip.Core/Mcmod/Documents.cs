@@ -7,92 +7,92 @@ public interface IVersionConstraint {
   public bool IsSatisfiedBy(SemVersion version);
 }
 
-/// A root manifest.json (spec §4). Parsed by IDocumentParser.
-public abstract record ManifestDocument {
-  /// Whether the document carries formatVersion 4 and the format UUID. Unmarked documents are
-  /// plain LeviLamina manifests: accepted only as self-contained concrete packages (never as
-  /// routing documents, and without install edges).
-  public required bool IsMarked { get; init; }
-}
+/// A root manifest.json (spec §4, §10.1). Parsed by IDocumentParser.
+public abstract record ManifestDocument;
 
-/// A document with an "artifacts" key (spec §4.1). Always marked.
-public record RoutingDocument : ManifestDocument {
-  public string? Name { get; init; }
+/// A document with a "targets" key (spec §4.2). Only id, version and the targets take part in
+/// resolution; the rest of the document is a template for packing (spec §8).
+public record MetaDocument : ManifestDocument {
+  public string? Id { get; init; }
 
   public SemVersion? Version { get; init; }
 
-  public required IReadOnlyList<Artifact> Artifacts { get; init; }
-
-  public IReadOnlyList<Ref> Refs { get; init; } = [];
+  public required IReadOnlyList<MetaTarget> Targets { get; init; }
 }
 
-public record Artifact {
+public record MetaTarget {
   public string Variant { get; init; } = "";
 
   /// Null when the key is absent ("any platform").
   public IReadOnlyList<McmodPlatform>? Platforms { get; init; }
 
-  /// Null when the key is absent ("any rid").
-  public IReadOnlyList<string>? Rids { get; init; }
+  /// Null when the key is absent ("any runtime").
+  public IReadOnlyList<string>? Runtimes { get; init; }
 
-  /// Ref strings before template expansion (see RefTemplate). Non-empty.
-  public required IReadOnlyList<string> Refs { get; init; }
+  /// Source refs before template expansion (see RefTemplate). Non-empty.
+  public required IReadOnlyList<string> Source { get; init; }
 
-  /// Number of selector keys written; the most specific matching artifact wins (spec §5.2).
-  public int SelectorCount => (Platforms is null ? 0 : 1) + (Rids is null ? 0 : 1);
+  /// The id and version templates use (spec §4.2): the target's own, or else the document's;
+  /// null when there is none.
+  public string? TemplateId { get; init; }
+
+  public SemVersion? TemplateVersion { get; init; }
+
+  /// Number of selector keys written; the most specific matching target wins (spec §5.2).
+  public int SelectorCount => (Platforms is null ? 0 : 1) + (Runtimes is null ? 0 : 1);
 
   public bool Matches(LipEnvironment environment) =>
       (Platforms is null || Platforms.Contains(environment.Platform))
-      && (Rids is null || Rids.Contains(environment.Rid));
+      && (Runtimes is null || Runtimes.Contains(environment.Runtime));
 }
 
-public enum PackagePlatform {
-  Universal,
-  Server,
-  Client,
-}
-
-/// A document without an "artifacts" key (spec §4.2).
-public record ConcreteDocument : ManifestDocument {
-  public required string Name { get; init; }
+/// A document without a "targets" key (spec §4.1), or a LeviLamina manifest read as one
+/// (spec §10.1).
+public record PackageDocument : ManifestDocument {
+  public required string Id { get; init; }
 
   public required SemVersion Version { get; init; }
 
-  /// "files" for a file package; any other value is a mod (LeviLamina semantics).
-  public required string Type { get; init; }
+  /// Whether the document has "mod": a mod is written whole into mods/&lt;id&gt;/; any other
+  /// package is a file package, whose files are its Files (spec §7).
+  public required bool IsMod { get; init; }
 
-  public bool IsFilePackage => Type == "files";
+  public bool IsFilePackage => !IsMod;
 
-  public PackagePlatform Platform { get; init; } = PackagePlatform.Universal;
+  /// Null when omitted (both platforms).
+  public McmodPlatform? Platform { get; init; }
 
-  public string? Rid { get; init; }
-
-  public IReadOnlyList<Ref> Refs { get; init; } = [];
+  /// Null when omitted (any runtime).
+  public string? Runtime { get; init; }
 
   public IReadOnlyList<Dep> Dependencies { get; init; } = [];
 
-  public IReadOnlyList<Dep> OptionalDependencies { get; init; } = [];
-
   public IReadOnlyList<Dep> Conflicts { get; init; } = [];
 
+  /// The install edges a tooth.json's dependencies become (spec §10.2 rule 3). Not part of the
+  /// manifest.json syntax: the parser never sets them.
   public IReadOnlyList<InstallDep> InstallDependencies { get; init; } = [];
 
-  public IReadOnlyList<Placement> Placements { get; init; } = [];
+  public IReadOnlyList<PackageFile> Files { get; init; } = [];
 
-  /// The asset placements of a tooth.json converted to format 4 (spec §9.5), which select files
-  /// by pattern: they are expanded against the archive's files at install time, into placements
-  /// before Placements. Not part of the manifest.json syntax: the parser never sets them.
+  public IReadOnlyList<PackageArchive> Archives { get; init; } = [];
+
+  /// The asset placements of a tooth.json (spec §10.2 rule 5), which select files by pattern:
+  /// they are expanded against the archive's files at install time, into files before Files.
+  /// Not part of the manifest.json syntax: the parser never sets them.
   public IReadOnlyList<AssetPlacement> AssetPlacements { get; init; } = [];
 
-  public IReadOnlyList<PathGlob> PreserveFiles { get; init; } = [];
+  public IReadOnlyList<PathGlob> Preserve { get; init; } = [];
 
-  public IReadOnlyList<PathGlob> RemoveFiles { get; init; } = [];
+  public IReadOnlyList<PathGlob> Remove { get; init; } = [];
 
-  public Scripts Scripts { get; init; } = new();
+  public Hooks Hooks { get; init; } = new();
 }
 
+/// A "dependencies" or "conflicts" entry (spec §4.1, §6). Refs is the "source" of a dependency,
+/// null when absent; a dependency with a source is an install edge.
 public record Dep {
-  public required string Name { get; init; }
+  public required string Id { get; init; }
 
   public IVersionConstraint? Version { get; init; }
 
@@ -100,31 +100,54 @@ public record Dep {
   public IReadOnlyList<Ref>? Refs { get; init; }
 }
 
+/// An install edge of a tooth.json dependency (spec §10.2 rule 3): any identity satisfies it.
 public record InstallDep {
-  public string? Name { get; init; }
-
   public IVersionConstraint? Version { get; init; }
 
   public required IReadOnlyList<Ref> Refs { get; init; }
 
-  /// Set on the edges converted from tooth.json dependencies (spec §9.3); see InstallEdge. Not
-  /// part of the manifest.json syntax.
+  /// A "client" variant means "" when the target archive uses manifest.json; see InstallEdge.
   public bool ToothClientCompat { get; init; }
 }
 
-/// src is a path in the archive, dest a path in the workspace. "" or a trailing '/' marks the
-/// directory form; src and dest always have the same form.
-public record Placement(string Src, string Dest) {
-  public bool IsDirectory => Src == "" || Src.EndsWith('/');
+public enum PackageFileForm {
+  File,
+  Directory,
+  Glob,
 }
 
-/// A tooth.json asset placement (spec §9.5): Src is matched against the files of the asset
-/// mounted at Mount in the archive (a directory name), by the v3 rules: a file placement takes the
-/// file named Src or the files matching the glob Src, a directory placement the files below the
-/// directory Src. Dest is a workspace path.
+/// A "files" entry (spec §4.1, §7). Src is a path in the package's archive, or in the archive
+/// named by From; Dest a path in the workspace.
+public record PackageFile(string? From, string Src, string Dest) {
+  public PackageFileForm Form =>
+      PathGlob.HasMetacharacters(Src) ? PackageFileForm.Glob
+      : Src == "" || Src.EndsWith('/') ? PackageFileForm.Directory
+      : PackageFileForm.File;
+}
+
+public enum PackageArchiveFormat {
+  /// Detected from the content: zip, tar or tgz.
+  Detect,
+  Zip,
+  Tar,
+  Tgz,
+  File,
+}
+
+/// An "archives" entry (spec §4.1, §7).
+public record PackageArchive(
+    string Name,
+    IReadOnlyList<string> Urls,
+    string? Sha256,
+    PackageArchiveFormat Format);
+
+/// A tooth.json asset placement (spec §10.2 rule 5): Src is matched against the files of the
+/// asset mounted at Mount in the archive (a directory name), by the v3 rules: a file placement
+/// takes the file named Src or the files matching the glob Src, a directory placement the files
+/// below the directory Src. Dest is a workspace path.
 public record AssetPlacement(string Mount, bool IsDirectory, string Src, string Dest);
 
-public record Scripts {
+public record Hooks {
   public IReadOnlyList<string> PreInstall { get; init; } = [];
 
   public IReadOnlyList<string> PostInstall { get; init; } = [];

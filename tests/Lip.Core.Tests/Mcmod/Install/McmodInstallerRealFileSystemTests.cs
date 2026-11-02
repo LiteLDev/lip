@@ -41,13 +41,12 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
       ["lang/en_US.json"] = "{}",
     });
     FileSystem fs = new();
-    ConcreteDocument document = new() {
-      IsMarked = true,
-      Name = "LegacyMoney",
+    PackageDocument document = new() {
+      Id = "LegacyMoney",
       Version = SemVersion.Parse("0.22.0"),
-      Type = "native",
-      RemoveFiles = [new PathGlob("data/")],
-      Scripts = new Scripts {
+      IsMod = true,
+      Remove = [new PathGlob("data/")],
+      Hooks = new Hooks {
         PreInstall = ["echo pre> pre_install.txt"],
         PostInstall = ["echo post> post_install.txt"],
         PostUninstall = ["echo done> post_uninstall.txt"],

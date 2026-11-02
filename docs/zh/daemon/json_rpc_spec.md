@@ -26,6 +26,8 @@
 
 `Update` 的 `packages` 参数可以为空，表示更新所有显式安装的包。
 
+`Migrate` 不会询问：在 [`lip migrate`](../cli/commands/migrate.md) 会于终端上询问某个值的情况下，该方法会失败，并指明该值。
+
 ## 错误与取消
 
 方法失败时以 JSON-RPC 错误响应，其 `message` 说明原因，工作区的状态与对应 `lip` 命令失败时相同。客户端可以用通知 `$/cancelRequest` `{ "id": <请求 id> }` 取消一个尚未完成的请求：被取消的 `Install`、`Uninstall` 或 `Update` 会撤销其修改，并以错误响应。客户端可以在先前的请求得到响应之前发送新的请求，但发现同一工作区上已有另一个 `Install`、`Uninstall` 或 `Update` 在运行时，该操作会立即失败。

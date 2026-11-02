@@ -38,4 +38,4 @@ lip view github.com/user/repo@branch:main
 
 ## 说明
 
-读取参数所指归档的根文档，并以 JSON 形式展示：归档中有 `tooth.json` 时显示它，否则显示 `manifest.json`。对于包路径，归档是该版本标签处、或 git 引用所指提交处的仓库。文档按原样显示，不会跟随路由文档。
+读取参数所指归档的根文档，并以 JSON 形式展示：归档中有 `tooth.json` 时显示它，否则显示 `manifest.json`。对于包路径，归档是该版本标签处、或 git 引用所指提交处的仓库。文档按原样显示，不会跟随元文档。

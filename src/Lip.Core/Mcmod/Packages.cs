@@ -5,29 +5,30 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// An edge of the dependency graph that lip installs (spec §6): a dependencies entry with refs,
-/// or an installDependencies entry. ToothClientCompat marks edges mapped from tooth.json
-/// dependencies (spec §9.3): a "client" variant is treated as "" when the target archive uses
-/// manifest.json.
+/// An edge of the dependency graph that lip installs (spec §6): a dependencies entry with a
+/// source, whose key the identity of the package satisfying it must equal; or a tooth.json
+/// dependency (spec §10.2 rule 3), without a name, which any identity satisfies.
+/// ToothClientCompat marks the latter: a "client" variant is treated as "" when the target
+/// archive uses manifest.json.
 public record InstallEdge(
     string? Name,
     IVersionConstraint? Version,
     IReadOnlyList<Ref> Refs,
     bool ToothClientCompat = false);
 
-/// A concrete package, i.e. a resolution candidate's payload.
+/// A package, i.e. a resolution candidate's payload.
 public interface IPackage {
   /// How the lock reads the recorded manifest: "mcmod" or "tooth" (McmodPackage.Kind).
   public string Kind { get; }
 
-  /// The package name; compared ignoring ASCII case.
+  /// The package id; compared ignoring ASCII case.
   public string Identity { get; }
 
   public SemVersion Version { get; }
 
   /// What selected this package within its archive besides the archive itself: "" for a
-  /// manifest.json package (an archive holds one concrete document), the v3 label for a
-  /// converted tooth.json, whose variants are different packages in one archive (spec §9).
+  /// manifest.json package (an archive holds one package document), the v3 label for a
+  /// tooth.json, whose variants are different packages in one archive (spec §10.2).
   public string Variant => "";
 
   public IReadOnlyList<InstallEdge> InstallEdges { get; }
@@ -38,8 +39,8 @@ public interface IPackage {
   public JsonElement Manifest { get; }
 }
 
-/// A concrete document, from a manifest.json or converted from a tooth.json (spec §9).
-public record McmodPackage(ConcreteDocument Document, JsonElement Manifest) : IPackage {
+/// A package document, from a manifest.json or read from a tooth.json (spec §10).
+public record McmodPackage(PackageDocument Document, JsonElement Manifest) : IPackage {
   public const string KindName = "mcmod";
 
   /// "mcmod" when Manifest is the manifest.json; "tooth" (ToothCompat.KindName) when it is the
@@ -47,23 +48,20 @@ public record McmodPackage(ConcreteDocument Document, JsonElement Manifest) : IP
   /// conversion is not expressible as manifest.json.
   public string Kind { get; init; } = KindName;
 
-  public string Identity => Document.Name;
+  public string Identity => Document.Id;
 
   public SemVersion Version => Document.Version;
 
   /// The v3 label a tooth.json was converted with (IPackage.Variant); "" otherwise.
   public string Variant { get; init; } = "";
 
-  /// Unmarked documents are self-contained: they never create install edges.
-  public IReadOnlyList<InstallEdge> InstallEdges => Document.IsMarked
-      ? [
-        .. Document.Dependencies
-            .Where(d => d.Refs is not null)
-            .Select(d => new InstallEdge(d.Name, d.Version, d.Refs!)),
-        .. Document.InstallDependencies
-            .Select(d => new InstallEdge(d.Name, d.Version, d.Refs, d.ToothClientCompat)),
-      ]
-      : [];
+  public IReadOnlyList<InstallEdge> InstallEdges => [
+    .. Document.Dependencies
+        .Where(d => d.Refs is not null)
+        .Select(d => new InstallEdge(d.Id, d.Version, d.Refs!)),
+    .. Document.InstallDependencies
+        .Select(d => new InstallEdge(null, d.Version, d.Refs, d.ToothClientCompat)),
+  ];
 
   public IReadOnlyList<Dep> Conflicts => Document.Conflicts;
 }
@@ -71,9 +69,9 @@ public record McmodPackage(ConcreteDocument Document, JsonElement Manifest) : IP
 /// The root document of an archive (spec §2.4).
 public abstract record ArchiveDocument;
 
-public record RoutingArchiveDocument(RoutingDocument Document) : ArchiveDocument;
+public record MetaArchiveDocument(MetaDocument Document) : ArchiveDocument;
 
-public record ConcreteArchiveDocument(ConcreteDocument Document, JsonElement Manifest)
+public record PackageArchiveDocument(PackageDocument Document, JsonElement Manifest)
     : ArchiveDocument;
 
 /// A tooth.json root; Manifest is the v3 form after migration of v1/v2.
@@ -84,14 +82,14 @@ public static partial class PackageNames {
 
   public static bool AreEqual(string a, string b) => Fold(a) == Fold(b);
 
-  /// Lowercases ASCII letters only: names are compared ignoring ASCII case (spec §1).
+  /// Lowercases ASCII letters only: identities are compared ignoring ASCII case (spec §1).
   public static string Fold(string name) => string.Create(name.Length, name, (span, s) => {
     for (int i = 0; i < s.Length; i++) {
       span[i] = char.IsAsciiLetterUpper(s[i]) ? (char)(s[i] | 0x20) : s[i];
     }
   });
 
-  /// A valid package name (^[A-Za-z0-9][A-Za-z0-9._-]*$, spec §4.2) derived from free text:
+  /// A valid id (^[A-Za-z0-9][A-Za-z0-9._-]*$, spec §4.1) derived from free text:
   /// other characters become '-', leading '.', '_' and '-' are dropped.
   public static string FromText(string text, string fallback) {
     string name = ReplaceInvalidCharacters(text).TrimStart('.', '_', '-');
@@ -102,7 +100,7 @@ public static partial class PackageNames {
   public static string ReplaceInvalidCharacters(string text) =>
       InvalidNameCharacters().Replace(text, "-");
 
-  /// Whether a name matches ^[A-Za-z0-9][A-Za-z0-9._-]*$ (spec §4.2).
+  /// Whether a name matches ^[A-Za-z0-9][A-Za-z0-9._-]*$ (spec §4.1).
   public static bool IsValid(string name) => ValidName().IsMatch(name);
 
   [GeneratedRegex("[^A-Za-z0-9._-]")]

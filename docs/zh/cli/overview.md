@@ -13,7 +13,7 @@
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`list`](commands/list.md) 和 [`versions`](commands/versions.md)。
 
-[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--rid <RID>`，用于设置工作区[环境](../concepts/package_manifest.md#环境)中的 RID。lip 只管理服务端工作区。
+[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--rid <RID>`，用于设置工作区[环境](../concepts/package_manifest.md#环境)中的 RID；[`pack`](commands/pack.md) 用它选择打包的目标 RID。lip 只管理服务端工作区。
 
 ## 命令
 
@@ -22,7 +22,8 @@
 - [`lip init`](commands/init.md)：为新项目创建 `manifest.json`。
 - [`lip install`](commands/install.md)：安装包。
 - [`lip list`](commands/list.md)：列出已安装包。
-- [`lip migrate`](commands/migrate.md)：把当前目录下的包仓库从 `tooth.json` 迁移到 `manifest.json`。
+- [`lip migrate`](commands/migrate.md)：把当前目录下的包仓库从 `tooth.json` 或 LeviLamina 清单迁移到 `manifest.json`。
+- [`lip pack`](commands/pack.md)：把当前目录中的 `manifest.json` 打包为包文档或 `.mcmod` 文件。
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。
 - [`lip versions`](commands/versions.md)：显示某个包的可用版本。

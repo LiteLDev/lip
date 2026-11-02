@@ -16,7 +16,7 @@ namespace Lip.Core.Mcmod.Resolution;
 /// is decided without enumerating every candidate: the loaded candidates are checked first, then
 /// each member whose version is in range and whose identity is that of a loaded candidate is
 /// looked up directly: the requirement's spec refs are resolved for exactly that version. This
-/// shortcut misses a member routed from a tag of another version (a routing document without a
+/// shortcut misses a member routed from a tag of another version (a meta document without a
 /// version key) and a member named differently from the loaded candidates (a package renamed
 /// between versions); the search then meets the member while walking the candidates, and takes
 /// it there as satisfying the requirement.
@@ -771,7 +771,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     /// Whether two tooth.json packages of different identities are one package renamed between
     /// versions: converted from the same variant label of the tooth.json at the root of one
     /// repository. A tooth.json names its own path in "tooth", so a repository that moved names
-    /// the new path in its newer tags (spec §9.1); its versions are still one package, of which
+    /// the new path in its newer tags (spec §10.2 rule 1); its versions are still one package, of which
     /// S holds one (spec §6.3), and installing a newer one replaces the installed one.
     private static bool IsRenamed(Candidate a, Candidate b) {
       return a.Package.Kind == ToothCompat.KindName && b.Package.Kind == ToothCompat.KindName
@@ -809,7 +809,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         return false;
       }
 
-      // §9.3: "client" means "" only when the pinned archive uses manifest.json; a package
+      // §10.2 rule 3: "client" means "" only when the pinned archive uses manifest.json; a package
       // converted from the tooth.json at that archive itself is reached in one hop.
       bool manifestArchive = candidate.Chain.Count > 1
           || candidate.Package.Kind != ToothCompat.KindName;
@@ -969,7 +969,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     }
 
     private static bool Conflicts(IPackage package, IPackage other) {
-      return package.Conflicts.Any(d => SameIdentity(d.Name, other.Identity)
+      return package.Conflicts.Any(d => SameIdentity(d.Id, other.Identity)
           && (d.Version is null || d.Version.IsSatisfiedBy(other.Version)));
     }
 

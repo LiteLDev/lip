@@ -11,6 +11,10 @@ public class McmodServiceTests {
   private const string Lib = "example.com/lib";
   private const string App = "example.com/app";
 
+  // The identities of the tooth.json packages at Lib and App: their tooth names (spec §10.2).
+  private const string LibId = "lib";
+  private const string AppId = "app";
+
   private static readonly OperationOptions s_options = new();
 
   private readonly WorkspaceHarness _ws = new();
@@ -30,9 +34,9 @@ public class McmodServiceTests {
     Assert.Equal("lib 1", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     LockFile lockFile = await _ws.Lock();
     Assert.Equal("server", lockFile.Platform);
-    Assert.NotNull(lockFile.Rid);
+    Assert.NotNull(lockFile.Runtime);
     LockedPackage package = Assert.Single(lockFile.Packages);
-    Assert.Equal(Lib, package.Identity);
+    Assert.Equal(LibId, package.Identity);
     Assert.Equal("1.0.0", package.Version);
     Assert.Equal("tooth", package.Kind);
     Assert.True(package.Explicit);
@@ -71,7 +75,7 @@ public class McmodServiceTests {
     // Assert
     IReadOnlyList<InstalledPackage> packages = await _ws.Service.List();
     Assert.Equal(
-        [(Lib, "1.1.0", false), (App, "1.0.0", true)],
+        [(LibId, "1.1.0", false), (AppId, "1.0.0", true)],
         packages.Select(p => (p.Identity, p.Version, p.Explicit)));
     Assert.True(_ws.Exists("lib/lib.dll"));
     Assert.True(_ws.Exists("app/app.dll"));
@@ -110,7 +114,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([$"{App}@1.0.0"], s_options);
     await _ws.Service.Uninstall([Lib], s_options);
     Assert.Equal(
-        [(Lib, "1.0.0", false), (App, "1.0.0", true)],
+        [(LibId, "1.0.0", false), (AppId, "1.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
 
     // Act: app 2.0.0 needs lib >=1.1.0, so the installed lib cannot stay.
@@ -118,7 +122,7 @@ public class McmodServiceTests {
 
     // Assert
     Assert.Equal(
-        [(Lib, "1.1.0", false), (App, "2.0.0", true)],
+        [(LibId, "1.1.0", false), (AppId, "2.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
     Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
   }
@@ -149,7 +153,7 @@ public class McmodServiceTests {
 
     // Assert
     LockFile lockFile = await _ws.Lock();
-    Assert.False(lockFile.Packages.Single(p => p.Identity == Lib).Explicit);
+    Assert.False(lockFile.Packages.Single(p => p.Identity == LibId).Explicit);
     Assert.True(_ws.Exists("lib/lib.dll"));
   }
 
@@ -163,7 +167,7 @@ public class McmodServiceTests {
     await Assert.ThrowsAsync<InvalidOperationException>(
         () => _ws.Service.Uninstall([Lib], s_options));
     await _ws.Service.Uninstall([Lib], s_options with { NoDependencies = true });
-    Assert.Equal([App], (await _ws.Lock()).Packages.Select(p => p.Identity));
+    Assert.Equal([AppId], (await _ws.Lock()).Packages.Select(p => p.Identity));
     Assert.False(_ws.Exists("lib/lib.dll"));
   }
 
@@ -184,7 +188,7 @@ public class McmodServiceTests {
 
     // Assert
     Assert.Equal(
-        [(Lib, "1.1.0", false), (App, "2.0.0", true)],
+        [(LibId, "1.1.0", false), (AppId, "2.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
     Assert.Equal("app 2", _ws.Fs.File.ReadAllText(_ws.Path("app/app.dll")));
   }
@@ -199,7 +203,7 @@ public class McmodServiceTests {
     await _ws.Service.Update([Lib], s_options);
 
     // Assert
-    Assert.True((await _ws.Lock()).Packages.Single(p => p.Identity == Lib).Explicit);
+    Assert.True((await _ws.Lock()).Packages.Single(p => p.Identity == LibId).Explicit);
   }
 
   [Fact]
@@ -232,7 +236,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([App], s_options with { NoDependencies = true });
 
     // Assert
-    Assert.Equal([App], (await _ws.Lock()).Packages.Select(p => p.Identity));
+    Assert.Equal([AppId], (await _ws.Lock()).Packages.Select(p => p.Identity));
     Assert.False(_ws.Exists("lib/lib.dll"));
   }
 
@@ -251,14 +255,14 @@ public class McmodServiceTests {
 
     // Assert: refs/cli.md §4, a dry run reports the packages it would mark as explicitly
     // installed.
-    Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{Lib}'"));
-    Assert.False((await _ws.Lock()).Packages.Single(p => p.Identity == Lib).Explicit);
+    Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{LibId}'"));
+    Assert.False((await _ws.Lock()).Packages.Single(p => p.Identity == LibId).Explicit);
   }
 
   [Fact]
-  public async Task Install_RoutingDirectoryByPlatform_InstallsServerModUnderMods() {
+  public async Task Install_MetaDirectoryByPlatform_InstallsServerModUnderMods() {
     // Arrange
-    AddRoutingFixture();
+    AddMetaFixture();
 
     // Act
     await _ws.Service.Install(["./fixture.mcmod"], s_options);
@@ -275,7 +279,7 @@ public class McmodServiceTests {
     string file = Ref.FromFile(_ws.Path("fixture.mcmod")).ToString();
     Assert.Equal(
         [(file, (int?)0), ("./server/", null)],
-        package.Chain.Select(h => (h.Ref, h.Artifact)));
+        package.Chain.Select(h => (h.Ref, h.Target)));
     Assert.Equal($"{file}!server/", package.ArchiveKey);
     ZipArchiveIdentity identity = Assert.IsType<ZipArchiveIdentity>(package.Archive);
     Assert.Equal(file, identity.Url);
@@ -285,7 +289,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_Directory_ThrowsWithoutChanges() {
     // Arrange
-    _ws.AddFile("pkg/manifest.json", WorkspaceHarness.Concrete("Dir", "1.0.0", "native"));
+    _ws.AddFile("pkg/manifest.json", WorkspaceHarness.Package("Dir", "1.0.0", "native"));
 
     // Act & Assert
     ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(
@@ -299,12 +303,12 @@ public class McmodServiceTests {
   public async Task Update_LocalFileChanged_ReinstallsSameVersion() {
     // Arrange
     _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Zipped", "1.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
       ["Zipped.dll"] = "v1",
     });
     await _ws.Service.Install(["x.mcmod"], s_options);
     _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Zipped", "1.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
       ["Zipped.dll"] = "v2",
     });
 
@@ -321,7 +325,7 @@ public class McmodServiceTests {
   public async Task Uninstall_ByLocalPath_RemovesPackageInstalledFromIt(string argument) {
     // Arrange
     string path = _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Zipped", "1.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
       ["Zipped.dll"] = "v1",
     });
     await _ws.Service.Install([path], s_options);
@@ -339,7 +343,7 @@ public class McmodServiceTests {
   public async Task Update_LocalFileGone_KeepsPackageAndWarns() {
     // Arrange
     string path = _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Zipped", "1.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
       ["Zipped.dll"] = "v1",
     });
     await _ws.Service.Install([path], s_options);
@@ -358,11 +362,10 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_LockRecordsClientPlatform_ThrowsWithoutChanges() {
     // Arrange
-    AddRoutingFixture();
+    AddMetaFixture();
     _ws.AddFile(".lip/lock.json", $$"""
         {
-          "formatVersion": 4,
-          "formatUuid": "{{ManifestFormat.Uuid}}",
+          "format": "{{ManifestFormat.Format}}",
           "platform": "client",
           "packages": []
         }
@@ -378,7 +381,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Uninstall_ByCaseInsensitiveName_RemovesModFiles() {
     // Arrange
-    AddRoutingFixture();
+    AddMetaFixture();
     await _ws.Service.Install(["./fixture.mcmod"], s_options);
 
     // Act
@@ -393,8 +396,8 @@ public class McmodServiceTests {
   public async Task Install_FilePackageWithPlacements_WritesPlacementsAndUninstallRemovesThem() {
     // Arrange
     _ws.AddZip("pkg.zip", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Tool", "1.0.0", "files", """
-            "placements": [
+      ["manifest.json"] = WorkspaceHarness.Package("Tool", "1.0.0", "files", """
+            "files": [
               { "src": "bin/", "dest": "tools/" },
               { "src": "readme.txt", "dest": "docs/tool.txt" }
             ]
@@ -418,10 +421,10 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_McmodFile_InstallsConcreteZip() {
+  public async Task Install_McmodFile_InstallsPackageZip() {
     // Arrange
     _ws.Fs.AddFile(_ws.Path("x.mcmod"), new MockFileData(WorkspaceHarness.Zip(new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Zipped", "2.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "2.0.0", "native"),
       ["Zipped.dll"] = "zipped",
     })));
 
@@ -441,25 +444,24 @@ public class McmodServiceTests {
         new Dictionary<string, byte[]> {
           ["manifest.json"] = Encoding.UTF8.GetBytes("""
               {
-                "formatVersion": 4,
-                "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-                "artifacts": [ { "refs": ["./inner.mcmod"] } ]
+                "format": "bf45b1",
+                "targets": [ { "source": "./inner.mcmod" } ]
               }
               """),
           ["inner.mcmod"] = WorkspaceHarness.Zip(new() {
-            ["manifest.json"] = WorkspaceHarness.Concrete("Inner", "1.0.0", "files", """
-                  "placements": [ { "src": "a.txt", "dest": "a.txt" } ],
-                  "installDependencies": [ { "refs": ["./dep/"] } ]
+            ["manifest.json"] = WorkspaceHarness.Package("Inner", "1.0.0", "files", """
+                  "files": [ { "src": "a.txt", "dest": "a.txt" } ],
+                  "dependencies": { "Dep": { "source": "./dep/" } }
                 """),
             ["a.txt"] = "a",
-            ["dep/manifest.json"] = WorkspaceHarness.Concrete("Dep", "1.0.0", "files", """
-                  "placements": [ { "src": "b.txt", "dest": "b.txt" } ]
+            ["dep/manifest.json"] = WorkspaceHarness.Package("Dep", "1.0.0", "files", """
+                  "files": [ { "src": "b.txt", "dest": "b.txt" } ]
                 """),
             ["dep/b.txt"] = "b",
           }),
         })));
     _ws.AddZip("other.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Other", "1.0.0", "files"),
+      ["manifest.json"] = WorkspaceHarness.Package("Other", "1.0.0", "files"),
     });
     await _ws.Service.Install(["./outer.mcmod"], s_options);
     await _ws.Cache.Clean();
@@ -503,7 +505,7 @@ public class McmodServiceTests {
     Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
     LockFile lockFile = await _ws.Lock();
     Assert.Equal(
-        [(Lib, "1.0.0", true), (App, "1.0.0", true)],
+        [(LibId, "1.0.0", true), (AppId, "1.0.0", true)],
         lockFile.Packages.Select(p => (p.Identity, p.Version, p.Explicit)));
     Assert.Null(lockFile.Packages[0].Archive);
 
@@ -566,7 +568,7 @@ public class McmodServiceTests {
 
     // Assert
     Assert.Equal(
-        [($"{Lib}#a", false), ($"{Lib}#b", false), (Lib, true)],
+        [("lib-a", false), ("lib-b", false), (LibId, true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Explicit)));
     Assert.Equal("a", _ws.Fs.File.ReadAllText(_ws.Path("a.dll")));
     Assert.Equal("b", _ws.Fs.File.ReadAllText(_ws.Path("b.dll")));
@@ -582,7 +584,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
 
     // Act
-    await _ws.Service.Uninstall([Lib], s_options);
+    await _ws.Service.Uninstall([LibId], s_options);
 
     // Assert
     Assert.Empty((await _ws.Lock()).Packages);
@@ -603,7 +605,7 @@ public class McmodServiceTests {
     Assert.False(_ws.Exists("a.dll"));
     Assert.Equal("b", _ws.Fs.File.ReadAllText(_ws.Path("b.dll")));
     LockedPackage remaining = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal($"{Lib}#b", remaining.Identity);
+    Assert.Equal("lib-b", remaining.Identity);
     Assert.True(remaining.Explicit);
   }
 
@@ -658,13 +660,13 @@ public class McmodServiceTests {
   public async Task Install_TagAndRevRefs_UseDocumentVersionAndExactCommit() {
     // Arrange
     _ws.Git.AddTag(Lib, "nightly", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Lib", "3.0.0-nightly", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Lib", "3.0.0-nightly", "native"),
     });
     string rev = _ws.Git.AddBranch(App, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("App", "0.1.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("App", "0.1.0", "native"),
     });
     _ws.Git.AddBranch(App, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("App", "0.2.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("App", "0.2.0", "native"),
     });
 
     // Act
@@ -693,7 +695,7 @@ public class McmodServiceTests {
     // Assert
     Assert.Equal("lib head", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     Assert.Equal(
-        [(App, "2.0.0"), (Lib, "1.5.0")],
+        [(AppId, "2.0.0"), (LibId, "1.5.0")],
         (await _ws.Lock()).Packages.Select(p => (p.Identity, p.Version)).Order());
   }
 
@@ -701,11 +703,11 @@ public class McmodServiceTests {
   public async Task Install_ManifestDependencyWithGitRef_InstallsPinnedDependency() {
     // Arrange
     _ws.Git.AddBranch(Lib, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Lib", "2.1.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Lib", "2.1.0", "native"),
     });
     _ws.AddZip("app.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("App", "1.0.0", "native", $$"""
-            "dependencies": [ { "name": "Lib", "version": ">=2.0.0", "refs": ["{{Lib}}@branch:dev"] } ]
+      ["manifest.json"] = WorkspaceHarness.Package("App", "1.0.0", "native", $$"""
+            "dependencies": { "Lib": { "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } }
           """),
     });
 
@@ -723,11 +725,11 @@ public class McmodServiceTests {
   public async Task Install_GitRefDocumentOutOfRange_Throws() {
     // Arrange
     _ws.Git.AddBranch(Lib, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Lib", "1.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Lib", "1.0.0", "native"),
     });
     _ws.AddZip("app.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("App", "1.0.0", "native", $$"""
-            "installDependencies": [ { "version": ">=2.0.0", "refs": ["{{Lib}}@branch:dev"] } ]
+      ["manifest.json"] = WorkspaceHarness.Package("App", "1.0.0", "native", $$"""
+            "dependencies": { "Lib": { "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } }
           """),
     });
 
@@ -741,7 +743,7 @@ public class McmodServiceTests {
   public async Task View_BranchRef_PrintsDocumentAtHead() {
     // Arrange
     _ws.Git.AddBranch(Lib, "main", new() {
-      ["manifest.json"] = WorkspaceHarness.Concrete("Lib", "9.0.0", "native"),
+      ["manifest.json"] = WorkspaceHarness.Package("Lib", "9.0.0", "native"),
     });
 
     // Act
@@ -815,24 +817,23 @@ public class McmodServiceTests {
     });
   }
 
-  /// fixture.mcmod: a routing document selecting ./server/ or ./client/ by platform.
-  private void AddRoutingFixture() {
+  /// fixture.mcmod: a meta document selecting ./server/ or ./client/ by platform.
+  private void AddMetaFixture() {
     _ws.AddZip("fixture.mcmod", new() {
       ["manifest.json"] = """
           {
-            "formatVersion": 4,
-            "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-            "artifacts": [
-              { "platform": "server", "refs": ["./server/"] },
-              { "platform": "client", "refs": ["./client/"] }
+            "format": "bf45b1",
+            "targets": [
+              { "platform": "server", "source": "./server/" },
+              { "platform": "client", "source": "./client/" }
             ]
           }
           """,
       ["server/manifest.json"] =
-          WorkspaceHarness.Concrete("Demo", "1.0.0", "native", "\"platform\": \"server\""),
+          WorkspaceHarness.Package("Demo", "1.0.0", "native", "\"platform\": \"server\""),
       ["server/Demo.dll"] = "server",
       ["client/manifest.json"] =
-          WorkspaceHarness.Concrete("Demo", "1.0.0", "native", "\"platform\": \"client\""),
+          WorkspaceHarness.Package("Demo", "1.0.0", "native", "\"platform\": \"client\""),
       ["client/Demo.dll"] = "client",
     });
   }

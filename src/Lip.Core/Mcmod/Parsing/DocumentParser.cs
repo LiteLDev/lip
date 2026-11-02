@@ -5,13 +5,11 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Parses and validates a root manifest.json (spec §1, §4).
+/// Parses and validates a root manifest.json (spec §1, §4, §10.1).
 ///
-/// A document carrying both format markers (formatVersion 4 and the format UUID) is a v4 document.
-/// A document carrying neither is a plain LeviLamina manifest: it is accepted only as a concrete
-/// document, and the refs of its dependencies and its installDependencies are ignored (it never
-/// creates install edges). A document carrying exactly one marker, or a marker with another value,
-/// is invalid.
+/// A document with "format": "bf45b1" is a document of this format: a meta document when it has
+/// "targets", a package document otherwise. A document without "format" is a LeviLamina manifest,
+/// read as a mod without install edges (spec §10.1). Any other "format" is invalid.
 public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange = null)
     : IDocumentParser {
   private static readonly UTF8Encoding _strictUtf8 = new(
@@ -27,6 +25,26 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
   private readonly Func<string, IVersionConstraint> _parseRange = parseRange ?? VersionRange.Parse;
 
   public ManifestDocument Parse(byte[] utf8Json) {
+    using JsonDocument json = ParseJson(utf8Json);
+    JsonElement root = json.RootElement;
+    if (root.ValueKind != JsonValueKind.Object) {
+      throw Invalid("$", "the top level must be an object");
+    }
+
+    if (!root.TryGetProperty(ManifestFormat.FormatKey, out JsonElement format)) {
+      return ParseLegacy(root);
+    }
+
+    if (format.ValueKind != JsonValueKind.String || format.GetString() != ManifestFormat.Format) {
+      throw Invalid($"$.{ManifestFormat.FormatKey}", $"must be \"{ManifestFormat.Format}\"");
+    }
+
+    return root.TryGetProperty("targets", out _) ? ParseMeta(root) : ParsePackage(root);
+  }
+
+  /// Parses strict JSON (spec §1 "Document"): UTF-8 (a byte order mark is ignored), no comments,
+  /// no trailing commas and no duplicate member names. The caller disposes the result.
+  public static JsonDocument ParseJson(byte[] utf8Json) {
     ReadOnlyMemory<byte> bytes = utf8Json;
 
     // RFC 8259 §8.1 allows parsers to ignore a byte order mark.
@@ -41,82 +59,60 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
       throw new ManifestFormatException("Invalid manifest.json: not valid UTF-8.", ex);
     }
 
-    JsonDocument json;
     try {
-      json = JsonDocument.Parse(bytes, _jsonOptions);
+      return JsonDocument.Parse(bytes, _jsonOptions);
     }
     catch (JsonException ex) {
       throw new ManifestFormatException(
           $"Invalid manifest.json: not strict JSON ({ex.Message})", ex);
     }
-
-    using (json) {
-      JsonElement root = json.RootElement;
-      if (root.ValueKind != JsonValueKind.Object) {
-        throw Invalid("$", "the top level must be an object");
-      }
-
-      bool isMarked = ReadMarkers(root);
-
-      if (root.TryGetProperty("artifacts", out _)) {
-        if (!isMarked) {
-          throw Invalid(
-              "$.artifacts",
-              $"a routing document must declare \"{ManifestFormat.FormatVersionKey}\": "
-              + $"{ManifestFormat.Version} and \"{ManifestFormat.FormatUuidKey}\": "
-              + $"\"{ManifestFormat.Uuid}\"");
-        }
-
-        return ParseRouting(root);
-      }
-
-      return ParseConcrete(root, isMarked);
-    }
   }
 
-  private static bool ReadMarkers(JsonElement root) {
-    bool hasVersion = root.TryGetProperty(ManifestFormat.FormatVersionKey, out JsonElement version);
-    bool hasUuid = root.TryGetProperty(ManifestFormat.FormatUuidKey, out JsonElement uuid);
+  /// Whether a string is an id (spec §4.1): ^[A-Za-z0-9][A-Za-z0-9._-]*$.
+  public static bool IsId(string value) => IdRegex().IsMatch(value);
 
-    if (hasVersion && !(version.ValueKind == JsonValueKind.Number
-        && version.TryGetInt32(out int v) && v == ManifestFormat.Version)) {
-      throw Invalid($"$.{ManifestFormat.FormatVersionKey}", $"must be {ManifestFormat.Version}");
-    }
+  #region LeviLamina manifests (spec §10.1)
 
-    if (hasUuid && !(uuid.ValueKind == JsonValueKind.String
-        && uuid.GetString() == ManifestFormat.Uuid)) {
-      throw Invalid($"$.{ManifestFormat.FormatUuidKey}", $"must be \"{ManifestFormat.Uuid}\"");
-    }
+  private PackageDocument ParseLegacy(JsonElement root) => new() {
+    Id = ReadRequired(root, "name", "$", ReadId),
+    Version = ReadRequired(root, "version", "$", ReadSemVersion),
+    IsMod = true,
+    Platform = root.TryGetProperty("platform", out JsonElement platform)
+        && platform.ValueKind == JsonValueKind.String
+        && McmodPlatformExtensions.TryParse(platform.GetString()!, out McmodPlatform p)
+        ? p
+        : null,
+    Conflicts = ReadOptional(root, "conflicts", "$", ArrayOf(ReadLegacyConflict)) ?? [],
+  };
 
-    if (hasVersion != hasUuid) {
-      (string present, string missing) = hasVersion
-          ? (ManifestFormat.FormatVersionKey, ManifestFormat.FormatUuidKey)
-          : (ManifestFormat.FormatUuidKey, ManifestFormat.FormatVersionKey);
-      throw Invalid($"$.{missing}", $"is required when \"{present}\" is present");
-    }
+  private Dep ReadLegacyConflict(JsonElement element, string path) {
+    RequireObject(element, path);
 
-    return hasVersion;
-  }
-
-  #region Routing documents (spec §4.1)
-
-  private static RoutingDocument ParseRouting(JsonElement root) {
-    JsonElement artifactsJson = root.GetProperty("artifacts");
-    List<Artifact> artifacts = ReadArray(
-        artifactsJson, "$.artifacts", nonEmpty: true, ReadArtifact);
-
-    CheckArtifactsAreUnambiguous(artifacts);
-
-    return new RoutingDocument {
-      IsMarked = true,
-      Name = ReadOptional(root, "name", "$", ReadString),
-      Version = ReadOptional(root, "version", "$", ReadSemVersion),
-      Artifacts = artifacts,
-      Refs = ReadOptional(root, "refs", "$", (e, p) => ReadRefs(e, p, nonEmpty: false)) ?? [],
+    return new Dep {
+      Id = ReadRequired(element, "name", path, ReadString),
+      Version = ReadOptional(element, "version", path, ReadRange),
     };
   }
 
-  private static Artifact ReadArtifact(JsonElement element, string path) {
+  #endregion
+
+  #region Meta documents (spec §4.2)
+
+  private static MetaDocument ParseMeta(JsonElement root) {
+    string? id = ReadOptional(root, "id", "$", ReadId);
+    SemVersion? version = ReadOptional(root, "version", "$", ReadSemVersion);
+
+    List<MetaTarget> targets = ReadArray(
+        root.GetProperty("targets"), "$.targets", nonEmpty: true,
+        (e, p) => ReadTarget(e, p, id, version));
+
+    CheckTargetsAreUnambiguous(targets);
+
+    return new MetaDocument { Id = id, Version = version, Targets = targets };
+  }
+
+  private static MetaTarget ReadTarget(
+      JsonElement element, string path, string? id, SemVersion? version) {
     RequireObject(element, path);
 
     string variant = ReadOptional(element, "variant", path, ReadString) ?? "";
@@ -124,16 +120,28 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
       throw Invalid($"{path}.variant", $"'{variant}' is not a valid variant");
     }
 
-    return new Artifact {
+    // A null override removes the template's value (spec §4.2 "Templates").
+    if (element.TryGetProperty("id", out JsonElement idOverride)) {
+      id = idOverride.ValueKind == JsonValueKind.Null ? null : ReadId(idOverride, $"{path}.id");
+    }
+
+    if (element.TryGetProperty("version", out JsonElement versionOverride)) {
+      version = versionOverride.ValueKind == JsonValueKind.Null
+          ? null
+          : ReadSemVersion(versionOverride, $"{path}.version");
+    }
+
+    return new MetaTarget {
       Variant = variant,
-      Platforms = ReadOptional(element, "platform", path, ReadArtifactPlatforms),
-      Rids = ReadOptional(element, "rid", path, ReadArtifactRids),
-      Refs = ReadRequired(element, "refs", path, (e, p) => ReadArray(
-          e, p, nonEmpty: true, ReadRefTemplate)),
+      Platforms = ReadOptional(element, "platform", path, ReadTargetPlatforms),
+      Runtimes = ReadOptional(element, "runtime", path, ReadTargetRuntimes),
+      Source = ReadRequired(element, "source", path, (e, p) => ReadOneOrMany(e, p, ReadRefTemplate)),
+      TemplateId = id,
+      TemplateVersion = version,
     };
   }
 
-  private static List<McmodPlatform> ReadArtifactPlatforms(JsonElement element, string path) {
+  private static List<McmodPlatform> ReadTargetPlatforms(JsonElement element, string path) {
     const string Reason = "must be \"server\", \"client\" or a non-empty array of them";
 
     static McmodPlatform ReadOne(JsonElement e, string p) =>
@@ -149,7 +157,7 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
     };
   }
 
-  private static List<string> ReadArtifactRids(JsonElement element, string path) =>
+  private static List<string> ReadTargetRuntimes(JsonElement element, string path) =>
       element.ValueKind switch {
         JsonValueKind.String => [ReadString(element, path)],
         JsonValueKind.Array => ReadArray(element, path, nonEmpty: true, ReadString),
@@ -163,8 +171,8 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
       throw Invalid(path, $"unknown placeholder {unknown} in '{template}'");
     }
 
-    // A templated ref is validated by the resolver after expansion (spec §4.1).
-    if (!KnownPlaceholderRegex().IsMatch(template)
+    // A templated ref is validated by the resolver after expansion (spec §4.2).
+    if (!RefTemplate.HasPlaceholder(template)
         && !Ref.TryParse(template, out _, out string? error)) {
       throw Invalid(path, $"invalid ref '{template}': {error}");
     }
@@ -172,20 +180,20 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
     return template;
   }
 
-  /// Two artifacts with the same variant are ambiguous when they write the same selector keys
-  /// and the values of every written key intersect (spec §4.1 validity).
-  private static void CheckArtifactsAreUnambiguous(List<Artifact> artifacts) {
-    for (int i = 0; i < artifacts.Count; i++) {
-      for (int j = i + 1; j < artifacts.Count; j++) {
-        Artifact a = artifacts[i];
-        Artifact b = artifacts[j];
+  /// Two targets with the same variant are ambiguous when they write the same selector keys
+  /// and the values of every written key intersect (spec §4.2 validity).
+  private static void CheckTargetsAreUnambiguous(List<MetaTarget> targets) {
+    for (int i = 0; i < targets.Count; i++) {
+      for (int j = i + 1; j < targets.Count; j++) {
+        MetaTarget a = targets[i];
+        MetaTarget b = targets[j];
 
         if (a.Variant == b.Variant
             && Overlaps(a.Platforms, b.Platforms)
-            && Overlaps(a.Rids, b.Rids)) {
+            && Overlaps(a.Runtimes, b.Runtimes)) {
           throw Invalid(
-              $"$.artifacts[{j}]",
-              $"ambiguous with $.artifacts[{i}]: same variant '{a.Variant}', same selector keys "
+              $"$.targets[{j}]",
+              $"ambiguous with $.targets[{i}]: same variant '{a.Variant}', same selector keys "
               + "and overlapping values");
         }
       }
@@ -197,84 +205,191 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
 
   #endregion
 
-  #region Concrete documents (spec §4.2)
+  #region Package documents (spec §4.1)
 
-  private ConcreteDocument ParseConcrete(JsonElement root, bool isMarked) {
-    string name = ReadRequired(root, "name", "$", ReadString);
-    if (!NameRegex().IsMatch(name)) {
-      throw Invalid("$.name", $"'{name}' does not match ^[A-Za-z0-9][A-Za-z0-9._-]*$");
+  private PackageDocument ParsePackage(JsonElement root) {
+    bool isMod = root.TryGetProperty("mod", out JsonElement mod);
+    if (isMod) {
+      ReadMod(mod, "$.mod");
+      foreach (string key in new[] { "files", "archives" }) {
+        if (root.TryGetProperty(key, out _)) {
+          throw Invalid($"$.{key}", "is not allowed together with \"mod\"");
+        }
+      }
     }
 
-    string type = ReadRequired(root, "type", "$", ReadString);
-    bool isFilePackage = type == "files";
-
-    if (!isFilePackage && root.TryGetProperty("placements", out _)) {
-      throw Invalid("$.placements", "only allowed when \"type\" is \"files\"");
+    if (root.TryGetProperty("info", out JsonElement info)) {
+      ReadInfo(info, "$.info");
     }
 
-    Func<JsonElement, string, Dep> readDep = (e, p) => ReadDep(e, p, isMarked);
+    List<PackageArchive> archives =
+        ReadOptional(root, "archives", "$", (e, p) => ReadMap(e, p, ReadArchive)) ?? [];
+    List<PackageFile> files = ReadOptional(root, "files", "$", ArrayOf(ReadFile)) ?? [];
+    for (int i = 0; i < files.Count; i++) {
+      if (files[i].From is string from && !archives.Any(a => a.Name == from)) {
+        throw Invalid($"$.files[{i}].from", $"'{from}' is not a key of \"archives\"");
+      }
+    }
 
-    return new ConcreteDocument {
-      IsMarked = isMarked,
-      Name = name,
+    return new PackageDocument {
+      Id = ReadRequired(root, "id", "$", ReadId),
       Version = ReadRequired(root, "version", "$", ReadSemVersion),
-      Type = type,
-      Platform = root.TryGetProperty("platform", out JsonElement platform)
-          ? ReadPackagePlatform(platform, "$.platform")
-          : PackagePlatform.Universal,
-      Rid = ReadOptional(root, "rid", "$", ReadString),
-      Refs = ReadOptional(root, "refs", "$", (e, p) => ReadRefs(e, p, nonEmpty: false)) ?? [],
-      Dependencies = ReadOptional(root, "dependencies", "$", ArrayOf(readDep)) ?? [],
-      OptionalDependencies =
-          ReadOptional(root, "optionalDependencies", "$", ArrayOf(readDep)) ?? [],
-      Conflicts = ReadOptional(root, "conflicts", "$", ArrayOf(readDep)) ?? [],
-      // Unmarked documents never create install edges, so their installDependencies are ignored.
-      InstallDependencies = isMarked
-          ? ReadOptional(root, "installDependencies", "$", ArrayOf(ReadInstallDep)) ?? []
-          : [],
-      Placements = ReadOptional(root, "placements", "$", ArrayOf(ReadPlacement)) ?? [],
-      PreserveFiles = ReadOptional(root, "preserveFiles", "$", ArrayOf(ReadGlob)) ?? [],
-      RemoveFiles = ReadOptional(root, "removeFiles", "$", ArrayOf(ReadGlob)) ?? [],
-      Scripts = ReadOptional(root, "scripts", "$", ReadScripts) ?? new(),
+      IsMod = isMod,
+      Platform = ReadOptional(root, "platform", "$", ReadPlatform),
+      Runtime = ReadOptional(root, "runtime", "$", ReadString),
+      Dependencies = ReadOptional(root, "dependencies", "$", (e, p) => ReadMap(e, p, ReadDependency))
+          ?? [],
+      Conflicts = ReadOptional(root, "conflicts", "$", (e, p) => ReadMap(e, p, ReadConflict)) ?? [],
+      Files = files,
+      Archives = archives,
+      Preserve = ReadOptional(root, "preserve", "$", ArrayOf(ReadGlob)) ?? [],
+      Remove = ReadOptional(root, "remove", "$", ArrayOf(ReadGlob)) ?? [],
+      Hooks = ReadOptional(root, "hooks", "$", ReadHooks) ?? new(),
     };
   }
 
-  private static PackagePlatform ReadPackagePlatform(JsonElement element, string path) {
-    string? value = element.ValueKind == JsonValueKind.String ? ReadString(element, path) : null;
+  private static McmodPlatform? ReadPlatform(JsonElement element, string path) =>
+      element.ValueKind == JsonValueKind.String
+      && McmodPlatformExtensions.TryParse(element.GetString()!, out McmodPlatform platform)
+          ? platform
+          : throw Invalid(path, "must be \"server\" or \"client\"");
 
-    if (value == "universal") {
-      return PackagePlatform.Universal;
-    }
+  private static void ReadInfo(JsonElement element, string path) {
+    RequireObject(element, path);
 
-    return value is not null && McmodPlatformExtensions.TryParse(value, out McmodPlatform platform)
-        ? platform switch {
-          McmodPlatform.Server => PackagePlatform.Server,
-          _ => PackagePlatform.Client,
-        }
-        : throw Invalid(path, "must be \"server\", \"client\" or \"universal\"");
+    _ = ReadOptional(element, "name", path, ReadString);
+    _ = ReadOptional(element, "description", path, ReadString);
+    _ = ReadOptional(element, "authors", path, ArrayOf(ReadString));
+    _ = ReadOptional(element, "tags", path, ArrayOf(ReadString));
+    _ = ReadOptional(element, "icon", path, ReadHttpsUrl);
   }
 
-  private Dep ReadDep(JsonElement element, string path, bool isMarked) {
-    RequireObject(element, path);
+  private Dep ReadDependency(string id, JsonElement element, string path) {
+    if (element.ValueKind == JsonValueKind.String) {
+      return new Dep { Id = id, Version = ReadRange(element, path) };
+    }
+
+    RequireObject(element, path, "must be a range or an object");
+
+    List<Ref>? refs = ReadOptional(element, "source", path, (e, p) => ReadOneOrMany(e, p, ReadRef));
+    if (element.TryGetProperty("mod", out JsonElement mod)) {
+      if (mod.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
+        throw Invalid($"{path}.mod", $"must be a boolean, not {Describe(mod)}");
+      }
+
+      if (mod.ValueKind == JsonValueKind.False && refs is null) {
+        throw Invalid($"{path}.mod", "false is only allowed together with \"source\"");
+      }
+    }
 
     return new Dep {
-      Name = ReadRequired(element, "name", path, ReadString),
+      Id = id,
       Version = ReadOptional(element, "version", path, ReadRange),
-      // Unmarked documents never create install edges, so the refs of their entries are ignored.
-      Refs = isMarked
-          ? ReadOptional(element, "refs", path, (e, p) => ReadRefs(e, p, nonEmpty: true))
-          : null,
+      Refs = refs,
     };
   }
 
-  private InstallDep ReadInstallDep(JsonElement element, string path) {
+  private Dep ReadConflict(string id, JsonElement element, string path) =>
+      new() { Id = id, Version = ReadRange(element, path) };
+
+  private static void ReadMod(JsonElement element, string path) {
     RequireObject(element, path);
 
-    return new InstallDep {
-      Name = ReadOptional(element, "name", path, ReadString),
-      Version = ReadOptional(element, "version", path, ReadRange),
-      Refs = ReadRequired(element, "refs", path, (e, p) => ReadRefs(e, p, nonEmpty: true)),
+    foreach (string key in new[] { "loader", "entry" }) {
+      if (ReadRequired(element, key, path, ReadString) == "") {
+        throw Invalid($"{path}.{key}", "must not be empty");
+      }
+    }
+
+    if (element.TryGetProperty("passive", out JsonElement passive)
+        && passive.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
+      throw Invalid($"{path}.passive", $"must be a boolean, not {Describe(passive)}");
+    }
+
+    foreach (string key in new[] { "loadAfter", "loadBefore" }) {
+      _ = ReadOptional(element, key, path, ArrayOf((e, p) => {
+        string value = ReadString(e, p);
+        return value == "*" || IsId(value)
+            ? value
+            : throw Invalid(p, $"'{value}' is neither an id nor \"*\"");
+      }));
+    }
+
+    if (element.TryGetProperty("extra", out JsonElement extra)) {
+      RequireObject(extra, $"{path}.extra");
+    }
+  }
+
+  private static PackageFile ReadFile(JsonElement element, string path) {
+    RequireObject(element, path);
+
+    string? from = ReadOptional(element, "from", path, ReadString);
+    string src = ReadRequired(element, "src", path, ReadFilePath);
+    string dest = ReadRequired(element, "dest", path, ReadFilePath);
+    PackageFile file = new(from, src, dest);
+
+    bool destIsDirectory = dest == "" || dest.EndsWith('/');
+    switch (file.Form) {
+      case PackageFileForm.Glob:
+        try {
+          _ = new PathGlob(src);
+        }
+        catch (FormatException ex) {
+          throw Invalid($"{path}.src", $"invalid glob '{src}'", ex);
+        }
+
+        if (!destIsDirectory) {
+          throw Invalid($"{path}.dest", $"'{dest}' must be \"\" or end with '/' for a glob src");
+        }
+
+        break;
+      case PackageFileForm.Directory when !destIsDirectory:
+        throw Invalid($"{path}.dest", $"'{dest}' must be \"\" or end with '/' for a directory src");
+      case PackageFileForm.File when destIsDirectory:
+        throw Invalid($"{path}.dest", $"'{dest}' must name a file for a file src");
+    }
+
+    return file;
+  }
+
+  private static string ReadFilePath(JsonElement element, string path) {
+    string value = ReadString(element, path);
+    string trimmed = value.EndsWith('/') ? value[..^1] : value;
+
+    string? reason = value switch {
+      "" => null,
+      _ when value.StartsWith('/') => "must not start with '/'",
+      _ when value.Contains('\\') => "must not contain '\\'",
+      _ when DriveLetterRegex().IsMatch(value) => "must not start with a drive letter",
+      _ when trimmed.Split('/').Contains("") => "must not contain an empty segment",
+      _ when trimmed.Split('/').Contains("..") => "must not contain a '..' segment",
+      _ => null,
     };
+
+    return reason is null ? value : throw Invalid(path, $"'{value}' {reason}");
+  }
+
+  private static PackageArchive ReadArchive(string name, JsonElement element, string path) {
+    RequireObject(element, path);
+
+    string? sha256 = ReadOptional(element, "sha256", path, ReadString);
+    if (sha256 is not null && !Sha256Regex().IsMatch(sha256)) {
+      throw Invalid($"{path}.sha256", "must be 64 hexadecimal digits");
+    }
+
+    string? format = ReadOptional(element, "format", path, ReadString);
+    return new PackageArchive(
+        name,
+        ReadRequired(element, "url", path, (e, p) => ReadOneOrMany(e, p, ReadHttpsUrl)),
+        sha256?.ToLowerInvariant(),
+        format switch {
+          null => PackageArchiveFormat.Detect,
+          "zip" => PackageArchiveFormat.Zip,
+          "tar" => PackageArchiveFormat.Tar,
+          "tgz" => PackageArchiveFormat.Tgz,
+          "file" => PackageArchiveFormat.File,
+          _ => throw Invalid($"{path}.format", "must be \"zip\", \"tar\", \"tgz\" or \"file\""),
+        });
   }
 
   private IVersionConstraint ReadRange(JsonElement element, string path) {
@@ -290,38 +405,6 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
     }
   }
 
-  private static Placement ReadPlacement(JsonElement element, string path) {
-    RequireObject(element, path);
-
-    string src = ReadRequired(element, "src", path, ReadPlacementPath);
-    string dest = ReadRequired(element, "dest", path, ReadPlacementPath);
-
-    if (IsDirectoryForm(src) != IsDirectoryForm(dest)) {
-      throw Invalid(
-          path,
-          $"src '{src}' and dest '{dest}' must both be directories (\"\" or ending with '/') "
-          + "or both be files");
-    }
-
-    return new Placement(src, dest);
-  }
-
-  private static bool IsDirectoryForm(string path) => path == "" || path.EndsWith('/');
-
-  private static string ReadPlacementPath(JsonElement element, string path) {
-    string value = ReadString(element, path);
-
-    string? reason = value switch {
-      _ when value.StartsWith('/') => "must not start with '/'",
-      _ when value.Contains('\\') => "must not contain '\\'",
-      _ when DriveLetterRegex().IsMatch(value) => "must not start with a drive letter",
-      _ when value.Split('/').Contains("..") => "must not contain a '..' segment",
-      _ => null,
-    };
-
-    return reason is null ? value : throw Invalid(path, $"'{value}' {reason}");
-  }
-
   private static PathGlob ReadGlob(JsonElement element, string path) {
     string pattern = ReadString(element, path);
     try {
@@ -332,12 +415,12 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
     }
   }
 
-  private static Scripts ReadScripts(JsonElement element, string path) {
+  private static Hooks ReadHooks(JsonElement element, string path) {
     RequireObject(element, path);
 
     Func<JsonElement, string, List<string>> commands = ArrayOf(ReadString);
 
-    return new Scripts {
+    return new Hooks {
       PreInstall = ReadOptional(element, "preInstall", path, commands) ?? [],
       PostInstall = ReadOptional(element, "postInstall", path, commands) ?? [],
       PreUninstall = ReadOptional(element, "preUninstall", path, commands) ?? [],
@@ -349,13 +432,26 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
 
   #region Primitives
 
-  private static List<Ref> ReadRefs(JsonElement element, string path, bool nonEmpty) =>
-      ReadArray(element, path, nonEmpty, (e, p) => {
-        string s = ReadString(e, p);
-        return Ref.TryParse(s, out Ref? r, out string? error)
-            ? r
-            : throw Invalid(p, $"invalid ref '{s}': {error}");
-      });
+  private static Ref ReadRef(JsonElement element, string path) {
+    string s = ReadString(element, path);
+    return Ref.TryParse(s, out Ref? r, out string? error)
+        ? r
+        : throw Invalid(path, $"invalid ref '{s}': {error}");
+  }
+
+  private static string ReadId(JsonElement element, string path) {
+    string value = ReadString(element, path);
+    return IsId(value)
+        ? value
+        : throw Invalid(path, $"'{value}' does not match ^[A-Za-z0-9][A-Za-z0-9._-]*$");
+  }
+
+  private static string ReadHttpsUrl(JsonElement element, string path) {
+    string value = ReadString(element, path);
+    return Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) && uri.Scheme == Uri.UriSchemeHttps
+        ? value
+        : throw Invalid(path, $"'{value}' is not an https URL");
+  }
 
   private static SemVersion ReadSemVersion(JsonElement element, string path) {
     string s = ReadString(element, path);
@@ -378,10 +474,35 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
     }
   }
 
-  private static void RequireObject(JsonElement element, string path) {
+  private static void RequireObject(JsonElement element, string path, string? reason = null) {
     if (element.ValueKind != JsonValueKind.Object) {
-      throw Invalid(path, $"must be an object, not {Describe(element)}");
+      throw Invalid(path, $"{reason ?? "must be an object"}, not {Describe(element)}");
     }
+  }
+
+  /// A value or a non-empty array of values.
+  private static List<T> ReadOneOrMany<T>(
+      JsonElement element, string path, Func<JsonElement, string, T> readItem) =>
+      element.ValueKind == JsonValueKind.Array
+          ? ReadArray(element, path, nonEmpty: true, readItem)
+          : [readItem(element, path)];
+
+  /// An object whose member names are ids (spec §4.1), in document order.
+  private static List<T> ReadMap<T>(
+      JsonElement element, string path, Func<string, JsonElement, string, T> readValue) {
+    RequireObject(element, path);
+
+    List<T> values = [];
+    foreach (JsonProperty property in element.EnumerateObject()) {
+      string memberPath = $"{path}[\"{property.Name}\"]";
+      if (!IsId(property.Name)) {
+        throw Invalid(memberPath, $"'{property.Name}' does not match ^[A-Za-z0-9][A-Za-z0-9._-]*$");
+      }
+
+      values.Add(readValue(property.Name, property.Value, memberPath));
+    }
+
+    return values;
   }
 
   private static Func<JsonElement, string, List<T>> ArrayOf<T>(
@@ -417,8 +538,8 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
       JsonElement parent,
       string key,
       string parentPath,
-      Func<JsonElement, string, T> read) where T : class =>
-      parent.TryGetProperty(key, out JsonElement value) ? read(value, $"{parentPath}.{key}") : null;
+      Func<JsonElement, string, T> read) =>
+      parent.TryGetProperty(key, out JsonElement value) ? read(value, $"{parentPath}.{key}") : default;
 
   private static string Describe(JsonElement element) => element.ValueKind switch {
     JsonValueKind.Object => "an object",
@@ -437,10 +558,10 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
       new($"Invalid manifest.json at {path}: {reason}.", inner);
 
   [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*\z")]
-  private static partial Regex NameRegex();
+  private static partial Regex IdRegex();
 
-  [GeneratedRegex(@"\{\{(name|version|platform|rid)\}\}")]
-  private static partial Regex KnownPlaceholderRegex();
+  [GeneratedRegex(@"^[0-9A-Fa-f]{64}\z")]
+  private static partial Regex Sha256Regex();
 
   [GeneratedRegex(@"^[A-Za-z]:")]
   private static partial Regex DriveLetterRegex();

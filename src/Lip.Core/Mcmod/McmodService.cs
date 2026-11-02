@@ -25,7 +25,7 @@ public record OperationOptions(
 /// One entry of the workspace lock, as listed to the user.
 public record InstalledPackage(string Identity, string Version, bool Explicit, string Kind);
 
-/// The workspace operations: install, uninstall, update and list (spec §6–§8).
+/// The workspace operations: install, uninstall, update and list (spec §6–§9).
 ///
 /// Every operation loads the lock (migrating a v3 tooth_lock.json), determines the environment,
 /// computes the new package set with the graph solver, then uninstalls what leaves the set (in
@@ -48,13 +48,13 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 ///
 /// Locks migrated from v3 have no archive identity: such packages are reopened by resolving
 /// their tag again (archive key "path@version"). The variants of one tooth have distinct
-/// identities (spec §9.1), but a lock may still hold two entries of one identity (e.g. a v3 lock
-/// with tooth paths differing only in case); they are kept, listed and uninstalled as separate
-/// entries, while the solver sees the identity once (spec §6.3 applies to new solves).
+/// identities (spec §10.2 rule 1), but a lock may still hold two entries of one identity (e.g. a
+/// v3 lock with tooth paths differing only in case); they are kept, listed and uninstalled as
+/// separate entries, while the solver sees the identity once (spec §6.3 applies to new solves).
 ///
 /// A package can change identity between versions: a tooth.json names its own path in "tooth",
 /// so when its repository moves (GitHub redirects the old path), the newer tags name the new
-/// path. Updating such a package replaces it under its new identity, and installing it under
+/// path, and a renamed repository gives the package another tooth name. Updating such a package replaces it under its new identity, and installing it under
 /// either path does not add a second copy (see MovedFrom); the graph solver treats both
 /// identities as one package (GraphSolver.IsRenamed) and both paths as one repository.
 public class McmodService(
@@ -249,7 +249,7 @@ public class McmodService(
     for (int i = 0; i < candidates.Count; i++) {
       Candidate candidate = candidates[i];
       string identity = candidate.Package.Identity;
-      // The newest version may have another identity (spec §8, "Updating": the package is then
+      // The newest version may have another identity (spec §9, "Updating": the package is then
       // replaced), e.g. a tooth.json whose repository moved and whose "tooth" now names the new
       // path. Without arguments, the request comes from the installed package it replaces;
       // otherwise that package is found by MovedFrom.
@@ -427,13 +427,13 @@ public class McmodService(
           + " Client workspaces are managed by launchers such as LeviLauncher.");
     }
 
-    if (lockFile.Rid == "") {
-      throw new LockFormatException("The lock records an empty rid.");
+    if (lockFile.Runtime == "") {
+      throw new LockFormatException("The lock records an empty runtime.");
     }
 
     return new LipEnvironment(
         McmodPlatform.Server,
-        explicitRid ?? lockFile.Rid ?? RuntimeInformation.RuntimeIdentifier);
+        explicitRid ?? lockFile.Runtime ?? RuntimeInformation.RuntimeIdentifier);
   }
 
   private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
@@ -484,10 +484,11 @@ public class McmodService(
             + (diagnostics.Count == 0 ? "." : ":" + string.Concat(
                 diagnostics.Take(10).Select(d => $"\n  - {d}"))));
 
-    // A tooth.json package is identified by its "tooth" path (spec §9.1), whatever path it is
-    // requested by: a repository that moved still answers at its old path (GitHub redirects
-    // it) while its tooth.json names the new one, or the other way round at its older tags.
-    string tooth = ToothPath(candidate.Package.Identity);
+    // A tooth.json package is identified by its "tooth" path (spec §10.2 rule 1), whatever path
+    // it is requested by: a repository that moved still answers at its old path (GitHub
+    // redirects it) while its tooth.json names the new one, or the other way round at its older
+    // tags.
+    string tooth = ToothPath(candidate.Package.Manifest);
     if (candidate.Package.Kind == ToothCompat.KindName && candidate.Chain.Count == 1
         && request.Ref.Kind == RefKind.Spec
         && !string.Equals(tooth, request.Ref.Target, StringComparison.OrdinalIgnoreCase)) {
@@ -897,7 +898,7 @@ public class McmodService(
         Kind = candidate.Package.Kind,
         Explicit = isExplicit,
         Chain = [
-          .. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.ArtifactIndex) {
+          .. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.TargetIndex) {
             Commit = h.Commit,
           }),
         ],
@@ -922,11 +923,11 @@ public class McmodService(
         ?? throw new InvalidOperationException($"No installer for package kind '{kind}'.");
   }
 
-  /// The lock with the given packages and the environment, once known (spec §8).
+  /// The lock with the given packages and the environment, once known (spec §9).
   private static LockFile LockWith(Workspace workspace, List<LockedPackage> packages) {
     return workspace.Lock with {
       Platform = workspace.Environment.Platform.ToSpecString(),
-      Rid = workspace.Environment.Rid,
+      Runtime = workspace.Environment.Runtime,
       Packages = [.. packages],
     };
   }
@@ -952,20 +953,20 @@ public class McmodService(
         return null;
       }
 
-      // Migrated v3 entries have no identity: that of the repository of the tooth path (the
-      // package identity without its "#label"). Tooth packages have no relative refs, so it is
-      // never used as a base; it is never written to the lock either.
+      // Migrated v3 entries have no identity: that of the repository of the tooth path. Tooth
+      // packages have no relative refs, so it is never used as a base; it is never written to
+      // the lock either.
       ArchiveIdentity identity = package.Archive ?? new GitArchiveIdentity(
-          ArchiveProvider.GetRepoUrl(package.Identity.Split('#')[0]), "", "");
+          ArchiveProvider.GetRepoUrl(ToothPath(package.Manifest)), "", "");
       List<ChainHop> chain = [
         .. package.Chain.Select(h => new ChainHop(
-            Ref.Parse(h.Ref, allowFile: true), h.Artifact, h.Commit)),
+            Ref.Parse(h.Ref, allowFile: true), h.Target, h.Commit)),
       ];
       ArchiveHandle archive = new(
           package.ArchiveKey,
           new DeferredSource(async () => {
             Sources.ISource source = await OpenLockedArchive(workspace, package);
-            // The archive of a converted tooth.json mounts its assets (spec §9); resolving the
+            // The archive of a tooth.json package mounts its assets (spec §10.2); resolving the
             // chain again already yields that archive.
             return tooth is null || source is MountSource
                 ? source
@@ -991,12 +992,12 @@ public class McmodService(
     }
 
     byte[] manifest = Encoding.UTF8.GetBytes(package.Manifest.GetRawText());
-    return _documentParser.Parse(manifest) is ConcreteDocument document
+    return _documentParser.Parse(manifest) is PackageDocument document
         ? new McmodPackage(document, package.Manifest)
-        : throw new FormatException("the locked manifest is not a concrete document.");
+        : throw new FormatException("the locked manifest is not a package document.");
   }
 
-  /// Opens the archive recorded in the lock and verifies its identity (spec §8). Two cases
+  /// Opens the archive recorded in the lock and verifies its identity (spec §9). Two cases
   /// re-resolve the recorded chain instead, accepting only the recorded archive:
   /// - migrated v3 entries, which record no identity: the tag "path@version" is resolved again;
   /// - nested ZIP archives, which are not cached on their own: the chain is resolved again,
@@ -1132,7 +1133,7 @@ public class McmodService(
   /// when no installed package has the candidate's identity; null when there is none. This is
   /// how lip recognises a tooth.json package whose repository moved (e.g. a transfer to another
   /// GitHub organisation, whose old path GitHub redirects): its newer tags name the new path in
-  /// "tooth", so they have another identity (spec §9.1) than the version installed. The
+  /// "tooth", so they have another identity (spec §10.2 rule 1) than the version installed. The
   /// installed package must have the candidate's variant and be either
   /// - installed from the same spec ref as the candidate, or as the request the candidate was
   ///   resolved for (requested, which FirstCandidate may have replaced by the new path of a
@@ -1177,16 +1178,16 @@ public class McmodService(
       return null;
     }
 
-    string label = Label(candidate.Package.Identity);
+    string label = candidate.Package.Variant;
     HashSet<string> names = new(StringComparer.OrdinalIgnoreCase) {
       RepositoryName(first.Target),
-      RepositoryName(ToothPath(candidate.Package.Identity)),
+      RepositoryName(ToothPath(candidate.Package.Manifest)),
     };
     foreach ((LockedPackage package, Ref from) in installed) {
       if (package.Kind != ToothCompat.KindName || from.Kind != RefKind.Spec
-          || Label(package.Identity) != label
+          || from.Variant != label
           || !(names.Contains(RepositoryName(from.Target))
-              || names.Contains(RepositoryName(ToothPath(package.Identity))))
+              || names.Contains(RepositoryName(ToothPath(package.Manifest))))
           || !GitRef.TryParse($"tag:v{package.Version}", out GitRef? tag, out _)) {
         continue;
       }
@@ -1227,13 +1228,14 @@ public class McmodService(
         + $"'{candidate.Package.Identity}' version {candidate.Package.Version}.");
   }
 
-  /// The tooth path of an identity: the identity without its "#label" (spec §9.1). Other
-  /// identities have no '#'.
-  private static string ToothPath(string identity) => identity.Split('#')[0];
-
-  /// The v3 label of a tooth.json identity; "" for other identities.
-  private static string Label(string identity) =>
-      identity.Contains('#') ? identity[(identity.IndexOf('#') + 1)..] : "";
+  /// The tooth path a tooth.json package's recorded tooth.json declares (spec §10.2 rule 1); ""
+  /// for other packages.
+  private static string ToothPath(JsonElement manifest) =>
+      manifest.ValueKind == JsonValueKind.Object
+      && manifest.TryGetProperty("tooth", out JsonElement tooth)
+      && tooth.ValueKind == JsonValueKind.String
+          ? tooth.GetString()!
+          : "";
 
   /// The last segment of a path.
   private static string RepositoryName(string path) => path[(path.LastIndexOf('/') + 1)..];

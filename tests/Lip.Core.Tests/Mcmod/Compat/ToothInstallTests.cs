@@ -11,7 +11,7 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Installing and uninstalling tooth.json packages converted to format 4 (spec §9) with
+/// Installing and uninstalling tooth.json packages read as file packages (spec §10.2) with
 /// McmodInstaller: the v3 behaviour that the conversion keeps.
 public class ToothInstallTests {
   private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
@@ -129,7 +129,7 @@ public class ToothInstallTests {
     Version = candidate.Package.Version.ToString(),
     Kind = candidate.Package.Kind,
     Explicit = true,
-    Chain = [.. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.ArtifactIndex))],
+    Chain = [.. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.TargetIndex))],
     ArchiveKey = candidate.Archive.Key,
     Files = [.. files],
     Manifest = candidate.Package.Manifest,

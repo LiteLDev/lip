@@ -175,7 +175,7 @@ public class ToothPlacementsTests {
   }
 
   [Fact]
-  public void Expand_SeveralAssets_ConcretePlacementsByAssetThenKeyThenPlacement() {
+  public void Expand_SeveralAssets_FilesByAssetThenKeyThenPlacement() {
     // Arrange
     string[] keys = ["0/a.dll", "0/b.dll", "1/x/c.txt", "2"];
     AssetPlacement[] placements = [
@@ -186,40 +186,39 @@ public class ToothPlacementsTests {
     ];
 
     // Act
-    List<Placement> expanded = [.. ToothPlacements.Expand(placements, keys)];
+    List<PackageFile> expanded = [.. ToothPlacements.Expand(placements, keys)];
 
     // Assert
     Assert.Equal(
         [
-          new Placement("0/a.dll", "plugins/p/a.dll"),
-          new Placement("0/a.dll", "plugins/p/a2.dll"),
-          new Placement("0/b.dll", "plugins/p/b.dll"),
-          new Placement("1/x/c.txt", "plugins/x/data/c.txt"),
-          new Placement("2", "plugins/p/node.zip"),
+          new PackageFile(null, "0/a.dll", "plugins/p/a.dll"),
+          new PackageFile(null, "0/a.dll", "plugins/p/a2.dll"),
+          new PackageFile(null, "0/b.dll", "plugins/p/b.dll"),
+          new PackageFile(null, "1/x/c.txt", "plugins/x/data/c.txt"),
+          new PackageFile(null, "2", "plugins/p/node.zip"),
         ],
         expanded);
   }
 
   [Fact]
-  public void Expand_Document_PrependsConcretePlacementsAndClearsAssetPlacements() {
+  public void Expand_Document_PrependsFilesAndClearsAssetPlacements() {
     // Arrange
-    ConcreteDocument document = new() {
-      IsMarked = true,
-      Name = "github.com/user/repo",
+    PackageDocument document = new() {
+      Id = "repo",
       Version = SemVersion.Parse("1.0.0"),
-      Type = "files",
+      IsMod = false,
       AssetPlacements = [new("0", false, "a.dll", "a.dll")],
-      Placements = [new Placement("0/b.dll", "b.dll")],
+      Files = [new PackageFile(null, "0/b.dll", "b.dll")],
     };
 
     // Act
-    ConcreteDocument expanded = ToothPlacements.Expand(document, ["0/a.dll", "0/b.dll"]);
+    PackageDocument expanded = ToothPlacements.Expand(document, ["0/a.dll", "0/b.dll"]);
 
     // Assert
     Assert.Empty(expanded.AssetPlacements);
     Assert.Equal(
-        [new Placement("0/a.dll", "a.dll"), new Placement("0/b.dll", "b.dll")],
-        expanded.Placements);
+        [new PackageFile(null, "0/a.dll", "a.dll"), new PackageFile(null, "0/b.dll", "b.dll")],
+        expanded.Files);
   }
 
   [Theory]

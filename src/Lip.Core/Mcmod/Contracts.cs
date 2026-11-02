@@ -5,23 +5,23 @@ using Lip.Core.Mcmod.Install;
 
 namespace Lip.Core.Mcmod;
 
-/// Thrown when a manifest.json is not a valid document (spec §4).
+/// Thrown when a manifest.json is not a valid document (spec §4, §10.1).
 public class ManifestFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
 /// Parses a root manifest.json (spec §4).
 public interface IDocumentParser {
-  /// Parses UTF-8 bytes into a RoutingDocument or ConcreteDocument. Throws
+  /// Parses UTF-8 bytes into a MetaDocument or PackageDocument. Throws
   /// ManifestFormatException when the document is invalid.
   public ManifestDocument Parse(byte[] utf8Json);
 }
 
-/// tooth.json compatibility (spec §9).
+/// tooth.json compatibility (spec §10.2).
 public interface IToothCompat {
-  /// Converts a tooth.json to the format 4 package a ref variant selects in an environment
-  /// (spec §9). version, when set, replaces the version the tooth.json declares (the tag
-  /// version). Returns null when no variant applies. The version range is checked by the
-  /// resolver.
+  /// Reads a tooth.json as the package a ref variant selects in an environment (spec §10.2).
+  /// version, when set, replaces the version the tooth.json declares (the tag version). Returns
+  /// null when no variant applies or its identity is not an id. The version range is checked by
+  /// the resolver.
   public Compat.ToothConversion? Convert(
       ToothArchiveDocument document,
       string variant,
@@ -36,12 +36,12 @@ public interface IArchiveReader {
   public Task<ArchiveDocument> Read(ArchiveHandle archive);
 }
 
-/// One hop of a resolution chain: the ref, the artifact selected at the hop (routing documents),
-/// and for a spec ref the commit its archive is at (spec §8).
-public record ChainHop(Ref Ref, int? ArtifactIndex, string? Commit = null);
+/// One hop of a resolution chain: the ref, the target selected at the hop (meta documents),
+/// and for a spec ref the commit its archive is at (spec §9).
+public record ChainHop(Ref Ref, int? TargetIndex, string? Commit = null);
 
-/// A concrete package produced by Resolve, with the archive it lives in and the chain that led
-/// to it (spec §8).
+/// A package produced by Resolve, with the archive it lives in and the chain that led
+/// to it (spec §9).
 public record Candidate(IPackage Package, ArchiveHandle Archive, IReadOnlyList<ChainHop> Chain);
 
 /// Diagnostics explain every path that produced no candidate.
@@ -146,7 +146,7 @@ public interface IMcmodInstaller {
       PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken);
 }
 
-/// Reads and writes the workspace lock (spec §8), which lives in &lt;root&gt;/.lip/lock.json.
+/// Reads and writes the workspace lock (spec §9), which lives in &lt;root&gt;/.lip/lock.json.
 public interface ILockStore {
   /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json left in the workspace
   /// by lip v0.x. Throws when the lock exists but cannot be read.
@@ -174,18 +174,15 @@ public interface ILockStore {
 }
 
 public record LockFile {
-  [JsonPropertyName("formatVersion")]
-  public int FormatVersion { get; init; } = ManifestFormat.Version;
-
-  [JsonPropertyName("formatUuid")]
-  public string FormatUuid { get; init; } = ManifestFormat.Uuid;
+  [JsonPropertyName("format")]
+  public string Format { get; init; } = ManifestFormat.Format;
 
   /// "server" or "client" (spec §5.1). lip writes "server"; null in locks migrated from v3.
   [JsonPropertyName("platform")]
   public string? Platform { get; init; }
 
-  [JsonPropertyName("rid")]
-  public string? Rid { get; init; }
+  [JsonPropertyName("runtime")]
+  public string? Runtime { get; init; }
 
   [JsonPropertyName("packages")]
   public List<LockedPackage> Packages { get; init; } = [];
@@ -193,8 +190,8 @@ public record LockFile {
 
 public record LockedHop(
     [property: JsonPropertyName("ref")] string Ref,
-    [property: JsonPropertyName("artifact")] int? Artifact) {
-  /// For a spec ref, the commit its archive was at (spec §8): the tag's commit, or the commit a
+    [property: JsonPropertyName("target")] int? Target) {
+  /// For a spec ref, the commit its archive was at (spec §9): the tag's commit, or the commit a
   /// git ref (@branch:, @tag:, @rev:) resolved to. Null for other refs and for entries migrated
   /// from tooth_lock.json.
   [JsonPropertyName("commit")]
@@ -203,7 +200,7 @@ public record LockedHop(
 }
 
 public record LockedPackage {
-  [JsonPropertyName("name")]
+  [JsonPropertyName("id")]
   public required string Identity { get; init; }
 
   [JsonPropertyName("version")]

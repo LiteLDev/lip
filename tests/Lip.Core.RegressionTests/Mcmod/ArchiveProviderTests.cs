@@ -36,9 +36,8 @@ public class ArchiveProviderTests {
     // Arrange
     ArchiveProvider provider = CreateProvider();
     Mock<IDocumentParser> parser = new();
-    parser.Setup(p => p.Parse(It.IsAny<byte[]>())).Returns(new RoutingDocument {
-      IsMarked = true,
-      Artifacts = [],
+    parser.Setup(p => p.Parse(It.IsAny<byte[]>())).Returns(new MetaDocument {
+      Targets = [],
     });
 
     // Act
@@ -57,7 +56,7 @@ public class ArchiveProviderTests {
     if (document is ToothArchiveDocument tooth) {
       Assert.Equal(spec, tooth.Manifest.Path, ignoreCase: true);
     } else {
-      Assert.IsType<RoutingArchiveDocument>(document);
+      Assert.IsType<MetaArchiveDocument>(document);
     }
   }
 

@@ -16,17 +16,15 @@ lip init
 
 ```json
 {
-  "formatVersion": 4,
-  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-  "name": "MyMod",
-  "entry": "MyMod.dll",
-  "type": "native",
+  "format": "bf45b1",
+  "id": "MyMod",
   "version": "0.1.0",
-  "dependencies": []
+  "dependencies": {},
+  "mod": { "loader": "native", "entry": "MyMod.dll" }
 }
 ```
 
-它既是 LeviLamina 的 mod 清单，也是 lip 包。请按你的 mod 修改 `name`、`entry` 和 `type`。
+它既是 LeviLamina 的 mod 清单，也是 lip 包。请按你的 mod 修改 `id` 和 `mod`。
 
 ## 发布版本
 
@@ -34,77 +32,78 @@ lip init
 
 ## mod
 
-mod 是 `type` 不为 `"files"` 的具体包。无论在服务端（由 lip 安装）还是客户端（由 LeviLauncher 等启动器安装），整个归档都会写入 `mods/<name>/`。服务端的 `plugins` 是指向 `mods` 的链接，因此 LeviLamina 也能在 `plugins/<name>/` 下找到该 mod。
+mod 是带有 `mod` 键的包。无论在服务端（由 lip 安装）还是客户端（由 LeviLauncher 等启动器安装），整个归档都会写入 `mods/<id>/`。服务端的 `plugins` 是指向 `mods` 的链接，因此 LeviLamina 也能在 `plugins/<id>/` 下找到该 mod。
 
-带 `refs` 的依赖由 lip 安装；LeviLamina 仍照常读取 `name` 和 `version`。只应由 lip 安装的包（例如 LeviLamina 本身）请写在 `installDependencies` 中：
+`dependencies` 把每个依赖的 id 映射到一个版本范围，或一个带 `version` 和 `source` 的对象。带 `source` 的依赖由 lip 安装；LeviLamina 读取全部依赖，并要求每个依赖都是已加载的 mod。对于不是由 LeviLamina 加载的 mod 的依赖（例如文件包），请加上 `"mod": false`：
 
 ```json
 {
-  "formatVersion": 4,
-  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-  "name": "LegacyMoney",
-  "entry": "LegacyMoney.dll",
-  "type": "native",
+  "format": "bf45b1",
+  "id": "LegacyMoney",
   "version": "0.22.0",
   "platform": "server",
-  "rid": "win-x64",
-  "refs": ["github.com/LiteLDev/LegacyMoney"],
-  "dependencies": [
-    {
-      "name": "iListenAttentively",
-      "version": "^0.17.0",
-      "refs": ["github.com/MiracleForest/iListenAttentively"]
-    }
-  ],
-  "installDependencies": [
-    { "version": ">=26.51.0 <26.52.0", "refs": ["github.com/LiteLDev/LeviLamina"] }
-  ]
+  "runtime": "win-x64",
+  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
+  "dependencies": {
+    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
+    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
+  },
+  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
+  "preserve": ["config/", "data/"]
 }
 ```
 
-版本范围使用 LeviLamina 的语法。不带运算符的版本号（例如 `1.2.3`）会被拒绝，请写成 `=1.2.3`。
+版本范围使用 [node-semver](https://github.com/npm/node-semver#ranges) 的语法，例如 `^0.17.0` 或 `>=26.51.0 <26.52.0`。不带运算符的版本号（例如 `1.2.3`）只匹配该版本。
 
 ## 文件包
 
-文件包（`"type": "files"`）通过 `placements` 把文件放到工作区中：
+文件包（不带 `mod`）通过 `files` 把文件放到工作区中。每一项复制一个文件、一个目录或匹配某个 glob 的文件，来源可以是包本身，也可以是 `archives` 中列出、由 lip 下载的归档：
 
 ```json
 {
-  "formatVersion": 4,
-  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-  "name": "PeEditor",
-  "type": "files",
+  "format": "bf45b1",
+  "id": "PeEditor",
   "version": "3.9.0",
-  "rid": "win-x64",
-  "placements": [{ "src": "PeEditor.exe", "dest": "PeEditor.exe" }]
+  "runtime": "win-x64",
+  "files": [{ "src": "PeEditor.exe", "dest": "PeEditor.exe" }]
 }
 ```
 
 ## 打包 `.mcmod`
 
-`.mcmod` 文件是一个 ZIP 归档，根部是 `manifest.json`，旁边是包的文件。发布前可以先测试：
+`.mcmod` 文件是一个 ZIP 归档，根部是 `manifest.json`，旁边是包的文件。[`lip pack`](../cli/commands/pack.md) 可以用当前目录中的 `manifest.json` 和某个目录（例如构建的输出目录）中的文件生成它：
+
+```sh
+lip pack build/ -o LegacyMoney-server-win-x64.mcmod
+```
+
+发布前可以先测试：
 
 ```sh
 lip install ./LegacyMoney-server-win-x64.mcmod
 ```
 
-## 路由到发布资源
+## 指向发布资源
 
-构建好的 mod 通常不放在仓库里。此时仓库在每个标签处的 `manifest.json` 是一个路由文档，指向附加在 release 上的 `.mcmod` 文件，每个平台和 RID 一个：
+构建好的 mod 通常不放在仓库里。此时仓库在每个标签处的 `manifest.json` 是一个元文档，其 `targets` 指向附加在 release 上的 `.mcmod` 文件，每个平台和 RID 一个。它的其余键是这些包的模板：
 
 ```json
 {
-  "formatVersion": 4,
-  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-  "name": "LegacyMoney",
+  "format": "bf45b1",
+  "id": "LegacyMoney",
   "version": "0.22.0",
-  "artifacts": [
+  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
+  "dependencies": {
+    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
+    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
+  },
+  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
+  "preserve": ["config/", "data/"],
+  "targets": [
     {
       "platform": ["server", "client"],
-      "rid": "win-x64",
-      "refs": [
-        "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/{{name}}-{{platform}}-{{rid}}.mcmod"
-      ]
+      "runtime": "win-x64",
+      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod"
     }
   ]
 }
@@ -112,22 +111,28 @@ lip install ./LegacyMoney-server-win-x64.mcmod
 
 在 `win-x64` 服务端上，`lip install github.com/LiteLDev/LegacyMoney` 会读取最新标签处的这个文档，并安装 `LegacyMoney-server-win-x64.mcmod`。
 
+要为每个平台和 RID 生成 `.mcmod`，请在仓库中运行 `lip pack`：它用选中的 target 把模板补全为包文档，并与你的文件一起打包。target 还可以覆盖模板中的键，或用 `null` 删除它们：
+
+```sh
+lip pack build/ --platform server --rid win-x64 -o LegacyMoney-server-win-x64.mcmod
+lip pack build/ --platform client --rid win-x64 -o LegacyMoney-client-win-x64.mcmod
+```
+
 ## 变体
 
 使用变体可以在一个仓库中提供多个包。用户通过 `path#variant` 选择，例如 `lip install github.com/user/repo#lua`：
 
 ```json
 {
-  "formatVersion": 4,
-  "formatUuid": "0c6b977a-64ad-441f-9a29-c7f4b196882f",
-  "artifacts": [
-    { "variant": "quickjs", "refs": ["./quickjs/"] },
-    { "variant": "lua", "refs": ["./lua/"] }
+  "format": "bf45b1",
+  "targets": [
+    { "variant": "quickjs", "source": "./quickjs/" },
+    { "variant": "lua", "source": "./lua/" }
   ]
 }
 ```
 
-`./quickjs/` 和 `./lua/` 都是仓库中的目录，各自带有具体的 `manifest.json`。
+`./quickjs/` 和 `./lua/` 都是仓库中的目录，各自带有包文档 `manifest.json`。
 
 ## 已有的 `tooth.json` 包
 

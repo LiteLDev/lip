@@ -31,7 +31,7 @@ Without arguments, every explicitly installed package is requested again by what
 
 To move a package installed from a git ref back to released versions, update it by its plain package path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
 
-A package whose repository moved (for example, transferred to another GitHub organization) can still be updated by its old path, which GitHub redirects. When the `tooth.json` of a newer version declares the new path, that version is a package of another identity: updating the package by its old or its new path replaces the installed package with it, keeping its preserved files, and lip reports the change. Installing the package by the other path does not install a second copy, and a dependency declared on either path is satisfied by the same version installed from the other.
+A package whose repository moved (for example, transferred to another GitHub organization) can still be updated by its old path, which GitHub redirects. When the `tooth.json` of a newer version declares the new path, the package keeps its identity as long as the repository keeps its name (the identity of a `tooth.json` package is the last element of its path), so updating it by its old or its new path is a normal update that also switches the package to the new path, keeping its preserved files. Likewise, a repository of the same name elsewhere has the same identity: `lip update <that path>` replaces the installed package with the package from that path. Installing the package by the other path does not install a second copy, and a dependency declared on either path is satisfied by the same version installed from the other.
 
 When a package path without a git ref redirects to the path that the `tooth.json` declares, lip requests the package by the declared path instead, keeping its variant, and the [lock](../../concepts/lockfiles.md) records that path. Later updates then go straight to the new repository and no longer depend on the redirect. This applies to `lip install` by the old path, and to explicitly installed packages that lip v0.36.0 replaced but still recorded under the old path: the next `lip update` reinstalls them from the new path. A package installed from a git ref keeps its path, and a dependency is requested by the path its dependent declares. A fork, or another repository whose `tooth.json` declares some other path, does not redirect there, so it is still requested by its own path. `lip uninstall` also accepts the old path of such a package.
 
@@ -40,5 +40,5 @@ When a package path without a git ref redirects to the path that the `tooth.json
 | Option | Description |
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
-| `--ignore-scripts` | Skip running install and uninstall lifecycle scripts while updating packages. |
+| `--ignore-scripts` | Skip running install and uninstall hooks while updating packages. |
 | `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |

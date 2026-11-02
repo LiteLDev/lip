@@ -4,21 +4,20 @@ using Semver;
 namespace Lip.Core.Tests.Mcmod;
 
 public class RefTemplateTests {
-  private static readonly RoutingDocument _document = new() {
-    IsMarked = true,
-    Name = "LegacyMoney",
-    Version = SemVersion.Parse("0.22.0"),
-    Artifacts = [],
+  private static readonly MetaTarget _target = new() {
+    Source = ["./a/"],
+    TemplateId = "LegacyMoney",
+    TemplateVersion = SemVersion.Parse("0.22.0"),
   };
 
   [Fact]
   public void Expand_AllPlaceholders_Substitutes() {
     // Arrange
     string template = "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/"
-        + "{{name}}-{{platform}}-{{rid}}.mcmod";
+        + "{{id}}-{{platform}}-{{runtime}}.mcmod";
 
     // Act
-    Ref r = RefTemplate.Expand(template, _document, new(McmodPlatform.Server, "win-x64"));
+    Ref r = RefTemplate.Expand(template, _target, new(McmodPlatform.Server, "win-x64"));
 
     // Assert
     Assert.Equal(
@@ -28,19 +27,20 @@ public class RefTemplateTests {
   }
 
   [Fact]
-  public void Expand_MissingName_ThrowsFormatException() {
+  public void Expand_MissingId_ThrowsFormatException() {
     // Arrange
-    RoutingDocument document = _document with { Name = null };
+    MetaTarget target = _target with { TemplateId = null };
 
     // Act & Assert
     Assert.Throws<FormatException>(
-        () => RefTemplate.Expand("./{{name}}/", document, new(McmodPlatform.Server, "win-x64")));
+        () => RefTemplate.Expand("./{{id}}/", target, new(McmodPlatform.Server, "win-x64")));
   }
 
   [Theory]
-  [InlineData("./{{name}}/{{rid}}", null)]
-  [InlineData("./{{os}}/", "{{os}}")]
-  [InlineData("./{{ name }}/", "{{ name }}")]
+  [InlineData("./{{id}}/{{runtime}}", null)]
+  [InlineData("./{{name}}/", "{{name}}")]
+  [InlineData("./{{rid}}/", "{{rid}}")]
+  [InlineData("./{{ id }}/", "{{ id }}")]
   public void FindUnknownPlaceholder_ReturnsFirstUnknown(string template, string? expected) {
     // Act & Assert
     Assert.Equal(expected, RefTemplate.FindUnknownPlaceholder(template));

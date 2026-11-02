@@ -22,7 +22,7 @@ Each package argument takes one of the following forms:
 4. **Remote archive** — an `https://` URL of a `.mcmod` or `.zip` file (e.g. `https://example.com/package.mcmod`), optionally followed by `#<variant>`. The download is cached under the URL.
 5. **Local archive** — a `.mcmod` or `.zip` file, by an absolute path or a path relative to the current directory (e.g. `./package.mcmod` or `C:\Downloads\package.zip`), optionally followed by `#<variant>`. An argument is local when it starts with `./`, `../`, `.\` or `..\`, is `.` or `..`, is an absolute path, or contains no `@` and either ends with `.mcmod` or `.zip` (ignoring case) or names an existing file or directory. Whether the file is a ZIP archive depends on its content, not on its extension.
 
-A local directory is not a package: `lip install ./some/dir` fails without touching the workspace. Pack the directory into a `.mcmod` file (a ZIP archive with `manifest.json` at its root) instead. Relative refs (`./...`) inside a package, such as the routes of a routing document or a `.mcmod` nested in an archive, keep working.
+A local directory is not a package: `lip install ./some/dir` fails without touching the workspace. Pack the directory into a `.mcmod` file (a ZIP archive with `manifest.json` at its root) instead. [`lip pack`](pack.md) does that. Relative refs (`./...`) inside a package, such as the `source` of a meta document's targets or a `.mcmod` nested in an archive, keep working.
 
 The dependencies of the packages are installed too. Installing a package that is already explicitly installed is an error; use [`lip update`](update.md) to change its version. A package that is installed as a dependency becomes explicitly installed.
 
@@ -43,7 +43,7 @@ A package installed from a git ref also satisfies dependencies on its package pa
 | Option | Description |
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
-| `--ignore-scripts` | Do not run package scripts, including the uninstall scripts of packages the operation removes or replaces (and the scripts of `tooth.json` packages). |
+| `--ignore-scripts` | Do not run package `hooks`, including the uninstall hooks of packages the operation removes or replaces (and the scripts of `tooth.json` packages). |
 | `--no-dependencies` | Install exactly the first candidate of each argument, replacing an installed package of the same identity; no dependencies are installed and no other package is uninstalled. This may leave the workspace broken. |
 | `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |
 

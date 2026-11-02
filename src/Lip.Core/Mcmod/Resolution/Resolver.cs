@@ -6,7 +6,7 @@ using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
 
-/// Resolve(ref, base, range) (spec §5.2), with the tooth.json bridge of spec §9.
+/// Resolve(ref, base, range) (spec §5.2), with the tooth.json bridge of spec §10.2.
 ///
 /// One instance caches archives, spec version lists and documents by archive key, so a ref
 /// reached on several paths (or resolved again by the graph solver) is fetched and read once.
@@ -150,7 +150,7 @@ public class Resolver(
   }
 
   /// Step 1 for a spec ref pinned by a git ref (spec §3): the single archive of the commit the
-  /// git ref resolves to. Only a tag named "v" + SemVer has a tag version (§4.3, §9.1).
+  /// git ref resolves to. Only a tag named "v" + SemVer has a tag version (§4.3, §10.2 rule 1).
   private async IAsyncEnumerable<Candidate> ResolvePinned(
       Walk walk,
       Ref reference,
@@ -200,11 +200,11 @@ public class Resolver(
       yield break;
     }
 
-    // §9.3: a tooth.json dependency labelled "client" means the default variant of an archive
-    // that uses manifest.json.
+    // §10.2 rule 3: a tooth.json dependency labelled "client" means the default variant of an
+    // archive that uses manifest.json.
     string variant = reference.Variant;
     if (toothClientCompat && variant == "client"
-        && document is RoutingArchiveDocument or ConcreteArchiveDocument) {
+        && document is MetaArchiveDocument or PackageArchiveDocument) {
       variant = "";
     }
 
@@ -218,8 +218,8 @@ public class Resolver(
 
     // §4.3: a document at the root of a tag must carry the tag's version, if any.
     SemVersion? documentVersion = document switch {
-      RoutingArchiveDocument routing => routing.Document.Version,
-      ConcreteArchiveDocument concrete => concrete.Document.Version,
+      MetaArchiveDocument meta => meta.Document.Version,
+      PackageArchiveDocument package => package.Document.Version,
       _ => null,
     };
     if (tagVersion is not null && documentVersion is not null
@@ -231,30 +231,30 @@ public class Resolver(
 
     ImmutableHashSet<(string, string)> visited = path.Visited.Add((archive.Key, variant));
 
-    // The lock records the commit of every spec hop (spec §8).
+    // The lock records the commit of every spec hop (spec §9).
     string? commit = reference.Kind == RefKind.Spec && archive.Identity is GitArchiveIdentity git
         ? git.Commit
         : null;
 
     switch (document) {
-      case RoutingArchiveDocument routing: {
-          await foreach (Candidate candidate in ResolveRouting(
-              walk, hopRef, routing.Document, variant, archive, commit, path, refPath, visited)) {
+      case MetaArchiveDocument meta: {
+          await foreach (Candidate candidate in ResolveMeta(
+              walk, hopRef, meta.Document, variant, archive, commit, path, refPath, visited)) {
             yield return candidate;
           }
 
           break;
         }
 
-      case ConcreteArchiveDocument concrete: {
-          string? reason = RejectConcrete(walk, concrete.Document, variant);
+      case PackageArchiveDocument package: {
+          string? reason = RejectPackage(walk, package.Document, variant);
           if (reason is not null) {
             walk.Report(refPath, reason);
             break;
           }
 
           yield return new Candidate(
-              new McmodPackage(concrete.Document, concrete.Manifest),
+              new McmodPackage(package.Document, package.Manifest),
               archive,
               path.Hops.Add(new ChainHop(hopRef, null, commit)));
           break;
@@ -296,47 +296,47 @@ public class Resolver(
     }
   }
 
-  /// Step 3: selects the most specific matching artifact and resolves its refs in order.
-  private async IAsyncEnumerable<Candidate> ResolveRouting(
+  /// Step 3: selects the most specific matching target and resolves its source refs in order.
+  private async IAsyncEnumerable<Candidate> ResolveMeta(
       Walk walk,
       Ref reference,
-      RoutingDocument document,
+      MetaDocument document,
       string variant,
       ArchiveHandle archive,
       string? commit,
       ChainPath path,
       ChainPath refPath,
       ImmutableHashSet<(string, string)> visited) {
-    List<(Artifact Artifact, int Index)> matching = [
-      .. document.Artifacts
-          .Select((artifact, index) => (artifact, index))
-          .Where(a => a.artifact.Variant == variant)
-          .Where(a => a.artifact.Matches(walk.Environment)),
+    List<(MetaTarget Target, int Index)> matching = [
+      .. document.Targets
+          .Select((target, index) => (target, index))
+          .Where(t => t.target.Variant == variant)
+          .Where(t => t.target.Matches(walk.Environment)),
     ];
     if (matching.Count == 0) {
-      walk.Report(refPath, $"no artifact for variant \"{variant}\" matches the environment "
+      walk.Report(refPath, $"no target for variant \"{variant}\" matches the environment "
           + $"({walk.Environment.Platform.ToSpecString()}, "
-          + $"{walk.Environment.Rid})");
+          + $"{walk.Environment.Runtime})");
       yield break;
     }
 
-    int most = matching.Max(a => a.Artifact.SelectorCount);
-    List<(Artifact Artifact, int Index)> best = [
-      .. matching.Where(a => a.Artifact.SelectorCount == most),
+    int most = matching.Max(t => t.Target.SelectorCount);
+    List<(MetaTarget Target, int Index)> best = [
+      .. matching.Where(t => t.Target.SelectorCount == most),
     ];
     if (best.Count > 1) {
-      walk.Report(refPath, "artifacts "
-          + string.Join(", ", best.Select(a => a.Index))
+      walk.Report(refPath, "targets "
+          + string.Join(", ", best.Select(t => t.Index))
           + " match the environment equally well");
       yield break;
     }
 
-    (Artifact selected, int selectedIndex) = best[0];
+    (MetaTarget selected, int selectedIndex) = best[0];
 
     List<Ref> refs = [];
-    foreach (string template in selected.Refs) {
+    foreach (string template in selected.Source) {
       try {
-        refs.Add(RefTemplate.Expand(template, document, walk.Environment));
+        refs.Add(RefTemplate.Expand(template, selected, walk.Environment));
       }
       catch (FormatException ex) {
         walk.Report(refPath, $"invalid document: {ex.Message}");
@@ -348,7 +348,7 @@ public class Resolver(
         path.Hops.Add(new ChainHop(reference, selectedIndex, commit)),
         visited,
         refPath.Labels.SetItem(refPath.Labels.Count - 1,
-            $"{refPath.Labels[^1]}[artifact {selectedIndex}]"));
+            $"{refPath.Labels[^1]}[target {selectedIndex}]"));
     foreach (Ref r in refs) {
       await foreach (Candidate candidate in ResolveRef(
           walk, r, archive, toothClientCompat: false, next)) {
@@ -357,30 +357,25 @@ public class Resolver(
     }
   }
 
-  /// Step 4: returns why a concrete document is not a candidate, or null when it is. The
+  /// Step 4: returns why a package document is not a candidate, or null when it is. The
   /// platform is consulted last so that an unknown platform only fails when it decides.
-  private static string? RejectConcrete(Walk walk, ConcreteDocument document, string variant) {
+  private static string? RejectPackage(Walk walk, PackageDocument document, string variant) {
     if (variant != "") {
-      return $"{document.Name} is a concrete package and has no variant \"{variant}\"";
+      return $"{document.Id} is a package and has no variant \"{variant}\"";
     }
 
     if (walk.Range is not null && !walk.Range.IsSatisfiedBy(document.Version)) {
       return $"version {document.Version} does not satisfy {walk.Range}";
     }
 
-    if (document.Rid is not null && document.Rid != walk.Environment.Rid) {
-      return $"rid {document.Rid} differs from the environment rid {walk.Environment.Rid}";
+    if (document.Runtime is not null && document.Runtime != walk.Environment.Runtime) {
+      return $"runtime {document.Runtime} differs from the environment runtime "
+          + walk.Environment.Runtime;
     }
 
-    if (document.Platform != PackagePlatform.Universal) {
-      McmodPlatform platform = walk.Environment.Platform;
-      bool matches = document.Platform == PackagePlatform.Server
-          ? platform == McmodPlatform.Server
-          : platform == McmodPlatform.Client;
-      if (!matches) {
-        return $"platform {document.Platform.ToString().ToLowerInvariant()} differs from the "
-            + $"environment platform {platform.ToSpecString()}";
-      }
+    if (document.Platform is McmodPlatform platform && platform != walk.Environment.Platform) {
+      return $"platform {platform.ToSpecString()} differs from the environment platform "
+          + walk.Environment.Platform.ToSpecString();
     }
 
     return null;

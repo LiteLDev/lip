@@ -47,11 +47,10 @@ public class ArchiveReaderTests {
   public async Task Read_ManifestJson_UsesParser() {
     // Arrange
     Mock<IDocumentParser> parser = new();
-    parser.Setup(p => p.Parse(It.IsAny<byte[]>())).Returns(new ConcreteDocument {
-      IsMarked = true,
-      Name = "x",
+    parser.Setup(p => p.Parse(It.IsAny<byte[]>())).Returns(new PackageDocument {
+      Id = "x",
       Version = SemVersion.Parse("1.0.0"),
-      Type = "files",
+      IsMod = false,
     });
     ArchiveHandle archive = CreateArchive(new() { ["manifest.json"] = "{\"name\":\"x\"}" });
 
@@ -59,8 +58,8 @@ public class ArchiveReaderTests {
     ArchiveDocument document = await new ArchiveReader(parser.Object).Read(archive);
 
     // Assert
-    ConcreteArchiveDocument concrete = Assert.IsType<ConcreteArchiveDocument>(document);
-    Assert.Equal("x", concrete.Manifest.GetProperty("name").GetString());
+    PackageArchiveDocument package = Assert.IsType<PackageArchiveDocument>(document);
+    Assert.Equal("x", package.Manifest.GetProperty("name").GetString());
   }
 
   [Fact]

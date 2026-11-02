@@ -55,7 +55,7 @@ public class VersionRangeTests {
   [InlineData(">=1.3.0-beta.1 || >=2.0.0", "2.0.0-beta.1", false)]
   [InlineData(">=1.3.0-beta.1 || >=2.0.0-beta.1", "2.0.0-beta.2", true)]
   [InlineData("*", "1.0.0-alpha", false)]
-  public void IsSatisfiedBy_LeviLaminaTestTable_MatchesLeviLamina(
+  public void IsSatisfiedBy_Table_FollowsNodeSemver(
       string range, string version, bool expected) {
     // Arrange
     VersionRange r = VersionRange.Parse(range);
@@ -124,8 +124,7 @@ public class VersionRangeTests {
   [InlineData("1 - 2", "2.9.9", true)]
   [InlineData("1 - 2", "3.0.0", false)]
   [InlineData("65535", "65535.9.9", true)]
-  [InlineData("65535", "70000.0.0", true)]
-  [InlineData("^65535.1.2", "70000.0.0", true)]
+  [InlineData("65535", "70000.0.0", false)]
   [InlineData("~1.65535", "2.0.0", false)]
   [InlineData("~1.65535", "1.65535.9", true)]
   [InlineData("^0.0.65535", "0.1.0", false)]
@@ -133,9 +132,8 @@ public class VersionRangeTests {
   [InlineData(">=1.0.0", "1.0.0+meta", true)]
   [InlineData("<2.0.0", "2.0.0-rc.1", false)]
   [InlineData("  >=1.0.0\t<2.0.0  ||\n=3.0.0 ", "3.0.0", true)]
-  [InlineData("> =1.0.0", "1.0.0", true)]
   [InlineData("2.0.0 - 1.0.0", "1.5.0", false)]
-  public void IsSatisfiedBy_EdgeCase_FollowsVersionRequirement(
+  public void IsSatisfiedBy_EdgeCase_FollowsNodeSemver(
       string range, string version, bool expected) {
     // Arrange
     VersionRange r = VersionRange.Parse(range);
@@ -147,22 +145,14 @@ public class VersionRangeTests {
     Assert.Equal(expected, result);
   }
 
-  // The first eight are VersionRequirementTest.RejectsInvalidRangesWithoutChangingValue.
   [Theory]
-  [InlineData("||")]
-  [InlineData("1.2.3 ||")]
   [InlineData(">=")]
   [InlineData("> 1.2.3 <")]
   [InlineData("1.x.3")]
   [InlineData("1.2.3 -")]
   [InlineData("(>=1.0.0)")]
   [InlineData("^1.2-beta")]
-  [InlineData("|| ^1.0.0")]
   [InlineData("^1.0.0 ||| ^2.0.0")]
-  [InlineData(">=*")]
-  [InlineData("^x")]
-  [InlineData("~*")]
-  [InlineData("<x.x")]
   [InlineData("1.2.3.4")]
   [InlineData("01.2")]
   [InlineData("=1.02.3")]
@@ -170,37 +160,29 @@ public class VersionRangeTests {
   [InlineData("^1.2.3-")]
   [InlineData("^1.2.3+")]
   [InlineData("^1.2.3+build_1")]
-  [InlineData("^65536")]
-  [InlineData("^1.2.3-beta.65536")]
-  [InlineData(">65535")]
-  [InlineData(">65535.65535")]
-  [InlineData("<=65535")]
-  [InlineData("v1.2.3")]
   [InlineData("^1.")]
   [InlineData(">= >=1.0.0")]
   [InlineData("==1.0.0")]
-  [InlineData("1.2.3 - *")]
   [InlineData(">=1.0.0 - 2.0.0")]
-  [InlineData("^1.0.0\v")]
-  [InlineData("^1.0.0 ")]
   [InlineData("^１.0.0")]
   public void Parse_InvalidRange_ThrowsFormatException(string range) {
     // Act & Assert
     Assert.Throws<FormatException>(() => VersionRange.Parse(range));
   }
 
-  // The spec deviation; "0.2.0" is used by OEOTYAN/WorldEdit-BE's manifest.json.
+  // A full version without an operator matches exactly that version (spec §4.1 "range").
   [Theory]
-  [InlineData("1.2.3")]
-  [InlineData("0.2.0")]
-  [InlineData("1.2.3-beta")]
-  [InlineData("1.2.3+build")]
-  [InlineData(" 1.2.3 ")]
-  [InlineData("^1.0.0 || 2.0.0")]
-  [InlineData(">=1.0.0 1.5.0")]
-  public void Parse_BareFullVersion_Throws(string range) {
+  [InlineData("1.2.3", "1.2.3", true)]
+  [InlineData("1.2.3", "1.2.4", false)]
+  [InlineData("0.2.0", "0.2.0", true)]
+  [InlineData("0.2.0", "0.3.0", false)]
+  [InlineData("1.2.3-beta", "1.2.3-beta", true)]
+  [InlineData("^1.0.0 || 2.0.0", "2.0.0", true)]
+  [InlineData("^1.0.0 || 2.0.0", "2.0.1", false)]
+  public void IsSatisfiedBy_BareFullVersion_MatchesExactly(
+      string range, string version, bool expected) {
     // Act & Assert
-    Assert.Throws<FormatException>(() => VersionRange.Parse(range));
+    Assert.Equal(expected, VersionRange.Parse(range).IsSatisfiedBy(SemVersion.Parse(version)));
   }
 
   [Theory]

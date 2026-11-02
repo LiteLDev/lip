@@ -1,10 +1,10 @@
 # Migrating Packages
 
-lip packages used to be described by `tooth.json` (format versions 1 to 3). They are now described by `manifest.json` (format version 4, see [Package Manifest](../concepts/package_manifest.md)). lip still installs `tooth.json` packages, but new versions of your package should use `manifest.json`. The `lip migrate` command helps you convert it.
+lip packages used to be described by `tooth.json` (format versions 1 to 3), and LeviLamina mods by a `manifest.json` without the `format` key. Packages are now described by a `manifest.json` with `"format": "bf45b1"` (see [Package Manifest](../concepts/package_manifest.md)). lip still installs both older kinds of package, but new versions of your package should use the new `manifest.json`. The `lip migrate` command helps you convert it.
 
 ## Using `lip migrate`
 
-Run `lip migrate` without arguments in the root directory of your package repository, the one that contains `tooth.json` (format 1, 2 or 3):
+Run `lip migrate` without arguments in the root directory of your package repository, the one that contains `tooth.json` (format 1, 2 or 3) or the LeviLamina `manifest.json`:
 
 ```sh
 cd MyTool
@@ -13,58 +13,78 @@ git add -A
 git commit -m "Migrate to manifest.json"
 ```
 
-It converts `tooth.json` to `manifest.json` as described below, writes `manifest.json` and then deletes `tooth.json` (if an archive has both, lip reads `tooth.json`, so it has to go). `tooth.json` is deleted only once `manifest.json` has been written. Without a `tooth.json` in the current directory, the command fails and changes nothing.
+It converts the file as described below and writes `manifest.json`, indented with two spaces. A `tooth.json` is then deleted (if an archive has both, lip reads `tooth.json`, so it has to go), only once `manifest.json` has been written. If the directory has a `tooth.json` and a `manifest.json` at the same time, the command fails and changes nothing: remove the one you do not want to convert first. Without either file, or when `manifest.json` already has the `format` key, the command fails too.
 
-Everything that cannot be expressed in `manifest.json`, or needs your decision, is printed as a warning that names the `tooth.json` field it is about, such as `variants[0].preserve_files`. Fields of format 1 and 2 files are named as in format 3, which lip converts them to first. Warnings do not make the command fail; review them, fix `manifest.json` where needed, and commit.
+### Questions
 
-### An existing `manifest.json`
+When the result needs a value that the old file does not provide in a valid form, lip asks for it on the terminal and asks again until the answer is valid. For example:
 
-Many repositories already have a `manifest.json`, for example the LeviLamina manifest of a mod. `lip migrate` merges into it instead of replacing it:
+-   the `id`, when the name of the tooth or the `name` of the LeviLamina manifest is not a valid id;
+-   the `version`, when it is not a SemVer version, e.g. a build placeholder such as `"${modVersion}"` in a LeviLamina mod template;
+-   `mod.loader` and `mod.entry` of a LeviLamina manifest, when they are missing;
+-   the RIDs a `tooth.json` platform pattern such as `win-*` stands for, as a comma-separated list;
+-   the URL prefix the packages will be published under, for a tooth path not on GitHub.
 
--   Keys the file does not have yet are appended at the end of the object, in the converted order and in the file's own indentation and line endings. This includes the format markers `formatVersion` and `formatUuid`.
--   Keys the file already has are never overwritten. When the existing value differs from the converted one, lip prints a warning with both values.
--   The rest of the file, including its key order and formatting, is left as it is.
+When standard input or standard error is not a terminal (in CI, for example), `lip migrate` fails instead, naming the value it would ask for, and changes nothing. The daemon's `Migrate` method never asks: it fails in the same way.
 
-lip then checks the merged file and warns if it is not a valid `manifest.json` yet. This is the case, for example, for a LeviLamina mod template whose `version` is a build placeholder such as `"${modVersion}"`: a routing document's `version` must be a SemVer version, equal to the tag it is published at. Replace such placeholders with real values, or move the build template elsewhere, before you publish.
+### Warnings
 
-## Migration Logic
+Everything that is dropped, or converted with another meaning, is printed as a warning that names the field it comes from, such as `variants[0].preserve_files`. Fields of `tooth.json` format 1 and 2 files are named as in format 3, which lip converts them to first. Warnings do not make the command fail; review them, fix `manifest.json` where needed, and commit.
 
-The `name` is derived from the last segment of the `tooth` path (e.g. `github.com/user/MyTool` becomes `MyTool`), and `version` is copied. The result is one of two kinds of document.
+## From tooth.json
 
-**A file package**, when the `tooth.json` has a single variant without a label and all its assets are `self`:
+The `id` is the tooth name, the last segment of the `tooth` path (e.g. `github.com/user/MyTool` becomes `MyTool`; a major version suffix such as `/v2` is skipped). `version` is copied, and `info` takes the `name`, `description`, `tags` and, as `icon`, the `avatar_url` of the `tooth.json`. The result is one of two kinds of document.
 
--   `"type": "files"`, and `rid` from the variant's `platform`.
--   The placements are converted to `placements`.
--   The dependencies become `installDependencies`, with their ranges converted to LeviLamina's syntax.
--   `preserve_files` and `remove_files` become `preserveFiles` and `removeFiles`.
--   The scripts become `preInstall`, `postInstall` (`install` first, then `post_install`), `preUninstall` (`pre_uninstall`, then `uninstall`) and `postUninstall`.
+**A package document**, when the `tooth.json` has a single variant without a label, all its assets are `self`, and its `platform` is empty or not a glob pattern: the content of the variant (see below) is written at the top level, and its `platform` becomes `runtime`.
 
-**A routing document** otherwise, with one artifact per variant: `variant` is the label and `rid` the platform. Each artifact points to where the concrete package of that variant should be published:
+**A meta document** otherwise, whose `targets` hold the content of the variants:
 
--   for a `github.com/<owner>/<repo>` path, a release asset <span v-pre>`https://github.com/<owner>/<repo>/releases/download/v{{version}}/{{name}}-<label>[-{{rid}}].mcmod`</span> (`default` for the empty label);
--   otherwise, a directory `./<label>/` of the repository.
+-   For each label, the variants are merged per RID as lip v0.x merged them; RIDs with the same merged content share one target, whose `runtime` lists them. Variants with an empty `platform` make one more target without `runtime`.
+-   A target has `variant` set to the label (omitted for the empty label), the merged content, and for a labeled variant the `id` `<tooth name>-<label>`, which is the identity lip v0.x packages of that variant have.
+-   When there is a `client` label (the usual server/client split, which lip resolves by platform), the unlabeled targets get `"platform": "server"`, and the `client` targets are written once more as unlabeled targets with `"platform": "client"`, keeping their `id` (`<tooth name>-client`).
+-   Each target's `source` is where the package of that target should be published: for a `github.com/<owner>/<repo>` path, a release asset <span v-pre>`https://github.com/<owner>/<repo>/releases/download/v{{version}}/{{id}}[-{{platform}}][-{{runtime}}].mcmod`</span>, with <span v-pre>`-{{platform}}`</span> and <span v-pre>`-{{runtime}}`</span> present when the target has `platform` and `runtime`; for other paths, the same file name under the URL prefix lip asks you for.
 
-When the only labels are the empty one and `client` (the usual server/client split, which lip resolves by platform), the two become artifacts of the default variant with `"platform": "server"` and `"platform": "client"`, and the release asset is <span v-pre>`{{name}}-{{platform}}[-{{rid}}].mcmod`</span>.
+lip does not create those packages: build each one with [`lip pack`](../cli/commands/pack.md) and attach it to the release. See [Creating Packages](creating_packages.md).
 
-lip checks the result with its own parser and warns if it is not a valid `manifest.json` yet, e.g. when two variants with the same label overlap, or when a key kept from an existing `manifest.json` conflicts.
+The content of a (merged) variant:
 
-lip does not create those packages: build a concrete `manifest.json` with the files of each variant yourself, as lip prints for every variant. See [Creating Packages](creating_packages.md).
+-   The dependencies become `dependencies`. The key is the identity the dependency has (its tooth name, followed by `-<label>` for a labeled one), and the value `{ "version": <range>, "source": "<path>[#label]" }`. Ranges are converted to [node-semver](https://github.com/npm/node-semver#ranges) syntax; a range that accepts every version is left out.
+-   Assets other than `self` become `archives` named `asset<i>`, `i` being the index of the asset, with its `urls` as `url` and its type as `format` (`"file"` for `uncompressed`).
+-   The placements become `files`, taking from the archive of their asset (`from`), or from the package itself for a `self` asset. A `dir` placement becomes a directory (`src` ending with `/`, or `""` for `""` and `"."`), and a `file` placement a single file, or a glob when its `src` is a pattern. For an `uncompressed` asset, `src` is the name of its archive. `\` in `dest` becomes `/`.
+-   `preserve_files` and `remove_files` become `preserve` and `remove`.
+-   The scripts become `hooks`: `preInstall` (`pre_install`), `postInstall` (`install` first, then `post_install`), `preUninstall` (`pre_uninstall`, then `uninstall`) and `postUninstall` (`post_uninstall`).
+-   Empty values are omitted.
+
+## From a LeviLamina Manifest
+
+A `manifest.json` without `format` is rewritten in place as a mod:
+
+| LeviLamina key | Becomes |
+| --- | --- |
+| `name` | `id` |
+| `version` | `version` |
+| `platform` | `platform`, when it is `"server"` or `"client"` |
+| `description` | `info.description` |
+| `author` | `info.authors` |
+| `type`, `entry`, `passive`, `extraInfo` | `mod.loader`, `mod.entry`, `mod.passive`, `mod.extra` |
+| `dependencies` | `dependencies`: each `name` mapped to its `version`, or `"*"` |
+| `conflicts` | `conflicts`: each `name` mapped to its `version`, or `"*"` |
+| `optionalDependencies`, `loadAfter` | `mod.loadAfter`: their names, without duplicates |
+| `loadBefore` | `mod.loadBefore`: their names, `__before_all_mods__` becoming `"*"` |
+
+Other keys are moved into `mod.extra`. The resulting dependencies have no `source`, so lip does not install them: add a `source` to those lip should install, such as `"LeviLamina": { "version": "...", "source": "github.com/LiteLDev/LeviLamina" }`.
 
 ## Limitations
 
 `lip migrate` is a helper, not a guarantee. Always review its output.
 
--   The `info` section (name, description, tags, avatar) has no equivalent and is dropped.
--   Assets other than `self` (`zip`, `tar`, `tgz`, `uncompressed`) are downloaded from URLs, which `manifest.json` cannot do: such a variant becomes an artifact of a routing document, and its files have to be packed into its concrete package.
--   In a file package, every placement is checked against the files in the repository directory, which lip v3 placed them from. A placement that `manifest.json` cannot write so that it places the same files, such as a `file` placement whose `src` is a glob pattern, is expanded into one file placement per file it placed, with a warning: files added later are not placed until you edit the list.
--   A `platform` glob pattern cannot be expressed as a `rid`; the package is then not restricted to a RID.
--   Version ranges that LeviLamina's syntax cannot express are left out. A converted range that accepts different versions than the `tooth.json` range (lip probes the versions around its bounds, e.g. prereleases) is kept with a warning.
--   A `preserve_files` pattern without `/` matched the file name in any directory; it becomes `**/<pattern>`, with a warning.
--   Glob patterns that use more than `*` and `**` are copied, but may not match the same files.
--   In a file package, a placement that matches no file of the repository (e.g. a `file` placement naming a directory) placed nothing in `tooth.json`, but would make the installation fail; it is left out with a warning. The repository directory may include files that are not committed, which lip cannot tell apart.
+-   A `file` placement whose `src` is a glob pattern placed every matching file at `dest/<file name>` in `tooth.json`, but a glob in `files` keeps the path below the part of the pattern without wildcards. When the two differ, e.g. for `**/*.dll`, lip warns; for `self` assets it checks against the files in the repository directory.
+-   Version ranges that node-semver cannot express, or whose conversion accepts other versions than the `tooth.json` range, are reported.
+-   A `preserve_files` pattern without `/` matched the file name in any directory; it becomes `**/<pattern>`. A `remove_files` pattern also removed matching directories; it is also written with a trailing `/`. Patterns that are not valid globs, such as ones starting with `/`, are dropped.
 -   Dependencies of format 1 and 2 whose range cannot be read in format 3 (e.g. `2.16.x`) were already ignored when installing the `tooth.json`; they are reported so that you can add them by hand.
 -   Scripts other than the install and uninstall hooks (such as `pre_pack` or custom scripts), and the `prerequisites` of format 2, have no equivalent and are dropped.
--   A converted file package places files exactly where the `tooth.json` did. If your package is a mod, consider making it a mod instead (any `type` other than `"files"`), which is installed to `mods/<name>/`.
--   Dependencies on other `tooth.json` packages keep working, because lip still installs `tooth.json` packages (it converts them to format 4 in memory).
+-   In a LeviLamina manifest, the versions in `optionalDependencies`, `loadAfter` and `loadBefore` are dropped. In all of `dependencies`, `conflicts`, `optionalDependencies`, `loadAfter` and `loadBefore`, entries whose name is not a valid id are dropped, and a `version` that is not a node-semver range becomes `"*"`.
+-   A converted `tooth.json` becomes a file package that places files exactly where the `tooth.json` did. If your package is a mod, consider making it a mod instead (with a `mod` key), which is installed to `mods/<id>/`.
+-   Dependencies on other `tooth.json` packages keep working, because lip still installs `tooth.json` packages (it converts them in memory).
 
 Tags are versions only when they are named exactly `v<SemVer>` (e.g. `v1.2.3`). Tags such as `v1.2` are ignored.

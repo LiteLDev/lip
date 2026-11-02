@@ -11,9 +11,9 @@ namespace Lip.Core.Mcmod.Lock;
 public class LockFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Reads and writes the workspace lock (spec §8).
+/// Reads and writes the workspace lock (spec §9).
 ///
-/// The lock (format 4) lives inside the workspace, in &lt;root&gt;/.lip/lock.json, so that it
+/// The lock (format bf45b1) lives inside the workspace, in &lt;root&gt;/.lip/lock.json, so that it
 /// follows the workspace when the workspace is moved, renamed or copied.
 ///
 /// When that lock is absent, a v3 &lt;root&gt;/tooth_lock.json written by lip v0.x is migrated. The
@@ -27,12 +27,12 @@ public class LockFormatException(string message, Exception? inner = null)
 /// onto the workspace. Other paths outside the root (a v3 placement that escaped the root) are
 /// kept verbatim as absolute paths; lip never deletes them, as they are not inside the workspace.
 ///
-/// Migrated entries have kind "tooth" and record the tooth.json (spec §9), like the entries of
-/// tooth.json packages lip installs itself: they are converted to format 4 when used.
+/// Migrated entries have kind "tooth" and record the tooth.json (spec §10.2), like the entries of
+/// tooth.json packages lip installs itself: they are read as file packages when used.
 ///
-/// v3 keyed packages by (tooth path, variant); v4 keys them by identity, which for a tooth.json
-/// package is the tooth path followed by "#label" for a labelled variant (spec §9.1), so the
-/// variants of one tooth migrate to entries of distinct identities.
+/// v3 keyed packages by (tooth path, variant); the lock keys them by identity, which for a
+/// tooth.json package is the tooth name followed by "-label" for a labelled variant (spec §10.2
+/// rule 1), so the variants of one tooth migrate to entries of distinct identities.
 public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStore {
   /// The directory of lip's own files in the workspace root, and the lock in it.
   public const string LipDirectory = ".lip";
@@ -91,11 +91,9 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
 
   public async Task Stage(string workspaceRoot, LockFile lockFile) {
     try {
-      if (lockFile.FormatVersion != ManifestFormat.Version
-          || lockFile.FormatUuid != ManifestFormat.Uuid) {
+      if (lockFile.Format != ManifestFormat.Format) {
         throw new LockFormatException(
-            $"format {lockFile.FormatVersion}/{lockFile.FormatUuid} is not"
-            + $" {ManifestFormat.Version}/{ManifestFormat.Uuid}.");
+            $"format \"{lockFile.Format}\" is not \"{ManifestFormat.Format}\".");
       }
 
       Validate(lockFile);
@@ -204,23 +202,13 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
         throw new LockFormatException("the top level is not an object.");
       }
 
-      if (!root.TryGetProperty(ManifestFormat.FormatVersionKey, out JsonElement version)
-          || version.ValueKind != JsonValueKind.Number
-          || !version.TryGetInt32(out int v)
-          || v != ManifestFormat.Version) {
+      if (!root.TryGetProperty(ManifestFormat.FormatKey, out JsonElement format)
+          || format.ValueKind != JsonValueKind.String
+          || format.GetString() != ManifestFormat.Format) {
         throw new LockFormatException(
-            $"unsupported {ManifestFormat.FormatVersionKey}"
-            + $" {Describe(root, ManifestFormat.FormatVersionKey)},"
-            + $" expected {ManifestFormat.Version}.");
-      }
-
-      if (!root.TryGetProperty(ManifestFormat.FormatUuidKey, out JsonElement uuid)
-          || uuid.ValueKind != JsonValueKind.String
-          || uuid.GetString() != ManifestFormat.Uuid) {
-        throw new LockFormatException(
-            $"unsupported {ManifestFormat.FormatUuidKey}"
-            + $" {Describe(root, ManifestFormat.FormatUuidKey)},"
-            + $" expected \"{ManifestFormat.Uuid}\".");
+            $"unsupported {ManifestFormat.FormatKey}"
+            + $" {Describe(root, ManifestFormat.FormatKey)},"
+            + $" expected \"{ManifestFormat.Format}\".");
       }
 
       LockFile lockFile = root.Deserialize<LockFile>(_readOptions)
@@ -235,8 +223,8 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
   }
 
   private static void Validate(LockFile lockFile) {
-    if (lockFile.Packages is null || lockFile.FormatUuid is null) {
-      throw new LockFormatException("packages or formatUuid is null.");
+    if (lockFile.Packages is null || lockFile.Format is null) {
+      throw new LockFormatException("packages or format is null.");
     }
 
     if (lockFile.Platform is not null
@@ -245,8 +233,8 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
           $"invalid platform \"{lockFile.Platform}\", expected \"server\" or \"client\".");
     }
 
-    if (lockFile.Rid is "") {
-      throw new LockFormatException("rid is empty.");
+    if (lockFile.Runtime is "") {
+      throw new LockFormatException("runtime is empty.");
     }
 
     for (int i = 0; i < lockFile.Packages.Count; i++) {

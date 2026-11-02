@@ -4,7 +4,8 @@ namespace Lip.Core.Mcmod;
 
 /// Several sources as one: the files of each source are under its mount, a directory name
 /// without '/'. A source whose only key is "" (a single downloaded file) is the file named by the
-/// mount itself. Used for the assets of a tooth.json converted to format 4 (spec §9.4).
+/// mount itself. Used for the assets of a tooth.json (spec §10.2 rule 4) and the archives of a file package
+/// (spec §7).
 public class MountSource : ISource {
   private readonly IReadOnlyList<(string Mount, ISource Source)> _mounts;
 

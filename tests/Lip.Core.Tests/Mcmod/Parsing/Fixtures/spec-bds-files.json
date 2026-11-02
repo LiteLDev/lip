@@ -1,0 +1,15 @@
+{
+  "format": "bf45b1",
+  "id": "bedrock-server",
+  "version": "1.21.50",
+  "platform": "server",
+  "runtime": "win-x64",
+  "archives": {
+    "bds": { "url": "https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-1.21.50.01.zip" }
+  },
+  "files": [
+    { "from": "bds", "src": "", "dest": "" },
+    { "src": "defaults/*.json", "dest": "" }
+  ],
+  "preserve": ["server.properties", "allowlist.json", "permissions.json", "worlds/"]
+}

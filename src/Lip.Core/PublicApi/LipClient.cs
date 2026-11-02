@@ -89,7 +89,8 @@ public class LipClient(
         new ArchiveReader(documentParser),
         new ToothCompat(),
         documentParser,
-        [new McmodInstaller(fileSystem, commandRunner, documentParser, userInteraction)]);
+        [new McmodInstaller(
+            fileSystem, commandRunner, documentParser, userInteraction, archiveProvider)]);
 
     LipClient lipClient = new(
         fileSystem, userInteraction, cacheService, configService, mcmodService);
@@ -128,8 +129,8 @@ public class LipClient(
     await _configService.Set(key, value);
   }
 
-  /// Writes a format 4 manifest.json (a concrete native mod) named after the current directory
-  /// (refs/cli.md §5.7). Fails when that name is not a valid package name.
+  /// Writes a manifest.json package document describing a native mod, its id named after the
+  /// current directory (refs/cli.md §5.7). Fails when that id is not a valid id.
   public async Task Init() {
     string path = ManifestFormat.ManifestFileName;
     if (_fileSystem.File.Exists(path)) {
@@ -138,21 +139,22 @@ public class LipClient(
 
     string directoryName = _fileSystem.Path.GetFileName(
         Path.TrimEndingDirectorySeparator(_fileSystem.Directory.GetCurrentDirectory()));
-    string name = PackageNames.ReplaceInvalidCharacters(directoryName);
-    if (!PackageNames.IsValid(name)) {
+    string id = PackageNames.ReplaceInvalidCharacters(directoryName);
+    if (!PackageNames.IsValid(id)) {
       throw new InvalidOperationException(
-          $"Cannot name the package after the directory '{directoryName}': '{name}' is not a "
-          + "valid package name. Rename the directory, or write manifest.json yourself.");
+          $"Cannot name the package after the directory '{directoryName}': '{id}' is not a "
+          + "valid id. Rename the directory, or write manifest.json yourself.");
     }
 
     JsonObject manifest = new() {
-      [ManifestFormat.FormatVersionKey] = ManifestFormat.Version,
-      [ManifestFormat.FormatUuidKey] = ManifestFormat.Uuid,
-      ["name"] = name,
-      ["entry"] = $"{name}.dll",
-      ["type"] = "native",
+      [ManifestFormat.FormatKey] = ManifestFormat.Format,
+      ["id"] = id,
       ["version"] = "0.1.0",
-      ["dependencies"] = new JsonArray(),
+      ["dependencies"] = new JsonObject(),
+      ["mod"] = new JsonObject {
+        ["loader"] = "native",
+        ["entry"] = $"{id}.dll",
+      },
     };
 
     using Stream stream = _fileSystem.CreateFileWithDirectory(path);
@@ -179,11 +181,13 @@ public class LipClient(
         packages.Where(p => !p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct());
   }
 
-  /// Migrates the package repository in the current directory from tooth.json to manifest.json
-  /// (ToothRepositoryMigrator). Everything that cannot be converted is reported as a warning.
+  /// Migrates the package repository in the current directory to a manifest.json of format
+  /// bf45b1, from tooth.json or a LeviLamina manifest (RepositoryMigrator), asking the user for
+  /// missing values. Everything dropped or converted with another meaning is reported as a
+  /// warning.
   public async Task Migrate() {
-    IReadOnlyList<string> notes = await ToothRepositoryMigrator.Migrate(
-        _fileSystem, _fileSystem.Directory.GetCurrentDirectory());
+    IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(
+        _fileSystem, _fileSystem.Directory.GetCurrentDirectory(), _userInteraction);
 
     foreach (string note in notes) {
       await _userInteraction.PrintWarning(note);

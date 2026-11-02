@@ -2,18 +2,18 @@ using DotNet.Globbing;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Expands the asset placements of a converted tooth.json (spec §9.5) against the files of its
-/// archive into concrete placements, by the matching rules of lip v3.
+/// Expands the asset placements of a tooth.json (spec §10.2 rule 5) against the files of its
+/// archive into file-form files, by the matching rules of lip v3.
 public static class ToothPlacements {
-  /// Returns the document with its asset placements expanded into placements, which come before
-  /// its other placements. keys are the archive's keys (MountSource keys).
-  public static ConcreteDocument Expand(ConcreteDocument document, IReadOnlyCollection<string> keys) {
+  /// Returns the document with its asset placements expanded into files, which come before its
+  /// other files. keys are the archive's keys (MountSource keys).
+  public static PackageDocument Expand(PackageDocument document, IReadOnlyCollection<string> keys) {
     if (document.AssetPlacements.Count == 0) {
       return document;
     }
 
     return document with {
-      Placements = [.. Expand(document.AssetPlacements, keys), .. document.Placements],
+      Files = [.. Expand(document.AssetPlacements, keys), .. document.Files],
       AssetPlacements = [],
     };
   }
@@ -21,7 +21,7 @@ public static class ToothPlacements {
   /// One file placement per (key, target) pair, in the order lip v3 wrote them: by asset, then
   /// by key in the asset's own order, then by placement. A key matched by several placements is
   /// placed several times; a later placement of the same target overwrites an earlier one.
-  public static IEnumerable<Placement> Expand(
+  public static IEnumerable<PackageFile> Expand(
       IReadOnlyList<AssetPlacement> placements, IReadOnlyCollection<string> keys) {
     foreach (IGrouping<string, AssetPlacement> asset in placements.GroupBy(p => p.Mount)) {
       string prefix = asset.Key + "/";
@@ -32,7 +32,7 @@ public static class ToothPlacements {
       ];
 
       foreach ((string key, string target) in Match(assetKeys, [.. asset])) {
-        yield return new Placement(MountSource.Key(asset.Key, key), NormalizeTarget(target));
+        yield return new PackageFile(null, MountSource.Key(asset.Key, key), NormalizeTarget(target));
       }
     }
   }

@@ -24,6 +24,17 @@ public class ConsoleUserInteraction : IUserInteraction {
     _console.MarkupLine($"[bold red]✗ {Markup.Escape(message)}[/]");
   }
 
+  public Task<string> Ask(string question) {
+    if (Console.IsInputRedirected || Console.IsErrorRedirected) {
+      throw new CannotAskException(
+          $"lip needs {question}, but cannot ask for it: standard input or standard error is not"
+          + " a terminal.");
+    }
+
+    return Task.FromResult(_console.Prompt(
+        new TextPrompt<string>($"Enter {Markup.Escape(question)}:").AllowEmpty()));
+  }
+
   public async Task RunWithProgress(string message, Func<IProgress<double>, Task> action) {
     Progress progress = _console.Progress();
 
