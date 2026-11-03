@@ -9,7 +9,7 @@ using Lip.Core.Migration.PackageManifests;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Migrates a package repository to a manifest.json of format bf45b1 (lip migrate, refs/cli.md
+/// Migrates a package repository to a manifest.json of format bf45b1 (lip migrate, specs/cli.md
 /// §5.8): from the tooth.json at its root (ToothMigrator), which is then deleted, or else from the
 /// LeviLamina manifest in its manifest.json (LeviLaminaMigrator), which is rewritten.
 ///

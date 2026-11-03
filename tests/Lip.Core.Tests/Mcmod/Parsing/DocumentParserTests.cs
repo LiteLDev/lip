@@ -194,7 +194,7 @@ public class DocumentParserTests {
 
   [Fact]
   public void Parse_IdWithTrailingNewline_ThrowsManifestFormatException() {
-    // Arrange: an id must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ in full (refs/package_format.md
+    // Arrange: an id must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ in full (specs/package_format.md
     // §4.1); .NET's '$' alone would accept a trailing line break.
     string json = $$"""{ {{Format}}, "id": "my-mod\n", "version": "1.0.0" }""";
 

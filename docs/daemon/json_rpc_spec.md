@@ -1,12 +1,12 @@
 # JSON-RPC Specification
 
-`lipd` exposes the core functionality of lip through a JSON-RPC 2.0 interface. The normative definition is the [lipd specification](https://github.com/LiteLDev/lip/blob/main/refs/lipd/lipd.md).
+`lipd` exposes the core functionality of lip through a JSON-RPC 2.0 interface. The normative definition is the [lipd specification](https://github.com/LiteLDev/lip/blob/main/specs/lipd/lipd.md).
 
 ## OpenRPC Specification
 
 For a complete and rigorous definition of all available methods, parameters, and return types, please refer to our OpenRPC schema:
 
-[**lipd.openrpc.yaml**](https://github.com/LiteLDev/lip/blob/main/refs/lipd/lipd.openrpc.yaml)
+[**lipd.openrpc.yaml**](https://github.com/LiteLDev/lip/blob/main/specs/lipd/lipd.openrpc.yaml)
 
 This schema defines:
 -   All available RPC methods (e.g., `Install`, `List`, `Versions`).

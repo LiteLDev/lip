@@ -56,7 +56,7 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 ## 清单校验
 
-各格式由仓库 `refs/files/` 目录中以 YAML 编写的 JSON Schema 描述：`manifest.json` 为 `manifest.schema.yaml`，锁为 `lock.schema.yaml`。旧格式位于 `refs/files/legacy/v<格式>/`：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
+各格式由仓库 `specs/schemas/` 目录中以 YAML 编写的 JSON Schema 描述：`manifest.json` 为 `manifest.schema.yaml`，锁为 `lock.schema.yaml`。旧格式位于 `specs/schemas/legacy/v<格式>/`：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
 
 - **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `id`、`version`、ref、范围、glob 或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
 - **版本**：带有 `"format": "bf45b1"` 的 `manifest.json` 是当前格式的文档；不带 `format` 的是 LeviLamina 清单，按 mod 读取（规范 §10.1）。格式版本为 1 或 2 的 `tooth.json` 会在读取时于内存中转换为版本 3，再转换为文件包（规范 §10.2）；如需把包仓库从 `tooth.json` 或 LeviLamina 清单迁移到 `manifest.json`，请在仓库中运行 `lip migrate`。
@@ -78,9 +78,9 @@ lip 在保存于工作区中 `.lip/lock.json` 的锁文件里维护已安装包�
 
 ## 关于规范的说明
 
-lip 只管理服务端工作区：它从不从工作区判断平台，而是总是使用 `server`，如同由用户显式指定（[CLI 规范](https://github.com/LiteLDev/lip/blob/main/refs/cli.md) §3，规范 §5.1）。客户端工作区交由实现同一规范的启动器（如 LeviLauncher）处理。
+lip 只管理服务端工作区：它从不从工作区判断平台，而是总是使用 `server`，如同由用户显式指定（[CLI 规范](https://github.com/LiteLDev/lip/blob/main/specs/cli.md) §3，规范 §5.1）。客户端工作区交由实现同一规范的启动器（如 LeviLauncher）处理。
 
-lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md)（格式 `bf45b1`）。规范没有规定 lip 如何继续管理旧版本写入的锁（规范 §9 "Earlier formats"），并允许通过包含嵌套 ZIP 归档的归档来标识它（规范 §9）。lip 的做法如下：
+lip 实现 [lip 包规范](https://github.com/LiteLDev/lip/blob/main/specs/package_format.md)（格式 `bf45b1`）。规范没有规定 lip 如何继续管理旧版本写入的锁（规范 §9 "Earlier formats"），并允许通过包含嵌套 ZIP 归档的归档来标识它（规范 §9）。lip 的做法如下：
 
 1. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。
 2. **嵌套的 ZIP 归档**：位于另一个归档中的 ZIP 归档只按 SHA-256 锁定，且不单独缓存。要再次打开它，lip 会重新解析记录的解析链，从而重新打开父归档并解出该 ZIP 文件，并且只接受 SHA-256 一致的结果。

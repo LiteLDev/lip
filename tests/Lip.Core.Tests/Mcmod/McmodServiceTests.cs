@@ -253,7 +253,7 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Install([Lib], s_options with { NoDependencies = true, DryRun = true });
 
-    // Assert: refs/cli.md §4, a dry run reports the packages it would mark as explicitly
+    // Assert: specs/cli.md §4, a dry run reports the packages it would mark as explicitly
     // installed.
     Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{LibId}'"));
     Assert.False((await _ws.Lock()).Packages.Single(p => p.Identity == LibId).Explicit);

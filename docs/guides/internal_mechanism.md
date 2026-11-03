@@ -56,7 +56,7 @@ A `manifest.json` at a tag that has a `version` must declare the tag's version. 
 
 ## Manifest Validation
 
-The formats are described by JSON Schemas, written in YAML, in the repository's `refs/files/` directory: `manifest.schema.yaml` for `manifest.json` and `lock.schema.yaml` for the lock. The legacy formats are under `refs/files/legacy/v<format>/`: `tooth.schema.yaml` for tooth.json formats 1, 2 and 3, `tooth_lock.schema.yaml` for tooth_lock.json and `liprc.schema.yaml` for liprc.json (all format 3). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
+The formats are described by JSON Schemas, written in YAML, in the repository's `specs/schemas/` directory: `manifest.schema.yaml` for `manifest.json` and `lock.schema.yaml` for the lock. The legacy formats are under `specs/schemas/legacy/v<format>/`: `tooth.schema.yaml` for tooth.json formats 1, 2 and 3, `tooth_lock.schema.yaml` for tooth_lock.json and `liprc.schema.yaml` for liprc.json (all format 3). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
 
 -   **Validation**: lip parses `manifest.json` strictly (UTF-8, no comments, no duplicate keys) and rejects a document whose keys have the wrong type, such as an invalid `id`, `version`, ref, range, glob or template. A ref to an invalid document yields no candidate, and lip reports why.
 -   **Versioning**: A `manifest.json` with `"format": "bf45b1"` is a document of the current format; one without `format` is a LeviLamina manifest, read as a mod (spec §10.1). `tooth.json` in format 1 or 2 is converted to format 3 in memory when it is read, and then to a file package (spec §10.2); run `lip migrate` in a package repository to migrate it from `tooth.json` or a LeviLamina manifest to `manifest.json`.
@@ -78,9 +78,9 @@ The journal and the operation lock below are kept in lip's per-user data directo
 
 ## Notes on the Specification
 
-lip manages server workspaces only: it never determines the platform from the workspace, but always uses `server` as if the user had specified it ([CLI specification](https://github.com/LiteLDev/lip/blob/main/refs/cli.md) §3, spec §5.1). Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
+lip manages server workspaces only: it never determines the platform from the workspace, but always uses `server` as if the user had specified it ([CLI specification](https://github.com/LiteLDev/lip/blob/main/specs/cli.md) §3, spec §5.1). Client workspaces are left to launchers implementing the same specification, such as LeviLauncher.
 
-lip implements the [lip package specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md) (format `bf45b1`). The specification leaves open how lip keeps managing locks written by earlier versions (spec §9, "Earlier formats"), and lets a nested ZIP archive be identified through the archive containing it (spec §9). lip does this as follows:
+lip implements the [lip package specification](https://github.com/LiteLDev/lip/blob/main/specs/package_format.md) (format `bf45b1`). The specification leaves open how lip keeps managing locks written by earlier versions (spec §9, "Earlier formats"), and lets a nested ZIP archive be identified through the archive containing it (spec §9). lip does this as follows:
 
 1.  **Migrated lock entries**: Entries migrated from `tooth_lock.json` record no archive identity. When lip needs their archive, it resolves the tag `path@version` again.
 2.  **Nested ZIP archives**: A ZIP archive inside another archive is locked by its SHA-256 only, and is not cached on its own. To open it again, lip resolves the recorded chain again, which reopens the parent archive and extracts the ZIP file, and accepts the result only if its SHA-256 matches.

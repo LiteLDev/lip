@@ -337,7 +337,7 @@ The [lock][PF lock] (PF §9) of a [workspace][PF workspace] is the file `.lip/lo
 [PF tooth name]: package_format.md#t-tooth-name
 [PF tooth variant]: package_format.md#t-tooth-variant
 [PF tooth range]: package_format.md#t-tooth-range
-[lock-schema]: files/lock.schema.yaml
+[lock-schema]: schemas/lock.schema.yaml
 
 [RFC 2119]: https://www.rfc-editor.org/rfc/rfc2119
 [RFC 8174]: https://www.rfc-editor.org/rfc/rfc8174

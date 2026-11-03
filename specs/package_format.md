@@ -566,7 +566,7 @@ A [meta document] that names sub-[packages][package] by [variant]:
 [git-objects]: https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 [RID]: https://learn.microsoft.com/dotnet/core/rid-catalog
 [LeviLamina]: https://github.com/LiteLDev/LeviLamina
-[tooth-v1]: files/legacy/v1/tooth.schema.yaml
-[tooth-v2]: files/legacy/v2/tooth.schema.yaml
-[tooth-v3]: files/legacy/v3/tooth.schema.yaml
-[tooth-lock-v3]: files/legacy/v3/tooth_lock.schema.yaml
+[tooth-v1]: schemas/legacy/v1/tooth.schema.yaml
+[tooth-v2]: schemas/legacy/v2/tooth.schema.yaml
+[tooth-v3]: schemas/legacy/v3/tooth.schema.yaml
+[tooth-lock-v3]: schemas/legacy/v3/tooth_lock.schema.yaml

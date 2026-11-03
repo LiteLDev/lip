@@ -1,5 +1,5 @@
 $schema: https://json-schema.org/draft-07/schema#
-$id: https://github.com/LiteLDev/lip/raw/main/refs/files/manifest.schema.yaml
+$id: https://github.com/LiteLDev/lip/raw/main/specs/schemas/manifest.schema.yaml
 title: lip manifest.json (format bf45b1)
 description: >-
   A manifest.json of format "bf45b1": a package document, or a meta document (with "targets")
