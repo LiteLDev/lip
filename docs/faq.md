@@ -1,9 +1,9 @@
 # Frequently Asked Questions
 
-### Why does lip provide a daemon (`lipd`)?
-The daemon (`lipd`) is designed for **external integrations**. It allows IDEs, GUIs, and other tools to interact with lip programmatically using a standard JSON-RPC interface.
+### Why does lip provide `lip rpc`?
+[`lip rpc`](cli/commands/rpc.md) is designed for **external integrations**. It allows IDEs, GUIs, and other tools to interact with lip programmatically using a standard JSON-RPC interface.
 
-**Note**: The standard `lip` CLI runs independently and **does not** use the daemon. This ensures the CLI remains simple and has zero startup overhead for standard operations.
+**Note**: Ordinary `lip` commands such as `lip install` run on their own and **do not** go through `lip rpc`. This keeps the CLI simple, with no extra startup overhead for standard operations.
 
 ### What is `manifest.json`?
 `manifest.json` is the manifest of a lip package, marked by `"format": "bf45b1"`. LeviLamina reads the same file to load a mod, and lip reads what it needs to install it: where to find the package's dependencies, which build to install on which platform, and how to place files. See [Package Manifest](concepts/package_manifest.md).

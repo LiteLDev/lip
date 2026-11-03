@@ -10,7 +10,7 @@
 npm install -g @levimc/lip
 ```
 
-该方式会同时安装 `lip` 和 `lipd`，适用于 Windows、Linux 与 macOS。
+该方式会安装 `lip`，适用于 Windows、Linux 与 macOS。
 
 如果你只想运行 `lip` 而不全局安装，也可以使用 `npx`：
 
@@ -36,7 +36,7 @@ winget install levimc.lip
 
 ## Windows 安装包 <Badge platform="windows" />
 
-每个 [Release](https://github.com/LiteLDev/lip/releases/latest) 都为 x64（`win-x64`）和 ARM64（`win-arm64`）提供两种 Windows 安装包。两者都会把 `lip` 和 `lipd` 安装到 `C:\Program Files\lip`，并把该目录加入系统 `PATH`。安装后请打开新的终端再使用 `lip`。
+每个 [Release](https://github.com/LiteLDev/lip/releases/latest) 都为 x64（`win-x64`）和 ARM64（`win-arm64`）提供两种 Windows 安装包。两者都会把 `lip` 安装到 `C:\Program Files\lip`，并把该目录加入系统 `PATH`。安装后请打开新的终端再使用 `lip`。
 
 - `lip-<version>-<runtime>-setup.exe` 还会安装 `lip` 所需的 .NET 运行时，缺失时自动下载。直接运行即可，也可以静默安装：
 

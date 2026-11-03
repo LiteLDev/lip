@@ -1,9 +1,9 @@
 # 常见问题
 
-### 为什么 lip 要提供守护进程（`lipd`）？
-守护进程（`lipd`）是为**外部集成**设计的。它让 IDE、GUI 和其他工具可以通过标准 JSON-RPC 接口，以编程方式与 lip 交互。
+### 为什么 lip 要提供 `lip rpc`？
+[`lip rpc`](cli/commands/rpc.md) 是为**外部集成**设计的。它让 IDE、GUI 和其他工具可以通过标准 JSON-RPC 接口，以编程方式与 lip 交互。
 
-**注意**：标准 `lip` CLI 可以独立运行，**不会**使用守护进程。这样可保证 CLI 保持简单，并且日常命令没有额外启动开销。
+**注意**：`lip install` 等普通 `lip` 命令独立运行，**不会**经过 `lip rpc`。这样可保证 CLI 保持简单，并且日常命令没有额外启动开销。
 
 ### 什么是 `manifest.json`？
 `manifest.json` 是 lip 包的清单文件，以 `"format": "bf45b1"` 标记。LeviLamina 读取同一文件来加载 mod，lip 则从中读取安装所需的内容：去哪里找包的依赖、在哪个平台上安装哪个构建，以及如何放置文件。参见[包清单](concepts/package_manifest.md)。

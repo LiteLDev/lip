@@ -88,6 +88,9 @@ app.Configure(config => {
   config.AddCommand<PackCommand>("pack")
       .WithDescription("Packs manifest.json into the package document of one target, or into a ZIP archive");
 
+  config.AddCommand<RpcCommand>("rpc")
+      .WithDescription("Serves the commands over JSON-RPC on standard input and output");
+
   config.AddCommand<UninstallCommand>("uninstall")
       .WithDescription("Uninstalls packages");
 

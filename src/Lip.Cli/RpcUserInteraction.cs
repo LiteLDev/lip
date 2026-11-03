@@ -1,6 +1,6 @@
 using Lip.Core.Infrastructure;
 
-namespace Lip.Daemon;
+namespace Lip.Cli;
 
 public class RpcUserInteraction(IClientContract clientContract) : IUserInteraction {
   private readonly IClientContract _clientContract = clientContract;

@@ -48,14 +48,6 @@ jobs:
             --no-self-contained \
             -p:DebugType=embedded
 
-      - shell: bash
-        run: |
-          dotnet publish src/Lip.Daemon \
-            -o bin \
-            -r ${{ matrix.runtime }} \
-            --no-self-contained \
-            -p:DebugType=embedded
-
       - uses: actions/upload-artifact@v7
         with:
           name: lip-${{ github.sha }}-${{ matrix.runtime }}
@@ -128,14 +120,6 @@ jobs:
             --no-self-contained \
             -p:DebugType=embedded
 
-      - shell: bash
-        run: |
-          dotnet publish src/Lip.Daemon \
-            -o .tmp/artifacts \
-            -r win-${{ matrix.arch }} \
-            --no-self-contained \
-            -p:DebugType=embedded
-
       - run: |
           ./packaging/wix/build.ps1 -Version 0.0.1 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
           ./packaging/wix/build.ps1 -Version 0.0.2 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
@@ -177,14 +161,6 @@ jobs:
       - shell: bash
         run: |
           dotnet publish src/Lip.Cli \
-            -o .tmp/artifacts \
-            -r win-x64 \
-            --no-self-contained \
-            -p:DebugType=embedded
-
-      - shell: bash
-        run: |
-          dotnet publish src/Lip.Daemon \
             -o .tmp/artifacts \
             -r win-x64 \
             --no-self-contained \

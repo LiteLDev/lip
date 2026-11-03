@@ -10,7 +10,7 @@ The default installation method for all platforms is npm:
 npm install -g @levimc/lip
 ```
 
-This installs both `lip` and `lipd` and works on Windows, Linux, and macOS.
+This installs `lip` and works on Windows, Linux, and macOS.
 
 If you only want to run `lip` without installing it globally, you can also use `npx`:
 
@@ -36,7 +36,7 @@ This package was previously published as `futrime.lip`. If you installed it unde
 
 ## Windows installer <Badge platform="windows" />
 
-Each [release](https://github.com/LiteLDev/lip/releases/latest) provides two installers for Windows, for x64 (`win-x64`) and ARM64 (`win-arm64`). Both install `lip` and `lipd` to `C:\Program Files\lip` and add that directory to the system `PATH`. Open a new terminal afterwards to use `lip`.
+Each [release](https://github.com/LiteLDev/lip/releases/latest) provides two installers for Windows, for x64 (`win-x64`) and ARM64 (`win-arm64`). Both install `lip` to `C:\Program Files\lip` and add that directory to the system `PATH`. Open a new terminal afterwards to use `lip`.
 
 - `lip-<version>-<runtime>-setup.exe` also installs the .NET runtime that `lip` needs, downloading it when it is missing. Run it, or install silently:
 

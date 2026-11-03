@@ -14,7 +14,7 @@ param(
     [ValidateSet('x64', 'arm64')]
     [string] $Arch,
 
-    # Directory containing the published lip.exe and lipd.exe.
+    # Directory containing the published lip.exe.
     [Parameter(Mandatory)]
     [string] $BinDir,
 

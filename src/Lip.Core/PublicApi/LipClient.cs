@@ -99,7 +99,7 @@ public class LipClient(
     return lipClient;
   }
 
-  // Implemented explicitly so that RPC hosts exposing the client's public methods (Lip.Daemon)
+  // Implemented explicitly so that RPC hosts exposing the client's public methods (lip rpc)
   // do not expose Dispose.
   void IDisposable.Dispose() {
     foreach (IDisposable resource in _ownedResources) {

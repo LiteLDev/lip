@@ -25,7 +25,7 @@ When the result needs a value that the old file does not provide in a valid form
 -   the RIDs a `tooth.json` platform pattern such as `win-*` stands for, as a comma-separated list;
 -   the URL prefix the packages will be published under, for a tooth path not on GitHub.
 
-When standard input or standard error is not a terminal (in CI, for example), `lip migrate` fails instead, naming the value it would ask for, and changes nothing. The daemon's `Migrate` method never asks: it fails in the same way.
+When standard input or standard error is not a terminal (in CI, for example), `lip migrate` fails instead, naming the value it would ask for, and changes nothing. The `Migrate` method of [`lip rpc`](../cli/commands/rpc.md) never asks: it fails in the same way.
 
 ### Warnings
 

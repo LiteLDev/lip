@@ -1,6 +1,6 @@
-# lipd JSON-RPC Specification
+# lip rpc JSON-RPC Specification
 
-This specification defines the externally observable behavior of `lipd`, which offers the [commands][CLI command] of `lip` over [JSON-RPC 2.0]. It uses the terms of the [CLI specification][CLI] and of the [package specification][PF], and cites their sections as "CLI §N" and "PF §N". A reference "§N" names section N of this specification.
+This specification defines the externally observable behavior of `lip rpc` (CLI §5.12), which offers the [commands][CLI command] of `lip` over [JSON-RPC 2.0]. It uses the terms of the [CLI specification][CLI] and of the [package specification][PF], and cites their sections as "CLI §N" and "PF §N". A reference "§N" names section N of this specification.
 
 ## Conventions
 
@@ -10,25 +10,24 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHOULD", "SHOULD NOT", "RECOMMEND
 
 Each term below is defined using only the terms before it and the terms of the [CLI specification][CLI] and the [package specification][PF].
 
-- <a id="t-client"></a>**client**: the program connected to `lipd`.
-- <a id="t-method"></a>**method**: a [JSON-RPC 2.0] method that the [client] calls on `lipd` (§3).
-- <a id="t-client-call"></a>**client call**: a [JSON-RPC 2.0] request that `lipd` sends to the [client] (§4).
+- <a id="t-client"></a>**client**: the program connected to `lip rpc`.
+- <a id="t-method"></a>**method**: a [JSON-RPC 2.0] method that the [client] calls on `lip rpc` (§3).
+- <a id="t-client-call"></a>**client call**: a [JSON-RPC 2.0] request that `lip rpc` sends to the [client] (§4).
 
 ## 1. Invocation
 
 ```
-lipd [-h | --help] [--version]
-lipd run
+lip rpc
 ```
 
-`lipd run` serves one [JSON-RPC 2.0] connection on its standard input and standard output until standard input is closed, then exits with code 0. It takes no options. `--help` and `--version` behave as `-h` and `-v` of `lip` (CLI §1).
+`lip rpc` serves one [JSON-RPC 2.0] connection on its standard input and standard output until standard input is closed, then exits with code 0. It takes no options.
 
-The [workspace][PF workspace] of every [method] is the current working directory of the `lipd` process.
+The [workspace][PF workspace] of every [method] is the current working directory of the `lip rpc` process.
 
 ## 2. Protocol
 
 - **Protocol**: [JSON-RPC 2.0].
-- **Transport**: `lipd` reads messages from standard input, and writes responses and [client calls][client call] to standard output.
+- **Transport**: `lip rpc` reads messages from standard input, and writes responses and [client calls][client call] to standard output.
 - **Framing**: each message is a JSON ([RFC 8259]) body encoded in UTF-8, preceded by the header `Content-Length: <bytes>` and an empty line (`\r\n\r\n`), as in the base protocol of the [Language Server Protocol][LSP].
 - **Parameters**: the parameters of a [method] MAY be given by position, in the order §3 lists them, or by name. A parameter marked `?` MAY be omitted.
 - **Results**: a [method] that succeeds responds with its result; a [method] whose result §3 lists as `null` responds with `null`.
@@ -58,7 +57,7 @@ The [workspace][PF workspace] of every [method] is the current working directory
 
 ## 4. Calls to the Client
 
-`lipd` sends each [message][CLI message] that `lip` would write to standard error (CLI §1.2) to the [client] as one of these [client calls][client call]:
+`lip rpc` sends each [message][CLI message] that `lip` would write to standard error (CLI §1.2) to the [client] as one of these [client calls][client call]:
 
 | [Client call][client call] | Parameters | Meaning |
 |---|---|---|
@@ -68,11 +67,11 @@ The [workspace][PF workspace] of every [method] is the current working directory
 | `PrintError` | `message: string` | An error [message][CLI message]. |
 | `ReportProgress` | `id: string`, `message: string`, `percentage: number` | The progress of a running task. All `ReportProgress` calls of one task have the same `id` and `message`; `percentage` is the progress reached so far. |
 
-The [client] MUST answer each [client call] with the result `null`. After sending a `Print*` [client call], `lipd` does not continue the [method] that sent it until the answer arrives. After sending `ReportProgress`, `lipd` does not wait for the answer.
+The [client] MUST answer each [client call] with the result `null`. After sending a `Print*` [client call], `lip rpc` does not continue the [method] that sent it until the answer arrives. After sending `ReportProgress`, `lip rpc` does not wait for the answer.
 
-`lipd` does not send the final success line of a [command][CLI command]; the response of the [method] takes its place.
+`lip rpc` does not send the final success line of a [command][CLI command]; the response of the [method] takes its place.
 
-The OpenRPC document [lipd.openrpc.yaml][openrpc] MUST describe the same [methods][method], parameters and results as this specification.
+The OpenRPC document [rpc.openrpc.yaml][openrpc] MUST describe the same [methods][method], parameters and results as this specification.
 
 ## References
 
@@ -99,7 +98,7 @@ The OpenRPC document [lipd.openrpc.yaml][openrpc] MUST describe the same [method
 [PF root document]: ../package_format.md#t-root-document
 [PF explicitly installed]: ../package_format.md#t-explicitly-installed
 [PF dependency package]: ../package_format.md#t-dependency-package
-[openrpc]: lipd.openrpc.yaml
+[openrpc]: rpc.openrpc.yaml
 
 [RFC 2119]: https://www.rfc-editor.org/rfc/rfc2119
 [RFC 8174]: https://www.rfc-editor.org/rfc/rfc8174

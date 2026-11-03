@@ -37,14 +37,14 @@ export default defineDocsConfig({
       { text: 'Concepts', link: '/concepts/architecture' },
       { text: 'Guides', link: '/guides/creating_packages' },
       { text: 'CLI', link: '/cli/overview' },
-      { text: 'Daemon', link: '/daemon/overview' },
+      { text: 'JSON-RPC', link: '/rpc/overview' },
     ],
     zh: [
       { text: '介绍', link: '/zh/intro/quick_start' },
       { text: '概念', link: '/zh/concepts/architecture' },
       { text: '指南', link: '/zh/guides/creating_packages' },
       { text: 'CLI', link: '/zh/cli/overview' },
-      { text: '守护进程', link: '/zh/daemon/overview' },
+      { text: 'JSON-RPC', link: '/zh/rpc/overview' },
     ],
   },
   sidebar: {
@@ -84,6 +84,7 @@ export default defineDocsConfig({
                 { text: 'list', link: '/cli/commands/list' },
                 { text: 'migrate', link: '/cli/commands/migrate' },
                 { text: 'pack', link: '/cli/commands/pack' },
+                { text: 'rpc', link: '/cli/commands/rpc' },
                 { text: 'uninstall', link: '/cli/commands/uninstall' },
                 { text: 'update', link: '/cli/commands/update' },
                 { text: 'versions', link: '/cli/commands/versions' },
@@ -93,16 +94,12 @@ export default defineDocsConfig({
           ],
         },
       ],
-      '/daemon/': [
+      '/rpc/': [
         {
-          text: 'Daemon (lipd)',
+          text: 'JSON-RPC (lip rpc)',
           items: [
-            { text: 'Overview', link: '/daemon/overview' },
-            { text: 'JSON-RPC Spec', link: '/daemon/json_rpc_spec' },
-            {
-              text: 'Commands',
-              items: [{ text: 'run', link: '/daemon/commands/run' }],
-            },
+            { text: 'Overview', link: '/rpc/overview' },
+            { text: 'JSON-RPC Spec', link: '/rpc/json_rpc_spec' },
           ],
         },
       ],
@@ -155,6 +152,7 @@ export default defineDocsConfig({
                 { text: 'list', link: '/zh/cli/commands/list' },
                 { text: 'migrate', link: '/zh/cli/commands/migrate' },
                 { text: 'pack', link: '/zh/cli/commands/pack' },
+                { text: 'rpc', link: '/zh/cli/commands/rpc' },
                 { text: 'uninstall', link: '/zh/cli/commands/uninstall' },
                 { text: 'update', link: '/zh/cli/commands/update' },
                 { text: 'versions', link: '/zh/cli/commands/versions' },
@@ -164,16 +162,12 @@ export default defineDocsConfig({
           ],
         },
       ],
-      '/zh/daemon/': [
+      '/zh/rpc/': [
         {
-          text: '守护进程（lipd）',
+          text: 'JSON-RPC（lip rpc）',
           items: [
-            { text: '概览', link: '/zh/daemon/overview' },
-            { text: 'JSON-RPC 规范', link: '/zh/daemon/json_rpc_spec' },
-            {
-              text: '命令',
-              items: [{ text: 'run', link: '/zh/daemon/commands/run' }],
-            },
+            { text: '概览', link: '/zh/rpc/overview' },
+            { text: 'JSON-RPC 规范', link: '/zh/rpc/json_rpc_spec' },
           ],
         },
       ],
