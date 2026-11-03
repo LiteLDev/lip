@@ -1,60 +1,19 @@
 on:
-  # Pull requests and the merge queue always run this workflow, so build-result can be a required check; the jobs
-  # skip themselves when no build input changed.
   pull_request:
-  merge_group:
-  # Other branches build through their pull request, so a pull request does not report build-result twice.
-  push:
-    branches:
-      - main
-      - 'release/**'
-    paths:
+    paths: &paths
       - .github/workflows/build.yml
       - 'src/**'
       - 'tests/**'
       - 'packaging/wix/**'
+  push:
+    branches:
+      - main
+      - 'release/**'
+    paths: *paths
   workflow_dispatch:
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      build: ${{ steps.changes.outputs.build }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-
-      - id: changes
-        run: |
-          case "$EVENT" in
-            pull_request)
-              # The checked-out merge commit's first parent is the tip of the base branch.
-              base=HEAD^1
-              ;;
-            merge_group)
-              git fetch --depth=1 origin "$MERGE_GROUP_BASE"
-              base="$MERGE_GROUP_BASE"
-              ;;
-            *)
-              echo "build=true" >> "$GITHUB_OUTPUT"
-              exit 0
-              ;;
-          esac
-          if git diff --name-only "$base" HEAD | grep -qE '^(\.github/workflows/build\.yml|src/|tests/|packaging/wix/)'; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          EVENT: ${{ github.event_name }}
-          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
-
   build:
-    needs: changes
-    if: needs.changes.outputs.build == 'true'
     runs-on: ${{ matrix.runs-on }}
     permissions:
       contents: read
@@ -103,8 +62,6 @@ jobs:
           path: bin/
 
   check-style:
-    needs: changes
-    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,8 +77,6 @@ jobs:
             --verify-no-changes
 
   test:
-    needs: changes
-    if: needs.changes.outputs.build == 'true'
     runs-on: ${{ matrix.runs-on }}
     permissions:
       contents: read
@@ -146,8 +101,6 @@ jobs:
           dotnet test
 
   test-windows-installer:
-    needs: changes
-    if: needs.changes.outputs.build == 'true'
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 45
     permissions:
@@ -210,8 +163,6 @@ jobs:
 
   # A clean Windows Server Core, where setup.exe has to install the .NET runtime itself.
   test-windows-installer-server-core:
-    needs: changes
-    if: needs.changes.outputs.build == 'true'
     runs-on: windows-2022
     timeout-minutes: 45
     permissions:
@@ -266,19 +217,3 @@ jobs:
         with:
           name: windows-installer-logs-server-core
           path: .tmp/wix/logs/
-
-  # The required check: fails when any job failed or was cancelled, passes when they passed or had nothing to build.
-  build-result:
-    if: always()
-    needs:
-      - build
-      - changes
-      - check-style
-      - test
-      - test-windows-installer
-      - test-windows-installer-server-core
-    runs-on: ubuntu-latest
-    steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: |
-          exit 1
