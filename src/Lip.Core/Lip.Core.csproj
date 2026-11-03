@@ -10,7 +10,7 @@
     <PackageReference Include="Downloader" Version="5.10.1" />
     <PackageReference Include="Flurl" Version="4.0.0" />
     <PackageReference Include="Flurl.Http" Version="4.0.2" />
-    <PackageReference Include="Scriban" Version="7.5.0" />
+    <PackageReference Include="Scriban" Version="7.5.3" />
     <PackageReference Include="Semver" Version="3.0.0" />
     <PackageReference Include="SharpCompress" Version="0.50.5" />
     <PackageReference Include="Spectre.Console.Json" Version="0.57.2" />
