@@ -7,7 +7,7 @@
   <ItemGroup>
     <PackageReference Include="CliWrap" Version="3.10.5" />
     <PackageReference Include="DotNet.Glob" Version="3.1.3" />
-    <PackageReference Include="Downloader" Version="5.10.1" />
+    <PackageReference Include="Downloader" Version="6.0.0" />
     <PackageReference Include="Flurl" Version="4.0.0" />
     <PackageReference Include="Flurl.Http" Version="4.0.2" />
     <PackageReference Include="Scriban" Version="7.5.0" />
