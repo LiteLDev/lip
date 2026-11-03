@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 
 namespace Lip.Core.Mcmod;
 
-/// Packing (spec §8, lip pack in refs/cli.md §5.11): turns a meta document into the package
+/// Packing (spec §8, lip pack in specs/cli.md §5.11): turns a meta document into the package
 /// document of one of its targets, and writes it into a ZIP archive with the package's files.
 public static class Packer {
   private static readonly JsonSerializerOptions _writeOptions = new() {

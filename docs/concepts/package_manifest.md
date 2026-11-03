@@ -3,10 +3,10 @@
 A lip package is described by a `manifest.json` at the root of its archive, marked by
 `"format": "bf45b1"`. The same document is read by LeviLamina, which loads the mods it describes;
 lip installs them.
-The normative definition is the [package format specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md).
+The normative definition is the [package format specification](https://github.com/LiteLDev/lip/blob/main/specs/package_format.md).
 
 The format is described by the JSON Schema
-[`manifest.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/refs/files/manifest.schema.yaml).
+[`manifest.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/manifest.schema.yaml).
 lip also reads LeviLamina manifests without `format` and the `tooth.json` of lip v0.x, see
 [Legacy Formats](#legacy-formats).
 
@@ -326,7 +326,7 @@ The environment of a workspace is a pair `(platform, runtime)`:
 
 lip reads the formats below as package documents, but never writes them; convert yours with
 [`lip migrate`](../cli/commands/migrate.md). The exact mappings are §10 of the
-[specification](https://github.com/LiteLDev/lip/blob/main/refs/package_format.md).
+[specification](https://github.com/LiteLDev/lip/blob/main/specs/package_format.md).
 
 ### LeviLamina Manifests
 
@@ -365,8 +365,8 @@ memory into a file package and handles it like any other package:
   or update the package.
 
 The format 3 schema is
-[`legacy/v3/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/refs/files/legacy/v3/tooth.schema.yaml)
-(formats 1 and 2: [`legacy/v1/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/refs/files/legacy/v1/tooth.schema.yaml), [`legacy/v2/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/refs/files/legacy/v2/tooth.schema.yaml)):
+[`legacy/v3/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v3/tooth.schema.yaml)
+(formats 1 and 2: [`legacy/v1/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v1/tooth.schema.yaml), [`legacy/v2/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v2/tooth.schema.yaml)):
 
 ```json
 {

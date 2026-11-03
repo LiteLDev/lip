@@ -130,7 +130,7 @@ public class LipClient(
   }
 
   /// Writes a manifest.json package document describing a native mod, its id named after the
-  /// current directory (refs/cli.md §5.7). Fails when that id is not a valid id.
+  /// current directory (specs/cli.md §5.7). Fails when that id is not a valid id.
   public async Task Init() {
     string path = ManifestFormat.ManifestFileName;
     if (_fileSystem.File.Exists(path)) {

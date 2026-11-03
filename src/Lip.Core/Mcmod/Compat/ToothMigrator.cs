@@ -10,7 +10,7 @@ using Semver;
 namespace Lip.Core.Mcmod.Compat;
 
 /// Converts a tooth.json (v1–v3, already migrated to v3) into a manifest.json of format bf45b1
-/// (refs/cli.md §5.8), as faithfully as the formats allow. lip itself does not need the result:
+/// (specs/cli.md §5.8), as faithfully as the formats allow. lip itself does not need the result:
 /// it reads tooth.json archives as they are (ToothCompat, spec §10.2), with the same mapping.
 /// RepositoryMigrator writes the result into a package repository. The notes list what is
 /// dropped or converted with another meaning, each naming the tooth.json field it comes from
@@ -91,7 +91,7 @@ public static partial class ToothMigrator {
     public IReadOnlyList<string>? Files => _selfFiles ??= SelfFiles?.Invoke();
   }
 
-  /// The targets of a meta document (refs/cli.md §5.8 rule 3).
+  /// The targets of a meta document (specs/cli.md §5.8 rule 3).
   private static async Task<JsonArray> Targets(Context context, string id) {
     PackageManifest tooth = context.Tooth;
 
@@ -243,7 +243,7 @@ public static partial class ToothMigrator {
         variants.SingleOrDefault(v => hook(v.Scripts).Count > 0) is { } v ? hook(v.Scripts) : [];
   }
 
-  /// The content of a (merged) variant (refs/cli.md §5.8 rule 4).
+  /// The content of a (merged) variant (specs/cli.md §5.8 rule 4).
   private static JsonObject Content(Context context, PackageManifestVariant variant, string field) {
     List<string> notes = context.Notes;
     JsonObject content = [];
@@ -640,7 +640,7 @@ public static partial class ToothMigrator {
     }
   }
 
-  /// Converts a v3 range to the node-semver syntax (spec §4.1), or returns null with a note when
+  /// Converts a v3 range to the node-semver syntax (spec §1 "range"), or returns null with a note when
   /// it cannot be expressed. A note also tells when the converted range accepts a different set
   /// of versions, as far as probing versions around its bounds tells.
   private static string? ConvertRange(SemVersionRange range, List<string> notes, string field) {

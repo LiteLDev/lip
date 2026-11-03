@@ -9,7 +9,7 @@
 | `next/<topic>` | Unfinished work that users would see, collected until it is complete | Pull requests of any size, in any state that builds |
 | anything else | One pull request | — |
 
-`main` must stay releasable, so a change that users can see (anything `refs/` describes: the CLI, lipd, file formats, filesystem and network behavior) merges into `main` only when it is complete. Split large work into as many pull requests as you like, but aim them at `next/<topic>`; when the topic is done, merge `next/<topic>` into `main` with one pull request whose title describes the whole change (for example `feat!: replace the manifest format with format bf45b1`), then delete the branch. Changes users cannot see (refactoring, tests, CI, docs) go straight to `main`.
+`main` must stay releasable, so a change that users can see (anything `specs/` describes: the CLI, lipd, file formats, filesystem and network behavior) merges into `main` only when it is complete. Split large work into as many pull requests as you like, but aim them at `next/<topic>`; when the topic is done, merge `next/<topic>` into `main` with one pull request whose title describes the whole change (for example `feat!: replace the manifest format with format bf45b1`), then delete the branch. Changes users cannot see (refactoring, tests, CI, docs) go straight to `main`.
 
 ## Pull requests
 

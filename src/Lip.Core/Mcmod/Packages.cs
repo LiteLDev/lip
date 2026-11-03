@@ -89,7 +89,7 @@ public static partial class PackageNames {
     }
   });
 
-  /// A valid id (^[A-Za-z0-9][A-Za-z0-9._-]*$, spec §4.1) derived from free text:
+  /// A valid id (^[A-Za-z0-9][A-Za-z0-9._-]*$, spec §1) derived from free text:
   /// other characters become '-', leading '.', '_' and '-' are dropped.
   public static string FromText(string text, string fallback) {
     string name = ReplaceInvalidCharacters(text).TrimStart('.', '_', '-');
@@ -100,7 +100,7 @@ public static partial class PackageNames {
   public static string ReplaceInvalidCharacters(string text) =>
       InvalidNameCharacters().Replace(text, "-");
 
-  /// Whether a name matches ^[A-Za-z0-9][A-Za-z0-9._-]*$ (spec §4.1).
+  /// Whether a name matches ^[A-Za-z0-9][A-Za-z0-9._-]*$ (spec §1).
   public static bool IsValid(string name) => ValidName().IsMatch(name);
 
   [GeneratedRegex("[^A-Za-z0-9._-]")]

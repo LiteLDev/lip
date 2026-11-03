@@ -170,7 +170,7 @@ public class VersionRangeTests {
     Assert.Throws<FormatException>(() => VersionRange.Parse(range));
   }
 
-  // A full version without an operator matches exactly that version (spec §4.1 "range").
+  // A full version without an operator matches exactly that version (spec §1 "range").
   [Theory]
   [InlineData("1.2.3", "1.2.3", true)]
   [InlineData("1.2.3", "1.2.4", false)]

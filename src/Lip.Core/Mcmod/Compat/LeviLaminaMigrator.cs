@@ -6,7 +6,7 @@ using Semver;
 namespace Lip.Core.Mcmod.Compat;
 
 /// Converts a LeviLamina manifest (spec §10.1) into a manifest.json of format bf45b1 describing
-/// the same mod (refs/cli.md §5.8, "From a LeviLamina manifest"). Values the result needs that are
+/// the same mod (specs/cli.md §5.8, "From a LeviLamina manifest"). Values the result needs that are
 /// missing or invalid (id, version, mod.loader, mod.entry) are asked for through
 /// IUserInteraction.Ask; the notes list what is dropped or converted with another meaning.
 public static class LeviLaminaMigrator {

@@ -1,9 +1,9 @@
 # AGENTS.md
 
-- MUST ensure that `refs/` is the single source of truth.
-- MUST check if any code, doc, test, or any other thing in the project violates `refs` and auto fix before any commit.
-- MUST require the user's explicit approval for every change to `refs/`.
-- MUST only describe externally observable behavior in `refs/`: CLI interface, API, file formats, filesystem interaction behavior, network interaction behavior, etc.
+- MUST ensure that `specs/` is the single source of truth.
+- MUST check if any code, doc, test, or any other thing in the project violates `specs` and auto fix before any commit.
+- MUST require the user's explicit approval for every change to `specs/`.
+- MUST only describe externally observable behavior in `specs/`: CLI interface, API, file formats, filesystem interaction behavior, network interaction behavior, etc.
 - MUST follow the branches and pull request rules in `CONTRIBUTING.md`.
 - MUST keep `main` releasable: aim a pull request with an unfinished externally observable change at `next/<topic>`, not `main`.
 - MUST title every pull request in Conventional Commits, describing the change users see.

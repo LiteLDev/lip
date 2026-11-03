@@ -26,7 +26,7 @@ The lockfile is saved once, after every package of an operation has been install
 
 ## Structure
 
-The lockfile is a JSON file described by the JSON Schema [`lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/refs/files/lock.schema.yaml):
+The lockfile is a JSON file described by the JSON Schema [`lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/lock.schema.yaml):
 
 ```json
 {
@@ -105,7 +105,7 @@ lip v0.x used `tooth_lock.json` (format 3) in the workspace root. If there is no
 
 `tooth_lock.json` recorded the absolute paths of the files. If the workspace was moved after those packages were installed, the paths point to its old location: lip infers the old root from where the recorded files now exist under the workspace and rebases the paths onto the workspace, so the packages still own their files and can be uninstalled.
 
-The old format is described by [`tooth_lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/refs/files/legacy/v3/tooth_lock.schema.yaml):
+The old format is described by [`tooth_lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v3/tooth_lock.schema.yaml):
 
 ```json
 {
