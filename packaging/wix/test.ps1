@@ -111,7 +111,7 @@ function Get-PathEntryCount {
 
 function Assert-Installed([string] $Version) {
     Assert (Test-Path (Join-Path $installDir 'lip.exe')) 'lip.exe is installed'
-    Assert (Test-Path (Join-Path $installDir 'lipd.exe')) 'lipd.exe is installed'
+    Assert (-not (Test-Path (Join-Path $installDir 'lipd.exe'))) 'lipd.exe of earlier versions is not left behind'
     Assert ((Get-PathEntryCount) -eq 1) 'the machine PATH contains the install directory once'
 
     $visible = @(Get-LipEntries | Where-Object { -not $_.SystemComponent })
@@ -120,12 +120,10 @@ function Assert-Installed([string] $Version) {
 
     # Resolve lip the way a newly opened shell does.
     $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    foreach ($command in 'lip', 'lipd') {
-        $source = (Get-Command $command).Source
-        Assert ($source -eq (Join-Path $installDir "$command.exe")) "$command resolves to the install directory (got $source)"
-        & $command --version
-        Assert ($LASTEXITCODE -eq 0) "$command --version succeeds"
-    }
+    $source = (Get-Command lip).Source
+    Assert ($source -eq (Join-Path $installDir 'lip.exe')) "lip resolves to the install directory (got $source)"
+    & lip --version
+    Assert ($LASTEXITCODE -eq 0) 'lip --version succeeds'
 }
 
 function Assert-NotInstalled {

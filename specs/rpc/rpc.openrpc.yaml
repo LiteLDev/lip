@@ -1,7 +1,7 @@
 openrpc: 1.2.6
 info:
-  title: lip Daemon JSON-RPC API
-  description: API for interacting with the lip package installer daemon.
+  title: lip rpc JSON-RPC API
+  description: API for interacting with the lip package installer through lip rpc.
   version: 4.0.0
 methods:
   - name: CacheClean
@@ -71,7 +71,7 @@ methods:
         type: 'null'
   - name: Init
     description: >-
-      Writes a manifest.json package document of format "bf45b1" in the daemon working directory,
+      Writes a manifest.json package document of format "bf45b1" in the current directory,
       as lip init: its id named after the directory, version "0.1.0", no dependencies, and a native
       mod with entry "<id>.dll". Fails, writing nothing, when manifest.json exists or the resulting
       id is not a valid id.
@@ -86,7 +86,7 @@ methods:
       become explicitly installed. Fails when a requested package is already explicitly installed or
       two arguments request the same identity. Each element of packages is a package argument (CLI
       section 2): an https:// URL [#variant] of a ZIP archive; a local ZIP file [#variant], absolute
-      or relative to the daemon working directory; or a package path [#variant] optionally followed
+      or relative to the current directory; or a package path [#variant] optionally followed
       by @<version>, @branch:<name>, @tag:<name> or @rev:<40-digit commit id>. A local directory is
       rejected.
     params:
@@ -150,10 +150,10 @@ methods:
         maxItems: 2
   - name: Migrate
     description: >-
-      Converts the package repository in the daemon working directory to a manifest.json of format
+      Converts the package repository in the current directory to a manifest.json of format
       "bf45b1", as lip migrate: from tooth.json (format 1, 2 or 3), then deleted, or else from a
       LeviLamina manifest.json. What is dropped or converted with another meaning is reported
-      through PrintWarning. lipd asks no questions: when lip migrate would ask for a value, the
+      through PrintWarning. lip rpc asks no questions: when lip migrate would ask for a value, the
       method fails, naming the value. Fails, changing nothing, also when tooth.json and
       manifest.json both exist, when neither exists, when manifest.json already has the format key,
       or when a file cannot be read.
@@ -281,7 +281,7 @@ methods:
       - name: package
         description: >-
           The package to view: a package argument (CLI section 2): an https:// URL [#variant] of a
-          ZIP archive; a local ZIP file [#variant], absolute or relative to the daemon working
+          ZIP archive; a local ZIP file [#variant], absolute or relative to the current
           directory; or a package path [#variant] optionally followed by @<version>, @branch:<name>,
           @tag:<name> or @rev:<40-digit commit id>. A local directory is rejected.
         schema:
@@ -294,8 +294,8 @@ methods:
       description: The document as JSON text.
   - name: PrintInfo
     description: >-
-      Request sent by lipd to the client: an informational message. The client must answer with the
-      result null; lipd does not proceed with the method that sent it until the answer arrives.
+      Request sent by lip rpc to the client: an informational message. The client must answer with the
+      result null; lip rpc does not proceed with the method that sent it until the answer arrives.
     params:
       - name: message
         description: The message to display.
@@ -308,8 +308,8 @@ methods:
         type: 'null'
   - name: PrintSuccess
     description: >-
-      Request sent by lipd to the client: a success message. The client must answer with the result
-      null; lipd does not proceed with the method that sent it until the answer arrives.
+      Request sent by lip rpc to the client: a success message. The client must answer with the result
+      null; lip rpc does not proceed with the method that sent it until the answer arrives.
     params:
       - name: message
         description: The message to display.
@@ -322,8 +322,8 @@ methods:
         type: 'null'
   - name: PrintWarning
     description: >-
-      Request sent by lipd to the client: a warning. The client must answer with the result null;
-      lipd does not proceed with the method that sent it until the answer arrives.
+      Request sent by lip rpc to the client: a warning. The client must answer with the result null;
+      lip rpc does not proceed with the method that sent it until the answer arrives.
     params:
       - name: message
         description: The message to display.
@@ -336,8 +336,8 @@ methods:
         type: 'null'
   - name: PrintError
     description: >-
-      Request sent by lipd to the client: an error message. The client must answer with the result
-      null; lipd does not proceed with the method that sent it until the answer arrives.
+      Request sent by lip rpc to the client: an error message. The client must answer with the result
+      null; lip rpc does not proceed with the method that sent it until the answer arrives.
     params:
       - name: message
         description: The message to display.
@@ -350,8 +350,8 @@ methods:
         type: 'null'
   - name: ReportProgress
     description: >-
-      Request sent by lipd to the client: progress of a running task. The client must answer with
-      the result null; lipd does not wait for the answer.
+      Request sent by lip rpc to the client: progress of a running task. The client must answer with
+      the result null; lip rpc does not wait for the answer.
     params:
       - name: id
         description: Identifies the task; all reports of one task carry the same id.

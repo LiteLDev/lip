@@ -34,10 +34,6 @@
       <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
     </Component>
 
-    <Component Directory="INSTALLFOLDER">
-      <File Source="$(BinDir)\lipd.exe" />
-    </Component>
-
     <!--
       Versions up to 0.35.0 were installed by an Inno Setup installer. Run its uninstaller
       first, so that it neither keeps a second entry in Installed Apps nor later deletes the

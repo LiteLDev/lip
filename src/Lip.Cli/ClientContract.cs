@@ -1,7 +1,7 @@
 using PolyType;
 using StreamJsonRpc;
 
-namespace Lip.Daemon;
+namespace Lip.Cli;
 
 [JsonRpcContract]
 [GenerateShape(IncludeMethods = MethodShapeFlags.PublicInstance)]

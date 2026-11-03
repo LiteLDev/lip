@@ -25,7 +25,7 @@ git commit -m "Migrate to manifest.json"
 - `tooth.json` 中 `win-*` 这样的平台模式所代表的 RID，以逗号分隔；
 - 对于不在 GitHub 上的 tooth 路径，包将要发布到的 URL 前缀。
 
-若标准输入或标准错误不是终端（例如在 CI 中），`lip migrate` 会失败，指明本应询问的值，且不做任何修改。守护进程的 `Migrate` 方法从不询问：它会以同样的方式失败。
+若标准输入或标准错误不是终端（例如在 CI 中），`lip migrate` 会失败，指明本应询问的值，且不做任何修改。[`lip rpc`](../cli/commands/rpc.md) 的 `Migrate` 方法从不询问：它会以同样的方式失败。
 
 ### 警告
 

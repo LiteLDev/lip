@@ -2,9 +2,9 @@ using Lip.Core.PublicApi;
 using Spectre.Console.Cli;
 using StreamJsonRpc;
 
-namespace Lip.Daemon.Commands;
+namespace Lip.Cli.Commands;
 
-public class RunCommand : AsyncCommand<RunCommand.Settings> {
+public class RpcCommand : AsyncCommand<RpcCommand.Settings> {
   public class Settings : CommandSettings {
   }
 

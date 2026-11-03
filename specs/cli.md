@@ -1,6 +1,6 @@
 # lip Command Line Interface Specification
 
-This specification defines the externally observable behavior of the `lip` command. It uses the terms of the [package specification][PF] and cites its sections as "PF §N". A reference "§N" names section N of this specification.
+This specification defines the externally observable behavior of the `lip` command. It uses the terms of the [package specification][PF] and cites its sections as "PF §N". The [JSON-RPC specification][RPC] defines `lip rpc` (§5.12). A reference "§N" names section N of this specification.
 
 ## Conventions
 
@@ -37,6 +37,7 @@ The [workspace][PF workspace] of every [command] is the current working director
 
 - A [result] is written to standard output.
 - A [message] is written to standard error.
+- `lip rpc` writes to standard output only the messages of its protocol ([RPC] §2).
 - With `--json`, the [result] is written to standard output as JSON ([RFC 8259]) of the shape the [command] defines, and nothing else is written to standard output. Without `--json`, the layout of a [result] is meant for people and is not specified.
 
 ### 1.3 Exit Status
@@ -238,6 +239,10 @@ Without `--output`, the output is the [result], written as JSON. With `--output`
 
 The [command] fails and writes nothing when `manifest.json` is missing or is not a valid [document][PF document] of format `bf45b1`, when no [Target][PF Target] or more than one is selected, or when packing fails (PF §8).
 
+### 5.12 `lip rpc`
+
+Serves the [commands][command] over [JSON-RPC 2.0] on standard input and standard output, as the [JSON-RPC specification][RPC] defines.
+
 ## 6. Configuration
 
 <a id="t-configuration"></a>The **configuration** belongs to the operating system user, and is stored in the file `config.yaml`:
@@ -266,6 +271,8 @@ The [lock][PF lock] (PF §9) of a [workspace][PF workspace] is the file `.lip/lo
 ## References
 
 - [PF]: lip Package Specification.
+- [RPC]: lip rpc JSON-RPC Specification.
+- [JSON-RPC 2.0]: JSON-RPC 2.0 Specification.
 - [RFC 2119], [RFC 8174]: Key words for use in RFCs to Indicate Requirement Levels.
 - [RFC 8259]: The JavaScript Object Notation (JSON) Data Interchange Format.
 - [SemVer 2.0.0]: Semantic Versioning 2.0.0.
@@ -339,8 +346,11 @@ The [lock][PF lock] (PF §9) of a [workspace][PF workspace] is the file `.lip/lo
 [PF tooth range]: package_format.md#t-tooth-range
 [lock-schema]: schemas/lock.schema.yaml
 
+[RPC]: rpc/rpc.md
+
 [RFC 2119]: https://www.rfc-editor.org/rfc/rfc2119
 [RFC 8174]: https://www.rfc-editor.org/rfc/rfc8174
+[JSON-RPC 2.0]: https://www.jsonrpc.org/specification
 [RFC 8259]: https://www.rfc-editor.org/rfc/rfc8259
 [SemVer 2.0.0]: https://semver.org/spec/v2.0.0.html
 [XDG]: https://specifications.freedesktop.org/basedir-spec/latest/

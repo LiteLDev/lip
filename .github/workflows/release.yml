@@ -87,15 +87,6 @@ jobs:
             -p:DebugType=embedded \
             -p:Version=${{ needs.create-release.outputs.version }}
 
-      - shell: bash
-        run: |
-          dotnet publish src/Lip.Daemon \
-            -o bin \
-            -r ${{ matrix.runtime }} \
-            --no-self-contained \
-            -p:DebugType=embedded \
-            -p:Version=${{ needs.create-release.outputs.version }}
-
       - uses: actions/upload-artifact@v7
         with:
           name: lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}
@@ -244,7 +235,7 @@ jobs:
           cp -R packaging/npm/. .tmp/npm/
 
       - run: |
-          chmod +x .tmp/npm/lip.js .tmp/npm/lipd.js
+          chmod +x .tmp/npm/lip.js
 
       - run: |
           node -e '
@@ -257,19 +248,18 @@ jobs:
 
       - run: |
           for target in \
-            "linux-x64:linux-x64:lip:lipd" \
-            "linux-arm64:linux-arm64:lip:lipd" \
-            "osx-x64:darwin-x64:lip:lipd" \
-            "osx-arm64:darwin-arm64:lip:lipd" \
-            "win-x64:win32-x64:lip.exe:lipd.exe" \
-            "win-arm64:win32-arm64:lip.exe:lipd.exe"
+            "linux-x64:linux-x64:lip" \
+            "linux-arm64:linux-arm64:lip" \
+            "osx-x64:darwin-x64:lip" \
+            "osx-arm64:darwin-arm64:lip" \
+            "win-x64:win32-x64:lip.exe" \
+            "win-arm64:win32-arm64:lip.exe"
           do
-            IFS=: read -r runtime npm_dir cli_binary daemon_binary <<< "$target"
+            IFS=: read -r runtime npm_dir cli_binary <<< "$target"
             mkdir -p ".tmp/npm/$npm_dir"
             cp ".tmp/artifacts/lip-${{ needs.create-release.outputs.version }}-$runtime/$cli_binary" ".tmp/npm/$npm_dir/$cli_binary"
-            cp ".tmp/artifacts/lip-${{ needs.create-release.outputs.version }}-$runtime/$daemon_binary" ".tmp/npm/$npm_dir/$daemon_binary"
             if [[ "$cli_binary" != *.exe ]]; then
-              chmod +x ".tmp/npm/$npm_dir/$cli_binary" ".tmp/npm/$npm_dir/$daemon_binary"
+              chmod +x ".tmp/npm/$npm_dir/$cli_binary"
             fi
           done
 

@@ -1,3 +1,4 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
@@ -5,8 +6,6 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lip.Daemon", "src\Lip.Daemon\Lip.Daemon.csproj", "{3D33FB64-1E71-B9CF-CF69-2ED482C03446}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Golang.Org.X.Mod", "src\Golang.Org.X.Mod\Golang.Org.X.Mod.csproj", "{5EF70C58-2E81-A90B-EFD1-756F8D51BD11}"
 EndProject
@@ -26,10 +25,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{3D33FB64-1E71-B9CF-CF69-2ED482C03446}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{3D33FB64-1E71-B9CF-CF69-2ED482C03446}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{3D33FB64-1E71-B9CF-CF69-2ED482C03446}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{3D33FB64-1E71-B9CF-CF69-2ED482C03446}.Release|Any CPU.Build.0 = Release|Any CPU
 		{5EF70C58-2E81-A90B-EFD1-756F8D51BD11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5EF70C58-2E81-A90B-EFD1-756F8D51BD11}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5EF70C58-2E81-A90B-EFD1-756F8D51BD11}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -59,7 +54,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{3D33FB64-1E71-B9CF-CF69-2ED482C03446} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{5EF70C58-2E81-A90B-EFD1-756F8D51BD11} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{DB874841-6927-6B73-A75E-5BB2FFF563C0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{4817D91B-B948-AAB1-1693-9C35D5C7DFD0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}

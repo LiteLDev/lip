@@ -22,7 +22,7 @@ features:
   - title: 依赖解析
     details: 自动依赖求解并按拓扑顺序安装。
   - title: 面向集成
-    details: 提供 JSON-RPC 守护进程（lipd），可无缝集成到 IDE 与工具。
+    details: 提供 JSON-RPC 接口（lip rpc），可无缝集成到 IDE 与工具。
   - title: 跨平台
     details: 支持 Windows、Linux 和 macOS，并可根据平台选择变体。
 ---
