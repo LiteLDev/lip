@@ -3,9 +3,11 @@ on:
   # skip themselves when no build input changed.
   pull_request:
   merge_group:
+  # Other branches build through their pull request, so a pull request does not report build-result twice.
   push:
-    branches-ignore:
-      - 'gh-readonly-queue/**'
+    branches:
+      - main
+      - 'release/**'
     paths:
       - .github/workflows/build.yml
       - 'src/**'
