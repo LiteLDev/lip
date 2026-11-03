@@ -1,20 +1,57 @@
 on:
-  release:
-    types:
-      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of the draft release to build and publish (e.g. v1.2.3)
+        required: true
+
+concurrency:
+  group: release-${{ inputs.tag }}
 
 jobs:
   get-version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get-version.outputs.VERSION }}
+      channel: ${{ steps.get-channel.outputs.CHANNEL }}
+      npm-tag: ${{ steps.get-channel.outputs.NPM_TAG }}
     steps:
-      - uses: actions/checkout@v7
-
       - id: get-version
         shell: bash
         run: |
-          echo "VERSION=$(echo '${{ github.event.release.tag_name }}' | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$(echo '${{ inputs.tag }}' | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+
+      # prerelease: a version like 1.2.3-beta.1, published to npm under its tag (beta).
+      # latest: the newest stable version, marked Latest on GitHub, npm and winget.
+      # maintenance: a bugfix release of an older line, published to npm under release-X.Y.
+      - id: get-channel
+        shell: bash
+        run: |
+          if [[ "$VERSION" == *-* ]]; then
+            npm_tag="${VERSION#*-}"
+            echo "CHANNEL=prerelease" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=${npm_tag%%.*}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          newest=$(
+            {
+              gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1000 \
+                --json tagName --jq '.[].tagName' \
+                | sed -n 's/^v\([0-9]*\.[0-9]*\.[0-9]*\)$/\1/p'
+              echo "$VERSION"
+            } | sort -V | tail -1
+          )
+          if [[ "$newest" == "$VERSION" ]]; then
+            echo "CHANNEL=latest" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "CHANNEL=maintenance" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=release-${VERSION%.*}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.get-version.outputs.VERSION }}
 
   build:
     runs-on: ${{ matrix.runs-on }}
@@ -38,6 +75,8 @@ jobs:
             runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/setup-dotnet@v6
         with:
@@ -66,27 +105,13 @@ jobs:
           name: lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}
           path: bin/
 
-  create-release-notes:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - id: extract-release-notes
-        uses: ffurrer2/extract-release-notes@v3
-
-      - uses: softprops/action-gh-release@v3
-        with:
-          body: ${{ steps.extract-release-notes.outputs.release_notes }}
-
   create-portable-archives:
     runs-on: ubuntu-latest
     needs:
       - build
       - get-version
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -99,6 +124,8 @@ jobs:
           - win-x64
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/download-artifact@v8
         with:
@@ -114,18 +141,18 @@ jobs:
         run: |
           zip -r9 "../lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}.zip" *
 
-      - uses: softprops/action-gh-release@v3
+      - uses: actions/upload-artifact@v7
         with:
-          files: |
-            lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}.{zip,tar.xz}
+          name: release-asset-${{ matrix.runtime }}
+          path: lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}.*
 
-  create-windows-installer:
+  create-windows-installers:
     runs-on: ${{ matrix.runs-on }}
     needs:
       - build
       - get-version
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -138,6 +165,8 @@ jobs:
             build-arch: x64compatible
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/download-artifact@v8
         with:
@@ -155,21 +184,59 @@ jobs:
             /DAppVersion=${{ needs.get-version.outputs.version }}
             /DBuildArch=${{ matrix.build-arch }}
 
-      - uses: softprops/action-gh-release@v3
+      - uses: actions/upload-artifact@v7
         with:
-          files: |
-            .tmp/inno/lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}-setup.exe
+          name: release-asset-${{ matrix.runtime }}-installers
+          path: .tmp/inno/lip-${{ needs.get-version.outputs.version }}-${{ matrix.runtime }}-setup.exe
+
+  publish-release:
+    runs-on: ubuntu-latest
+    needs:
+      - create-portable-archives
+      - create-windows-installers
+      - get-version
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-asset-*
+          path: .tmp/assets
+          merge-multiple: true
+
+      - run: |
+          gh release upload '${{ inputs.tag }}' .tmp/assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - run: |
+          case '${{ needs.get-version.outputs.channel }}' in
+            prerelease) flags=(--prerelease) ;;
+            latest) flags=(--latest) ;;
+            *) flags=(--latest=false) ;;
+          esac
+          gh release edit '${{ inputs.tag }}' \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            "${flags[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   publish-npm:
     runs-on: ubuntu-latest
     needs:
       - build
       - get-version
+      - publish-release
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/setup-node@v7
         with:
@@ -214,25 +281,20 @@ jobs:
             fi
           done
 
-      - if: contains(needs.get-version.outputs.version, '-')
-        run: |
-          version='${{ needs.get-version.outputs.version }}'
-          tag="${version#*-}"
-          tag="${tag%%.*}"
-          npm publish .tmp/npm --tag "$tag"
+      - run: |
+          npm publish .tmp/npm --tag '${{ needs.get-version.outputs.npm-tag }}'
 
-      - if: ${{ !contains(needs.get-version.outputs.version, '-') }}
-        run: |
-          npm publish .tmp/npm
-
+  # winget offers the newest version only, so prereleases and older lines stay off it.
   publish-winget:
+    if: needs.get-version.outputs.channel == 'latest'
     needs:
-      - build
-      - create-portable-archives
       - get-version
+      - publish-release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
   
       - run: gh repo sync lip-winget-bot/winget-pkgs -b master
         env:
