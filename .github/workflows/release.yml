@@ -13,11 +13,45 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get-version.outputs.VERSION }}
+      channel: ${{ steps.get-channel.outputs.CHANNEL }}
+      npm-tag: ${{ steps.get-channel.outputs.NPM_TAG }}
     steps:
       - id: get-version
         shell: bash
         run: |
           echo "VERSION=$(echo '${{ inputs.tag }}' | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+
+      # prerelease: a version like 1.2.3-beta.1, published to npm under its tag (beta).
+      # latest: the newest stable version, marked Latest on GitHub, npm and winget.
+      # maintenance: a bugfix release of an older line, published to npm under release-X.Y.
+      - id: get-channel
+        shell: bash
+        run: |
+          if [[ "$VERSION" == *-* ]]; then
+            npm_tag="${VERSION#*-}"
+            echo "CHANNEL=prerelease" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=${npm_tag%%.*}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          newest=$(
+            {
+              gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1000 \
+                --json tagName --jq '.[].tagName' \
+                | sed -n 's/^v\([0-9]*\.[0-9]*\.[0-9]*\)$/\1/p'
+              echo "$VERSION"
+            } | sort -V | tail -1
+          )
+          if [[ "$newest" == "$VERSION" ]]; then
+            echo "CHANNEL=latest" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "CHANNEL=maintenance" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=release-${VERSION%.*}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.get-version.outputs.VERSION }}
 
   build:
     runs-on: ${{ matrix.runs-on }}
@@ -179,21 +213,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - if: contains(needs.get-version.outputs.version, '-')
-        run: |
+      - run: |
+          case '${{ needs.get-version.outputs.channel }}' in
+            prerelease) flags=(--prerelease) ;;
+            latest) flags=(--latest) ;;
+            *) flags=(--latest=false) ;;
+          esac
           gh release edit '${{ inputs.tag }}' \
             --repo "$GITHUB_REPOSITORY" \
             --draft=false \
-            --prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - if: ${{ !contains(needs.get-version.outputs.version, '-') }}
-        run: |
-          gh release edit '${{ inputs.tag }}' \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false \
-            --latest
+            "${flags[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -254,18 +283,12 @@ jobs:
             fi
           done
 
-      - if: contains(needs.get-version.outputs.version, '-')
-        run: |
-          version='${{ needs.get-version.outputs.version }}'
-          tag="${version#*-}"
-          tag="${tag%%.*}"
-          npm publish .tmp/npm --tag "$tag"
+      - run: |
+          npm publish .tmp/npm --tag '${{ needs.get-version.outputs.npm-tag }}'
 
-      - if: ${{ !contains(needs.get-version.outputs.version, '-') }}
-        run: |
-          npm publish .tmp/npm
-
+  # winget offers the newest version only, so prereleases and older lines stay off it.
   publish-winget:
+    if: needs.get-version.outputs.channel == 'latest'
     needs:
       - get-version
       - publish-release

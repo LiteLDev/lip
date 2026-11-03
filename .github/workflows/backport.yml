@@ -1,0 +1,40 @@
+# Cherry-picks a merged pull request labelled "backport release/X.Y" onto release/X.Y and opens a pull request there.
+on:
+  pull_request_target:
+    types:
+      - closed
+      - labeled
+
+concurrency:
+  group: backport-${{ github.event.pull_request.number }}
+
+jobs:
+  backport:
+    if: github.event.pull_request.merged && (github.event.action == 'closed' || startsWith(github.event.label.name, 'backport '))
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      # Checks out the base branch, never the pull request's code.
+      - uses: actions/checkout@v7
+
+      - id: backport
+        uses: korthout/backport-action@v3
+        with:
+          label_pattern: ^backport ([^ ]+)$
+          pull_title: ${pull_title}
+          pull_description: |-
+            Backport of #${pull_number} to `${target_branch}`.
+
+      # Pull requests opened with the workflow token start no workflows, so build them here.
+      - if: steps.backport.outputs.created_pull_numbers
+        run: |
+          for number in $NUMBERS; do
+            branch=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)
+            gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBERS: ${{ steps.backport.outputs.created_pull_numbers }}

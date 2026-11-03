@@ -1,0 +1,25 @@
+# A squash merge commits the pull request title, and the release notes list it.
+on:
+  pull_request:
+    types:
+      - edited
+      - opened
+      - reopened
+      - synchronize
+  merge_group:
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      # The merge queue only takes pull requests whose title passed.
+      - if: github.event_name == 'pull_request'
+        run: |
+          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([^()]+\))?!?: [^ ].*$'
+          if [[ ! "$TITLE" =~ $pattern ]]; then
+            echo "::error::The title must follow Conventional Commits, like 'feat: ...' or 'fix(solver): ...'"
+            exit 1
+          fi
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
