@@ -243,6 +243,16 @@ jobs:
           ./packaging/wix/build.ps1 -Version 0.0.1 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
           ./packaging/wix/build.ps1 -Version 0.0.2 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
 
+      # Some runners start without the Docker engine running.
+      - run: |
+          $service = Get-Service docker
+          Write-Output "Docker service: $($service.Status)"
+          if ($service.Status -ne 'Running') {
+            Start-Service docker
+            $service.WaitForStatus('Running', '00:02:00')
+          }
+          docker version
+
       - run: |
           docker run --rm `
             -v "${{ github.workspace }}:C:\lip" `
