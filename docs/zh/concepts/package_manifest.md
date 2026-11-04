@@ -2,10 +2,10 @@
 
 lip 包由其归档根部的 `manifest.json` 描述，并以 `"format": "bf45b1"` 标记。同一份文档也由
 LeviLamina 读取：LeviLamina 加载其描述的 mod，lip 负责安装它们。
-规范性定义见[包格式规范](https://github.com/LiteLDev/lip/blob/main/specs/package_format.md)。
+规范性定义见[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package/README.md)。
 
 该格式由 JSON Schema
-[`manifest.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/manifest.schema.yaml)
+[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json)
 描述。lip 还可读取不带 `format` 的 LeviLamina 清单和 lip v0.x 的 `tooth.json`，参见[旧格式](#旧格式)。
 
 ## 归档
@@ -306,7 +306,7 @@ lip 保留 `variant` 等于 ref 的 variant、且所有选择器（`platform`、
 ## 旧格式
 
 lip 把下列格式读作包文档，但从不写入它们；请使用 [`lip migrate`](../cli/commands/migrate.md)
-转换你的包。确切的映射见[规范](https://github.com/LiteLDev/lip/blob/main/specs/package_format.md) §10。
+转换你的包。确切的映射见[原包格式规范](https://github.com/LiteLDev/lip/blob/1e023e6/specs/package_format.md) §10。
 
 ### LeviLamina 清单
 
@@ -339,8 +339,8 @@ lip v0.x 的包使用 `tooth.json`（格式版本 1 到 3）。lip 在内存中�
 - 锁以 `"kind": "tooth"` 记录该 `tooth.json`；卸载或更新该包时，lip 会再次转换它。
 
 格式 3 的 schema 为
-[`legacy/v3/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v3/tooth.schema.yaml)
-（格式 1 和 2：[`legacy/v1/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v1/tooth.schema.yaml)、[`legacy/v2/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v2/tooth.schema.yaml)）：
+[`legacy/v3/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v3/tooth.schema.yaml)
+（格式 1 和 2：[`legacy/v1/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v1/tooth.schema.yaml)、[`legacy/v2/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v2/tooth.schema.yaml)）：
 
 ```json
 {

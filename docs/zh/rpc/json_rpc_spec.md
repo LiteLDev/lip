@@ -1,12 +1,12 @@
 # JSON-RPC 规范
 
-[`lip rpc`](../cli/commands/rpc.md) 通过 JSON-RPC 2.0 接口暴露 lip 的核心能力。规范性定义见 [JSON-RPC 接口规范](https://github.com/LiteLDev/lip/blob/main/specs/rpc/rpc.md)。
+[`lip rpc`](../cli/commands/rpc.md) 通过 JSON-RPC 2.0 接口暴露 lip 的核心能力。最后一版定义见 [JSON-RPC 接口规范](https://github.com/LiteLDev/lip/blob/1e023e6/specs/rpc/rpc.md)。
 
 ## OpenRPC 规范
 
 关于全部方法、参数与返回类型的完整且严格定义，请参阅我们的 OpenRPC schema：
 
-[**rpc.openrpc.yaml**](https://github.com/LiteLDev/lip/blob/main/specs/rpc/rpc.openrpc.yaml)
+[**rpc.openrpc.yaml**](https://github.com/LiteLDev/lip/blob/1e023e6/specs/rpc/rpc.openrpc.yaml)
 
 该 schema 定义了：
 - 所有可用 RPC 方法（如 `Install`、`List`、`Versions`）。

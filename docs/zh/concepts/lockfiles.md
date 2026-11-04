@@ -26,7 +26,7 @@ lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当不�
 
 ## 结构
 
-锁文件是一个 JSON 文件，由 JSON Schema [`lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/lock.schema.yaml) 描述：
+锁文件是一个 JSON 文件，由 JSON Schema [`lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/lock.schema.yaml) 描述：
 
 ```json
 {
@@ -105,7 +105,7 @@ lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若没有
 
 `tooth_lock.json` 记录的是文件的绝对路径。若工作区在这些包安装之后被移动过，这些路径会指向旧位置：lip 会根据所记录的文件现在在工作区中的位置推断出旧的根目录，并把这些路径改写到当前工作区下，因此这些包仍然拥有各自的文件，也仍然可以卸载。
 
-旧格式由 [`tooth_lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/specs/schemas/legacy/v3/tooth_lock.schema.yaml) 描述：
+旧格式由 [`tooth_lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v3/tooth_lock.schema.yaml) 描述：
 
 ```json
 {
