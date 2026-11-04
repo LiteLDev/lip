@@ -1,4 +1,4 @@
-# lip
+# Userspace
 
 This document defines the files of the program `lip` that belong to the operating system user rather than to a workspace: the [configuration], the [data directory] and the [cache directory]. The configuration file format is defined by the JSON Schema [`config.schema.json`](config.schema.json).
 
