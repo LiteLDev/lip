@@ -26,7 +26,7 @@ The lockfile is saved once, after every package of an operation has been install
 
 ## Structure
 
-The lockfile is a JSON file described by the JSON Schema [`lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/lock.schema.yaml):
+The lockfile is a JSON file described by the JSON Schema [`lock.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/lock.schema.json):
 
 ```json
 {
