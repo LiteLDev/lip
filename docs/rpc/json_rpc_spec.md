@@ -1,12 +1,12 @@
 # JSON-RPC Specification
 
-[`lip rpc`](../cli/commands/rpc.md) exposes the core functionality of lip through a JSON-RPC 2.0 interface. The normative definition is the [JSON-RPC interface specification](https://github.com/LiteLDev/lip/blob/main/specs/rpc/rpc.md).
+[`lip rpc`](../cli/commands/rpc.md) exposes the core functionality of lip through a JSON-RPC 2.0 interface. It was last specified by the [JSON-RPC interface specification](https://github.com/LiteLDev/lip/blob/1e023e6/specs/rpc/rpc.md).
 
 ## OpenRPC Specification
 
 For a complete and rigorous definition of all available methods, parameters, and return types, please refer to our OpenRPC schema:
 
-[**rpc.openrpc.yaml**](https://github.com/LiteLDev/lip/blob/main/specs/rpc/rpc.openrpc.yaml)
+[**rpc.openrpc.yaml**](https://github.com/LiteLDev/lip/blob/1e023e6/specs/rpc/rpc.openrpc.yaml)
 
 This schema defines:
 -   All available RPC methods (e.g., `Install`, `List`, `Versions`).
