@@ -26,7 +26,7 @@ lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当不�
 
 ## 结构
 
-锁文件是一个 JSON 文件，由 JSON Schema [`lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/lock.schema.yaml) 描述：
+锁文件是一个 JSON 文件，由 JSON Schema [`lock.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/lock.schema.json) 描述：
 
 ```json
 {
