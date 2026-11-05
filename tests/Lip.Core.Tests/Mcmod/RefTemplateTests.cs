@@ -41,6 +41,9 @@ public class RefTemplateTests {
   [InlineData("./{{name}}/", "{{name}}")]
   [InlineData("./{{rid}}/", "{{rid}}")]
   [InlineData("./{{ id }}/", "{{ id }}")]
+  [InlineData("./a{{b", "{{b")]
+  [InlineData("./{{id}}/{{x", "{{x")]
+  [InlineData("./{{{id}}/", "{{{id}}")]
   public void FindUnknownPlaceholder_ReturnsFirstUnknown(string template, string? expected) {
     // Act & Assert
     Assert.Equal(expected, RefTemplate.FindUnknownPlaceholder(template));

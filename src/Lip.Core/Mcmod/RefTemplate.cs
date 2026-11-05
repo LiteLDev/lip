@@ -3,16 +3,13 @@ using System.Text.RegularExpressions;
 namespace Lip.Core.Mcmod;
 
 /// Template expansion of target sources (spec §4.2): {{id}}, {{version}}, {{platform}} and
-/// {{runtime}}. Any other {{...}} makes the document invalid, which IDocumentParser checks with
+/// {{runtime}}. Any other "{{" makes the document invalid, which IDocumentParser checks with
 /// FindUnknownPlaceholder; Expand assumes a validated document.
 public static partial class RefTemplate {
-  private static readonly HashSet<string> _known = ["id", "version", "platform", "runtime"];
-
-  /// Returns the first placeholder that is not allowed, or null.
-  public static string? FindUnknownPlaceholder(string template) => PlaceholderRegex()
-      .Matches(template)
-      .Select(m => m.Value)
-      .FirstOrDefault(p => !_known.Contains(p[2..^2]));
+  /// Returns the first "{{" that does not begin a known placeholder, up to its "}}" or the end of
+  /// the template, or null.
+  public static string? FindUnknownPlaceholder(string template) =>
+      UnknownPlaceholderRegex().Match(template) is { Success: true } m ? m.Value : null;
 
   /// Whether a template contains a known placeholder.
   public static bool HasPlaceholder(string template) => KnownPlaceholderRegex().IsMatch(template);
@@ -43,4 +40,7 @@ public static partial class RefTemplate {
 
   [GeneratedRegex(@"\{\{(id|version|platform|runtime)\}\}")]
   private static partial Regex KnownPlaceholderRegex();
+
+  [GeneratedRegex(@"\{\{(?!(?:id|version|platform|runtime)\}\})(?:[^}]|\}(?!\}))*(?:\}\})?")]
+  private static partial Regex UnknownPlaceholderRegex();
 }
