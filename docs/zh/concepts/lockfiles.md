@@ -48,7 +48,7 @@ lip v0.36 把锁以相同格式保存在 `.lip/lock.json` 中：当不存在 `.l
 
 ### 包条目
 
-* **`id`**：包的身份：其 `manifest.json` 的 `id`（LeviLamina 清单则为其 `name`），或 `tooth.json` 包的 tooth 名称，带标签的变体在其后加 `-<label>`（例如 `LegacyScriptEngine-lua`）。
+* **`id`**：包的身份：其 `manifest.json` 的 `name`（LeviLamina 清单亦然），或 `tooth.json` 包的 tooth 名称，带标签的变体在其后加 `-<label>`（例如 `LegacyScriptEngine-lua`）。
 * **`version`**：已安装的版本。
 * **`kind`**：`manifest.json` 包（`bf45b1` 格式或 LeviLamina 清单）为 `"mcmod"`，`tooth.json` 包为 `"tooth"`。两者的安装与卸载方式相同；kind 说明 `manifest` 中保存的是什么。
 * **`explicit`**：

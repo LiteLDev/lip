@@ -48,7 +48,7 @@ The lockfile is a JSON file described by the JSON Schema [`workspace.schema.json
 
 ### Package Entry
 
-*   **`id`**: The identity of the package: the `id` of its `manifest.json` (the `name` of a LeviLamina manifest), or for a `tooth.json` package its tooth name, followed by `-<label>` for a labeled variant (e.g. `LegacyScriptEngine-lua`).
+*   **`id`**: The identity of the package: the `name` of its `manifest.json` (also for a LeviLamina manifest), or for a `tooth.json` package its tooth name, followed by `-<label>` for a labeled variant (e.g. `LegacyScriptEngine-lua`).
 *   **`version`**: The installed version.
 *   **`kind`**: `"mcmod"` for a `manifest.json` package (of format `bf45b1`, or a LeviLamina manifest), `"tooth"` for a `tooth.json` package. Both are installed and uninstalled the same way; the kind says what `manifest` holds.
 *   **`explicit`**:

@@ -8,9 +8,9 @@ namespace Lip.Core.Tests.Mcmod.Parsing;
 public class DocumentParserFixtureTests {
   private const string Format = "\"format\": \"bf45b1\"";
 
-  private const string Package = $"{Format}, \"id\": \"m\", \"version\": \"1.0.0\"";
+  private const string Package = $"{Format}, \"name\": \"m\", \"version\": \"1.0.0\"";
 
-  private const string Mod = "\"mod\": { \"loader\": \"native\", \"entry\": \"m.dll\" }";
+  private const string Mod = "\"entry\": \"m.dll\", \"type\": \"native\"";
 
   private readonly DocumentParser _parser = new(FakeVersionRange.Parse);
 
@@ -23,7 +23,6 @@ public class DocumentParserFixtureTests {
     MetaDocument doc = Assert.IsType<MetaDocument>(ParseFixture("spec-legacymoney-meta.json"));
 
     // Assert
-    Assert.Equal("LegacyMoney", doc.Id);
     Assert.Equal("0.22.0", doc.Version!.ToString());
     MetaTarget target = Assert.Single(doc.Targets);
     Assert.Equal("", target.Variant);
@@ -31,12 +30,12 @@ public class DocumentParserFixtureTests {
     Assert.Equal(["win-x64"], target.Runtimes);
     Assert.Equal(
         ["https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/"
-            + "{{id}}-{{platform}}-{{runtime}}.mcmod"],
+            + "LegacyMoney-{{platform}}-{{runtime}}.mcmod"],
         target.Source);
     Assert.Equal(
         "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/"
         + "LegacyMoney-client-win-x64.mcmod",
-        RefTemplate.Expand(target.Source[0], target, new(McmodPlatform.Client, "win-x64")).Target);
+        RefTemplate.Expand(target.Source[0], doc.Version, new(McmodPlatform.Client, "win-x64")).Target);
   }
 
   [Fact]
@@ -87,7 +86,7 @@ public class DocumentParserFixtureTests {
     MetaDocument doc = Assert.IsType<MetaDocument>(ParseFixture("spec-variant-meta.json"));
 
     // Assert
-    Assert.Null(doc.Id);
+    Assert.Null(doc.Version);
     Assert.Equal(["quickjs", "lua"], doc.Targets.Select(t => t.Variant));
     Assert.Equal(["./quickjs/"], doc.Targets[0].Source);
   }
@@ -123,37 +122,37 @@ public class DocumentParserFixtureTests {
     { $$"""{ {{Package}} /* c */ }""", "not strict JSON" },
     { $$"""{ {{Package}} // c""" + "\n}", "not strict JSON" },
     { $$"""{ {{Package}}, }""", "not strict JSON" },
-    { $$"""{ {{Package}}, "id": "n" }""", "not strict JSON" },
+    { $$"""{ {{Package}}, "name": "n" }""", "not strict JSON" },
     { $$"""{ {{Package}} } {}""", "not strict JSON" },
     { $$"""{ {{Package}}, "x": 'a' }""", "not strict JSON" },
     // §4: the format marker.
-    { """{ "format": "bf45b2", "id": "m", "version": "1.0.0" }""", "$.format: must be \"bf45b1\"" },
-    { """{ "format": 1, "id": "m", "version": "1.0.0" }""", "$.format: must be \"bf45b1\"" },
+    { """{ "format": "bf45b2", "name": "m", "version": "1.0.0" }""", "$.format: must be \"bf45b1\"" },
+    { """{ "format": 1, "name": "m", "version": "1.0.0" }""", "$.format: must be \"bf45b1\"" },
     // §4.1: package documents.
-    { $$"""{ {{Format}}, "version": "1.0.0" }""", "$.id: is required" },
-    { $$"""{ {{Format}}, "id": "m" }""", "$.version: is required" },
-    { $$"""{ {{Format}}, "id": "-m", "version": "1.0.0" }""", "$.id: '-m' does not match" },
-    { $$"""{ {{Format}}, "id": "m", "version": "1.0" }""", "$.version: '1.0' is not a SemVer" },
+    { $$"""{ {{Format}}, "version": "1.0.0" }""", "$.name: is required" },
+    { $$"""{ {{Format}}, "name": "m" }""", "$.version: is required" },
+    { $$"""{ {{Format}}, "name": "-m", "version": "1.0.0" }""", "$.name: '-m' does not match" },
+    { $$"""{ {{Format}}, "name": "m", "version": "1.0" }""", "$.version: '1.0' is not a SemVer" },
     { $$"""{ {{Package}}, "platform": "universal" }""", "$.platform: must be \"server\" or \"client\"" },
     { $$"""{ {{Package}}, "runtime": 1 }""", "$.runtime: must be a string" },
-    { $$"""{ {{Package}}, "info": { "authors": "a" } }""", "$.info.authors: must be an array" },
-    { $$"""{ {{Package}}, "info": { "icon": "http://x" } }""", "$.info.icon: 'http://x' is not an https URL" },
-    { $$"""{ {{Package}}, "dependencies": [] }""", "$.dependencies: must be an object" },
-    { $$"""{ {{Package}}, "dependencies": { "-a": "*" } }""", "$.dependencies[\"-a\"]: '-a' does not match" },
-    { $$"""{ {{Package}}, "dependencies": { "a": 1 } }""", "$.dependencies[\"a\"]: must be a range or an object" },
-    { $$"""{ {{Package}}, "dependencies": { "a": "invalid" } }""", "$.dependencies[\"a\"]: invalid version range" },
-    { $$"""{ {{Package}}, "dependencies": { "a": { "source": [] } } }""", "$.dependencies[\"a\"].source: must not be empty" },
-    { $$"""{ {{Package}}, "dependencies": { "a": { "source": "http://x/a.mcmod" } } }""", "$.dependencies[\"a\"].source: invalid ref" },
-    { $$"""{ {{Package}}, "dependencies": { "a": { "mod": false } } }""", "$.dependencies[\"a\"].mod: false is only allowed together with \"source\"" },
-    { $$"""{ {{Package}}, "dependencies": { "a": { "mod": 0 } } }""", "$.dependencies[\"a\"].mod: must be a boolean" },
-    { $$"""{ {{Package}}, "conflicts": { "a": {} } }""", "$.conflicts[\"a\"]: must be a string" },
-    { $$"""{ {{Package}}, "mod": {} }""", "$.mod.loader: is required" },
-    { $$"""{ {{Package}}, "mod": { "loader": "", "entry": "m.dll" } }""", "$.mod.loader: must not be empty" },
-    { $$"""{ {{Package}}, "mod": { "loader": "native", "entry": "m.dll", "loadAfter": ["_x"] } }""", "$.mod.loadAfter[0]: '_x' is neither an id nor \"*\"" },
-    { $$"""{ {{Package}}, "mod": { "loader": "native", "entry": "m.dll", "passive": "yes" } }""", "$.mod.passive: must be a boolean" },
-    { $$"""{ {{Package}}, "mod": { "loader": "native", "entry": "m.dll", "extra": [] } }""", "$.mod.extra: must be an object" },
-    { $$"""{ {{Package}}, {{Mod}}, "files": [] }""", "$.files: is not allowed together with \"mod\"" },
-    { $$"""{ {{Package}}, {{Mod}}, "archives": {} }""", "$.archives: is not allowed together with \"mod\"" },
+    { $$"""{ {{Package}}, "dependencies": {} }""", "$.dependencies: must be an array" },
+    { $$"""{ {{Package}}, "dependencies": [ "a" ] }""", "$.dependencies[0]: must be an object" },
+    { $$"""{ {{Package}}, "dependencies": [ {} ] }""", "$.dependencies[0].name: is required" },
+    { $$"""{ {{Package}}, "dependencies": [ { "name": "-a" } ] }""", "$.dependencies[0].name: '-a' does not match" },
+    { $$"""{ {{Package}}, "dependencies": [ { "name": "a", "version": 1 } ] }""", "$.dependencies[0].version: must be a string" },
+    { $$"""{ {{Package}}, "dependencies": [ { "name": "a", "version": "invalid" } ] }""", "$.dependencies[0].version: invalid version range" },
+    { $$"""{ {{Package}}, "dependencies": [ { "name": "a", "source": [] } ] }""", "$.dependencies[0].source: must not be empty" },
+    { $$"""{ {{Package}}, "dependencies": [ { "name": "a", "source": "http://x/a.mcmod" } ] }""", "$.dependencies[0].source: invalid ref" },
+    { $$"""{ {{Package}}, "conflicts": {} }""", "$.conflicts: must be an array" },
+    { $$"""{ {{Package}}, "conflicts": [ { "version": "*" } ] }""", "$.conflicts[0].name: is required" },
+    { $$"""{ {{Package}}, "conflicts": [ { "name": "a", "version": "invalid" } ] }""", "$.conflicts[0].version: invalid version range" },
+    { $$"""{ {{Package}}, "entry": "m.dll" }""", "$.type: is required together with \"entry\"" },
+    { $$"""{ {{Package}}, "type": "native" }""", "$.entry: is required together with \"type\"" },
+    { $$"""{ {{Package}}, "entry": "", "type": "native" }""", "$.entry: must not be empty" },
+    { $$"""{ {{Package}}, "entry": "m.dll", "type": "" }""", "$.type: must not be empty" },
+    { $$"""{ {{Package}}, "entry": 1, "type": "native" }""", "$.entry: must be a string" },
+    { $$"""{ {{Package}}, {{Mod}}, "files": [] }""", "$.files: is not allowed together with \"entry\"" },
+    { $$"""{ {{Package}}, {{Mod}}, "archives": {} }""", "$.archives: is not allowed together with \"entry\"" },
     { $$"""{ {{Package}}, "files": [ { "src": "a" } ] }""", "$.files[0].dest: is required" },
     { $$"""{ {{Package}}, "files": [ { "src": "/a", "dest": "a" } ] }""", "$.files[0].src: '/a' must not start with '/'" },
     { $$"""{ {{Package}}, "files": [ { "src": "a\\b", "dest": "a" } ] }""", "must not contain '\\'" },
@@ -180,9 +179,9 @@ public class DocumentParserFixtureTests {
     { $$"""{ {{Format}}, "targets": [ { "platform": "universal", "source": "./a/" } ] }""", "$.targets[0].platform: must be" },
     { $$"""{ {{Format}}, "targets": [ { "runtime": [], "source": "./a/" } ] }""", "$.targets[0].runtime: must not be empty" },
     { """{ "format": "bf45b1", "targets": [ { "source": "./{{name}}/" } ] }""", "unknown placeholder {{name}}" },
+    { """{ "format": "bf45b1", "targets": [ { "source": "./{{id}}/" } ] }""", "$.targets[0].source: unknown placeholder {{id}}" },
     { $$"""{ {{Format}}, "targets": [ { "source": "http://x/a.mcmod" } ] }""", "$.targets[0].source: invalid ref" },
-    { $$"""{ {{Format}}, "id": "-x", "targets": [ { "source": "./a/" } ] }""", "$.id: '-x' does not match" },
-    { $$"""{ {{Format}}, "targets": [ { "id": "-x", "source": "./a/" } ] }""", "$.targets[0].id: '-x' does not match" },
+    { $$"""{ {{Format}}, "version": "1.0", "targets": [ { "source": "./a/" } ] }""", "$.version: '1.0' is not a SemVer" },
     { $$"""{ {{Format}}, "targets": [ { "source": "./a/" }, { "source": "./b/" } ] }""", "$.targets[1]: ambiguous with $.targets[0]" },
     { $$"""{ {{Format}}, "targets": [ { "platform": "server", "source": "./a/" }, { "platform": ["client", "server"], "source": "./b/" } ] }""", "$.targets[1]: ambiguous" },
     // §10.1: LeviLamina manifests.

@@ -18,12 +18,16 @@ namespace Lip.Core.Mcmod.Compat;
 ///
 /// - A single unlabeled variant whose assets are all "self", for no platform or one exact
 ///   runtime: a package document holding its content.
-/// - Anything else: a meta document. Its targets hold the merged content of the variants of
+/// - Anything else: a meta document. Its targets stand for the merged content of the variants of
 ///   each label per runtime (patterns are asked for the runtimes they stand for), and point
 ///   where the packages are to be published (GitHub release assets for github.com paths, under
-///   an asked URL prefix otherwise); publishing them is left to the author (lip pack).
+///   an asked URL prefix otherwise). Targets holds a package document per target, in order;
+///   packing and publishing them is left to the author (lip pack).
 public static partial class ToothMigrator {
-  public record Result(JsonObject Document, IReadOnlyList<string> Notes);
+  public record Result(JsonObject Document, IReadOnlyList<string> Notes) {
+    /// The package document of each target of a meta document, in order; empty otherwise.
+    public IReadOnlyList<JsonObject> Targets { get; init; } = [];
+  }
 
   private static readonly string[] _knownScripts = [
     "pre_install", "install", "post_install", "pre_uninstall", "uninstall", "post_uninstall",
@@ -47,38 +51,50 @@ public static partial class ToothMigrator {
       id = await AskId(ui, $"the package id (the tooth name '{id}' is not a valid id)");
     }
 
-    JsonObject document = new() {
-      [ManifestFormat.FormatKey] = ManifestFormat.Format,
-      ["id"] = id,
-      ["version"] = tooth.Version.ToString(),
-    };
-    JsonObject info = [];
-    AddString(info, "name", tooth.Info.Name);
-    AddString(info, "description", tooth.Info.Description);
-    if (tooth.Info.Tags.Count > 0) {
-      info["tags"] = new JsonArray([.. tooth.Info.Tags.Select(t => (JsonNode)t)]);
-    }
-    AddString(info, "icon", tooth.Info.AvatarUrl);
-    if (info.Count > 0) {
-      document["info"] = info;
+    if (tooth.Info.Name != "" || tooth.Info.Description != "" || tooth.Info.Tags.Count > 0
+        || tooth.Info.AvatarUrl != "") {
+      notes.Add("info: manifest.json has no package information; it was dropped.");
     }
 
     PackageManifestVariant? single = tooth.Variants.Count == 1 ? tooth.Variants[0] : null;
     if (single is not null && single.Label == ""
         && single.Assets.All(a => a.Type == PackageManifestAsset.AssetType.Self)
         && !IsPattern(single.Platform)) {
-      if (single.Platform != "") {
-        document["runtime"] = single.Platform;
-      }
-
+      JsonObject document = Package(id, tooth.Version, null,
+          single.Platform == "" ? null : single.Platform);
       foreach ((string key, JsonNode? value) in Content(context, single, "variants[0]")) {
         document[key] = value?.DeepClone();
       }
-    } else {
-      document["targets"] = await Targets(context, id);
+
+      return new Result(document, notes);
     }
 
-    return new Result(document, notes);
+    (JsonArray targets, List<JsonObject> packages) = await Targets(context, id);
+    JsonObject meta = new() {
+      [ManifestFormat.FormatKey] = ManifestFormat.Format,
+      ["version"] = tooth.Version.ToString(),
+      ["targets"] = targets,
+    };
+    return new Result(meta, notes) { Targets = packages };
+  }
+
+  /// The start of a package document: format, name, version, and platform and runtime when
+  /// given.
+  private static JsonObject Package(string name, SemVersion version, string? platform, string? runtime) {
+    JsonObject document = new() {
+      [ManifestFormat.FormatKey] = ManifestFormat.Format,
+      ["name"] = name,
+      ["version"] = version.ToString(),
+    };
+    if (platform is not null) {
+      document["platform"] = platform;
+    }
+
+    if (runtime is not null) {
+      document["runtime"] = runtime;
+    }
+
+    return document;
   }
 
   private sealed record Context(
@@ -91,8 +107,10 @@ public static partial class ToothMigrator {
     public IReadOnlyList<string>? Files => _selfFiles ??= SelfFiles?.Invoke();
   }
 
-  /// The targets of a meta document (specs/cli.md §5.8 rule 3).
-  private static async Task<JsonArray> Targets(Context context, string id) {
+  /// The targets of a meta document (specs/cli.md §5.8 rule 3), and the package document each
+  /// target is to name.
+  private static async Task<(JsonArray Targets, List<JsonObject> Packages)> Targets(
+      Context context, string id) {
     PackageManifest tooth = context.Tooth;
 
     // The runtimes every pattern platform stands for, asked once per pattern.
@@ -106,7 +124,9 @@ public static partial class ToothMigrator {
     string prefix = await ReleasePrefix(context.Ui, tooth.Path);
     bool hasClient = tooth.Variants.Any(v => v.Label == ToothCompat.ClientLabel);
 
-    JsonArray targets = [];
+    // Each target: its variant, platform and runtimes (null when absent), and content.
+    List<(string Variant, string? Platform, List<string>? Runtimes, string Name, JsonObject Content)>
+        selected = [];
     foreach (string label in tooth.Variants.Select(v => v.Label).Distinct()) {
       List<PackageManifestVariant> variants = [.. tooth.Variants.Where(v => v.Label == label)];
       string field = $"variants (label '{label}')";
@@ -120,70 +140,51 @@ public static partial class ToothMigrator {
       ];
 
       // Runtimes whose merged content is the same make one target.
-      List<(List<string> Runtimes, JsonObject Content)> groups = [];
+      List<(List<string>? Runtimes, JsonObject Content)> groups = [];
       foreach (string runtime in runtimes) {
         JsonObject content = Content(context, Merge(label, variants.Where(
             v => v.Platform == "" || v.Platform == runtime
                 || (IsPattern(v.Platform) && patterns[v.Platform].Contains(runtime)))), field);
         int existing = groups.FindIndex(g => JsonNode.DeepEquals(g.Content, content));
         if (existing >= 0) {
-          groups[existing].Runtimes.Add(runtime);
+          groups[existing].Runtimes!.Add(runtime);
         } else {
           groups.Add(([runtime], content));
         }
       }
 
-      List<JsonObject> labelTargets = [];
-      foreach ((List<string> groupRuntimes, JsonObject content) in groups) {
-        labelTargets.Add(Target(label, groupRuntimes, content));
-      }
-
       if (variants.Any(v => v.Platform == "")) {
-        labelTargets.Add(Target(
-            label, null, Content(context, Merge(label, variants.Where(v => v.Platform == "")), field)));
+        groups.Add((null, Content(context, Merge(label, variants.Where(v => v.Platform == "")), field)));
       }
 
-      foreach (JsonObject target in labelTargets) {
-        if (label != "") {
-          target["id"] = ToothCompat.GetIdentity(tooth.Path, label) is string labelId
+      string name = label == "" ? id
+          : ToothCompat.GetIdentity(tooth.Path, label) is string labelId
               && PackageNames.IsValid(labelId)
               ? labelId
               : PackageNames.FromText($"{id}-{label.Replace('/', '-')}", id);
-        }
+      string? platform = hasClient && label == "" ? McmodPlatform.Server.ToSpecString() : null;
 
-        if (hasClient && label == "") {
-          target["platform"] = McmodPlatform.Server.ToSpecString();
-        }
-
-        Order(target);
-        targets.Add(target);
+      foreach ((List<string>? groupRuntimes, JsonObject content) in groups) {
+        selected.Add((label, platform, groupRuntimes, name, content));
 
         // tooth.json selects the "client" label for "" on client platforms (spec §10.2 rule 2).
         if (label == ToothCompat.ClientLabel) {
-          JsonObject copy = (JsonObject)target.DeepClone();
-          copy.Remove("variant");
-          copy["platform"] = McmodPlatform.Client.ToSpecString();
-          Order(copy);
-          targets.Add(copy);
+          selected.Add(("", McmodPlatform.Client.ToSpecString(), groupRuntimes, name, content));
         }
       }
     }
 
-    foreach (JsonObject target in targets.Cast<JsonObject>()) {
-      string file = "{{id}}"
-          + (target.ContainsKey("platform") ? "-{{platform}}" : "")
-          + (target.ContainsKey("runtime") ? "-{{runtime}}" : "")
-          + ".mcmod";
-      target["source"] = prefix + file;
-      Order(target);
-    }
-
-    return targets;
-
-    static JsonObject Target(string label, List<string>? runtimes, JsonObject content) {
+    JsonArray targets = [];
+    List<JsonObject> packages = [];
+    foreach ((string variant, string? platform, List<string>? runtimes, string name, JsonObject content)
+        in selected) {
       JsonObject target = [];
-      if (label != "") {
-        target["variant"] = label;
+      if (variant != "") {
+        target["variant"] = variant;
+      }
+
+      if (platform is not null) {
+        target["platform"] = platform;
       }
 
       if (runtimes is not null) {
@@ -192,23 +193,23 @@ public static partial class ToothMigrator {
             : new JsonArray([.. runtimes.Select(r => (JsonNode)r)]);
       }
 
+      target["source"] = prefix + name
+          + (platform is not null ? "-{{platform}}" : "")
+          + (runtimes is not null ? "-{{runtime}}" : "")
+          + ".mcmod";
+      targets.Add(target);
+
+      // A package for several runtimes leaves its runtime open.
+      JsonObject package = Package(
+          name, tooth.Version, platform, runtimes is [string runtime] ? runtime : null);
       foreach ((string key, JsonNode? value) in content) {
-        target[key] = value?.DeepClone();
+        package[key] = value?.DeepClone();
       }
 
-      return target;
+      packages.Add(package);
     }
-  }
 
-  /// Puts the keys of a target in the order of the spec: selectors, source, overrides.
-  private static void Order(JsonObject target) {
-    string[] first = ["variant", "platform", "runtime", "source", "id"];
-    List<KeyValuePair<string, JsonNode?>> entries = [.. target];
-    target.Clear();
-    foreach (KeyValuePair<string, JsonNode?> entry in entries
-        .OrderBy(e => Array.IndexOf(first, e.Key) is int i and >= 0 ? i : first.Length)) {
-      target[entry.Key] = entry.Value;
-    }
+    return (targets, packages);
   }
 
   /// Merges variants as tooth.json does (spec §10.2 rule 2): dependencies, assets, preserve_files
@@ -248,7 +249,7 @@ public static partial class ToothMigrator {
     List<string> notes = context.Notes;
     JsonObject content = [];
 
-    JsonObject dependencies = [];
+    JsonArray dependencies = [];
     foreach ((PackageId dependency, SemVersionRange range) in variant.Dependencies) {
       string dependencyField = $"{field}.dependencies[\"{dependency}\"]";
       string key = ToothCompat.GetIdentity(dependency.Path, dependency.Variant);
@@ -258,13 +259,13 @@ public static partial class ToothMigrator {
         continue;
       }
 
-      JsonObject value = [];
+      JsonObject value = new() { ["name"] = key };
       if (ConvertRange(range, notes, dependencyField) is string version) {
         value["version"] = version;
       }
 
       value["source"] = dependency.ToString();
-      dependencies[key] = value;
+      dependencies.Add(value);
 
       if (dependency.Variant == ToothCompat.ClientLabel) {
         notes.Add($"{dependencyField}: keeps its \"client\" variant. tooth.json read it as the "
@@ -491,12 +492,6 @@ public static partial class ToothMigrator {
     }
   }
 
-  private static void AddString(JsonObject target, string key, string value) {
-    if (value != "") {
-      target[key] = value;
-    }
-  }
-
   /// The URL prefix (ending with '/') the packages of a meta document are published under.
   private static async Task<string> ReleasePrefix(IUserInteraction ui, string path) {
     string[] elements = path.Split('/');
@@ -512,7 +507,7 @@ public static partial class ToothMigrator {
             && uri.Scheme == Uri.UriSchemeHttps
             && RefTemplate.FindUnknownPlaceholder(answer) is null
             ? null
-            : "enter an https URL; it may use {{id}}, {{version}}, {{platform}} and {{runtime}}.");
+            : "enter an https URL; it may use {{version}}, {{platform}} and {{runtime}}.");
     return prefix.EndsWith('/') ? prefix : prefix + "/";
   }
 

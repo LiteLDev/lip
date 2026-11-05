@@ -17,38 +17,40 @@ For a directory named `MyMod`, the generated `manifest.json` looks like this:
 ```json
 {
   "format": "bf45b1",
-  "id": "MyMod",
+  "name": "MyMod",
   "version": "0.1.0",
-  "dependencies": {},
-  "mod": { "loader": "native", "entry": "MyMod.dll" }
+  "dependencies": [],
+  "entry": "MyMod.dll",
+  "type": "native"
 }
 ```
 
-This is both a LeviLamina mod manifest and a lip package. Edit `id` and `mod` to match your mod.
+This is both a LeviLamina mod manifest and a lip package. Edit `name`, `entry` and `type` to match your mod.
 
 ## Publishing a Version
 
-A package path such as `github.com/user/MyMod` is the git repository `https://github.com/user/MyMod.git`. To publish a version, push a tag named `v` followed by the [SemVer 2.0.0](https://semver.org/) version, e.g. `v1.0.0`. The `version` in the `manifest.json` at the tag must be the same version. Tags that are not exactly `v<SemVer>`, such as `v1.0`, are ignored.
+A package path such as `github.com/user/MyMod` is the git repository `https://github.com/user/MyMod.git`. To publish a version, push a tag named `v` followed by the [SemVer 2.0.0](https://semver.org/) version, e.g. `v1.0.0`. The `manifest.json` at the tag is a meta document (see [Pointing to Release Assets](#pointing-to-release-assets)); its `version`, if it has one, must be the same version. Tags that are not exactly `v<SemVer>`, such as `v1.0`, are ignored.
 
 ## A Mod
 
-A mod is a package with a `mod` key. The whole archive is written to `mods/<id>/`, on a server (by lip) as on a client (by launchers such as LeviLauncher). On a server, `plugins` is a link to `mods`, so LeviLamina finds the mod under `plugins/<id>/` as well.
+A mod is a package with the `entry` and `type` keys. The whole archive is written to `mods/<name>/`, on a server (by lip) as on a client (by launchers such as LeviLauncher). On a server, `plugins` is a link to `mods`, so LeviLamina finds the mod under `plugins/<name>/` as well.
 
-`dependencies` maps the id of each dependency to a version range, or to an object with `version` and `source`. Dependencies with a `source` are installed by lip; LeviLamina reads all of them and requires each to be a loaded mod. Add `"mod": false` to a dependency that is not a mod LeviLamina loads, such as a file package:
+`dependencies` is an array of objects with the `name` of the package depended on, and optionally a `version` range and a `source`. Dependencies with a `source` are installed by lip; LeviLamina reads all of them. `conflicts` lists, in the same way, packages that must not be installed together with this one; a conflict without `version` matches every version. Other keys that LeviLamina reads, such as `description`, `author`, `passive`, `loadBefore` and `loadAfter`, go at the top level, as LeviLamina defines them; lip ignores them:
 
 ```json
 {
   "format": "bf45b1",
-  "id": "LegacyMoney",
+  "name": "LegacyMoney",
   "version": "0.22.0",
   "platform": "server",
   "runtime": "win-x64",
-  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
-  "dependencies": {
-    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  },
-  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
+  "entry": "LegacyMoney.dll",
+  "type": "native",
+  "author": "LiteLDev",
+  "dependencies": [
+    { "name": "LeviLamina", "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
+    { "name": "iListenAttentively", "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
+  ],
   "preserve": ["config/", "data/"]
 }
 ```
@@ -57,12 +59,12 @@ Version ranges use the syntax of [node-semver](https://github.com/npm/node-semve
 
 ## A File Package
 
-A file package (without `mod`) places files in the workspace with `files`. Each entry copies a file, a directory or the files matching a glob, from the package itself or from an archive listed in `archives` that lip downloads:
+A file package (without `entry`) places files in the workspace with `files`. Each entry copies a file, a directory or the files matching a glob, from the package itself or from an archive listed in `archives` that lip downloads:
 
 ```json
 {
   "format": "bf45b1",
-  "id": "PeEditor",
+  "name": "PeEditor",
   "version": "3.9.0",
   "runtime": "win-x64",
   "files": [{ "src": "PeEditor.exe", "dest": "PeEditor.exe" }]
@@ -85,37 +87,38 @@ lip install ./LegacyMoney-server-win-x64.mcmod
 
 ## Pointing to Release Assets
 
-Built mods usually do not live in the repository. Instead, the repository's `manifest.json` at each tag is a meta document whose `targets` point to the `.mcmod` files attached to the release, one per platform and RID. Its other keys are the template of those packages:
+Built mods usually do not live in the repository. Instead, the repository's `manifest.json` at each tag is a meta document whose `targets` point to the `.mcmod` files attached to the release, one per platform and RID:
 
 ```json
 {
   "format": "bf45b1",
-  "id": "LegacyMoney",
   "version": "0.22.0",
-  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
-  "dependencies": {
-    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  },
-  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
-  "preserve": ["config/", "data/"],
   "targets": [
     {
-      "platform": ["server", "client"],
+      "platform": "server",
       "runtime": "win-x64",
-      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod"
+      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/LegacyMoney-server-win-x64.mcmod"
+    },
+    {
+      "platform": "client",
+      "runtime": "win-x64",
+      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/LegacyMoney-client-win-x64.mcmod"
     }
   ]
 }
 ```
 
+<span v-pre>`{{version}}` is replaced by the version of the tag. A `source` may also contain `{{platform}}` and `{{runtime}}`, replaced by the platform and RID of the workspace.</span>
+
 On a `win-x64` server, `lip install github.com/LiteLDev/LegacyMoney` reads this document at the newest tag and installs `LegacyMoney-server-win-x64.mcmod`.
 
-To build the `.mcmod` of each platform and RID, run `lip pack` in the repository: it completes the template with the selected target into a package document, and packs it with your files. A target may also override keys of the template, or remove them with `null`:
+Each `.mcmod` file has its own package document. Keep one for each target in the repository, e.g. in `targets/0/manifest.json` and `targets/1/manifest.json` (the one `lip init` created can be moved there), with `"platform": "server"` and `"platform": "client"` respectively, and run `lip pack` in its directory to pack it with your build output:
 
 ```sh
-lip pack build/ --platform server --rid win-x64 -o LegacyMoney-server-win-x64.mcmod
-lip pack build/ --platform client --rid win-x64 -o LegacyMoney-client-win-x64.mcmod
+cd targets/0
+lip pack ../../build/ -o ../../LegacyMoney-server-win-x64.mcmod
+cd ../1
+lip pack ../../build/ -o ../../LegacyMoney-client-win-x64.mcmod
 ```
 
 ## Variants

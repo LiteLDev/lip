@@ -30,6 +30,17 @@ public class RepositoryMigratorTests {
       }
       """;
 
+  /// A format 3 tooth.json with two labels, read as a meta document.
+  private static readonly string _variantTooth = $$"""
+      {
+        "format_version": 3,
+        "format_uuid": "{{Uuid3}}",
+        "tooth": "github.com/test/tool",
+        "version": "1.0.0",
+        "variants": [ { "label": "lua", "assets": [] }, { "label": "quickjs", "assets": [] } ]
+      }
+      """;
+
   [Fact]
   public async Task Migrate_NeitherFile_ThrowsAndChangesNothing() {
     // Act
@@ -88,6 +99,49 @@ public class RepositoryMigratorTests {
     Assert.Equal([new PackageFile(null, "tool.exe", "tool.exe")], document.Files);
     Assert.StartsWith("{\n  \"format\": \"bf45b1\",\n", Read("manifest.json"));
     Assert.DoesNotContain(notes, n => n.Contains("not a valid manifest.json"));
+  }
+
+  [Fact]
+  public async Task Migrate_MetaDocument_WritesThePackageDocumentOfEachTarget() {
+    // Arrange
+    AddFile("tooth.json", _variantTooth);
+
+    // Act
+    IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
+
+    // Assert
+    Assert.Equal(["manifest.json"], Files());
+    MetaDocument meta = Assert.IsType<MetaDocument>(
+        new DocumentParser().Parse(_fs.File.ReadAllBytes(Path("manifest.json"))));
+    Assert.Equal(["lua", "quickjs"], meta.Targets.Select(t => t.Variant));
+    Assert.Equal(
+        ["0", "1"],
+        _fs.Directory.GetDirectories(Path(RepositoryMigrator.TargetsDirectoryName))
+            .Select(d => _fs.Path.GetFileName(d)).Order(StringComparer.Ordinal));
+    Assert.Equal(
+        ["tool-lua", "tool-quickjs"],
+        Enumerable.Range(0, 2).Select(i => Assert.IsType<PackageDocument>(new DocumentParser()
+            .Parse(_fs.File.ReadAllBytes(Path($"targets/{i}/manifest.json")))).Id));
+    Assert.StartsWith("{\n  \"format\": \"bf45b1\",\n", Read("targets/0/manifest.json"));
+    Assert.DoesNotContain(notes, n => n.Contains("not a valid manifest.json"));
+  }
+
+  [Fact]
+  public async Task Migrate_MetaDocumentWithExistingTargets_ThrowsAndChangesNothing() {
+    // Arrange
+    AddFile("tooth.json", _variantTooth);
+    AddFile("targets/x.txt", "x");
+
+    // Act
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
+
+    // Assert
+    Assert.Contains("targets exists", ex.Message);
+    Assert.Equal(["tooth.json"], Files());
+    Assert.Equal(
+        [Path("targets/x.txt").Replace('/', _fs.Path.DirectorySeparatorChar)],
+        _fs.Directory.GetFiles(Path("targets"), "*", SearchOption.AllDirectories));
   }
 
   [Fact]
@@ -205,7 +259,7 @@ public class RepositoryMigratorTests {
   [Fact]
   public async Task Migrate_ManifestAlreadyMigrated_ThrowsAndChangesNothing() {
     // Arrange
-    const string manifest = """{ "format": "bf45b1", "id": "m", "version": "1.0.0" }""";
+    const string manifest = """{ "format": "bf45b1", "name": "m", "version": "1.0.0" }""";
     AddFile("manifest.json", manifest);
 
     // Act

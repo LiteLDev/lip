@@ -13,7 +13,7 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 
 Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md), [`list`](commands/list.md), and [`versions`](commands/versions.md).
 
-[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) accept `--rid <RID>` to set the RID of the workspace [environment](../concepts/package_manifest.md#environment); [`pack`](commands/pack.md) accepts it to choose the RID to pack for. lip manages server workspaces only.
+[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) accept `--rid <RID>` to set the RID of the workspace [environment](../concepts/package_manifest.md#environment). lip manages server workspaces only.
 
 ## Commands
 

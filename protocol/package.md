@@ -7,7 +7,7 @@
   - **ZIP archive**: a file in the ZIP format [APPNOTE], by content, whatever its name. Each entry MUST be a regular file or directory; entry paths are decoded as UTF-8, MUST be `/`-separated, and MUST NOT start with `/` or contain a `..` segment or `\`.
   - **directory archive**: a directory, taken as the archive of its contents.
   - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees.
-- **manifest**: The file `manifest.json` at the root of an archive, which MUST be valid against `manifest.schema.json`. Its `version`, and each non-null `version` of its targets, MUST be a version; each string of the `source` of a dependency MUST be a source; in each string of the `source` of a target, every `{{` MUST begin `{{id}}`, `{{version}}`, `{{platform}}` or `{{runtime}}`.
+- **manifest**: The file `manifest.json` at the root of an archive, which MUST be valid against `manifest.schema.json`. Its `version` MUST be a version; the `version` of each member of its `dependencies` and `conflicts` MUST be a range; each string of the `source` of a dependency MUST be a source; in each string of the `source` of a target, every `{{` MUST begin `{{version}}`, `{{platform}}` or `{{runtime}}`.
 - **package**: An archive that has a manifest.
 - **meta package**: A package whose manifest has the key `targets`.
 - **concrete package**: Any other package.
@@ -102,7 +102,7 @@ The **chain** of a candidate is the sequence of sources followed to reach it, st
    - Of its `targets`, keep each whose `variant` (default `""`) equals the variant of the source, and whose `platform` and `runtime`, when present, contain the corresponding component of `environment`. A single value contains only itself.
    - Of those, select the one that writes the most of `platform` and `runtime`. When none is left, or more than one writes the most, the meta package contributes no candidate.
    - The candidates are those of Resolve(s, this archive, range, environment) for each source s of the selected target's `source`, concatenated in order.
-   - Before s is parsed, `{{id}}` and `{{version}}` in it are replaced by the member of the same name in the selected target, or else in the manifest, and `{{platform}}` and `{{runtime}}` by the components of `environment`; for a git archive with a tag version, `version` is the version of the package. A source with a template that has no value contributes no candidate.
+   - Before s is parsed, `{{version}}` in it is replaced by the version of the package, and `{{platform}}` and `{{runtime}}` by the components of `environment`. A source with `{{version}}` in a package without a version contributes no candidate.
 3. Concrete packages. A concrete package is the single candidate if all of these hold, and none otherwise:
    - the variant of the source is `""`;
    - its manifest's `platform` and `runtime` are each omitted or equal to the corresponding component of `environment`;

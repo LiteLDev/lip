@@ -32,19 +32,22 @@ A mod, as it would be found at the root of `LegacyMoney-server-win-x64.mcmod`:
 ```json
 {
   "format": "bf45b1",
-  "id": "LegacyMoney",
+  "name": "LegacyMoney",
   "version": "0.22.0",
   "platform": "server",
   "runtime": "win-x64",
-  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
-  "dependencies": {
-    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  },
-  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
+  "entry": "LegacyMoney.dll",
+  "type": "native",
+  "author": "LiteLDev",
+  "dependencies": [
+    { "name": "LeviLamina", "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
+    { "name": "iListenAttentively", "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
+  ],
   "preserve": ["config/", "data/"]
 }
 ```
+
+`author` is not a key of lip: lip ignores it, and LeviLamina reads it.
 
 ## Package and Meta Documents
 
@@ -53,12 +56,11 @@ Every document has the key `"format": "bf45b1"`. A `manifest.json` without `form
 invalid. Keys lip does not know are ignored.
 
 A document with a `targets` key is a **meta document**. It installs nothing itself: it points to
-other archives depending on the requested variant and the environment, and its other keys are a
-template for [packing](#packing).
+other archives depending on the requested variant and the environment.
 
 A document without `targets` is a **package document**, and its archive is a **package**. A
-package is a **mod** when its document has the `mod` key, and a **file package** otherwise. The
-`id` of a package is its identity; identities are compared ignoring ASCII case.
+package is a **mod** when its document has the `entry` key, and a **file package** otherwise.
+The `name` of a package is its identity; identities are compared ignoring ASCII case.
 
 ## Refs
 
@@ -91,21 +93,22 @@ followed by a git ref: `spec[#variant][@git-ref]`.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `format` | `string` | Yes | `"bf45b1"`. |
-| `id` | `string` | Yes | Identity. Must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. |
+| `name` | `string` | Yes | Identity. Must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. |
 | `version` | `string` | Yes | SemVer 2.0.0. At a version tag (`v<version>`), it must equal the tag version. |
 | `platform` | `string` | No | `"server"` or `"client"`. Omitted means both. |
 | `runtime` | `string` | No | [.NET RID](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog). Omitted means any. |
-| `info` | `object` | No | Information for people: `name`, `description`, `authors`, `tags`, `icon` (an https URL). lip does not use it. |
-| `dependencies` | `object` | No | Maps ids to [dependencies](#dependency). |
-| `conflicts` | `object` | No | Maps ids to version ranges: packages that must not be installed together with this one. |
-| `mod` | `object` | No | Makes the package a [mod](#mod). |
+| `dependencies` | `array` | No | [Dependencies](#dependency). |
+| `conflicts` | `array` | No | [Conflicts](#conflict): packages that must not be installed together with this one. |
+| `entry` | `string` | No | Makes the package a [mod](#mod): the entry of the mod, e.g. `"LegacyMoney.dll"`. Non-empty. |
+| `type` | `string` | No | The type of the mod, e.g. `"native"`. Non-empty. |
 | `files` | `array` | No | File packages only. See [File](#file). |
 | `archives` | `object` | No | File packages only. Downloaded archives that `files` take files from. See [Archive](#archive). |
 | `preserve` | `string[]` | No | [Globs](#globs) of files that are kept when they already exist, and on uninstall. |
 | `remove` | `string[]` | No | [Globs](#globs) of extra paths to remove on uninstall. |
 | `hooks` | `object` | No | Lifecycle commands. See [Hooks](#hooks). |
 
-`mod` must not appear together with `files` or `archives`.
+`entry` and `type` must appear together, and `entry` must not appear together with `files` or
+`archives`.
 
 A package is a candidate only when the ref has no variant, its `platform` is omitted or equals
 the environment platform, its `runtime` is omitted or equals the environment runtime, and its
@@ -113,17 +116,14 @@ the environment platform, its `runtime` is omitted or equals the environment run
 
 ### Dependency
 
-A dependency is a version range, or an object:
-
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
+| `name` | `string` | Yes | The identity of the package depended on. |
 | `version` | `string` | No | Version range. Omitted means any version. |
 | `source` | `string` or `string[]` | No | Where to find the package: one ref, or alternatives tried in order. Non-empty. |
-| `mod` | `boolean` | No | `false` when the dependency is not a mod that LeviLamina must load. Allowed only with `source`. |
 
-A range alone, such as `"^1.2.0"`, is the same as `{ "version": "^1.2.0" }`. Only dependencies
-with `source` are installed by lip, and the package installed for one must have the id of its
-key. LeviLamina requires every dependency without `"mod": false` to be a loaded mod.
+Only dependencies with `source` are installed by lip, and the package installed for one must
+have its `name`. LeviLamina reads `dependencies` too.
 
 Version ranges use the syntax and semantics of [node-semver](https://github.com/npm/node-semver#ranges),
 for example `^1.2.0`, `~1.2`, `>=1.0.0 <2.0.0`, `1.x`, `1.0.0 - 1.4.0` or `>=1.0.0 || 0.9.0`. A
@@ -135,9 +135,9 @@ spec in `source`; `version` stays a version range, since LeviLamina reads it too
 
 ```json
 {
-  "dependencies": {
-    "LeviLamina": { "version": ">=1.5.0", "source": "github.com/LiteLDev/LeviLamina@branch:main" }
-  }
+  "dependencies": [
+    { "name": "LeviLamina", "version": ">=1.5.0", "source": "github.com/LiteLDev/LeviLamina@branch:main" }
+  ]
 }
 ```
 
@@ -148,18 +148,23 @@ dependency whose ref is the same spec and variant without a git ref, when its ve
 dependency's range; so a workspace can run a development build of a library that released mods
 depend on.
 
-### Mod
+### Conflict
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `loader` | `string` | Yes | The loader of the mod, e.g. `"native"`. |
-| `entry` | `string` | Yes | The entry of the mod, e.g. `"LegacyMoney.dll"`. |
-| `passive` | `boolean` | No | Read by LeviLamina. |
-| `loadAfter` | `string[]` | No | Ids of mods to load before this one; `"*"` stands for every mod. |
-| `loadBefore` | `string[]` | No | Ids of mods to load after this one; `"*"` stands for every mod. |
-| `extra` | `object` | No | Further data for the loader. |
+| `name` | `string` | Yes | The identity of the conflicting package. |
+| `version` | `string` | No | Version range. Omitted means any version. |
 
-These keys are read by LeviLamina; lip uses `mod` only to tell a mod from a file package.
+### Mod
+
+A package with `entry` and `type` is a mod. Both keys are read by LeviLamina; lip uses `entry`
+only to tell a mod from a file package.
+
+The keys a package document has in common with a LeviLamina manifest (`name`, `version`,
+`platform`, `entry`, `type`, `dependencies` and `conflicts`) have the same shape in both, so a
+mod's `manifest.json` is also its LeviLamina manifest. Other keys LeviLamina reads, such as
+`description`, `author`, `passive`, `loadBefore`, `loadAfter` and `extraInfo`, are written at the
+top level as LeviLamina defines them; lip ignores them.
 
 ### File
 
@@ -198,7 +203,7 @@ Globs are matched segment by segment with the patterns of POSIX `fnmatch`: `*` m
 characters except `/` (a leading `.` included), `?` one character except `/`, and `[...]` one
 character of a set (`[!...]` of its complement). A `**` segment matches zero or more segments; a
 pattern ending with `/` matches a directory and everything below it. There is no escape
-character. For a mod, globs are relative to the mod directory `mods/<id>/`; for a file package,
+character. For a mod, globs are relative to the mod directory `mods/<name>/`; for a file package,
 to the workspace root.
 
 ### Hooks
@@ -215,15 +220,15 @@ that exits with a non-zero code fails the operation.
 
 ## Mods and File Packages
 
-- A **mod** (with `mod`): the whole archive is written to `mods/<id>/`. On a server, `plugins`
-  is a link to `mods`, so the mod is also visible under `plugins/<id>/`. lip installs to server
-  workspaces; client workspaces are managed by launchers such as LeviLauncher.
-- A **file package** (without `mod`): the `files` are executed in order.
+- A **mod** (with `entry`): the whole archive is written to `mods/<name>/`. On a server,
+  `plugins` is a link to `mods`, so the mod is also visible under `plugins/<name>/`. lip installs
+  to server workspaces; client workspaces are managed by launchers such as LeviLauncher.
+- A **file package** (without `entry`): the `files` are executed in order.
 
 ```json
 {
   "format": "bf45b1",
-  "id": "bedrock-server",
+  "name": "bedrock-server",
   "version": "1.21.50",
   "platform": "server",
   "runtime": "win-x64",
@@ -246,11 +251,10 @@ Installing a file that another installed package owns is an error.
 | --- | --- | --- | --- |
 | `format` | `string` | Yes | `"bf45b1"`. |
 | `targets` | `array` | Yes | Non-empty. See [Target](#target). |
-| `id` | `string` | No | Used in templates. |
-| `version` | `string` | No | SemVer 2.0.0. Used in templates. |
+| `version` | `string` | No | SemVer 2.0.0. Used in [templates](#templates). At a version tag (`v<version>`), it must equal the tag version. |
 
-Any other key of a package document is part of the **template**: lip ignores it when resolving,
-and [packing](#packing) completes it into a package document.
+A meta document describes no package itself: each package its targets point to has its own
+package document.
 
 ### Target
 
@@ -260,7 +264,6 @@ and [packing](#packing) completes it into a package document.
 | `platform` | `string` or `string[]` | No | `"server"`, `"client"`, or both. Omitted means any. |
 | `runtime` | `string` or `string[]` | No | .NET RIDs. Omitted means any. |
 | `source` | `string` or `string[]` | Yes | One ref, or alternatives tried in order. Non-empty. |
-| any key of a package document except `format` | its type, or `null` | No | Overrides the template when packing; `null` removes the key. |
 
 lip keeps the targets whose `variant` equals the variant of the ref and whose selectors
 (`platform`, `runtime`) all contain the current [environment](#environment). Of those, it picks
@@ -269,49 +272,29 @@ same selector keys with overlapping values.
 
 ### Templates
 
-<span v-pre>Refs in `source` may contain `{{id}}`, `{{version}}`, `{{platform}}` and
-`{{runtime}}`. `{{id}}` and `{{version}}` take the key of the same name in the target, or else in
-the document (if there is none, or the target sets it to `null`, the ref yields no candidate);
+<span v-pre>Refs in `source` may contain `{{version}}`, `{{platform}}` and `{{runtime}}`.
+`{{version}}` is the version of the package: the tag version for a git archive at a version tag,
+else the `version` of the document (if there is none, the ref yields no candidate);
 `{{platform}}` and `{{runtime}}` are the values of the environment. Any other `{{...}}` makes the
 document invalid.</span>
 
 ```json
 {
   "format": "bf45b1",
-  "id": "LegacyMoney",
   "version": "0.22.0",
-  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
-  "dependencies": {
-    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  },
-  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
-  "preserve": ["config/", "data/"],
   "targets": [
     {
       "platform": ["server", "client"],
       "runtime": "win-x64",
-      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod"
+      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/LegacyMoney-{{platform}}-{{runtime}}.mcmod"
     }
   ]
 }
 ```
 
-### Packing
-
-Packing turns a meta document into the package document of one target, for a platform and a
-runtime:
-
-1. Start from the meta document without `targets`.
-2. Every key of the target other than `variant`, `platform`, `runtime` and `source` replaces the
-   key of the same name; a `null` removes it.
-3. When the target writes `platform`, set `platform` to the packed platform; when it writes
-   `runtime`, set `runtime` to the packed runtime.
-4. The result must be a valid package document.
-
-Packing the example above for `server` and `win-x64` gives the [example](#example) at the top of
-this page, which belongs at the root of `LegacyMoney-server-win-x64.mcmod`, where the target's
-`source` points. [`lip pack`](../cli/commands/pack.md) does this and builds the `.mcmod` file.
+On a `win-x64` server, this points to `LegacyMoney-server-win-x64.mcmod`, which has the
+[example](#example) at the top of this page as its `manifest.json`.
+[`lip pack`](../cli/commands/pack.md) builds such a `.mcmod` file.
 
 ## Environment
 

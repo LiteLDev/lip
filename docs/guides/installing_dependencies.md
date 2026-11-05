@@ -60,7 +60,7 @@ lip install https://example.com/package.mcmod
 
 ## Server Workspaces Only
 
-lip manages server workspaces: mods are installed to `mods/<id>/` (see [Environment](../concepts/package_manifest.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
+lip manages server workspaces: mods are installed to `mods/<name>/` (see [Environment](../concepts/package_manifest.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
 In a server workspace, `plugins` is a link to `mods` (a directory junction on Windows, a symbolic link elsewhere), so software that looks in `plugins/` keeps working, and a path under `plugins/` is the same file as the path under `mods/`. Before `lip install`, `lip uninstall` or `lip update` changes any package, lip sets this up:
 

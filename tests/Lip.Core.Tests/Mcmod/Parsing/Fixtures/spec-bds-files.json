@@ -1,6 +1,6 @@
 {
   "format": "bf45b1",
-  "id": "bedrock-server",
+  "name": "bedrock-server",
   "version": "1.21.50",
   "platform": "server",
   "runtime": "win-x64",

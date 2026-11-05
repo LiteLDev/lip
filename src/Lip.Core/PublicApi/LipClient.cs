@@ -148,13 +148,11 @@ public class LipClient(
 
     JsonObject manifest = new() {
       [ManifestFormat.FormatKey] = ManifestFormat.Format,
-      ["id"] = id,
+      ["name"] = id,
       ["version"] = "0.1.0",
-      ["dependencies"] = new JsonObject(),
-      ["mod"] = new JsonObject {
-        ["loader"] = "native",
-        ["entry"] = $"{id}.dll",
-      },
+      ["dependencies"] = new JsonArray(),
+      ["entry"] = $"{id}.dll",
+      ["type"] = "native",
     };
 
     using Stream stream = _fileSystem.CreateFileWithDirectory(path);

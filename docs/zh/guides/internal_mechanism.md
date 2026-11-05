@@ -58,7 +58,7 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 `manifest.json` 由 JSON Schema [`protocol/manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/manifest.schema.json) 描述。锁由 [`protocol/workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json) 描述。旧格式曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
 
-- **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `id`、`version`、ref、范围、glob 或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
+- **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `name`、`version`、ref、范围、glob 或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
 - **版本**：带有 `"format": "bf45b1"` 的 `manifest.json` 是当前格式的文档；不带 `format` 的是 LeviLamina 清单，按 mod 读取（规范 §10.1）。格式版本为 1 或 2 的 `tooth.json` 会在读取时于内存中转换为版本 3，再转换为文件包（规范 §10.2）；如需把包仓库从 `tooth.json` 或 LeviLamina 清单迁移到 `manifest.json`，请在仓库中运行 `lip migrate`。
 
 ## 工作区状态

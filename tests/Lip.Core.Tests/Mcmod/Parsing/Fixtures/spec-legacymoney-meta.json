@@ -1,18 +1,10 @@
 {
   "format": "bf45b1",
-  "id": "LegacyMoney",
   "version": "0.22.0",
-  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
-  "dependencies": {
-    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  },
-  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
-  "preserve": ["config/", "data/"],
   "targets": [
     {
       "platform": ["server", "client"], "runtime": "win-x64",
-      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod"
+      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/LegacyMoney-{{platform}}-{{runtime}}.mcmod"
     }
   ]
 }

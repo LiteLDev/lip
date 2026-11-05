@@ -3,9 +3,9 @@
 ## 1. Terminology
 
 - **workspace**: A directory into which packages are installed. Paths in this document are relative to it and `/`-separated, unless said to be absolute.
-- **mod**: A concrete package whose manifest has the key `mod`.
+- **mod**: A concrete package whose manifest has the key `entry`.
 - **file package**: A concrete package that is not a mod.
-- **identity**: The `id` of the manifest of a concrete package.
+- **identity**: The `name` of the manifest of a concrete package.
 - **operation**: Installing, uninstalling or updating packages in a workspace as one unit, including every package it installs, replaces or uninstalls as a dependency.
 - **request**: A pair (source, range) given to an operation.
 - **failure**: A condition that aborts the operation in progress.
@@ -28,16 +28,16 @@ A workspace has one environment, recorded in its workspace file; every operation
 
 ## 3. Valid States
 
-The **install edges** of a concrete package are the members of its `dependencies` whose value has `source`; the others are ignored in this document.
+The **install edges** of a concrete package are the members of its `dependencies` that have `source`; the others are ignored in this document.
 
 A concrete package whose chain starts with a remote repository `r#v@x`, `x` a ref, **stands in** for every candidate of `r#v` (same `r` and `v`, no ref) for a range its version satisfies. A source with a ref is satisfied only by its own candidates.
 
 The set S of packages installed in a workspace, given the requests that made its explicitly installed packages, MUST satisfy:
 
 1. For every request (s, range), S contains a candidate of Resolve(s, none, range, environment), or a package that stands in for one.
-2. For every install edge (key k, value d) of every package P in S, S contains a package Q whose identity equals k and that, for some source s of the `source` of d, is a candidate of Resolve(s, the archive of P, the `version` of d, environment), or stands in for one.
+2. For every install edge d of every package P in S, S contains a package Q whose identity equals the `name` of d and that, for some source s of the `source` of d, is a candidate of Resolve(s, the archive of P, the `version` of d, environment), or stands in for one.
 3. No two packages in S have the same identity.
-4. For every member (key k, range R) of the `conflicts` of every package in S, S contains no package whose identity equals k and whose version satisfies R.
+4. For every member c of the `conflicts` of every package in S, S contains no package whose identity equals the `name` of c and, when c has `version`, whose version satisfies it.
 
 An operation that cannot end in such an S is a failure. When several such S exist, packages earlier in the sequences of candidates SHOULD be preferred.
 

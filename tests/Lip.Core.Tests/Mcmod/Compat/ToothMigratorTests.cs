@@ -33,25 +33,38 @@ public class ToothMigratorTests {
 
     // Assert
     MetaDocument document = Assert.IsType<MetaDocument>(Reparse(result));
-    Assert.Equal("LegacyMoney", document.Id);
+    Assert.Equal(
+        ["format", "version", "targets"],
+        result.Document.Select(p => p.Key));
+    Assert.Equal("0.22.0", document.Version!.ToString());
     Assert.Equal(
         [
-          ("", McmodPlatform.Server, "LegacyMoney"),
-          ("client", (McmodPlatform?)null, "LegacyMoney-client"),
-          ("", McmodPlatform.Client, "LegacyMoney-client"),
+          ("", McmodPlatform.Server),
+          ("client", (McmodPlatform?)null),
+          ("", McmodPlatform.Client),
         ],
-        document.Targets.Select(t => (t.Variant, t.Platforms?.Single(), t.TemplateId)));
+        document.Targets.Select(t => (t.Variant, t.Platforms?.Single())));
+    const string prefix = "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/";
     Assert.Equal(
-        "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/"
-            + "{{id}}-{{platform}}-{{runtime}}.mcmod",
-        document.Targets[0].Source.Single());
+        [
+          prefix + "LegacyMoney-{{platform}}-{{runtime}}.mcmod",
+          prefix + "LegacyMoney-client-{{runtime}}.mcmod",
+          prefix + "LegacyMoney-client-{{platform}}-{{runtime}}.mcmod",
+        ],
+        document.Targets.Select(t => t.Source.Single()));
+    Assert.All(
+        result.Document["targets"]!.AsArray(),
+        t => Assert.Empty(t!.AsObject().Select(p => p.Key)
+            .Except(["variant", "platform", "runtime", "source"])));
     Assert.Equal(
-        "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/"
-            + "{{id}}-{{runtime}}.mcmod",
-        document.Targets[1].Source.Single());
-    JsonObject info = result.Document["info"]!.AsObject();
-    Assert.Equal("Legacy Money", (string?)info["name"]);
-    Assert.Equal("https://example.com/a.png", (string?)info["icon"]);
+        [
+          """{"format":"bf45b1","name":"LegacyMoney","version":"0.22.0","platform":"server","runtime":"win-x64"}""",
+          """{"format":"bf45b1","name":"LegacyMoney-client","version":"0.22.0","runtime":"win-x64"}""",
+          """{"format":"bf45b1","name":"LegacyMoney-client","version":"0.22.0","platform":"client","runtime":"win-x64"}""",
+        ],
+        result.Targets.Select(t => t.ToJsonString()));
+    Assert.All(result.Targets, t => Assert.IsType<PackageDocument>(Reparse(t)));
+    Assert.Contains("info: manifest.json has no package information; it was dropped.", result.Notes);
     Assert.DoesNotContain(result.Notes, n => n.Contains("not a valid manifest.json"));
   }
 
@@ -74,10 +87,13 @@ public class ToothMigratorTests {
     MetaDocument document = Assert.IsType<MetaDocument>(Reparse(result));
     Assert.Equal(
         [
-          ("lua", "engine-lua", "https://example.com/releases/v{{version}}/{{id}}.mcmod"),
-          ("quickjs", "engine-quickjs", "https://example.com/releases/v{{version}}/{{id}}.mcmod"),
+          ("lua", "https://example.com/releases/v{{version}}/engine-lua.mcmod"),
+          ("quickjs", "https://example.com/releases/v{{version}}/engine-quickjs.mcmod"),
         ],
-        document.Targets.Select(t => (t.Variant, t.TemplateId, t.Source.Single())));
+        document.Targets.Select(t => (t.Variant, t.Source.Single())));
+    Assert.Equal(
+        ["engine-lua", "engine-quickjs"],
+        result.Targets.Select(t => (string?)t["name"]));
     Assert.Equal(2, ui.Questions.Count);
     Assert.Single(ui.Warnings);
   }
@@ -124,18 +140,26 @@ public class ToothMigratorTests {
     Assert.Equal(
         [["win-x64", "win-arm64"], ["linux-x64"], null],
         document.Targets.Select(t => t.Runtimes));
-    JsonArray targets = result.Document["targets"]!.AsArray();
-    JsonObject windows = targets[0]!.AsObject();
+    Assert.Equal(
+        """{"runtime":["win-x64","win-arm64"],"source":"https://github.com/o/tool/releases/download/v{{version}}/tool-{{runtime}}.mcmod"}""",
+        result.Document["targets"]![0]!.ToJsonString());
+    IReadOnlyList<JsonObject> targets = result.Targets;
+    Assert.Equal(3, targets.Count);
+    Assert.All(targets, t => Assert.IsType<PackageDocument>(Reparse(t)));
+    Assert.Equal(
+        [null, "linux-x64", null],
+        targets.Select(t => (string?)t["runtime"]));
+    JsonObject windows = targets[0];
     Assert.Equal(["asset0", "asset1"], windows["archives"]!.AsObject().Select(p => p.Key));
     Assert.Equal("file", (string?)windows["archives"]!["asset1"]!["format"]);
     Assert.Equal(
         """[{"from":"asset0","src":"","dest":"common/"},{"from":"asset1","src":"asset1","dest":"tool.exe"}]""",
         windows["files"]!.ToJsonString());
-    JsonObject linux = targets[1]!.AsObject();
+    JsonObject linux = targets[1];
     Assert.Equal(
-        """{"libx":{"version":"1.*","source":"github.com/o/libx"}}""",
+        """[{"name":"libx","version":"1.*","source":"github.com/o/libx"}]""",
         linux["dependencies"]!.ToJsonString());
-    Assert.False(targets[2]!.AsObject().ContainsKey("dependencies"));
+    Assert.False(targets[2].ContainsKey("dependencies"));
   }
 
   [Fact]
@@ -160,8 +184,12 @@ public class ToothMigratorTests {
 
     // Assert
     PackageDocument document = Assert.IsType<PackageDocument>(Reparse(result));
+    Assert.Equal(
+        ["format", "name", "version", "runtime", "files", "preserve", "remove", "hooks"],
+        result.Document.Select(p => p.Key));
     Assert.Equal("tool", document.Id);
     Assert.Equal("win-x64", document.Runtime);
+    Assert.Empty(result.Targets);
     Assert.Equal([new PackageFile(null, "bin/*.dll", "plugins/tool/")], document.Files);
     Assert.Equal(["**/config.json", "data/"], document.Preserve.Select(g => g.Pattern));
     Assert.Equal(["logs", "logs/"], document.Remove.Select(g => g.Pattern));
@@ -212,6 +240,14 @@ public class ToothMigratorTests {
         ["example.com/a", "example.com/b/v2#lua"],
         document.Dependencies.Select(d => d.Refs!.Single().ToString()));
     Assert.Null(document.Dependencies[1].Version);
+    Assert.True(JsonNode.DeepEquals(
+        JsonNode.Parse("""
+            [
+              { "name": "a", "version": ">=1.2.3 <2.0.0", "source": "example.com/a" },
+              { "name": "b-lua", "source": "example.com/b/v2#lua" }
+            ]
+            """),
+        result.Document["dependencies"]));
     Assert.Empty(result.Notes);
   }
 
@@ -271,8 +307,10 @@ public class ToothMigratorTests {
     return PackageManifestMigration.Migrate(document);
   }
 
-  private static ManifestDocument Reparse(ToothMigrator.Result result) =>
-      new DocumentParser().Parse(Encoding.UTF8.GetBytes(result.Document.ToJsonString()));
+  private static ManifestDocument Reparse(ToothMigrator.Result result) => Reparse(result.Document);
+
+  private static ManifestDocument Reparse(JsonObject document) =>
+      new DocumentParser().Parse(Encoding.UTF8.GetBytes(document.ToJsonString()));
 }
 
 /// Answers questions from a queue; with no answer left it cannot ask, like a redirected
