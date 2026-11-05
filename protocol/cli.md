@@ -163,7 +163,7 @@ lip view <PACKAGE>
 lip init
 ```
 
-Writes `manifest.json` in the current directory: a manifest with the members of `{ "format": "bf45b1", "name": "<id>", "version": "0.1.0", "dependencies": [], "entry": "<id>.dll", "type": "native" }`, `<id>` being the name of the current directory with every character other than an ASCII letter, an ASCII digit, `.`, `_` and `-` replaced by `-`.
+Writes `manifest.json` in the current directory: a manifest with the members of `{ "format": "bf45b1", "id": "<id>", "version": "0.1.0", "dependencies": {}, "mod": { "loader": "native", "entry": "<id>.dll" } }`, `<id>` being the name of the current directory with every character other than an ASCII letter, an ASCII digit, `.`, `_` and `-` replaced by `-`.
 
 When `manifest.json` exists, or `<id>` is not an id, the command fails and writes nothing.
 
@@ -177,8 +177,7 @@ Converts a `tooth.json` of lip v0.x, or a LeviLamina `manifest.json` without the
 
 - When `tooth.json` exists, it is the source of the conversion, and is deleted after `manifest.json` has been written.
 - Otherwise `manifest.json` is the source of the conversion, and is rewritten in place.
-- When the output is a meta package, `lip` also writes, for each index `<i>` of its `targets`, `targets/<i>/manifest.json`: the manifest of a concrete package for that target to name, written as JSON indented by two spaces.
-- When both or neither exist, when `manifest.json` has the key `format`, when `targets` exists and the output is a meta package, or when a file cannot be read, the command fails and changes nothing.
+- When both or neither exist, when `manifest.json` has the key `format`, or when a file cannot be read, the command fails and changes nothing.
 
 The mapping of the members of the source to those of the output is not defined here. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
 
@@ -209,14 +208,17 @@ When `<KEY>` is not a configuration key, the command fails. `set` and `delete` r
 ### 5.11. `lip pack`
 
 ```
-lip pack [<DIR>] [-o, --output <FILE>]
+lip pack [<DIR>] [--variant <VARIANT>] [--platform <PLATFORM>] [--rid <RID>] [-o, --output <FILE>]
 ```
 
-Packs a concrete package. The output is the `manifest.json` in the current directory.
+Packs the `manifest.json` in the current directory into the manifest of a concrete package for one environment. `--variant` defaults to `""`, `--platform` (`server` or `client`) to `server`, and `--rid` to the RID lip runs on; `--platform` and `--rid` together are the environment.
+
+- For a meta package, the target is the one Section 3 step 2 of [PACKAGE] selects for the variant and the environment. The output is the manifest without `targets`, with each key of the target other than `variant`, `platform`, `runtime` and `source` set to its value in the target, or deleted when that is `null`, and with `platform` and `runtime` each set to the corresponding component of the environment when the target has that key.
+- For a concrete package, `--variant` MUST be `""`, `--platform` and `--rid` are not used, and the output is the manifest itself.
 
 Without `--output`, the output is the result. With `--output`, `lip` writes to `<FILE>`, replacing it, a ZIP archive holding the output as `manifest.json` at its root and every regular file below `<DIR>` (default: the current directory) at its path relative to `<DIR>`, except `<FILE>` itself and, at the root of `<DIR>`, `manifest.json` and everything below `.git/` and `.lip/`.
 
-The command fails and writes nothing when `manifest.json` is missing or is not a valid manifest of a concrete package.
+The command fails and writes nothing when `manifest.json` is missing or is not a valid manifest, when no target or more than one is selected, or when the output is not a valid manifest of a concrete package.
 
 ### 5.12. `lip rpc`
 

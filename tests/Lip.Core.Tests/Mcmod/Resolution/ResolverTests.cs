@@ -12,7 +12,7 @@ namespace Lip.Core.Tests.Mcmod.Resolution;
 public class ResolverTests {
   private const string _legacyMoney = "github.com/LiteLDev/LegacyMoney";
   private const string _legacyMoneyTemplate = "https://github.com/LiteLDev/LegacyMoney/releases/"
-      + "download/v{{version}}/LegacyMoney-{{platform}}-{{runtime}}.mcmod";
+      + "download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod";
 
   private static readonly LipEnvironment _server = new(McmodPlatform.Server, "win-x64");
   private static readonly LipEnvironment _client = new(McmodPlatform.Client, "win-x64");
@@ -37,13 +37,22 @@ public class ResolverTests {
         Platform = platform,
         Runtime = runtime,
       },
-      JsonDocument.Parse($"{{\"name\":\"{name}\"}}").RootElement.Clone());
+      JsonDocument.Parse($"{{\"id\":\"{name}\"}}").RootElement.Clone());
 
-  private static MetaArchiveDocument Meta(params MetaTarget[] targets) =>
-      new(new MetaDocument { Targets = targets });
+  private static MetaArchiveDocument Meta(
+      params MetaTarget[] targets) => Meta(null, null, targets);
 
-  private static MetaArchiveDocument Meta(string version, params MetaTarget[] targets) =>
-      new(new MetaDocument { Version = SemVersion.Parse(version), Targets = targets });
+  private static MetaArchiveDocument Meta(
+      string? name,
+      string? version,
+      params MetaTarget[] targets) => new(new MetaDocument {
+        Id = name,
+        Version = version is null ? null : SemVersion.Parse(version),
+        Targets = [.. targets.Select(t => t with {
+          TemplateId = t.TemplateId ?? name,
+          TemplateVersion = t.TemplateVersion ?? (version is null ? null : SemVersion.Parse(version)),
+        })],
+      });
 
   private static MetaTarget Art(params string[] refs) => new() { Source = refs };
 
@@ -61,7 +70,7 @@ public class ResolverTests {
       new SemVersionRangeConstraint(SemVersionRange.Parse(range));
 
   private void AddLegacyMoney() {
-    _archives.AddTag(_legacyMoney, "v0.22.0", Meta("0.22.0", new MetaTarget {
+    _archives.AddTag(_legacyMoney, "v0.22.0", Meta("LegacyMoney", "0.22.0", new MetaTarget {
       Platforms = [McmodPlatform.Server, McmodPlatform.Client],
       Runtimes = ["win-x64"],
       Source = [_legacyMoneyTemplate],
@@ -274,41 +283,6 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_MetaWithoutVersionAtTag_ExpandsTheTagVersion() {
-    // Arrange
-    _archives.AddTag(_legacyMoney, "v0.22.0", Meta(new MetaTarget { Source = [_legacyMoneyTemplate] }));
-    _archives.AddUrl(
-        "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/"
-        + "LegacyMoney-server-win-x64.mcmod",
-        PackageDoc("LegacyMoney", "0.22.0", McmodPlatform.Server, "win-x64"));
-
-    // Act
-    ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse(_legacyMoney), Workspace, null, _server);
-
-    // Assert
-    Candidate candidate = Assert.Single(result.Candidates);
-    Assert.EndsWith("/v0.22.0/LegacyMoney-server-win-x64.mcmod", candidate.Archive.Key);
-    Assert.Empty(result.Diagnostics);
-  }
-
-  [Fact]
-  public async Task Resolve_MetaWithVersionOutsideGit_ExpandsTheDocumentVersion() {
-    // Arrange
-    _archives.AddUrl("https://example.com/r.mcmod",
-        Meta("1.2.3", Art("https://example.com/{{version}}.mcmod")));
-    _archives.AddUrl("https://example.com/1.2.3.mcmod", PackageDoc("Pkg", "1.2.3"));
-
-    // Act
-    ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse("https://example.com/r.mcmod"), Workspace, null, _server);
-
-    // Assert
-    Candidate candidate = Assert.Single(result.Candidates);
-    Assert.Equal("https://example.com/1.2.3.mcmod", candidate.Archive.Key);
-  }
-
-  [Fact]
   public async Task Resolve_MissingTemplateKey_NoCandidate() {
     // Arrange
     _archives.AddUrl("https://example.com/r.mcmod",
@@ -478,7 +452,7 @@ public class ResolverTests {
     // Arrange
     _archives.AddTag("github.com/user/pkg", "v1.0.0", PackageDoc("Pkg", "1.0.1"));
     _archives.AddTag("github.com/user/routed", "v1.0.0",
-        Meta("1.0.1", Art("https://example.com/x.mcmod")));
+        Meta("Routed", "1.0.1", Art("https://example.com/x.mcmod")));
 
     // Act
     ResolveResult package = await CreateResolver()
@@ -611,7 +585,7 @@ public class ResolverTests {
     const string commit = "0123456789abcdef0123456789abcdef01234567";
     AddLegacyMoney();
     _archives.AddGitRef(_legacyMoney, "branch:main", commit, Meta(
-        "0.22.0", new MetaTarget { Source = [_legacyMoneyTemplate] }));
+        "LegacyMoney", "0.22.0", new MetaTarget { Source = [_legacyMoneyTemplate] }));
     Ref reference = Ref.Parse($"{_legacyMoney}@branch:main");
 
     // Act

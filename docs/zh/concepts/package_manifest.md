@@ -29,22 +29,19 @@ LeviLamina 读取：LeviLamina 加载其描述的 mod，lip 负责安装它们�
 ```json
 {
   "format": "bf45b1",
-  "name": "LegacyMoney",
+  "id": "LegacyMoney",
   "version": "0.22.0",
   "platform": "server",
   "runtime": "win-x64",
-  "entry": "LegacyMoney.dll",
-  "type": "native",
-  "author": "LiteLDev",
-  "dependencies": [
-    { "name": "LeviLamina", "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    { "name": "iListenAttentively", "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  ],
+  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
+  "dependencies": {
+    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
+    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
+  },
+  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
   "preserve": ["config/", "data/"]
 }
 ```
-
-`author` 不是 lip 的键：lip 忽略它，由 LeviLamina 读取。
 
 ## 包文档与元文档
 
@@ -52,10 +49,10 @@ LeviLamina 读取：LeviLamina 加载其描述的 mod，lip 负责安装它们�
 [LeviLamina 清单](#levilamina-清单)；`format` 为其他任何值时，文档无效。lip 不认识的键会被忽略。
 
 含有 `targets` 键的文档是**元文档**。它本身不安装任何东西，而是根据请求的变体和环境指向其他
-归档。
+归档；其余键是用于[打包](#打包)的模板。
 
-不含 `targets` 的文档是**包文档**，其归档称为**包**。文档带有 `entry` 键的包是 **mod**，否则是
-**文件包**。包的 `name` 即其身份；比较身份时不区分 ASCII 大小写。
+不含 `targets` 的文档是**包文档**，其归档称为**包**。文档带有 `mod` 键的包是 **mod**，否则是
+**文件包**。包的 `id` 即其身份；比较身份时不区分 ASCII 大小写。
 
 ## 引用
 
@@ -87,35 +84,38 @@ LeviLamina 读取：LeviLamina 加载其描述的 mod，lip 负责安装它们�
 | 字段 | 类型 | 必需 | 说明 |
 | --- | --- | --- | --- |
 | `format` | `string` | 是 | `"bf45b1"`。 |
-| `name` | `string` | 是 | 身份。必须匹配 `^[A-Za-z0-9][A-Za-z0-9._-]*$`。 |
+| `id` | `string` | 是 | 身份。必须匹配 `^[A-Za-z0-9][A-Za-z0-9._-]*$`。 |
 | `version` | `string` | 是 | SemVer 2.0.0。位于版本标签（`v<version>`）处时必须等于标签版本。 |
 | `platform` | `string` | 否 | `"server"` 或 `"client"`。缺省表示两者皆可。 |
 | `runtime` | `string` | 否 | [.NET RID](https://learn.microsoft.com/zh-cn/dotnet/core/rid-catalog)。缺省表示不限。 |
-| `dependencies` | `array` | 否 | [依赖](#依赖)。 |
-| `conflicts` | `array` | 否 | [冲突](#冲突)：不得与本包同时安装的包。 |
-| `entry` | `string` | 否 | 使该包成为 [mod](#mod)：mod 的入口，例如 `"LegacyMoney.dll"`。不得为空。 |
-| `type` | `string` | 否 | mod 的类型，例如 `"native"`。不得为空。 |
+| `info` | `object` | 否 | 给人看的信息：`name`、`description`、`authors`、`tags`、`icon`（https URL）。lip 不使用。 |
+| `dependencies` | `object` | 否 | 将 id 映射到[依赖](#依赖)。 |
+| `conflicts` | `object` | 否 | 将 id 映射到版本范围：不得与本包同时安装的包。 |
+| `mod` | `object` | 否 | 使该包成为 [mod](#mod)。 |
 | `files` | `array` | 否 | 仅限文件包。参见 [File](#file)。 |
 | `archives` | `object` | 否 | 仅限文件包。供 `files` 取文件的下载归档。参见 [Archive](#archive)。 |
 | `preserve` | `string[]` | 否 | 已存在时保留、卸载时也保留的文件的 [glob](#glob)。 |
 | `remove` | `string[]` | 否 | 卸载时额外删除的路径的 [glob](#glob)。 |
 | `hooks` | `object` | 否 | 生命周期命令。参见[钩子](#钩子)。 |
 
-`entry` 和 `type` 必须同时出现，且 `entry` 不得与 `files` 或 `archives` 同时出现。
+`mod` 不得与 `files` 或 `archives` 同时出现。
 
 只有当 ref 不带 variant、`platform` 缺省或等于环境平台、`runtime` 缺省或等于环境的
 runtime、并且 `version` 在请求的范围内时，包才是候选。
 
 ### 依赖
 
+依赖是一个版本范围，或一个对象：
+
 | 字段 | 类型 | 必需 | 说明 |
 | --- | --- | --- | --- |
-| `name` | `string` | 是 | 所依赖的包的身份。 |
 | `version` | `string` | 否 | 版本范围。缺省表示任意版本。 |
 | `source` | `string` 或 `string[]` | 否 | 包的位置：一个 ref，或按顺序尝试的多个备选。不得为空。 |
+| `mod` | `boolean` | 否 | 为 `false` 表示该依赖不是 LeviLamina 必须加载的 mod。只能与 `source` 一起使用。 |
 
-只有带 `source` 的依赖才由 lip 安装，且为其安装的包必须具有该依赖的 `name`。LeviLamina 也会读取
-`dependencies`。
+单独的范围（例如 `"^1.2.0"`）等同于 `{ "version": "^1.2.0" }`。只有带 `source` 的依赖才由
+lip 安装，且为其安装的包必须具有与键相同的 id。LeviLamina 要求每个不带 `"mod": false` 的依赖
+都是已加载的 mod。
 
 版本范围使用 [node-semver](https://github.com/npm/node-semver#ranges) 的语法和语义，例如
 `^1.2.0`、`~1.2`、`>=1.0.0 <2.0.0`、`1.x`、`1.0.0 - 1.4.0` 或 `>=1.0.0 || 0.9.0`。不带运算符
@@ -127,9 +127,9 @@ runtime、并且 `version` 在请求的范围内时，包才是候选。
 
 ```json
 {
-  "dependencies": [
-    { "name": "LeviLamina", "version": ">=1.5.0", "source": "github.com/LiteLDev/LeviLamina@branch:main" }
-  ]
+  "dependencies": {
+    "LeviLamina": { "version": ">=1.5.0", "source": "github.com/LiteLDev/LeviLamina@branch:main" }
+  }
 }
 ```
 
@@ -138,22 +138,18 @@ git 引用所指提交处的包必须声明在范围内的 `version`，否则该
 只要其版本在依赖的范围内，也能满足以同一 spec 和 variant、但不带 git 引用的依赖；因此工作区
 可以运行一个库的开发构建，而依赖它的正式发布的模组仍可安装。
 
-### 冲突
+### Mod
 
 | 字段 | 类型 | 必需 | 说明 |
 | --- | --- | --- | --- |
-| `name` | `string` | 是 | 冲突的包的身份。 |
-| `version` | `string` | 否 | 版本范围。缺省表示任意版本。 |
+| `loader` | `string` | 是 | mod 的加载器，例如 `"native"`。 |
+| `entry` | `string` | 是 | mod 的入口，例如 `"LegacyMoney.dll"`。 |
+| `passive` | `boolean` | 否 | 由 LeviLamina 读取。 |
+| `loadAfter` | `string[]` | 否 | 应在本 mod 之前加载的 mod 的 id；`"*"` 表示所有 mod。 |
+| `loadBefore` | `string[]` | 否 | 应在本 mod 之后加载的 mod 的 id；`"*"` 表示所有 mod。 |
+| `extra` | `object` | 否 | 供加载器使用的其他数据。 |
 
-### Mod
-
-带有 `entry` 和 `type` 的包是 mod。这两个键都由 LeviLamina 读取；lip 只根据 `entry` 是否存在来
-区分 mod 与文件包。
-
-包文档与 LeviLamina 清单共有的键（`name`、`version`、`platform`、`entry`、`type`、
-`dependencies` 和 `conflicts`）在两者中形式相同，因此 mod 的 `manifest.json` 同时也是它的
-LeviLamina 清单。LeviLamina 读取的其他键，例如 `description`、`author`、`passive`、
-`loadBefore`、`loadAfter` 和 `extraInfo`，按 LeviLamina 的定义写在顶层；lip 忽略它们。
+这些键由 LeviLamina 读取；lip 只根据 `mod` 是否存在来区分 mod 与文件包。
 
 ### File
 
@@ -189,7 +185,7 @@ archive 的名称必须匹配 `^[A-Za-z0-9][A-Za-z0-9._-]*$`。
 glob 按段使用 POSIX `fnmatch` 的模式匹配：`*` 匹配除 `/` 外的任意字符（包括开头的 `.`），
 `?` 匹配除 `/` 外的一个字符，`[...]` 匹配集合中的一个字符（`[!...]` 为补集）。单独构成一段的
 `**` 匹配零个或多个段；以 `/` 结尾的模式匹配目录及其下的全部内容。没有转义字符。对 mod，glob
-相对于 mod 目录 `mods/<name>/`；对文件包，相对于工作区根目录。
+相对于 mod 目录 `mods/<id>/`；对文件包，相对于工作区根目录。
 
 ### 钩子
 
@@ -205,15 +201,15 @@ glob 按段使用 POSIX `fnmatch` 的模式匹配：`*` 匹配除 `/` 外的任�
 
 ## mod 与文件包
 
-- **mod**（带 `entry`）：整个归档写入 `mods/<name>/`。服务端的 `plugins` 是指向 `mods` 的链接，
-  因此也可以在 `plugins/<name>/` 下看到该 mod。lip 只安装到服务端工作区；客户端工作区由
+- **mod**（带 `mod`）：整个归档写入 `mods/<id>/`。服务端的 `plugins` 是指向 `mods` 的链接，
+  因此也可以在 `plugins/<id>/` 下看到该 mod。lip 只安装到服务端工作区；客户端工作区由
   LeviLauncher 等启动器管理。
-- **文件包**（不带 `entry`）：按顺序执行 `files`。
+- **文件包**（不带 `mod`）：按顺序执行 `files`。
 
 ```json
 {
   "format": "bf45b1",
-  "name": "bedrock-server",
+  "id": "bedrock-server",
   "version": "1.21.50",
   "platform": "server",
   "runtime": "win-x64",
@@ -236,9 +232,10 @@ glob 按段使用 POSIX `fnmatch` 的模式匹配：`*` 匹配除 `/` 外的任�
 | --- | --- | --- | --- |
 | `format` | `string` | 是 | `"bf45b1"`。 |
 | `targets` | `array` | 是 | 非空。参见 [Target](#target)。 |
-| `version` | `string` | 否 | SemVer 2.0.0。用于[模板](#模板)。位于版本标签（`v<version>`）处时必须等于标签版本。 |
+| `id` | `string` | 否 | 用于模板。 |
+| `version` | `string` | 否 | SemVer 2.0.0。用于模板。 |
 
-元文档本身不描述任何包：其 target 指向的每个包都有自己的包文档。
+包文档的其他任何键都属于**模板**：lip 在解析时忽略它们，[打包](#打包)时把模板补全为包文档。
 
 ### Target
 
@@ -248,6 +245,7 @@ glob 按段使用 POSIX `fnmatch` 的模式匹配：`*` 匹配除 `/` 外的任�
 | `platform` | `string` 或 `string[]` | 否 | `"server"`、`"client"` 或两者。缺省表示不限。 |
 | `runtime` | `string` 或 `string[]` | 否 | .NET RID。缺省表示不限。 |
 | `source` | `string` 或 `string[]` | 是 | 一个 ref，或按顺序尝试的多个备选。不得为空。 |
+| 包文档中除 `format` 外的任意键 | 该键的类型，或 `null` | 否 | 打包时覆盖模板；`null` 表示删除该键。 |
 
 lip 保留 `variant` 等于 ref 的 variant、且所有选择器（`platform`、`runtime`）都包含当前
 [环境](#环境)的 target，再从中选出写出选择器键最多的那一个。两个 variant 相同的 target 不得
@@ -255,27 +253,47 @@ lip 保留 `variant` 等于 ref 的 variant、且所有选择器（`platform`、
 
 ### 模板
 
-<span v-pre>`source` 中的 ref 可以包含 `{{version}}`、`{{platform}}` 和 `{{runtime}}`。
-`{{version}}` 是包的版本：位于版本标签处的 git 归档取标签版本，否则取文档的 `version`（没有时，
-该 ref 不产生候选）；`{{platform}}` 和 `{{runtime}}` 取环境的值。出现其他任何 `{{...}}` 时，
-文档无效。</span>
+<span v-pre>`source` 中的 ref 可以包含 `{{id}}`、`{{version}}`、`{{platform}}` 和
+`{{runtime}}`。`{{id}}` 和 `{{version}}` 取 target 中同名键的值，否则取文档中同名键的值
+（两者都没有，或 target 将其设为 `null` 时，该 ref 不产生候选）；`{{platform}}` 和
+`{{runtime}}` 取环境的值。出现其他任何 `{{...}}` 时，文档无效。</span>
 
 ```json
 {
   "format": "bf45b1",
+  "id": "LegacyMoney",
   "version": "0.22.0",
+  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
+  "dependencies": {
+    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
+    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
+  },
+  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
+  "preserve": ["config/", "data/"],
   "targets": [
     {
       "platform": ["server", "client"],
       "runtime": "win-x64",
-      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/LegacyMoney-{{platform}}-{{runtime}}.mcmod"
+      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod"
     }
   ]
 }
 ```
 
-在 `win-x64` 服务端上，它指向 `LegacyMoney-server-win-x64.mcmod`，其 `manifest.json` 即本页开头的
-[示例](#示例)。[`lip pack`](../cli/commands/pack.md) 可以生成这样的 `.mcmod` 文件。
+### 打包
+
+打包把元文档针对某个平台和 runtime 转换为其中一个 target 的包文档：
+
+1. 从去掉 `targets` 的元文档开始。
+2. target 中除 `variant`、`platform`、`runtime` 和 `source` 以外的每个键替换同名键；值为
+   `null` 时删除该键。
+3. target 写出 `platform` 时，把 `platform` 设为打包的平台；写出 `runtime` 时，把 `runtime`
+   设为打包的 runtime。
+4. 结果必须是有效的包文档。
+
+把上面的示例针对 `server` 和 `win-x64` 打包，得到本页开头的[示例](#示例)，它应位于该 target 的
+`source` 所指的 `LegacyMoney-server-win-x64.mcmod` 的根部。[`lip pack`](../cli/commands/pack.md)
+完成这一步并生成 `.mcmod` 文件。
 
 ## 环境
 

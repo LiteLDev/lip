@@ -4,16 +4,20 @@ using Semver;
 namespace Lip.Core.Tests.Mcmod;
 
 public class RefTemplateTests {
-  private static readonly SemVersion _version = SemVersion.Parse("0.22.0");
+  private static readonly MetaTarget _target = new() {
+    Source = ["./a/"],
+    TemplateId = "LegacyMoney",
+    TemplateVersion = SemVersion.Parse("0.22.0"),
+  };
 
   [Fact]
   public void Expand_AllPlaceholders_Substitutes() {
     // Arrange
     string template = "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/"
-        + "LegacyMoney-{{platform}}-{{runtime}}.mcmod";
+        + "{{id}}-{{platform}}-{{runtime}}.mcmod";
 
     // Act
-    Ref r = RefTemplate.Expand(template, _version, new(McmodPlatform.Server, "win-x64"));
+    Ref r = RefTemplate.Expand(template, _target, new(McmodPlatform.Server, "win-x64"));
 
     // Assert
     Assert.Equal(
@@ -23,37 +27,23 @@ public class RefTemplateTests {
   }
 
   [Fact]
-  public void Expand_MissingVersion_ThrowsFormatException() {
+  public void Expand_MissingId_ThrowsFormatException() {
+    // Arrange
+    MetaTarget target = _target with { TemplateId = null };
+
     // Act & Assert
     Assert.Throws<FormatException>(
-        () => RefTemplate.Expand("./{{version}}/", null, new(McmodPlatform.Server, "win-x64")));
-  }
-
-  [Fact]
-  public void Expand_NoVersionPlaceholder_NeedsNoVersion() {
-    // Act
-    Ref r = RefTemplate.Expand("./{{platform}}/", null, new(McmodPlatform.Client, "win-x64"));
-
-    // Assert
-    Assert.Equal("./client/", r.Target);
-  }
-
-  [Fact]
-  public void Substitute_IdPlaceholder_ThrowsFormatException() {
-    // Act & Assert
-    Assert.Throws<FormatException>(
-        () => RefTemplate.Substitute("./{{id}}/", "1.0.0", new(McmodPlatform.Server, "win-x64")));
+        () => RefTemplate.Expand("./{{id}}/", target, new(McmodPlatform.Server, "win-x64")));
   }
 
   [Theory]
-  [InlineData("./{{version}}/{{platform}}/{{runtime}}", null)]
-  [InlineData("./{{id}}/", "{{id}}")]
+  [InlineData("./{{id}}/{{runtime}}", null)]
   [InlineData("./{{name}}/", "{{name}}")]
   [InlineData("./{{rid}}/", "{{rid}}")]
-  [InlineData("./{{ version }}/", "{{ version }}")]
+  [InlineData("./{{ id }}/", "{{ id }}")]
   [InlineData("./a{{b", "{{b")]
-  [InlineData("./{{version}}/{{x", "{{x")]
-  [InlineData("./{{{version}}/", "{{{version}}")]
+  [InlineData("./{{id}}/{{x", "{{x")]
+  [InlineData("./{{{id}}/", "{{{id}}")]
   public void FindUnknownPlaceholder_ReturnsFirstUnknown(string template, string? expected) {
     // Act & Assert
     Assert.Equal(expected, RefTemplate.FindUnknownPlaceholder(template));

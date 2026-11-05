@@ -163,20 +163,20 @@ internal sealed class WorkspaceHarness {
       }
       """;
 
-  /// A package document: a mod of the type and the entry "&lt;name&gt;.dll", or a file
+  /// A package document: a mod with the loader type and the entry "&lt;name&gt;.dll", or a file
   /// package for the type "files"; extra holds further keys.
   public static string Package(string name, string version, string type, string extra = "") =>
       $$"""
       {
         "format": "bf45b1",
-        "name": "{{name}}",
+        "id": "{{name}}",
         "version": "{{version}}"{{ModKey(name, type)}}{{(extra == "" ? "" : ",\n" + extra)}}
       }
       """;
 
   private static string ModKey(string name, string type) => type == "files"
       ? ""
-      : $",\n  \"entry\": \"{name}.dll\",\n  \"type\": \"{type}\"";
+      : $",\n  \"mod\": {{ \"loader\": \"{type}\", \"entry\": \"{name}.dll\" }}";
 
   /// The bytes of a ZIP file holding the given files.
   public static byte[] Zip(Dictionary<string, string> files) =>

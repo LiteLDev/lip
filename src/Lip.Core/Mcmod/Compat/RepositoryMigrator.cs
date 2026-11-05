@@ -17,17 +17,12 @@ namespace Lip.Core.Mcmod.Compat;
 ///   already has the format key, is a failure, and nothing is changed.
 /// - manifest.json is written, with an indentation of two spaces, through the hidden temporary
 ///   file .manifest.json.tmp and a rename; tooth.json is deleted only after that succeeded.
-/// - For a meta document, the package document of each target i is written first to
-///   targets/i/manifest.json; a repository that already has targets is then a failure.
 /// - Questions are asked through IUserInteraction.Ask before anything is written.
 ///
-/// The notes are the migrator's, those of ToothMigrator.DroppedFields, and one for each written
-/// manifest.json that is not valid.
+/// The notes are the migrator's, those of ToothMigrator.DroppedFields, and a last one when the
+/// written manifest.json is not valid.
 public static class RepositoryMigrator {
   public const string TempFileName = ".manifest.json.tmp";
-
-  /// The directory the package documents of the targets of a meta document are written to.
-  public const string TargetsDirectoryName = "targets";
 
   private static readonly JsonDocumentOptions _strictJson = new() {
     AllowDuplicateProperties = false,
@@ -103,38 +98,9 @@ public static class RepositoryMigrator {
     }
 
     notes.InsertRange(0, result.Notes);
-    byte[] bytes = Serialize(result.Document);
+    byte[] bytes = Encoding.UTF8.GetBytes(result.Document.ToJsonString(_writeOptions) + "\n");
     if (ToothMigrator.ValidationNote(bytes) is string validation) {
       notes.Add(validation);
-    }
-
-    string targetsPath = fs.Path.Join(directory, TargetsDirectoryName);
-    if (result.Targets.Count > 0) {
-      if (fs.Directory.Exists(targetsPath) || fs.File.Exists(targetsPath)) {
-        throw new InvalidOperationException(
-            $"{TargetsDirectoryName} exists, but the package documents of the targets are to be"
-            + $" written there. Move {TargetsDirectoryName} away and run lip migrate again.");
-      }
-
-      try {
-        for (int i = 0; i < result.Targets.Count; i++) {
-          string name = $"{TargetsDirectoryName}/{i}/{ManifestFormat.ManifestFileName}";
-          byte[] target = Serialize(result.Targets[i]);
-          if (ToothMigrator.ValidationNote(target) is string targetValidation) {
-            notes.Add($"{name}: {targetValidation}");
-          }
-
-          fs.Directory.CreateDirectory(fs.Path.Join(targetsPath, $"{i}"));
-          await fs.File.WriteAllBytesAsync(fs.Path.Join(directory, name), target);
-        }
-      }
-      catch {
-        if (fs.Directory.Exists(targetsPath)) {
-          fs.Directory.Delete(targetsPath, recursive: true);
-        }
-
-        throw;
-      }
     }
 
     string tempPath = fs.Path.Join(directory, TempFileName);
@@ -148,10 +114,6 @@ public static class RepositoryMigrator {
       fs.SetHidden(tempPath, true);
       fs.File.Move(tempPath, manifestPath, overwrite: true);
       fs.SetHidden(manifestPath, false);
-    }
-    catch when (result.Targets.Count > 0 && fs.Directory.Exists(targetsPath)) {
-      fs.Directory.Delete(targetsPath, recursive: true);
-      throw;
     }
     finally {
       if (fs.File.Exists(tempPath)) {
@@ -173,9 +135,6 @@ public static class RepositoryMigrator {
 
     return notes;
   }
-
-  private static byte[] Serialize(JsonObject document) =>
-      Encoding.UTF8.GetBytes(document.ToJsonString(_writeOptions) + "\n");
 
   private static async Task<JsonDocument> ReadJson(IFileSystem fs, string path, string name) {
     try {

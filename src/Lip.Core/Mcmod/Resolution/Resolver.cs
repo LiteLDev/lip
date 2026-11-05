@@ -257,10 +257,8 @@ public class Resolver(
 
     switch (document) {
       case MetaArchiveDocument meta: {
-          // The version of the package (spec §1): the tag version, or else the document's.
           await foreach (Candidate candidate in ResolveMeta(
-              walk, hopRef, meta.Document, tagVersion ?? meta.Document.Version, variant, archive,
-              commit, path, refPath, visited)) {
+              walk, hopRef, meta.Document, variant, archive, commit, path, refPath, visited)) {
             yield return candidate;
           }
 
@@ -322,7 +320,6 @@ public class Resolver(
       Walk walk,
       Ref reference,
       MetaDocument document,
-      SemVersion? version,
       string variant,
       ArchiveHandle archive,
       string? commit,
@@ -358,7 +355,7 @@ public class Resolver(
     List<Ref> refs = [];
     foreach (string template in selected.Source) {
       try {
-        refs.Add(RefTemplate.Expand(template, version, walk.Environment));
+        refs.Add(RefTemplate.Expand(template, selected, walk.Environment));
       }
       catch (FormatException ex) {
         walk.Report(refPath, $"invalid document: {ex.Message}");

@@ -453,7 +453,7 @@ public class McmodServiceTests {
           ["inner.mcmod"] = WorkspaceHarness.Zip(new() {
             ["manifest.json"] = WorkspaceHarness.Package("Inner", "1.0.0", "files", """
                   "files": [ { "src": "a.txt", "dest": "a.txt" } ],
-                  "dependencies": [ { "name": "Dep", "source": "./dep/" } ]
+                  "dependencies": { "Dep": { "source": "./dep/" } }
                 """),
             ["a.txt"] = "a",
             ["dep/manifest.json"] = WorkspaceHarness.Package("Dep", "1.0.0", "files", """
@@ -758,7 +758,7 @@ public class McmodServiceTests {
     });
     _ws.AddZip("app.mcmod", new() {
       ["manifest.json"] = WorkspaceHarness.Package("App", "1.0.0", "native", $$"""
-            "dependencies": [ { "name": "Lib", "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } ]
+            "dependencies": { "Lib": { "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } }
           """),
     });
 
@@ -780,7 +780,7 @@ public class McmodServiceTests {
     });
     _ws.AddZip("app.mcmod", new() {
       ["manifest.json"] = WorkspaceHarness.Package("App", "1.0.0", "native", $$"""
-            "dependencies": [ { "name": "Lib", "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } ]
+            "dependencies": { "Lib": { "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } }
           """),
     });
 

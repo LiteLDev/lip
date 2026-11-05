@@ -10,8 +10,11 @@ public interface IVersionConstraint {
 /// A root manifest.json (spec §4, §10.1). Parsed by IDocumentParser.
 public abstract record ManifestDocument;
 
-/// A document with a "targets" key (spec §4.2): its version and the targets.
+/// A document with a "targets" key (spec §4.2). Only id, version and the targets take part in
+/// resolution; the rest of the document is a template for packing (spec §8).
 public record MetaDocument : ManifestDocument {
+  public string? Id { get; init; }
+
   public SemVersion? Version { get; init; }
 
   public required IReadOnlyList<MetaTarget> Targets { get; init; }
@@ -29,6 +32,12 @@ public record MetaTarget {
   /// Source refs before template expansion (see RefTemplate). Non-empty.
   public required IReadOnlyList<string> Source { get; init; }
 
+  /// The id and version templates use (spec §4.2): the target's own, or else the document's;
+  /// null when there is none.
+  public string? TemplateId { get; init; }
+
+  public SemVersion? TemplateVersion { get; init; }
+
   /// Number of selector keys written; the most specific matching target wins (spec §5.2).
   public int SelectorCount => (Platforms is null ? 0 : 1) + (Runtimes is null ? 0 : 1);
 
@@ -44,7 +53,7 @@ public record PackageDocument : ManifestDocument {
 
   public required SemVersion Version { get; init; }
 
-  /// Whether the document has "entry": a mod is written whole into mods/&lt;id&gt;/; any other
+  /// Whether the document has "mod": a mod is written whole into mods/&lt;id&gt;/; any other
   /// package is a file package, whose files are its Files (spec §7).
   public required bool IsMod { get; init; }
 
@@ -80,7 +89,7 @@ public record PackageDocument : ManifestDocument {
   public Hooks Hooks { get; init; } = new();
 }
 
-/// A "dependencies" or "conflicts" member (spec §4.1, §6). Refs is the "source" of a dependency,
+/// A "dependencies" or "conflicts" entry (spec §4.1, §6). Refs is the "source" of a dependency,
 /// null when absent; a dependency with a source is an install edge.
 public record Dep {
   public required string Id { get; init; }

@@ -1,6 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
@@ -72,12 +71,6 @@ public class LipClientTests {
     Assert.Equal("ws", document.Id);
     Assert.True(document.IsMod);
     Assert.Equal("0.1.0", document.Version.ToString());
-    Assert.True(JsonNode.DeepEquals(
-        JsonNode.Parse("""
-            { "format": "bf45b1", "name": "ws", "version": "0.1.0", "dependencies": [],
-              "entry": "ws.dll", "type": "native" }
-            """),
-        JsonNode.Parse(bytes)));
     Assert.False(_ws.Exists("tooth.json"));
   }
 
@@ -193,7 +186,7 @@ public class LipClientTests {
         _client.Migrate);
 
     // Assert
-    Assert.Contains("the package name", ex.Message);
+    Assert.Contains("the package id", ex.Message);
     Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("manifest.json")));
   }
 

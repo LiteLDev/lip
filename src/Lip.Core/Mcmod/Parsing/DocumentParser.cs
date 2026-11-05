@@ -99,18 +99,20 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
   #region Meta documents (spec §4.2)
 
   private static MetaDocument ParseMeta(JsonElement root) {
+    string? id = ReadOptional(root, "id", "$", ReadId);
+    SemVersion? version = ReadOptional(root, "version", "$", ReadSemVersion);
+
     List<MetaTarget> targets = ReadArray(
-        root.GetProperty("targets"), "$.targets", nonEmpty: true, ReadTarget);
+        root.GetProperty("targets"), "$.targets", nonEmpty: true,
+        (e, p) => ReadTarget(e, p, id, version));
 
     CheckTargetsAreUnambiguous(targets);
 
-    return new MetaDocument {
-      Version = ReadOptional(root, "version", "$", ReadSemVersion),
-      Targets = targets,
-    };
+    return new MetaDocument { Id = id, Version = version, Targets = targets };
   }
 
-  private static MetaTarget ReadTarget(JsonElement element, string path) {
+  private static MetaTarget ReadTarget(
+      JsonElement element, string path, string? id, SemVersion? version) {
     RequireObject(element, path);
 
     string variant = ReadOptional(element, "variant", path, ReadString) ?? "";
@@ -118,11 +120,24 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
       throw Invalid($"{path}.variant", $"'{variant}' is not a valid variant");
     }
 
+    // A null override removes the template's value (spec §4.2 "Templates").
+    if (element.TryGetProperty("id", out JsonElement idOverride)) {
+      id = idOverride.ValueKind == JsonValueKind.Null ? null : ReadId(idOverride, $"{path}.id");
+    }
+
+    if (element.TryGetProperty("version", out JsonElement versionOverride)) {
+      version = versionOverride.ValueKind == JsonValueKind.Null
+          ? null
+          : ReadSemVersion(versionOverride, $"{path}.version");
+    }
+
     return new MetaTarget {
       Variant = variant,
       Platforms = ReadOptional(element, "platform", path, ReadTargetPlatforms),
       Runtimes = ReadOptional(element, "runtime", path, ReadTargetRuntimes),
       Source = ReadRequired(element, "source", path, (e, p) => ReadOneOrMany(e, p, ReadRefTemplate)),
+      TemplateId = id,
+      TemplateVersion = version,
     };
   }
 
@@ -193,26 +208,18 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
   #region Package documents (spec §4.1)
 
   private PackageDocument ParsePackage(JsonElement root) {
-    // "entry" and "type" come together; a document with them is a mod (spec §4.1).
-    bool isMod = root.TryGetProperty("entry", out _);
-    if (isMod != root.TryGetProperty("type", out _)) {
-      throw Invalid(
-          isMod ? "$.type" : "$.entry",
-          $"is required together with \"{(isMod ? "entry" : "type")}\"");
-    }
-
+    bool isMod = root.TryGetProperty("mod", out JsonElement mod);
     if (isMod) {
-      foreach (string key in new[] { "entry", "type" }) {
-        if (ReadRequired(root, key, "$", ReadString) == "") {
-          throw Invalid($"$.{key}", "must not be empty");
-        }
-      }
-
+      ReadMod(mod, "$.mod");
       foreach (string key in new[] { "files", "archives" }) {
         if (root.TryGetProperty(key, out _)) {
-          throw Invalid($"$.{key}", "is not allowed together with \"entry\"");
+          throw Invalid($"$.{key}", "is not allowed together with \"mod\"");
         }
       }
+    }
+
+    if (root.TryGetProperty("info", out JsonElement info)) {
+      ReadInfo(info, "$.info");
     }
 
     List<PackageArchive> archives =
@@ -225,13 +232,14 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
     }
 
     return new PackageDocument {
-      Id = ReadRequired(root, "name", "$", ReadId),
+      Id = ReadRequired(root, "id", "$", ReadId),
       Version = ReadRequired(root, "version", "$", ReadSemVersion),
       IsMod = isMod,
       Platform = ReadOptional(root, "platform", "$", ReadPlatform),
       Runtime = ReadOptional(root, "runtime", "$", ReadString),
-      Dependencies = ReadOptional(root, "dependencies", "$", ArrayOf(ReadDependency)) ?? [],
-      Conflicts = ReadOptional(root, "conflicts", "$", ArrayOf(ReadConflict)) ?? [],
+      Dependencies = ReadOptional(root, "dependencies", "$", (e, p) => ReadMap(e, p, ReadDependency))
+          ?? [],
+      Conflicts = ReadOptional(root, "conflicts", "$", (e, p) => ReadMap(e, p, ReadConflict)) ?? [],
       Files = files,
       Archives = archives,
       Preserve = ReadOptional(root, "preserve", "$", ArrayOf(ReadGlob)) ?? [],
@@ -246,23 +254,70 @@ public partial class DocumentParser(Func<string, IVersionConstraint>? parseRange
           ? platform
           : throw Invalid(path, "must be \"server\" or \"client\"");
 
-  private Dep ReadDependency(JsonElement element, string path) {
+  private static void ReadInfo(JsonElement element, string path) {
     RequireObject(element, path);
 
+    _ = ReadOptional(element, "name", path, ReadString);
+    _ = ReadOptional(element, "description", path, ReadString);
+    _ = ReadOptional(element, "authors", path, ArrayOf(ReadString));
+    _ = ReadOptional(element, "tags", path, ArrayOf(ReadString));
+    _ = ReadOptional(element, "icon", path, ReadHttpsUrl);
+  }
+
+  private Dep ReadDependency(string id, JsonElement element, string path) {
+    if (element.ValueKind == JsonValueKind.String) {
+      return new Dep { Id = id, Version = ReadRange(element, path) };
+    }
+
+    RequireObject(element, path, "must be a range or an object");
+
+    List<Ref>? refs = ReadOptional(element, "source", path, (e, p) => ReadOneOrMany(e, p, ReadRef));
+    if (element.TryGetProperty("mod", out JsonElement mod)) {
+      if (mod.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
+        throw Invalid($"{path}.mod", $"must be a boolean, not {Describe(mod)}");
+      }
+
+      if (mod.ValueKind == JsonValueKind.False && refs is null) {
+        throw Invalid($"{path}.mod", "false is only allowed together with \"source\"");
+      }
+    }
+
     return new Dep {
-      Id = ReadRequired(element, "name", path, ReadId),
+      Id = id,
       Version = ReadOptional(element, "version", path, ReadRange),
-      Refs = ReadOptional(element, "source", path, (e, p) => ReadOneOrMany(e, p, ReadRef)),
+      Refs = refs,
     };
   }
 
-  private Dep ReadConflict(JsonElement element, string path) {
+  private Dep ReadConflict(string id, JsonElement element, string path) =>
+      new() { Id = id, Version = ReadRange(element, path) };
+
+  private static void ReadMod(JsonElement element, string path) {
     RequireObject(element, path);
 
-    return new Dep {
-      Id = ReadRequired(element, "name", path, ReadId),
-      Version = ReadOptional(element, "version", path, ReadRange),
-    };
+    foreach (string key in new[] { "loader", "entry" }) {
+      if (ReadRequired(element, key, path, ReadString) == "") {
+        throw Invalid($"{path}.{key}", "must not be empty");
+      }
+    }
+
+    if (element.TryGetProperty("passive", out JsonElement passive)
+        && passive.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
+      throw Invalid($"{path}.passive", $"must be a boolean, not {Describe(passive)}");
+    }
+
+    foreach (string key in new[] { "loadAfter", "loadBefore" }) {
+      _ = ReadOptional(element, key, path, ArrayOf((e, p) => {
+        string value = ReadString(e, p);
+        return value == "*" || IsId(value)
+            ? value
+            : throw Invalid(p, $"'{value}' is neither an id nor \"*\"");
+      }));
+    }
+
+    if (element.TryGetProperty("extra", out JsonElement extra)) {
+      RequireObject(extra, $"{path}.extra");
+    }
   }
 
   private static PackageFile ReadFile(JsonElement element, string path) {

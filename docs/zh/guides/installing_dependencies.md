@@ -60,7 +60,7 @@ lip install https://example.com/package.mcmod
 
 ## 仅限服务端工作区
 
-lip 管理服务端工作区：mod 安装到 `mods/<name>/`（参见[环境](../concepts/package_manifest.md#环境)）。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
+lip 管理服务端工作区：mod 安装到 `mods/<id>/`（参见[环境](../concepts/package_manifest.md#环境)）。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
 
 在服务端工作区中，`plugins` 是指向 `mods` 的链接（Windows 上为目录联接，其他平台为符号链接），因此仍在 `plugins/` 中查找的软件可以继续工作，`plugins/` 下的路径与 `mods/` 下对应的路径是同一个文件。在 `lip install`、`lip uninstall` 或 `lip update` 改动任何包之前，lip 会这样准备：
 
