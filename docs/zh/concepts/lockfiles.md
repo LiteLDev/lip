@@ -26,7 +26,7 @@ lip v0.36 把锁以相同格式保存在 `.lip/lock.json` 中：当不存在 `.l
 
 ## 结构
 
-锁文件是一个 JSON 文件，由 JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/workspace.schema.json) 描述：
+锁文件是一个 JSON 文件，由 JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json) 描述：
 
 ```json
 {

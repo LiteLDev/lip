@@ -9,7 +9,7 @@ namespace Lip.Core.Mcmod.Lock;
 public class LockFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Reads and writes the workspace file (protocol/workspace §8.1), called the lock in the code.
+/// Reads and writes the workspace file (protocol/workspace.md §8.1), called the lock in the code.
 ///
 /// The workspace file (format bf45b1) lives inside the workspace, in &lt;root&gt;/.lip/workspace.json,
 /// so that it follows the workspace when the workspace is moved, renamed or copied. Next to it in
@@ -17,7 +17,7 @@ public class LockFormatException(string message, Exception? inner = null)
 ///
 /// When it is absent, the &lt;root&gt;/.lip/lock.json of lip v0.36, which has the same format, is read
 /// instead, and else a v3 &lt;root&gt;/tooth_lock.json written by lip v0.x is migrated. The next save
-/// writes .lip/workspace.json and deletes the file it was read from (protocol/workspace §8.6).
+/// writes .lip/workspace.json and deletes the file it was read from (protocol/workspace.md §8.6).
 ///
 /// v3 recorded the absolute paths of the files a package placed (relative to the working
 /// directory, which was the workspace root). Migration turns paths under the workspace root into

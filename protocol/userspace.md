@@ -92,6 +92,6 @@ This document has no IANA actions.
 - [GIT-OBJECTS] Chacon, S. and B. Straub, "Pro Git, Section 10.2: Git Objects", <https://git-scm.com/book/en/v2/Git-Internals-Git-Objects>.
 - [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <https://www.rfc-editor.org/info/rfc2119>.
 - [RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017, <https://www.rfc-editor.org/info/rfc8174>.
-- [WORKSPACE] "lip Workspace Protocol", [`../workspace/README.md`](../workspace/README.md).
+- [WORKSPACE] "lip Workspace Protocol", [`workspace.md`](workspace.md).
 - [XDG] freedesktop.org, "XDG Base Directory Specification", <https://specifications.freedesktop.org/basedir-spec/latest/>.
 - [YAML] "YAML Ain't Markup Language (YAML) Version 1.2", Revision 1.2.2, October 2021, <https://yaml.org/spec/1.2.2/>.

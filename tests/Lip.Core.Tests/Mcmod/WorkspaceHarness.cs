@@ -101,7 +101,7 @@ internal sealed class WorkspaceHarness {
   /// outside the workspace (lip's data directory) may be created.
   public SortedDictionary<string, string> Snapshot() {
     SortedDictionary<string, string> snapshot = new(StringComparer.Ordinal);
-    // Creating .lip and the workspace lock file in it is not a change (protocol/workspace §8).
+    // Creating .lip and the workspace lock file in it is not a change (protocol/workspace.md §8).
     string lip = Fs.Path.Join(Root, LockStore.LipDirectory);
     foreach (string path in Fs.AllPaths.Where(
         p => p != lip && p != LockStore.GetMutexPath(Root))) {

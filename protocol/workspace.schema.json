@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/workspace/workspace.schema.json",
+  "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/workspace.schema.json",
   "title": "lip workspace file (<workspace>/.lip/workspace.json), format bf45b1",
   "type": "object",
   "properties": {

@@ -18,7 +18,7 @@ namespace Lip.Core.Mcmod.Install;
 /// - Moves, directory removals and directory links (the workspace layout) are recorded and undone
 ///   too.
 ///
-/// With a journal path (&lt;root&gt;/.lip/journal, protocol/workspace §8.3), every change is appended
+/// With a journal path (&lt;root&gt;/.lip/journal, protocol/workspace.md §8.3), every change is appended
 /// to the journal (one JSON object per line, its paths relative to &lt;root&gt; and '/'-separated)
 /// and flushed to the operating system before it is made, so that a later process can undo the
 /// changes of a process that was killed (Recover). Commit appends a "Commit" line; from then on

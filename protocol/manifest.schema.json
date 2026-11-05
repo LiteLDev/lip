@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/package/manifest.schema.json",
+  "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/manifest.schema.json",
   "title": "lip manifest.json (format bf45b1)",
   "description": "The manifest.json at the root of a package: a concrete package, or a meta package (with \"targets\") naming other packages. Keys not described here are ignored. Not expressible here: two targets with the same variant must not write the same selector keys (platform, runtime) with intersecting values.",
   "type": "object",

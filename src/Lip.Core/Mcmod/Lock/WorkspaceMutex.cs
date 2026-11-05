@@ -6,7 +6,7 @@ namespace Lip.Core.Mcmod.Lock;
 public class WorkspaceBusyException(string message, Exception? inner = null)
     : InvalidOperationException(message, inner);
 
-/// The workspace lock (protocol/workspace §8.2), held while an install, uninstall or update
+/// The workspace lock (protocol/workspace.md §8.2), held while an install, uninstall or update
 /// changes a workspace, so that two processes never interleave their changes, their journals or
 /// their workspace files.
 ///

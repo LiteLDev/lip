@@ -3,10 +3,10 @@
 A lip package is described by a `manifest.json` at the root of its archive, marked by
 `"format": "bf45b1"`. The same document is read by LeviLamina, which loads the mods it describes;
 lip installs them.
-The normative definition is the [package protocol](https://github.com/LiteLDev/lip/blob/main/protocol/package/README.md).
+The normative definition is the [package protocol](https://github.com/LiteLDev/lip/blob/main/protocol/package.md).
 
 The format is described by the JSON Schema
-[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json).
+[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/manifest.schema.json).
 lip also reads LeviLamina manifests without `format` and the `tooth.json` of lip v0.x, see
 [Legacy Formats](#legacy-formats).
 

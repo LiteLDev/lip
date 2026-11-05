@@ -2,10 +2,10 @@
 
 lip 包由其归档根部的 `manifest.json` 描述，并以 `"format": "bf45b1"` 标记。同一份文档也由
 LeviLamina 读取：LeviLamina 加载其描述的 mod，lip 负责安装它们。
-规范性定义见[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package/README.md)。
+规范性定义见[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md)。
 
 该格式由 JSON Schema
-[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json)
+[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/manifest.schema.json)
 描述。lip 还可读取不带 `format` 的 LeviLamina 清单和 lip v0.x 的 `tooth.json`，参见[旧格式](#旧格式)。
 
 ## 归档

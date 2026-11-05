@@ -314,11 +314,11 @@ This document has no IANA actions.
 
 - [JSON-RPC] JSON-RPC Working Group, "JSON-RPC 2.0 Specification", <https://www.jsonrpc.org/specification>.
 - [LSP] Microsoft, "Language Server Protocol Specification 3.17, Base Protocol", <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol>.
-- [PACKAGE] "lip Package Protocol", [`../package/README.md`](../package/README.md).
+- [PACKAGE] "lip Package Protocol", [`package.md`](package.md).
 - [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <https://www.rfc-editor.org/info/rfc2119>.
 - [RFC8089] Kerwin, M., "The "file" URI Scheme", RFC 8089, DOI 10.17487/RFC8089, February 2017, <https://www.rfc-editor.org/info/rfc8089>.
 - [RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017, <https://www.rfc-editor.org/info/rfc8174>.
 - [RFC8259] Bray, T., Ed., "The JavaScript Object Notation (JSON) Data Interchange Format", STD 90, RFC 8259, DOI 10.17487/RFC8259, December 2017, <https://www.rfc-editor.org/info/rfc8259>.
 - [SEMVER] Preston-Werner, T., "Semantic Versioning 2.0.0", <https://semver.org/spec/v2.0.0.html>.
-- [USERSPACE] "lip Userspace Protocol", [`../userspace/README.md`](../userspace/README.md).
-- [WORKSPACE] "lip Workspace Protocol", [`../workspace/README.md`](../workspace/README.md).
+- [USERSPACE] "lip Userspace Protocol", [`userspace.md`](userspace.md).
+- [WORKSPACE] "lip Workspace Protocol", [`workspace.md`](workspace.md).

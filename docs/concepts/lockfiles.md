@@ -26,7 +26,7 @@ The lockfile is saved once, after every package of an operation has been install
 
 ## Structure
 
-The lockfile is a JSON file described by the JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/workspace.schema.json):
+The lockfile is a JSON file described by the JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json):
 
 ```json
 {

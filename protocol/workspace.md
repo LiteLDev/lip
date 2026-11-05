@@ -308,7 +308,7 @@ This document has no IANA actions.
 
 - [CREATEFILE] Microsoft, "CreateFileW function (fileapi.h)", <https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew>.
 - [FLOCK] "flock(2) - Linux manual page", <https://man7.org/linux/man-pages/man2/flock.2.html>.
-- [PACKAGE] "lip Package Protocol", [`../package/README.md`](../package/README.md).
+- [PACKAGE] "lip Package Protocol", [`package.md`](package.md).
 - [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <https://www.rfc-editor.org/info/rfc2119>.
 - [RFC3339] Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, DOI 10.17487/RFC3339, July 2002, <https://www.rfc-editor.org/info/rfc3339>.
 - [RFC8089] Kerwin, M., "The "file" URI Scheme", RFC 8089, DOI 10.17487/RFC8089, February 2017, <https://www.rfc-editor.org/info/rfc8089>.

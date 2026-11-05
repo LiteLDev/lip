@@ -38,7 +38,7 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 /// WorkspaceTransaction, journaled next to the lock in .lip, and writes the lock last; a failure
 /// (or cancellation) undoes every change and leaves the lock as it was. An operation other than a
 /// dry run holds the workspace's WorkspaceMutex throughout, and first finishes or undoes what an
-/// interrupted operation left in the journal (protocol/workspace §8.4).
+/// interrupted operation left in the journal (protocol/workspace.md §8.4).
 ///
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the lock
 /// without network access, and their archives are opened from the lock only when needed. If the

@@ -56,7 +56,7 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 ## 清单校验
 
-`manifest.json` 由 JSON Schema [`protocol/package/manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json) 描述。锁由 [`protocol/workspace/workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/workspace.schema.json) 描述。旧格式曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
+`manifest.json` 由 JSON Schema [`protocol/manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/manifest.schema.json) 描述。锁由 [`protocol/workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json) 描述。旧格式曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
 
 - **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `id`、`version`、ref、范围、glob 或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
 - **版本**：带有 `"format": "bf45b1"` 的 `manifest.json` 是当前格式的文档；不带 `format` 的是 LeviLamina 清单，按 mod 读取（规范 §10.1）。格式版本为 1 或 2 的 `tooth.json` 会在读取时于内存中转换为版本 3，再转换为文件包（规范 §10.2）；如需把包仓库从 `tooth.json` 或 LeviLamina 清单迁移到 `manifest.json`，请在仓库中运行 `lip migrate`。
@@ -71,7 +71,7 @@ lip 在保存于工作区中 `.lip/workspace.json` 的锁文件里维护已安�
 
 为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：锁先写入 `.lip/workspace.json.new`，再重命名覆盖 `.lip/workspace.json`；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。锁保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
 
-下面的日志和操作锁与锁文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/workspace`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/README.md#8-the-lip-directory) 中，其他程序也可以参与。
+下面的日志和操作锁与锁文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#8-the-lip-directory) 中，其他程序也可以参与。
 
 - **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存锁的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
 - **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。
@@ -80,7 +80,7 @@ lip 在保存于工作区中 `.lip/workspace.json` 的锁文件里维护已安�
 
 lip 只管理服务端工作区：它从不从工作区判断平台，而是总是使用 `server`，如同由用户显式指定（[CLI 规范](https://github.com/LiteLDev/lip/blob/1e023e6/specs/cli.md) §3，规范 §5.1）。客户端工作区交由实现同一规范的启动器（如 LeviLauncher）处理。
 
-lip 实现[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package/README.md)和[原 lip 包规范](https://github.com/LiteLDev/lip/blob/1e023e6/specs/package_format.md)（格式 `bf45b1`）。规范没有规定 lip 如何继续管理旧版本写入的锁（规范 §9 "Earlier formats"），并允许通过包含嵌套 ZIP 归档的归档来标识它（规范 §9）。lip 的做法如下：
+lip 实现[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md)和[原 lip 包规范](https://github.com/LiteLDev/lip/blob/1e023e6/specs/package_format.md)（格式 `bf45b1`）。规范没有规定 lip 如何继续管理旧版本写入的锁（规范 §9 "Earlier formats"），并允许通过包含嵌套 ZIP 归档的归档来标识它（规范 §9）。lip 的做法如下：
 
 1. **迁移而来的锁条目**：从 `tooth_lock.json` 迁移而来的条目不记录归档标识。当 lip 需要其归档时，会重新解析标签 `path@version`。
 2. **嵌套的 ZIP 归档**：位于另一个归档中的 ZIP 归档只按 SHA-256 锁定，且不单独缓存。要再次打开它，lip 会重新解析记录的解析链，从而重新打开父归档并解出该 ZIP 文件，并且只接受 SHA-256 一致的结果。
