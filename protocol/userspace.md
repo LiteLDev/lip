@@ -25,7 +25,7 @@ Earlier formats. If `config.yaml` is missing and the config directory has the `l
 
 ## 3. Cache
 
-The cache directory holds only data that can be obtained again. Every process using it, `lip` or not, follows this section; other processes MAY read and write it.
+Every process using the cache directory, `lip` or not, follows this section; other processes MAY read and write it.
 
 Entries.
 
@@ -39,12 +39,6 @@ Any other entry is not defined here; a process MUST NOT read meaning into it.
 
 Writing. A process creates an entry only by writing the whole file below `.staging` under a name no other process uses, then renaming it to the entry's name. It MUST NOT create a `git-<O>` whose content does not have object id `<O>`, and MUST NOT modify an entry in place; if the entry exists, the rename either fails or replaces it with a file of the same meaning.
 
-Reading. An existing entry is complete. Since a URL's body can change, a reader that knows what an `http-<H>` entry's content must be (e.g., from a SHA-256 in a workspace file) MUST check it, and MAY delete it on mismatch.
+Reading. An existing entry is complete. A reader that knows what an `http-<H>` entry's content must be MUST check it, and MAY delete it on mismatch.
 
-Deleting. Any entry MAY be deleted, which can make a process reading it fail. A file below `.staging` MAY be deleted when no process is writing it.
-
-## 4. Security Considerations
-
-The `github_proxy` prefix receives every network request `lip` sends to GitHub, so it can observe and alter what `lip` downloads from GitHub.
-
-Any process that can write to the cache directory can alter what `lip` installs from a URL whose content the workspace file does not yet record. `git-<O>` entries are named by content and can be checked.
+Deleting. Any entry MAY be deleted. A file below `.staging` MAY be deleted when no process is writing it.

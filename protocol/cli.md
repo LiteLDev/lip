@@ -247,7 +247,3 @@ The result of a method is the result of the command, as the command writes it wi
 A method that fails responds with a JSON-RPC error whose `message` describes the cause, and leaves everything as the failing command would. `Migrate` asks no questions: where `lip migrate` would ask, the method fails, naming the value. The client MAY cancel a pending JSON-RPC request with the notification `$/cancelRequest` and parameters `{ "id": <request id> }`; a cancelled `Install`, `Uninstall` or `Update` undoes its changes and responds with an error. Requests MAY be sent before earlier ones are answered; a workspace operation that finds the workspace lock held, including by another request, fails at once.
 
 The server sends the messages to the client as JSON-RPC requests, which the client answers with `null`: `PrintInfo(message)`, `PrintSuccess(message)`, `PrintWarning(message)`, `PrintError(message)` and `ReportProgress(id, message, percentage)`.
-
-## 6. Security Considerations
-
-`install`, `uninstall` and `update` run hook commands unless `--ignore-scripts` or `--dry-run` is given.

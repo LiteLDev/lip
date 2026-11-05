@@ -293,7 +293,7 @@
       }
     },
     "packageKeys": {
-      "description": "The keys of a concrete package, all of which a target may override.",
+      "description": "The keys of a concrete package.",
       "properties": {
         "id": {
           "$ref": "#/definitions/id"

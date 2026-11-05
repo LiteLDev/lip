@@ -5,7 +5,3 @@
 - `github.com/LiteLDev/LeviLamina`
 - `github.com/LiteLDev/LegacyScriptEngine`
 - `github.com/LiteLDev/LeviAntiCheat`
-
-## Security Considerations
-
-Installing these runs their `scripts` and downloads their assets unverified, trusting their repositories and asset hosts.

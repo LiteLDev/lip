@@ -5,15 +5,15 @@
 - **ASCII case-insensitive**: Two strings are equal ASCII case-insensitively when equal after `A`–`Z` is replaced by `a`–`z` in both.
 - **archive**: A tree of regular files and directories, each named by its path from the root; one of:
   - **ZIP archive**: a file in the ZIP format [APPNOTE], by content, whatever its name. Each entry MUST be a regular file or directory; entry paths are decoded as UTF-8, MUST be `/`-separated, and MUST NOT start with `/` or contain a `..` segment or `\`.
-  - **directory archive**: a directory, taken as the archive of its contents; the unpacked form of a ZIP archive.
+  - **directory archive**: a directory, taken as the archive of its contents.
   - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees.
 - **manifest**: The file `manifest.json` at the root of an archive, which MUST be valid against `manifest.schema.json`.
 - **package**: An archive that has a manifest.
 - **meta package**: A package whose manifest has the key `targets`.
-- **concrete package**: Any other package. Only concrete packages are installed.
+- **concrete package**: Any other package.
 - **id**: A string matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`, compared ASCII case-insensitively.
 - **version**: A [SEMVER] version, without a leading `v`.
-- **version of a package**: The tag version (Section 2.1) of its git archive, if any; otherwise its manifest's `version`. A concrete package always has one.
+- **version of a package**: The tag version (Section 2.1) of its git archive, if any; otherwise its manifest's `version`.
 - **range**: A string with the syntax and matching semantics of a [NODE-SEMVER] range, as `semver.satisfies` applies it without the options `loose` and `includePrerelease`. A version satisfies a range that matches it.
 - **variant**: `""`, or a string matching `^[a-z0-9_]+(/[a-z0-9_]+)?$`.
 - **platform**: `"server"` or `"client"`.
@@ -50,7 +50,7 @@ The **location** of a source is the part before its `#` (and before its `@`, for
 
 The **variant of the source** is the part after the `#`, or `""` without `#`; a `#` followed by nothing is invalid. A remote repository is split first at its first `@`, then the part before it at its first `#`. A URL is split at its first `#`; a local path at its last `#`.
 
-A source with any other URI scheme, such as `http:` or `file:`, is invalid.
+A source with any other URI scheme is invalid.
 
 ### 2.1. Remote Repositories
 
@@ -65,7 +65,7 @@ The **ref** after `@` selects commits:
 | none | The commit of every version tag |
 | `<version>` | The commit of the tag `v<version>` |
 | `branch:<name>` | The commit `refs/heads/<name>` points to |
-| `tag:<name>` | The commit `refs/tags/<name>` points to, for a tag of any name |
+| `tag:<name>` | The commit `refs/tags/<name>` points to |
 | `rev:<commit>` | The commit with that id, compared case-insensitively |
 
 An annotated tag is peeled to its commit. `<name>` MUST be a valid ref name [GIT-REF]. Any other ref is invalid.
@@ -110,7 +110,3 @@ The **chain** of a candidate is the sequence of sources followed to reach it, st
    - its version satisfies `range`.
 
 Loops. A chain contributes no candidate when it has more than 8 sources, or when the same archive with the same variant of the source occurs twice in it.
-
-## 4. Security Considerations
-
-As a source may name an archive from the network, the restrictions on ZIP archive entry paths (Section 1) and on local paths inside a manifest (Section 2.3) keep the files an archive names inside that archive.

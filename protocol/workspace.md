@@ -3,7 +3,7 @@
 ## 1. Terminology
 
 - **workspace**: A directory into which packages are installed. Paths in this document are relative to it and `/`-separated, unless said to be absolute.
-- **mod**: A concrete package whose manifest has the key `mod`, loaded by LeviLamina [LEVILAMINA].
+- **mod**: A concrete package whose manifest has the key `mod`.
 - **file package**: A concrete package that is not a mod.
 - **identity**: The `id` of the manifest of a concrete package.
 - **operation**: Installing, uninstalling or updating packages in a workspace as one unit, including every package it installs, replaces or uninstalls as a dependency.
@@ -16,9 +16,9 @@
 
 A workspace has one environment, recorded in its workspace file; every operation on it resolves sources for that environment. How a workspace without a recorded environment gets one is not defined here.
 
-`.lip` at the workspace root is the directory of Section 7. No package writes or deletes anything there.
+`.lip` at the workspace root is the directory of Section 7.
 
-**Server layout.** In a workspace whose platform is `"server"`, mods are installed below `mods`, and `plugins` at the root MUST be a link to `mods`: a directory junction on Windows, a relative symbolic link elsewhere. A path through `plugins/` is the same file as the corresponding path through `mods/`; it is compared, and recorded in the workspace file, in the `mods/` form. Before an operation changes the workspace, it establishes the layout:
+**Server layout.** In a workspace whose platform is `"server"`, mods are installed below `mods`, and `plugins` at the root MUST be a link to `mods`: a directory junction on Windows, a relative symbolic link elsewhere. A path through `plugins/` is compared, and recorded in the workspace file, in its `mods/` form. Before an operation changes the workspace, it establishes the layout:
 
 - `mods` missing: it is created as a directory.
 - `plugins` missing: it is created as a link to `mods`.
@@ -85,7 +85,7 @@ Updating an explicitly installed package makes a request of the first source of 
 - a remote repository without a ref gives its highest version tag;
 - `@<version>` and `rev:` give the same commit;
 - `branch:` and `tag:` give the commit the branch or tag points to now;
-- a URL is downloaded again; the content behind a URL SHOULD NOT change;
+- a URL is downloaded again;
 - a local path is read again.
 
 The package is replaced only when the package obtained differs in identity, version, archive name or archive identifier.
@@ -100,10 +100,7 @@ An operation succeeds or fails as a whole.
 2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made, including to directories and the server layout, is undone (Section 7.5). The workspace file does not change.
 3. **Hook commands are not undone.** Hook commands that already ran are neither run again nor reversed. They SHOULD be safe to run again, and SHOULD NOT assume that the files of the operation stay in place.
 4. The paths that uninstallation steps 2–4 delete are those that match before any hook command of the operation runs.
-5. **Interruption.** When an operation is interrupted while changing the workspace (for example, its process is killed), the next operation on the workspace first recovers it (Section 7.5).
-6. **Concurrency.** An operation holds the workspace lock for its whole duration (Section 7.4), so two operations never change the same workspace at once.
-
-The workspace file records an operation only once every step of it has succeeded.
+5. **Interruption.** When an operation is interrupted while changing the workspace, the next operation on the workspace first recovers it (Section 7.5).
 
 ## 7. The `.lip` Directory
 
@@ -113,7 +110,7 @@ Creating `.lip` and `.lip/lock` is not a change, and an operation that fails ear
 
 ### 7.1. Workspace File
 
-The **workspace file** is `.lip/workspace.json`, valid against `workspace.schema.json`. It belongs to the directory, not to its path: a workspace that is moved, renamed or copied keeps its workspace file, and so its installed packages. A workspace without a workspace file and without the files of Section 7.6 has no installed packages and no recorded environment.
+The **workspace file** is `.lip/workspace.json`, valid against `workspace.schema.json`. A workspace without a workspace file and without the files of Section 7.6 has no installed packages and no recorded environment.
 
 The workspace file is replaced only as a whole, by renaming `.lip/workspace.json.new` over it (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
 
@@ -154,7 +151,7 @@ Entries whose `kind` is not `"mcmod"` record packages of other formats. An imple
 
 ### 7.2. Workspace Lock
 
-The **workspace lock** is held on `.lip/lock`. To take it, a process creates `.lip` and the empty file `.lip/lock` when they do not exist, opens `.lip/lock`, and keeps it open with a share mode of 0 [CREATEFILE] on Windows, or takes an exclusive `flock` lock (`LOCK_EX`) [FLOCK] on it elsewhere. When this fails because another process has the file open with a share mode of 0 or holds a `flock` lock on it, another process holds the workspace lock. Closing the file, which the operating system does when the process ends, releases the lock.
+The **workspace lock** is held on `.lip/lock`. To take it, a process creates `.lip` and the empty file `.lip/lock` when they do not exist, opens `.lip/lock`, and keeps it open with a share mode of 0 [CREATEFILE] on Windows, or takes an exclusive `flock` lock (`LOCK_EX`) [FLOCK] on it elsewhere. When this fails because another process has the file open with a share mode of 0 or holds a `flock` lock on it, another process holds the workspace lock. Closing the file releases the lock.
 
 `.lip/lock` MUST NOT be deleted, renamed or replaced while the workspace lock is held. Its content is not defined here.
 
@@ -162,7 +159,7 @@ A process that only reads the workspace file need not take the workspace lock.
 
 ### 7.3. Journal
 
-The **journal** is `.lip/journal`. It exists only while an operation changes the workspace, or after such an operation was interrupted. It is a sequence of **records**, each a JSON [RFC8259] object written in UTF-8 on one line ended by LF (U+000A). Any other line, including a cut-off last line, is ignored.
+The **journal** is `.lip/journal`. It is a sequence of **records**, each a JSON [RFC8259] object written in UTF-8 on one line ended by LF (U+000A). Any other line, including a cut-off last line, is ignored.
 
 Every record has the member `op`. The members `path` and `to` are paths relative to the workspace; `hidden` is a boolean that defaults to `false`.
 
@@ -193,7 +190,7 @@ An operation does, in order:
 5. Create `.lip/journal` with a `"Begin"` record. A journal that already exists is never overwritten.
 6. Make the changes and run the hook commands (Sections 2 and 4), each change after its record. When a step fails or the operation is cancelled, undo the operation (Section 7.5) and fail.
 7. Write the new workspace file to `.lip/workspace.json.new`.
-8. Append a `"Commit"` record to the journal, and flush it to the operating system. This is the **commit point**: from here on, the operation is completed rather than undone.
+8. Append a `"Commit"` record to the journal, and flush it to the operating system.
 9. Rename `.lip/workspace.json.new` over `.lip/workspace.json`, then complete the operation (Section 7.5).
 10. Release the workspace lock.
 
@@ -223,18 +220,11 @@ A file or directory that step 2 or 3 cannot delete is left in place.
    - `"Begin"`, `"DeleteDirectoryOnCommit"`: nothing.
 3. When every record was undone, delete the journal. Otherwise replace the journal by one with a `"Begin"` record followed by the records that could not be undone, in their order, and fail. A `"CreateDirectory"` record whose `path` is a directory above the `path` of such a record is not undone, and is kept too.
 
-Undoing a record is checked against the workspace as it is, so a record whose change was never made, or was already undone, changes nothing; recovering a journal again after an interruption of recovery has the same effect.
+Undoing a record is checked against the workspace as it is.
 
 **Recovering** is completing the operation when the journal has a `"Commit"` record, and undoing it otherwise. The process that recovers MUST hold the workspace lock.
 
 ### 7.6. Earlier Formats
 
-- When `.lip/workspace.json` does not exist and `.lip/lock.json` written by lip v0.36 does, `.lip/lock.json` is read as the workspace file; it has the same format. The next operation writes `.lip/workspace.json` and then deletes `.lip/lock.json`.
-- When neither exists, a `tooth_lock.json` at the root of the workspace was written by lip v0.x. How it is taken over is not defined here.
-- lip v0.36 kept the journal and the inter-process lock of a workspace outside it. They are neither read nor deleted.
-
-## 8. Security Considerations
-
-Hook commands run with the privileges of the process that runs the operation, and are not undone. Installing a package runs its hook commands.
-
-A process that can write to `.lip` can make the next operation delete or rename files in the workspace through a journal. `.lip` has the same access rights as the workspace.
+- When `.lip/workspace.json` does not exist and `.lip/lock.json` does, `.lip/lock.json` is read as the workspace file; it has the same format. The next operation writes `.lip/workspace.json` and then deletes `.lip/lock.json`.
+- When neither exists, how a `tooth_lock.json` at the root of the workspace is taken over is not defined here.

@@ -22,8 +22,6 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 
 ## References
 
-### Normative
-
 - [APPNOTE] PKWARE Inc., "APPNOTE.TXT - .ZIP File Format Specification", <https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT>.
 - [CLI] [`cli.md`](cli.md).
 - [COMPATIBILITY] [`compatibility.md`](compatibility.md).
@@ -50,7 +48,3 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 - [WORKSPACE] [`workspace.md`](workspace.md).
 - [XDG] freedesktop.org, "XDG Base Directory Specification", <https://specifications.freedesktop.org/basedir-spec/latest/>.
 - [YAML] "YAML Ain't Markup Language (YAML) Version 1.2", Revision 1.2.2, October 2021, <https://yaml.org/spec/1.2.2/>.
-
-### Informative
-
-- [LEVILAMINA] LiteLDev, "LeviLamina", <https://github.com/LiteLDev/LeviLamina>.
