@@ -147,7 +147,9 @@ internal sealed class WorkspaceHarness {
     return snapshot;
   }
 
-  public Task<LockFile> Lock() => LockStore.Load(Root);
+  /// The workspace file. Throws when there is none.
+  public async Task<LockFile> Lock() =>
+      await LockStore.Load(Root) ?? throw new InvalidOperationException("No workspace file.");
 
   /// Where the lock of the workspace lives, in .lip inside the workspace.
   public string LockPath => LockStore.GetLockPath(Root);

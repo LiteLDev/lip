@@ -89,7 +89,7 @@ Without `--no-dependencies`, `lip install` installs a set of packages satisfying
 - An installed package keeps its version when that satisfies Section 3 of [WORKSPACE]; otherwise a dependency package may change version. Each dependency package that no explicitly installed package needs is uninstalled.
 - When a requested package is already explicitly installed, or two package arguments request the same identity, the command fails.
 
-With `--no-dependencies`, `lip` installs, for each package argument, exactly the first candidate of its request as explicitly installed, replacing an installed package of the same identity, following no dependency, and installing or uninstalling no other package. An installed package with the identity, version, archive identifier and asset identifiers of that candidate is only marked explicitly installed. Section 3 of [WORKSPACE] may no longer hold afterwards.
+With `--no-dependencies`, `lip` installs, for each package argument, exactly the first candidate of its request as explicitly installed, replacing an installed package of the same identity, following no dependency, and installing or uninstalling no other package. An installed package with the identity, version and commit of that candidate is only marked explicitly installed. Section 3 of [WORKSPACE] may no longer hold afterwards.
 
 ### 5.2. `lip uninstall`
 

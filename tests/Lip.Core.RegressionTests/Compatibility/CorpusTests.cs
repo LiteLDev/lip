@@ -20,8 +20,7 @@ namespace Lip.Core.RegressionTests.Compatibility;
 /// - Resolve(package, workspace, =version, (server, win-x64)) yields a candidate, unless the
 ///   tooth.json at the tag declares the variant only for other platforms (not installable on
 ///   win-x64, with or without lip v4);
-/// - only the root document is downloaded while resolving, and the self-asset placements are
-///   matched against the git tree keys;
+/// - only the root document is downloaded while resolving;
 /// - GraphSolver.Solve of that single request succeeds (entries whose dependencies cannot be
 ///   satisfied upstream, which lip v3 could not install either, are listed below).
 /// RISK entries (upstream breakage, see README.md) are skipped.
@@ -178,24 +177,7 @@ public class CorpusTests {
 
     Candidate candidate = result.Candidates[0];
 
-    // 2. Self-asset placements are resolved against the git tree. Only the root document is
-    // downloaded; the other assets (URL assets) are not opened.
-    ToothEntry entry0 = candidate.Package.Entry;
-    List<string> keys = [.. candidate.Archive.Source.Keys];
-    foreach (EntryAsset asset in entry0.Assets.Where(a => a.Type == AssetType.Self)) {
-      foreach (EntryPlacement placement in asset.Placements) {
-        AssetPlacement legacy = new(
-            "", placement.LegacyDirectory ?? placement.Form == PlacementForm.Directory,
-            placement.Src, placement.Dest);
-        // Many manifests place build outputs that are not committed, so a placement may match
-        // nothing (as before). It must match, though, whenever the tree has the path it names.
-        if (ToothPlacements.Match(keys, [legacy]).Count == 0 && TreeHasPath(keys, legacy)) {
-          return $"self placement {(legacy.IsDirectory ? "dir" : "file")} "
-              + $"'{legacy.Src}' -> '{legacy.Dest}' matches no key";
-        }
-      }
-    }
-
+    // 2. Only the root document is downloaded; the other assets (URL assets) are not opened.
     List<string> unexpected = recorder.UnexpectedBlobs();
     if (unexpected.Count > 0) {
       return $"{unexpected.Count} blob(s) other than the root document were downloaded while "
@@ -238,16 +220,6 @@ public class CorpusTests {
 
   private static Resolver CreateResolver(ArchiveProvider provider) => new(
       provider, new ArchiveReader());
-
-  private static bool TreeHasPath(List<string> keys, AssetPlacement placement) {
-    string src = placement.Src.Replace('\\', '/');
-
-    return !placement.IsDirectory
-        ? keys.Contains(src)
-        : src.Trim('/') is "" or "."
-            ? keys.Count > 0
-            : keys.Any(k => k.StartsWith(src.Trim('/') + "/", StringComparison.Ordinal));
-  }
 
   private static IEnumerable<CorpusEntry> SelectEntries() {
     List<CorpusEntry> entries = [.. LoadCorpus().Where(e => e.BaselineInstallable && e.GitTag)];

@@ -34,12 +34,11 @@ public class McmodInstallerTests {
     _ui.Setup(u => u.PrintInfo(It.IsAny<string>())).Returns(Task.CompletedTask);
     _ui.Setup(u => u.PrintWarning(It.IsAny<string>())).Returns(Task.CompletedTask);
     _provider
-        .Setup(p => p.OpenAsset(It.IsAny<IReadOnlyList<string>>(), It.IsAny<AssetFormat>()))
-        .Returns((IReadOnlyList<string> urls, AssetFormat _) =>
+        .Setup(p => p.OpenAsset(It.IsAny<IReadOnlyList<string>>()))
+        .Returns((IReadOnlyList<string> urls) =>
             urls.FirstOrDefault(_assets.ContainsKey) is string url
-                ? Task.FromResult(new OpenedAsset(
-                    _assets[url], new AssetIdentity(url, TestIdentity.Sha256)))
-                : Task.FromException<OpenedAsset>(
+                ? Task.FromResult(_assets[url])
+                : Task.FromException<ISource>(
                     new ArchiveUnavailableException($"none of {string.Join(", ", urls)}")));
     _installer = new McmodInstaller(_fs, _commandRunner.Object, _ui.Object);
   }
@@ -64,7 +63,7 @@ public class McmodInstallerTests {
   private static ToothEntry Entry(string members) {
     using JsonDocument json = JsonDocument.Parse(
         $$"""{ "platform": "server", "runtime": "win-x64"{{(members == "" ? "" : ", " + members)}} }""");
-    return ToothParser.ParseEntry(json.RootElement, legacy: false);
+    return ToothParser.ParseEntry(json.RootElement);
   }
 
   /// A candidate of the package tooth with the given entry members, whose archive holds the
@@ -79,10 +78,7 @@ public class McmodInstallerTests {
   private Candidate Candidate(
       ToothEntry entry, ISource self, string tooth = Pack, string version = "1.0.0") {
     Package package = new(tooth, "", SemVersion.Parse(version), entry);
-    ArchiveHandle archive = new(
-        $"{tooth}@{version}",
-        self,
-        new GitArchiveIdentity($"https://{tooth}.git", new string('0', 40)));
+    ArchiveHandle archive = new($"{tooth}@{version}", self, new string('0', 40));
     return Lip.Core.Mcmod.Candidate.Create(package, archive, Ref.Parse(tooth), _provider.Object);
   }
 
@@ -108,16 +104,19 @@ public class McmodInstallerTests {
 
   /// The lock entry of an installed candidate.
   private static LockedPackage Locked(Candidate candidate, IEnumerable<string> files) => new() {
-    Tooth = candidate.Package.Tooth,
+    Manifest = candidate.Package.Manifest,
     Variant = candidate.Package.Variant,
-    Version = candidate.Package.Version.ToString(),
     Explicit = true,
     Source = candidate.Source.ToString(),
-    Archive = candidate.Archive.Identity,
-    Assets = [.. candidate.Package.Entry.Assets.Select(_ => (AssetIdentity?)null)],
-    Entry = candidate.Package.Entry.Json,
+    Commit = candidate.Archive.Commit,
     Files = [.. files],
-    ToothFormatVersion = candidate.Package.Entry.Legacy ? 3 : null,
+  };
+
+  /// A workspace file of the environment (server, win-x64) with the given packages.
+  private static LockFile Lock(params LockedPackage[] packages) => new() {
+    Platform = "server",
+    Runtime = "win-x64",
+    Packages = [.. packages],
   };
 
   private static InstallContext Context(
@@ -125,7 +124,7 @@ public class McmodInstallerTests {
       LockFile? lockFile = null,
       bool dryRun = false,
       bool ignoreScripts = false) =>
-      new(_root, environment ?? _server, lockFile ?? new LockFile(), dryRun, ignoreScripts);
+      new(_root, environment ?? _server, lockFile ?? Lock(), dryRun, ignoreScripts);
 
   private SortedDictionary<string, string> Snapshot() {
     SortedDictionary<string, string> snapshot = new(StringComparer.Ordinal);
@@ -364,8 +363,7 @@ public class McmodInstallerTests {
     Assert.Equal("zip's", Read("tooth.json"));
     _provider.Verify(p => p.OpenAsset(
         It.Is<IReadOnlyList<string>>(u => u.SequenceEqual(
-            new[] { "https://mirror.invalid/bds.zip", "https://example.com/bds.zip" })),
-        AssetFormat.Zip));
+            new[] { "https://mirror.invalid/bds.zip", "https://example.com/bds.zip" }))));
   }
 
   [Fact]
@@ -622,7 +620,7 @@ public class McmodInstallerTests {
     AddFile("PeEditor.exe", "other's");
     AddFile("unrelated.txt", "keep");
     Candidate other = Candidate("", tooth: "example.com/other");
-    LockFile lockFile = new() { Packages = [Locked(other, ["PeEditor.exe"])] };
+    LockFile lockFile = Lock() with { Packages = [Locked(other, ["PeEditor.exe"])] };
     Candidate candidate = Candidate(
         SelfPlacements(Placement("new.txt", "new.txt"), Placement("PeEditor.exe", "PeEditor.exe"))
             + """, "hooks": { "pre_install": [ "echo pre" ] }""",
@@ -644,7 +642,7 @@ public class McmodInstallerTests {
     // Arrange
     AddFile("cfg.ini", "other's");
     Candidate other = Candidate("", tooth: "example.com/other");
-    LockFile lockFile = new() { Packages = [Locked(other, ["cfg.ini"])] };
+    LockFile lockFile = Lock() with { Packages = [Locked(other, ["cfg.ini"])] };
     Candidate candidate = Candidate(
         SelfPlacements(Placement("cfg.ini", "cfg.ini")) + """, "preserve": [ "cfg.ini" ]""",
         new() { ["cfg.ini"] = "default" });
@@ -662,7 +660,7 @@ public class McmodInstallerTests {
     string lockedPath = OperatingSystem.IsWindows() ? @"Plugins\LegacyMoney\LegacyMoney.DLL"
         : @"plugins\LegacyMoney\LegacyMoney.dll";
     Candidate other = Candidate("", tooth: "example.com/other");
-    LockFile lockFile = new() { Packages = [Locked(other, [lockedPath])] };
+    LockFile lockFile = Lock() with { Packages = [Locked(other, [lockedPath])] };
 
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(
@@ -674,7 +672,7 @@ public class McmodInstallerTests {
   public async Task Install_FileOwnedBySamePackageInLock_IsNotAConflict() {
     // Arrange: a reinstall while the old entry is still in the lock.
     Candidate old = LegacyMoney(version: "0.21.0");
-    LockFile lockFile = new() {
+    LockFile lockFile = Lock() with {
       Packages = [Locked(old, ["mods/LegacyMoney/LegacyMoney.dll"])],
     };
 
@@ -734,7 +732,7 @@ public class McmodInstallerTests {
   public async Task Install_PreservedFileAlreadyOwnedBySamePackage_StaysOwned() {
     // Arrange
     AddFile("mods/LegacyMoney/config/config.json", "user");
-    LockFile lockFile = new() {
+    LockFile lockFile = Lock() with {
       Packages = [Locked(
           LegacyMoney(version: "0.21.0"), ["mods/LegacyMoney/config/config.json"])],
     };
@@ -944,14 +942,12 @@ public class McmodInstallerTests {
         }
         """);
     LockedPackage locked = new() {
-      Tooth = Pack,
+      Manifest = new Package(
+          Pack, "", SemVersion.Parse("1.0.0"), ToothParser.ParseEntry(entry.RootElement)).Manifest,
       Variant = "",
-      Version = "1.0.0",
       Explicit = true,
       Source = Pack,
-      Archive = new GitArchiveIdentity($"https://{Pack}.git", new string('0', 40)),
-      Assets = [new AssetIdentity("https://example.com/gone.zip", TestIdentity.Sha256)],
-      Entry = entry.RootElement.Clone(),
+      Commit = new string('0', 40),
       Files = ["a.txt", "keep.txt"],
     };
 
@@ -970,7 +966,7 @@ public class McmodInstallerTests {
   public async Task Uninstall_InvalidRecordedEntry_Throws() {
     // Arrange
     LockedPackage locked = Locked(Candidate(""), []) with {
-      Entry = JsonDocument.Parse("""{ "platform": "nowhere" }""").RootElement,
+      Manifest = JsonDocument.Parse("""{ "format_version": 4, "variants": {} }""").RootElement,
     };
 
     // Act & Assert
@@ -1041,7 +1037,7 @@ public class McmodInstallerTests {
     AddFile("shared.txt", "s");
     Candidate candidate = Candidate("");
     Candidate other = Candidate("", tooth: "example.com/other");
-    LockFile lockFile = new() {
+    LockFile lockFile = Lock() with {
       Packages = [Locked(candidate, ["shared.txt"]), Locked(other, ["shared.txt"])],
     };
 
@@ -1065,7 +1061,7 @@ public class McmodInstallerTests {
     AddFile("mods/LegacyMoney/run.log", "log");
     AddFile("mods/LegacyMoney/keep.txt", "k");
     Candidate other = Candidate("", tooth: "example.com/other");
-    LockFile lockFile = new() {
+    LockFile lockFile = Lock() with {
       Packages = [
         Locked(candidate, owned),
         Locked(other, ["mods/LegacyMoney/data/foreign.txt"]),
@@ -1257,7 +1253,7 @@ public class McmodInstallerTests {
     }));
 
     // Act
-    await _installer.Uninstall(lockedV1, Context(lockFile: new LockFile { Packages = [lockedV1] }));
+    await _installer.Uninstall(lockedV1, Context(lockFile: Lock(lockedV1)));
     IReadOnlyList<string> ownedV2 = await _installer.Install(v2, Context());
 
     // Assert
@@ -1278,7 +1274,7 @@ public class McmodInstallerTests {
         SelfPlacements(Placement("a.txt", "a.txt")), new() { ["a.txt"] = "2" }, version: "2.0.0");
 
     // Act
-    await _installer.Uninstall(lockedV1, Context(lockFile: new LockFile { Packages = [lockedV1] }));
+    await _installer.Uninstall(lockedV1, Context(lockFile: Lock(lockedV1)));
     IReadOnlyList<string> ownedV2 = await _installer.Install(v2, Context());
 
     // Assert
@@ -1349,9 +1345,7 @@ public class McmodInstallerAssetDownloadTests {
 
     // Assert
     Assert.Equal("two", h.Fs.File.ReadAllText(h.Path("out/a.txt")));
-    LockedPackage package = Assert.Single((await h.Lock()).Packages);
-    AssetIdentity asset = Assert.IsType<AssetIdentity>(Assert.Single(package.Assets));
-    Assert.Equal("https://two.example.com/a.zip", asset.Url);
+    Assert.Equal(["out/a.txt"], Assert.Single((await h.Lock()).Packages).Files);
   }
 
   [Fact]

@@ -237,7 +237,7 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_PlacementsWithOtherMeaning_AreNoted() {
+  public async Task Migrate_PlacementsInvalidInFormat4_AreLeftOutWithNote() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -260,13 +260,9 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    Assert.Equal(3, result.Notes.Count);
-    Assert.Contains(result.Notes, n => n.Contains("'a*' -> 'x' contains a pattern in src"));
-    Assert.Contains(result.Notes, n => n.Contains("'bin/**/*.dll' -> 'y' places the files"));
-    Assert.Contains(result.Notes, n => n.Contains("'bin/[a' -> 'z' uses a pattern that is not"));
-    Assert.All(
-        result.Notes,
-        n => Assert.StartsWith("variants (label '', win-x64).assets[0]:", n));
+    string note = Assert.Single(result.Notes);
+    Assert.StartsWith("variants (label '', win-x64).assets[0]:", note);
+    Assert.Contains("'bin/[a' -> 'z' becomes 'bin/[a' -> 'z/'", note);
     Assert.Equal(
         [
           new EntryPlacement("a*/", "x/"),
@@ -277,7 +273,7 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_UnsupportedAssetTypes_AreDroppedWithNotes() {
+  public async Task Migrate_UnsupportedAssetType_LeavesOutTheEntryWithNote() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -299,15 +295,40 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
+    // Assert: as protocol/package.md §5 reads it, the variant has no entry for win-x64.
+    Assert.StartsWith(
+        "variants (label '', win-x64).assets[0]: format 4 has no asset type \"tar\"",
+        Assert.Single(result.Notes));
+    Assert.Empty(result.Document["variants"]!.AsObject());
+  }
+
+  [Theory]
+  [InlineData("tar")]
+  [InlineData("tgz")]
+  [InlineData("uncompressed")]
+  public async Task Migrate_UnsupportedAssetTypeForOneRuntime_LeavesOutOnlyItsEntries(string type) {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/o/tool", "version": "1.0.0",
+          "variants": [
+            { "platform": "win-x64",
+              "assets": [ { "type": "{{type}}", "urls": ["https://example.com/a"] } ] },
+            { "platform": "linux-x64",
+              "assets": [ { "type": "zip", "urls": ["https://example.com/a.zip"] } ] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
     Assert.Equal(
-        [
-          "variants (label '', win-x64).assets[0]: format 4 has no asset type \"tar\"",
-          "variants (label '', win-x64).assets[1]: format 4 has no asset type \"tgz\"",
-          "variants (label '', win-x64).assets[2]: format 4 has no asset type \"uncompressed\"",
-        ],
-        result.Notes.Select(n => n[..n.IndexOf(';')]));
-    ToothEntry entry = Reparse(result).Variants[""][0];
-    Assert.Equal(AssetType.Zip, Assert.Single(entry.Assets).Type);
+        [(McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64")],
+        Reparse(result).Variants[""].Select(e => (e.Platform, e.Runtime)));
+    Assert.Contains($"\"{type}\"", Assert.Single(result.Notes));
   }
 
   [Fact]
@@ -396,7 +417,7 @@ public class ToothMigratorTests {
     Assert.Contains(
         result.Notes,
         n => n.StartsWith("variants (label '', win-x64).preserve_files: 'config.json' has no '/'"));
-    Assert.Equal(2, result.Notes.Count(n => n.Contains("contains '{'")));
+
   }
 
   [Fact]

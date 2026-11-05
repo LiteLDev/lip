@@ -33,12 +33,10 @@ public record ToothFile {
 /// An entry of a tooth file (tooth.schema.json "entry"). Json is the entry as written, which the
 /// workspace file records (protocol/workspace.md §7.1).
 ///
-/// Legacy marks an entry derived from a tooth file of format 3 (protocol/package.md §5): its assets,
-/// preserve_files and remove_files keep their meaning in lip v0.37.0. Its PreserveFiles and
-/// RemoveFiles are the globs that meaning stands for (ToothCompat.PreserveFiles, RemoveFiles),
-/// its assets may be of the types tar, tgz and uncompressed, and its placements have a type
-/// (EntryPlacement.LegacyDirectory). Its dependencies on the variant "client" of a package of
-/// format 4 name the variant "" (ToothDependency.ClientCompat).
+/// PreserveFiles and RemoveFiles are its "preserve" and "purge". Derived marks an entry that
+/// protocol/package.md §5 derived from a tooth file of format 3 while resolving; it only decides
+/// which dependencies name the variant "" for "client" (ToothDependency.ClientCompat), and is not
+/// recorded.
 public record ToothEntry {
   public required McmodPlatform Platform { get; init; }
 
@@ -54,7 +52,7 @@ public record ToothEntry {
 
   public Hooks Hooks { get; init; } = new();
 
-  public bool Legacy { get; init; }
+  public bool Derived { get; init; }
 
   public required JsonElement Json { get; init; }
 
@@ -90,11 +88,6 @@ public enum AssetType {
   Self,
   Zip,
   Mcmod,
-
-  /// The asset types of format 3 (protocol/package.md §5), in entries derived from it only.
-  Tar,
-  Tgz,
-  Uncompressed,
 }
 
 /// An asset of an entry (tooth.schema.json "asset").
@@ -109,18 +102,13 @@ public enum PlacementForm {
   Glob,
 }
 
-/// A placement of an asset. LegacyDirectory is the type of a placement of format 3 (true for
-/// "dir", false for "file"), which is carried out as lip v0.37.0 did (ToothPlacements); null for
-/// a placement of format 4, whose form Src decides (tooth.schema.json "place").
-public record EntryPlacement(string Src, string Dest, bool? LegacyDirectory = null) {
+/// A member of the "place" of an asset, whose form Src decides (tooth.schema.json "place").
+public record EntryPlacement(string Src, string Dest) {
   public PlacementForm Form =>
       PathGlob.HasMetacharacters(Src) ? PlacementForm.Glob
       : Src == "" || Src.EndsWith('/') ? PlacementForm.Directory
       : PlacementForm.File;
 }
-
-/// A placement of format 3 against the files of the asset mounted at Mount (ToothPlacements).
-public record AssetPlacement(string Mount, bool IsDirectory, string Src, string Dest);
 
 public record Hooks {
   public IReadOnlyList<string> PreInstall { get; init; } = [];

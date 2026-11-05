@@ -18,9 +18,10 @@ public record ToothDocument(int FormatVersion, ToothFile? File, PackageManifest?
   public bool IsLegacy => File is null;
 
   /// The tooth file of format 4 the tooth file is read as for an environment (protocol/package.md
-  /// §5). Throws ToothFormatException when a tooth file of format 3 cannot be read so.
-  public ToothFile ReadFor(LipEnvironment environment) =>
-      File ?? ToothCompat.Derive(Legacy!, environment);
+  /// §5), with version, when given, as the version of a tooth file of an earlier format (its tag
+  /// version). Throws ToothFormatException when a tooth file of format 3 cannot be read so.
+  public ToothFile ReadFor(LipEnvironment environment, SemVersion? version = null) =>
+      File ?? ToothCompat.Derive(Legacy!, environment, version);
 
   /// Reads a tooth file. Throws ToothFormatException when it is not the tooth file of a package.
   public static ToothDocument Parse(byte[] utf8Json) {

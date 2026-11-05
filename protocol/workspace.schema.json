@@ -1,133 +1,65 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/workspace.schema.json",
-  "title": "lip workspace file (<workspace>/.lip/workspace.json), format_version 4",
+  "title": "lip workspace.json (format_version 4)",
   "type": "object",
   "properties": {
     "format_version": {
       "const": 4
     },
     "platform": {
-      "enum": ["server", "client", null]
+      "enum": [
+        "server",
+        "client"
+      ]
     },
     "runtime": {
-      "type": ["string", "null"],
+      "type": "string",
       "minLength": 1
     },
     "packages": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/package"
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "description": "The tooth file of the package, of format_version 4.",
+            "$ref": "tooth.schema.json"
+          },
+          "variant": {
+            "type": "string"
+          },
+          "explicit": {
+            "type": "boolean"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "manifest",
+          "variant",
+          "explicit",
+          "ref",
+          "files"
+        ]
       }
     }
   },
-  "required": ["format_version", "platform", "runtime", "packages"],
-  "definitions": {
-    "sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
-    },
-    "package": {
-      "type": "object",
-      "properties": {
-        "tooth": {
-          "type": "string"
-        },
-        "variant": {
-          "type": "string"
-        },
-        "version": {
-          "type": "string"
-        },
-        "explicit": {
-          "type": "boolean"
-        },
-        "source": {
-          "type": "string"
-        },
-        "archive": {
-          "oneOf": [
-            { "$ref": "#/definitions/zipArchive" },
-            { "$ref": "#/definitions/gitArchive" },
-            { "$ref": "#/definitions/directoryArchive" }
-          ]
-        },
-        "assets": {
-          "type": "array",
-          "items": {
-            "oneOf": [
-              { "type": "null" },
-              {
-                "type": "object",
-                "properties": {
-                  "url": {
-                    "type": "string"
-                  },
-                  "sha256": {
-                    "$ref": "#/definitions/sha256"
-                  }
-                },
-                "required": ["url", "sha256"]
-              }
-            ]
-          }
-        },
-        "entry": {
-          "type": "object"
-        },
-        "files": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": ["tooth", "variant", "version", "explicit", "source", "archive", "assets", "entry", "files"]
-    },
-    "zipArchive": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "zip"
-        },
-        "sha256": {
-          "$ref": "#/definitions/sha256"
-        },
-        "url": {
-          "type": "string"
-        }
-      },
-      "required": ["kind", "sha256", "url"]
-    },
-    "gitArchive": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "git"
-        },
-        "repo": {
-          "type": "string",
-          "pattern": "^https://.+\\.git$"
-        },
-        "commit": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
-        }
-      },
-      "required": ["kind", "repo", "commit"]
-    },
-    "directoryArchive": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "directory"
-        },
-        "path": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": ["kind", "path"]
-    }
-  }
+  "required": [
+    "format_version",
+    "platform",
+    "runtime",
+    "packages"
+  ]
 }

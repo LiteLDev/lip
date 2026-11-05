@@ -44,8 +44,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     });
     Mock<IArchiveProvider> provider = new();
     provider.Setup(p => p.OpenAsset(
-            It.Is<IReadOnlyList<string>>(u => u.Single() == ModUrl), AssetFormat.Zip))
-        .ReturnsAsync(new OpenedAsset(new ZipSource(zip), new AssetIdentity(ModUrl, TestIdentity.Sha256)));
+            It.Is<IReadOnlyList<string>>(u => u.Single() == ModUrl)))
+        .ReturnsAsync(new ZipSource(zip));
     using JsonDocument entryJson = JsonDocument.Parse($$"""
         {
           "platform": "server",
@@ -59,12 +59,12 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
           }
         }
         """);
-    ToothEntry entry = ToothParser.ParseEntry(entryJson.RootElement, legacy: false);
+    ToothEntry entry = ToothParser.ParseEntry(entryJson.RootElement);
     Package package = new("example.com/legacymoney", "", SemVersion.Parse("0.22.0"), entry);
     ArchiveHandle archive = new(
         "example.com/legacymoney@0.22.0",
         new ZipSource(WorkspaceHarness.Zip(new() { ["tooth.json"] = "{}" })),
-        new GitArchiveIdentity("https://example.com/legacymoney.git", new string('0', 40)));
+        new string('0', 40));
     Candidate candidate = Candidate.Create(
         package, archive, Ref.Parse("example.com/legacymoney"), provider.Object);
 
@@ -72,7 +72,11 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     McmodInstaller installer =
         new(fs, new CommandRunner(), new Mock<IUserInteraction>().Object);
     InstallContext context = new(
-        _root, new LipEnvironment(McmodPlatform.Server, "win-x64"), new LockFile(), false, false);
+        _root,
+        new LipEnvironment(McmodPlatform.Server, "win-x64"),
+        new LockFile { Platform = "server", Runtime = "win-x64", Packages = [] },
+        false,
+        false);
     // The server layout: plugins links to mods.
     await new WorkspaceLayout(fs, new DirectoryLinker(fs), new Mock<IUserInteraction>().Object)
         .Prepare(_root, dryRun: false);
@@ -97,14 +101,11 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     Directory.CreateDirectory(Path.Combine(_root, "plugins", "LegacyMoney", "data", "x"));
     File.WriteAllText(Path.Combine(_root, "plugins", "LegacyMoney", "data", "x", "a.db"), "a");
     await installer.Uninstall(new LockedPackage {
-      Tooth = package.Tooth,
+      Manifest = package.Manifest,
       Variant = package.Variant,
-      Version = package.Version.ToString(),
       Explicit = true,
       Source = package.Tooth,
-      Archive = archive.Identity,
-      Assets = [new AssetIdentity(ModUrl, TestIdentity.Sha256)],
-      Entry = entry.Json,
+      Commit = archive.Commit,
       Files = [.. owned],
     }, context);
 

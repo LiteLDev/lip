@@ -148,8 +148,8 @@ public class RepositoryMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_FilePlacementOfDirectoryOrMissingFile_IsLeftOutWithNote() {
-    // Arrange
+  public async Task Migrate_Placements_AreConvertedWhateverTheFilesOfTheRepository() {
+    // Arrange: as protocol/package.md §5 converts them, whether they match files or not.
     AddFile("tooth.json", $$"""
         {
           "format_version": 3,
@@ -172,15 +172,18 @@ public class RepositoryMigratorTests {
     // Assert
     ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
     Assert.Equal(
-        [new EntryPlacement("tool/", "plugins/tool/")],
+        [
+          new EntryPlacement("tool", "plugins/tool"),
+          new EntryPlacement("missing/", "plugins/missing/"),
+          new EntryPlacement("tool/", "plugins/tool/"),
+        ],
         tooth.Variants[""][0].Assets[0].Placements);
-    Assert.Contains(notes, n => n.Contains("'tool' -> 'plugins/tool' names a directory"));
-    Assert.Contains(notes, n => n.Contains("'missing' -> 'plugins/missing' matches no file"));
+    Assert.DoesNotContain(notes, n => n.Contains("placement"));
   }
 
   [Fact]
-  public async Task Migrate_PatternPlacementThroughSubdirectories_IsExpandedIntoFiles() {
-    // Arrange: tooth.json placed the files by name; a glob form keeps their subdirectories.
+  public async Task Migrate_PatternPlacement_BecomesGlobForm() {
+    // Arrange
     AddFile("tooth.json", $$"""
         {
           "format_version": 3,
@@ -206,12 +209,11 @@ public class RepositoryMigratorTests {
     ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
     Assert.Equal(
         [
-          new EntryPlacement("bin/a.dll", "plugins/tool/a.dll"),
-          new EntryPlacement("bin/x/b.dll", "plugins/tool/b.dll"),
+          new EntryPlacement("bin/**/*.dll", "plugins/tool/"),
           new EntryPlacement("lib/*.dll", "plugins/lib/"),
         ],
         tooth.Variants[""][0].Assets[0].Placements);
-    Assert.Single(notes.Distinct(), n => n.Contains("expanded into 2 placements"));
+    Assert.DoesNotContain(notes, n => n.Contains("placement"));
   }
 
   [Fact]
@@ -263,9 +265,9 @@ public class RepositoryMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_DroppedScriptsAndInvalidResult_AreNoted() {
+  public async Task Migrate_DroppedScriptsAndConvertedPaths_AreNotedAndValid() {
     // Arrange: a script other than the install and uninstall ones is dropped, and a placement
-    // src with an empty segment is kept but is not a path of format 4.
+    // src with an empty segment loses it.
     AddFile("tooth.json", $$"""
         {
           "format_version": 3,
@@ -283,10 +285,11 @@ public class RepositoryMigratorTests {
 
     // Assert
     Assert.Contains(notes, n => n.StartsWith("variants[0].scripts.build:"));
-    Assert.StartsWith(
-        "The result is not a valid tooth.json of format 4 yet:", notes[^1]);
-    Assert.Contains("place[0].src", notes[^1]);
+    Assert.DoesNotContain(notes, n => n.StartsWith("The result is not a valid tooth.json"));
     Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
+    ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
+    Assert.Equal(
+        [new EntryPlacement("a/b.dll", "b.dll")], tooth.Variants[""][0].Assets[0].Placements);
   }
 
   private string Path(string name) => _fs.Path.Join(_root, name);

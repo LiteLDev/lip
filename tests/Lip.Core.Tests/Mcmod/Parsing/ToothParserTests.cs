@@ -72,7 +72,7 @@ public class ToothParserTests {
     Assert.Empty(entry.Hooks.PostInstall);
     Assert.Empty(entry.Hooks.PreUninstall);
     Assert.Empty(entry.Hooks.PostUninstall);
-    Assert.False(entry.Legacy);
+    Assert.False(entry.Derived);
     Assert.False(entry.IsMod);
     Assert.Null(entry.McmodAsset);
     Assert.Equal("server", entry.Json.GetProperty("platform").GetString());
@@ -706,7 +706,6 @@ public class ToothParserTests {
     // Assert
     Assert.Equal(new EntryPlacement(src, dest), placement);
     Assert.Equal(form, placement.Form);
-    Assert.Null(placement.LegacyDirectory);
   }
 
   [Theory]
@@ -1010,15 +1009,15 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothEntry entry = ToothParser.ParseEntry(valid.RootElement, legacy: false);
+    ToothEntry entry = ToothParser.ParseEntry(valid.RootElement);
 
     // Assert
     Assert.Equal(McmodPlatform.Client, entry.Platform);
     Assert.Equal("linux-x64", entry.Runtime);
-    Assert.False(entry.Legacy);
+    Assert.False(entry.Derived);
     Assert.Equal(AssetType.Zip, Assert.Single(entry.Assets).Type);
     Assert.Throws<ToothFormatException>(
-        () => ToothParser.ParseEntry(invalid.RootElement, legacy: false));
+        () => ToothParser.ParseEntry(invalid.RootElement));
   }
 
   [Theory]

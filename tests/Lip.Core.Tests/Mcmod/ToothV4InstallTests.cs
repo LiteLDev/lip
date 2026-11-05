@@ -32,11 +32,9 @@ public class ToothV4InstallTests {
     Assert.Equal("1.0.0", package.Version);
     Assert.True(package.Explicit);
     Assert.Equal("example.com/a", package.Source);
-    GitArchiveIdentity archive = Assert.IsType<GitArchiveIdentity>(package.Archive);
-    Assert.Equal("https://example.com/a.git", archive.RepoUrl);
-    Assert.Equal([null], package.Assets);
+    Assert.Matches("^[0-9a-f]{40}$", package.Commit);
     Assert.Equal(["tools/a/a.exe", "tools/a/lib/b.dll"], package.Files);
-    Assert.Null(package.ToothFormatVersion);
+    Assert.Equal(4, package.Manifest.GetProperty("format_version").GetInt32());
 
     string json = h.Fs.File.ReadAllText(h.LockPath);
     using JsonDocument document = JsonDocument.Parse(json);
@@ -44,7 +42,7 @@ public class ToothV4InstallTests {
         ["format_version", "platform", "runtime", "packages"],
         document.RootElement.EnumerateObject().Select(p => p.Name));
     Assert.Equal(
-        ["tooth", "variant", "version", "explicit", "source", "archive", "assets", "entry", "files"],
+        ["manifest", "variant", "explicit", "ref", "commit", "files"],
         document.RootElement.GetProperty("packages")[0].EnumerateObject().Select(p => p.Name));
   }
 
@@ -79,9 +77,6 @@ public class ToothV4InstallTests {
 
     LockFile lockFile = await h.Lock();
     Assert.Equal(["example.com/base", "example.com/top"], lockFile.Packages.Select(p => p.Tooth));
-    AssetIdentity asset = Assert.IsType<AssetIdentity>(Assert.Single(lockFile.Packages[1].Assets));
-    Assert.Equal("https://example.com/top.mcmod", asset.Url);
-    Assert.Equal(64, asset.Sha256.Length);
   }
 
   [Fact]
@@ -123,7 +118,7 @@ public class ToothV4InstallTests {
   }
 
   [Fact]
-  public async Task Install_LegacyTooth_IsReadAsFormat4AndRecordsLegacyEntry() {
+  public async Task Install_LegacyTooth_IsReadAsFormat4AndRecordsTheDerivedToothFile() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/old", "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth("example.com/old", "1.0.0", "plugins/old/old.dll"),
@@ -134,9 +129,10 @@ public class ToothV4InstallTests {
 
     Assert.Equal("old", h.Fs.File.ReadAllText(h.Path("mods/old/old.dll")));
     LockedPackage package = Assert.Single((await h.Lock()).Packages);
-    Assert.Equal(3, package.ToothFormatVersion);
-    Assert.Equal("server", package.Entry.GetProperty("platform").GetString());
-    Assert.Equal(WorkspaceHarness.Runtime, package.Entry.GetProperty("runtime").GetString());
+    Assert.Equal(4, package.Manifest.GetProperty("format_version").GetInt32());
+    JsonElement entry = package.Manifest.GetProperty("variants").GetProperty("")[0];
+    Assert.Equal("server", entry.GetProperty("platform").GetString());
+    Assert.Equal(WorkspaceHarness.Runtime, entry.GetProperty("runtime").GetString());
 
     await h.Service.Uninstall(["example.com/old"], _options);
     Assert.False(h.Exists("mods/old/old.dll"));
@@ -188,7 +184,7 @@ public class ToothV4InstallTests {
   }
 
   [Fact]
-  public async Task Install_LocalDirectory_RecordsDirectoryArchive() {
+  public async Task Install_LocalDirectory_RecordsFileUriAndNoCommit() {
     WorkspaceHarness h = new();
     string directory = h.Fs.Path.Combine(h.Root, "src");
     h.Fs.AddFile(h.Fs.Path.Combine(directory, "tooth.json"), new(WorkspaceHarness.Tooth4(
@@ -199,7 +195,8 @@ public class ToothV4InstallTests {
 
     Assert.Equal("x", h.Fs.File.ReadAllText(h.Path("out/x.txt")));
     LockedPackage package = Assert.Single((await h.Lock()).Packages);
-    Assert.Equal(directory, Assert.IsType<DirectoryArchiveIdentity>(package.Archive).Path);
+    Assert.Equal(Ref.FromFile(directory).ToString(), package.Source);
     Assert.StartsWith("file:", package.Source);
+    Assert.Null(package.Commit);
   }
 }

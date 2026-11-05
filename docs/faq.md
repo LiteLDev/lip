@@ -24,7 +24,7 @@ No. lip manages server workspaces only. Client workspaces are managed by launche
 Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) version, such as `v1.2.3`, are versions. Tags such as `v1.2` or `1.2.3` are ignored. You can still install any tag, branch or commit with a git ref, e.g. `lip install github.com/user/repo@tag:1.2.3` or `@branch:main`; the package's version is then the `version` its `tooth.json` declares. See [Git refs](cli/commands/install.md#git-refs).
 
 ### How do I install a package from my disk?
-Run `lip install` with the path of a directory or a ZIP file that has a `tooth.json` at its root, e.g. `lip install ../MyTool` or `lip install ./package.zip`. The workspace file records the path (and, for a ZIP file, its SHA-256): uninstalling needs nothing, and `lip update` reads it again.
+Run `lip install` with the path of a directory or a ZIP file that has a `tooth.json` at its root, e.g. `lip install ../MyTool` or `lip install ./package.zip`. The workspace file records the path: uninstalling needs nothing, and `lip update` reads it again.
 
 ### How do I upgrade lip itself?
 Reinstall `lip` using the same method you used originally, such as `winget upgrade levimc.lip`, the latest Windows installer (`setup.exe` or `.msi`), or the latest portable archive from the GitHub releases page. There is no built-in `lip self-update` command yet. If you installed `lip` from the old `futrime.lip` winget package or from npm, uninstall it first and then install it again with one of the methods in [Installation](intro/installation.md).

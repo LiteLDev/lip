@@ -46,28 +46,24 @@ public class ArchiveProviderTests {
         $"{spec}: {versions.Count} versions, newest {versions[0].Tag}, format {document.FormatVersion}");
     Assert.True(versions.Count > 10);
     Assert.Equal($"{spec}@{versions[0].Version}", archive.Key);
-    GitArchiveIdentity identity = Assert.IsType<GitArchiveIdentity>(archive.Identity);
-    Assert.Equal($"https://{spec}.git", identity.RepoUrl);
-    Assert.Equal(40, identity.Commit.Length);
+    Assert.Matches("^[0-9a-f]{40}$", archive.Commit);
     Assert.Equal(spec, document.Tooth, ignoreCase: true);
   }
 
   [WinX64Theory]
   [InlineData(_releaseZipUrl)]
-  public async Task OpenOpenLocked_ReleaseZip_VerifiesSha256(string url) {
+  public async Task Open_ReleaseZip_ReadsItsFiles(string url) {
     // Arrange
     ArchiveProvider provider = CreateProvider();
 
     // Act
     ArchiveHandle archive = await provider.Open(Ref.Parse(url));
-    ArchiveHandle locked = await CreateProvider().OpenLocked(archive.Key, archive.Identity);
+    ArchiveHandle again = await CreateProvider().Open(Ref.Parse(url));
 
     // Assert
-    ZipArchiveIdentity identity = Assert.IsType<ZipArchiveIdentity>(archive.Identity);
     Assert.Equal(url, archive.Key);
-    Assert.Equal(url, identity.Url);
-    Assert.Matches("^[0-9a-f]{64}$", identity.Sha256);
+    Assert.Null(archive.Commit);
     Assert.NotEmpty(archive.Source.Keys);
-    Assert.Equal(archive.Source.Keys.Order(), locked.Source.Keys.Order());
+    Assert.Equal(archive.Source.Keys.Order(), again.Source.Keys.Order());
   }
 }

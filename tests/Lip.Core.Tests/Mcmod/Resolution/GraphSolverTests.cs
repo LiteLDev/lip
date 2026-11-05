@@ -847,7 +847,7 @@ internal static class TestCandidates {
       Runtime = Environment.Runtime,
       Dependencies = dependencies ?? [],
       Assets = assets,
-      Legacy = legacy,
+      Derived = legacy,
       Json = s_emptyEntry,
     };
 
@@ -861,14 +861,12 @@ internal static class TestCandidates {
 
     Mock<IArchiveProvider> provider = new();
     provider
-        .Setup(p => p.OpenAsset(It.IsAny<IReadOnlyList<string>>(), It.IsAny<AssetFormat>()))
-        .Returns((IReadOnlyList<string> urls, AssetFormat _) => {
+        .Setup(p => p.OpenAsset(It.IsAny<IReadOnlyList<string>>()))
+        .Returns((IReadOnlyList<string> urls) => {
           downloads?.Add(urls[0]);
           return unavailable
               ? throw new ArchiveUnavailableException($"404 {urls[0]}")
-              : Task.FromResult(new OpenedAsset(
-                  new ZipSource(mcmod!),
-                  new AssetIdentity(urls[0], Convert.ToHexStringLower(SHA256.HashData(mcmod!)))));
+              : Task.FromResult<Lip.Core.Sources.ISource>(new ZipSource(mcmod!));
         });
 
     return Candidate.Create(
@@ -882,7 +880,5 @@ internal static class TestCandidates {
   private static ArchiveHandle Archive(string key, Ref reference) => new(
       key,
       s_archiveSource,
-      new GitArchiveIdentity(
-          $"https://{reference.Target}.git",
-          Convert.ToHexStringLower(SHA1.HashData(Encoding.UTF8.GetBytes(PackageNames.Fold(key))))));
+      Convert.ToHexStringLower(SHA1.HashData(Encoding.UTF8.GetBytes(PackageNames.Fold(key)))));
 }

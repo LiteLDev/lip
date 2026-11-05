@@ -12,10 +12,10 @@ lip migrate
 
 Run it in the root directory of your package repository. It rewrites the `tooth.json` there, of format version 1, 2 or 3, in place as a `tooth.json` of format version 4 (see [tooth.json](../../concepts/tooth_json.md)), indented with two spaces:
 
-- `tooth`, `version` and `info` are copied.
+- `tooth`, `version` and `info` are copied; an `info.avatar_url` starting with `https://` becomes `info.logo`, and is dropped otherwise.
 - Each label becomes a variant. For each runtime it applies to, its variants are merged as lip v0.37.0 merged them, into an entry for the server and an entry for the client. With a `client` label, the variant `""` gets server entries only, and the `client` entries are also used as the client entries of `""`.
-- `self` and `zip` assets keep their `placements`, converted to `place` of format 4. `preserve_files` and `remove_files` become `preserve` and `purge`, and an `info.avatar_url` starting with `https://` becomes `info.logo`. The `tar`, `tgz` and `uncompressed` asset types are dropped.
-- The scripts become `hooks`.
+- Each entry is converted exactly as lip reads a `tooth.json` of an [earlier format](../../concepts/tooth_json.md#earlier-formats): assets keep their `type` and `urls`, and their `placements` become `place`; `preserve_files` becomes `preserve` (a pattern without `/` gets a `**/` prefix) and `remove_files` becomes `purge` (a pattern without a trailing `/` is also added with one); the scripts become `hooks`. Placements and patterns that are not valid in format 4 are left out.
+- A runtime whose merged variants have an asset of type `tar`, `tgz` or `uncompressed` gets no entry, since format 4 has no such asset types.
 
 Format 4 has no RID patterns. When a value the result needs is missing or invalid, such as the RIDs a platform pattern like `win-*` stands for, or the RIDs that variants without a platform apply to, lip asks for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, it fails instead, naming the value it would ask for, and changes nothing.
 

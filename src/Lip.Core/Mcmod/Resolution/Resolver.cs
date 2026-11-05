@@ -144,9 +144,9 @@ public class Resolver(
       archive = gitRef.Kind == GitRefKind.Version
           ? await Cached(
               _archives, $"{source.Target}@{gitRef} {commit}",
-              () => _archiveProvider.OpenLocked(
-                  $"{source.Target}@{gitRef}",
-                  new GitArchiveIdentity(ArchiveProvider.GetRepoUrl(source.Target), commit)))
+              async () => (await _archiveProvider.OpenCommit(source.Target, commit)) with {
+                Key = $"{source.Target}@{gitRef}",
+              })
           : await Cached(
               _archives, $"{source.Target}@rev:{commit}",
               () => _archiveProvider.OpenCommit(source.Target, commit));
@@ -205,7 +205,7 @@ public class Resolver(
 
     ToothFile tooth;
     try {
-      tooth = document.ReadFor(walk.Environment);
+      tooth = document.ReadFor(walk.Environment, version);
     }
     catch (ToothFormatException ex) {
       walk.Report(archive.Key, ex.Message);
@@ -232,7 +232,10 @@ public class Resolver(
     }
 
     return Candidate.Create(
-        new Package(tooth.Tooth, variant, version, entry), archive, source, _archiveProvider);
+        new Package(tooth.Tooth, variant, version, entry) { Manifest = tooth.Json },
+        archive,
+        source,
+        _archiveProvider);
   }
 
   /// Shares one task per key. Failed tasks are evicted so that a transient failure is retried

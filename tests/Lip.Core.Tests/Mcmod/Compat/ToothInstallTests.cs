@@ -9,10 +9,9 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Installing and uninstalling packages whose entry is derived from a tooth file of format 3
-/// (protocol/package.md §5) with McmodInstaller: their assets, preserve_files and remove_files
-/// keep the meaning they had in lip v0.37.0, and the workspace file records them with
-/// tooth_format_version 3 (protocol/workspace.md §7.1).
+/// Installing and uninstalling packages whose tooth file is of format 3 with McmodInstaller: they
+/// are installed with the tooth file of format 4 derived from it (protocol/package.md §5), which
+/// the workspace file records (protocol/workspace.md §7.1), with nothing of format 3 left.
 public class ToothInstallTests {
   private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -32,11 +31,8 @@ public class ToothInstallTests {
     _root = _fileSystem.Path.GetFullPath("ws");
     _fileSystem.Directory.CreateDirectory(_root);
     _archiveProvider.Setup(p => p.OpenAsset(
-            It.Is<IReadOnlyList<string>>(u => u.Contains("https://example.com/a.zip")),
-            AssetFormat.LegacyArchive))
-        .ReturnsAsync(new OpenedAsset(
-            CreateSource(new() { ["tool.exe"] = "exe", ["other.txt"] = "x" }),
-            new AssetIdentity("https://example.com/a.zip", TestIdentity.Sha256)));
+            It.Is<IReadOnlyList<string>>(u => u.Contains("https://example.com/a.zip"))))
+        .ReturnsAsync(CreateSource(new() { ["tool.exe"] = "exe", ["other.txt"] = "x" }));
   }
 
   private static readonly string _manifestJson = $$"""
@@ -99,13 +95,13 @@ public class ToothInstallTests {
     Assert.True(document.IsLegacy);
     ToothFile tooth = document.ReadFor(env);
     ToothEntry entry = tooth.SelectEntry(variant, env)!;
-    Assert.True(entry.Legacy);
+    Assert.True(entry.Derived);
     ArchiveHandle self = new(
         $"{tooth.Tooth}@{tooth.Version}",
         CreateSource(new(selfFiles) { ["tooth.json"] = json }),
-        new GitArchiveIdentity($"https://{tooth.Tooth}.git", new string('a', 40)));
+        new string('a', 40));
     return Candidate.Create(
-        new Package(tooth.Tooth, variant, tooth.Version, entry),
+        new Package(tooth.Tooth, variant, tooth.Version, entry) { Manifest = tooth.Json },
         self,
         Ref.Parse(tooth.Tooth).WithVariant(variant),
         _archiveProvider.Object);
@@ -127,23 +123,28 @@ public class ToothInstallTests {
       bool dryRun = false,
       bool ignoreScripts = false,
       LipEnvironment? environment = null) =>
-      new(_root, environment ?? _serverWin, new LockFile(), dryRun, ignoreScripts);
+      new(
+          _root,
+          environment ?? _serverWin,
+          new LockFile {
+            Platform = (environment ?? _serverWin).Platform.ToSpecString(),
+            Runtime = (environment ?? _serverWin).Runtime,
+            Packages = [],
+          },
+          dryRun,
+          ignoreScripts);
 
   private string Workspace(string relativePath) => _fileSystem.Path.Combine(
       _root, relativePath.Replace('/', Path.DirectorySeparatorChar));
 
   /// The workspace file entry of an installed candidate (protocol/workspace.md §7.1).
   private static LockedPackage Lock(Candidate candidate, IReadOnlyList<string> files) => new() {
-    Tooth = candidate.Package.Tooth,
+    Manifest = candidate.Package.Manifest,
     Variant = candidate.Package.Variant,
-    Version = candidate.Package.Version.ToString(),
     Explicit = true,
     Source = candidate.Source.ToString(),
-    Archive = candidate.Archive.Identity,
-    Assets = [.. candidate.Package.Entry.Assets.Select(_ => (AssetIdentity?)null)],
-    Entry = candidate.Package.Entry.Json,
+    Commit = candidate.Archive.Commit,
     Files = [.. files],
-    ToothFormatVersion = 3,
   };
 
   [Fact]
@@ -194,7 +195,8 @@ public class ToothInstallTests {
     IReadOnlyList<string> files = await _installer.Install(
         candidate, CreateContext(ignoreScripts: true));
 
-    // Assert: unlike format 4, a directory placement of format 3 writes the tooth file too.
+    // Assert: the placements are carried out as format 4 carries out the members of place they
+    // become; the tooth file is never written.
     Assert.Equal(
         [
           "mods/g/a.dll",
@@ -202,17 +204,17 @@ public class ToothInstallTests {
           "all/bin/a.dll",
           "all/bin/b.dll",
           "all/bin/c.txt",
-          "all/tooth.json",
         ],
         files);
-    // bin/b.dll is placed after bin/a.dll's second placement, so it wins.
-    Assert.Equal("b", _fileSystem.File.ReadAllText(Workspace("mods/g/b.dll")));
+    // The file placement of bin/a.dll at plugins/g/b.dll comes after the glob, so it wins.
+    Assert.Equal("a", _fileSystem.File.ReadAllText(Workspace("mods/g/b.dll")));
     Assert.False(_fileSystem.Directory.Exists(Workspace("plugins/never")));
+    Assert.False(_fileSystem.File.Exists(Workspace("all/tooth.json")));
   }
 
   [Fact]
-  public async Task Install_MissingSrc_PlacesNothingForIt() {
-    // Arrange: lip v0.37.0 skipped placements matching nothing.
+  public async Task Install_MissingSrc_FailsAsInFormat4() {
+    // Arrange: lip v0.37.0 skipped placements matching nothing; format 4 does not.
     Candidate candidate = CreateCandidateFrom(
         $$"""
         {
@@ -229,44 +231,10 @@ public class ToothInstallTests {
         """,
         new() { ["a.dll"] = "a" });
 
-    // Act
-    IReadOnlyList<string> files = await _installer.Install(
-        candidate, CreateContext(ignoreScripts: true));
-
-    // Assert
-    Assert.Equal(["mods/m/a.dll"], files);
-  }
-
-  [Fact]
-  public async Task Install_UncompressedAsset_PlacesTheFile() {
-    // Arrange
-    _archiveProvider.Setup(p => p.OpenAsset(
-            It.Is<IReadOnlyList<string>>(u => u.Contains("https://example.com/node.zip")),
-            AssetFormat.LegacyFile))
-        .ReturnsAsync(new OpenedAsset(
-            CreateSource(new() { [""] = "node" }),
-            new AssetIdentity("https://example.com/node.zip", TestIdentity.Sha256)));
-    Candidate candidate = CreateCandidateFrom(
-        $$"""
-        {
-          "format_version": 3, "format_uuid": "{{_uuid}}",
-          "tooth": "github.com/user/single", "version": "1.0.0",
-          "variants": [{ "assets": [
-            { "type": "uncompressed", "urls": ["https://example.com/node.zip"], "placements": [
-              { "type": "file", "src": "", "dest": "plugins/x/node.zip" }
-            ] }
-          ] }]
-        }
-        """,
-        []);
-
-    // Act
-    IReadOnlyList<string> files = await _installer.Install(
-        candidate, CreateContext(ignoreScripts: true));
-
-    // Assert
-    Assert.Equal(["mods/x/node.zip"], files);
-    Assert.Equal("node", _fileSystem.File.ReadAllText(Workspace("mods/x/node.zip")));
+    // Act & Assert
+    await Assert.ThrowsAsync<McmodInstallException>(
+        () => _installer.Install(candidate, CreateContext(ignoreScripts: true)));
+    Assert.False(_fileSystem.Directory.Exists(Workspace("mods")));
   }
 
   [Fact]
@@ -349,8 +317,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Install_AssetUnavailable_ThrowsAndWritesNothing() {
     // Arrange
-    _archiveProvider.Setup(p => p.OpenAsset(
-            It.IsAny<IReadOnlyList<string>>(), AssetFormat.LegacyArchive))
+    _archiveProvider.Setup(p => p.OpenAsset(It.IsAny<IReadOnlyList<string>>()))
         .ThrowsAsync(new ArchiveUnavailableException("down"));
     Candidate candidate = CreateCandidate();
 
@@ -441,29 +408,6 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public async Task Uninstall_SameEntryWithoutToothFormatVersion_HasTheMeaningOfFormat4() {
-    // Arrange: the entry recorded without tooth_format_version is read as format 4, where a
-    // pattern without a trailing '/' matches files only.
-    Candidate candidate = CreateCandidateFrom(
-        $$"""
-        {
-          "format_version": 3, "format_uuid": "{{_uuid}}",
-          "tooth": "github.com/user/remover", "version": "1.0.0",
-          "variants": [{ "remove_files": ["plugins/Remover"] }]
-        }
-        """,
-        []);
-    _fileSystem.AddFile(Workspace("mods/Remover/data/db.json"), new MockFileData("{}"));
-
-    // Act
-    await _installer.Uninstall(
-        Lock(candidate, []) with { ToothFormatVersion = null }, CreateContext());
-
-    // Assert
-    Assert.True(_fileSystem.File.Exists(Workspace("mods/Remover/data/db.json")));
-  }
-
-  [Fact]
   public async Task Uninstall_RemoveFilesNamingLayoutDirectories_RemovesNothingBelowThem() {
     // Arrange
     Candidate candidate = CreateCandidateFrom(
@@ -499,20 +443,18 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public async Task Uninstall_RecordedEntry_IsUsedWhateverTheEnvironment() {
-    // Arrange: the recorded entry is the one installed, not one derived again.
+  public async Task Uninstall_RecordedToothFileWithoutEntryForTheEnvironment_Throws() {
+    // Arrange: the recorded tooth file was derived for (server, win-x64).
     Candidate candidate = CreateCandidate();
     _fileSystem.AddFile(Workspace("tool.exe"), new MockFileData("exe"));
 
-    // Act
-    await _installer.Uninstall(
+    // Act & Assert
+    await Assert.ThrowsAsync<McmodInstallException>(() => _installer.Uninstall(
         Lock(candidate, ["tool.exe"]),
         CreateContext(
             ignoreScripts: true,
-            environment: new LipEnvironment(McmodPlatform.Server, "linux-x64")));
-
-    // Assert
-    Assert.False(_fileSystem.File.Exists(Workspace("tool.exe")));
+            environment: new LipEnvironment(McmodPlatform.Server, "linux-x64"))));
+    Assert.True(_fileSystem.File.Exists(Workspace("tool.exe")));
   }
 
   [Fact]
@@ -546,17 +488,21 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public void LockedEntry_ToothFormatVersion3_ReadsTheEntryAsLegacy() {
+  public void LockedEntry_DerivedToothFile_IsReadAsFormat4() {
     // Arrange
     Candidate candidate = CreateCandidate();
 
     // Act
     ToothEntry entry = McmodInstaller.LockedEntry(
-        JsonSerializer.Deserialize<LockedPackage>(JsonSerializer.Serialize(Lock(candidate, [])))!);
+        JsonSerializer.Deserialize<LockedPackage>(JsonSerializer.Serialize(Lock(candidate, [])))!,
+        _serverWin);
 
     // Assert
-    Assert.True(entry.Legacy);
+    Assert.False(entry.Derived);
     Assert.Equal(AssetType.Zip, entry.Assets[1].Type);
+    Assert.Equal(
+        [new EntryPlacement("data/", "plugins/repo/data/")], entry.Assets[0].Placements.Skip(1));
+    Assert.Equal(["plugins/repo/logs/"], entry.RemoveFiles.Select(g => g.Pattern));
     Assert.Equal(["echo preun", "echo un"], entry.Hooks.PreUninstall);
   }
 }

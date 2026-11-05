@@ -59,7 +59,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     foreach (Candidate candidate in set
         .OrderBy(c => FoldCase(c.Package.Identity), StringComparer.Ordinal)
         .ThenBy(c => c.Package.Version, SemVersion.SortOrderComparer)
-        .ThenBy(c => c.Archive.Identity.Canonical, StringComparer.Ordinal)) {
+        .ThenBy(c => c.Archive.Commit ?? "", StringComparer.Ordinal)) {
       if (indexOf.TryAdd(PackageKey.Of(candidate), nodes.Count)) {
         nodes.Add(candidate);
       }
@@ -135,7 +135,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
   }
 
   /// Whether two candidates are the same package: same identity (ignoring ASCII case), same
-  /// version and same archive identifier.
+  /// version and same commit (protocol/workspace.md §5).
   public static bool IsSamePackage(Candidate a, Candidate b) {
     return PackageKey.Of(a).Equals(PackageKey.Of(b));
   }
@@ -218,13 +218,14 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     return component;
   }
 
-  /// The "same package" identity of a candidate: its identity, version and archive content.
-  private readonly record struct PackageKey(string Identity, SemVersion Version, string Archive) {
+  /// The "same package" identity of a candidate (protocol/workspace.md §5): its identity, version
+  /// and commit.
+  private readonly record struct PackageKey(string Identity, SemVersion Version, string Commit) {
     public static PackageKey Of(Candidate candidate) {
       return new(
           FoldCase(candidate.Package.Identity),
           candidate.Package.Version,
-          candidate.Archive.Identity.Canonical);
+          candidate.Archive.Commit?.ToLowerInvariant() ?? "");
     }
   }
 
@@ -723,7 +724,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       // package of format 4.
       return SameIdentity(wanted.Target, pinned.Target)
           && (wanted.Variant == candidate.Package.Variant
-              || (requirement.Compat && !candidate.Package.Entry.Legacy
+              || (requirement.Compat && !candidate.Package.Entry.Derived
                   && wanted.Variant == ToothCompat.ClientLabel
                   && candidate.Package.Variant == ""));
     }

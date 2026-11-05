@@ -7,58 +7,27 @@ using Lip.Core.Sources;
 namespace Lip.Core.Mcmod;
 
 /// An asset of a candidate (protocol/workspace.md §4 step 2), opened on first use: the archive
-/// of the package for "self", otherwise downloaded, or opened from the asset identifier the
-/// workspace file records.
+/// of the package for "self", otherwise downloaded.
 public sealed class AssetHandle {
-  private readonly Lazy<Task<(ISource Source, AssetIdentity? Identity)>> _open;
+  private readonly Lazy<Task<ISource>> _open;
 
-  private AssetHandle(
-      AssetType type,
-      AssetIdentity? recorded,
-      Func<Task<(ISource, AssetIdentity?)>> open) {
+  private AssetHandle(AssetType type, Func<Task<ISource>> open) {
     Type = type;
-    Recorded = recorded;
     _open = new(open);
   }
 
   public AssetType Type { get; }
 
-  /// The asset identifier the workspace file records for it, or null.
-  public AssetIdentity? Recorded { get; }
-
   /// The archive of the package itself.
   public static AssetHandle Self(ArchiveHandle archive) =>
-      new(AssetType.Self, null, () => Task.FromResult<(ISource, AssetIdentity?)>(
-          (archive.Source, null)));
+      new(AssetType.Self, () => Task.FromResult(archive.Source));
 
   /// An asset downloaded from the first of its URLs that can be obtained.
-  public static AssetHandle Download(
-      IArchiveProvider provider, EntryAsset asset, AssetFormat format) =>
-      new(asset.Type, null, async () => {
-        OpenedAsset opened = await provider.OpenAsset(asset.Urls, format);
-        return (opened.Source, opened.Identity);
-      });
-
-  /// An asset the workspace file records, verified against its identifier.
-  public static AssetHandle Locked(
-      IArchiveProvider provider, AssetType type, AssetIdentity identity, AssetFormat format) =>
-      new(type, identity, async () => (await provider.OpenLockedAsset(identity, format), identity));
-
-  /// The format an asset of an entry is downloaded as.
-  public static AssetFormat FormatOf(EntryAsset asset, bool legacy) => asset.Type switch {
-    AssetType.Uncompressed => AssetFormat.LegacyFile,
-    _ when legacy => AssetFormat.LegacyArchive,
-    _ => AssetFormat.Zip,
-  };
+  public static AssetHandle Download(IArchiveProvider provider, EntryAsset asset) =>
+      new(asset.Type, () => provider.OpenAsset(asset.Urls));
 
   /// The files of the asset. Throws ArchiveUnavailableException when it cannot be obtained.
-  public async Task<ISource> Open() => (await OpenCore()).Source;
-
-  /// The asset identifier (null for "self"), downloading the asset when it is not recorded.
-  public async Task<AssetIdentity?> GetIdentity() =>
-      Type == AssetType.Self ? null : Recorded ?? (await OpenCore()).Identity;
-
-  private Task<(ISource Source, AssetIdentity? Identity)> OpenCore() => _open.Value;
+  public Task<ISource> Open() => _open.Value;
 }
 
 /// A candidate (protocol/package.md §4): a package with its selected entry, the archive it is
@@ -122,8 +91,7 @@ public record Candidate(
           [
             .. package.Entry.Assets.Select(a => a.Type == AssetType.Self
                 ? AssetHandle.Self(archive)
-                : AssetHandle.Download(
-                    provider, a, AssetHandle.FormatOf(a, package.Entry.Legacy))),
+                : AssetHandle.Download(provider, a)),
           ]);
 }
 
@@ -233,9 +201,9 @@ public interface IMcmodInstaller {
 /// Reads and writes the workspace file (protocol/workspace.md §7.1), called the lock in the code,
 /// which lives in &lt;root&gt;/.lip/workspace.json, and names the other files in &lt;root&gt;/.lip.
 public interface ILockStore {
-  /// Returns an empty lock when none exists. Throws LockFormatException when the lock exists
+  /// Returns null when none exists. Throws LockFormatException when the lock exists
   /// but cannot be read, or when the workspace has files of earlier formats (§7.6).
-  public Task<LockFile> Load(string workspaceRoot);
+  public Task<LockFile?> Load(string workspaceRoot);
 
   /// Writes the lock: Stage, then CommitStaged.
   public Task Save(string workspaceRoot, LockFile lockFile);
@@ -268,29 +236,29 @@ public record LockFile {
   [JsonPropertyName("format_version")]
   public int FormatVersion { get; init; } = ToothFormat.FormatVersion;
 
-  /// "server" or "client", null until known. lip writes "server".
+  /// "server" or "client". lip writes "server".
   [JsonPropertyName("platform")]
-  public string? Platform { get; init; }
+  public required string Platform { get; init; }
 
   [JsonPropertyName("runtime")]
-  public string? Runtime { get; init; }
+  public required string Runtime { get; init; }
 
   /// In installation order.
   [JsonPropertyName("packages")]
-  public List<LockedPackage> Packages { get; init; } = [];
+  public required List<LockedPackage> Packages { get; init; }
 }
 
 /// An installed package in the workspace file (protocol/workspace.md §7.1).
 public record LockedPackage {
-  [JsonPropertyName("tooth")]
-  public required string Tooth { get; init; }
+  /// Its tooth file, of format 4 (for a tooth file of an earlier format, the one
+  /// protocol/package.md §5 derives from it for the environment of the workspace). Its "tooth" is
+  /// the tooth path and its "version" the version of the package.
+  [JsonPropertyName("manifest")]
+  public required JsonElement Manifest { get; init; }
 
   /// The variant of its source.
   [JsonPropertyName("variant")]
   public required string Variant { get; init; }
-
-  [JsonPropertyName("version")]
-  public required string Version { get; init; }
 
   /// Whether a request named it (as opposed to a dependency package).
   [JsonPropertyName("explicit")]
@@ -298,36 +266,35 @@ public record LockedPackage {
 
   /// The source of the request or the key of the dependency it was resolved for; a local path
   /// as the file: URI of its absolute path.
-  [JsonPropertyName("source")]
+  [JsonPropertyName("ref")]
   public required string Source { get; init; }
 
-  [JsonPropertyName("archive")]
-  public required ArchiveIdentity Archive { get; init; }
-
-  /// One member for each asset of the entry: null for "self".
-  [JsonPropertyName("assets")]
-  public required List<AssetIdentity?> Assets { get; init; }
-
-  /// The selected entry, in the form protocol/package.md §5 reads it for the environment.
-  [JsonPropertyName("entry")]
-  public required JsonElement Entry { get; init; }
+  /// For a package from a remote repository, the commit its archive was at (lowercase hex);
+  /// otherwise null, and omitted.
+  [JsonPropertyName("commit")]
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Commit { get; init; }
 
   /// Owned files, workspace-relative, '/'-separated and in the mods/ form.
   [JsonPropertyName("files")]
-  public List<string> Files { get; init; } = [];
+  public required List<string> Files { get; init; }
 
-  /// The format_version of the tooth file the entry was read from when it is not 4: an entry
-  /// derived from format 3 keeps the meaning of format 3 (protocol/package.md §5), which the
-  /// entry itself does not tell. Omitted for format 4.
-  [JsonPropertyName("tooth_format_version")]
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public int? ToothFormatVersion { get; init; }
+  /// The tooth path, the "tooth" of the manifest.
+  [JsonIgnore]
+  public string Tooth => StringMember("tooth");
+
+  /// The version, the "version" of the manifest.
+  [JsonIgnore]
+  public string Version => StringMember("version");
 
   /// The identity (protocol/package.md §4).
   [JsonIgnore]
   public string Identity => Package.GetIdentity(Tooth, Variant);
 
-  /// Whether the entry is one derived from an earlier format.
-  [JsonIgnore]
-  public bool IsLegacy => ToothFormatVersion is not null && ToothFormatVersion != ToothFormat.FormatVersion;
+  private string StringMember(string name) =>
+      Manifest.ValueKind == JsonValueKind.Object
+      && Manifest.TryGetProperty(name, out JsonElement value)
+      && value.ValueKind == JsonValueKind.String
+          ? value.GetString()!
+          : "";
 }

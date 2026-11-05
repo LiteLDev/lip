@@ -61,7 +61,7 @@ public static class RepositoryMigrator {
             + ex.Message, ex);
       }
 
-      result = await ToothMigrator.Migrate(tooth, ui, () => RepositoryFiles(fs, directory));
+      result = await ToothMigrator.Migrate(tooth, ui);
       notes.AddRange(result.Notes);
       notes.AddRange(ToothMigrator.DroppedFields(json.RootElement, tooth));
     }
@@ -100,40 +100,5 @@ public static class RepositoryMigrator {
       throw new InvalidOperationException(
           $"Cannot read {ToothFormat.ToothFileName}: {ex.Message}", ex);
     }
-  }
-
-  /// The '/'-separated paths of the files of the repository, in ordinal order, which make up
-  /// the archive of the tooth.json ("self" assets): everything in the directory but .git and
-  /// tooth.json itself. Links are not followed and inaccessible entries are skipped. Untracked
-  /// files are included: the working tree is all lip can see.
-  private static List<string> RepositoryFiles(IFileSystem fs, string directory) {
-    EnumerationOptions options = new() {
-      IgnoreInaccessible = true,
-      AttributesToSkip = FileAttributes.ReparsePoint,
-    };
-    List<string> files = [];
-    void Walk(string current) {
-      foreach (string file in fs.Directory.EnumerateFiles(current, "*", options)) {
-        files.Add(fs.Path.GetRelativePath(directory, file).Replace('\\', '/'));
-      }
-
-      foreach (string sub in fs.Directory.EnumerateDirectories(current, "*", options)) {
-        if (current != directory || fs.Path.GetFileName(sub) != ".git") {
-          Walk(sub);
-        }
-      }
-    }
-
-    try {
-      Walk(directory);
-    }
-    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-      throw new InvalidOperationException(
-          $"Cannot list the files of the repository: {ex.Message}", ex);
-    }
-
-    files.Remove(ToothFormat.ToothFileName);
-    files.Sort(StringComparer.Ordinal);
-    return files;
   }
 }

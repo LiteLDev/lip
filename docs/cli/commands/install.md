@@ -35,7 +35,7 @@ A git ref pins a tooth path to one commit of its repository:
 - `@tag:<tag>` takes the commit the tag points to; any tag name works, e.g. `@tag:nightly`. `lip update` resolves the tag again.
 - `@rev:<commit>` takes exactly that commit, which never changes. Abbreviated commit ids are not accepted, since resolving them would need the whole history of the repository.
 
-The version of a package installed this way is the `version` that its `tooth.json` declares at that commit. Only a tag named `v<SemVer>`, such as `@tag:v1.2.0`, gives the package the tag's version, as for plain versions: the `tooth.json` there must declare that version (a `tooth.json` of an earlier format takes the tag's version). The [workspace file](../../concepts/lockfiles.md) records the source and the commit it resolved to, so the workspace keeps that commit until you update.
+The version of a package installed this way is the `version` that its `tooth.json` declares at that commit. Only a tag named `v<SemVer>`, such as `@tag:v1.2.0`, gives the package the tag's version, as for plain versions: the `tooth.json` there must declare that version (a `tooth.json` of an earlier format takes the tag's version). The [workspace file](../../concepts/lockfiles.md) records the source, the commit it resolved to and its `tooth.json`, so the workspace keeps that commit until you update.
 
 A package installed from a git ref also satisfies dependencies on its tooth path and variant without a git ref, as long as its version is in the dependency's range: a mod requiring `github.com/LiteLDev/LeviLamina` `>=1.5.0` accepts a LeviLamina installed from `@branch:main` that declares `1.6.0`, and fails if it declares `1.4.0`.
 
@@ -45,7 +45,7 @@ A package installed from a git ref also satisfies dependencies on its tooth path
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
 | `--ignore-scripts` | Do not run package `hooks`, including the uninstall hooks of packages the operation removes or replaces. |
-| `--no-dependencies` | Install exactly the first candidate of each argument, replacing an installed package of the same identity; no dependencies are installed and no other package is uninstalled. This may leave the workspace broken. |
+| `--no-dependencies` | Install exactly the first candidate of each argument, replacing an installed package of the same identity; no dependencies are installed and no other package is uninstalled. An installed package with the same identity, version and commit is only marked explicitly installed. This may leave the workspace broken. |
 | `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |
 
 ## Examples

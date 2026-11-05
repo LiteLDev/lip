@@ -16,7 +16,8 @@ namespace Lip.Core.RegressionTests.Compatibility;
 
 /// Checks that tooth.json files of format 3 are read through protocol/package.md §5 and installed
 /// like lip v3 did: ToothCompat.Derive must map the same merged variant PackageManifest.GetVariant
-/// picks, and McmodInstaller must write exactly the files it reports for the derived entry.
+/// picks, converted as Section 5 converts it, and McmodInstaller must write exactly the files it
+/// reports for the derived entry.
 public class ToothCompatCorpusTests {
   private static readonly LipEnvironment _environment = new(McmodPlatform.Server, "win-x64");
 
@@ -75,21 +76,23 @@ public class ToothCompatCorpusTests {
     ToothEntry? actual = document.ReadFor(_environment).SelectEntry(reference.Variant, _environment);
 
     // Assert
-    if (expected is null) {
+    if (expected is null || expected.Assets.Any(a => a.Type is not (
+        PackageManifestAsset.AssetType.Self or PackageManifestAsset.AssetType.Zip))) {
       Assert.Null(actual);
       return;
     }
 
     Assert.NotNull(actual);
-    Assert.True(actual.Legacy);
+    Assert.True(actual.Derived);
     Assert.Equal(
         expected.Assets.Select(a => (a.Type.ToString(), string.Join(" ", a.Urls))),
         actual.Assets.Select(a => (a.Type.ToString(), string.Join(" ", a.Urls))));
     Assert.Equal(
-        expected.Assets.SelectMany(a => a.Placements.Select(p => (
-            p.Type == PackageManifestAssetPlacement.PlacementType.Directory, p.Src, p.Dst))),
-        actual.Assets.SelectMany(a => a.Placements.Select(p => (
-            p.LegacyDirectory ?? false, p.Src, p.Dest))));
+        expected.Assets.Select(a => a.Placements
+            .Select(ToothCompat.ConvertPlacement)
+            .Where(p => ToothParser.IsValidPlacement(p.Src, p.Dest))
+            .ToList()),
+        actual.Assets.Select(a => a.Placements.Select(p => (p.Src, p.Dest)).ToList()));
     Assert.Equal(
         expected.Dependencies.Select(d => d.Key.ToString()),
         actual.Dependencies.Select(d => d.Source.ToString()));
@@ -129,7 +132,11 @@ public class ToothCompatCorpusTests {
               Ref.Parse(package),
               _archiveProvider),
           new InstallContext(
-              root, _environment, new LockFile(), DryRun: false, IgnoreScripts: true));
+              root,
+              _environment,
+              new LockFile { Platform = "server", Runtime = _environment.Runtime, Packages = [] },
+              DryRun: false,
+              IgnoreScripts: true));
 
       // Assert
       Assert.NotEmpty(files);

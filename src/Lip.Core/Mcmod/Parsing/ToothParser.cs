@@ -119,10 +119,20 @@ public static partial class ToothParser {
     };
   }
 
-  /// Parses an entry of a tooth file of format 4 (Legacy false), or one derived from format 3
-  /// (Legacy true, protocol/package.md §5). Throws ToothFormatException.
-  public static ToothEntry ParseEntry(JsonElement element, bool legacy) =>
-      legacy ? ParseLegacyEntry(element, "$") : ParseEntryAt(element, "$");
+  /// Parses an entry of a tooth file of format 4. Throws ToothFormatException.
+  public static ToothEntry ParseEntry(JsonElement element) => ParseEntryAt(element, "$");
+
+  /// Whether a member of place is valid (tooth.schema.json "place").
+  public static bool IsValidPlacement(string src, string dest) {
+    using JsonDocument json = JsonDocument.Parse(JsonSerializer.Serialize(new { src, dest }));
+    try {
+      _ = ReadPlacement(json.RootElement, "$");
+      return true;
+    }
+    catch (ToothFormatException) {
+      return false;
+    }
+  }
 
   /// Whether a string is a runtime: a .NET runtime identifier, without wildcards.
   public static bool IsRuntime(string value) => RuntimeRegex().IsMatch(value);
@@ -151,36 +161,6 @@ public static partial class ToothParser {
       PreserveFiles = ReadOptional(element, "preserve", path, ArrayOf(ReadGlob)) ?? [],
       RemoveFiles = ReadOptional(element, "purge", path, ArrayOf(ReadGlob)) ?? [],
       Hooks = ReadOptional(element, "hooks", path, ReadHooks) ?? new(),
-      Json = element.Clone(),
-    };
-  }
-
-  /// An entry derived from format 3 (ToothCompat.Derive): its values keep the meaning they had in
-  /// lip v0.37.0, so only their types are checked.
-  private static ToothEntry ParseLegacyEntry(JsonElement element, string path) {
-    RequireObject(element, path);
-
-    List<EntryAsset> assets = ReadOptional(element, "assets", path, ArrayOf(ReadLegacyAsset)) ?? [];
-    return new ToothEntry {
-      Platform = ReadRequired(element, "platform", path, ReadPlatform),
-      Runtime = ReadRequired(element, "runtime", path, ReadString),
-      Dependencies = [
-        .. (ReadOptional(element, "dependencies", path, ReadDependencies) ?? [])
-            .Select(d => d with { ClientCompat = true }),
-      ],
-      Assets = assets,
-      PreserveFiles = [
-        .. ToothCompat.PreserveFiles(
-                ReadOptional(element, "preserve", path, ArrayOf(ReadString)) ?? [])
-            .Select(ToothCompat.TryParseGlob).OfType<PathGlob>(),
-      ],
-      RemoveFiles = [
-        .. ToothCompat.RemoveFiles(
-                ReadOptional(element, "purge", path, ArrayOf(ReadString)) ?? [])
-            .Select(ToothCompat.TryParseGlob).OfType<PathGlob>(),
-      ],
-      Hooks = ReadOptional(element, "hooks", path, ReadHooks) ?? new(),
-      Legacy = true,
       Json = element.Clone(),
     };
   }
@@ -307,36 +287,6 @@ public static partial class ToothParser {
     };
 
     return reason is null ? value : throw Invalid(path, $"'{value}' {reason}");
-  }
-
-  private static EntryAsset ReadLegacyAsset(JsonElement element, string path) {
-    RequireObject(element, path);
-
-    AssetType type = ReadRequired(element, "type", path, ReadString) switch {
-      "self" => AssetType.Self,
-      "zip" => AssetType.Zip,
-      "tar" => AssetType.Tar,
-      "tgz" => AssetType.Tgz,
-      "uncompressed" => AssetType.Uncompressed,
-      _ => throw Invalid($"{path}.type",
-          "must be \"self\", \"zip\", \"tar\", \"tgz\" or \"uncompressed\""),
-    };
-
-    return new EntryAsset(
-        type,
-        ReadOptional(element, "urls", path, ArrayOf(ReadString)) ?? [],
-        ReadOptional(element, "placements", path, ArrayOf((e, p) => {
-          RequireObject(e, p);
-          bool isDirectory = ReadRequired(e, "type", p, ReadString) switch {
-            "file" => false,
-            "dir" => true,
-            _ => throw Invalid($"{p}.type", "must be \"file\" or \"dir\""),
-          };
-          return new EntryPlacement(
-              ReadRequired(e, "src", p, ReadString),
-              ReadRequired(e, "dest", p, ReadString),
-              isDirectory);
-        })) ?? []);
   }
 
   private static PathGlob ReadGlob(JsonElement element, string path) {

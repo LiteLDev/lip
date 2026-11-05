@@ -425,7 +425,8 @@ public class McmodServiceAtomicityTests {
           _ws.Path("mods/New/a/b.txt"), empty, TestContext.Current.CancellationToken);
       killed.DeleteFile(_ws.Path("mods/Base/sub/x.txt"));
       killed.DeleteDirectoryOnCommit(_ws.Path("mods/Base/sub"));
-      await _ws.LockStore.Stage(_ws.Root, new LockFile());
+      await _ws.LockStore.Stage(
+          _ws.Root, new LockFile { Platform = "server", Runtime = "win-x64", Packages = [] });
     }
 
     // A cut-off last line, as when lip is killed while writing it.

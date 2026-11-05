@@ -96,7 +96,7 @@ public class ResolverTests {
     Assert.Equal("", candidate.Package.Variant);
     Assert.Equal(SemVersion.Parse("1.0.0"), candidate.Package.Version);
     Assert.Equal(Ref.Parse(Url), candidate.Source);
-    Assert.False(candidate.Package.Entry.Legacy);
+    Assert.False(candidate.Package.Entry.Derived);
     Assert.Empty(server.Diagnostics);
     Assert.Equal("client-win", MarkerOf(Assert.Single(client.Candidates)));
   }
@@ -264,7 +264,7 @@ public class ResolverTests {
     // Assert
     Assert.Equal(["2.0.0", "1.10.0", "1.2.0", "1.0.0"],
         result.Candidates.Select(c => c.Package.Version.ToString()));
-    Assert.All(result.Candidates, c => Assert.IsType<GitArchiveIdentity>(c.Archive.Identity));
+    Assert.All(result.Candidates, c => Assert.NotNull(c.Archive.Commit));
   }
 
   [Fact]
@@ -469,10 +469,11 @@ public class ResolverTests {
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
     Assert.Equal("1.0.0", candidate.Package.Version.ToString());
-    Assert.Equal(new GitArchiveIdentity($"https://{Spec}.git", commit), candidate.Archive.Identity);
+    Assert.Equal(commit, candidate.Archive.Commit);
+    Assert.Equal($"{Spec}@1.0.0", candidate.Archive.Key);
     Assert.Equal(Ref.Parse($"{Spec}@1.0.0"), candidate.Source);
     Assert.Equal(0, _archives.ListCount);
-    Assert.Equal([$"locked {Spec}@1.0.0 {commit}"], _archives.Opened);
+    Assert.Equal([$"{Spec}@rev:{commit}"], _archives.Opened);
   }
 
   [Theory]
@@ -502,7 +503,7 @@ public class ResolverTests {
     Assert.Equal(expectCandidate ? 1 : 0, result.Candidates.Count);
     if (expectCandidate) {
       Assert.Equal(declared, result.Candidates[0].Package.Version.ToString());
-      Assert.Equal(commit, ((GitArchiveIdentity)result.Candidates[0].Archive.Identity).Commit);
+      Assert.Equal(commit, result.Candidates[0].Archive.Commit);
     }
   }
 
@@ -602,7 +603,7 @@ public class ResolverTests {
 
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
-    Assert.Equal(recorded, ((GitArchiveIdentity)candidate.Archive.Identity).Commit);
+    Assert.Equal(recorded, candidate.Archive.Commit);
     Assert.Empty(_archives.ResolvedRefs);
   }
 
@@ -622,13 +623,13 @@ public class ResolverTests {
     ResolveResult result = await resolver.Resolve(Ref.Parse($"{Spec}@{gitRef}"), null, s_server);
 
     // Assert
-    Assert.Equal(now, ((GitArchiveIdentity)Assert.Single(result.Candidates).Archive.Identity).Commit);
+    Assert.Equal(now, Assert.Single(result.Candidates).Archive.Commit);
   }
 
   // Earlier formats (protocol/package.md §5)
 
   [Fact]
-  public async Task Resolve_Format3_DerivesLegacyEntryForEnvironment() {
+  public async Task Resolve_Format3_DerivesEntryForEnvironment() {
     // Arrange: variants whose platform does not match the runtime are left out.
     _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0",
         Variant3("", "linux-x64", "linux"),
@@ -643,7 +644,7 @@ public class ResolverTests {
 
     // Assert
     Candidate candidate = Assert.Single(server.Candidates);
-    Assert.True(candidate.Package.Entry.Legacy);
+    Assert.True(candidate.Package.Entry.Derived);
     Assert.Equal(McmodPlatform.Server, candidate.Package.Entry.Platform);
     Assert.Equal("win-x64", candidate.Package.Entry.Runtime);
     Assert.Equal("win", MarkerOf(candidate));
@@ -842,14 +843,15 @@ public class ResolverTests {
       return commit;
     }
 
+    public Task Forget(string url) => Task.CompletedTask;
+
     public Task<ArchiveHandle> Open(Ref target) {
       if (FailOnce.Remove(target.Target)) {
         throw new ArchiveUnavailableException($"timeout {target.Target}");
       }
 
       return _urls.TryGetValue(target.Target, out string? tooth)
-          ? Task.FromResult(Handle(
-              target.Target, tooth, new ZipArchiveIdentity(TestIdentity.Sha256, target.Target)))
+          ? Task.FromResult(Handle(target.Target, tooth, commit: null))
           : throw new ArchiveUnavailableException($"404 {target.Target}");
     }
 
@@ -891,18 +893,8 @@ public class ResolverTests {
       return Task.FromResult(GitHandle($"{spec}@rev:{commit}", spec, commit));
     }
 
-    public Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity) {
-      GitArchiveIdentity git = Assert.IsType<GitArchiveIdentity>(identity);
-      Opened.Add($"locked {key} {git.Commit}");
-      string spec = git.RepoUrl["https://".Length..^".git".Length];
-      return Task.FromResult(GitHandle(key, spec, git.Commit));
-    }
-
-    public Task<OpenedAsset> OpenAsset(IReadOnlyList<string> urls, AssetFormat format) =>
+    public Task<Lip.Core.Sources.ISource> OpenAsset(IReadOnlyList<string> urls) =>
         throw new NotSupportedException();
-
-    public Task<Lip.Core.Sources.ISource> OpenLockedAsset(
-        AssetIdentity identity, AssetFormat format) => throw new NotSupportedException();
 
     private string AddCommit(string spec, string toothJson) {
       string commit = (++_commits).ToString("x40");
@@ -921,15 +913,14 @@ public class ResolverTests {
     }
 
     private ArchiveHandle GitHandle(string key, string spec, string commit) =>
-        Handle(key, Get(spec).Commits[commit],
-            new GitArchiveIdentity(ArchiveProvider.GetRepoUrl(spec), commit));
+        Handle(key, Get(spec).Commits[commit], commit);
 
-    private static ArchiveHandle Handle(string key, string? toothJson, ArchiveIdentity identity) =>
+    private static ArchiveHandle Handle(string key, string? toothJson, string? commit) =>
         new(key,
             new ZipSource(WorkspaceHarness.Zip(toothJson is null
                 ? new() { ["readme.txt"] = "" }
                 : new() { [ToothFormat.ToothFileName] = toothJson })),
-            identity);
+            commit);
 
     private sealed class Repository {
       public Dictionary<string, string> Tags { get; } = [];

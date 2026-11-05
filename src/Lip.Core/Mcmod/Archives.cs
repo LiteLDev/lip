@@ -1,71 +1,13 @@
-using System.Text.Json.Serialization;
 using Lip.Core.Sources;
 using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// The archive identifier of a package (protocol/workspace.md §7.1), which identifies the content
-/// of its archive.
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
-[JsonDerivedType(typeof(ZipArchiveIdentity), "zip")]
-[JsonDerivedType(typeof(GitArchiveIdentity), "git")]
-[JsonDerivedType(typeof(DirectoryArchiveIdentity), "directory")]
-public abstract record ArchiveIdentity {
-  /// A string equal for two identifiers exactly when they identify the same content.
-  [JsonIgnore]
-  public abstract string Canonical { get; }
-}
-
-/// A ZIP archive, identified by the SHA-256 of its bytes (lowercase hex). Url is the URL it was
-/// downloaded from, without its fragment, or the file: URI of the absolute path of a local file.
-public record ZipArchiveIdentity(
-    [property: JsonPropertyName("sha256")] string Sha256,
-    [property: JsonPropertyName("url")] string Url) : ArchiveIdentity {
-  [JsonIgnore]
-  public override string Canonical => $"zip {Sha256.ToLowerInvariant()}";
-}
-
-/// A git archive: a commit (lowercase hex) of the repository at RepoUrl, https://&lt;repo&gt;.git.
-public record GitArchiveIdentity(
-    [property: JsonPropertyName("repo")] string RepoUrl,
-    [property: JsonPropertyName("commit")] string Commit) : ArchiveIdentity {
-  [JsonIgnore]
-  public override string Canonical =>
-      $"git {PackageNames.Fold(RepoUrl)} {Commit.ToLowerInvariant()}";
-}
-
-/// A directory archive on the local file system, identified by its absolute path.
-public record DirectoryArchiveIdentity(
-    [property: JsonPropertyName("path")] string Path) : ArchiveIdentity {
-  [JsonIgnore]
-  public override string Canonical => $"directory {Path}";
-}
-
-/// The asset identifier of an asset other than "self" (protocol/workspace.md §7.1): the URL it was
-/// downloaded from and the SHA-256 of the file (lowercase hex).
-public record AssetIdentity(
-    [property: JsonPropertyName("url")] string Url,
-    [property: JsonPropertyName("sha256")] string Sha256);
-
-/// An opened archive: a key naming it in messages and caches, its file tree, and its identity.
-/// Source keys are '/'-separated relative file paths, as for every ISource.
-public record ArchiveHandle(string Key, ISource Source, ArchiveIdentity Identity);
-
-/// A downloaded asset: its files, and its identifier.
-public record OpenedAsset(ISource Source, AssetIdentity Identity);
-
-/// What a downloaded asset must be.
-public enum AssetFormat {
-  /// A ZIP archive (protocol/package.md §1): the assets of type "zip" and "mcmod".
-  Zip,
-
-  /// A ZIP, tar or gzipped tar archive, told apart by content, whose files are not checked: the
-  /// assets of type "zip", "tar" and "tgz" of format 3, as lip v0.37.0 read them.
-  LegacyArchive,
-
-  /// A single file with the key "": the assets of type "uncompressed" of format 3.
-  LegacyFile,
-}
+/// An opened archive: a key naming it in messages and caches, its file tree, and, for a git
+/// archive, the commit (lowercase hex) it is the tree of, which the workspace file records
+/// (protocol/workspace.md §7.1). Source keys are '/'-separated relative file paths, as for every
+/// ISource.
+public record ArchiveHandle(string Key, ISource Source, string? Commit = null);
 
 /// A version of a remote repository: a version tag "v" + version.
 public record SpecVersion(SemVersion Version, string Tag);
@@ -96,16 +38,12 @@ public interface IArchiveProvider {
   /// Opens the git archive of a commit of a remote repository. Its key is "spec@rev:commit".
   public Task<ArchiveHandle> OpenCommit(string spec, string commit);
 
-  /// Opens the archive an archive identifier recorded in the workspace file identifies, and
-  /// verifies its identity (protocol/workspace.md §5, "Reinstalling").
-  public Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity);
+  /// Downloads the ZIP archive of an asset from the first of its https URLs that can be obtained
+  /// (protocol/workspace.md §4 step 2), cached under the key of that URL like the archives of
+  /// URLs. Throws ArchiveUnavailableException when none can.
+  public Task<ISource> OpenAsset(IReadOnlyList<string> urls);
 
-  /// Downloads an asset from the first of its URLs that can be obtained (protocol/workspace.md §4
-  /// step 2), cached under the key of that URL like the archives of URLs. Throws
-  /// ArchiveUnavailableException when none can.
-  public Task<OpenedAsset> OpenAsset(IReadOnlyList<string> urls, AssetFormat format);
-
-  /// Opens an asset an asset identifier recorded in the workspace file identifies, and verifies
-  /// its SHA-256.
-  public Task<ISource> OpenLockedAsset(AssetIdentity identity, AssetFormat format);
+  /// Forgets the cached download of the archive of a URL, so that the next Open downloads it
+  /// again (protocol/workspace.md §5 "Updating").
+  public Task Forget(string url);
 }

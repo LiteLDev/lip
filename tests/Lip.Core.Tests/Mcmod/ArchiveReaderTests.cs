@@ -46,8 +46,8 @@ public class ArchiveReaderTests {
     source.Setup(s => s.Keys).Returns(files.Keys);
     source.Setup(s => s.OpenRead(It.IsAny<string>()))
         .ReturnsAsync((string key) => new MemoryStream(Encoding.UTF8.GetBytes(files[key])));
-    return new ArchiveHandle(
-        "test", source.Object, new ZipArchiveIdentity(TestIdentity.Sha256, "https://example.com/a.zip"));
+    return new ArchiveHandle("test", source.Object);
+
   }
 
   [Fact]
@@ -71,7 +71,7 @@ public class ArchiveReaderTests {
     ToothFile file = document.ReadFor(_environment);
     Assert.Same(document.File, file);
     ToothEntry entry = Assert.Single(file.Variants[""]);
-    Assert.False(entry.Legacy);
+    Assert.False(entry.Derived);
     Assert.Same(entry, file.SelectEntry("", _environment));
   }
 
@@ -96,7 +96,7 @@ public class ArchiveReaderTests {
   }
 
   [Fact]
-  public async Task Read_Format3_DerivesLegacyEntriesForTheEnvironment() {
+  public async Task Read_Format3_DerivesEntriesForTheEnvironment() {
     // Arrange
     ArchiveHandle archive = CreateArchive(new() { ["tooth.json"] = _toothV3 });
     ToothDocument document = await new ArchiveReader().Read(archive);
@@ -107,7 +107,7 @@ public class ArchiveReaderTests {
     // Assert
     Assert.Equal("github.com/user/repo", file.Tooth);
     ToothEntry entry = Assert.IsType<ToothEntry>(file.SelectEntry("", _environment));
-    Assert.True(entry.Legacy);
+    Assert.True(entry.Derived);
   }
 
   [Fact]

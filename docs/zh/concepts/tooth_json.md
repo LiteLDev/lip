@@ -248,20 +248,38 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
 
 lip 读取格式版本 1、2 和 3 的 `tooth.json`（为 lip v0.37.0 及更早版本编写），但从不写入它们；请使用
 [`lip migrate`](../cli/commands/migrate.md) 转换你的包。格式 1 和 2 先像 lip v0.37.0 那样读取为格式 3。
-格式 3 的 `tooth.json` 随后针对工作区的环境读取为格式 4 的 `tooth.json`：
+格式 3 的 `tooth.json` 随后针对工作区的环境被完整地转换为格式 4 的 `tooth.json`，lip 只使用转换结果：
+lip 解析、安装并记录到[工作区文件](lockfiles.md)中的都是它。安装时不再保留任何格式 3 的语义。
 
-- 保留 `tooth` 和 `version`，`info` 也保留，但其 `avatar_url` 以 `https://` 开头时变为 `logo`，否则被丢弃。
+- 保留 `tooth`。`version` 为包的版本：在版本标签处为标签版本，而不论 `tooth.json` 的 `version` 写的是
+  什么；否则为该 `version`。
+- 保留 `info`，但其 `avatar_url` 以 `https://` 开头时变为 `logo`，否则被丢弃。
 - 对每个标签，将该标签下 `platform` 为空或与运行时匹配（作为 RID 模式，例如 `win-*`）的变体，按 lip
   v0.37.0 的方式合并为一个对应该环境平台和运行时的条目。没有这类变体的标签不构成变体。
-- 在客户端上，标签为 `client` 的变体被用作变体 `""`。
+- `dependencies` 原样保留。
+- 每个资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`（见下文）。类型为 `tar`、`tgz` 或
+  `uncompressed` 的资源在格式 4 中不存在，会使该标签在该环境下没有变体。
+- `preserve_files` 变为 `preserve`：`\` 替换为 `/`，不含 `/` 的模式加上前缀 `**/`，因此 `config.json`
+  变为 `**/config.json`。
+- `remove_files` 变为 `purge`：`\` 替换为 `/`，不以 `/` 结尾的模式还会再加上一个以 `/` 结尾的形式，因此
+  `logs` 变为 `logs` 和 `logs/`。
 - scripts 变为 `hooks`：`pre_install` 仍为 `pre_install`；`install` 和随后的 `post_install` 变为
   `post_install`；`pre_uninstall` 和随后的 `uninstall` 变为 `pre_uninstall`；`post_uninstall` 仍为
   `post_uninstall`。
-- `preserve_files` 变为 `preserve`，`remove_files` 变为 `purge`。它们和资源都保持其在 lip v0.37.0 中的
-  含义，包括 `tar`、`tgz` 和 `uncompressed` 资源类型以及带 `type` 的 `placements`。
-- 在版本标签处，包的版本为标签版本，而不论其 `version` 写的是什么。
+- 在客户端上，标签为 `client` 的变体被用作变体 `""`。
 - 对某个格式 4 包的 `client` 变体的依赖，指向该包的变体 `""`。
 
+放置规则 `{ "type": ..., "src": ..., "dest": ... }` 在 `src` 和 `dest` 中的 `\` 替换为 `/`、空段和 `.` 段被移除
+后，变为 `place` 的一个成员：
+
+| 放置规则 | `place` 成员 |
+| --- | --- |
+| `type` 为 `dir` | `src` 和 `dest` 各自加上 `/`（为空时除外）：目录形式。 |
+| `type` 为 `file`，`src` 含 `*`、`?` 或 `[` | `src`，以及加上 `/` 的 `dest`（为空时除外）：glob 形式。 |
+| `type` 为 `file`，其他 `src` | `src` 和 `dest`：文件形式。 |
+
+转换后在格式 4 中无效的 glob 或放置规则会被略去。随后放置规则按格式 4 的方式执行：例如，缺失的文件现在会使安装
+失败，包的 `tooth.json` 也永远不会被写入。
 早期格式的包始终是文件包。其身份遵循同样的规则，例如 `github.com/LiteLDev/LegacyScriptEngine#lua`。
 
 格式 3 的 schema 为

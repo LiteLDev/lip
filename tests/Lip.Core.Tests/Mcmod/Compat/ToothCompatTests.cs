@@ -76,7 +76,7 @@ public class ToothCompatTests {
     Assert.Equal(SemVersion.Parse("1.2.3"), tooth.Version);
     Assert.Equal(["", "client"], tooth.Variants.Keys.Order(StringComparer.Ordinal));
     ToothEntry entry = Assert.Single(tooth.Variants[""]);
-    Assert.True(entry.Legacy);
+    Assert.True(entry.Derived);
     Assert.Equal(McmodPlatform.Server, entry.Platform);
     Assert.Equal("win-x64", entry.Runtime);
     Assert.Equal(
@@ -88,7 +88,7 @@ public class ToothCompatTests {
     Assert.Equal(["echo win"], entry.Hooks.PostInstall);
     EntryAsset asset = Assert.Single(entry.Assets);
     Assert.Equal(AssetType.Self, asset.Type);
-    Assert.Equal([new EntryPlacement("a.dll", "plugins/a/a.dll", false)], asset.Placements);
+    Assert.Equal([new EntryPlacement("a.dll", "plugins/a/a.dll")], asset.Placements);
     Assert.Same(entry, tooth.SelectEntry("", _serverWin));
     Assert.Equal(
         ["github.com/user/clientdep"], Dependencies(Assert.Single(tooth.Variants["client"])));
@@ -371,22 +371,19 @@ public class ToothCompatTests {
     // Act
     JsonElement entry = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]).Json;
 
-    // Assert: the globs use the keys of format 4; the assets keep the placements of format 3.
+    // Assert: everything is converted to format 4.
     Assert.Equal(
         ["platform", "runtime", "assets", "preserve", "purge"],
         entry.EnumerateObject().Select(p => p.Name));
-    Assert.Equal("""["config.json"]""", entry.GetProperty("preserve").GetRawText());
-    Assert.Equal("""["logs"]""", entry.GetProperty("purge").GetRawText());
-    JsonElement asset = Assert.Single(entry.GetProperty("assets").EnumerateArray());
-    Assert.False(asset.TryGetProperty("place", out _));
+    Assert.Equal("""["**/config.json"]""", entry.GetProperty("preserve").GetRawText());
+    Assert.Equal("""["logs","logs/"]""", entry.GetProperty("purge").GetRawText());
     Assert.Equal(
-        "file",
-        Assert.Single(asset.GetProperty("placements").EnumerateArray()).GetProperty("type")
-            .GetString());
+        """{"type":"self","place":[{"src":"a.dll","dest":"plugins/a.dll"}]}""",
+        Assert.Single(entry.GetProperty("assets").EnumerateArray()).GetRawText());
   }
 
   [Fact]
-  public void ParseEntry_LegacyEntryWithOldGlobKeys_IgnoresThem() {
+  public void ParseEntry_EntryWithGlobKeysOfFormat3_IgnoresThem() {
     // Arrange
     using JsonDocument json = JsonDocument.Parse("""
         { "platform": "server", "runtime": "win-x64",
@@ -394,7 +391,7 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothEntry entry = ToothParser.ParseEntry(json.RootElement, legacy: true);
+    ToothEntry entry = ToothParser.ParseEntry(json.RootElement);
 
     // Assert
     Assert.Empty(entry.PreserveFiles);
@@ -402,16 +399,16 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void Derive_DerivedEntry_ReparsesAsLegacyEntry() {
+  public void Derive_DerivedEntry_ReparsesAsTheSameEntryOfFormat4() {
     // Arrange
     ToothFile tooth = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
     ToothEntry entry = tooth.Variants[""][0];
 
     // Act
-    ToothEntry reparsed = ToothParser.ParseEntry(entry.Json, legacy: true);
+    ToothEntry reparsed = ToothParser.ParseEntry(entry.Json);
 
     // Assert
-    Assert.True(reparsed.Legacy);
+    Assert.False(reparsed.Derived);
     Assert.Equal(entry.Platform, reparsed.Platform);
     Assert.Equal(entry.Runtime, reparsed.Runtime);
     Assert.Equal(Dependencies(entry), Dependencies(reparsed));
@@ -459,10 +456,7 @@ public class ToothCompatTests {
               "preserve_files": ["config.json"], "remove_files": ["logs"] },
             { "platform": "win-*",
               "assets": [
-                { "type": "uncompressed", "urls": ["https://example.com/b.exe"],
-                  "placements": [ { "type": "file", "src": "", "dest": "b.exe" } ] },
-                { "type": "tar", "urls": ["https://example.com/c.tar"] },
-                { "type": "tgz", "urls": ["https://example.com/d.tgz"],
+                { "type": "self",
                   "placements": [ { "type": "dir", "src": "d", "dest": "plugins/d" } ] }
               ],
               "preserve_files": ["plugins\\x\\*.json"], "remove_files": ["tmp/"] }
@@ -474,16 +468,125 @@ public class ToothCompatTests {
     ToothEntry entry = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]);
 
     // Assert
-    Assert.Equal(
-        [AssetType.Zip, AssetType.Uncompressed, AssetType.Tar, AssetType.Tgz],
-        entry.Assets.Select(a => a.Type));
+    Assert.Equal([AssetType.Zip, AssetType.Self], entry.Assets.Select(a => a.Type));
     Assert.Equal(["https://example.com/a.zip"], entry.Assets[0].Urls);
-    Assert.Equal([new EntryPlacement("", "b.exe", false)], entry.Assets[1].Placements);
-    Assert.Equal([new EntryPlacement("d", "plugins/d", true)], entry.Assets[3].Placements);
+    Assert.Empty(entry.Assets[0].Placements);
+    Assert.Empty(entry.Assets[1].Urls);
+    Assert.Equal([new EntryPlacement("d/", "plugins/d/")], entry.Assets[1].Placements);
     Assert.False(entry.IsMod);
     Assert.Equal(
         ["**/config.json", "plugins/x/*.json"], entry.PreserveFiles.Select(g => g.Pattern));
     Assert.Equal(["logs", "logs/", "tmp/"], entry.RemoveFiles.Select(g => g.Pattern));
+  }
+
+  [Theory]
+  [InlineData("tar")]
+  [InlineData("tgz")]
+  [InlineData("uncompressed")]
+  public void Derive_AssetOfTypeWithoutFormat4Equivalent_MakesTheVariantAbsent(string type) {
+    // Arrange: the asset is in a variant of the label "client" for windows only.
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [
+            { "assets": [ { "type": "zip", "urls": ["https://example.com/a.zip"] } ] },
+            { "label": "client",
+              "assets": [ { "type": "zip", "urls": ["https://example.com/c.zip"] } ] },
+            { "label": "client", "platform": "win-*",
+              "assets": [ { "type": "{{type}}", "urls": ["https://example.com/b"],
+                "placements": [ { "type": "file", "src": "", "dest": "b.exe" } ] } ] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothFile serverWin = ToothCompat.Derive(manifest, _serverWin);
+    ToothFile clientWin = ToothCompat.Derive(manifest, _clientWin);
+    ToothFile clientLinux = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
+
+    // Assert: on windows, the variant "client" is absent, and so is the variant "" derived from
+    // it on the client; elsewhere, it is there.
+    Assert.Equal([""], serverWin.Variants.Keys);
+    Assert.False(serverWin.Json.GetProperty("variants").TryGetProperty("client", out _));
+    Assert.Empty(clientWin.Variants);
+    Assert.Empty(clientWin.Json.GetProperty("variants").EnumerateObject());
+    Assert.Equal(["", "client"], clientLinux.Variants.Keys.Order(StringComparer.Ordinal));
+  }
+
+  [Theory]
+  [InlineData("file", "a.dll", "plugins/a.dll", "a.dll", "plugins/a.dll")]
+  [InlineData("file", ".\\bin\\a.dll", "plugins\\\\a.dll", "bin/a.dll", "plugins/a.dll")]
+  [InlineData("file", "bin/*.dll", "plugins/a", "bin/*.dll", "plugins/a/")]
+  [InlineData("file", "bin/a?.dll", "plugins/", "bin/a?.dll", "plugins/")]
+  [InlineData("file", "bin/[ab].dll", "", "bin/[ab].dll", "")]
+  [InlineData("dir", "bin", "plugins/a", "bin/", "plugins/a/")]
+  [InlineData("dir", "./bin/", "plugins//a/", "bin/", "plugins/a/")]
+  [InlineData("dir", "", "plugins/a", "", "plugins/a/")]
+  [InlineData("dir", ".", ".", "", "")]
+  public void ConvertPlacement_Format3Placement_BecomesMemberOfPlace(
+      string type, string src, string dest, string expectedSrc, string expectedDest) {
+    // Arrange
+    PackageManifestAssetPlacement placement = new() {
+      Type = type == "dir"
+          ? PackageManifestAssetPlacement.PlacementType.Directory
+          : PackageManifestAssetPlacement.PlacementType.File,
+      Src = src,
+      Dst = dest,
+    };
+
+    // Act
+    (string actualSrc, string actualDest) = ToothCompat.ConvertPlacement(placement);
+
+    // Assert
+    Assert.Equal((expectedSrc, expectedDest), (actualSrc, actualDest));
+    Assert.True(ToothParser.IsValidPlacement(actualSrc, actualDest));
+  }
+
+  [Fact]
+  public void Derive_PlacementsAndGlobsInvalidInFormat4_AreLeftOut() {
+    // Arrange: a file placement of the whole archive ("" is the directory form in format 4), a
+    // file placed at "" and globs that are no globs of format 4.
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [ { "platform": "win-x64",
+            "assets": [ { "type": "self", "placements": [
+              { "type": "file", "src": "", "dest": "b.exe" },
+              { "type": "file", "src": "a.dll", "dest": "." },
+              { "type": "file", "src": "c.dll", "dest": "plugins/c.dll" } ] } ],
+            "preserve_files": ["/abs", "a//b", "ok.json"],
+            "remove_files": ["/abs", "a//b", "logs/"] } ]
+        }
+        """);
+
+    // Act
+    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+
+    // Assert
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(
+        [new EntryPlacement("c.dll", "plugins/c.dll")], Assert.Single(entry.Assets).Placements);
+    Assert.Equal(["**/ok.json"], entry.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(["logs/"], entry.RemoveFiles.Select(g => g.Pattern));
+    _ = ToothParser.Parse(Encoding.UTF8.GetBytes(tooth.Json.GetRawText()));
+  }
+
+  [Fact]
+  public void Derive_Version_IsTheVersionOfThePackage() {
+    // Arrange
+    PackageManifest manifest = Manifest(_multiPlatformV3);
+
+    // Act
+    ToothFile tagged = ToothCompat.Derive(manifest, _serverWin, SemVersion.Parse("2.0.0"));
+    ToothFile untagged = ToothCompat.Derive(manifest, _serverWin);
+
+    // Assert
+    Assert.Equal(SemVersion.Parse("2.0.0"), tagged.Version);
+    Assert.Equal("2.0.0", tagged.Json.GetProperty("version").GetString());
+    Assert.Equal(SemVersion.Parse("1.2.3"), untagged.Version);
+    Assert.Equal("1.2.3", untagged.Json.GetProperty("version").GetString());
   }
 
   [Fact]
@@ -670,77 +773,16 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void ParseEntry_LegacyEntry_ConvertsPreserveAndPurge() {
-    // Arrange: an entry of the workspace file derived from format 3 (protocol/workspace.md §7.1).
-    using JsonDocument json = JsonDocument.Parse("""
-        {
-          "platform": "server", "runtime": "win-x64",
-          "dependencies": { "github.com/user/a#client": "^1.0.0" },
-          "assets": [
-            { "type": "uncompressed", "urls": ["https://example.com/a.exe"],
-              "placements": [ { "type": "file", "src": "", "dest": "a.exe" } ] },
-            { "type": "self", "placements": [ { "type": "dir", "src": "/x\\", "dest": "../y" } ] }
-          ],
-          "preserve": ["config.json", "data\\", "/bad", "a//b"],
-          "purge": ["logs", "tmp/"],
-          "hooks": { "post_install": ["x"] }
-        }
-        """);
-
-    // Act
-    ToothEntry entry = ToothParser.ParseEntry(json.RootElement, legacy: true);
-
-    // Assert
-    Assert.True(entry.Legacy);
-    ToothDependency dependency = Assert.Single(entry.Dependencies);
-    Assert.True(dependency.ClientCompat);
-    Assert.Equal("client", dependency.Source.Variant);
-    Assert.Equal([AssetType.Uncompressed, AssetType.Self], entry.Assets.Select(a => a.Type));
-    Assert.Equal([new EntryPlacement("", "a.exe", false)], entry.Assets[0].Placements);
-    Assert.Equal([new EntryPlacement("/x\\", "../y", true)], entry.Assets[1].Placements);
-    Assert.Equal(["**/config.json", "data/"], entry.PreserveFiles.Select(g => g.Pattern));
-    Assert.Equal(["logs", "logs/", "tmp/"], entry.RemoveFiles.Select(g => g.Pattern));
-    Assert.Equal(["x"], entry.Hooks.PostInstall);
-  }
-
-  [Theory]
-  [InlineData("""{ "platform": "server", "runtime": "win-x64", "assets": [ { "type": "mcmod", "urls": [] } ] }""")]
-  [InlineData("""{ "platform": "server", "runtime": "win-x64", "assets": [ { "type": "self", "placements": [ { "type": "glob", "src": "", "dest": "" } ] } ] }""")]
-  [InlineData("""{ "platform": "any", "runtime": "win-x64" }""")]
-  [InlineData("""{ "platform": "server" }""")]
-  [InlineData("""{ "platform": "server", "runtime": "win-x64", "preserve": [ 1 ] }""")]
-  public void ParseEntry_InvalidLegacyEntry_Throws(string entry) {
-    // Arrange
-    using JsonDocument json = JsonDocument.Parse(entry);
-
-    // Act & Assert
-    Assert.Throws<ToothFormatException>(() => ToothParser.ParseEntry(json.RootElement, legacy: true));
-  }
-
-  [Fact]
-  public void ParseEntry_LegacyRuntime_IsNotValidatedAsRid() {
-    // Arrange
-    using JsonDocument json = JsonDocument.Parse("""{ "platform": "client", "runtime": "x y" }""");
-
-    // Act
-    ToothEntry entry = ToothParser.ParseEntry(json.RootElement, legacy: true);
-
-    // Assert
-    Assert.Equal("x y", entry.Runtime);
-    Assert.Throws<ToothFormatException>(() => ToothParser.ParseEntry(json.RootElement, legacy: false));
-  }
-
-  [Fact]
-  public void Derive_DerivedDocumentJson_IsUtf8Json() {
+  public void Derive_DerivedDocument_IsAValidToothFileOfFormat4() {
     // Arrange
     ToothFile tooth = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
 
     // Act
     byte[] bytes = Encoding.UTF8.GetBytes(tooth.Json.GetRawText());
 
-    // Assert: the derived document is not of format 4 as a file (its entries are legacy), but
-    // is strict JSON.
-    using JsonDocument document = ToothParser.ParseJson(bytes);
-    Assert.Equal(4, ToothParser.FormatVersion(document.RootElement));
+    // Assert: the derived document is a valid tooth file of format 4.
+    ToothFile reparsed = ToothParser.Parse(bytes);
+    Assert.Equal(tooth.Tooth, reparsed.Tooth);
+    Assert.Equal(tooth.Variants.Keys, reparsed.Variants.Keys);
   }
 }

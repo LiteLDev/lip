@@ -24,7 +24,7 @@
 只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。不过，仍可用 git 引用安装任意标签、分支或提交，例如 `lip install github.com/user/repo@tag:1.2.3` 或 `@branch:main`；此时包的版本是其 `tooth.json` 声明的 `version`。参见 [git 引用](cli/commands/install.md#git-引用)。
 
 ### 如何安装磁盘上的包？
-用根部带有 `tooth.json` 的目录或 ZIP 文件的路径运行 `lip install`，例如 `lip install ../MyTool` 或 `lip install ./package.zip`。工作区文件会记录该路径（对于 ZIP 文件还记录其 SHA-256）：卸载不需要它，`lip update` 会重新读取它。
+用根部带有 `tooth.json` 的目录或 ZIP 文件的路径运行 `lip install`，例如 `lip install ../MyTool` 或 `lip install ./package.zip`。工作区文件会记录该路径：卸载不需要它，`lip update` 会重新读取它。
 
 ### 如何升级 lip 自身？
 使用你最初的安装方式重新安装 `lip`，例如 `winget upgrade levimc.lip`，或从 GitHub Releases 页面下载最新的 Windows 安装包（`setup.exe` 或 `.msi`）或便携压缩包。目前还没有内置的 `lip self-update` 命令。如果你是通过旧的 `futrime.lip` winget 包或 npm 安装的 `lip`，请先卸载，再按[安装](intro/installation.md)中的方式重新安装。

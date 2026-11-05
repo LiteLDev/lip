@@ -269,24 +269,45 @@ The environment of a workspace is a pair `(platform, runtime)`:
 
 lip reads `tooth.json` of format versions 1, 2 and 3, as written for lip v0.37.0 and earlier,
 but never writes them; convert yours with [`lip migrate`](../cli/commands/migrate.md). Formats 1
-and 2 are first read as format 3, as lip v0.37.0 did. A format 3 `tooth.json` is then read, for
-the environment of the workspace, as a format 4 `tooth.json`:
+and 2 are first read as format 3, as lip v0.37.0 did. A format 3 `tooth.json` is then converted
+completely, for the environment of the workspace, into a format 4 `tooth.json`, and lip uses only
+that one: it is what lip resolves, installs, and records in the [workspace file](lockfiles.md).
+Nothing of format 3 remains at install time.
 
-- `tooth` and `version` are kept, and so is `info`, except that `avatar_url` becomes `logo`
-  when it starts with `https://` and is dropped otherwise.
+- `tooth` is kept. `version` is the version of the package: the tag version at a version tag,
+  whatever the `version` of the `tooth.json` says, and that `version` otherwise.
+- `info` is kept, except that `avatar_url` becomes `logo` when it starts with `https://` and is
+  dropped otherwise.
 - For each label, the variants with that label whose `platform` is empty or matches the runtime
   (as a RID pattern, e.g. `win-*`) are merged as lip v0.37.0 merged them, into one entry for the
   platform and runtime of the environment. A label without such variants is no variant.
-- On a client, a variant labeled `client` is used as the variant `""`.
+- `dependencies` are kept as they are.
+- Each asset keeps its `type` and `urls`, and its `placements` become `place` (see below). An
+  asset of type `tar`, `tgz` or `uncompressed`, which format 4 does not have, leaves the label
+  without a variant for the environment.
+- `preserve_files` becomes `preserve`: `\` is replaced by `/`, and a pattern without `/` is
+  prefixed by `**/`, so `config.json` becomes `**/config.json`.
+- `remove_files` becomes `purge`: `\` is replaced by `/`, and a pattern that does not end with `/`
+  is also added with a trailing `/`, so `logs` becomes `logs` and `logs/`.
 - The scripts become `hooks`: `pre_install` stays `pre_install`, `install` and then
   `post_install` become `post_install`, `pre_uninstall` and then `uninstall` become
   `pre_uninstall`, and `post_uninstall` stays `post_uninstall`.
-- `preserve_files` becomes `preserve` and `remove_files` becomes `purge`. They and the assets
-  keep the meaning they had in lip v0.37.0, including the `tar`, `tgz` and `uncompressed` asset
-  types and `placements` with `type`.
-- At a version tag, the version of the package is the tag version, whatever its `version` says.
+- On a client, a variant labeled `client` is used as the variant `""`.
 - A dependency on the variant `client` of a package whose `tooth.json` is of format 4 names its
   variant `""`.
+
+A placement `{ "type": ..., "src": ..., "dest": ... }` becomes a member of `place` after `\` is
+replaced by `/` and empty and `.` segments are removed from `src` and `dest`:
+
+| Placement | `place` member |
+| --- | --- |
+| `type` `dir` | `src` and `dest`, each followed by `/` unless empty: the directory form. |
+| `type` `file`, `src` containing `*`, `?` or `[` | `src`, and `dest` followed by `/` unless empty: the glob form. |
+| `type` `file`, any other `src` | `src` and `dest`: the file form. |
+
+A converted glob or placement that is not valid in format 4 is left out. The placements are then
+carried out as in format 4: for example, a missing file now fails the installation, and the
+`tooth.json` of the package is never written.
 
 A package of an earlier format is always a file package. Its identity follows the same rule, e.g.
 `github.com/LiteLDev/LegacyScriptEngine#lua`.

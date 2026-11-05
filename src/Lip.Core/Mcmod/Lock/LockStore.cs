@@ -2,7 +2,6 @@ using System.IO.Abstractions;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Lip.Core.Infrastructure;
-using Semver;
 
 namespace Lip.Core.Mcmod.Lock;
 
@@ -37,8 +36,6 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
   private static readonly JsonSerializerOptions _readOptions = new() {
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
-    // Hand-edited files may put the archive "kind" after the other properties.
-    AllowOutOfOrderMetadataProperties = true,
   };
 
   private static readonly JsonSerializerOptions _writeOptions = new() {
@@ -57,7 +54,7 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
   private string LipPath(string workspaceRoot, string name) =>
       _fs.Path.Join(NormalizeRoot(workspaceRoot), LipDirectory, name);
 
-  public async Task<LockFile> Load(string workspaceRoot) {
+  public async Task<LockFile?> Load(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
 
     string path = LipPath(root, FileName);
@@ -75,7 +72,7 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
       }
     }
 
-    return new LockFile();
+    return null;
   }
 
   public async Task Save(string workspaceRoot, LockFile lockFile) {
@@ -159,6 +156,15 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
             + "files they installed).");
       }
 
+      // "commit" is omitted, not null, for a package that is not from a remote repository.
+      if (root.TryGetProperty("packages", out JsonElement packages)
+          && packages.ValueKind == JsonValueKind.Array
+          && packages.EnumerateArray().Any(p => p.ValueKind == JsonValueKind.Object
+              && p.TryGetProperty("commit", out JsonElement commit)
+              && commit.ValueKind != JsonValueKind.String)) {
+        throw new LockFormatException("a package has a commit that is not a string.");
+      }
+
       LockFile lockFile = root.Deserialize<LockFile>(_readOptions)
           ?? throw new LockFormatException("the lock is null.");
       Validate(lockFile);
@@ -181,21 +187,21 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
           $"{ToothFormat.FormatVersionKey} is not {ToothFormat.FormatVersion}.");
     }
 
-    if (lockFile.Platform is not null
-        && !McmodPlatformExtensions.TryParse(lockFile.Platform, out _)) {
+    if (lockFile.Platform is null
+        || !McmodPlatformExtensions.TryParse(lockFile.Platform, out _)) {
       throw new LockFormatException(
           $"invalid platform \"{lockFile.Platform}\", expected \"server\" or \"client\".");
     }
 
-    if (lockFile.Runtime is "") {
-      throw new LockFormatException("runtime is empty.");
+    if (lockFile.Runtime is null or "") {
+      throw new LockFormatException("runtime is missing or empty.");
     }
 
     for (int i = 0; i < lockFile.Packages.Count; i++) {
       LockedPackage package = lockFile.Packages[i]
           ?? throw new LockFormatException($"packages[{i}] is null.");
-      string at = $"packages[{i}] ({package.Tooth})";
-      if (package.Files is null || package.Files.Any(f => f is null) || package.Assets is null) {
+      string at = $"packages[{i}]";
+      if (package.Files is null || package.Files.Any(f => f is null)) {
         throw new LockFormatException($"{at} has a null entry.");
       }
 
@@ -203,38 +209,23 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
         throw new LockFormatException($"{at} has the invalid variant \"{package.Variant}\".");
       }
 
-      if (!SemVersion.TryParse(package.Version, SemVersionStyles.Strict, out _)) {
-        throw new LockFormatException($"{at} has the invalid version \"{package.Version}\".");
+      if (package.Manifest.ValueKind != JsonValueKind.Object) {
+        throw new LockFormatException($"{at} has a manifest that is not an object.");
       }
 
-      if (package.Entry.ValueKind != JsonValueKind.Object) {
-        throw new LockFormatException($"{at} has an entry that is not an object.");
+      try {
+        _ = ToothParser.Parse(package.Manifest);
+      }
+      catch (ToothFormatException ex) {
+        throw new LockFormatException($"{at} has an invalid manifest: {ex.Message}", ex);
       }
 
-      string? invalid = package.Archive switch {
-        null => "no archive",
-        ZipArchiveIdentity zip when !Sha256Regex().IsMatch(zip.Sha256) =>
-            $"the invalid sha256 \"{zip.Sha256}\"",
-        GitArchiveIdentity git when !CommitRegex().IsMatch(git.Commit) =>
-            $"the invalid commit \"{git.Commit}\"",
-        GitArchiveIdentity git when !RepoRegex().IsMatch(git.RepoUrl) =>
-            $"the invalid repo \"{git.RepoUrl}\"",
-        DirectoryArchiveIdentity { Path: "" } => "an empty archive path",
-        _ => package.Assets.FirstOrDefault(a => a is not null && !Sha256Regex().IsMatch(a.Sha256))
-            is AssetIdentity asset ? $"the invalid asset sha256 \"{asset.Sha256}\"" : null,
-      };
-      if (invalid is not null) {
-        throw new LockFormatException($"{at} has {invalid}.");
+      if (package.Commit is not null && !CommitRegex().IsMatch(package.Commit)) {
+        throw new LockFormatException($"{at} has the invalid commit \"{package.Commit}\".");
       }
     }
   }
 
-  [GeneratedRegex(@"^[0-9a-f]{64}\z")]
-  private static partial Regex Sha256Regex();
-
   [GeneratedRegex(@"^[0-9a-f]{40}\z")]
   private static partial Regex CommitRegex();
-
-  [GeneratedRegex(@"^https://.+\.git\z")]
-  private static partial Regex RepoRegex();
 }

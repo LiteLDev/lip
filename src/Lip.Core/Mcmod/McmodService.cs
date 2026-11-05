@@ -40,10 +40,12 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// the journal (protocol/workspace.md §7.4).
 ///
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the workspace
-/// file without network access, and their archives and assets are opened from their identifiers
-/// only when needed. If the request cannot be satisfied with every installed package pinned, it
-/// is solved again with only the explicitly installed packages pinned, so that dependencies may
-/// change version. Packages that no explicitly installed package needs any more are removed.
+/// file (with the tooth file it records) without network access, and their archives (the commit
+/// it records for a remote repository, otherwise what their source names now) and assets are
+/// opened only when needed. If the request cannot be satisfied with every installed package
+/// pinned, it is solved again with only the explicitly installed packages pinned, so that
+/// dependencies may change version. Packages that no explicitly installed package needs any more
+/// are removed.
 public class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
@@ -176,7 +178,7 @@ public class McmodService(
     if (packages.Count == 0) {
       // Every explicitly installed package, requested again by its source: a remote repository
       // at its newest version, a branch at its head, a tag where it points now, a rev as it is,
-      // a URL as cached and a local path with its current content.
+      // a URL downloaded again and a local path with its current content.
       requests = [];
       foreach (IGrouping<string, LockedPackage> group in workspace.Lock.Packages
           .Where(p => p.Explicit)
@@ -195,6 +197,13 @@ public class McmodService(
       }
     } else {
       requests = ParseRequests(packages);
+    }
+
+    // A URL is downloaded again (protocol/workspace.md §5 "Updating").
+    foreach ((_, PackageRequest request) in requests) {
+      if (request.Ref.Kind == RefKind.Url) {
+        await _archiveProvider.Forget(request.Ref.Target);
+      }
     }
 
     List<Candidate> candidates = await RequestedCandidates(
@@ -225,9 +234,10 @@ public class McmodService(
   }
 
   public async Task<IReadOnlyList<InstalledPackage>> List() {
-    LockFile lockFile = await _lockStore.Load(_workspaceRoot());
+    LockFile? lockFile = await _lockStore.Load(_workspaceRoot());
     return [
-      .. lockFile.Packages.Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit)),
+      .. (lockFile?.Packages ?? [])
+          .Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit)),
     ];
   }
 
@@ -251,15 +261,23 @@ public class McmodService(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
 
     ArchiveHandle archive;
+    // The tag version of the archive, the version of a package of an earlier format.
+    SemVersion? tagVersion = null;
     if (request.Ref is { Kind: RefKind.Spec, GitRef: GitRef gitRef }) {
       archive = await _archiveProvider.OpenCommit(
           request.Ref.Target, await _archiveProvider.ResolveGitRef(request.Ref.Target, gitRef));
+      tagVersion = gitRef.Kind switch {
+        GitRefKind.Version => SemVersion.Parse(gitRef.Name, SemVersionStyles.Strict),
+        GitRefKind.Tag => ArchiveProvider.ParseVersionTag($"refs/tags/{gitRef.Name}"),
+        _ => null,
+      };
     } else if (request.Ref.Kind == RefKind.Spec) {
       SpecVersion version = (await _archiveProvider.ListVersions(request.Ref.Target))
           .FirstOrDefault()
           ?? throw new InvalidOperationException(
               $"'{request.Ref.Target}' has no version tags.");
       archive = await _archiveProvider.OpenVersion(request.Ref.Target, version);
+      tagVersion = version.Version;
     } else {
       archive = await _archiveProvider.Open(request.Ref);
     }
@@ -271,7 +289,7 @@ public class McmodService(
 
     string? runtime = null;
     try {
-      runtime = (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot()))).Runtime;
+      runtime = (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Runtime;
     }
     catch (LockFormatException) {
       // A workspace file lip cannot read records no environment it can use.
@@ -279,20 +297,26 @@ public class McmodService(
 
     LipEnvironment environment = new(
         McmodPlatform.Server, runtime ?? RuntimeInformation.RuntimeIdentifier);
-    return JsonSerializer.Serialize(document.ReadFor(environment).Json, _indented);
+    return JsonSerializer.Serialize(document.ReadFor(environment, tagVersion).Json, _indented);
   }
 
   #region Planning
 
   private async Task<Workspace> OpenWorkspace(OperationOptions options) {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
-    LockFile lockFile = await _lockStore.Load(root);
-    LipEnvironment environment = DetermineEnvironment(lockFile, options.Rid);
+    LockFile? recorded = await _lockStore.Load(root);
+    LipEnvironment environment = DetermineEnvironment(recorded, options.Rid);
+    // A workspace without a workspace file gets the environment of its first operation.
+    LockFile lockFile = recorded ?? new LockFile {
+      Platform = environment.Platform.ToSpecString(),
+      Runtime = environment.Runtime,
+      Packages = [],
+    };
     Resolver resolver = new(_archiveProvider, _archiveReader, Warn);
     foreach (LockedPackage package in lockFile.Packages) {
-      if (package.Archive is GitArchiveIdentity git
+      if (package.Commit is string commit
           && Ref.TryParse(package.Source, out Ref? source, out _)) {
-        resolver.PinCommit(source, git.Commit);
+        resolver.PinCommit(source, commit);
       }
     }
 
@@ -372,21 +396,17 @@ public class McmodService(
   /// The environment of the workspace (protocol/cli.md §4). lip manages server workspaces only,
   /// so the platform is always server. The runtime is --rid, then the workspace file, then the
   /// RID lip itself runs on.
-  private static LipEnvironment DetermineEnvironment(LockFile lockFile, string? explicitRid) {
+  private static LipEnvironment DetermineEnvironment(LockFile? lockFile, string? explicitRid) {
     string server = McmodPlatform.Server.ToSpecString();
-    if (lockFile.Platform is { } platform && platform != server) {
+    if (lockFile?.Platform is { } platform && platform != server) {
       throw new InvalidOperationException(
           $"The workspace file records the platform \"{platform}\", but lip manages server"
           + " workspaces only. Client workspaces are managed by launchers such as LeviLauncher.");
     }
 
-    if (lockFile.Runtime == "") {
-      throw new LockFormatException("The workspace file records an empty runtime.");
-    }
-
     return new LipEnvironment(
         McmodPlatform.Server,
-        explicitRid ?? lockFile.Runtime ?? RuntimeInformation.RuntimeIdentifier);
+        explicitRid ?? lockFile?.Runtime ?? RuntimeInformation.RuntimeIdentifier);
   }
 
   private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
@@ -556,7 +576,7 @@ public class McmodService(
     foreach (Group group in plan.Groups) {
       if (plan.Frozen.Contains(group)
           || (members.TryGetValue(group.Key, out Candidate? member)
-              && await IsSamePackage(group.Representative, member))) {
+              && IsSamePackage(group.Representative, member))) {
         kept.Add(group.Key);
       }
     }
@@ -629,7 +649,7 @@ public class McmodService(
       ];
       bool same = existing.Count > 0;
       foreach (LockedPackage package in existing) {
-        same = same && await IsSamePackage(package, candidate);
+        same = same && IsSamePackage(package, candidate);
       }
 
       if (same) {
@@ -685,12 +705,7 @@ public class McmodService(
             PackagePlan plan = await _installer.PlanInstall(
                 candidate, Context(workspace, options, remaining), view);
             plans.Add(("Installing" + what, plan));
-            List<AssetIdentity?> assets = [];
-            foreach (AssetHandle asset in candidate.Assets) {
-              assets.Add(await asset.GetIdentity());
-            }
-
-            remaining.Add(Locked(candidate, isExplicit, plan.OwnedFiles, assets));
+            remaining.Add(Locked(candidate, isExplicit, plan.OwnedFiles));
             break;
           }
         case MarkExplicitChange(LockedPackage package):
@@ -768,20 +783,13 @@ public class McmodService(
   }
 
   private static LockedPackage Locked(
-      Candidate candidate,
-      bool isExplicit,
-      IReadOnlyList<string> files,
-      List<AssetIdentity?> assets) => new() {
-        Tooth = candidate.Package.Tooth,
+      Candidate candidate, bool isExplicit, IReadOnlyList<string> files) => new() {
+        Manifest = candidate.Package.Manifest,
         Variant = candidate.Package.Variant,
-        Version = candidate.Package.Version.ToString(),
         Explicit = isExplicit,
         Source = candidate.Source.ToString(),
-        Archive = candidate.Archive.Identity,
-        Assets = assets,
-        Entry = candidate.Package.Entry.Json,
+        Commit = CommitOf(candidate),
         Files = [.. files],
-        ToothFormatVersion = candidate.Package.Entry.Legacy ? 3 : null,
       };
 
   private static InstallContext Context(
@@ -809,14 +817,15 @@ public class McmodService(
 
   #region Installed packages
 
-  /// The package an entry of the workspace file records, or null when it cannot be read.
-  private static Package? ToPackage(LockedPackage package) {
+  /// The package an entry of the workspace file records, with the entry of its variant for the
+  /// environment, or null when there is none or it cannot be read.
+  private static Package? ToPackage(LockedPackage package, LipEnvironment environment) {
     try {
       return new Package(
           package.Tooth,
           package.Variant,
           SemVersion.Parse(package.Version, SemVersionStyles.Strict),
-          McmodInstaller.LockedEntry(package));
+          McmodInstaller.LockedEntry(package, environment)) { Manifest = package.Manifest };
     }
     catch (Exception ex) when (ex is McmodInstallException or FormatException) {
       return null;
@@ -824,43 +833,29 @@ public class McmodService(
   }
 
   /// Rebuilds an installed package from the workspace file (protocol/workspace.md §5,
-  /// "Reinstalling"): its archive and assets are those the workspace file records, opened and
-  /// verified when first needed. Returns null when the entry cannot be read, or does not apply
-  /// to the environment (e.g. another --rid).
+  /// "Reinstalling"): with the tooth file the workspace file records, and the archive of the
+  /// commit it records for a remote repository, otherwise the archive its source names now,
+  /// opened when first needed. Returns null when its tooth file has no entry for the environment
+  /// (e.g. another --rid).
   private async Task<Candidate?> PinnedCandidate(Workspace workspace, LockedPackage package) {
     try {
-      Package rebuilt = ToPackage(package) ?? throw new FormatException("the entry is invalid.");
-      ToothEntry entry = rebuilt.Entry;
-      if (!entry.Contains(workspace.Environment)) {
+      if (ToPackage(package, workspace.Environment) is not Package rebuilt) {
         return null;
       }
 
-      if (entry.Assets.Count != package.Assets.Count) {
-        throw new FormatException(
-            $"it records {package.Assets.Count} asset identifiers for {entry.Assets.Count} assets.");
+      Ref source = Ref.Parse(package.Source, allowFile: true);
+      if (source.Kind == RefKind.Spec && package.Commit is null) {
+        throw new FormatException("it records no commit for a package of a remote repository.");
       }
 
-      Ref source = Ref.Parse(package.Source, allowFile: true);
       string key = $"{package.Source} (installed)";
       ArchiveHandle archive = new(
           key,
-          new DeferredSource(async () =>
-              (await _archiveProvider.OpenLocked(key, package.Archive)).Source),
-          package.Archive);
-      List<AssetHandle> assets = [];
-      for (int i = 0; i < entry.Assets.Count; i++) {
-        EntryAsset asset = entry.Assets[i];
-        assets.Add(asset.Type == AssetType.Self
-            ? AssetHandle.Self(archive)
-            : AssetHandle.Locked(
-                _archiveProvider,
-                asset.Type,
-                package.Assets[i] ?? throw new FormatException(
-                    $"it records no asset identifier for asset {i}."),
-                AssetHandle.FormatOf(asset, entry.Legacy)));
-      }
-
-      return new Candidate(rebuilt, archive, source, assets);
+          new DeferredSource(async () => (source.Kind == RefKind.Spec
+              ? await _archiveProvider.OpenCommit(source.Target, package.Commit!)
+              : await _archiveProvider.Open(source.WithVariant(""))).Source),
+          source.Kind == RefKind.Spec ? package.Commit : null);
+      return Candidate.Create(rebuilt, archive, source, _archiveProvider);
     }
     catch (Exception ex) when (ex is FormatException or ArgumentException
         or InvalidOperationException) {
@@ -904,27 +899,15 @@ public class McmodService(
       [.. lockFile.Packages.Where(p => p.Explicit).Select(p => p.Identity)];
 
   /// Whether a candidate is the installed package (protocol/workspace.md §5): same identity,
-  /// version, archive identifier and asset identifiers. The asset identifiers of a candidate
-  /// that is not installed are known once its assets are downloaded.
-  private static async Task<bool> IsSamePackage(LockedPackage package, Candidate candidate) {
-    if (!SameIdentity(package.Identity, candidate.Package.Identity)
-        || package.Version != candidate.Package.Version.ToString()
-        || package.Archive.Canonical != candidate.Archive.Identity.Canonical
-        || package.Assets.Count != candidate.Assets.Count) {
-      return false;
-    }
+  /// version and commit.
+  private static bool IsSamePackage(LockedPackage package, Candidate candidate) =>
+      SameIdentity(package.Identity, candidate.Package.Identity)
+      && package.Version == candidate.Package.Version.ToString()
+      && string.Equals(package.Commit, CommitOf(candidate), StringComparison.OrdinalIgnoreCase);
 
-    for (int i = 0; i < candidate.Assets.Count; i++) {
-      AssetIdentity? identity = await candidate.Assets[i].GetIdentity();
-      AssetIdentity? recorded = package.Assets[i];
-      if (identity?.Url != recorded?.Url
-          || !string.Equals(identity?.Sha256, recorded?.Sha256, StringComparison.OrdinalIgnoreCase)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
+  /// The commit of a candidate from a remote repository (lowercase hex), or null.
+  private static string? CommitOf(Candidate candidate) =>
+      candidate.Source.Kind == RefKind.Spec ? candidate.Archive.Commit?.ToLowerInvariant() : null;
 
   private static bool SameIdentity(string a, string b) => PackageNames.AreEqual(a, b);
 

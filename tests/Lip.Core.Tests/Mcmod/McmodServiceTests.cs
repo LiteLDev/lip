@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
@@ -40,16 +39,38 @@ public class McmodServiceTests {
     LockedPackage package = Assert.Single(lockFile.Packages);
     Assert.Equal((Lib, "", "1.0.0", true, Lib), (
         package.Tooth, package.Variant, package.Version, package.Explicit, package.Source));
-    Assert.Equal(new GitArchiveIdentity("https://example.com/lib.git", commit), package.Archive);
-    Assert.Equal([null], package.Assets);
+    Assert.Equal(commit, package.Commit);
     Assert.Equal(["lib/lib.dll"], package.Files);
     Assert.True(JsonNode.DeepEquals(
-        JsonNode.Parse(LibTooth("1.0.0"))!["variants"]![""]![0],
-        JsonNode.Parse(package.Entry.GetRawText())));
+        JsonNode.Parse(LibTooth("1.0.0")), JsonNode.Parse(package.Manifest.GetRawText())));
   }
 
   [Fact]
-  public async Task Install_LocalZip_RecordsFileUriSourceAndIdentifiers() {
+  public async Task Install_RemoteRepository_WritesTheMembersOfTheSchema() {
+    // Arrange
+    AddLib("1.0.0");
+    _ws.AddZip("x.zip", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(
+          "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "x",
+    });
+
+    // Act
+    await _ws.Service.Install([Lib, "x.zip"], _options);
+
+    // Assert: "commit" only for a package from a remote repository.
+    using JsonDocument document = JsonDocument.Parse(_ws.Fs.File.ReadAllText(_ws.LockPath));
+    JsonElement[] packages = [.. document.RootElement.GetProperty("packages").EnumerateArray()];
+    Assert.Equal(
+        ["manifest", "variant", "explicit", "ref", "commit", "files"],
+        packages[0].EnumerateObject().Select(p => p.Name));
+    Assert.Equal(
+        ["manifest", "variant", "explicit", "ref", "files"],
+        packages[1].EnumerateObject().Select(p => p.Name));
+  }
+
+  [Fact]
+  public async Task Install_LocalZip_RecordsFileUriSourceAndNoCommit() {
     // Arrange: a self asset placing through plugins/, and a zip asset.
     byte[] extra = WorkspaceHarness.Zip(new() { ["y.txt"] = "y" });
     _ws.AddDownload("https://example.com/extra.zip", extra);
@@ -75,14 +96,10 @@ public class McmodServiceTests {
     string uri = Ref.FromFile(path).ToString();
     Assert.StartsWith("file:", uri);
     Assert.Equal(uri, package.Source);
-    Assert.Equal(
-        new ZipArchiveIdentity(Sha256(_ws.Fs.File.ReadAllBytes(path)), uri), package.Archive);
-    Assert.Equal(
-        [null, new AssetIdentity("https://example.com/extra.zip", Sha256(extra))],
-        package.Assets);
+    Assert.Null(package.Commit);
     Assert.Equal(["mods/pkg/x.txt", "extra/y.txt"], package.Files);
     Assert.True(JsonNode.DeepEquals(
-        JsonNode.Parse(tooth)!["variants"]![""]![0], JsonNode.Parse(package.Entry.GetRawText())));
+        JsonNode.Parse(tooth), JsonNode.Parse(package.Manifest.GetRawText())));
   }
 
   [Fact]
@@ -133,9 +150,49 @@ public class McmodServiceTests {
     // Assert
     LockFile lockFile = await _ws.Lock();
     Assert.Equal(
-        [(Lib, (int?)3, false), (App, null, true)],
-        lockFile.Packages.Select(p => (p.Tooth, p.ToothFormatVersion, p.Explicit)));
+        [(Lib, false), (App, true)], lockFile.Packages.Select(p => (p.Tooth, p.Explicit)));
     Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+
+    // The tooth file of format 3 is recorded as the one of format 4 derived from it.
+    Assert.True(JsonNode.DeepEquals(
+        JsonNode.Parse($$"""
+            {
+              "format_version": 4,
+              "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+              "tooth": "{{Lib}}",
+              "version": "1.0.0",
+              "info": {},
+              "variants": {
+                "": [ {
+                  "platform": "server",
+                  "runtime": "{{WorkspaceHarness.Runtime}}",
+                  "assets": [
+                    { "type": "self", "place": [ { "src": "file.dll", "dest": "lib/lib.dll" } ] }
+                  ]
+                } ]
+              }
+            }
+            """),
+        JsonNode.Parse(lockFile.Packages[0].Manifest.GetRawText())));
+  }
+
+  [Fact]
+  public async Task Install_FormatThreeWithOtherVersionThanItsTag_RecordsTheTagVersion() {
+    // Arrange
+    _ws.AddTag(Lib, "1.2.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "0.9.0", "lib/lib.dll"),
+      ["file.dll"] = "lib",
+    });
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal("1.2.0", package.Version);
+    Assert.Equal("1.2.0", package.Manifest.GetProperty("version").GetString());
+    Assert.Equal([(Lib, "1.2.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
   }
 
   [Fact]
@@ -222,10 +279,10 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Install([Lib], _options with { NoDependencies = true });
 
-    // Assert: same identity, version, archive and assets, so nothing is reinstalled.
+    // Assert: same identity, version and commit, so nothing is reinstalled.
     LockedPackage after = (await _ws.Lock()).Packages.Single(p => p.Tooth == Lib);
     Assert.True(after.Explicit);
-    Assert.Equal(before.Archive, after.Archive);
+    Assert.Equal(before.Commit, after.Commit);
     Assert.Equal(before.Files, after.Files);
     _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Once);
   }
@@ -331,12 +388,12 @@ public class McmodServiceTests {
     await _ws.Service.Update([], _options);
 
     // Assert: the version is the tooth file's, as a branch has no tag version; the new commit
-    // differs in archive identifier, so the package is replaced.
+    // differs, so the package is replaced.
     Assert.Equal(("1.2.0", $"{Lib}@branch:main"), (installed.Version, installed.Source));
-    Assert.Equal(first, Assert.IsType<GitArchiveIdentity>(installed.Archive).Commit);
+    Assert.Equal(first, installed.Commit);
     Assert.Equal("head 2", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     LockedPackage updated = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(second, Assert.IsType<GitArchiveIdentity>(updated.Archive).Commit);
+    Assert.Equal(second, updated.Commit);
     Assert.Equal($"{Lib}@branch:main", updated.Source);
   }
 
@@ -660,11 +717,75 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Update([], _options);
 
-    // Assert: same version, other archive identifier.
+    // Assert: same version, other commit.
     Assert.Equal("lib moved", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+    Assert.Equal(moved, Assert.Single((await _ws.Lock()).Packages).Commit);
+  }
+
+  [Fact]
+  public async Task Update_BranchAtTheSameCommit_ReplacesNothing() {
+    // Arrange
+    string commit = _ws.Git.AddBranch(Lib, "main", new() {
+      ["tooth.json"] = LibTooth("1.0.0", hook: true),
+      ["lib.dll"] = "head",
+    });
+    await _ws.Service.Install([$"{Lib}@branch:main"], _options);
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Update([], _options);
+
+    // Assert
+    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Once);
+    Assert.Equal(commit, Assert.Single((await _ws.Lock()).Packages).Commit);
+  }
+
+  [Fact]
+  public async Task Install_NoDependenciesOfSameVersionAtOtherCommit_ReplacesIt() {
+    // Arrange
+    AddLib("1.0.0", hook: true);
+    await _ws.Service.Install([Lib], _options);
+    string moved = _ws.Git.AddTag(Lib, "v1.0.0", new() {
+      ["tooth.json"] = LibTooth("1.0.0", hook: true),
+      ["lib.dll"] = "lib moved",
+    });
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { NoDependencies = true });
+
+    // Assert
+    Assert.Equal("lib moved", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+    Assert.Equal(moved, Assert.Single((await _ws.Lock()).Packages).Commit);
+    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Exactly(2));
+  }
+
+  [Fact]
+  public async Task Install_InstalledPackageWhoseTagMoved_IsKeptWithItsRecordedToothFile() {
+    // Arrange: mod a is installed; its tag then moves to a tooth file whose mod is named B.
+    AddMod("example.com/a", "A");
+    await _ws.Service.Install(["example.com/a"], _options);
+    _ws.AddDownload("https://example.com/moved.mcmod", WorkspaceHarness.Mcmod("B"));
+    _ws.AddTag("example.com/a", "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/a", "1.0.0",
+          """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/moved.mcmod" ] } ]"""),
+    });
+    AddMod("example.com/b", "B");
+    _ws.Restart();
+
+    // Act: the installed package is reinstalled with the tooth file the workspace file records,
+    // so its mod name is still A, and b's mod name B does not clash with it.
+    await _ws.Service.Install(["example.com/b"], _options);
+
+    // Assert
+    Assert.True(_ws.Exists("mods/A/A.dll"));
+    Assert.True(_ws.Exists("mods/B/B.dll"));
+    LockFile lockFile = await _ws.Lock();
     Assert.Equal(
-        moved,
-        Assert.IsType<GitArchiveIdentity>(Assert.Single((await _ws.Lock()).Packages).Archive).Commit);
+        ["https://example.com/A.mcmod"],
+        lockFile.Packages[0].Manifest.GetProperty("variants").GetProperty("")[0]
+            .GetProperty("assets")[0].GetProperty("urls").EnumerateArray()
+            .Select(u => u.GetString()));
   }
 
   [Fact]
@@ -702,7 +823,7 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Update_AssetChanged_ReplacesPackage() {
+  public async Task Update_AssetChanged_ReplacesNothing() {
     // Arrange: same tag, but the asset its URL serves changes.
     _ws.AddDownload("https://example.com/data.zip", WorkspaceHarness.Zip(new() { ["d.txt"] = "1" }));
     _ws.AddTag(Lib, "1.0.0", new() {
@@ -720,15 +841,12 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Update([], _options);
 
-    // Assert
-    Assert.Equal("2", _ws.Fs.File.ReadAllText(_ws.Path("d.txt")));
-    Assert.Equal(
-        [new AssetIdentity("https://example.com/data.zip", Sha256(changed))],
-        Assert.Single((await _ws.Lock()).Packages).Assets);
+    // Assert: same identity, version and commit (protocol/workspace.md §5).
+    Assert.Equal("1", _ws.Fs.File.ReadAllText(_ws.Path("d.txt")));
   }
 
   [Fact]
-  public async Task Update_LocalZipChanged_ReinstallsSameVersion() {
+  public async Task Update_LocalZipOfSameVersion_ReplacesNothing() {
     // Arrange
     _ws.AddZip("x.zip", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth4(
@@ -745,13 +863,13 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Update([], _options);
 
-    // Assert: the archive identifier (its SHA-256) differs.
-    Assert.Equal("v2", _ws.Fs.File.ReadAllText(_ws.Path("x.txt")));
+    // Assert: a ZIP archive has no commit, and the version is the same.
+    Assert.Equal("v1", _ws.Fs.File.ReadAllText(_ws.Path("x.txt")));
   }
 
   [Fact]
   public async Task Update_LocalDirectoryOfSameVersion_ReplacesNothing() {
-    // Arrange: a directory archive is identified by its path.
+    // Arrange
     AddLocalDirectory("src", "1.0.0", "v1");
     await _ws.Service.Install(["./src"], _options);
     AddLocalDirectory("src", "1.0.0", "v2");
@@ -895,7 +1013,6 @@ public class McmodServiceTests {
     }
   }
 
-  private static string Sha256(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
 
   private static string LibTooth(string version, bool hook = false) => WorkspaceHarness.Tooth4(
       Lib,

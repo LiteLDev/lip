@@ -88,9 +88,9 @@ Updating an explicitly installed package makes a request of its source again:
 - a URL is downloaded again;
 - a local path is read again.
 
-The package is replaced only when the package obtained differs in identity, version, archive identifier or asset identifiers.
+The package is replaced only when the package obtained differs in identity, version or commit.
 
-**Reinstalling.** Installing a package again from the workspace file installs the archive and assets the workspace file records, with the entry it records, whatever its source names now, and is a failure when an archive or asset identifier differs.
+**Reinstalling.** Installing a package again from the workspace file installs it with the tooth file the workspace file records: for a remote repository, from the commit it records; otherwise from the archive its source names now.
 
 ## 6. Atomicity
 
@@ -114,26 +114,14 @@ The **workspace file** is `.lip/workspace.json`, valid against `workspace.schema
 
 The workspace file is replaced only as a whole, by renaming `.lip/workspace.json.new` over it (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
 
-It records the environment (`platform` and `runtime`, each `null` until known), and for each installed package, in installation order:
+It records the environment (`platform` and `runtime`), and for each installed package, in installation order:
 
-- its tooth path (`tooth`), the variant of its source (`variant`) and its version (`version`);
+- its tooth file (`manifest`), of `format_version` 4 (Section 5 of [PACKAGE]);
+- the variant of its source (`variant`);
 - whether a request named it (`explicit`): such a package is **explicitly installed**; any other is a **dependency package**;
-- its source (`source`), a local path recorded as the `file:` URI [RFC8089] of its absolute path;
-- its archive identifier (`archive`) and asset identifiers (`assets`);
-- its entry (`entry`), in the form Section 5 of [PACKAGE] reads it for the environment;
+- its source (`ref`), a local path recorded as the `file:` URI [RFC8089] of its absolute path;
+- for a remote repository, the commit its archive was at (`commit`), in lowercase hexadecimal;
 - the paths of the files it owns (`files`), in the `mods/` form.
-
-The **archive identifier** of a package identifies the content of its archive:
-
-| Archive | `archive` |
-|---|---|
-| A ZIP archive | `{"kind": "zip", "sha256": <SHA-256 of the file>, "url": <the URL it was downloaded from, without its fragment; the file: URI of its absolute path, for a local file>}` |
-| A git archive | `{"kind": "git", "repo": "https://<repo>.git", "commit": <the commit id>}` |
-| A directory archive | `{"kind": "directory", "path": <its absolute path>}` |
-
-The **asset identifiers** of a package are an array with one member for each asset of its entry, in order: `null` for an asset of type `"self"`, and otherwise `{"url": <the URL it was downloaded from>, "sha256": <SHA-256 of the file>}`.
-
-SHA-256 values and commit ids are written in lowercase hexadecimal.
 
 ### 7.2. Workspace Lock
 

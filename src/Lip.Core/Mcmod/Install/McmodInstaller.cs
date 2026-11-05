@@ -5,7 +5,6 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
-using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Lock;
 using Lip.Core.Sources;
 
@@ -20,13 +19,12 @@ public class McmodInstallException(string message, Exception? inner = null)
 ///
 /// Installing writes the files of the assets of the entry, in order (step 2): each asset is
 /// mounted at its index; "self" and "zip" assets carry out their placements, "mcmod" assets are
-/// written whole into the mod directory, and the assets of an entry derived from format 3 are
-/// carried out as lip v0.37.0 did (ToothPlacements). The mod directory is named by the mod
+/// written whole into the mod directory. The mod directory is named by the mod
 /// name, the "name" of the manifest.json of the mcmod asset (Candidate.GetModManifest); lip
 /// writes that manifest.json as it is, like any other file.
 ///
 /// Ownership: a file is owned by a package when the package wrote it. A file that already exists
-/// and matches preserve_files is kept and not written, so it is not owned by the package, unless
+/// and matches preserve is kept and not written, so it is not owned by the package, unless
 /// the lock already records it as owned by a package of the same identity (reinstall or update
 /// while the old entry is still in the lock), in which case ownership carries over.
 ///
@@ -147,7 +145,7 @@ public partial class McmodInstaller(
 
   public async Task<PackagePlan> PlanUninstall(
       LockedPackage package, InstallContext context, WorkspaceView view) {
-    ToothEntry entry = LockedEntry(package);
+    ToothEntry entry = LockedEntry(package, context.Environment);
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
 
     // The paths to delete are those of the workspace before pre_uninstall runs.
@@ -284,16 +282,24 @@ public partial class McmodInstaller(
     }
   }
 
-  /// The entry a lock entry records (protocol/workspace.md §7.1).
-  public static ToothEntry LockedEntry(LockedPackage package) {
+  /// The entry of an installed package (protocol/workspace.md §7.1): the entry of its variant in
+  /// its recorded tooth file for the environment.
+  public static ToothEntry LockedEntry(LockedPackage package, LipEnvironment environment) {
+    ToothFile manifest;
     try {
-      return ToothParser.ParseEntry(package.Entry, package.IsLegacy);
+      manifest = ToothParser.Parse(package.Manifest);
     }
     catch (FormatException ex) {
       throw new McmodInstallException(
-          $"{package.Identity}: the entry recorded in the workspace file is invalid: "
+          $"{package.Identity}: the tooth file recorded in the workspace file is invalid: "
           + ex.Message, ex);
     }
+
+    return manifest.SelectEntry(package.Variant, environment)
+        ?? throw new McmodInstallException(
+            $"{package.Identity}: the tooth file recorded in the workspace file has no entry of the"
+            + $" variant \"{package.Variant}\" for ({environment.Platform.ToSpecString()}, "
+            + $"{environment.Runtime}).");
   }
 
   /// Where asset i is mounted in the source of a package.
@@ -318,8 +324,8 @@ public partial class McmodInstaller(
     List<string> order = [];
     Dictionary<string, (string Target, ISource Source, string Key)> targets = new(PathComparer);
     void Add(string target, ISource from, string key) {
+      // Windows drops trailing dots and spaces, which would alias another path.
       if (!IsSafeRelativePath(target)
-          // Windows drops trailing dots and spaces, which would alias another path.
           || target.Split('/').Any(s => s.EndsWith('.') || s.EndsWith(' '))) {
         throw new McmodInstallException(
             $"{name}: '{target}' is not a valid path inside the workspace.");
@@ -337,39 +343,27 @@ public partial class McmodInstaller(
 
     // Step 2.
     List<string> keys = [.. source.Keys];
-    if (entry.Legacy) {
-      List<AssetPlacement> placements = [];
-      for (int i = 0; i < entry.Assets.Count; i++) {
-        placements.AddRange(entry.Assets[i].Placements.Select(p => new AssetPlacement(
-            Mount(i), p.LegacyDirectory ?? false, p.Src, p.Dest)));
-      }
+    for (int i = 0; i < entry.Assets.Count; i++) {
+      EntryAsset asset = entry.Assets[i];
+      string prefix = Mount(i) + "/";
+      List<(string Path, string Key)> files = [
+        .. keys
+            .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(k => (k[prefix.Length..], k))
+            // The tooth file of the package is never written.
+            .Where(f => asset.Type != AssetType.Self || f.Item1 != ToothFormat.ToothFileName),
+      ];
 
-      foreach ((string key, string target) in ToothPlacements.Expand(placements, keys)) {
-        Add(target, source, key);
-      }
-    } else {
-      for (int i = 0; i < entry.Assets.Count; i++) {
-        EntryAsset asset = entry.Assets[i];
-        string prefix = Mount(i) + "/";
-        List<(string Path, string Key)> files = [
-          .. keys
-              .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
-              .Select(k => (k[prefix.Length..], k))
-              // The tooth file of the package is never written.
-              .Where(f => asset.Type != AssetType.Self || f.Item1 != ToothFormat.ToothFileName),
-        ];
-
-        if (asset.Type == AssetType.Mcmod) {
-          foreach ((string path, string key) in files) {
-            Add($"{modDirectory}{path}", source, key);
-          }
-
-          continue;
+      if (asset.Type == AssetType.Mcmod) {
+        foreach ((string path, string key) in files) {
+          Add($"{modDirectory}{path}", source, key);
         }
 
-        foreach (EntryPlacement placement in asset.Placements) {
-          PlanPlacement(name, i, placement, files, (target, key) => Add(target, source, key));
-        }
+        continue;
+      }
+
+      foreach (EntryPlacement placement in asset.Placements) {
+        PlanPlacement(name, i, placement, files, (target, key) => Add(target, source, key));
       }
     }
 
