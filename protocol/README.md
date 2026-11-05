@@ -8,7 +8,7 @@ The lip protocol is normative and consists of:
 | [WORKSPACE] | Workspaces and operations on them; the workspace file by [`workspace.schema.json`](workspace.schema.json). |
 | [USERSPACE] | Per-user configuration and cache; the configuration file by [`config.schema.json`](config.schema.json). |
 | [CLI] | The command line interface of `lip`. |
-| [COMPATIBILITY] | The packages of lip v0.x that `lip` MUST support. |
+| [COMPATIBILITY] | The `tooth.json` packages that `lip` MUST install. |
 
 ## Conventions
 
@@ -33,7 +33,6 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 - [GIT-REF] "git-check-ref-format", <https://git-scm.com/docs/git-check-ref-format>.
 - [GO-MODULE] "golang.org/x/mod/module: CheckPath", <https://pkg.go.dev/golang.org/x/mod/module#CheckPath>.
 - [JSON-RPC] JSON-RPC Working Group, "JSON-RPC 2.0 Specification", <https://www.jsonrpc.org/specification>.
-- [LIP-V0.37] LiteLDev, "lip v0.37.0", <https://github.com/LiteLDev/lip/tree/v0.37.0>.
 - [LSP] Microsoft, "Language Server Protocol Specification 3.17, Base Protocol", <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol>.
 - [NODE-SEMVER] "node-semver: Ranges", <https://github.com/npm/node-semver#ranges>.
 - [PACKAGE] [`package.md`](package.md).
@@ -55,4 +54,3 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 ### Informative
 
 - [LEVILAMINA] LiteLDev, "LeviLamina", <https://github.com/LiteLDev/LeviLamina>.
-- [LEVIMC] LeviMC, "LeviMC", <https://levimc.org/>.
