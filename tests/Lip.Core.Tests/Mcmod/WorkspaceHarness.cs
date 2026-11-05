@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -34,11 +35,18 @@ internal sealed class WorkspaceHarness {
         .Returns(Task.CompletedTask);
 
     Cache = new CacheService(Fs, Ui.Object);
+    LockStore = new LockStore(Fs);
+    Linker = new MockDirectoryLinker(Fs);
+    Restart();
+  }
+
+  /// Starts over with a new archive provider and service, as a new lip process does, so that
+  /// tags added since are seen.
+  [MemberNotNull(nameof(ArchiveProvider), nameof(Service))]
+  public void Restart() {
     DocumentParser parser = new();
     ArchiveProvider = new ArchiveProvider(
         Git, Cache, Fs, new Mock<IFileDownloader>().Object);
-    LockStore = new LockStore(Fs);
-    Linker = new MockDirectoryLinker(Fs);
     Service = new McmodService(
         Faults,
         Ui.Object,
@@ -72,13 +80,13 @@ internal sealed class WorkspaceHarness {
 
   public CacheService Cache { get; }
 
-  public ArchiveProvider ArchiveProvider { get; }
+  public ArchiveProvider ArchiveProvider { get; private set; }
 
   public LockStore LockStore { get; }
 
   public MockDirectoryLinker Linker { get; }
 
-  public McmodService Service { get; }
+  public McmodService Service { get; private set; }
 
   /// The absolute path of a workspace-relative '/'-separated path.
   public string Path(string relative) =>

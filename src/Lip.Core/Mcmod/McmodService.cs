@@ -349,6 +349,13 @@ public class McmodService(
     LockFile lockFile = await _lockStore.Load(root);
     LipEnvironment environment = DetermineEnvironment(lockFile, options.Rid);
     Resolver resolver = new(_archiveProvider, _archiveReader, _toothCompat, Warn);
+    foreach (LockedPackage package in lockFile.Packages) {
+      if (package.Chain is [{ Commit: string commit } first, ..]
+          && Ref.TryParse(first.Ref, out Ref? reference, out _)) {
+        resolver.PinCommit(reference, commit);
+      }
+    }
+
     return new Workspace(root, lockFile, environment, resolver, _createSolver(resolver));
   }
 
@@ -724,7 +731,17 @@ public class McmodService(
               + (isExplicit ? "explicitly installed." : "not explicitly installed."));
         }
 
-        final.Add(package with { Explicit = isExplicit });
+        LockedPackage entry = package with { Explicit = isExplicit };
+        // A kept package requested by another source, e.g. "<path>@<version>" for a package
+        // installed from "<path>", records the source it is requested by now.
+        if (isExplicit && kept.Contains(Fold(package.Identity))
+            && members.TryGetValue(Fold(package.Identity), out Candidate? member)
+            && member.Chain.Count > 0 && package.Chain.Count > 0
+            && member.Chain[0].Ref.ToString() != package.Chain[0].Ref) {
+          entry = entry with { Chain = Locked(member, isExplicit, []).Chain };
+        }
+
+        final.Add(entry);
       }
 
       return final;
@@ -1035,7 +1052,7 @@ public class McmodService(
     }
 
     Ref reference = Ref.Parse(package.Chain[0].Ref, allowFile: true);
-    if (reference.GitRef is { Kind: not GitRefKind.Rev }
+    if (reference.GitRef is { Kind: GitRefKind.Branch or GitRefKind.Tag }
         && GitRef.TryParse($"rev:{package.Chain[0].Commit}", out GitRef? rev, out _)) {
       // The branch or tag may have moved; the locked package came from the recorded commit.
       // Only nested ZIP archives of manifest.json packages are re-resolved, so losing the tag

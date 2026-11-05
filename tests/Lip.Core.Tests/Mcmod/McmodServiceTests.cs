@@ -180,8 +180,10 @@ public class McmodServiceTests {
   [Fact]
   public async Task Update_NoArguments_UpdatesExplicitPackagesToNewest() {
     // Arrange
-    AddLibAndApp();
-    await _ws.Service.Install([$"{App}@1.0.0"], s_options);
+    AddLibAndApp(withApp2: false);
+    await _ws.Service.Install([App], s_options);
+    AddApp2();
+    _ws.Restart();
 
     // Act
     await _ws.Service.Update([], s_options);
@@ -680,6 +682,55 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Update_VersionRefWhoseTagMoved_KeepsTheRecordedCommit() {
+    // Arrange
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
+      ["file.dll"] = "lib 1.0.0",
+    });
+    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
+      ["file.dll"] = "lib 1.0.0 moved",
+    });
+    _ws.AddTag(Lib, "1.1.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.1.0", "lib/lib.dll"),
+      ["file.dll"] = "lib 1.1.0",
+    });
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Update([], s_options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(
+        ("1.0.0", $"{Lib}@1.0.0", $"{Lib}@1.0.0"),
+        (package.Version, package.Chain[0].Ref, package.ArchiveKey));
+    Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Fact]
+  public async Task Install_VersionRefOfInstalledDependency_RecordsTheVersionRef() {
+    // Arrange: lib 1.1.0 is installed as a dependency, through the unpinned path.
+    AddLibAndApp(withApp2: false);
+    await _ws.Service.Install([App], s_options);
+
+    // Act
+    await _ws.Service.Install([$"{Lib}@1.1.0"], s_options);
+    _ws.AddTag(Lib, "1.2.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.2.0", "lib/lib.dll"),
+      ["file.dll"] = "lib 1.2.0",
+    });
+    _ws.Restart();
+    await _ws.Service.Update([], s_options);
+
+    // Assert: the version ref pins lib.
+    LockedPackage lib = (await _ws.Lock()).Packages.Single(p => p.Identity == LibId);
+    Assert.Equal(("1.1.0", true, $"{Lib}@1.1.0"), (lib.Version, lib.Explicit, lib.Chain[0].Ref));
+  }
+
+  [Fact]
   public async Task Install_UnpinnedEdgeAfterBranchInstall_KeepsBranchBuild() {
     // Arrange: lib's tags are 1.0.0 and 1.1.0; its branch declares 1.5.0.
     AddLibAndApp();
@@ -773,7 +824,7 @@ public class McmodServiceTests {
   }
 
   /// lib 1.0.0 and 1.1.0; app 1.0.0 (lib >=1.0.0) and 2.0.0 (lib >=1.1.0).
-  private void AddLibAndApp() {
+  private void AddLibAndApp(bool withApp2 = true) {
     foreach (string version in new[] { "1.0.0", "1.1.0" }) {
       _ws.AddTag(Lib, version, new() {
         ["tooth.json"] = WorkspaceHarness.Tooth(Lib, version, "lib/lib.dll"),
@@ -786,6 +837,12 @@ public class McmodServiceTests {
           $$"""{ "{{Lib}}": ">=1.0.0" }"""),
       ["file.dll"] = "app 1",
     });
+    if (withApp2) {
+      AddApp2();
+    }
+  }
+
+  private void AddApp2() {
     _ws.AddTag(App, "2.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth(App, "2.0.0", "app/app.dll",
           $$"""{ "{{Lib}}": ">=1.1.0" }"""),

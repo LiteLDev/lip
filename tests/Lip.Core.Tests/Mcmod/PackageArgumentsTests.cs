@@ -1,6 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
 using Lip.Core.Mcmod;
-using Semver;
 
 namespace Lip.Core.Tests.Mcmod;
 
@@ -10,11 +9,9 @@ public class PackageArgumentsTests {
   private readonly WorkspaceHarness _ws = new();
 
   [Theory]
-  [InlineData("github.com/LiteLDev/LeviLamina", "github.com/LiteLDev/LeviLamina", null)]
-  [InlineData("github.com/LiteLDev/LeviLamina@1.9.7", "github.com/LiteLDev/LeviLamina", "1.9.7")]
-  [InlineData("github.com/a/b#client@1.0.0-rc.1", "github.com/a/b#client", "1.0.0-rc.1")]
-  [InlineData("github.com/a/b#client", "github.com/a/b#client", null)]
-  public void Parse_SpecForms_ReturnsSpecRequest(string argument, string reference, string? version) {
+  [InlineData("github.com/LiteLDev/LeviLamina", "github.com/LiteLDev/LeviLamina")]
+  [InlineData("github.com/a/b#client", "github.com/a/b#client")]
+  public void Parse_SpecForms_ReturnsSpecRequest(string argument, string reference) {
     // Act
     PackageRequest request = Parse(argument);
 
@@ -23,16 +20,12 @@ public class PackageArgumentsTests {
     Assert.Null(request.Ref.GitRef);
     Assert.Equal(reference, request.Ref.ToString());
     Assert.Null(request.Base);
-    if (version is null) {
-      Assert.Null(request.Range);
-    } else {
-      Assert.Equal(
-          new ExactVersionConstraint(SemVersion.Parse(version, SemVersionStyles.Strict)),
-          request.Range);
-    }
+    Assert.Null(request.Range);
   }
 
   [Theory]
+  [InlineData("github.com/LiteLDev/LeviLamina@1.9.7", GitRefKind.Version, "1.9.7", "")]
+  [InlineData("github.com/a/b#client@1.0.0-rc.1", GitRefKind.Version, "1.0.0-rc.1", "client")]
   [InlineData("github.com/LiteLDev/LeviLamina@branch:main", GitRefKind.Branch, "main", "")]
   [InlineData("github.com/a/b#client@branch:feat/x#1", GitRefKind.Branch, "feat/x#1", "client")]
   [InlineData("github.com/a/b@tag:release-2024", GitRefKind.Tag, "release-2024", "")]
@@ -120,7 +113,6 @@ public class PackageArgumentsTests {
   [InlineData("./missing.mcmod")]
   [InlineData("missing.zip")]
   [InlineData("http://example.com/x.mcmod")]
-  [InlineData("https://example.com/x.mcmod@branch:main")]
   public void Parse_InvalidArgument_Throws(string argument) {
     Assert.Throws<ArgumentException>(() => Parse(argument));
   }

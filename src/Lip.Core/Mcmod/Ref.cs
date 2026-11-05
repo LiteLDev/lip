@@ -19,12 +19,15 @@ public enum RefKind {
 }
 
 public enum GitRefKind {
+  /// A SemVer 2.0.0 version V, selecting the tag "v" + V.
+  Version,
   Branch,
   Tag,
   Rev,
 }
 
-/// A git ref pinning a spec ref (spec §3): "branch:" name, "tag:" name or "rev:" commit id.
+/// A git ref pinning a spec ref (spec §3): a version, "branch:" name, "tag:" name or "rev:"
+/// commit id.
 public sealed partial record GitRef {
   private GitRef(GitRefKind kind, string name) {
     Kind = kind;
@@ -33,7 +36,7 @@ public sealed partial record GitRef {
 
   public GitRefKind Kind { get; }
 
-  /// The branch or tag name, or the full lowercase commit id of a rev.
+  /// The version, the branch or tag name, or the full lowercase commit id of a rev.
   public string Name { get; }
 
   public override string ToString() => $"{Prefix(Kind)}{Name}";
@@ -43,7 +46,7 @@ public sealed partial record GitRef {
       [NotNullWhen(true)] out GitRef? result,
       [NotNullWhen(false)] out string? error) {
     result = null;
-    foreach (GitRefKind kind in Enum.GetValues<GitRefKind>()) {
+    foreach (GitRefKind kind in (GitRefKind[])[GitRefKind.Branch, GitRefKind.Tag, GitRefKind.Rev]) {
       string prefix = Prefix(kind);
       if (!s.StartsWith(prefix, StringComparison.Ordinal)) {
         continue;
@@ -67,7 +70,13 @@ public sealed partial record GitRef {
       return true;
     }
 
-    error = $"'{s}' is not branch:<name>, tag:<name> or rev:<commit>";
+    if (Semver.SemVersion.TryParse(s, Semver.SemVersionStyles.Strict, out _)) {
+      result = new GitRef(GitRefKind.Version, s);
+      error = null;
+      return true;
+    }
+
+    error = $"'{s}' is not <version>, branch:<name>, tag:<name> or rev:<commit>";
     return false;
   }
 
@@ -95,6 +104,7 @@ public sealed partial record GitRef {
   }
 
   private static string Prefix(GitRefKind kind) => kind switch {
+    GitRefKind.Version => "",
     GitRefKind.Branch => "branch:",
     GitRefKind.Tag => "tag:",
     _ => "rev:",
@@ -197,14 +207,11 @@ public partial record Ref {
       if (at >= 0) {
         head = s[..at];
         if (!GitRef.TryParse(s[(at + 1)..], out gitRef, out string? gitError)) {
-          error = $"{gitError}; '@' in a spec ref must be followed by branch:<name>, tag:<name> "
-              + "or rev:<commit> (a version range belongs in the version key)";
+          error = $"{gitError}; '@' in a spec ref must be followed by <version>, branch:<name>, "
+              + "tag:<name> or rev:<commit>";
           return false;
         }
       }
-    } else if (GitRefSuffixRegex().IsMatch(s)) {
-      error = "only spec refs may have a git ref (@branch:, @tag: or @rev:)";
-      return false;
     }
 
     int hash = head.IndexOf('#');
@@ -231,8 +238,8 @@ public partial record Ref {
 
       result = new Ref(RefKind.Relative, target, variant);
     } else if (isUrl) {
-      if (!Uri.TryCreate(target, UriKind.Absolute, out Uri? uri) || uri.Scheme != "https"
-          || uri.Host == "") {
+      if (!IsUriText(target) || !Uri.TryCreate(target, UriKind.Absolute, out Uri? uri)
+          || uri.Scheme != "https" || uri.Host == "") {
         error = "not an absolute https URL";
         return false;
       }
@@ -266,6 +273,16 @@ public partial record Ref {
   [GeneratedRegex(@"^[a-z0-9_]+(/[a-z0-9_]+)?\z")]
   private static partial Regex VariantRegex();
 
-  [GeneratedRegex("@(branch|tag|rev):")]
-  private static partial Regex GitRefSuffixRegex();
+  /// Whether s has only the characters RFC 3986 allows in a URI, with every '%' starting a
+  /// percent-encoded octet, and '[' and ']' only in the host; Uri.TryCreate alone also accepts
+  /// and escapes others.
+  private static bool IsUriText(string s) {
+    int authority = s.IndexOf("://", StringComparison.Ordinal) + 3;
+    int pathStart = s.IndexOfAny(['/', '?', '#'], authority);
+    return UriTextRegex().IsMatch(s)
+        && (pathStart < 0 || s.IndexOfAny(['[', ']'], pathStart) < 0);
+  }
+
+  [GeneratedRegex(@"^(?:[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=]|%[0-9A-Fa-f]{2})*\z")]
+  private static partial Regex UriTextRegex();
 }

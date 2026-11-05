@@ -37,6 +37,15 @@ public class Resolver(
   /// whole operation.
   private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _commits = new();
 
+  /// Makes a version ref resolve to the commit a workspace recorded for it, as updating it gives
+  /// the same commit even when its tag has moved since (spec §9, "Updating").
+  public void PinCommit(Ref reference, string commit) {
+    if (reference is { Kind: RefKind.Spec, GitRef: { Kind: GitRefKind.Version } gitRef }) {
+      _commits.TryAdd(
+          $"{reference.Target}@{gitRef}", new(() => Task.FromResult(commit.ToLowerInvariant())));
+    }
+  }
+
   public async Task<ResolveResult> Resolve(
       Ref reference,
       ArchiveHandle? baseArchive,
@@ -163,18 +172,28 @@ public class Resolver(
       string commit = await Cached(
           _commits, $"{reference.Target}@{gitRef}",
           () => _archiveProvider.ResolveGitRef(reference.Target, gitRef));
-      archive = await Cached(
-          _archives, $"{reference.Target}@rev:{commit}",
-          () => _archiveProvider.OpenCommit(reference.Target, commit));
+      // The archive of a version ref is named like that of the same version without a ref.
+      archive = gitRef.Kind == GitRefKind.Version
+          ? await Cached(
+              _archives, $"{reference.Target}@{gitRef} {commit}",
+              () => _archiveProvider.OpenLocked(
+                  $"{reference.Target}@{gitRef}",
+                  new GitArchiveIdentity(
+                      ArchiveProvider.GetRepoUrl(reference.Target), commit, "")))
+          : await Cached(
+              _archives, $"{reference.Target}@rev:{commit}",
+              () => _archiveProvider.OpenCommit(reference.Target, commit));
     }
     catch (ArchiveUnavailableException ex) {
       walk.Report(refPath, ex.Message);
       yield break;
     }
 
-    SemVersion? tagVersion = gitRef.Kind == GitRefKind.Tag
-        ? ArchiveProvider.ParseVersionTag($"refs/tags/{gitRef.Name}")
-        : null;
+    SemVersion? tagVersion = gitRef.Kind switch {
+      GitRefKind.Version => SemVersion.Parse(gitRef.Name, SemVersionStyles.Strict),
+      GitRefKind.Tag => ArchiveProvider.ParseVersionTag($"refs/tags/{gitRef.Name}"),
+      _ => null,
+    };
     await foreach (Candidate candidate in ResolveArchive(
         walk, reference, archive, tagVersion, toothClientCompat, path, refPath)) {
       yield return candidate;

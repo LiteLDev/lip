@@ -31,20 +31,40 @@ public class RefTests {
   [InlineData("./a\\b")]
   [InlineData("http://example.com/x.zip")]
   [InlineData("file:///c/x.zip")]
-  [InlineData("github.com/a/b@1.0.0")]
+  [InlineData("github.com/a/b@v1.0.0")]
+  [InlineData("github.com/a/b@1.0")]
   [InlineData("github.com/a/b@branch:")]
   [InlineData("github.com/a/b@branch:a b")]
   [InlineData("github.com/a/b@tag:x.lock")]
   [InlineData("github.com/a/b@rev:0123abc")]
   [InlineData("github.com/a/b@rev:0123456789abcdef0123456789abcdef01234567\n")]
   [InlineData("github.com/a/b#lua\n")]
-  [InlineData("./a/@branch:main")]
-  [InlineData("https://example.com/x.zip@tag:v1")]
+  [InlineData("./a#b#c")]
   [InlineData("https://")]
+  [InlineData("https://example.com/a b.zip")]
+  [InlineData("https://example.com/é.zip")]
+  [InlineData("https://example.com/%zz.zip")]
+  [InlineData("https://example.com/a[1].zip")]
+  [InlineData("https://example.com/a.zip?x[0]=1")]
   [InlineData("")]
   public void Parse_InvalidRef_ThrowsFormatException(string s) {
     // Act & Assert
     Assert.Throws<FormatException>(() => Ref.Parse(s));
+  }
+
+  [Theory]
+  [InlineData("./a/@branch:main", RefKind.Relative)]
+  [InlineData("https://example.com/x.zip@tag:v1", RefKind.Url)]
+  [InlineData("https://example.com/a%20b.zip", RefKind.Url)]
+  [InlineData("https://[::1]/a.zip", RefKind.Url)]
+  public void Parse_AtInLocalPathOrUrl_IsPartOfTheLocation(string s, RefKind kind) {
+    // Act
+    Ref r = Ref.Parse(s);
+
+    // Assert
+    Assert.Equal(kind, r.Kind);
+    Assert.Equal(s, r.Target);
+    Assert.Null(r.GitRef);
   }
 
   [Fact]
@@ -58,6 +78,9 @@ public class RefTests {
   }
 
   [Theory]
+  [InlineData("github.com/a/b@1.0.0", "github.com/a/b", "", GitRefKind.Version, "1.0.0")]
+  [InlineData("github.com/a/b#lua@1.0.0-rc.1", "github.com/a/b", "lua", GitRefKind.Version,
+      "1.0.0-rc.1")]
   [InlineData("github.com/a/b@branch:main", "github.com/a/b", "", GitRefKind.Branch, "main")]
   [InlineData("github.com/a/b#lua@tag:v1.0.0", "github.com/a/b", "lua", GitRefKind.Tag, "v1.0.0")]
   [InlineData("github.com/a/b@branch:feat/a#b@c", "github.com/a/b", "", GitRefKind.Branch,

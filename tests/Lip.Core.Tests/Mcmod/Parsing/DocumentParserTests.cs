@@ -265,9 +265,9 @@ public class DocumentParserTests {
   }
 
   [Theory]
-  [InlineData("./a/@branch:main")]
-  [InlineData("https://example.com/a.mcmod@tag:v1")]
-  [InlineData("github.com/o/a@1.0.0")]
+  [InlineData("./a#b#c")]
+  [InlineData("https://example.com/a b.mcmod")]
+  [InlineData("github.com/o/a@v1.0.0")]
   [InlineData("file:///C:/a.mcmod")]
   public void Parse_InvalidRefInDependency_ThrowsManifestFormatException(string reference) {
     // Arrange

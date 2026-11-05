@@ -31,8 +31,9 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_NoArguments_ReplacesPackageByTheNewPathKeepingPreservedFiles() {
     // Arrange
     AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}"], s_options);
     AddVersion("1.1.0", New);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Restart();
     _ws.AddFile("mod/config.json", "edited by the user");
 
     // Act
@@ -53,8 +54,9 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_AfterTheReplacement_ResolvesTheNewPathWithoutWarningAndKeepsThePackage() {
     // Arrange
     AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}"], s_options);
     AddVersion("1.1.0", New);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Restart();
     await _ws.Service.Update([], s_options);
     LockFile before = await _ws.Lock();
     _ws.Ui.Invocations.Clear();
@@ -77,9 +79,10 @@ public class McmodServiceMovedRepositoryTests {
     // Arrange: lip v0.36.0 replaced the package under its new identity, but kept requesting it
     // by the old path, which only works through the redirect.
     AddVersion("1.0.0", Old);
-    AddVersion("1.1.0", New);
     _ws.Git.ReportsRedirects = false;
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{Old}"], s_options);
+    AddVersion("1.1.0", New);
+    _ws.Restart();
     await _ws.Service.Update([], s_options);
     LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal((NewId, "1.1.0", $"{Old}@1.1.0"),
@@ -107,9 +110,10 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_LockOfV036RecordingTheOldPath_DryRunChangesNothing() {
     // Arrange
     AddVersion("1.0.0", Old);
-    AddVersion("1.1.0", New);
     _ws.Git.ReportsRedirects = false;
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{Old}"], s_options);
+    AddVersion("1.1.0", New);
+    _ws.Restart();
     await _ws.Service.Update([], s_options);
     _ws.Git.ReportsRedirects = true;
     List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
@@ -177,8 +181,9 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_NamedByTheOldPath_FindsTheInstalledPackageWithoutAskingForTags() {
     // Arrange
     AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}"], s_options);
     AddVersion("1.1.0", New);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Restart();
     _ws.Git.ListedRefs.Clear();
 
     // Act
@@ -246,7 +251,7 @@ public class McmodServiceMovedRepositoryTests {
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal((OldId, "1.0.0"), (package.Identity, package.Version));
-    AssertRecordedFrom(New, package);
+    AssertRecordedFrom($"{New}@1.0.0", package);
     Assert.Equal($"{New}@1.0.0", package.ArchiveKey);
     Assert.Contains(_ws.Warnings, w => w.Contains($"declares the package path '{Old}'"));
   }
@@ -292,8 +297,9 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_NamedByEitherPath_ReplacesPackageByTheNewPath(string argument) {
     // Arrange
     AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}"], s_options);
     AddVersion("1.1.0", New);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Restart();
 
     // Act
     await _ws.Service.Update([argument], s_options);
@@ -308,8 +314,9 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_LabelledVariant_KeepsTheLabel() {
     // Arrange
     AddVersion("1.0.0", Old, label: "server");
+    await _ws.Service.Install([$"{Old}#server"], s_options);
     AddVersion("1.1.0", New, label: "server");
-    await _ws.Service.Install([$"{Old}#server@1.0.0"], s_options);
+    _ws.Restart();
 
     // Act
     await _ws.Service.Update([], s_options);
@@ -325,8 +332,9 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_DryRun_ReportsTheReplacementAndChangesNothing() {
     // Arrange
     AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}"], s_options);
     AddVersion("1.1.0", New);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Restart();
     List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
 
     // Act
@@ -340,7 +348,7 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Update_NamedPackageOfAnotherRepositoryOfTheSameName_ReplacesThePackage() {
     // Arrange: another repository of the same name has the same identity (spec §10.2 rule 1).
     AddVersion("1.0.0", Old);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{Old}"], s_options);
     const string other = "example.com/someone/Mod";
     _ws.AddTag(other, "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth(other, "1.0.0", "other/mod.dll"),
@@ -364,7 +372,7 @@ public class McmodServiceMovedRepositoryTests {
     // v1.1.0 naming the fork's path; it has the same identity (spec §10.2 rule 1).
     AddVersion("1.0.0", Old);
     AddFork();
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{Old}"], s_options);
 
     // Act
     await _ws.Service.Update([Fork], s_options);
@@ -380,7 +388,7 @@ public class McmodServiceMovedRepositoryTests {
     // Arrange
     AddVersion("1.0.0", Old);
     AddFork();
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{Old}"], s_options);
 
     // Act
     Exception ex = await Assert.ThrowsAnyAsync<Exception>(
@@ -443,8 +451,9 @@ public class McmodServiceMovedRepositoryTests {
       string argument) {
     // Arrange
     AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}"], s_options);
     AddVersion("1.1.0", New);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Restart();
     List<KeyValuePair<string, string>> before = WorkspaceSnapshot();
 
     // Act & Assert
@@ -459,9 +468,10 @@ public class McmodServiceMovedRepositoryTests {
     // Arrange: app depends on the old path; the package is installed as a dependency under the
     // identity of its old version.
     AddVersion("1.0.0", Old);
-    AddVersion("1.1.0", New);
     AddApp($$"""{ "{{Old}}": ">=1.0.0" }""");
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{Old}"], s_options);
+    AddVersion("1.1.0", New);
+    _ws.Restart();
     await _ws.Service.Install([App], s_options);
     await _ws.Service.Uninstall([Old], s_options);
     Assert.Equal(
@@ -482,8 +492,9 @@ public class McmodServiceMovedRepositoryTests {
   public async Task Install_NoDependencies_ReplacesTheInstalledPackage() {
     // Arrange
     AddVersion("1.0.0", Old);
+    await _ws.Service.Install([$"{Old}"], s_options);
     AddVersion("1.1.0", New);
-    await _ws.Service.Install([$"{Old}@1.0.0"], s_options);
+    _ws.Restart();
 
     // Act
     await _ws.Service.Install([New], s_options with { NoDependencies = true });

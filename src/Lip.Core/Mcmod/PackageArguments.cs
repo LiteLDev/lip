@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using Semver;
 
 namespace Lip.Core.Mcmod;
 
@@ -13,9 +12,9 @@ namespace Lip.Core.Mcmod;
 ///   "..\", is rooted, or has no '@' and ends with ".mcmod" or ".zip" or names an existing file
 ///   or directory. It becomes a file ref. Directories are rejected: lip does not install from a
 ///   plain directory.
-/// - "path" [ "#" variant ] [ "@" version ]: a spec ref; version is a SemVer 2.0.0 version
-///   (without a leading "v") for exactly that version, or a git ref ("branch:" name, "tag:" name,
-///   "rev:" full commit id) pinning the spec ref; without it, any version (the newest wins).
+/// - "path" [ "#" variant ] [ "@" git-ref ]: a spec ref, pinned by a git ref (a SemVer 2.0.0
+///   version without a leading "v", "branch:" name, "tag:" name or "rev:" full commit id);
+///   without it, any version (the newest wins).
 public static class PackageArguments {
   private static readonly string[] _zipExtensions = [".mcmod", ".zip"];
 
@@ -42,24 +41,6 @@ public static class PackageArguments {
           : throw new ArgumentException(
               $"Invalid package '{argument}': {file.LocalPath} does not exist.",
               nameof(argument));
-    }
-
-    int at = argument.IndexOf('@');
-    if (at < 0) {
-      return new PackageRequest(ParseSpec(argument, argument), null);
-    }
-
-    string versionText = argument[(at + 1)..];
-    if (SemVersion.TryParse(versionText, SemVersionStyles.Strict, out SemVersion? version)) {
-      return new PackageRequest(
-          ParseSpec(argument[..at], argument), new ExactVersionConstraint(version));
-    }
-
-    if (!versionText.Contains(':')) {
-      throw new ArgumentException(
-          $"Invalid package '{argument}': '{versionText}' is neither a SemVer 2.0.0 version nor "
-          + "a git ref (branch:<name>, tag:<name> or rev:<commit>).",
-          nameof(argument));
     }
 
     return new PackageRequest(ParseSpec(argument, argument), null);

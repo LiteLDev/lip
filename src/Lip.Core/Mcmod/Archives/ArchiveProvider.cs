@@ -65,8 +65,11 @@ public class ArchiveProvider(
     }
 
     string repoUrl = GetRepoUrl(spec);
-    string refName = (gitRef.Kind == GitRefKind.Branch ? _headsRefPrefix : _tagsRefPrefix)
-        + gitRef.Name;
+    string refName = gitRef.Kind switch {
+      GitRefKind.Version => $"{_versionTagRefPrefix}{gitRef.Name}",
+      GitRefKind.Branch => _headsRefPrefix + gitRef.Name,
+      _ => _tagsRefPrefix + gitRef.Name,
+    };
 
     IReadOnlyList<GitRemoteRef> refs;
     try {
