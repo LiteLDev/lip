@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Sources;
-using Semver;
 
 namespace Lip.Core.Mcmod;
 
@@ -128,7 +127,8 @@ public record Candidate(
           ]);
 }
 
-/// The mod manifest of a mod (protocol/package.md §4) and its mod name, its "name".
+/// The manifest.json at the root of the mcmod asset of a mod (protocol/package.md §4), of which
+/// lip reads only the mod name, its "name".
 public record ModManifest(string Name, JsonElement Json);
 
 /// Diagnostics explain every path that produced no candidate.
@@ -201,19 +201,12 @@ public interface IGraphSolver {
       LipEnvironment environment);
 }
 
-/// A package installed in the workspace once an operation is complete, with its mod name (null
-/// for a file package).
-public record InstalledMember(string Identity, SemVersion Version, string? ModName);
-
-/// Members: the packages installed in the workspace once the operation is complete, which decide
-/// the dependencies of a mod manifest (protocol/workspace.md §4 step 3).
 public record InstallContext(
     string WorkspaceRoot,
     LipEnvironment Environment,
     LockFile Lock,
     bool DryRun,
-    bool IgnoreScripts,
-    IReadOnlyList<InstalledMember>? Members = null);
+    bool IgnoreScripts);
 
 /// Installs and uninstalls packages (protocol/workspace.md §4), in two phases: planning, which
 /// checks everything and changes nothing, then applying the plan through a transaction that the

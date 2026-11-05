@@ -31,7 +31,7 @@ Entries.
 
 | Entry | Content |
 |---|---|
-| `http-<H>` | A regular file: the body of a successful response to an HTTPS GET of URL U, following redirects. `<H>` is the lowercase hexadecimal SHA-256 of U in UTF-8; U is the URL as a source or manifest writes it, without its fragment, whatever proxy was used. |
+| `http-<H>` | A regular file: the body of a successful response to an HTTPS GET of URL U, following redirects. `<H>` is the lowercase hexadecimal SHA-256 of U in UTF-8; U is the URL as a source or tooth file writes it, without its fragment, whatever proxy was used. |
 | `git-<O>` | A regular file: the content of the git blob with lowercase hexadecimal object id `<O>` [GIT-OBJECTS], without the object header. |
 | `.staging` | A directory of files being written. |
 

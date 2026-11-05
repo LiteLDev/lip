@@ -217,15 +217,12 @@ glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 `mods/<mod 名称>/`。在服务端，`plugins` 是指向 `mods` 的链接，因此也能在 `plugins/<mod 名称>/` 下找到该
 mod。
 
-lip 会对照条目的 `dependencies` 检查 mod 的 `manifest.json` 中的 `dependencies`：设 D 为
-`[{ "name": N }, ...]`，按条目依赖的顺序，为条目中每个由已安装 mod 满足的依赖各含一个成员，N 为该 mod
-的名称。
+lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检查也不修改其中的任何其他内容：
+`manifest.json` 与其他文件一样，按归档中的原样写入 mod 目录。让其 `dependencies` 与条目的
+`dependencies` 保持一致由你自己负责。缺少 `manifest.json`，或其中没有有效的 `name`，会在任何修改之前
+使安装失败。
 
-- 若 `manifest.json` 有 `dependencies`，它必须恰好等于 D，否则安装失败。
-- 若没有，lip 会在 mod 目录中写入 `dependencies` 设为 D 的 `manifest.json`。
-
-对文件包的依赖不会出现在 D 中。两个 mod 名称相同（不区分 ASCII 大小写）的 mod 不能安装在同一个工作区
-中。
+两个 mod 名称相同（不区分 ASCII 大小写）的 mod 不能安装在同一个工作区中。
 
 条目在 `mcmod` 资源之外还可以有其他资源，例如一个把文件放到 `mods/` 之外的 `zip` 资源。
 

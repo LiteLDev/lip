@@ -818,51 +818,20 @@ public class McmodServiceTests {
   #region Reinstalling and list
 
   [Fact]
-  public async Task Install_InstalledModAssetUnchangedAfterCacheClean_IsReadAgain() {
+  public async Task Install_ModWithDependency_WritesItsManifestAsItIs() {
     // Arrange
     AddMod("example.com/base", "Base");
     AddMod("example.com/top", "Top", """ "dependencies": { "example.com/base": "^1.0.0" }, """);
-    await _ws.Service.Install(["example.com/base"], _options);
-    ClearCache();
-    _ws.Restart();
-
-    // Act: installing Top needs the mod name of the installed Base again.
-    await _ws.Service.Install(["example.com/top"], _options);
-
-    // Assert
-    using JsonDocument top = JsonDocument.Parse(
-        _ws.Fs.File.ReadAllText(_ws.Path("mods/Top/manifest.json")));
-    Assert.Equal(
-        "Base", top.RootElement.GetProperty("dependencies")[0].GetProperty("name").GetString());
-  }
-
-  [Fact]
-  public async Task Install_InstalledModAssetChanged_FailsOrKeepsModDependency() {
-    // Arrange: the URL of Base's asset serves other bytes since Base was installed.
-    AddMod("example.com/base", "Base");
-    AddMod("example.com/top", "Top", """ "dependencies": { "example.com/base": "^1.0.0" }, """);
-    await _ws.Service.Install(["example.com/base"], _options);
-    _ws.AddDownload("https://example.com/Base.mcmod", WorkspaceHarness.Mcmod("Base", "\"x\": 1"));
-    ClearCache();
-    _ws.Restart();
-    SortedDictionary<string, string> before = WorkspaceSnapshot();
 
     // Act
-    Exception? ex = await Record.ExceptionAsync(
-        () => _ws.Service.Install(["example.com/top"], _options));
+    await _ws.Service.Install(["example.com/top"], _options);
 
-    // Assert: the recorded asset of Base cannot be obtained, an early failure
-    // (protocol/workspace.md §6 rule 1); or else the installed Base, of mod name Base, satisfies
-    // the dependency of Top (protocol/workspace.md §4 step 3).
-    if (ex is not null) {
-      Assert.Equal(before, WorkspaceSnapshot());
-      return;
-    }
-
+    // Assert: lip reads only the "name" of manifest.json and never changes it.
     using JsonDocument top = JsonDocument.Parse(
         _ws.Fs.File.ReadAllText(_ws.Path("mods/Top/manifest.json")));
-    JsonElement dependency = Assert.Single(top.RootElement.GetProperty("dependencies").EnumerateArray());
-    Assert.Equal("Base", dependency.GetProperty("name").GetString());
+    Assert.Equal("Top", top.RootElement.GetProperty("name").GetString());
+    Assert.False(top.RootElement.TryGetProperty("dependencies", out _));
+    Assert.True(_ws.Exists("mods/Base/manifest.json"));
   }
 
   [Fact]

@@ -233,16 +233,13 @@ a JSON object whose `name` matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. That `name` i
 name**. lip writes the whole archive into `mods/<mod name>/`, keeping its paths. On a server,
 `plugins` is a link to `mods`, so the mod is also found under `plugins/<mod name>/`.
 
-lip checks the `dependencies` of the mod's `manifest.json` against the `dependencies` of the
-entry: let D be `[{ "name": N }, ...]` with one member for each dependency of the entry that is
-satisfied by an installed mod, N being that mod's name, in the order of the entry's dependencies.
+lip reads only the `name` of `manifest.json`, to name the mod directory. It neither checks nor
+changes anything else in it: `manifest.json` is written into the mod directory exactly as it is in
+the archive, like every other file. Keeping its `dependencies` in line with the `dependencies` of
+the entry is up to you. A missing `manifest.json`, or one without a valid `name`, fails the
+installation before anything changes.
 
-- When `manifest.json` has `dependencies`, it must be exactly D, or the installation fails.
-- When it has none, lip writes `manifest.json` into the mod directory with `dependencies` set to
-  D.
-
-Dependencies on file packages do not appear in D. Two mods with the same mod name (ignoring ASCII
-case) cannot be installed in one workspace.
+Two mods with the same mod name (ignoring ASCII case) cannot be installed in one workspace.
 
 An entry can have other assets next to its `mcmod` asset, for example a `zip` asset that places
 files outside `mods/`.

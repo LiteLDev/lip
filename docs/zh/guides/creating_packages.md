@@ -74,7 +74,7 @@ lip 会询问包的 tooth 路径，即 [Go 模块路径](https://go.dev/ref/mod#
 
 ## mod
 
-mod 是带有 `mcmod` 资源的条目：一个根部带有该 mod 的 LeviLamina `manifest.json` 的 ZIP 归档。lip 把整个归档写入 `mods/<name>/`，其中 `<name>` 是该 `manifest.json` 中的 `name`。在服务端，`plugins` 是指向 `mods` 的链接，因此 LeviLamina 也能在 `plugins/<name>/` 下找到该 mod。
+mod 是带有 `mcmod` 资源的条目：一个根部带有该 mod 的 LeviLamina `manifest.json` 的 ZIP 归档。lip 把整个归档写入 `mods/<name>/`，其中 `<name>` 是该 `manifest.json` 中的 `name`；lip 不读取 `manifest.json` 的其他内容，并原样安装它。在服务端，`plugins` 是指向 `mods` 的链接，因此 LeviLamina 也能在 `plugins/<name>/` 下找到该 mod。
 
 用 [`lip pack`](../cli/commands/pack.md) 从构建输出目录（其中有 `manifest.json` 和 mod 的文件）构建该归档，并把它附加到 Release：
 
@@ -113,7 +113,7 @@ lip pack build/ -o MyMod-server-win-x64.zip
 }
 ```
 
-`dependencies` 把每个依赖的 tooth 路径映射到版本范围，例如 `^0.3.0` 或 `>=1.0.0 <2.0.0`，语法见 [Semver for .NET](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0)。lip 会安装这些依赖，并使其与 mod 的 LeviLamina `manifest.json` 保持一致：对每个以 mod 形式安装的依赖，mod 的 `manifest.json` 在其 `dependencies` 中按 `tooth.json` 依赖的顺序列出 `{ "name": "<该 mod 的名称>" }`。若在 mod 的 `manifest.json` 中省略 `dependencies`，lip 会在安装该 mod 时写入它；若你自己编写，它必须恰好是这个列表，否则安装失败。
+`dependencies` 把每个依赖的 tooth 路径映射到版本范围，例如 `^0.3.0` 或 `>=1.0.0 <2.0.0`，语法见 [Semver for .NET](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0)。lip 会安装这些依赖。它只读取 mod 的 LeviLamina `manifest.json` 中的 `name`，并原样安装该文件，因此请按 LeviLamina 的要求，自己在其 `dependencies` 中列出你的 mod 所依赖的 mod。
 
 在客户端上，mod 同样安装到 `mods/<name>/`，由 LeviLauncher 等启动器负责；lip 本身只安装到服务端。
 

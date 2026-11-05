@@ -658,7 +658,6 @@ public class McmodService(
       }
     }
 
-    IReadOnlyList<InstalledMember> members = await Members(workspace, changeSet);
     WorkspaceView view = new(_fs, layout);
     List<LockedPackage> remaining = [.. workspace.Lock.Packages];
     List<(string Message, PackagePlan Plan)> plans = [];
@@ -672,7 +671,7 @@ public class McmodService(
             }
 
             plans.Add(("Uninstalling" + what, await _installer.PlanUninstall(
-                package, Context(workspace, options, remaining, members), view)));
+                package, Context(workspace, options, remaining), view)));
             remaining.Remove(package);
             break;
           }
@@ -684,7 +683,7 @@ public class McmodService(
             }
 
             PackagePlan plan = await _installer.PlanInstall(
-                candidate, Context(workspace, options, remaining, members), view);
+                candidate, Context(workspace, options, remaining), view);
             plans.Add(("Installing" + what, plan));
             List<AssetIdentity?> assets = [];
             foreach (AssetHandle asset in candidate.Assets) {
@@ -768,59 +767,6 @@ public class McmodService(
     }
   }
 
-  /// The packages installed once the changes are made, with the mod names of mods when a mod is
-  /// installed (they decide its mod manifest, protocol/workspace.md §4 step 3).
-  private async Task<IReadOnlyList<InstalledMember>> Members(
-      Workspace workspace, ChangeSet changeSet) {
-    List<LockedPackage> remaining = [.. workspace.Lock.Packages];
-    List<Candidate> installed = [];
-    foreach (Change change in changeSet.Changes) {
-      switch (change) {
-        case UninstallChange(LockedPackage package):
-          remaining.Remove(package);
-          break;
-        case InstallChange(Candidate candidate, _):
-          installed.Add(candidate);
-          break;
-      }
-    }
-
-    bool needsModNames = installed.Any(c => c.Package.IsMod);
-    List<InstalledMember> members = [];
-    foreach (LockedPackage package in remaining) {
-      if (ToPackage(package) is not Package rebuilt) {
-        continue;
-      }
-
-      // The mod manifest of an installed mod is read from its recorded asset; when that cannot
-      // be obtained, the operation fails early (protocol/workspace.md §6 rule 1).
-      Candidate? candidate = needsModNames && rebuilt.IsMod
-          ? await PinnedCandidate(workspace, package)
-          : null;
-      members.Add(new InstalledMember(
-          rebuilt.Identity,
-          rebuilt.Version,
-          candidate is null ? null : (await candidate.GetModManifest())?.Name));
-    }
-
-    foreach (Candidate candidate in installed) {
-      members.Add(new InstalledMember(
-          candidate.Package.Identity, candidate.Package.Version, await ModName(candidate)));
-    }
-
-    return members;
-
-    // A mod manifest that cannot be read fails installing its package, not this.
-    static async Task<string?> ModName(Candidate candidate) {
-      try {
-        return (await candidate.GetModManifest())?.Name;
-      }
-      catch (McmodInstallException) {
-        return null;
-      }
-    }
-  }
-
   private static LockedPackage Locked(
       Candidate candidate,
       bool isExplicit,
@@ -841,15 +787,13 @@ public class McmodService(
   private static InstallContext Context(
       Workspace workspace,
       OperationOptions options,
-      List<LockedPackage> remaining,
-      IReadOnlyList<InstalledMember> members) {
+      List<LockedPackage> remaining) {
     return new InstallContext(
         workspace.Root,
         workspace.Environment,
         LockWith(workspace, remaining),
         options.DryRun,
-        options.IgnoreScripts,
-        members);
+        options.IgnoreScripts);
   }
 
   /// The workspace file with the given packages and the environment, once known.

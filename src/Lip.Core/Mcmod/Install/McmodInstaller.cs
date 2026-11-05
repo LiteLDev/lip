@@ -21,8 +21,9 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// Installing writes the files of the assets of the entry, in order (step 2): each asset is
 /// mounted at its index; "self" and "zip" assets carry out their placements, "mcmod" assets are
 /// written whole into the mod directory, and the assets of an entry derived from format 3 are
-/// carried out as lip v0.37.0 did (ToothPlacements). The mod manifest of a mod then gets its
-/// "dependencies" checked or written (step 3, ModManifestFile).
+/// carried out as lip v0.37.0 did (ToothPlacements). The mod directory is named by the mod
+/// name, the "name" of the manifest.json of the mcmod asset (Candidate.GetModManifest); lip
+/// writes that manifest.json as it is, like any other file.
 ///
 /// Ownership: a file is owned by a package when the package wrote it. A file that already exists
 /// and matches preserve_files is kept and not written, so it is not owned by the package, unless
@@ -38,11 +39,6 @@ public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
     IUserInteraction userInteraction) : IMcmodInstaller {
-  private static readonly JsonSerializerOptions _manifestOptions = new() {
-    WriteIndented = true,
-    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-  };
-
   private readonly IFileSystem _fs = fileSystem;
   private readonly ICommandRunner _commandRunner = commandRunner;
   private readonly IUserInteraction _ui = userInteraction;
@@ -303,7 +299,7 @@ public partial class McmodInstaller(
   /// Where asset i is mounted in the source of a package.
   private static string Mount(int i) => i.ToString(CultureInfo.InvariantCulture);
 
-  /// Plans the writes of steps 2 and 3 of installing a package (protocol/workspace.md §4).
+  /// Plans the writes of step 2 of installing a package (protocol/workspace.md §4).
   private async Task<List<PlannedWrite>> Plan(
       Candidate candidate,
       MountSource source,
@@ -374,14 +370,6 @@ public partial class McmodInstaller(
         foreach (EntryPlacement placement in asset.Placements) {
           PlanPlacement(name, i, placement, files, (target, key) => Add(target, source, key));
         }
-      }
-    }
-
-    // Step 3.
-    if (modManifest is not null) {
-      byte[]? written = ModManifestFile(package, modManifest, context.Members ?? []);
-      if (written is not null) {
-        Add(modDirectory + ToothFormat.ModManifestFileName, new BytesSource(written), "");
       }
     }
 
@@ -481,45 +469,6 @@ public partial class McmodInstaller(
           break;
         }
     }
-  }
-
-  /// The dependencies of the mod manifest of a mod (protocol/workspace.md §4 step 3): one
-  /// {"name": N} for each dependency of the package, in order, that a mod with mod name N among
-  /// the members satisfies.
-  public static JsonArray ModDependencies(Package package, IReadOnlyList<InstalledMember> members) {
-    JsonArray dependencies = [];
-    foreach (ToothDependency dependency in package.Entry.Dependencies) {
-      string identity = Package.GetIdentity(dependency.Source.Target, dependency.Source.Variant);
-      InstalledMember? satisfier = members.FirstOrDefault(m =>
-          PackageNames.AreEqual(m.Identity, identity) && dependency.Range.IsSatisfiedBy(m.Version));
-      if (satisfier?.ModName is string modName) {
-        dependencies.Add(new JsonObject { ["name"] = modName });
-      }
-    }
-
-    return dependencies;
-  }
-
-  /// The manifest.json that step 3 writes into the mod directory (protocol/workspace.md §4): the
-  /// mod manifest with "dependencies" set to ModDependencies; null when the mod manifest has
-  /// "dependencies", which must then equal them. Throws McmodInstallException otherwise.
-  public static byte[]? ModManifestFile(
-      Package package, ModManifest manifest, IReadOnlyList<InstalledMember> members) {
-    JsonArray dependencies = ModDependencies(package, members);
-    if (manifest.Json.TryGetProperty("dependencies", out JsonElement declared)) {
-      if (!JsonNode.DeepEquals(JsonNode.Parse(declared.GetRawText()), dependencies)) {
-        throw new McmodInstallException(
-            $"{package.Identity}: the \"dependencies\" of its mod manifest are "
-            + $"{declared.GetRawText()}, but its dependencies are satisfied by the mods "
-            + $"{dependencies.ToJsonString()}.");
-      }
-
-      return null;
-    }
-
-    JsonObject file = JsonNode.Parse(manifest.Json.GetRawText())!.AsObject();
-    file["dependencies"] = dependencies;
-    return Encoding.UTF8.GetBytes(file.ToJsonString(_manifestOptions));
   }
 
   private static List<string> OwnedFiles(List<PlannedWrite> plan) =>
@@ -654,12 +603,4 @@ public partial class McmodInstaller(
       string FullPath,
       bool Keep,
       bool StaysOwned);
-
-  /// A single generated file, with the key "".
-  private sealed class BytesSource(byte[] content) : ISource {
-    public IEnumerable<string> Keys => [""];
-
-    public Task<Stream> OpenRead(string key) =>
-        Task.FromResult<Stream>(new MemoryStream(content, writable: false));
-  }
 }

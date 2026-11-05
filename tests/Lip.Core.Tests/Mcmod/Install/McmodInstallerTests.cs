@@ -124,10 +124,8 @@ public class McmodInstallerTests {
       LipEnvironment? environment = null,
       LockFile? lockFile = null,
       bool dryRun = false,
-      bool ignoreScripts = false,
-      IReadOnlyList<InstalledMember>? members = null) =>
-      new(_root, environment ?? _server, lockFile ?? new LockFile(), dryRun, ignoreScripts,
-          members);
+      bool ignoreScripts = false) =>
+      new(_root, environment ?? _server, lockFile ?? new LockFile(), dryRun, ignoreScripts);
 
   private SortedDictionary<string, string> Snapshot() {
     SortedDictionary<string, string> snapshot = new(StringComparer.Ordinal);
@@ -391,7 +389,7 @@ public class McmodInstallerTests {
     _commandRunner.VerifyNoOtherCalls();
   }
 
-  // Step 2: "mcmod" assets, and step 3.
+  // Step 2: "mcmod" assets.
 
   [Fact]
   public async Task Install_Mcmod_WritesWholeArchiveIntoModDirectory() {
@@ -409,7 +407,9 @@ public class McmodInstallerTests {
         owned);
     Assert.Equal("dll", Read("mods/LegacyMoney/LegacyMoney.dll"));
     Assert.Equal("{}", Read("mods/LegacyMoney/lang/en_US.json"));
-    Assert.Equal(["LegacyMoney.dll", "lang/en_US.json"], source.Prefetched.Order(StringComparer.Ordinal));
+    Assert.Equal(
+        ["LegacyMoney.dll", "lang/en_US.json", "manifest.json"],
+        source.Prefetched.Order(StringComparer.Ordinal));
     Assert.False(_fs.Directory.Exists(Full("plugins")));
   }
 
@@ -423,111 +423,21 @@ public class McmodInstallerTests {
     Assert.Equal("dll", Read("mods/LegacyMoney/LegacyMoney.dll"));
   }
 
-  [Fact]
-  public async Task Install_McmodWithoutDependencies_WritesManifestWithGeneratedDependencies() {
-    // Act
-    await _installer.Install(LegacyMoney(), Context());
-
-    // Assert
-    Assert.Equal(
-        """{"name":"LegacyMoney","dependencies":[]}""",
-        Compact(Read("mods/LegacyMoney/manifest.json")));
-  }
-
-  [Fact]
-  public async Task Install_ModDependencies_GeneratedFromMembersInDependencyOrder() {
-    // Arrange: dependencies on two mods (in the opposite order of the members), a file package,
-    // a mod whose installed version does not satisfy the range, and a package not installed.
-    Candidate candidate = LegacyMoney("""
-        "dependencies": {
-          "example.com/b": "^1.0.0",
-          "example.com/a": "^1.0.0",
-          "example.com/file": "^1.0.0",
-          "example.com/old": "^2.0.0",
-          "example.com/missing": "^1.0.0"
-        }
-        """);
-    InstalledMember[] members = [
-      new("example.com/a", SemVersion.Parse("1.0.0"), "A"),
-      new("Example.com/B", SemVersion.Parse("1.2.0"), "B"),
-      new("example.com/file", SemVersion.Parse("1.0.0"), null),
-      new("example.com/old", SemVersion.Parse("1.0.0"), "Old"),
-    ];
-
-    // Act
-    await _installer.Install(candidate, Context(members: members));
-
-    // Assert
-    Assert.Equal(
-        """{"name":"LegacyMoney","dependencies":[{"name":"B"},{"name":"A"}]}""",
-        Compact(Read("mods/LegacyMoney/manifest.json")));
-  }
-
-  [Fact]
-  public async Task Install_ModDependencyOnVariant_MatchesIdentity() {
-    // Arrange
-    Candidate candidate = LegacyMoney(
-        """ "dependencies": { "example.com/a#extra": "^1.0.0", "example.com/b": "^1.0.0" } """);
-    InstalledMember[] members = [
-      new("example.com/a", SemVersion.Parse("1.0.0"), "A"),
-      new("example.com/a#extra", SemVersion.Parse("1.0.0"), "AExtra"),
-      new("example.com/b#extra", SemVersion.Parse("1.0.0"), "BExtra"),
-    ];
-
-    // Act
-    await _installer.Install(candidate, Context(members: members));
-
-    // Assert
-    Assert.Equal(
-        """{"name":"LegacyMoney","dependencies":[{"name":"AExtra"}]}""",
-        Compact(Read("mods/LegacyMoney/manifest.json")));
-  }
-
   [Theory]
-  [InlineData("""[{"name":"A"}]""")]
-  [InlineData("""[ { "name": "A" } ]""")]
-  public async Task Install_DeclaredDependenciesEqualGenerated_KeepsManifestAsWritten(
-      string declared) {
-    // Arrange
-    string manifest = $$"""{"name":"LegacyMoney","dependencies":{{declared}}}""";
+  [InlineData("""{"name":"LegacyMoney"}""")]
+  [InlineData("""{"name":"LegacyMoney","dependencies":[{"name":"Other"}],"extra":1}""")]
+  public async Task Install_McmodManifest_IsWrittenAsItIs(string manifest) {
+    // Arrange: lip reads only "name"; it neither checks nor fills in "dependencies".
     Candidate candidate = LegacyMoney(
         """ "dependencies": { "example.com/a": "^1.0.0" } """,
         new InMemorySource(new() { ["manifest.json"] = manifest, ["LegacyMoney.dll"] = "dll" }));
 
     // Act
-    IReadOnlyList<string> owned = await _installer.Install(
-        candidate, Context(members: [new("example.com/a", SemVersion.Parse("1.0.0"), "A")]));
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
 
     // Assert
     Assert.Equal(manifest, Read("mods/LegacyMoney/manifest.json"));
-    Assert.Contains("mods/LegacyMoney/manifest.json", owned);
-  }
-
-  [Theory]
-  [InlineData("[]")]
-  [InlineData("""[{"name":"B"},{"name":"A"}]""")]
-  [InlineData("""[{"name":"A","version":"1.0.0"},{"name":"B"}]""")]
-  [InlineData("""[{"name":"a"},{"name":"B"}]""")]
-  [InlineData("null")]
-  public async Task Install_DeclaredDependenciesDifferFromGenerated_ThrowsWithoutChanges(
-      string declared) {
-    // Arrange
-    Candidate candidate = LegacyMoney(
-        """ "dependencies": { "example.com/a": "^1.0.0", "example.com/b": "^1.0.0" } """,
-        new InMemorySource(new() {
-          ["manifest.json"] = $$"""{"name":"LegacyMoney","dependencies":{{declared}}}""",
-          ["LegacyMoney.dll"] = "dll",
-        }));
-    InstalledMember[] members = [
-      new("example.com/a", SemVersion.Parse("1.0.0"), "A"),
-      new("example.com/b", SemVersion.Parse("1.0.0"), "B"),
-    ];
-    SortedDictionary<string, string> before = Snapshot();
-
-    // Act & Assert
-    await Assert.ThrowsAsync<McmodInstallException>(
-        () => _installer.Install(candidate, Context(members: members)));
-    Assert.Equal(before, Snapshot());
+    Assert.Equal(["mods/LegacyMoney/manifest.json", "mods/LegacyMoney/LegacyMoney.dll"], owned);
   }
 
   [Fact]
@@ -582,23 +492,6 @@ public class McmodInstallerTests {
     // Assert
     Assert.Equal("patched", Read("mods/LegacyMoney/LegacyMoney.dll"));
     Assert.Equal(3, owned.Count);
-  }
-
-  [Fact]
-  public void ModDependencies_Range_ListsOnlySatisfyingMods() {
-    // Arrange
-    Package package = new("example.com/x", "", SemVersion.Parse("1.0.0"),
-        Entry(""" "dependencies": { "example.com/a": ">=1.0.0 <2.0.0" } """));
-
-    // Act & Assert
-    Assert.Equal(
-        """[{"name":"A"}]""",
-        McmodInstaller.ModDependencies(
-            package, [new("example.com/a", SemVersion.Parse("1.5.0"), "A")]).ToJsonString());
-    Assert.Equal(
-        "[]",
-        McmodInstaller.ModDependencies(
-            package, [new("example.com/a", SemVersion.Parse("2.0.0"), "A")]).ToJsonString());
   }
 
   // Write rules.

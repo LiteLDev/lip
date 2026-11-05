@@ -141,23 +141,6 @@ public class McmodServiceAtomicityTests {
   }
 
   [Fact]
-  public async Task Install_ModManifestDependenciesDiffer_ChangesNothing() {
-    // Arrange: B has no dependency, but its mod manifest declares one.
-    SortedDictionary<string, string> before = await ArrangeEarlyFailure(() => AddMod(
-        "b.zip",
-        "B",
-        manifest: """
-            { "name": "B", "entry": "B.dll", "type": "native", "dependencies": [ { "name": "Base" } ] }
-            """));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<McmodInstallException>(
-        () => _ws.Service.Install(["a.zip", "b.zip"], _options));
-    VerifyNoCommandRan();
-    Assert.Equal(before, WorkspaceSnapshot());
-  }
-
-  [Fact]
   public async Task Install_ModNameOfInstalledMod_ChangesNothing() {
     // Arrange: B's mod is named like Base's, but for ASCII case.
     SortedDictionary<string, string> before = await ArrangeEarlyFailure(() => AddMod(

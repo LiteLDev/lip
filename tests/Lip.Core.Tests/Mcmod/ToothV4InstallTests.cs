@@ -49,10 +49,12 @@ public class ToothV4InstallTests {
   }
 
   [Fact]
-  public async Task Install_McmodWithModDependency_WritesManifestWithDependencies() {
+  public async Task Install_McmodWithModDependency_InstallsBothAsTheyAre() {
     WorkspaceHarness h = new();
     h.AddDownload("https://example.com/base.mcmod", WorkspaceHarness.Mcmod("Base"));
-    h.AddDownload("https://example.com/top.mcmod", WorkspaceHarness.Mcmod("Top"));
+    h.AddDownload(
+        "https://example.com/top.mcmod",
+        WorkspaceHarness.Mcmod("Top", """ "dependencies": [ { "name": "Other" } ] """));
     h.AddTag("example.com/base", "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/base", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/base.mcmod" ] } ] """),
@@ -67,15 +69,13 @@ public class ToothV4InstallTests {
 
     await h.Service.Install(["example.com/top"], _options);
 
+    // The mod directories are named by the "name" of manifest.json, which is written unchanged.
     Assert.Equal("Top binary", h.Fs.File.ReadAllText(h.Path("mods/Top/Top.dll")));
-    using JsonDocument top = JsonDocument.Parse(h.Fs.File.ReadAllText(h.Path("mods/Top/manifest.json")));
-    Assert.Equal("Top", top.RootElement.GetProperty("name").GetString());
+    using JsonDocument top = JsonDocument.Parse(
+        h.Fs.File.ReadAllText(h.Path("mods/Top/manifest.json")));
     Assert.Equal(
-        """[{"name":"Base"}]""",
-        top.RootElement.GetProperty("dependencies").GetRawText().Replace(" ", "").Replace("\n", "").Replace("\r", ""));
-    using JsonDocument baseManifest = JsonDocument.Parse(
-        h.Fs.File.ReadAllText(h.Path("mods/Base/manifest.json")));
-    Assert.Equal(0, baseManifest.RootElement.GetProperty("dependencies").GetArrayLength());
+        "Other", top.RootElement.GetProperty("dependencies")[0].GetProperty("name").GetString());
+    Assert.True(h.Exists("mods/Base/Base.dll"));
 
     LockFile lockFile = await h.Lock();
     Assert.Equal(["example.com/base", "example.com/top"], lockFile.Packages.Select(p => p.Tooth));
@@ -85,16 +85,17 @@ public class ToothV4InstallTests {
   }
 
   [Fact]
-  public async Task Install_McmodDeclaringOtherDependencies_FailsEarly() {
+  public async Task Install_McmodWithoutManifestName_FailsEarly() {
     WorkspaceHarness h = new();
     h.AddDownload(
         "https://example.com/top.mcmod",
-        WorkspaceHarness.Mcmod("Top", """ "dependencies": [ { "name": "Other" } ] """));
+        WorkspaceHarness.Zip(new() { ["manifest.json"] = """{ "entry": "x.dll" }""" }));
     h.AddTag("example.com/top", "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/top", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/top.mcmod" ] } ] """),
     });
-    await Assert.ThrowsAsync<McmodInstallException>(
+
+    await Assert.ThrowsAnyAsync<Exception>(
         () => h.Service.Install(["example.com/top"], _options));
 
     Assert.False(h.Fs.Directory.Exists(h.Path("mods")));

@@ -148,7 +148,7 @@
           ]
         },
         {
-          "description": "A ZIP archive downloaded from urls, with a LeviLamina manifest.json at its root, written whole into the mod directory.",
+          "description": "A ZIP archive downloaded from urls, with a LeviLamina manifest.json at its root, written whole into mods/<the name in that manifest.json>/.",
           "properties": {
             "type": {
               "const": "mcmod"

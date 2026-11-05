@@ -56,10 +56,7 @@ A package **owns** every file it writes to the workspace by the steps below.
    - `"mcmod"`: every file of the archive of the asset is written into the mod directory, at its path in the archive.
 
    When two placements or assets write the same path, the later one wins.
-3. For a mod, let M be its mod manifest, and D the array of `{"name": N}`, in the order of the dependencies of P, for each dependency of P that a mod with mod name N satisfies in the workspace.
-   - When M has `dependencies`, it MUST equal D, as JSON values; otherwise it is a failure.
-   - Otherwise `manifest.json` in the mod directory is written: M with the member `dependencies` set to D.
-4. Run `hooks.post_install`.
+3. Run `hooks.post_install`.
 
 **Write rules.** When a file is written to the workspace:
 
@@ -99,7 +96,7 @@ The package is replaced only when the package obtained differs in identity, vers
 
 An operation succeeds or fails as a whole.
 
-1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a missing or invalid mod manifest, `dependencies` that Section 4 step 3 rejects, a server layout that cannot be established), no hook command of it runs, no change is made, and the workspace file does not change. Each step is checked against the workspace as the steps before it leave it.
+1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a server layout that cannot be established), no hook command of it runs, no change is made, and the workspace file does not change. Each step is checked against the workspace as the steps before it leave it.
 2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made, including to directories and the server layout, is undone (Section 7.5). The workspace file does not change.
 3. **Hook commands are not undone.** Hook commands that already ran are neither run again nor reversed. They SHOULD be safe to run again, and SHOULD NOT assume that the files of the operation stay in place.
 4. The paths that uninstallation steps 2–4 delete are those that match before any hook command of the operation runs.

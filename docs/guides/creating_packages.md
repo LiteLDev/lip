@@ -74,7 +74,7 @@ A file package places files in the workspace. Each asset is an archive to take f
 
 ## A Mod
 
-A mod is an entry with an `mcmod` asset: a ZIP archive with the LeviLamina `manifest.json` of the mod at its root. lip writes the whole archive into `mods/<name>/`, where `<name>` is the `name` in that `manifest.json`. On a server, `plugins` is a link to `mods`, so LeviLamina finds the mod under `plugins/<name>/` as well.
+A mod is an entry with an `mcmod` asset: a ZIP archive with the LeviLamina `manifest.json` of the mod at its root. lip writes the whole archive into `mods/<name>/`, where `<name>` is the `name` in that `manifest.json`; lip reads nothing else of `manifest.json` and installs it unchanged. On a server, `plugins` is a link to `mods`, so LeviLamina finds the mod under `plugins/<name>/` as well.
 
 Build the archive from the output directory of your build, which holds `manifest.json` and the files of the mod, with [`lip pack`](../cli/commands/pack.md), and attach it to the release:
 
@@ -113,7 +113,7 @@ Then point to it from `tooth.json`:
 }
 ```
 
-`dependencies` maps the tooth path of each dependency to a version range, e.g. `^0.3.0` or `>=1.0.0 <2.0.0`, in the syntax of [Semver for .NET](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0). lip installs the dependencies, and keeps them in line with the LeviLamina `manifest.json` of the mod: for each dependency that is installed as a mod, the mod's `manifest.json` lists `{ "name": "<that mod's name>" }` in its `dependencies`, in the order of the `tooth.json` dependencies. Leave `dependencies` out of the mod's `manifest.json` and lip writes it in when it installs the mod; if you write it yourself, it must be exactly that list, or the installation fails.
+`dependencies` maps the tooth path of each dependency to a version range, e.g. `^0.3.0` or `>=1.0.0 <2.0.0`, in the syntax of [Semver for .NET](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0). lip installs the dependencies. It reads only the `name` of the mod's LeviLamina `manifest.json` and installs that file unchanged, so list the mods your mod depends on in its `dependencies` yourself, as LeviLamina expects.
 
 On the client, mods are also installed to `mods/<name>/`, by launchers such as LeviLauncher; lip itself installs to servers only.
 

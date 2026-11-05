@@ -14,6 +14,7 @@ public static class ToothFormat {
   /// The format_uuid of tooth files of format 4.
   public const string FormatUuid = "f74a5fda-cb2a-4de8-959f-a1a76bad3102";
 
-  /// The LeviLamina manifest of a mod, in its mod directory (protocol/workspace.md §4 step 3).
+  /// The LeviLamina manifest at the root of the mcmod asset of a mod, whose "name" is the mod name
+  /// (protocol/package.md §4). lip reads nothing else of it and never writes it.
   public const string ModManifestFileName = "manifest.json";
 }

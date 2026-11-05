@@ -109,7 +109,7 @@ The **identity** of a candidate is its tooth path, followed by `#` and the varia
 
 A member (key k, range R) of the `dependencies` of the selected entry is a **dependency**; it names the candidates of Resolve(k, R, environment).
 
-A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`. The archive of that asset MUST have at its root a `manifest.json` that is a JSON object [RFC8259] whose `name` is an id: the **mod manifest**. Its `name` is the **mod name**.
+A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`. The archive of that asset MUST have at its root a `manifest.json` that is a JSON object [RFC8259] whose `name` is an id: the **mod name**.
 
 ## 5. Earlier Formats
 

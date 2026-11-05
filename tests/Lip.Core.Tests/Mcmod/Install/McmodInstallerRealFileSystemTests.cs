@@ -88,7 +88,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         "LegacyMoney.dll")));
     using (JsonDocument manifest = JsonDocument.Parse(
         File.ReadAllText(Path.Combine(_root, "mods", "LegacyMoney", "manifest.json")))) {
-      Assert.Equal(0, manifest.RootElement.GetProperty("dependencies").GetArrayLength());
+      Assert.False(manifest.RootElement.TryGetProperty("dependencies", out _));
     }
     Assert.True(File.Exists(Path.Combine(_root, "pre_install.txt")));
     Assert.True(File.Exists(Path.Combine(_root, "post_install.txt")));
