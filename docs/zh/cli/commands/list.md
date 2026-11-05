@@ -1,6 +1,6 @@
 # lip list
 
-列出已安装包。
+列出已安装的包。
 
 ## 概要
 
@@ -16,9 +16,15 @@ lip list [options]
 
 ## 说明
 
-读取该工作区的[锁文件](../../concepts/lockfiles.md)（或 lip v0.x 留下的旧 `tooth_lock.json`），按两组以 `<name>@<version>` 形式显示已安装包：
+读取该工作区的[工作区文件](../../concepts/lockfiles.md)，并以 `<身份>@<版本>` 的形式分两组显示已安装的包：
 
-- **User-Requested**：用户显式安装的包。
-- **Dependencies**：作为依赖安装的包。
+- **User-Requested** — 用户显式安装的包。
+- **Dependencies** — 作为依赖安装的包。
 
-包按安装顺序列出，依赖在前。名称即包的身份：其 `manifest.json` 的 `id`（LeviLamina 清单则为其 `name`），或 `tooth.json` 包的 tooth 名称（即其 `tooth` 路径的最后一个元素），带标签的变体在其后加 `-<label>`（例如 `LegacyScriptEngine-lua`）。
+包按安装顺序列出，依赖在前。包的身份是其 tooth 路径，变体不为 `""` 时再加上 `#<variant>`（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`）。
+
+使用 `--json` 时，结果为：
+
+```json
+{ "ExplicitInstalled": ["<identity>@<version>", ...], "ImplicitInstalled": ["<identity>@<version>", ...] }
+```

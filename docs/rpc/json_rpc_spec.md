@@ -22,11 +22,11 @@ Parameters may be given by position, in the order of the schema, or by name.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `rid` | `string \| null` | A .NET RID such as `"win-x64"`. `null`, `""` or an omitted `rid` uses the lock or lip's own RID. |
+| `rid` | `string \| null` | A .NET RID such as `"win-x64"`. `null`, `""` or an omitted `rid` uses the RID the workspace file records, or lip's own RID. |
 
 The `packages` parameter of `Update` may be empty to update every explicitly installed package.
 
-`Migrate` asks no questions: where [`lip migrate`](../cli/commands/migrate.md) would ask for a value on the terminal, the method fails, naming the value.
+`Init` and `Migrate` ask no questions: where [`lip init`](../cli/commands/init.md) or [`lip migrate`](../cli/commands/migrate.md) would ask for a value on the terminal, the method fails, naming the value. There is no method for `lip pack`.
 
 ## Errors and Cancellation
 

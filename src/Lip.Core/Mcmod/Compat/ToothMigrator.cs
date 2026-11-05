@@ -1,7 +1,10 @@
 using System.Globalization;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using DotNet.Globbing;
 using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 using Lip.Core.Json;
@@ -9,21 +12,29 @@ using Semver;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Converts a tooth.json (v1–v3, already migrated to v3) into a manifest.json of format bf45b1
-/// (specs/cli.md §5.8), as faithfully as the formats allow. lip itself does not need the result:
-/// it reads tooth.json archives as they are (ToothCompat, spec §10.2), with the same mapping.
-/// RepositoryMigrator writes the result into a package repository. The notes list what is
-/// dropped or converted with another meaning, each naming the tooth.json field it comes from
-/// (in its v3 form). Missing values are asked for through IUserInteraction.Ask.
+/// Converts a tooth.json of format 1–3 (already read as format 3) into one of format 4 (lip
+/// migrate, protocol/cli.md §5.8), agreeing with how protocol/package.md §5 reads it for every
+/// environment as far as format 4 can express it. The notes list what is dropped or converted
+/// with another meaning, each naming the field of format 3 it comes from. Missing values are
+/// asked for through IUserInteraction.Ask.
 ///
-/// - A single unlabeled variant whose assets are all "self", for no platform or one exact
-///   runtime: a package document holding its content.
-/// - Anything else: a meta document. Its targets hold the merged content of the variants of
-///   each label per runtime (patterns are asked for the runtimes they stand for), and point
-///   where the packages are to be published (GitHub release assets for github.com paths, under
-///   an asked URL prefix otherwise); publishing them is left to the author (lip pack).
+/// - Format 4 has no platform patterns and no "any runtime": the runtimes a platform pattern
+///   stands for, and those the variants without a platform apply to, are asked for.
+/// - Each label becomes a variant. It has an entry for each platform and runtime, holding the
+///   variants of the label merged for the runtime as Section 5 merges them.
+/// - With a variant labeled "client", the label "" has entries for the server only, and the
+///   entries of "client" for the client are also those of the variant "" (Section 5, last
+///   rule).
+/// - Assets of type "self" and "zip" keep their placements, converted to the placements of
+///   format 4; the asset types tar, tgz and uncompressed have no equivalent and are dropped.
 public static partial class ToothMigrator {
   public record Result(JsonObject Document, IReadOnlyList<string> Notes);
+
+  private static readonly JsonSerializerOptions _writeOptions = new() {
+    WriteIndented = true,
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    NewLine = "\n",
+  };
 
   private static readonly string[] _knownScripts = [
     "pre_install", "install", "post_install", "pre_uninstall", "uninstall", "post_uninstall",
@@ -31,25 +42,21 @@ public static partial class ToothMigrator {
 
   /// selfFiles, when given, returns the '/'-separated paths of the files of the tooth.json's own
   /// archive (its "self" asset). Each placement of a self asset is then checked against what lip
-  /// v3 placed from those files (ToothPlacements.Match): one that placed nothing is left out
-  /// (manifest.json would fail on it), and one whose manifest.json form would place other files
-  /// (e.g. a pattern placing files from subdirectories) is expanded into one file per file.
-  /// Notes tell about both.
+  /// v0.37.0 placed from those files (ToothPlacements.Match): one that placed nothing is left out
+  /// (format 4 would fail on it), and one whose format 4 form would place other files (e.g. a
+  /// pattern placing files from subdirectories) is expanded into one placement per file. Notes
+  /// tell about both.
   public static async Task<Result> Migrate(
       PackageManifest tooth,
       IUserInteraction ui,
       Func<IReadOnlyList<string>>? selfFiles = null) {
     List<string> notes = [];
-    Context context = new(tooth, ui, selfFiles, notes);
-
-    string id = ToothCompat.GetIdentity(tooth.Path, "");
-    if (!PackageNames.IsValid(id)) {
-      id = await AskId(ui, $"the package id (the tooth name '{id}' is not a valid id)");
-    }
+    Context context = new(tooth, selfFiles, notes);
 
     JsonObject document = new() {
-      [ManifestFormat.FormatKey] = ManifestFormat.Format,
-      ["id"] = id,
+      [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
+      ["format_uuid"] = ToothFormat.FormatUuid,
+      ["tooth"] = tooth.Path,
       ["version"] = tooth.Version.ToString(),
     };
     JsonObject info = [];
@@ -58,32 +65,17 @@ public static partial class ToothMigrator {
     if (tooth.Info.Tags.Count > 0) {
       info["tags"] = new JsonArray([.. tooth.Info.Tags.Select(t => (JsonNode)t)]);
     }
-    AddString(info, "icon", tooth.Info.AvatarUrl);
+    AddString(info, "avatar_url", tooth.Info.AvatarUrl);
     if (info.Count > 0) {
       document["info"] = info;
     }
 
-    PackageManifestVariant? single = tooth.Variants.Count == 1 ? tooth.Variants[0] : null;
-    if (single is not null && single.Label == ""
-        && single.Assets.All(a => a.Type == PackageManifestAsset.AssetType.Self)
-        && !IsPattern(single.Platform)) {
-      if (single.Platform != "") {
-        document["runtime"] = single.Platform;
-      }
-
-      foreach ((string key, JsonNode? value) in Content(context, single, "variants[0]")) {
-        document[key] = value?.DeepClone();
-      }
-    } else {
-      document["targets"] = await Targets(context, id);
-    }
-
+    document["variants"] = await Variants(context, ui);
     return new Result(document, notes);
   }
 
   private sealed record Context(
       PackageManifest Tooth,
-      IUserInteraction Ui,
       Func<IReadOnlyList<string>>? SelfFiles,
       List<string> Notes) {
     private IReadOnlyList<string>? _selfFiles;
@@ -91,159 +83,97 @@ public static partial class ToothMigrator {
     public IReadOnlyList<string>? Files => _selfFiles ??= SelfFiles?.Invoke();
   }
 
-  /// The targets of a meta document (specs/cli.md §5.8 rule 3).
-  private static async Task<JsonArray> Targets(Context context, string id) {
+  private static async Task<JsonObject> Variants(Context context, IUserInteraction ui) {
     PackageManifest tooth = context.Tooth;
 
-    // The runtimes every pattern platform stands for, asked once per pattern.
+    // The runtimes every platform pattern stands for, asked once per pattern, and the runtimes
+    // the variants without a platform apply to, asked once.
     Dictionary<string, List<string>> patterns = new(StringComparer.Ordinal);
     foreach (PackageManifestVariant variant in tooth.Variants) {
       if (IsPattern(variant.Platform) && !patterns.ContainsKey(variant.Platform)) {
-        patterns[variant.Platform] = await AskRuntimes(context.Ui, variant.Platform);
+        patterns[variant.Platform] = await AskRuntimes(
+            ui,
+            $"the runtimes (RIDs, comma-separated) the platform pattern '{variant.Platform}' "
+                + "stands for",
+            variant.Platform);
       }
     }
 
-    string prefix = await ReleasePrefix(context.Ui, tooth.Path);
+    List<string> anyRuntime = tooth.Variants.Any(v => v.Platform == "")
+        ? await AskRuntimes(
+            ui,
+            "the runtimes (RIDs, comma-separated, e.g. win-x64) the variants without a platform "
+                + "apply to",
+            null)
+        : [];
+
     bool hasClient = tooth.Variants.Any(v => v.Label == ToothCompat.ClientLabel);
+    JsonObject variants = [];
+    void AddEntry(string variant, JsonObject entry) {
+      if (variants[variant] is not JsonArray entries) {
+        entries = [];
+        variants[variant] = entries;
+      }
 
-    JsonArray targets = [];
+      entries.Add(entry);
+    }
+
     foreach (string label in tooth.Variants.Select(v => v.Label).Distinct()) {
-      List<PackageManifestVariant> variants = [.. tooth.Variants.Where(v => v.Label == label)];
-      string field = $"variants (label '{label}')";
-
+      List<PackageManifestVariant> labeled = [.. tooth.Variants.Where(v => v.Label == label)];
       List<string> runtimes = [
-        .. variants
-            .SelectMany(v => v.Platform == "" ? []
+        .. labeled
+            .SelectMany(v => v.Platform == "" ? anyRuntime
                 : IsPattern(v.Platform) ? patterns[v.Platform]
                 : [v.Platform])
             .Distinct(StringComparer.Ordinal),
       ];
 
-      // Runtimes whose merged content is the same make one target.
-      List<(List<string> Runtimes, JsonObject Content)> groups = [];
       foreach (string runtime in runtimes) {
-        JsonObject content = Content(context, Merge(label, variants.Where(
-            v => v.Platform == "" || v.Platform == runtime
-                || (IsPattern(v.Platform) && patterns[v.Platform].Contains(runtime)))), field);
-        int existing = groups.FindIndex(g => JsonNode.DeepEquals(g.Content, content));
-        if (existing >= 0) {
-          groups[existing].Runtimes.Add(runtime);
-        } else {
-          groups.Add(([runtime], content));
-        }
-      }
-
-      List<JsonObject> labelTargets = [];
-      foreach ((List<string> groupRuntimes, JsonObject content) in groups) {
-        labelTargets.Add(Target(label, groupRuntimes, content));
-      }
-
-      if (variants.Any(v => v.Platform == "")) {
-        labelTargets.Add(Target(
-            label, null, Content(context, Merge(label, variants.Where(v => v.Platform == "")), field)));
-      }
-
-      foreach (JsonObject target in labelTargets) {
-        if (label != "") {
-          target["id"] = ToothCompat.GetIdentity(tooth.Path, label) is string labelId
-              && PackageNames.IsValid(labelId)
-              ? labelId
-              : PackageNames.FromText($"{id}-{label.Replace('/', '-')}", id);
+        JsonObject content = Content(
+            context, Merge(tooth, label, runtime), $"variants (label '{label}', {runtime})");
+        AddEntry(label, Entry(McmodPlatform.Server, runtime, content));
+        if (label != "" || !hasClient) {
+          AddEntry(label, Entry(McmodPlatform.Client, runtime, content));
         }
 
-        if (hasClient && label == "") {
-          target["platform"] = McmodPlatform.Server.ToSpecString();
-        }
-
-        Order(target);
-        targets.Add(target);
-
-        // tooth.json selects the "client" label for "" on client platforms (spec §10.2 rule 2).
+        // On the client, the variant "" is the one of the label "client" (protocol/package.md
+        // §5).
         if (label == ToothCompat.ClientLabel) {
-          JsonObject copy = (JsonObject)target.DeepClone();
-          copy.Remove("variant");
-          copy["platform"] = McmodPlatform.Client.ToSpecString();
-          Order(copy);
-          targets.Add(copy);
+          AddEntry("", Entry(McmodPlatform.Client, runtime, content));
         }
       }
     }
 
-    foreach (JsonObject target in targets.Cast<JsonObject>()) {
-      string file = "{{id}}"
-          + (target.ContainsKey("platform") ? "-{{platform}}" : "")
-          + (target.ContainsKey("runtime") ? "-{{runtime}}" : "")
-          + ".mcmod";
-      target["source"] = prefix + file;
-      Order(target);
-    }
+    return variants;
 
-    return targets;
-
-    static JsonObject Target(string label, List<string>? runtimes, JsonObject content) {
-      JsonObject target = [];
-      if (label != "") {
-        target["variant"] = label;
-      }
-
-      if (runtimes is not null) {
-        target["runtime"] = runtimes.Count == 1
-            ? runtimes[0]
-            : new JsonArray([.. runtimes.Select(r => (JsonNode)r)]);
-      }
-
-      foreach ((string key, JsonNode? value) in content) {
-        target[key] = value?.DeepClone();
-      }
-
-      return target;
-    }
-  }
-
-  /// Puts the keys of a target in the order of the spec: selectors, source, overrides.
-  private static void Order(JsonObject target) {
-    string[] first = ["variant", "platform", "runtime", "source", "id"];
-    List<KeyValuePair<string, JsonNode?>> entries = [.. target];
-    target.Clear();
-    foreach (KeyValuePair<string, JsonNode?> entry in entries
-        .OrderBy(e => Array.IndexOf(first, e.Key) is int i and >= 0 ? i : first.Length)) {
-      target[entry.Key] = entry.Value;
-    }
-  }
-
-  /// Merges variants as tooth.json does (spec §10.2 rule 2): dependencies, assets, preserve_files
-  /// and remove_files concatenated, each script hook from the one variant that has it.
-  private static PackageManifestVariant Merge(string label, IEnumerable<PackageManifestVariant> variants) {
-    List<PackageManifestVariant> merged = [.. variants];
-    try {
-      return new PackageManifestVariant {
-        Label = label,
-        Dependencies = merged.SelectMany(v => v.Dependencies).ToDictionary(d => d.Key, d => d.Value),
-        Assets = [.. merged.SelectMany(v => v.Assets)],
-        PreserveFiles = [.. merged.SelectMany(v => v.PreserveFiles)],
-        RemoveFiles = [.. merged.SelectMany(v => v.RemoveFiles)],
-        Scripts = new() {
-          PreInstall = Hook(merged, s => s.PreInstall),
-          Install = Hook(merged, s => s.Install),
-          PostInstall = Hook(merged, s => s.PostInstall),
-          PreUninstall = Hook(merged, s => s.PreUninstall),
-          Uninstall = Hook(merged, s => s.Uninstall),
-          PostUninstall = Hook(merged, s => s.PostUninstall),
-        },
+    static JsonObject Entry(McmodPlatform platform, string runtime, JsonObject content) {
+      JsonObject entry = new() {
+        ["platform"] = platform.ToSpecString(),
+        ["runtime"] = runtime,
       };
-    }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) {
-      throw new InvalidOperationException(
-          $"The variants labeled '{label}' cannot be merged, as tooth.json could not merge them"
-          + $" either: {ex.Message}", ex);
-    }
+      foreach ((string key, JsonNode? value) in content) {
+        entry[key] = value?.DeepClone();
+      }
 
-    static List<string> Hook(
-        List<PackageManifestVariant> variants, Func<PackageManifestScripts, List<string>> hook) =>
-        variants.SingleOrDefault(v => hook(v.Scripts).Count > 0) is { } v ? hook(v.Scripts) : [];
+      return entry;
+    }
   }
 
-  /// The content of a (merged) variant (specs/cli.md §5.8 rule 4).
+  /// The variants of a label merged for a runtime, as protocol/package.md §5 merges them.
+  private static PackageManifestVariant Merge(PackageManifest tooth, string label, string runtime) {
+    try {
+      return tooth.GetVariant(label, runtime);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+        or KeyNotFoundException) {
+      throw new InvalidOperationException(
+          $"The variants labeled '{label}' cannot be merged for {runtime}, as tooth.json could "
+          + $"not merge them either: {ex.Message}", ex);
+    }
+  }
+
+  /// The content of an entry for a merged variant: dependencies, assets, preserve_files,
+  /// remove_files and hooks.
   private static JsonObject Content(Context context, PackageManifestVariant variant, string field) {
     List<string> notes = context.Notes;
     JsonObject content = [];
@@ -251,26 +181,19 @@ public static partial class ToothMigrator {
     JsonObject dependencies = [];
     foreach ((PackageId dependency, SemVersionRange range) in variant.Dependencies) {
       string dependencyField = $"{field}.dependencies[\"{dependency}\"]";
-      string key = ToothCompat.GetIdentity(dependency.Path, dependency.Variant);
-      if (!PackageNames.IsValid(key)) {
-        notes.Add($"{dependencyField}: the package it names would have the identity '{key}', "
-            + "which is not a valid id; it was dropped.");
+      string text = range.ToString();
+      if (!VersionRange.TryParse(text, out VersionRange? reparsed)
+          || Probes(range).Any(p => range.Contains(p) != reparsed!.IsSatisfiedBy(p))) {
+        notes.Add($"{dependencyField}: the range '{range}' cannot be written as a range of "
+            + "format 4; it was left out.");
         continue;
       }
 
-      JsonObject value = [];
-      if (ConvertRange(range, notes, dependencyField) is string version) {
-        value["version"] = version;
-      }
-
-      value["source"] = dependency.ToString();
-      dependencies[key] = value;
-
+      dependencies[dependency.ToString()] = text;
       if (dependency.Variant == ToothCompat.ClientLabel) {
-        notes.Add($"{dependencyField}: keeps its \"client\" variant. tooth.json read it as the "
-            + "default variant of a package that uses manifest.json (spec §10.2 rule 3); "
-            + "manifest.json does not, so drop \"#client\" once that package has moved to "
-            + "manifest.json.");
+        notes.Add($"{dependencyField}: keeps its \"client\" variant. A tooth.json of format 3 "
+            + "named the variant \"\" of a package of format 4 by it (protocol/package.md §5); "
+            + "format 4 does not, so drop \"#client\" once that package has moved to format 4.");
       }
     }
 
@@ -278,41 +201,40 @@ public static partial class ToothMigrator {
       content["dependencies"] = dependencies;
     }
 
-    JsonObject archives = [];
-    JsonArray files = [];
+    JsonArray assets = [];
     for (int i = 0; i < variant.Assets.Count; i++) {
       PackageManifestAsset asset = variant.Assets[i];
       string assetField = $"{field}.assets[{i}]";
-      string? from = null;
-      if (asset.Type != PackageManifestAsset.AssetType.Self) {
-        from = $"asset{i}";
-        JsonObject archive = new() {
-          ["url"] = asset.Urls.Count == 1
-              ? asset.Urls[0].ToString()
-              : new JsonArray([.. asset.Urls.Select(u => (JsonNode)u.ToString())]),
-          ["format"] = asset.Type switch {
-            PackageManifestAsset.AssetType.Zip => "zip",
-            PackageManifestAsset.AssetType.Tar => "tar",
-            PackageManifestAsset.AssetType.Tgz => "tgz",
-            _ => "file",
-          },
-        };
-        archives[from] = archive;
+      if (asset.Type is not (PackageManifestAsset.AssetType.Self
+          or PackageManifestAsset.AssetType.Zip)) {
+        notes.Add($"{assetField}: format 4 has no asset type "
+            + $"\"{JsonSerializer.Serialize(asset.Type).Trim('"')}\"; it was dropped. Publish its "
+            + "files as a ZIP archive and add an asset of type \"zip\".");
+        continue;
       }
 
+      JsonArray placements = [];
       foreach (PackageManifestAssetPlacement placement in asset.Placements) {
-        foreach (JsonObject file in Files(context, asset, from, placement, assetField)) {
-          files.Add(file);
+        foreach (JsonObject converted in Placements(context, asset, placement, assetField)) {
+          placements.Add(converted);
         }
       }
+
+      JsonObject result = asset.Type == PackageManifestAsset.AssetType.Self
+          ? new() { ["type"] = "self" }
+          : new() {
+            ["type"] = "zip",
+            ["urls"] = new JsonArray([.. asset.Urls.Select(u => (JsonNode)u.ToString())]),
+          };
+      if (placements.Count > 0) {
+        result["placements"] = placements;
+      }
+
+      assets.Add(result);
     }
 
-    if (archives.Count > 0) {
-      content["archives"] = archives;
-    }
-
-    if (files.Count > 0) {
-      content["files"] = files;
+    if (assets.Count > 0) {
+      content["assets"] = assets;
     }
 
     List<string> preserveFiles = [.. variant.PreserveFiles.Select(GlobListJsonConverter.Format)];
@@ -321,18 +243,18 @@ public static partial class ToothMigrator {
           + $"against file names in every directory; it became '**/{pattern}'.");
     }
 
-    AddGlobs(content, "preserve", ToothCompat.PreserveFiles(preserveFiles), notes,
+    AddGlobs(content, "preserve_files", ToothCompat.PreserveFiles(preserveFiles), notes,
         $"{field}.preserve_files");
-    AddGlobs(content, "remove", ToothCompat.RemoveFiles(
+    AddGlobs(content, "remove_files", ToothCompat.RemoveFiles(
         variant.RemoveFiles.Select(GlobListJsonConverter.Format)), notes,
         $"{field}.remove_files");
 
-    Hooks converted = ToothCompat.ConvertScripts(variant.Scripts);
+    Hooks hookCommands = ToothCompat.ConvertScripts(variant.Scripts);
     JsonObject hooks = [];
-    AddCommands(hooks, "preInstall", converted.PreInstall);
-    AddCommands(hooks, "postInstall", converted.PostInstall);
-    AddCommands(hooks, "preUninstall", converted.PreUninstall);
-    AddCommands(hooks, "postUninstall", converted.PostUninstall);
+    AddCommands(hooks, "pre_install", hookCommands.PreInstall);
+    AddCommands(hooks, "post_install", hookCommands.PostInstall);
+    AddCommands(hooks, "pre_uninstall", hookCommands.PreUninstall);
+    AddCommands(hooks, "post_uninstall", hookCommands.PostUninstall);
     if (hooks.Count > 0) {
       content["hooks"] = hooks;
     }
@@ -340,13 +262,12 @@ public static partial class ToothMigrator {
     return content;
   }
 
-  /// The files for a tooth.json placement: its manifest.json form, or, for a self asset whose
-  /// files are known, when that form would place other files than lip v3 did, one file-form
-  /// file per file v3 placed (none when it placed nothing).
-  private static List<JsonObject> Files(
+  /// The placements of format 4 for a placement of format 3: its format 4 form, or, for a self
+  /// asset whose files are known, when that form would place other files than lip v0.37.0 did,
+  /// one file-form placement per file v0.37.0 placed (none when it placed nothing).
+  private static List<JsonObject> Placements(
       Context context,
       PackageManifestAsset asset,
-      string? from,
       PackageManifestAssetPlacement placement,
       string field) {
     List<string> notes = context.Notes;
@@ -361,11 +282,6 @@ public static partial class ToothMigrator {
       return [];
     }
 
-    if (asset.Type == PackageManifestAsset.AssetType.Uncompressed) {
-      // The single downloaded file is the file named after its archive (spec §7 "Archives").
-      return [WithFrom(new JsonObject { ["src"] = from, ["dest"] = dest.TrimEnd('/') }, from)];
-    }
-
     JsonObject? converted = isDirectory
         ? new JsonObject { ["src"] = DirectoryForm(src), ["dest"] = DirectoryForm(dest) }
         : !IsPattern(src)
@@ -378,8 +294,8 @@ public static partial class ToothMigrator {
         asset.Type == PackageManifestAsset.AssetType.Self ? context.Files : null;
     if (selfFiles is null) {
       if (isDirectory && IsPattern(src)) {
-        notes.Add($"{field}: {description} contains a pattern in src, which tooth.json and "
-            + "manifest.json both take literally; check it.");
+        notes.Add($"{field}: {description} contains a pattern in src, which tooth.json took "
+            + "literally and format 4 does not; check it.");
       } else if (converted is null) {
         notes.Add($"{field}: {description} uses a pattern that is not a valid glob; it was "
             + "left out. List the files instead.");
@@ -391,7 +307,7 @@ public static partial class ToothMigrator {
             + "their path, while tooth.json placed them by file name only; check it.");
       }
 
-      return converted is null ? [] : [WithFrom(converted, from)];
+      return converted is null ? [] : [converted];
     }
 
     List<(string Key, string Target)> placed = [
@@ -417,31 +333,19 @@ public static partial class ToothMigrator {
       return [converted];
     }
 
-    notes.Add($"{field}: {description} cannot be written as one manifest.json file that "
-        + $"places the same files; it was expanded into {placed.Count} files, so files added "
-        + "later are not placed.");
+    notes.Add($"{field}: {description} cannot be written as one placement of format 4 that "
+        + $"places the same files; it was expanded into {placed.Count} placements, so files "
+        + "added later are not placed.");
     return [.. placed.Select(p => new JsonObject { ["src"] = p.Key, ["dest"] = p.Target })];
-
-    static JsonObject WithFrom(JsonObject file, string? from) {
-      if (from is null) {
-        return file;
-      }
-
-      JsonObject result = new() { ["from"] = from };
-      foreach ((string key, JsonNode? value) in file) {
-        result[key] = value?.DeepClone();
-      }
-
-      return result;
-    }
   }
 
-  /// What a file of the package's own archive places from the files (spec §7).
+  /// What a placement of format 4 of a self asset places from the files
+  /// (protocol/workspace.md §4 step 2).
   private static IEnumerable<(string Key, string Target)> Placed(
-      JsonObject file, IReadOnlyList<string> files) {
-    string src = (string)file["src"]!;
-    string dest = (string)file["dest"]!;
-    IEnumerable<string> candidates = files.Where(f => f != ManifestFormat.ManifestFileName);
+      JsonObject placement, IReadOnlyList<string> files) {
+    string src = (string)placement["src"]!;
+    string dest = (string)placement["dest"]!;
+    IEnumerable<string> candidates = files.Where(f => f != ToothFormat.ToothFileName);
     if (PathGlob.HasMetacharacters(src)) {
       PathGlob glob = new(src);
       string prefix = PathGlob.FixedPrefix(src);
@@ -454,7 +358,7 @@ public static partial class ToothMigrator {
           .Select(f => (f, dest + f[src.Length..]));
     }
 
-    return files.Contains(src) ? [(src, dest)] : [];
+    return candidates.Contains(src) ? [(src, dest)] : [];
   }
 
   private static string DirectoryForm(string path) {
@@ -463,7 +367,7 @@ public static partial class ToothMigrator {
   }
 
   private static void AddGlobs(
-      JsonObject document, string key, IEnumerable<string> globs, List<string> notes,
+      JsonObject content, string key, IEnumerable<string> globs, List<string> notes,
       string field) {
     JsonArray array = [];
     foreach (string glob in globs) {
@@ -473,7 +377,7 @@ public static partial class ToothMigrator {
       }
 
       if (glob.Contains('{')) {
-        notes.Add($"{field}: the pattern '{glob}' contains '{{', which manifest.json matches "
+        notes.Add($"{field}: the pattern '{glob}' contains '{{', which format 4 matches "
             + "literally; check it.");
       }
 
@@ -481,7 +385,7 @@ public static partial class ToothMigrator {
     }
 
     if (array.Count > 0) {
-      document[key] = array;
+      content[key] = array;
     }
   }
 
@@ -497,30 +401,24 @@ public static partial class ToothMigrator {
     }
   }
 
-  /// The URL prefix (ending with '/') the packages of a meta document are published under.
-  private static async Task<string> ReleasePrefix(IUserInteraction ui, string path) {
-    string[] elements = path.Split('/');
-    if (elements.Length >= 3 && elements[0] == "github.com") {
-      return $"https://github.com/{elements[1]}/{elements[2]}/releases/download/v{{{{version}}}}/";
-    }
+  /// Asks for a non-empty list of runtimes, each matching pattern when it is given.
+  private static async Task<List<string>> AskRuntimes(
+      IUserInteraction ui, string question, string? pattern) {
+    Glob? glob = pattern is null ? null : Glob.Parse(pattern);
+    string answer = await AskValid(ui, question, a => {
+      List<string> runtimes = SplitList(a);
+      if (runtimes.Count == 0) {
+        return "enter at least one RID, e.g. win-x64.";
+      }
 
-    string prefix = await AskValid(
-        ui,
-        $"the URL prefix the packages of {path} will be published under (e.g. "
-            + "https://example.com/releases/v{{version}})",
-        answer => Uri.TryCreate(answer, UriKind.Absolute, out Uri? uri)
-            && uri.Scheme == Uri.UriSchemeHttps
-            && RefTemplate.FindUnknownPlaceholder(answer) is null
-            ? null
-            : "enter an https URL; it may use {{id}}, {{version}}, {{platform}} and {{runtime}}.");
-    return prefix.EndsWith('/') ? prefix : prefix + "/";
-  }
+      if (runtimes.FirstOrDefault(r => !ToothParser.IsRuntime(r)) is string invalid) {
+        return $"'{invalid}' is not a runtime identifier.";
+      }
 
-  private static async Task<List<string>> AskRuntimes(IUserInteraction ui, string pattern) {
-    string answer = await AskValid(
-        ui,
-        $"the runtimes (RIDs, comma-separated) the platform pattern '{pattern}' stands for",
-        a => SplitList(a).Count > 0 ? null : "enter at least one RID, e.g. win-x64,win-arm64.");
+      return glob is not null && runtimes.FirstOrDefault(r => !glob.IsMatch(r)) is string other
+          ? $"'{other}' does not match '{pattern}'."
+          : null;
+    });
     return SplitList(answer);
   }
 
@@ -529,12 +427,9 @@ public static partial class ToothMigrator {
         .Distinct(StringComparer.Ordinal),
   ];
 
-  internal static Task<string> AskId(IUserInteraction ui, string question) => AskValid(
-      ui, question,
-      a => PackageNames.IsValid(a) ? null : "an id must match ^[A-Za-z0-9][A-Za-z0-9._-]*$.");
-
   /// Asks until the answer is valid (validate returns null) and returns the trimmed answer.
-  internal static async Task<string> AskValid(
+  /// Throws CannotAskException when the user cannot be asked.
+  public static async Task<string> AskValid(
       IUserInteraction ui, string question, Func<string, string?> validate) {
     while (true) {
       // A user interaction that returns no answer cannot ask.
@@ -551,25 +446,20 @@ public static partial class ToothMigrator {
   /// Whether a tooth.json platform or path is a pattern.
   private static bool IsPattern(string s) => s.IndexOfAny(['*', '?', '[']) >= 0;
 
-  /// Notes for the fields of a raw tooth.json that its v3 form (tooth, migrated from root) does
-  /// not keep and that therefore cannot reach the migrated document: v1 and v2 dependencies whose
-  /// range the migration to v3 could not read, v2 prerequisites, and v3 scripts other than the six
-  /// install and uninstall hooks (e.g. pre_pack, or custom scripts).
+  /// Notes for the fields of a raw tooth.json that its format 3 form (tooth, read from root)
+  /// does not keep and that therefore cannot reach the migrated tooth.json: dependencies of
+  /// format 1 and 2 whose range the migration to format 3 could not read, prerequisites of
+  /// format 2, and scripts of format 3 other than the six install and uninstall hooks (e.g.
+  /// pre_pack, or custom scripts).
   public static IReadOnlyList<string> DroppedFields(JsonElement root, PackageManifest tooth) {
     List<string> notes = [];
-    if (root.ValueKind != JsonValueKind.Object
-        || !root.TryGetProperty("format_version", out JsonElement formatVersion)
-        || formatVersion.ValueKind != JsonValueKind.Number) {
-      return notes;
-    }
-
-    switch (formatVersion.GetInt32()) {
+    switch (ToothParser.FormatVersion(root)) {
       case 1 or 2:
         HashSet<string> kept = [
           .. tooth.Variants.SelectMany(v => v.Dependencies.Keys).Select(id => id.ToString()),
         ];
-        // As in the migration to v3: a v2 platform with its own dependencies uses them instead
-        // of the root ones.
+        // As in the migration to format 3: a platform of format 2 with its own dependencies uses
+        // them instead of the root ones.
         static JsonElement? Dependencies(JsonElement e) =>
             e.ValueKind == JsonValueKind.Object
             && e.TryGetProperty("dependencies", out JsonElement d)
@@ -593,8 +483,8 @@ public static partial class ToothMigrator {
         if (root.TryGetProperty("prerequisites", out JsonElement prerequisites)
             && prerequisites.ValueKind == JsonValueKind.Object
             && prerequisites.EnumerateObject().Any()) {
-          notes.Add("prerequisites: has no equivalent in manifest.json and was dropped; declare "
-              + "the packages that must already be installed as dependencies instead.");
+          notes.Add("prerequisites: has no equivalent in format 4 and was dropped; declare the "
+              + "packages that must already be installed as dependencies instead.");
         }
 
         break;
@@ -614,8 +504,8 @@ public static partial class ToothMigrator {
               bool empty = script.Value.ValueKind == JsonValueKind.Array
                   && script.Value.GetArrayLength() == 0;
               if (!_knownScripts.Contains(script.Name) && !empty) {
-                notes.Add($"variants[{i}].scripts.{script.Name}: manifest.json only has install "
-                    + "and uninstall hooks; it was dropped.");
+                notes.Add($"variants[{i}].scripts.{script.Name}: format 4 only has install and "
+                    + "uninstall hooks; it was dropped.");
               }
             }
           }
@@ -629,48 +519,15 @@ public static partial class ToothMigrator {
     return notes;
   }
 
-  /// A note when utf8Json is not a valid manifest.json, else null.
+  /// A note when utf8Json is not a valid tooth.json of format 4, else null.
   public static string? ValidationNote(byte[] utf8Json) {
     try {
-      new DocumentParser().Parse(utf8Json);
+      ToothParser.Parse(utf8Json);
       return null;
     }
-    catch (ManifestFormatException ex) {
-      return $"The result is not a valid manifest.json yet: {ex.Message}";
+    catch (ToothFormatException ex) {
+      return $"The result is not a valid tooth.json of format 4 yet: {ex.Message}";
     }
-  }
-
-  /// Converts a v3 range to the node-semver syntax (spec §1 "range"), or returns null with a note when
-  /// it cannot be expressed. A note also tells when the converted range accepts a different set
-  /// of versions, as far as probing versions around its bounds tells.
-  private static string? ConvertRange(SemVersionRange range, List<string> notes, string field) {
-    if (range.Equals(SemVersionRange.All) || range.Equals(SemVersionRange.AllRelease)) {
-      return null;
-    }
-
-    string text = range.ToString().Replace(" || ", "||");
-    foreach (string candidate in new[] { text, $"={text}" }) {
-      VersionRange converted;
-      try {
-        converted = VersionRange.Parse(candidate);
-      }
-      catch (FormatException) {
-        // Try the next form.
-        continue;
-      }
-
-      if (Probes(range).FirstOrDefault(
-          p => range.Contains(p) != converted.IsSatisfiedBy(p)) is SemVersion differing) {
-        notes.Add($"{field}: the range '{range}' became '{converted.Text}', which "
-            + (range.Contains(differing) ? "rejects" : "accepts")
-            + $" {differing} unlike tooth.json; check it.");
-      }
-
-      return converted.Text;
-    }
-
-    notes.Add($"{field}: the range '{range}' could not be converted; it was left out.");
-    return null;
   }
 
   /// Versions on and next to every version in the text of a range, released and prerelease.
@@ -695,19 +552,15 @@ public static partial class ToothMigrator {
         yield return new SemVersion(a, b, c, ["0"]);
         yield return new SemVersion(a, b, c, ["rc", "1"]);
       }
-
-      string prerelease = $"{major}.{minor}.{patch}-{match.Groups[4].Value}";
-      foreach (string probe in new[] { prerelease, $"{prerelease}.1" }) {
-        if (match.Groups[4].Success
-            && SemVersion.TryParse(probe, SemVersionStyles.Strict, out SemVersion? version)) {
-          yield return version;
-        }
-      }
     }
   }
 
-  /// A version in the text of a range: up to three numeric components (wildcards read as 0) and
-  /// an optional prerelease.
-  [GeneratedRegex(@"(?<![\w.-])(\d+)(?:\.(\d+|[*xX]))?(?:\.(\d+|[*xX]))?(?:-([0-9A-Za-z.-]+))?")]
+  /// A version in the text of a range: up to three numeric components (wildcards read as 0).
+  [GeneratedRegex(@"(?<![\w.-])(\d+)(?:\.(\d+|[*xX]))?(?:\.(\d+|[*xX]))?")]
   private static partial Regex RangeVersionRegex();
+
+  /// The UTF-8 bytes of a tooth.json as lip writes it: indented by two spaces, with a final
+  /// line break.
+  public static byte[] Serialize(JsonObject document) =>
+      Encoding.UTF8.GetBytes(document.ToJsonString(_writeOptions) + "\n");
 }

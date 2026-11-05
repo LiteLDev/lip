@@ -1,153 +1,134 @@
-using System.Globalization;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Lip.Core.Entities;
 using Lip.Core.Json;
-using Semver;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// A tooth.json read as a file package (spec §10.2): the package a ref variant selects, and the
-/// assets its archive is made of. Assets[i] is mounted at Assets[i].Mount.
-public record ToothConversion(McmodPackage Package, IReadOnlyList<ToothAsset> Assets) {
-  /// The archive of the package: the tooth.json archive's key and identity, with every asset
-  /// mounted at its mount. "self" assets are the tooth.json archive itself; the other assets are
-  /// downloaded through the provider when their files are first needed (at install time).
-  public ArchiveHandle OpenArchive(ArchiveHandle self, IArchiveProvider archiveProvider) => new(
-      self.Key,
-      new MountSource([
-        .. Assets.Select(a => (a.Mount, a.Type == PackageManifestAsset.AssetType.Self
-            ? self.Source
-            : (Sources.ISource)new DeferredSource(() => archiveProvider.OpenAsset(
-                a.Urls, isArchive: a.Type != PackageManifestAsset.AssetType.Uncompressed)))),
-      ]),
-      self.Identity);
-}
-
-/// A tooth.json asset (spec §10.2 rule 4): its files are mounted at Mount in the archive of the
-/// converted package.
-public record ToothAsset(string Mount, PackageManifestAsset.AssetType Type, IReadOnlyList<string> Urls);
-
-/// tooth.json compatibility (spec §10.2): reads a tooth.json (format 1–3; 1 and 2 are first
-/// migrated to 3 by PackageManifestMigration) as the file package a ref variant selects.
+/// Tooth files of earlier formats (protocol/package.md §5): a tooth file of format 1, 2 or 3
+/// (1 and 2 are first read as 3 by PackageManifestMigration) is read, for an environment, as the
+/// tooth file of format 4 that Section 5 derives from it (Derive).
 ///
-/// - Rule 1: the identity is the tooth name, followed by "-label" when the selected v3 label is
-///   not "" (GetIdentity); the version is its "version" (the tag version wins over it; the
-///   resolver warns). The variant (rule 2) is selected exactly like PackageManifest.GetVariant
-///   does, but for the environment runtime instead of lip's own: every variant with the label
-///   whose platform matches the runtime, merged. Null when no variant applies or the identity is
-///   not an id; other errors of GetVariant (e.g. duplicate dependency keys across merged
-///   variants) propagate, as they failed the operation in v3 too.
-/// - Rule 2: a ref variant is a v3 label, except that "" means "client" when the environment
-///   platform is client and the tooth.json has a variant labeled "client".
-/// - Rule 3: every v3 dependency "&lt;path&gt;[#label]": range becomes an install dependency with
-///   that ref, the v3 range semantics and no name; its "client" label means "" when the target
-///   archive uses manifest.json (InstallDep.ToothClientCompat, applied by the resolver).
-/// - Rules 2, 4–7: the package is a file package. Asset i of the variant is mounted at "i" in
-///   its archive (ToothConversion.OpenArchive); its placements become AssetPlacements, expanded
-///   at install time (ToothPlacements, rule 5). preserve_files, remove_files and scripts map as
-///   described at PreserveFiles, RemoveFiles and ConvertScripts (rules 6, 7).
-public partial class ToothCompat : IToothCompat {
-  /// The lock kind of converted packages, whose recorded manifest is the tooth.json (in its v3
-  /// form, with the installed version).
-  public const string KindName = "tooth";
-
+/// For each label L of the variants of the tooth file, the variants labeled L whose platform is
+/// "" or matches the runtime are merged exactly like PackageManifest.GetVariant merges them for
+/// lip's own runtime in lip v0.37.0, and become the single entry of the variant L, for the
+/// platform and the runtime of the environment. Its assets, preserve_files and remove_files keep their meaning in
+/// lip v0.37.0 (the entry is Legacy: see ToothEntry), and its scripts become hooks
+/// (ConvertScripts). On the client platform, a tooth file with the label "client" has the variant
+/// "" derived from that label.
+public static partial class ToothCompat {
   public const string ClientLabel = "client";
 
-  public ToothConversion? Convert(
-      ToothArchiveDocument document,
-      string variant,
-      LipEnvironment environment,
-      SemVersion? version) => Convert(document.Manifest, variant, environment, version);
+  /// The tooth file of format 4 that a tooth file of format 3 is read as for an environment
+  /// (protocol/package.md §5). Throws ToothFormatException when the variants of a label cannot be
+  /// merged (lip v0.37.0 failed on them too).
+  public static ToothFile Derive(PackageManifest manifest, LipEnvironment environment) {
+    Dictionary<string, JsonObject> derived = new(StringComparer.Ordinal);
+    foreach (string label in manifest.Variants.Select(v => v.Label).Distinct()) {
+      PackageManifestVariant merged;
+      try {
+        merged = manifest.GetVariant(label, environment.Runtime);
+      }
+      catch (KeyNotFoundException) {
+        continue;
+      }
+      catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) {
+        throw new ToothFormatException(
+            $"Invalid tooth.json: the variants labeled '{label}' cannot be merged: {ex.Message}",
+            ex);
+      }
 
-  /// See IToothCompat.Convert.
-  public static ToothConversion? Convert(
-      PackageManifest manifest,
-      string variant,
-      LipEnvironment environment,
-      SemVersion? version = null) {
-    string label = GetLabel(manifest, variant, environment);
-
-    PackageManifestVariant selected;
-    try {
-      selected = manifest.GetVariant(label, environment.Runtime);
-    }
-    catch (KeyNotFoundException) {
-      return null;
-    }
-
-    if (version is not null) {
-      manifest = manifest with { Version = version };
+      derived[label] = Entry(merged, environment);
     }
 
-    string identity = GetIdentity(manifest.Path, label);
-    if (!PackageNames.IsValid(identity)) {
-      return null;
+    if (environment.Platform == McmodPlatform.Client
+        && manifest.Variants.Any(v => v.Label == ClientLabel)) {
+      if (derived.TryGetValue(ClientLabel, out JsonObject? client)) {
+        derived[""] = (JsonObject)client.DeepClone();
+      } else {
+        derived.Remove("");
+      }
     }
 
-    List<ToothAsset> assets = [];
-    List<AssetPlacement> placements = [];
-    for (int i = 0; i < selected.Assets.Count; i++) {
-      PackageManifestAsset asset = selected.Assets[i];
-      string mount = i.ToString(CultureInfo.InvariantCulture);
-      assets.Add(new ToothAsset(mount, asset.Type, [.. asset.Urls.Select(u => u.ToString())]));
-      placements.AddRange(asset.Placements.Select(p => new AssetPlacement(
-          mount,
-          p.Type == PackageManifestAssetPlacement.PlacementType.Directory,
-          p.Src,
-          p.Dst)));
+    JsonObject variants = [];
+    foreach ((string label, JsonObject entry) in derived) {
+      variants[label] = new JsonArray(entry);
     }
 
-    PackageDocument document = new() {
-      Id = identity,
-      Version = manifest.Version,
-      IsMod = false,
-      InstallDependencies = [
-        .. selected.Dependencies.Select(d => new InstallDep {
-          Version = new SemVersionRangeConstraint(d.Value),
-          Refs = [Ref.Parse(d.Key.ToString())],
-          ToothClientCompat = true,
-        }),
-      ],
-      AssetPlacements = placements,
-      Preserve = [.. PreserveFiles(selected.PreserveFiles.Select(GlobListJsonConverter.Format))
-          .Select(TryParseGlob).OfType<PathGlob>()],
-      Remove = [.. RemoveFiles(selected.RemoveFiles.Select(GlobListJsonConverter.Format))
-          .Select(TryParseGlob).OfType<PathGlob>()],
-      Hooks = ConvertScripts(selected.Scripts),
+    JsonObject document = new() {
+      [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
+      ["format_uuid"] = ToothFormat.FormatUuid,
+      ["tooth"] = manifest.Path,
+      ["version"] = manifest.Version.ToString(),
+      ["info"] = JsonSerializer.SerializeToNode(manifest.Info),
+      ["variants"] = variants,
     };
 
-    return new ToothConversion(
-        new McmodPackage(document, JsonSerializer.SerializeToElement(manifest)) {
-          Kind = KindName,
-          Variant = label,
-        },
-        assets);
+    JsonElement json = JsonSerializer.SerializeToElement(document);
+    return new ToothFile {
+      Tooth = manifest.Path,
+      Version = manifest.Version,
+      Variants = derived.ToDictionary(
+          d => d.Key,
+          d => (IReadOnlyList<ToothEntry>)[ToothParser.ParseEntry(
+              json.GetProperty("variants").GetProperty(d.Key)[0], legacy: true)],
+          StringComparer.Ordinal),
+      Json = json,
+    };
   }
 
-  /// Rebuilds the package of a lock entry of kind "tooth" by converting its recorded tooth.json
-  /// again: the label is the variant of the last chain hop (the ref that reached the tooth.json
-  /// archive), the environment comes from the lock (spec §5.1), and the version is the recorded
-  /// one. Null when the tooth.json has no such variant for the environment.
-  public static async Task<ToothConversion?> FromLocked(
-      LockedPackage package, LipEnvironment environment) {
-    (PackageManifest manifest, string variant) = await ReadLocked(package);
-    SemVersion version = SemVersion.Parse(package.Version, SemVersionStyles.Strict);
+  /// The derived entry of a merged variant, as JSON (protocol/package.md §5).
+  private static JsonObject Entry(PackageManifestVariant merged, LipEnvironment environment) {
+    JsonObject entry = new() {
+      ["platform"] = environment.Platform.ToSpecString(),
+      ["runtime"] = environment.Runtime,
+    };
 
-    return Convert(manifest, variant, environment, version);
+    if (merged.Dependencies.Count > 0) {
+      JsonObject dependencies = [];
+      foreach ((PackageId id, Semver.SemVersionRange range) in merged.Dependencies) {
+        dependencies[id.ToString()] = range.ToString();
+      }
+
+      entry["dependencies"] = dependencies;
+    }
+
+    if (merged.Assets.Count > 0) {
+      entry["assets"] = JsonSerializer.SerializeToNode(merged.Assets);
+    }
+
+    if (merged.PreserveFiles.Count > 0) {
+      entry["preserve_files"] = new JsonArray(
+          [.. merged.PreserveFiles.Select(g => (JsonNode)GlobListJsonConverter.Format(g))]);
+    }
+
+    if (merged.RemoveFiles.Count > 0) {
+      entry["remove_files"] = new JsonArray(
+          [.. merged.RemoveFiles.Select(g => (JsonNode)GlobListJsonConverter.Format(g))]);
+    }
+
+    Hooks hooks = ConvertScripts(merged.Scripts);
+    JsonObject hooksObject = [];
+    AddCommands(hooksObject, "pre_install", hooks.PreInstall);
+    AddCommands(hooksObject, "post_install", hooks.PostInstall);
+    AddCommands(hooksObject, "pre_uninstall", hooks.PreUninstall);
+    AddCommands(hooksObject, "post_uninstall", hooks.PostUninstall);
+    if (hooksObject.Count > 0) {
+      entry["hooks"] = hooksObject;
+    }
+
+    return entry;
   }
 
-  /// The identity of the package a tooth.json variant is read as (spec §10.2 rule 1): the tooth
-  /// name, followed by "-label" ('/' in the label replaced by '-') for a labelled variant. v3
-  /// installed every labelled variant as a package of its own, which may depend on its sibling
-  /// variants. The result may not be an id (PackageNames.IsValid); such a tooth.json has no
-  /// candidate.
-  public static string GetIdentity(string tooth, string label) =>
-      label == "" ? GetToothName(tooth) : $"{GetToothName(tooth)}-{label.Replace('/', '-')}";
+  private static void AddCommands(JsonObject hooks, string key, IReadOnlyList<string> commands) {
+    if (commands.Count > 0) {
+      hooks[key] = new JsonArray([.. commands.Select(c => (JsonNode)c)]);
+    }
+  }
 
-  /// The tooth name of a tooth path (spec §10.2 rule 1): its last '/'-separated element, or the
-  /// one before it when the last is a major version suffix ("v" followed by digits).
+  /// The tooth name of a tooth path (protocol/package.md §1): its last '/'-separated element, or
+  /// the one before it when the last is "v" followed by one or more ASCII digits.
   public static string GetToothName(string tooth) {
     string[] elements = tooth.Split('/');
     return elements.Length > 1 && MajorVersionSuffix().IsMatch(elements[^1])
@@ -158,47 +139,27 @@ public partial class ToothCompat : IToothCompat {
   [GeneratedRegex(@"^v[0-9]+\z")]
   private static partial Regex MajorVersionSuffix();
 
-  /// The recorded tooth.json of a lock entry and the variant of its last chain hop.
-  private static async Task<(PackageManifest Manifest, string Variant)> ReadLocked(
-      LockedPackage package) {
-    PackageManifest manifest = await PackageManifest.FromStream(
-        new MemoryStream(Encoding.UTF8.GetBytes(package.Manifest.GetRawText())));
-    string variant = package.Chain.Count > 0
-        ? Ref.Parse(package.Chain[^1].Ref, allowFile: true).Variant
-        : "";
-    return (manifest, variant);
-  }
-
-  /// The v3 label a ref variant selects (spec §10.2 rule 2).
-  public static string GetLabel(
-      PackageManifest manifest,
-      string variant,
-      LipEnvironment environment) =>
-      variant == ""
-          && environment.Platform == McmodPlatform.Client
-          && manifest.Variants.Any(v => v.Label == ClientLabel)
-          ? ClientLabel
-          : variant;
-
-  /// preserve patterns for preserve_files patterns. v3 matched a pattern against the path
-  /// relative to the workspace root and against the bare file name, so a pattern without '/'
-  /// matches the file name in every directory ("**/" is prepended). '\' becomes '/'.
+  /// The globs that patterns of preserve_files of format 3 stand for. lip v0.37.0 matched a
+  /// pattern against the path relative to the workspace root and against the bare file name, so a
+  /// pattern without '/' matches the file name in every directory ("**/" is prepended). '\'
+  /// becomes '/'.
   public static IEnumerable<string> PreserveFiles(IEnumerable<string> patterns) =>
       patterns
           .Select(p => p.Replace('\\', '/'))
           .Select(p => p.Contains('/') ? p : $"**/{p}");
 
-  /// remove patterns for remove_files patterns. v3 matched a pattern against both files and
-  /// directories (a directory also with a trailing '/'), and removed a matched directory with
-  /// everything in it, so a pattern without a trailing '/' matches files and directories (both
-  /// forms are returned). '\' becomes '/'.
+  /// The globs that patterns of remove_files of format 3 stand for. lip v0.37.0 matched a pattern
+  /// against both files and directories (a directory also with a trailing '/'), and removed a
+  /// matched directory with everything in it, so a pattern without a trailing '/' matches files
+  /// and directories (both forms are returned). '\' becomes '/'.
   public static IEnumerable<string> RemoveFiles(IEnumerable<string> patterns) =>
       patterns
           .Select(p => p.Replace('\\', '/'))
           .SelectMany(p => p.EndsWith('/') ? [p] : new[] { p, p + "/" });
 
-  /// v3 ran "install" scripts after the files were placed, together with "post_install", and
-  /// "uninstall" scripts before the files were removed, together with "pre_uninstall".
+  /// The hooks of the scripts of format 3 (protocol/package.md §5): "install" runs after the files
+  /// were placed, together with "post_install", and "uninstall" before the files are removed,
+  /// together with "pre_uninstall".
   public static Hooks ConvertScripts(PackageManifestScripts scripts) => new() {
     PreInstall = scripts.PreInstall,
     PostInstall = [.. scripts.Install, .. scripts.PostInstall],
@@ -206,9 +167,8 @@ public partial class ToothCompat : IToothCompat {
     PostUninstall = scripts.PostUninstall,
   };
 
-  /// The glob (spec §1) of a converted pattern, or null for a pattern that is not a valid glob
-  /// (empty segments, a leading '/', an incomplete bracket expression), which the conversion
-  /// drops.
+  /// The glob of a converted pattern, or null for a pattern that is not a valid glob (empty
+  /// segments, a leading '/', an incomplete bracket expression), which matches nothing.
   public static PathGlob? TryParseGlob(string pattern) {
     try {
       return new PathGlob(pattern);

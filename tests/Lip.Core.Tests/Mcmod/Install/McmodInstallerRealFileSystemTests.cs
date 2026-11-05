@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using System.Text;
 using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
@@ -9,7 +8,11 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Install;
 
+/// Installing and uninstalling a mod on the real file system (protocol/workspace.md §2, §4), with
+/// the real command runner.
 public class McmodInstallerRealFileSystemTests : IDisposable {
+  private const string ModUrl = "https://example.com/LegacyMoney.mcmod";
+
   private readonly string _root =
       Path.Combine(Path.GetTempPath(), "lip-installer-test-" + Guid.NewGuid().ToString("N"));
 
@@ -32,39 +35,42 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
   }
 
   [Fact]
-  public async Task InstallAndUninstall_RealCommandRunner_RunsScriptsInWorkspaceRoot() {
+  public async Task InstallAndUninstall_RealCommandRunner_RunsHooksInWorkspaceRoot() {
     // Arrange
-    const string ArchiveKey = "https://example.com/LegacyMoney.mcmod";
     byte[] zip = WorkspaceHarness.Zip(new() {
-      ["manifest.json"] = "{}",
+      ["manifest.json"] = """{"name":"LegacyMoney"}""",
       ["LegacyMoney.dll"] = "dll",
       ["lang/en_US.json"] = "{}",
     });
+    Mock<IArchiveProvider> provider = new();
+    provider.Setup(p => p.OpenAsset(
+            It.Is<IReadOnlyList<string>>(u => u.Single() == ModUrl), AssetFormat.Zip))
+        .ReturnsAsync(new OpenedAsset(new ZipSource(zip), new AssetIdentity(ModUrl, TestIdentity.Sha256)));
+    using JsonDocument entryJson = JsonDocument.Parse($$"""
+        {
+          "platform": "server",
+          "runtime": "win-x64",
+          "assets": [ { "type": "mcmod", "urls": [ "{{ModUrl}}" ] } ],
+          "remove_files": [ "plugins/LegacyMoney/data/" ],
+          "hooks": {
+            "pre_install": [ "echo pre> pre_install.txt" ],
+            "post_install": [ "echo post> post_install.txt" ],
+            "post_uninstall": [ "echo done> post_uninstall.txt" ]
+          }
+        }
+        """);
+    ToothEntry entry = ToothParser.ParseEntry(entryJson.RootElement, legacy: false);
+    Package package = new("example.com/legacymoney", "", SemVersion.Parse("0.22.0"), entry);
+    ArchiveHandle archive = new(
+        "example.com/legacymoney@0.22.0",
+        new ZipSource(WorkspaceHarness.Zip(new() { ["tooth.json"] = "{}" })),
+        new GitArchiveIdentity("https://example.com/legacymoney.git", new string('0', 40)));
+    Candidate candidate = Candidate.Create(
+        package, archive, Ref.Parse("example.com/legacymoney"), provider.Object);
+
     FileSystem fs = new();
-    PackageDocument document = new() {
-      Id = "LegacyMoney",
-      Version = SemVersion.Parse("0.22.0"),
-      IsMod = true,
-      Remove = [new PathGlob("data/")],
-      Hooks = new Hooks {
-        PreInstall = ["echo pre> pre_install.txt"],
-        PostInstall = ["echo post> post_install.txt"],
-        PostUninstall = ["echo done> post_uninstall.txt"],
-      },
-    };
-    const string Manifest = "{\"name\":\"LegacyMoney\"}";
-    Mock<IDocumentParser> parser = new();
-    parser.Setup(p => p.Parse(It.Is<byte[]>(b => Encoding.UTF8.GetString(b) == Manifest)))
-        .Returns(document);
-    JsonElement manifest = JsonDocument.Parse(Manifest).RootElement;
     McmodInstaller installer =
-        new(fs, new CommandRunner(), parser.Object, new Mock<IUserInteraction>().Object);
-    Candidate candidate = new(
-        new McmodPackage(document, manifest),
-        new ArchiveHandle(
-            ArchiveKey, new ZipSource(zip),
-            new ZipArchiveIdentity(TestIdentity.Sha256, ArchiveKey)),
-        []);
+        new(fs, new CommandRunner(), new Mock<IUserInteraction>().Object);
     InstallContext context = new(
         _root, new LipEnvironment(McmodPlatform.Server, "win-x64"), new LockFile(), false, false);
     // The server layout: plugins links to mods.
@@ -80,6 +86,10 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     // Written under mods, visible through plugins.
     Assert.Equal("dll", File.ReadAllText(Path.Combine(_root, "plugins", "LegacyMoney",
         "LegacyMoney.dll")));
+    using (JsonDocument manifest = JsonDocument.Parse(
+        File.ReadAllText(Path.Combine(_root, "mods", "LegacyMoney", "manifest.json")))) {
+      Assert.Equal(0, manifest.RootElement.GetProperty("dependencies").GetArrayLength());
+    }
     Assert.True(File.Exists(Path.Combine(_root, "pre_install.txt")));
     Assert.True(File.Exists(Path.Combine(_root, "post_install.txt")));
 
@@ -87,14 +97,15 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     Directory.CreateDirectory(Path.Combine(_root, "plugins", "LegacyMoney", "data", "x"));
     File.WriteAllText(Path.Combine(_root, "plugins", "LegacyMoney", "data", "x", "a.db"), "a");
     await installer.Uninstall(new LockedPackage {
-      Identity = "LegacyMoney",
-      Version = "0.22.0",
-      Kind = McmodPackage.KindName,
+      Tooth = package.Tooth,
+      Variant = package.Variant,
+      Version = package.Version.ToString(),
       Explicit = true,
-      Chain = [],
-      ArchiveKey = ArchiveKey,
+      Source = package.Tooth,
+      Archive = archive.Identity,
+      Assets = [new AssetIdentity(ModUrl, TestIdentity.Sha256)],
+      Entry = entry.Json,
       Files = [.. owned],
-      Manifest = manifest,
     }, context);
 
     // Assert

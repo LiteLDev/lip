@@ -1,36 +1,34 @@
-# 锁文件
+# 工作区文件
 
-`lip` 使用锁文件来维护当前工作区状态。该文件会精确记录已安装的包、具体版本、包的来源，以及写入磁盘的文件。
+`lip` 在工作区的**工作区文件**中记录工作区状态：安装了哪些包、它们的确切版本、来源，以及它们写入磁盘的文件。
 
 ## 位置
 
-锁文件是工作区根目录下的 `.lip/workspace.json`。在 Windows 上，lip 创建 `.lip` 目录时会为其设置隐藏属性；在其他平台上，它的名称本身就使其隐藏。
+工作区文件是工作区根目录下的 `.lip/workspace.json`。在 Windows 上，lip 创建 `.lip` 目录时会为其设置隐藏属性；在其他平台上，它的名称本身就使其隐藏。
 
-由于锁位于工作区目录之中，而不是与其路径绑定，移动、重命名或复制工作区后，锁会随之保留，已安装的包也随之保留。
+由于工作区文件位于工作区目录之中，而不是与其路径绑定，移动、重命名或复制工作区后，工作区文件会随之保留，已安装的包也随之保留。
 
-`.lip` 为 lip 保留：安装的包若要把文件写入工作区根目录下的 `.lip` 或其下任何位置，安装会失败；`remove` 模式也永远不会匹配 `.lip` 及其下的任何内容。
-
-lip v0.36 把锁以相同格式保存在 `.lip/lock.json` 中：当不存在 `.lip/workspace.json` 时，lip 会读取它，下一次 install、uninstall 或 update 会写入 `.lip/workspace.json` 并删除它。lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当两者都不存在时，lip 会迁移它（参见[下文](#旧格式-tooth-lock-json)）。
+`.lip` 为 lip 保留：安装的包若要把文件写入工作区根目录下的 `.lip` 或其下任何位置，安装会失败；`remove_files` 模式也永远不会匹配 `.lip` 及其下的任何内容。
 
 ## 作用
 
-锁文件在 `lip` 中有几个关键用途：
+工作区文件有以下几个用途：
 
-1. **状态追踪**：作为工作区当前安装状态的唯一真实来源。
-2. **可复现性**：记录每个已安装包的确切归档。当 lip 再次需要某个包时（例如卸载它），会直接打开该归档并校验其标识，而不是重新解析该包。
-3. **卸载清理**：`lip` 会追踪包写入的每个文件，使 `lip uninstall` 能干净删除相关文件，避免工作区出现“陈旧文件”。
-4. **依赖图**：区分用户显式安装的包和作为依赖隐式安装的包。这样 `lip uninstall` 会一并移除不再被任何显式安装的包需要的依赖（除非指定了 `--no-dependencies`），`lip list` 也能分组显示这两类包。
-5. **环境**：一旦确定了工作区的平台和 RID，就记录下来，使之后的命令使用相同的[环境](package_manifest.md#环境)。
+1.  **状态追踪**：作为工作区安装状态的唯一真实来源。
+2.  **可复现性**：记录每个已安装包的确切归档和资源，以及安装的条目。当 lip 再次需要某个包时，会打开该归档和这些资源并检查它们未被改变，而不是重新解析该包。
+3.  **卸载**：`lip` 追踪包写入磁盘的每个文件，使 `lip uninstall` 能干净地删除与包相关的所有文件，避免工作区中残留"腐烂文件"。
+4.  **依赖图**：区分用户显式安装的包和作为依赖安装的包。这样 `lip uninstall` 也能移除不再被任何显式安装的包需要的依赖（除非指定了 `--no-dependencies`），`lip list` 也能把两组分开显示。
+5.  **环境**：一旦得知工作区的平台和 RID，就将其记录下来，使后续命令使用同一[环境](tooth_json.md#环境)。
 
-锁文件在一次操作的所有包都安装或卸载完成之后保存一次。操作失败时，lip 会撤销它对工作区的修改，锁文件保持原样，因此两者始终一致（参见[内部机制](../guides/internal_mechanism.md#流程)）。
+工作区文件在一次操作的所有包都安装或卸载完成后才替换一次。若操作失败，lip 会撤销其对工作区的修改，工作区文件保持原样，因此两者始终一致（参见[内部机制](../guides/internal_mechanism.md#流程)）。
 
 ## 结构
 
-锁文件是一个 JSON 文件，由 JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json) 描述：
+工作区文件是一个 JSON 文件，由 JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json) 描述：
 
 ```json
 {
-  "format": "bf45b1",
+  "format_version": 4,
   "platform": "server",
   "runtime": "win-x64",
   "packages": [
@@ -41,88 +39,70 @@ lip v0.36 把锁以相同格式保存在 `.lip/lock.json` 中：当不存在 `.l
 
 ### 字段
 
-* **`format`**：锁文件的格式，为 `"bf45b1"`。
-* **`platform`**：工作区的平台。lip 写入 `"server"`；从 `tooth_lock.json` 迁移而来的锁在 lip 保存之前为 `null`。
-* **`runtime`**：工作区的 [.NET RID](https://learn.microsoft.com/zh-cn/dotnet/core/rid-catalog)。
-* **`packages`**：已安装的包，按安装顺序排列。
+*   **`format_version`**：工作区文件的格式，`4`。
+*   **`platform`**：工作区的平台，在得知之前为 `null`。lip 写入 `"server"`。
+*   **`runtime`**：工作区的 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)，在得知之前为 `null`。
+*   **`packages`**：已安装的包，按安装顺序排列：一个包排在满足其依赖的包之后。
 
 ### 包条目
 
-* **`id`**：包的身份：其 `manifest.json` 的 `id`（LeviLamina 清单则为其 `name`），或 `tooth.json` 包的 tooth 名称，带标签的变体在其后加 `-<label>`（例如 `LegacyScriptEngine-lua`）。
-* **`version`**：已安装的版本。
-* **`kind`**：`manifest.json` 包（`bf45b1` 格式或 LeviLamina 清单）为 `"mcmod"`，`tooth.json` 包为 `"tooth"`。两者的安装与卸载方式相同；kind 说明 `manifest` 中保存的是什么。
-* **`explicit`**：
-  * `true`：用户显式安装（如 `lip install <package>`）。
-  * `false`：作为其他包依赖被隐式安装。
-* **`chain`**：包的解析链，每一跳一项，包含：
-  * `ref`：该跳解析时的 ref，例如 `github.com/user/repo`、[git 引用](../cli/commands/install.md#git-引用)形式的 `github.com/user/repo@branch:main`、`https://` URL、上一归档内的 `./sub/`，或传给 `lip install` 的本地文件的 `file:///` URI；
-  * `target`：在该跳的元文档中选中的 target 的下标（该跳到达包文档时为 `null`）；
-  * `commit`（仅包路径）：该跳仓库所在的提交：版本标签的提交，或 git 引用解析到的提交。从 `tooth_lock.json` 迁移而来的条目没有此项。
+*   **`tooth`**：包的 tooth 路径，来自其 `tooth.json`。
+*   **`variant`**：安装来源的变体，默认变体为 `""`。它与 `tooth` 一起构成包的[身份](tooth_json.md#身份)。
+*   **`version`**：已安装的版本。
+*   **`explicit`**：
+    *   `true`：该包由用户显式安装（例如 `lip install <package>`）。
+    *   `false`：该包作为另一个包的依赖安装。
+*   **`source`**：包的安装来源：传给 `lip install` 或 `lip update` 的参数（例如 `github.com/user/repo`、`github.com/user/repo#lua@branch:main` 或 `https://` URL；本地路径记录为其绝对路径的 `file:` URI），对于依赖则是该依赖的键。[`lip update`](../cli/commands/update.md) 会再次请求它。
+*   **`archive`**：包的归档：
+    *   `{ "kind": "git", "repo": ..., "commit": ... }`：git 仓库的一个提交；`repo` 为 `https://<repo>.git`。
+    *   `{ "kind": "zip", "sha256": ..., "url": ... }`：ZIP 归档。`url` 是下载它的 `https://` URL（不含 `#<variant>`），或本地文件的 `file:` URI。
+    *   `{ "kind": "directory", "path": ... }`：本地目录，以其绝对路径表示。
+*   **`assets`**：条目的每个资源按顺序各对应一个成员：`self` 资源为 `null`，下载的资源为 `{ "url": ..., "sha256": ... }`，`url` 是下载它的 URL。
+*   **`entry`**：安装的 `tooth.json` 条目。对于[早期格式](tooth_json.md#早期格式)的 `tooth.json`，它是 lip 将其读取成的格式 4 条目。
+*   **`files`**：包拥有的文件，相对于工作区根目录，以 `/` 分隔。由于在服务端 `plugins` 是指向 `mods` 的链接，`plugins/` 下的文件会记录在 `mods/` 下。
 
-  [`lip update`](../cli/commands/update.md) 会重新请求第一跳：分支跟随到新的头，标签重新解析，rev 保持不变。
-* **`archiveKey`**：最终归档的键，例如 `github.com/user/repo@1.0.0`；带 `branch:`、`tag:` 或 `rev:` git 引用的包路径为 `github.com/user/repo@rev:<commit>`。
-* **`archive`**：最终归档的标识：
-  * `{ "kind": "zip", "sha256": ..., "url": ... }`：ZIP 归档。`url` 是下载它的 `https://` URL、本地文件的 `file:///` URI，或对嵌套在其他归档中的 ZIP 文件为 `null`；包是 ZIP 文件内的一个目录时，会设置 `path`。
-  * `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`：git 仓库的一个提交；仓库根目录的 `path` 为 `""`。
-  * `null`：从 `tooth_lock.json` 迁移而来的条目。
+SHA-256 值和提交 ID 以小写十六进制写入。
 
-  lip 再次需要已安装包的文件时，会打开该归档并校验其标识：git 归档按记录的提交获取（即使它来自一个已经前进的分支），下载的或本地的 ZIP 文件必须仍具有记录的 SHA-256。卸载则两者都不需要。
-* **`files`**：该包拥有的文件，相对于工作区根目录，以 `/` 分隔。服务端的 `plugins` 是指向 `mods` 的链接，因此 `plugins/` 下的文件记为 `mods/` 下的路径；从 `tooth_lock.json` 迁移而来的条目中的 `plugins/` 路径会被改写。
-* **`manifest`**：包的文档（`manifest.json`；`tooth` 包为 `tooth.json`，lip 需要该包时会再次把它转换为文件包），这样 lip 无需再次获取。
+当 lip 再次需要某个已安装包的文件时，它安装工作区文件所记录的内容，而不论来源现在指向什么：git 归档按记录的提交获取（即使它来自一个已前进的分支），ZIP 归档或资源必须仍具有记录的 SHA-256，否则操作失败。卸载不需要两者中的任何一个。
 
 ## 示例
 
 ```json
 {
-  "id": "LegacyMoney",
-  "version": "0.22.0",
-  "kind": "mcmod",
+  "tooth": "github.com/example/MyMod",
+  "variant": "",
+  "version": "1.0.0",
   "explicit": true,
-  "chain": [
-    { "ref": "github.com/LiteLDev/LegacyMoney", "target": 0 },
+  "source": "github.com/example/MyMod",
+  "archive": {
+    "kind": "git",
+    "repo": "https://github.com/example/MyMod.git",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "assets": [
     {
-      "ref": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod",
-      "target": null
+      "url": "https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
-  "archiveKey": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod",
-  "archive": {
-    "kind": "zip",
-    "sha256": "…",
-    "url": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod"
+  "entry": {
+    "platform": "server",
+    "runtime": "win-x64",
+    "dependencies": { "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0" },
+    "assets": [
+      {
+        "type": "mcmod",
+        "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
+      }
+    ]
   },
   "files": [
-    "mods/LegacyMoney/LegacyMoney.dll",
-    "mods/LegacyMoney/manifest.json"
-  ],
-  "manifest": { "...": "..." }
-}
-```
-
-## 旧格式：tooth_lock.json
-
-lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若没有 `.lip/workspace.json`，但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时写入 `.lip/workspace.json` 并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
-
-`tooth_lock.json` 记录的是文件的绝对路径。若工作区在这些包安装之后被移动过，这些路径会指向旧位置：lip 会根据所记录的文件现在在工作区中的位置推断出旧的根目录，并把这些路径改写到当前工作区下，因此这些包仍然拥有各自的文件，也仍然可以卸载。
-
-旧格式由 [`tooth_lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v3/tooth_lock.schema.yaml) 描述：
-
-```json
-{
-  "format_version": 3,
-  "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-  "packages": [
-    {
-      "manifest": { "...": "the tooth.json" },
-      "variant": "",
-      "locked": true,
-      "files": ["bin/example.exe"]
-    }
+    "mods/MyMod/MyMod.dll",
+    "mods/MyMod/manifest.json"
   ]
 }
 ```
 
-* **`manifest`**：包的完整 `tooth.json`。
-* **`variant`**：已安装变体的标签。
-* **`locked`**：包为显式安装时为 `true`。
-* **`files`**：包写入的文件。
+## 早期格式
+
+lip 不接管早期 lip 版本的工作区：`format_version` 不为 4 的 `.lip/workspace.json`、lip v0.36 的 `.lip/lock.json`，以及 lip v0.x 保存在工作区根目录下的 `tooth_lock.json`。在含有其中之一的工作区中，lip 会给出提示并失败，而不会安装、卸载、更新或列出包，以免覆盖这些包拥有的文件。请用安装这些包的 lip 版本卸载它们，或删除该文件重新开始；此后 lip 对它们安装的文件一无所知。

@@ -2,26 +2,14 @@ using DotNet.Globbing;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Expands the asset placements of a tooth.json (spec §10.2 rule 5) against the files of its
-/// archive into file-form files, by the matching rules of lip v3.
+/// Carries out the placements of the assets of an entry derived from format 3 (protocol/package.md
+/// §5) by the matching rules of lip v0.37.0.
 public static class ToothPlacements {
-  /// Returns the document with its asset placements expanded into files, which come before its
-  /// other files. keys are the archive's keys (MountSource keys).
-  public static PackageDocument Expand(PackageDocument document, IReadOnlyCollection<string> keys) {
-    if (document.AssetPlacements.Count == 0) {
-      return document;
-    }
-
-    return document with {
-      Files = [.. Expand(document.AssetPlacements, keys), .. document.Files],
-      AssetPlacements = [],
-    };
-  }
-
-  /// One file placement per (key, target) pair, in the order lip v3 wrote them: by asset, then
+  /// One (key, target) pair per file placed, in the order lip v0.37.0 wrote them: by asset, then
   /// by key in the asset's own order, then by placement. A key matched by several placements is
-  /// placed several times; a later placement of the same target overwrites an earlier one.
-  public static IEnumerable<PackageFile> Expand(
+  /// placed several times; a later placement of the same target overwrites an earlier one. keys
+  /// are the keys of the MountSource the assets are mounted in; targets are workspace paths.
+  public static IEnumerable<(string Key, string Target)> Expand(
       IReadOnlyList<AssetPlacement> placements, IReadOnlyCollection<string> keys) {
     foreach (IGrouping<string, AssetPlacement> asset in placements.GroupBy(p => p.Mount)) {
       string prefix = asset.Key + "/";
@@ -32,7 +20,7 @@ public static class ToothPlacements {
       ];
 
       foreach ((string key, string target) in Match(assetKeys, [.. asset])) {
-        yield return new PackageFile(null, MountSource.Key(asset.Key, key), NormalizeTarget(target));
+        yield return (MountSource.Key(asset.Key, key), NormalizeTarget(target));
       }
     }
   }

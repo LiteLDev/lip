@@ -6,90 +6,185 @@ using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Migration.PackageManifests;
+using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
+/// Converting tooth.json of format 1–3 to format 4 (lip migrate, protocol/cli.md §5.8), agreeing
+/// with protocol/package.md §5.
 public class ToothMigratorTests {
-  private const string Uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
+  private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
   [Fact]
-  public async Task Migrate_ServerAndClientVariants_TargetsByPlatform() {
+  public async Task Migrate_ServerAndClientLabels_WritesOneEntryPerPlatformAndRuntime() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
           "tooth": "github.com/LiteLDev/LegacyMoney", "version": "0.22.0",
           "info": { "name": "Legacy Money", "description": "d", "tags": ["economy"],
                     "avatar_url": "https://example.com/a.png" },
           "variants": [
-            { "platform": "win-x64", "assets": [] },
-            { "label": "client", "platform": "win-x64", "assets": [] }
+            { "platform": "win-x64", "dependencies": { "github.com/a/server": "1.0.0" } },
+            { "label": "client", "platform": "win-x64",
+              "dependencies": { "github.com/a/client": "1.0.0" } }
           ]
         }
         """);
-
-    // Act
-    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
-
-    // Assert
-    MetaDocument document = Assert.IsType<MetaDocument>(Reparse(result));
-    Assert.Equal("LegacyMoney", document.Id);
-    Assert.Equal(
-        [
-          ("", McmodPlatform.Server, "LegacyMoney"),
-          ("client", (McmodPlatform?)null, "LegacyMoney-client"),
-          ("", McmodPlatform.Client, "LegacyMoney-client"),
-        ],
-        document.Targets.Select(t => (t.Variant, t.Platforms?.Single(), t.TemplateId)));
-    Assert.Equal(
-        "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/"
-            + "{{id}}-{{platform}}-{{runtime}}.mcmod",
-        document.Targets[0].Source.Single());
-    Assert.Equal(
-        "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/"
-            + "{{id}}-{{runtime}}.mcmod",
-        document.Targets[1].Source.Single());
-    JsonObject info = result.Document["info"]!.AsObject();
-    Assert.Equal("Legacy Money", (string?)info["name"]);
-    Assert.Equal("https://example.com/a.png", (string?)info["icon"]);
-    Assert.DoesNotContain(result.Notes, n => n.Contains("not a valid manifest.json"));
-  }
-
-  [Fact]
-  public async Task Migrate_LabeledVariantsOutsideGitHub_AsksForThePrefix() {
-    // Arrange
-    PackageManifest tooth = Parse($$"""
-        {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
-          "tooth": "example.com/engine", "version": "1.0.0",
-          "variants": [ { "label": "lua", "assets": [] }, { "label": "quickjs", "assets": [] } ]
-        }
-        """);
-    FakeUi ui = new("http://bad", "https://example.com/releases/v{{version}}");
+    FakeUi ui = new();
 
     // Act
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, ui);
 
     // Assert
-    MetaDocument document = Assert.IsType<MetaDocument>(Reparse(result));
+    Assert.Empty(ui.Questions);
+    Assert.Empty(result.Notes);
+    ToothFile file = Reparse(result);
+    Assert.Equal("github.com/LiteLDev/LegacyMoney", file.Tooth);
+    Assert.Equal(SemVersion.Parse("0.22.0"), file.Version);
     Assert.Equal(
         [
-          ("lua", "engine-lua", "https://example.com/releases/v{{version}}/{{id}}.mcmod"),
-          ("quickjs", "engine-quickjs", "https://example.com/releases/v{{version}}/{{id}}.mcmod"),
+          ("", McmodPlatform.Server, "win-x64", "github.com/a/server"),
+          ("", McmodPlatform.Client, "win-x64", "github.com/a/client"),
+          ("client", McmodPlatform.Server, "win-x64", "github.com/a/client"),
+          ("client", McmodPlatform.Client, "win-x64", "github.com/a/client"),
         ],
-        document.Targets.Select(t => (t.Variant, t.TemplateId, t.Source.Single())));
-    Assert.Equal(2, ui.Questions.Count);
-    Assert.Single(ui.Warnings);
+        Entries(file).Select(e => (e.Variant, e.Entry.Platform, e.Entry.Runtime,
+            Assert.Single(e.Entry.Dependencies).Source.ToString()))
+            .OrderBy(e => e.Item1, StringComparer.Ordinal).ThenBy(e => e.Item2));
+    JsonObject info = result.Document["info"]!.AsObject();
+    Assert.Equal(
+        """{"name":"Legacy Money","description":"d","tags":["economy"],"avatar_url":"https://example.com/a.png"}""",
+        info.ToJsonString());
+    Assert.Equal(
+        ["format_version", "format_uuid", "tooth", "version", "info", "variants"],
+        result.Document.Select(p => p.Key));
   }
 
   [Fact]
-  public async Task Migrate_PrefixWithoutTerminal_ThrowsCannotAsk() {
+  public async Task Migrate_EverySelectedEntry_AgreesWithDerive() {
+    // Arrange: for every environment the migrated file has an entry for, it holds what
+    // protocol/package.md §5 derives.
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/o/tool", "version": "1.0.0",
+          "variants": [
+            { "dependencies": { "github.com/o/common": ">=1.0.0" } },
+            { "platform": "win-*", "dependencies": { "github.com/o/win": "1.*" } },
+            { "label": "client", "platform": "win-x64",
+              "dependencies": { "github.com/o/c": "^2.0.0" } }
+          ]
+        }
+        """);
+    FakeUi ui = new("win-x64, win-arm64", "win-x64, linux-x64");
+
+    // Act
+    ToothFile file = Reparse(await ToothMigrator.Migrate(tooth, ui));
+
+    // Assert
+    foreach ((string variant, ToothEntry entry) in Entries(file)) {
+      LipEnvironment environment = new(entry.Platform, entry.Runtime);
+      ToothEntry derived = ToothCompat.Derive(tooth, environment).Variants[variant].Single();
+      Assert.Equal(
+          derived.Dependencies.Select(d => (d.Source.ToString(), d.Range.Text)),
+          entry.Dependencies.Select(d => (d.Source.ToString(), d.Range.Text)));
+    }
+
+    // With the label "client", the variant "" has client entries only from that label.
+    Assert.Equal(
+        [
+          (McmodPlatform.Server, "win-x64"),
+          (McmodPlatform.Server, "linux-x64"),
+          (McmodPlatform.Server, "win-arm64"),
+          (McmodPlatform.Client, "win-x64"),
+        ],
+        file.Variants[""].Select(e => (e.Platform, e.Runtime)));
+    Assert.Equal(
+        [(McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64")],
+        file.Variants["client"].Select(e => (e.Platform, e.Runtime)));
+    Assert.Equal(
+        ["github.com/o/c"],
+        file.Variants[""][3].Dependencies.Select(d => d.Source.ToString()));
+  }
+
+  [Fact]
+  public async Task Migrate_VariantsWithoutPlatform_AskForRuntimes() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
           "tooth": "example.com/engine", "version": "1.0.0",
-          "variants": [ { "label": "lua", "assets": [] } ]
+          "variants": [ { "label": "lua" }, { "label": "js" } ]
+        }
+        """);
+    FakeUi ui = new("", "win x64", "win-*", " win-x64 , linux-x64,win-x64 ");
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, ui);
+
+    // Assert
+    Assert.Equal(4, ui.Questions.Count);
+    Assert.Contains("without a platform", ui.Questions[0]);
+    Assert.Equal(3, ui.Warnings.Count);
+    ToothFile file = Reparse(result);
+    Assert.Equal(["js", "lua"], file.Variants.Keys.Order(StringComparer.Ordinal));
+    Assert.Equal(
+        [
+          (McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64"),
+          (McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64"),
+        ],
+        file.Variants["lua"].Select(e => (e.Platform, e.Runtime)));
+  }
+
+  [Fact]
+  public async Task Migrate_PlatformPattern_AsksForMatchingRuntimesOnce() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/o/tool", "version": "1.0.0",
+          "variants": [
+            { "platform": "win-*", "dependencies": { "github.com/o/a": "1.0.0" } },
+            { "label": "lua", "platform": "win-*" },
+            { "platform": "linux-x64", "dependencies": { "github.com/o/b": "1.0.0" } }
+          ]
+        }
+        """);
+    FakeUi ui = new("linux-x64", "win-x64,win-arm64");
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, ui);
+
+    // Assert
+    Assert.Equal(2, ui.Questions.Count);
+    Assert.All(ui.Questions, q => Assert.Contains("'win-*'", q));
+    Assert.Contains("'linux-x64' does not match 'win-*'", Assert.Single(ui.Warnings));
+    ToothFile file = Reparse(result);
+    Assert.Equal(
+        [
+          (McmodPlatform.Server, "win-x64", "github.com/o/a"),
+          (McmodPlatform.Client, "win-x64", "github.com/o/a"),
+          (McmodPlatform.Server, "win-arm64", "github.com/o/a"),
+          (McmodPlatform.Client, "win-arm64", "github.com/o/a"),
+          (McmodPlatform.Server, "linux-x64", "github.com/o/b"),
+          (McmodPlatform.Client, "linux-x64", "github.com/o/b"),
+        ],
+        file.Variants[""].Select(e => (e.Platform, e.Runtime,
+            Assert.Single(e.Dependencies).Source.ToString())));
+    Assert.Equal(
+        ["win-x64", "win-x64", "win-arm64", "win-arm64"],
+        file.Variants["lua"].Select(e => e.Runtime));
+  }
+
+  [Fact]
+  public async Task Migrate_QuestionWithoutTerminal_ThrowsCannotAsk() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/engine", "version": "1.0.0",
+          "variants": [ { "label": "lua" } ]
         }
         """);
 
@@ -98,59 +193,190 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_PatternPlatforms_AskRuntimesAndMergePerRuntime() {
+  public async Task Migrate_Placements_AreConvertedToFormat4Forms() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
           "tooth": "github.com/o/tool", "version": "1.0.0",
           "variants": [
-            { "assets": [ { "type": "zip", "urls": ["https://example.com/common.zip"],
-                "placements": [ { "type": "dir", "src": "", "dest": "common" } ] } ] },
-            { "platform": "win-*", "assets": [ { "type": "uncompressed",
-                "urls": ["https://example.com/win.exe"],
-                "placements": [ { "type": "file", "src": "", "dest": "tool.exe" } ] } ] },
-            { "platform": "linux-x64", "dependencies": { "github.com/o/libx": "^1.0.0" } }
+            { "platform": "win-x64", "assets": [
+              { "type": "zip", "urls": ["https://example.com/common.zip"], "placements": [
+                { "type": "dir", "src": "", "dest": "common" },
+                { "type": "dir", "src": "/lib\\", "dest": "plugins\\lib\\" },
+                { "type": "file", "src": "a.dll", "dest": "plugins/a/a.dll" },
+                { "type": "file", "src": "bin/*.dll", "dest": "plugins\\tool" },
+                { "type": "dir", "src": "x", "dest": "." }
+              ] },
+              { "type": "self" }
+            ] }
           ]
         }
         """);
-    FakeUi ui = new("win-x64, win-arm64");
 
     // Act
-    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, ui);
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    MetaDocument document = Assert.IsType<MetaDocument>(Reparse(result));
+    Assert.Empty(result.Notes);
+    ToothEntry entry = Reparse(result).Variants[""][0];
     Assert.Equal(
-        [["win-x64", "win-arm64"], ["linux-x64"], null],
-        document.Targets.Select(t => t.Runtimes));
-    JsonArray targets = result.Document["targets"]!.AsArray();
-    JsonObject windows = targets[0]!.AsObject();
-    Assert.Equal(["asset0", "asset1"], windows["archives"]!.AsObject().Select(p => p.Key));
-    Assert.Equal("file", (string?)windows["archives"]!["asset1"]!["format"]);
-    Assert.Equal(
-        """[{"from":"asset0","src":"","dest":"common/"},{"from":"asset1","src":"asset1","dest":"tool.exe"}]""",
-        windows["files"]!.ToJsonString());
-    JsonObject linux = targets[1]!.AsObject();
-    Assert.Equal(
-        """{"libx":{"version":"1.*","source":"github.com/o/libx"}}""",
-        linux["dependencies"]!.ToJsonString());
-    Assert.False(targets[2]!.AsObject().ContainsKey("dependencies"));
+        [
+          new EntryPlacement("", "common/"),
+          new EntryPlacement("lib/", "plugins/lib/"),
+          new EntryPlacement("a.dll", "plugins/a/a.dll"),
+          new EntryPlacement("bin/*.dll", "plugins/tool/"),
+          new EntryPlacement("x/", ""),
+        ],
+        entry.Assets[0].Placements);
+    Assert.Equal(["https://example.com/common.zip"], entry.Assets[0].Urls);
+    Assert.Equal(AssetType.Self, entry.Assets[1].Type);
+    Assert.Empty(entry.Assets[1].Placements);
+    Assert.False(result.Document["variants"]![""]![0]!["assets"]![1]!.AsObject()
+        .ContainsKey("placements"));
   }
 
   [Fact]
-  public async Task Migrate_SingleSelfVariant_WritesAPackageDocument() {
+  public async Task Migrate_PlacementsWithOtherMeaning_AreNoted() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/o/tool", "version": "1.0.0",
+          "variants": [
+            { "platform": "win-x64", "assets": [
+              { "type": "zip", "urls": ["https://example.com/a.zip"], "placements": [
+                { "type": "dir", "src": "a*", "dest": "x" },
+                { "type": "file", "src": "bin/**/*.dll", "dest": "y" },
+                { "type": "file", "src": "bin/[a", "dest": "z" },
+                { "type": "file", "src": "ok.dll", "dest": "ok.dll" }
+              ] }
+            ] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    Assert.Equal(3, result.Notes.Count);
+    Assert.Contains(result.Notes, n => n.Contains("'a*' -> 'x' contains a pattern in src"));
+    Assert.Contains(result.Notes, n => n.Contains("'bin/**/*.dll' -> 'y' places the files"));
+    Assert.Contains(result.Notes, n => n.Contains("'bin/[a' -> 'z' uses a pattern that is not"));
+    Assert.All(
+        result.Notes,
+        n => Assert.StartsWith("variants (label '', win-x64).assets[0]:", n));
+    Assert.Equal(
+        [
+          new EntryPlacement("a*/", "x/"),
+          new EntryPlacement("bin/**/*.dll", "y/"),
+          new EntryPlacement("ok.dll", "ok.dll"),
+        ],
+        Reparse(result).Variants[""][0].Assets[0].Placements);
+  }
+
+  [Fact]
+  public async Task Migrate_UnsupportedAssetTypes_AreDroppedWithNotes() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/o/tool", "version": "1.0.0",
+          "variants": [
+            { "platform": "win-x64", "assets": [
+              { "type": "tar", "urls": ["https://example.com/a.tar"] },
+              { "type": "tgz", "urls": ["https://example.com/a.tgz"] },
+              { "type": "uncompressed", "urls": ["https://example.com/a.exe"],
+                "placements": [ { "type": "file", "src": "", "dest": "a.exe" } ] },
+              { "type": "zip", "urls": ["https://example.com/a.zip"] }
+            ] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    Assert.Equal(
+        [
+          "variants (label '', win-x64).assets[0]: format 4 has no asset type \"tar\"",
+          "variants (label '', win-x64).assets[1]: format 4 has no asset type \"tgz\"",
+          "variants (label '', win-x64).assets[2]: format 4 has no asset type \"uncompressed\"",
+        ],
+        result.Notes.Select(n => n[..n.IndexOf(';')]));
+    ToothEntry entry = Reparse(result).Variants[""][0];
+    Assert.Equal(AssetType.Zip, Assert.Single(entry.Assets).Type);
+  }
+
+  [Fact]
+  public async Task Migrate_Dependencies_KeepTheirRangeText() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "variants": [ { "platform": "win-x64", "dependencies": {
+            "example.com/a": ">=1.2.3 <2.0.0", "example.com/b/v2#lua": "*",
+            "example.com/c": "^1.0.0", "example.com/d": "1.*" } } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    Assert.Empty(result.Notes);
+    ToothEntry entry = Reparse(result).Variants[""][0];
+    Assert.Equal(
+        ["example.com/a", "example.com/b/v2#lua", "example.com/c", "example.com/d"],
+        entry.Dependencies.Select(d => d.Source.ToString()));
+    foreach ((ToothDependency dependency, SemVersionRange original) in entry.Dependencies.Zip(
+        tooth.Variants[0].Dependencies.Values)) {
+      Assert.Equal(original.ToString(), dependency.Range.Text);
+      Assert.Equal(SemVersionRange.Parse(dependency.Range.Text), dependency.Range.Range);
+    }
+  }
+
+  [Fact]
+  public async Task Migrate_ClientVariantDependency_IsKeptWithNote() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "variants": [ { "platform": "win-x64",
+                          "dependencies": { "example.com/a#client": "1.0.0" } } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    ToothEntry entry = Reparse(result).Variants[""][0];
+    Assert.Equal("example.com/a#client", Assert.Single(entry.Dependencies).Source.ToString());
+    Assert.False(entry.Dependencies[0].ClientCompat);
+    Assert.StartsWith(
+        "variants (label '', win-x64).dependencies[\"example.com/a#client\"]: keeps its",
+        Assert.Single(result.Notes.Distinct()));
+  }
+
+  [Fact]
+  public async Task Migrate_FilesAndScripts_BecomeGlobsAndHooks() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
           "tooth": "example.com/tool", "version": "1.0.0",
           "variants": [
             { "platform": "win-x64",
-              "assets": [ { "type": "self", "placements": [
-                { "type": "file", "src": "bin/*.dll", "dest": "plugins\\tool" } ] } ],
-              "preserve_files": ["config.json", "data/"], "remove_files": ["logs"],
-              "scripts": { "install": ["i"], "post_install": ["p"] } }
+              "preserve_files": ["config.json", "data/", "plugins\\x\\*.json"],
+              "remove_files": ["logs", "tmp/", "{a,b}"],
+              "scripts": { "pre_install": ["a"], "install": ["i"], "post_install": ["p"],
+                           "pre_uninstall": ["pu"], "uninstall": ["u"],
+                           "post_uninstall": ["z"] } }
           ]
         }
         """);
@@ -159,46 +385,50 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    PackageDocument document = Assert.IsType<PackageDocument>(Reparse(result));
-    Assert.Equal("tool", document.Id);
-    Assert.Equal("win-x64", document.Runtime);
-    Assert.Equal([new PackageFile(null, "bin/*.dll", "plugins/tool/")], document.Files);
-    Assert.Equal(["**/config.json", "data/"], document.Preserve.Select(g => g.Pattern));
-    Assert.Equal(["logs", "logs/"], document.Remove.Select(g => g.Pattern));
-    Assert.Equal(["i", "p"], document.Hooks.PostInstall);
-    string note = Assert.Single(result.Notes, n => n.Contains("config.json"));
-    Assert.StartsWith("variants[0].preserve_files:", note);
+    ToothEntry entry = Reparse(result).Variants[""][0];
+    Assert.Equal(
+        ["**/config.json", "data/", "plugins/x/*.json"], entry.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(["logs", "logs/", "tmp/", "{a,b}", "{a,b}/"], entry.RemoveFiles.Select(g => g.Pattern));
+    Assert.Equal(["a"], entry.Hooks.PreInstall);
+    Assert.Equal(["i", "p"], entry.Hooks.PostInstall);
+    Assert.Equal(["pu", "u"], entry.Hooks.PreUninstall);
+    Assert.Equal(["z"], entry.Hooks.PostUninstall);
+    Assert.Contains(
+        result.Notes,
+        n => n.StartsWith("variants (label '', win-x64).preserve_files: 'config.json' has no '/'"));
+    Assert.Equal(2, result.Notes.Count(n => n.Contains("contains '{'")));
   }
 
   [Fact]
-  public async Task Migrate_InvalidToothName_AsksForTheId() {
+  public async Task Migrate_UnmergeableVariants_Throws() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
-          "tooth": "example.com/_tool", "version": "1.0.0",
-          "variants": [ { "assets": [] } ]
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "variants": [
+            { "platform": "win-x64", "scripts": { "install": ["a"] } },
+            { "platform": "win-*", "scripts": { "install": ["b"] } }
+          ]
         }
         """);
-    FakeUi ui = new("tool");
 
     // Act
-    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, ui);
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => ToothMigrator.Migrate(tooth, new FakeUi("win-x64")));
 
     // Assert
-    Assert.Equal("tool", Assert.IsType<PackageDocument>(Reparse(result)).Id);
-    Assert.Contains("'_tool' is not a valid id", Assert.Single(ui.Questions));
+    Assert.Contains("labeled '' cannot be merged for win-x64", ex.Message);
   }
 
   [Fact]
-  public async Task Migrate_ConvertibleRange_HasNoNote() {
+  public async Task Migrate_EmptyInfo_IsLeftOut() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
           "tooth": "example.com/tool", "version": "1.0.0",
-          "variants": [ { "assets": [], "dependencies": {
-            "example.com/a": ">=1.2.3 <2.0.0", "example.com/b/v2#lua": "*" } } ]
+          "variants": [ { "platform": "win-x64" } ]
         }
         """);
 
@@ -206,13 +436,37 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    PackageDocument document = Assert.IsType<PackageDocument>(Reparse(result));
-    Assert.Equal(["a", "b-lua"], document.Dependencies.Select(d => d.Id));
+    Assert.False(result.Document.ContainsKey("info"));
     Assert.Equal(
-        ["example.com/a", "example.com/b/v2#lua"],
-        document.Dependencies.Select(d => d.Refs!.Single().ToString()));
-    Assert.Null(document.Dependencies[1].Version);
-    Assert.Empty(result.Notes);
+        """{"platform":"server","runtime":"win-x64"}""",
+        result.Document["variants"]![""]![0]!.ToJsonString());
+  }
+
+  [Fact]
+  public async Task Migrate_V1_IsMigratedThroughFormat3() {
+    // Arrange
+    PackageManifest tooth = Parse("""
+        {
+          "format_version": 1,
+          "tooth": "github.com/LiteLScript-Dev/HelperLib",
+          "version": "2.14.1",
+          "dependencies": { "github.com/user/dep": [[">=1.0.0"]] },
+          "commands": [
+            { "type": "install", "commands": ["echo install"],
+              "GOOS": "windows", "GOARCH": "amd64" }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    ToothFile file = Reparse(result);
+    ToothEntry entry = file.Variants[""][0];
+    Assert.Equal("win-x64", entry.Runtime);
+    Assert.Equal(["echo install"], entry.Hooks.PostInstall);
+    Assert.Equal(["github.com/user/dep"], entry.Dependencies.Select(d => d.Source.ToString()));
   }
 
   [Fact]
@@ -220,7 +474,7 @@ public class ToothMigratorTests {
     // Arrange
     using JsonDocument json = JsonDocument.Parse($$"""
         {
-          "format_version": 3, "format_uuid": "{{Uuid3}}",
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
           "tooth": "example.com/tool", "version": "1.0.0",
           "variants": [ { "scripts": { "post_install": ["a"], "pre_pack": [], "build": ["b"] } } ]
         }
@@ -266,13 +520,67 @@ public class ToothMigratorTests {
     Assert.StartsWith("prerequisites:", Assert.Single(v2Notes));
   }
 
+  [Fact]
+  public void ValidationNote_ValidAndInvalidDocuments() {
+    // Arrange
+    byte[] valid = Encoding.UTF8.GetBytes($$"""
+        { "format_version": 4, "format_uuid": "{{ToothFormat.FormatUuid}}",
+          "tooth": "example.com/a", "version": "1.0.0", "variants": {} }
+        """);
+    byte[] invalid = Encoding.UTF8.GetBytes($$"""
+        { "format_version": 4, "format_uuid": "{{ToothFormat.FormatUuid}}",
+          "tooth": "example.com/a", "version": "1.0.0", "variants": { "": [] } }
+        """);
+
+    // Act & Assert
+    Assert.Null(ToothMigrator.ValidationNote(valid));
+    Assert.StartsWith(
+        "The result is not a valid tooth.json of format 4 yet:",
+        ToothMigrator.ValidationNote(invalid));
+  }
+
+  [Fact]
+  public void Serialize_IndentsByTwoSpacesWithFinalLineBreak() {
+    // Arrange
+    JsonObject document = new() {
+      ["a"] = new JsonObject { ["b"] = "<é>" },
+    };
+
+    // Act
+    string text = Encoding.UTF8.GetString(ToothMigrator.Serialize(document));
+
+    // Assert
+    Assert.Equal("{\n  \"a\": {\n    \"b\": \"<é>\"\n  }\n}\n", text);
+  }
+
+  [Fact]
+  public async Task AskValid_InvalidAnswers_AreWarnedAndAskedAgain() {
+    // Arrange
+    FakeUi ui = new("  ", " ok ");
+
+    // Act
+    string answer = await ToothMigrator.AskValid(ui, "q", a => a == "" ? "empty" : null);
+
+    // Assert
+    Assert.Equal("ok", answer);
+    Assert.Equal(["q", "q"], ui.Questions);
+    Assert.Equal(["Invalid answer: empty"], ui.Warnings);
+  }
+
   private static PackageManifest Parse(string json) {
     using JsonDocument document = JsonDocument.Parse(json);
     return PackageManifestMigration.Migrate(document);
   }
 
-  private static ManifestDocument Reparse(ToothMigrator.Result result) =>
-      new DocumentParser().Parse(Encoding.UTF8.GetBytes(result.Document.ToJsonString()));
+  /// The migrated document read back as a tooth file of format 4; it must be valid.
+  private static ToothFile Reparse(ToothMigrator.Result result) {
+    byte[] bytes = ToothMigrator.Serialize(result.Document);
+    Assert.Null(ToothMigrator.ValidationNote(bytes));
+    return ToothParser.Parse(bytes);
+  }
+
+  private static IEnumerable<(string Variant, ToothEntry Entry)> Entries(ToothFile file) =>
+      file.Variants.SelectMany(v => v.Value.Select(e => (v.Key, e)));
 }
 
 /// Answers questions from a queue; with no answer left it cannot ask, like a redirected

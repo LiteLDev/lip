@@ -1,18 +1,18 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Text;
 using System.Text.Json;
-using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
-using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Sources;
 using Moq;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Installing and uninstalling tooth.json packages read as file packages (spec §10.2) with
-/// McmodInstaller: the v3 behaviour that the conversion keeps.
+/// Installing and uninstalling packages whose entry is derived from a tooth file of format 3
+/// (protocol/package.md §5) with McmodInstaller: their assets, preserve_files and remove_files
+/// keep the meaning they had in lip v0.37.0, and the workspace file records them with
+/// tooth_format_version 3 (protocol/workspace.md §7.1).
 public class ToothInstallTests {
   private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -26,13 +26,17 @@ public class ToothInstallTests {
   private readonly string _root;
 
   public ToothInstallTests() {
-    _installer = new McmodInstaller(
-        _fileSystem, _commandRunner.Object, new DocumentParser(), _userInteraction.Object);
+    _userInteraction.Setup(u => u.PrintInfo(It.IsAny<string>())).Returns(Task.CompletedTask);
+    _userInteraction.Setup(u => u.PrintWarning(It.IsAny<string>())).Returns(Task.CompletedTask);
+    _installer = new McmodInstaller(_fileSystem, _commandRunner.Object, _userInteraction.Object);
     _root = _fileSystem.Path.GetFullPath("ws");
     _fileSystem.Directory.CreateDirectory(_root);
     _archiveProvider.Setup(p => p.OpenAsset(
-            It.Is<IReadOnlyList<string>>(u => u.Contains("https://example.com/a.zip")), true))
-        .ReturnsAsync(CreateSource(new() { ["tool.exe"] = "exe", ["other.txt"] = "x" }));
+            It.Is<IReadOnlyList<string>>(u => u.Contains("https://example.com/a.zip")),
+            AssetFormat.LegacyArchive))
+        .ReturnsAsync(new OpenedAsset(
+            CreateSource(new() { ["tool.exe"] = "exe", ["other.txt"] = "x" }),
+            new AssetIdentity("https://example.com/a.zip", TestIdentity.Sha256)));
   }
 
   private static readonly string _manifestJson = $$"""
@@ -83,27 +87,31 @@ public class ToothInstallTests {
     return source.Object;
   }
 
-  private static async Task<PackageManifest> ParseManifest(string json) =>
-      await PackageManifest.FromStream(new MemoryStream(Encoding.UTF8.GetBytes(json)));
-
-  private async Task<Candidate> CreateCandidateFrom(
+  /// The candidate of the variant of a tooth file of format 3 for the environment, as the
+  /// resolver makes it: the entry derived from it (protocol/package.md §5).
+  private Candidate CreateCandidateFrom(
       string json,
       Dictionary<string, string> selfFiles,
       string variant = "",
       LipEnvironment? environment = null) {
-    PackageManifest manifest = await ParseManifest(json);
-    ToothConversion conversion = ToothCompat.Convert(manifest, variant, environment ?? _serverWin)!;
+    LipEnvironment env = environment ?? _serverWin;
+    ToothDocument document = ToothDocument.Parse(Encoding.UTF8.GetBytes(json));
+    Assert.True(document.IsLegacy);
+    ToothFile tooth = document.ReadFor(env);
+    ToothEntry entry = tooth.SelectEntry(variant, env)!;
+    Assert.True(entry.Legacy);
     ArchiveHandle self = new(
-        $"{manifest.Path}@{manifest.Version}",
+        $"{tooth.Tooth}@{tooth.Version}",
         CreateSource(new(selfFiles) { ["tooth.json"] = json }),
-        new GitArchiveIdentity($"https://{manifest.Path}.git", "abc", ""));
-    return new Candidate(
-        conversion.Package,
-        conversion.OpenArchive(self, _archiveProvider.Object),
-        [new ChainHop(Ref.Parse(manifest.Path).WithVariant(variant), null)]);
+        new GitArchiveIdentity($"https://{tooth.Tooth}.git", new string('a', 40)));
+    return Candidate.Create(
+        new Package(tooth.Tooth, variant, tooth.Version, entry),
+        self,
+        Ref.Parse(tooth.Tooth).WithVariant(variant),
+        _archiveProvider.Object);
   }
 
-  private Task<Candidate> CreateCandidate(
+  private Candidate CreateCandidate(
       string variant = "", LipEnvironment? environment = null) => CreateCandidateFrom(
           _manifestJson,
           new() {
@@ -124,28 +132,24 @@ public class ToothInstallTests {
   private string Workspace(string relativePath) => _fileSystem.Path.Combine(
       _root, relativePath.Replace('/', Path.DirectorySeparatorChar));
 
+  /// The workspace file entry of an installed candidate (protocol/workspace.md §7.1).
   private static LockedPackage Lock(Candidate candidate, IReadOnlyList<string> files) => new() {
-    Identity = candidate.Package.Identity,
+    Tooth = candidate.Package.Tooth,
+    Variant = candidate.Package.Variant,
     Version = candidate.Package.Version.ToString(),
-    Kind = candidate.Package.Kind,
     Explicit = true,
-    Chain = [.. candidate.Chain.Select(h => new LockedHop(h.Ref.ToString(), h.TargetIndex))],
-    ArchiveKey = candidate.Archive.Key,
+    Source = candidate.Source.ToString(),
+    Archive = candidate.Archive.Identity,
+    Assets = [.. candidate.Package.Entry.Assets.Select(_ => (AssetIdentity?)null)],
+    Entry = candidate.Package.Entry.Json,
     Files = [.. files],
-    Manifest = candidate.Package.Manifest,
+    ToothFormatVersion = 3,
   };
-
-  [Fact]
-  public void CanHandle_Tooth_ReturnsTrue() {
-    // Arrange & Act & Assert
-    Assert.True(_installer.CanHandle("tooth"));
-    Assert.True(_installer.CanHandle("mcmod"));
-  }
 
   [Fact]
   public async Task Install_SelfAndZipAssets_PlacesFilesInV3Order() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
 
     // Act
     IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext());
@@ -169,7 +173,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Install_GlobAndOverlappingPlacements_LaterPlacementWins() {
     // Arrange
-    Candidate candidate = await CreateCandidateFrom(
+    Candidate candidate = CreateCandidateFrom(
         $$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid}}",
@@ -190,7 +194,7 @@ public class ToothInstallTests {
     IReadOnlyList<string> files = await _installer.Install(
         candidate, CreateContext(ignoreScripts: true));
 
-    // Assert
+    // Assert: unlike format 4, a directory placement of format 3 writes the tooth file too.
     Assert.Equal(
         [
           "mods/g/a.dll",
@@ -207,12 +211,42 @@ public class ToothInstallTests {
   }
 
   [Fact]
+  public async Task Install_MissingSrc_PlacesNothingForIt() {
+    // Arrange: lip v0.37.0 skipped placements matching nothing.
+    Candidate candidate = CreateCandidateFrom(
+        $$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid}}",
+          "tooth": "github.com/user/missing", "version": "1.0.0",
+          "variants": [{ "assets": [
+            { "type": "self", "placements": [
+              { "type": "file", "src": "missing.dll", "dest": "plugins/m/missing.dll" },
+              { "type": "dir", "src": "nodir", "dest": "plugins/m/nodir" },
+              { "type": "file", "src": "a.dll", "dest": "plugins/m/a.dll" }
+            ] }
+          ] }]
+        }
+        """,
+        new() { ["a.dll"] = "a" });
+
+    // Act
+    IReadOnlyList<string> files = await _installer.Install(
+        candidate, CreateContext(ignoreScripts: true));
+
+    // Assert
+    Assert.Equal(["mods/m/a.dll"], files);
+  }
+
+  [Fact]
   public async Task Install_UncompressedAsset_PlacesTheFile() {
     // Arrange
     _archiveProvider.Setup(p => p.OpenAsset(
-            It.Is<IReadOnlyList<string>>(u => u.Contains("https://example.com/node.zip")), false))
-        .ReturnsAsync(CreateSource(new() { [""] = "node" }));
-    Candidate candidate = await CreateCandidateFrom(
+            It.Is<IReadOnlyList<string>>(u => u.Contains("https://example.com/node.zip")),
+            AssetFormat.LegacyFile))
+        .ReturnsAsync(new OpenedAsset(
+            CreateSource(new() { [""] = "node" }),
+            new AssetIdentity("https://example.com/node.zip", TestIdentity.Sha256)));
+    Candidate candidate = CreateCandidateFrom(
         $$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid}}",
@@ -238,7 +272,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Install_ExistingFile_Overwrites() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
     _fileSystem.AddFile(Workspace("mods/repo/a.dll"), new MockFileData("old"));
 
     // Act
@@ -250,9 +284,24 @@ public class ToothInstallTests {
   }
 
   [Fact]
+  public async Task Install_PreservedExistingFile_IsKept() {
+    // Arrange
+    Candidate candidate = CreateCandidate();
+    _fileSystem.AddFile(Workspace("mods/repo/data/config.json"), new MockFileData("user"));
+
+    // Act
+    IReadOnlyList<string> files = await _installer.Install(
+        candidate, CreateContext(ignoreScripts: true));
+
+    // Assert
+    Assert.DoesNotContain("mods/repo/data/config.json", files);
+    Assert.Equal("user", _fileSystem.File.ReadAllText(Workspace("mods/repo/data/config.json")));
+  }
+
+  [Fact]
   public async Task Install_Scripts_RunInOrderInWorkspaceRoot() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
     List<string> calls = [];
     _commandRunner.Setup(c => c.Run(It.IsAny<string>(), It.IsAny<string>()))
         .Callback((string command, string workingDirectory) => {
@@ -272,7 +321,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Install_IgnoreScripts_RunsNoScripts() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
 
     // Act
     await _installer.Install(candidate, CreateContext(ignoreScripts: true));
@@ -285,7 +334,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Install_DryRun_TouchesNothing() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
 
     // Act
     IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext(dryRun: true));
@@ -300,12 +349,13 @@ public class ToothInstallTests {
   [Fact]
   public async Task Install_AssetUnavailable_ThrowsAndWritesNothing() {
     // Arrange
-    _archiveProvider.Setup(p => p.OpenAsset(It.IsAny<IReadOnlyList<string>>(), true))
+    _archiveProvider.Setup(p => p.OpenAsset(
+            It.IsAny<IReadOnlyList<string>>(), AssetFormat.LegacyArchive))
         .ThrowsAsync(new ArchiveUnavailableException("down"));
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
 
     // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+    await Assert.ThrowsAsync<McmodInstallException>(
         () => _installer.Install(candidate, CreateContext()));
     Assert.False(_fileSystem.Directory.Exists(Workspace("mods")));
     _commandRunner.VerifyNoOtherCalls();
@@ -314,7 +364,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Uninstall_InstalledPackage_RemovesOwnedFilesExceptPreserved() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
     IReadOnlyList<string> files = await _installer.Install(
         candidate, CreateContext(ignoreScripts: true));
     _fileSystem.AddFile(Workspace("mods/repo/logs/today.log"), new MockFileData("log"));
@@ -340,7 +390,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Uninstall_PreserveFileName_KeepsFileInAnyDirectory() {
     // Arrange
-    Candidate candidate = await CreateCandidateFrom(
+    Candidate candidate = CreateCandidateFrom(
         $$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid}}",
@@ -368,7 +418,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Uninstall_RemoveFilesWithoutSlash_RemovesDirectory() {
     // Arrange
-    Candidate candidate = await CreateCandidateFrom(
+    Candidate candidate = CreateCandidateFrom(
         $$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid}}",
@@ -391,9 +441,32 @@ public class ToothInstallTests {
   }
 
   [Fact]
+  public async Task Uninstall_SameEntryWithoutToothFormatVersion_HasTheMeaningOfFormat4() {
+    // Arrange: the entry recorded without tooth_format_version is read as format 4, where a
+    // pattern without a trailing '/' matches files only.
+    Candidate candidate = CreateCandidateFrom(
+        $$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid}}",
+          "tooth": "github.com/user/remover", "version": "1.0.0",
+          "variants": [{ "remove_files": ["plugins/Remover"] }]
+        }
+        """,
+        []);
+    _fileSystem.AddFile(Workspace("mods/Remover/data/db.json"), new MockFileData("{}"));
+
+    // Act
+    await _installer.Uninstall(
+        Lock(candidate, []) with { ToothFormatVersion = null }, CreateContext());
+
+    // Assert
+    Assert.True(_fileSystem.File.Exists(Workspace("mods/Remover/data/db.json")));
+  }
+
+  [Fact]
   public async Task Uninstall_RemoveFilesNamingLayoutDirectories_RemovesNothingBelowThem() {
     // Arrange
-    Candidate candidate = await CreateCandidateFrom(
+    Candidate candidate = CreateCandidateFrom(
         $$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid}}",
@@ -412,10 +485,10 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public async Task Uninstall_ClientEnvironment_UsesClientLabel() {
+  public async Task Uninstall_ClientEnvironment_UsesEntryDerivedFromClientLabel() {
     // Arrange
     LipEnvironment client = new(McmodPlatform.Client, "win-x64");
-    Candidate candidate = await CreateCandidate(environment: client);
+    Candidate candidate = CreateCandidate(environment: client);
 
     // Act
     await _installer.Uninstall(Lock(candidate, []), CreateContext(environment: client));
@@ -426,9 +499,26 @@ public class ToothInstallTests {
   }
 
   [Fact]
+  public async Task Uninstall_RecordedEntry_IsUsedWhateverTheEnvironment() {
+    // Arrange: the recorded entry is the one installed, not one derived again.
+    Candidate candidate = CreateCandidate();
+    _fileSystem.AddFile(Workspace("tool.exe"), new MockFileData("exe"));
+
+    // Act
+    await _installer.Uninstall(
+        Lock(candidate, ["tool.exe"]),
+        CreateContext(
+            ignoreScripts: true,
+            environment: new LipEnvironment(McmodPlatform.Server, "linux-x64")));
+
+    // Assert
+    Assert.False(_fileSystem.File.Exists(Workspace("tool.exe")));
+  }
+
+  [Fact]
   public async Task Uninstall_MissingFile_Skips() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
     _fileSystem.AddFile(Workspace("tool.exe"), new MockFileData("exe"));
 
     // Act
@@ -443,7 +533,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Uninstall_DryRun_TouchesNothing() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
+    Candidate candidate = CreateCandidate();
     IReadOnlyList<string> files = await _installer.Install(
         candidate, CreateContext(ignoreScripts: true));
 
@@ -456,46 +546,17 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public async Task Uninstall_NoVariantForEnvironment_Throws() {
+  public void LockedEntry_ToothFormatVersion3_ReadsTheEntryAsLegacy() {
     // Arrange
-    Candidate candidate = await CreateCandidate();
-
-    // Act & Assert
-    await Assert.ThrowsAsync<McmodInstallException>(() => _installer.Uninstall(
-        Lock(candidate, []),
-        CreateContext(environment: new LipEnvironment(McmodPlatform.Server, "linux-x64"))));
-  }
-
-  [Fact]
-  public async Task Uninstall_V1ManifestFromLock_UsesMigratedManifest() {
-    // Arrange
-    PackageManifest manifest = await ParseManifest("""
-        {
-          "format_version": 1,
-          "tooth": "github.com/user/old",
-          "version": "1.0.0",
-          "placement": [{ "source": "a.txt", "destination": "a.txt" }],
-          "possession": ["keep.txt"]
-        }
-        """);
-    _fileSystem.AddFile(Workspace("a.txt"), new MockFileData("a"));
-    _fileSystem.AddFile(Workspace("keep.txt"), new MockFileData("keep"));
-    LockedPackage locked = new() {
-      Identity = "github.com/user/old",
-      Version = "1.0.0",
-      Kind = "tooth",
-      Explicit = true,
-      Chain = [new LockedHop("github.com/user/old", null)],
-      ArchiveKey = "github.com/user/old@1.0.0",
-      Files = ["a.txt"],
-      Manifest = JsonSerializer.SerializeToElement(manifest),
-    };
+    Candidate candidate = CreateCandidate();
 
     // Act
-    await _installer.Uninstall(locked, CreateContext());
+    ToothEntry entry = McmodInstaller.LockedEntry(
+        JsonSerializer.Deserialize<LockedPackage>(JsonSerializer.Serialize(Lock(candidate, [])))!);
 
     // Assert
-    Assert.False(_fileSystem.File.Exists(Workspace("a.txt")));
-    Assert.True(_fileSystem.File.Exists(Workspace("keep.txt")));
+    Assert.True(entry.Legacy);
+    Assert.Equal(AssetType.Zip, entry.Assets[1].Type);
+    Assert.Equal(["echo preun", "echo un"], entry.Hooks.PreUninstall);
   }
 }

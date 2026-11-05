@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Lip.Core.Mcmod;
 
-/// A path pattern (spec §1 "glob"), matched segment by segment with the POSIX pattern matching
+/// A path pattern (tooth.schema.json "globs"), matched segment by segment with the POSIX pattern matching
 /// notation as fnmatch applies it with FNM_PATHNAME and without FNM_PERIOD: '*' matches any run of
 /// characters other than '/' (a leading '.' included), '?' one character other than '/', and a
 /// bracket expression one character of its set ('[!...]' of the complement), with ranges,
@@ -56,11 +56,11 @@ public class PathGlob {
 
   public override string ToString() => Pattern;
 
-  /// Whether a path contains '*', '?' or '[', which make it a pattern (spec §4.1 "glob form").
+  /// Whether a path contains '*', '?' or '[', which make it a pattern (tooth.schema.json "placements").
   public static bool HasMetacharacters(string path) => path.AsSpan().IndexOfAny("*?[") >= 0;
 
   /// The leading segments of a pattern that contain no metacharacter, each followed by '/'
-  /// (spec §7 "fixed prefix"): "" when the first segment is a pattern.
+  /// (protocol/workspace.md §4 step 2): "" when the first segment is a pattern.
   public static string FixedPrefix(string pattern) {
     string[] segments = pattern.Split('/');
     StringBuilder prefix = new();

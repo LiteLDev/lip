@@ -6,8 +6,12 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod;
 
+/// The tooth file at the root of an archive (protocol/package.md §1, §3, §5).
 public class ArchiveReaderTests {
-  private const string _toothJson = """
+  private static readonly LipEnvironment _environment =
+      new(McmodPlatform.Server, WorkspaceHarness.Runtime);
+
+  private const string _toothV3 = """
       {
         "format_version": 3,
         "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
@@ -17,70 +21,131 @@ public class ArchiveReaderTests {
       }
       """;
 
+  private const string _toothV2 = """
+      {
+        "format_version": 2,
+        "tooth": "github.com/user/repo",
+        "version": "1.1.0",
+        "info": { "name": "repo", "description": "", "author": "", "tags": [] }
+      }
+      """;
+
+  private const string _toothV1 = """
+      {
+        "format_version": 1,
+        "tooth": "github.com/user/repo",
+        "version": "2.14.1",
+        "dependencies": {},
+        "information": { "name": "repo" },
+        "placement": [ { "source": "src/*", "destination": "declaration/*" } ]
+      }
+      """;
+
   private static ArchiveHandle CreateArchive(Dictionary<string, string> files) {
     Mock<ISource> source = new();
     source.Setup(s => s.Keys).Returns(files.Keys);
     source.Setup(s => s.OpenRead(It.IsAny<string>()))
         .ReturnsAsync((string key) => new MemoryStream(Encoding.UTF8.GetBytes(files[key])));
-    return new ArchiveHandle("test", source.Object, new ZipArchiveIdentity(TestIdentity.Sha256, "/test"));
+    return new ArchiveHandle(
+        "test", source.Object, new ZipArchiveIdentity(TestIdentity.Sha256, "https://example.com/a.zip"));
   }
 
   [Fact]
-  public async Task Read_ToothJsonPresent_PrefersToothJson() {
+  public async Task Read_Format4_ReturnsTheToothFile() {
     // Arrange
-    Mock<IDocumentParser> parser = new();
     ArchiveHandle archive = CreateArchive(new() {
-      ["tooth.json"] = _toothJson,
+      ["tooth.json"] = WorkspaceHarness.Tooth4(
+          "github.com/user/repo", "1.2.3", WorkspaceHarness.SelfAsset("a.dll", "plugins/a.dll")),
       ["manifest.json"] = "{}",
     });
 
     // Act
-    ArchiveDocument document = await new ArchiveReader(parser.Object).Read(archive);
+    ToothDocument document = await new ArchiveReader().Read(archive);
 
     // Assert
-    ToothArchiveDocument tooth = Assert.IsType<ToothArchiveDocument>(document);
-    Assert.Equal("github.com/user/repo", tooth.Manifest.Path);
-    parser.Verify(p => p.Parse(It.IsAny<byte[]>()), Times.Never);
+    Assert.Equal(4, document.FormatVersion);
+    Assert.False(document.IsLegacy);
+    Assert.Null(document.Legacy);
+    Assert.Equal("github.com/user/repo", document.Tooth);
+    Assert.Equal(SemVersion.Parse("1.2.3"), document.Version);
+    ToothFile file = document.ReadFor(_environment);
+    Assert.Same(document.File, file);
+    ToothEntry entry = Assert.Single(file.Variants[""]);
+    Assert.False(entry.Legacy);
+    Assert.Same(entry, file.SelectEntry("", _environment));
   }
 
-  [Fact]
-  public async Task Read_ManifestJson_UsesParser() {
+  [Theory]
+  [InlineData(_toothV1, 1, "2.14.1")]
+  [InlineData(_toothV2, 2, "1.1.0")]
+  [InlineData(_toothV3, 3, "1.0.0")]
+  public async Task Read_EarlierFormat_ReadsAsFormat3(string json, int formatVersion, string version) {
     // Arrange
-    Mock<IDocumentParser> parser = new();
-    parser.Setup(p => p.Parse(It.IsAny<byte[]>())).Returns(new PackageDocument {
-      Id = "x",
-      Version = SemVersion.Parse("1.0.0"),
-      IsMod = false,
-    });
-    ArchiveHandle archive = CreateArchive(new() { ["manifest.json"] = "{\"name\":\"x\"}" });
+    ArchiveHandle archive = CreateArchive(new() { ["tooth.json"] = json });
 
     // Act
-    ArchiveDocument document = await new ArchiveReader(parser.Object).Read(archive);
+    ToothDocument document = await new ArchiveReader().Read(archive);
 
     // Assert
-    PackageArchiveDocument package = Assert.IsType<PackageArchiveDocument>(document);
-    Assert.Equal("x", package.Manifest.GetProperty("name").GetString());
+    Assert.Equal(formatVersion, document.FormatVersion);
+    Assert.True(document.IsLegacy);
+    Assert.Null(document.File);
+    Assert.NotNull(document.Legacy);
+    Assert.Equal("github.com/user/repo", document.Tooth);
+    Assert.Equal(SemVersion.Parse(version), document.Version);
   }
 
   [Fact]
-  public async Task Read_InvalidDocument_ThrowsArchiveUnavailable() {
+  public async Task Read_Format3_DerivesLegacyEntriesForTheEnvironment() {
     // Arrange
-    Mock<IDocumentParser> parser = new();
-    parser.Setup(p => p.Parse(It.IsAny<byte[]>())).Throws(new ManifestFormatException("bad"));
-    ArchiveHandle archive = CreateArchive(new() { ["manifest.json"] = "{}" });
+    ArchiveHandle archive = CreateArchive(new() { ["tooth.json"] = _toothV3 });
+    ToothDocument document = await new ArchiveReader().Read(archive);
 
-    // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => new ArchiveReader(parser.Object).Read(archive));
+    // Act
+    ToothFile file = document.ReadFor(_environment);
+
+    // Assert
+    Assert.Equal("github.com/user/repo", file.Tooth);
+    ToothEntry entry = Assert.IsType<ToothEntry>(file.SelectEntry("", _environment));
+    Assert.True(entry.Legacy);
   }
 
   [Fact]
-  public async Task Read_NoDocument_ThrowsArchiveUnavailable() {
-    // Arrange
-    ArchiveHandle archive = CreateArchive(new() { ["readme.md"] = "" });
+  public async Task Read_NoToothFile_ThrowsArchiveUnavailable() {
+    // Arrange: a manifest.json does not make an archive a package.
+    ArchiveHandle archive = CreateArchive(new() {
+      ["manifest.json"] = """{ "name": "x", "entry": "x.dll", "type": "native" }""",
+    });
 
     // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => new ArchiveReader().Read(archive));
+  }
+
+  [Fact]
+  public async Task Read_ToothFileNotAtTheRoot_ThrowsArchiveUnavailable() {
+    // Arrange
+    ArchiveHandle archive = CreateArchive(new() {
+      ["sub/tooth.json"] = WorkspaceHarness.Tooth4("github.com/user/repo", "1.0.0"),
+    });
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => new ArchiveReader().Read(archive));
+  }
+
+  [Theory]
+  [InlineData("not json")]
+  [InlineData("[]")]
+  [InlineData("""{ "tooth": "github.com/user/repo", "version": "1.0.0" }""")]
+  [InlineData("""{ "format_version": 5, "tooth": "github.com/user/repo", "version": "1.0.0" }""")]
+  [InlineData("""{ "format_version": "4" }""")]
+  [InlineData("""{ "format_version": 4, "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102", "tooth": "github.com/user/repo", "version": "1.0.0" }""")]
+  [InlineData("""{ "format_version": 4, "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102", "tooth": "github.com/user/repo", "version": "v1.0.0", "variants": {} }""")]
+  [InlineData("""{ "format_version": 3, "tooth": "github.com/user/repo" }""")]
+  public async Task Read_InvalidToothFile_ThrowsArchiveUnavailable(string json) {
+    // Arrange
+    ArchiveHandle archive = CreateArchive(new() { ["tooth.json"] = json });
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => new ArchiveReader().Read(archive));
   }
 }

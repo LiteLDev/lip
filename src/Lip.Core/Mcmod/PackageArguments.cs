@@ -1,22 +1,21 @@
 using System.IO.Abstractions;
+using System.Text.RegularExpressions;
 
 namespace Lip.Core.Mcmod;
 
-/// Turns command line package arguments into requests (spec §6: (ref, range) pairs that are inside
-/// no archive).
+/// Turns package arguments into requests (protocol/cli.md §3): a source with a range matching
+/// every version.
 ///
 /// Accepted forms:
-/// - "https://..." [ "#" variant ]: a url ref to a ZIP archive.
-/// - a local ZIP file (.mcmod or .zip) [ "#" variant ]: a path, absolute or relative to the
-///   current directory (the workspace root), recognized when it starts with "./", "../", ".\",
-///   "..\", is rooted, or has no '@' and ends with ".mcmod" or ".zip" or names an existing file
-///   or directory. It becomes a file ref. Directories are rejected: lip does not install from a
-///   plain directory.
-/// - "path" [ "#" variant ] [ "@" git-ref ]: a spec ref, pinned by a git ref (a SemVer 2.0.0
-///   version without a leading "v", "branch:" name, "tag:" name or "rev:" full commit id);
-///   without it, any version (the newest wins).
-public static class PackageArguments {
-  private static readonly string[] _zipExtensions = [".mcmod", ".zip"];
+/// - "https://..." [ "#" variant ]: a URL.
+/// - a local path [ "#" variant ]: a path, absolute or relative to the current directory (the
+///   workspace root), recognized when it starts with "./", "../", ".\", "..\", is "." or "..",
+///   is rooted, or has no '@' and ends with ".zip" or names an existing file or directory. It
+///   becomes the file: URI of its absolute path, naming a local file or a local directory.
+/// - "repo" [ "#" variant ] [ "@" ref ]: a remote repository, with a ref (a version without a
+///   leading "v", "branch:" name, "tag:" name or "rev:" full commit id) or without.
+public static partial class PackageArguments {
+  private const string _zipExtension = ".zip";
 
   public static PackageRequest Parse(
       string argument, string currentDirectory, IFileSystem fileSystem) {
@@ -28,15 +27,13 @@ public static class PackageArguments {
               $"Invalid package '{argument}': not an https URL.", nameof(argument));
     }
 
-    if (LocalFileRef(argument, currentDirectory, fileSystem) is Ref file) {
-      if (fileSystem.Directory.Exists(file.LocalPath)) {
-        throw new ArgumentException(
-            $"Invalid package '{argument}': {file.LocalPath} is a directory. lip installs a "
-            + "local package only from a .mcmod or .zip file.",
-            nameof(argument));
-      }
+    if (OtherSchemeRegex().IsMatch(argument)) {
+      throw new ArgumentException(
+          $"Invalid package '{argument}': only https:// URLs are sources.", nameof(argument));
+    }
 
-      return fileSystem.File.Exists(file.LocalPath)
+    if (LocalFileRef(argument, currentDirectory, fileSystem) is Ref file) {
+      return fileSystem.File.Exists(file.LocalPath) || fileSystem.Directory.Exists(file.LocalPath)
           ? new PackageRequest(file, null)
           : throw new ArgumentException(
               $"Invalid package '{argument}': {file.LocalPath} does not exist.",
@@ -46,7 +43,7 @@ public static class PackageArguments {
     return new PackageRequest(ParseSpec(argument, argument), null);
   }
 
-  /// The file ref of an argument that names a local path (see the class remarks), whether or not
+  /// The source of an argument that names a local path (see the class remarks), whether or not
   /// it exists; null when the argument is no local path. A variant follows the last '#' unless
   /// the whole argument names an existing path, so that file names may contain '#'.
   public static Ref? LocalFileRef(
@@ -68,7 +65,7 @@ public static class PackageArguments {
         || path is "." or ".."
         || IsRooted(path, fileSystem)
         || (!path.Contains('@')
-            && (_zipExtensions.Any(e => path.EndsWith(e, StringComparison.OrdinalIgnoreCase))
+            && (path.EndsWith(_zipExtension, StringComparison.OrdinalIgnoreCase)
                 || Exists(path, currentDirectory, fileSystem)));
     if (!isLocal) {
       return null;
@@ -108,7 +105,7 @@ public static class PackageArguments {
     return reference.Kind == RefKind.Spec
         ? reference
         : throw new ArgumentException(
-            $"Invalid package '{argument}': not a package path.", nameof(argument));
+            $"Invalid package '{argument}': not a remote repository.", nameof(argument));
   }
 
   private static Ref ParseRef(string text, string argument) {
@@ -116,4 +113,8 @@ public static class PackageArguments {
         ? reference
         : throw new ArgumentException($"Invalid package '{argument}': {error}.", nameof(argument));
   }
+
+  /// A URI scheme followed by "://".
+  [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.-]*://")]
+  private static partial Regex OtherSchemeRegex();
 }

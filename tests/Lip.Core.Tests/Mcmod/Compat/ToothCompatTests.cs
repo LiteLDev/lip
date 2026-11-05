@@ -3,14 +3,14 @@ using System.Text.Json;
 using Lip.Core.Entities;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
-using Lip.Core.Sources;
-using Moq;
+using Lip.Core.Migration.PackageManifests;
 using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
+/// Reading tooth files of earlier formats (protocol/package.md §5).
 public class ToothCompatTests {
-  private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
+  private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
   private static readonly LipEnvironment _serverWin = new(McmodPlatform.Server, "win-x64");
 
@@ -19,9 +19,10 @@ public class ToothCompatTests {
   private static readonly string _multiPlatformV3 = $$"""
       {
         "format_version": 3,
-        "format_uuid": "{{_uuid}}",
+        "format_uuid": "{{_uuid3}}",
         "tooth": "github.com/user/repo",
         "version": "1.2.3",
+        "info": { "name": "Repo", "description": "d", "tags": ["a"], "avatar_url": "" },
         "variants": [
           {
             "platform": "",
@@ -53,170 +54,347 @@ public class ToothCompatTests {
       }
       """;
 
-  private static async Task<ToothArchiveDocument> ParseDocument(string json) {
-    byte[] bytes = Encoding.UTF8.GetBytes(json);
-    PackageManifest manifest = await PackageManifest.FromStream(new MemoryStream(bytes));
-    return new ToothArchiveDocument(manifest, JsonDocument.Parse(bytes).RootElement.Clone());
+  private static PackageManifest Manifest(string json) {
+    using JsonDocument document = JsonDocument.Parse(json);
+    return PackageManifestMigration.Migrate(document);
   }
 
-  private static List<string> EdgeRefs(IPackage package) =>
-      [.. package.InstallEdges.Select(e => Assert.Single(e.Refs).ToString())];
+  private static List<string> Dependencies(ToothEntry entry) =>
+      [.. entry.Dependencies.Select(d => d.Source.ToString())];
 
   [Fact]
-  public async Task Convert_MultiPlatformV3_MergesVariantsForRid() {
+  public void Derive_PlatformPattern_MergesMatchingVariantsOfEachLabel() {
     // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
+    PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothConversion? conversion = new ToothCompat().Convert(document, "", _serverWin, null);
+    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    Assert.NotNull(conversion);
-    PackageDocument converted = conversion.Package.Document;
+    Assert.Equal("github.com/user/repo", tooth.Tooth);
+    Assert.Equal(SemVersion.Parse("1.2.3"), tooth.Version);
+    Assert.Equal(["", "client"], tooth.Variants.Keys.Order(StringComparer.Ordinal));
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.True(entry.Legacy);
+    Assert.Equal(McmodPlatform.Server, entry.Platform);
+    Assert.Equal("win-x64", entry.Runtime);
     Assert.Equal(
-        ["github.com/user/common", "github.com/user/windows#client"],
-        EdgeRefs(conversion.Package));
-    Assert.Equal(["config/*.json"], converted.Preserve.Select(g => g.Pattern));
-    Assert.Equal(["echo win"], converted.Hooks.PostInstall);
+        ["github.com/user/common", "github.com/user/windows#client"], Dependencies(entry));
+    Assert.All(entry.Dependencies, d => Assert.True(d.ClientCompat));
+    Assert.True(entry.Dependencies[1].Range.IsSatisfiedBy(SemVersion.Parse("1.9.0")));
+    Assert.False(entry.Dependencies[1].Range.IsSatisfiedBy(SemVersion.Parse("2.0.0")));
+    Assert.Equal(["config/*.json"], entry.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(["echo win"], entry.Hooks.PostInstall);
+    EntryAsset asset = Assert.Single(entry.Assets);
+    Assert.Equal(AssetType.Self, asset.Type);
+    Assert.Equal([new EntryPlacement("a.dll", "plugins/a/a.dll", false)], asset.Placements);
+    Assert.Same(entry, tooth.SelectEntry("", _serverWin));
     Assert.Equal(
-        [new AssetPlacement("0", false, "a.dll", "plugins/a/a.dll")],
-        converted.AssetPlacements);
-    Assert.Equal(
-        [new ToothAsset("0", PackageManifestAsset.AssetType.Self, [])],
-        conversion.Assets,
-        (a, b) => a.Mount == b.Mount && a.Type == b.Type && a.Urls.SequenceEqual(b.Urls));
+        ["github.com/user/clientdep"], Dependencies(Assert.Single(tooth.Variants["client"])));
   }
 
-  [Fact]
-  public async Task Convert_V3_BuildsFilePackageWithIdentityEdgesAndManifest() {
+  [Theory]
+  [InlineData("win-arm64")]
+  [InlineData("win-x86")]
+  public void Derive_OtherRuntimeMatchingPattern_UsesThatRuntime(string runtime) {
     // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
+    PackageManifest manifest = Manifest(_multiPlatformV3);
+    LipEnvironment environment = new(McmodPlatform.Server, runtime);
 
     // Act
-    McmodPackage package = ToothCompat.Convert(document.Manifest, "", _serverWin)!.Package;
+    ToothFile tooth = ToothCompat.Derive(manifest, environment);
 
     // Assert
-    Assert.Equal("tooth", package.Kind);
-    Assert.Equal("repo", package.Identity);
-    Assert.Equal(SemVersion.Parse("1.2.3"), package.Version);
-    Assert.True(package.Document.IsFilePackage);
-    Assert.Null(package.Document.Platform);
-    Assert.Null(package.Document.Runtime);
-    Assert.Empty(package.Conflicts);
-
-    InstallEdge edge = package.InstallEdges[1];
-    Assert.Null(edge.Name);
-    Assert.True(edge.ToothClientCompat);
-    Ref reference = Assert.Single(edge.Refs);
-    Assert.Equal(RefKind.Spec, reference.Kind);
-    Assert.Equal("github.com/user/windows", reference.Target);
-    Assert.Equal("client", reference.Variant);
-    SemVersionRangeConstraint range = Assert.IsType<SemVersionRangeConstraint>(edge.Version);
-    Assert.True(range.IsSatisfiedBy(SemVersion.Parse("1.9.0")));
-    Assert.False(range.IsSatisfiedBy(SemVersion.Parse("2.0.0")));
-
-    Assert.Equal(3, package.Manifest.GetProperty("format_version").GetInt32());
-    PackageManifest roundTripped = await PackageManifest.FromStream(
-        new MemoryStream(Encoding.UTF8.GetBytes(package.Manifest.GetRawText())));
+    Assert.Equal([""], tooth.Variants.Keys);
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(runtime, entry.Runtime);
     Assert.Equal(
-        JsonSerializer.Serialize(document.Manifest),
-        JsonSerializer.Serialize(roundTripped));
+        ["github.com/user/common", "github.com/user/windows#client"], Dependencies(entry));
+    Assert.Same(entry, tooth.SelectEntry("", environment));
+    Assert.Null(tooth.SelectEntry("", _serverWin));
   }
 
   [Fact]
-  public async Task Convert_OtherRid_UsesThatRidNotTheRuntime() {
+  public void Derive_ExactPlatform_SelectsOnlyThatRuntime() {
     // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
+    PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothConversion? conversion = ToothCompat.Convert(
-        document.Manifest, "", new LipEnvironment(McmodPlatform.Server, "linux-x64"));
+    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
 
     // Assert
-    Assert.NotNull(conversion);
-    Assert.Equal(
-        ["github.com/user/common", "github.com/user/linux"], EdgeRefs(conversion.Package));
-    Assert.Empty(conversion.Assets);
+    Assert.Equal([""], tooth.Variants.Keys);
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(["github.com/user/common", "github.com/user/linux"], Dependencies(entry));
+    Assert.Empty(entry.Assets);
+    Assert.Empty(entry.Hooks.PostInstall);
   }
 
   [Fact]
-  public async Task Convert_ClientPlatformEmptyVariant_UsesClientLabel() {
-    // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
+  public void Derive_LabelMatchingOnlyAnyPlatform_HasNoVariant() {
+    // Arrange: only the variant without a platform matches osx-arm64; lip v0.37.0 needs no
+    // variant with that exact platform, so the label "" still has an entry.
+    PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothConversion? conversion = new ToothCompat().Convert(document, "", _clientWin, null);
+    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "osx-arm64"));
 
     // Assert
-    Assert.NotNull(conversion);
-    Assert.Equal("client", ToothCompat.GetLabel(document.Manifest, "", _clientWin));
-    Assert.Equal(["github.com/user/clientdep"], EdgeRefs(conversion.Package));
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(["github.com/user/common"], Dependencies(entry));
+    Assert.False(tooth.Variants.ContainsKey("extra"));
+    Assert.False(tooth.Variants.ContainsKey("client"));
   }
 
   [Fact]
-  public async Task GetLabel_ServerPlatform_KeepsEmptyLabel() {
+  public void Derive_NoVariantMatchesRuntime_HasNoVariants() {
     // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
-
-    // Act
-    string label = ToothCompat.GetLabel(document.Manifest, "", _serverWin);
-
-    // Assert
-    Assert.Equal("", label);
-  }
-
-  [Fact]
-  public async Task GetLabel_ClientPlatformWithoutClientVariant_KeepsEmptyLabel() {
-    // Arrange
-    ToothArchiveDocument document = await ParseDocument($$"""
+    PackageManifest manifest = Manifest($$"""
         {
-          "format_version": 3, "format_uuid": "{{_uuid}}",
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
           "tooth": "github.com/user/repo", "version": "1.0.0",
-          "variants": [{ "label": "", "platform": "win-x64" }]
+          "variants": [ { "platform": "win-x64" }, { "label": "lua", "platform": "win-*" } ]
         }
         """);
 
     // Act
-    string label = ToothCompat.GetLabel(document.Manifest, "", _clientWin);
+    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
 
     // Assert
-    Assert.Equal("", label);
-    Assert.NotNull(ToothCompat.Convert(document.Manifest, "", _clientWin));
+    Assert.Empty(tooth.Variants);
+    Assert.Empty(tooth.Json.GetProperty("variants").EnumerateObject());
   }
 
   [Fact]
-  public async Task Convert_ExplicitClientVariantOnServer_KeepsVariant() {
+  public void Derive_ClientPlatform_VariantEmptyIsTheClientLabel() {
     // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
+    PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothConversion? conversion = ToothCompat.Convert(document.Manifest, "client", _serverWin);
+    ToothFile tooth = ToothCompat.Derive(manifest, _clientWin);
 
     // Assert
-    Assert.NotNull(conversion);
-    Assert.Equal("client", ToothCompat.GetLabel(document.Manifest, "client", _serverWin));
-    Assert.Equal(["github.com/user/clientdep"], EdgeRefs(conversion.Package));
-  }
-
-  [Theory]
-  [InlineData("extra")]
-  [InlineData("missing")]
-  public async Task Convert_NoVariantForRid_ReturnsNull(string variant) {
-    // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
-
-    // Act
-    ToothConversion? conversion = new ToothCompat().Convert(document, variant, _serverWin, null);
-
-    // Assert
-    Assert.Null(conversion);
-    Assert.Throws<KeyNotFoundException>(() => document.Manifest.GetVariant(variant, "win-x64"));
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(McmodPlatform.Client, entry.Platform);
+    Assert.Equal("win-x64", entry.Runtime);
+    Assert.Equal(["github.com/user/clientdep"], Dependencies(entry));
+    Assert.Equal(["github.com/user/clientdep"],
+        Dependencies(Assert.Single(tooth.Variants["client"])));
+    Assert.Equal(
+        tooth.Json.GetProperty("variants").GetProperty("client").GetRawText(),
+        tooth.Json.GetProperty("variants").GetProperty("").GetRawText());
+    Assert.Same(entry, tooth.SelectEntry("", _clientWin));
   }
 
   [Fact]
-  public async Task Convert_V1_MigratesThenConverts() {
+  public void Derive_ClientPlatformWithoutClientVariantForRuntime_HasNoVariantEmpty() {
+    // Arrange: the label "client" exists but has no variant for linux-x64.
+    PackageManifest manifest = Manifest(_multiPlatformV3);
+
+    // Act
+    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
+
+    // Assert
+    Assert.Empty(tooth.Variants);
+  }
+
+  [Fact]
+  public void Derive_ClientPlatformWithoutClientLabel_KeepsVariantEmpty() {
     // Arrange
-    ToothArchiveDocument document = await ParseDocument("""
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [ { "label": "", "platform": "win-x64",
+                          "dependencies": { "github.com/user/a": "1.0.0" } } ]
+        }
+        """);
+
+    // Act
+    ToothFile tooth = ToothCompat.Derive(manifest, _clientWin);
+
+    // Assert
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(McmodPlatform.Client, entry.Platform);
+    Assert.Equal(["github.com/user/a"], Dependencies(entry));
+  }
+
+  [Fact]
+  public void Derive_ServerPlatform_KeepsVariantEmptyAndClientLabel() {
+    // Arrange
+    PackageManifest manifest = Manifest(_multiPlatformV3);
+
+    // Act
+    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+
+    // Assert
+    Assert.NotEqual(
+        Dependencies(Assert.Single(tooth.Variants[""])),
+        Dependencies(Assert.Single(tooth.Variants["client"])));
+    Assert.Equal(McmodPlatform.Server, tooth.Variants["client"][0].Platform);
+  }
+
+  [Fact]
+  public void Derive_DerivedDocument_IsFormat4WithEntriesForTheEnvironment() {
+    // Arrange
+    PackageManifest manifest = Manifest(_multiPlatformV3);
+
+    // Act
+    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+
+    // Assert
+    JsonElement json = tooth.Json;
+    Assert.Equal(4, json.GetProperty("format_version").GetInt32());
+    Assert.Equal(ToothFormat.FormatUuid, json.GetProperty("format_uuid").GetString());
+    Assert.Equal("github.com/user/repo", json.GetProperty("tooth").GetString());
+    Assert.Equal("1.2.3", json.GetProperty("version").GetString());
+    Assert.Equal("Repo", json.GetProperty("info").GetProperty("name").GetString());
+    JsonElement entry = Assert.Single(json.GetProperty("variants").GetProperty("").EnumerateArray());
+    Assert.Equal(
+        ["platform", "runtime", "dependencies", "assets", "preserve_files", "hooks"],
+        entry.EnumerateObject().Select(p => p.Name));
+    Assert.Equal("server", entry.GetProperty("platform").GetString());
+    Assert.Equal("win-x64", entry.GetProperty("runtime").GetString());
+    Assert.Equal(
+        """{"post_install":["echo win"]}""", entry.GetProperty("hooks").GetRawText());
+    Assert.Equal(entry.GetRawText(), tooth.Variants[""][0].Json.GetRawText());
+  }
+
+  [Fact]
+  public void Derive_DerivedEntry_ReparsesAsLegacyEntry() {
+    // Arrange
+    ToothFile tooth = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
+    ToothEntry entry = tooth.Variants[""][0];
+
+    // Act
+    ToothEntry reparsed = ToothParser.ParseEntry(entry.Json, legacy: true);
+
+    // Assert
+    Assert.True(reparsed.Legacy);
+    Assert.Equal(entry.Platform, reparsed.Platform);
+    Assert.Equal(entry.Runtime, reparsed.Runtime);
+    Assert.Equal(Dependencies(entry), Dependencies(reparsed));
+    Assert.Equal(entry.Assets[0].Placements, reparsed.Assets[0].Placements);
+    Assert.Equal(
+        entry.PreserveFiles.Select(g => g.Pattern), reparsed.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(entry.Hooks.PostInstall, reparsed.Hooks.PostInstall);
+  }
+
+  [Fact]
+  public void Derive_Scripts_BecomeHooks() {
+    // Arrange: scripts of one label merge across variants, one variant per script.
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [
+            { "scripts": { "pre_install": ["pre"], "install": ["install"],
+                           "uninstall": ["un"] } },
+            { "platform": "win-x64", "scripts": { "post_install": ["post"],
+                           "pre_uninstall": ["preun"], "post_uninstall": ["postun"] } }
+          ]
+        }
+        """);
+
+    // Act
+    Hooks hooks = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]).Hooks;
+
+    // Assert
+    Assert.Equal(["pre"], hooks.PreInstall);
+    Assert.Equal(["install", "post"], hooks.PostInstall);
+    Assert.Equal(["preun", "un"], hooks.PreUninstall);
+    Assert.Equal(["postun"], hooks.PostUninstall);
+  }
+
+  [Fact]
+  public void Derive_MergedVariants_ConcatenateAssetsAndFiles() {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [
+            { "assets": [ { "type": "zip", "urls": ["https://example.com/a.zip"] } ],
+              "preserve_files": ["config.json"], "remove_files": ["logs"] },
+            { "platform": "win-*",
+              "assets": [
+                { "type": "uncompressed", "urls": ["https://example.com/b.exe"],
+                  "placements": [ { "type": "file", "src": "", "dest": "b.exe" } ] },
+                { "type": "tar", "urls": ["https://example.com/c.tar"] },
+                { "type": "tgz", "urls": ["https://example.com/d.tgz"],
+                  "placements": [ { "type": "dir", "src": "d", "dest": "plugins/d" } ] }
+              ],
+              "preserve_files": ["plugins\\x\\*.json"], "remove_files": ["tmp/"] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothEntry entry = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]);
+
+    // Assert
+    Assert.Equal(
+        [AssetType.Zip, AssetType.Uncompressed, AssetType.Tar, AssetType.Tgz],
+        entry.Assets.Select(a => a.Type));
+    Assert.Equal(["https://example.com/a.zip"], entry.Assets[0].Urls);
+    Assert.Equal([new EntryPlacement("", "b.exe", false)], entry.Assets[1].Placements);
+    Assert.Equal([new EntryPlacement("d", "plugins/d", true)], entry.Assets[3].Placements);
+    Assert.False(entry.IsMod);
+    Assert.Equal(
+        ["**/config.json", "plugins/x/*.json"], entry.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(["logs", "logs/", "tmp/"], entry.RemoveFiles.Select(g => g.Pattern));
+  }
+
+  [Fact]
+  public void Derive_SameScriptInTwoMergedVariants_Throws() {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [
+            { "scripts": { "install": ["a"] } },
+            { "platform": "win-x64", "scripts": { "install": ["b"] } }
+          ]
+        }
+        """);
+
+    // Act
+    ToothFormatException ex = Assert.Throws<ToothFormatException>(
+        () => ToothCompat.Derive(manifest, _serverWin));
+
+    // Assert
+    Assert.Contains("labeled ''", ex.Message);
+    ToothFile linux = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
+    Assert.Equal(["a"], linux.Variants[""][0].Hooks.PostInstall);
+  }
+
+  [Fact]
+  public void Derive_SameDependencyInTwoMergedVariants_Throws() {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [
+            { "label": "lua", "dependencies": { "github.com/user/a": "1.*" } },
+            { "label": "lua", "platform": "win-x64",
+              "dependencies": { "github.com/user/a": "2.*" } }
+          ]
+        }
+        """);
+
+    // Act & Assert
+    Assert.Contains(
+        "labeled 'lua'",
+        Assert.Throws<ToothFormatException>(() => ToothCompat.Derive(manifest, _serverWin))
+            .Message);
+  }
+
+  [Fact]
+  public void Derive_V1_IsReadAsFormat3First() {
+    // Arrange
+    PackageManifest manifest = Manifest("""
         {
           "format_version": 1,
           "tooth": "github.com/LiteLScript-Dev/HelperLib",
@@ -231,20 +409,19 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothConversion? conversion = ToothCompat.Convert(document.Manifest, "", _serverWin);
+    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    Assert.NotNull(conversion);
-    Assert.Equal("HelperLib", conversion.Package.Identity);
-    Assert.Equal(3, conversion.Package.Manifest.GetProperty("format_version").GetInt32());
-    Assert.Equal(["echo install"], conversion.Package.Document.Hooks.PostInstall);
-    Assert.Equal(["github.com/user/dep"], EdgeRefs(conversion.Package));
+    Assert.Equal("github.com/LiteLScript-Dev/HelperLib", tooth.Tooth);
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(["echo install"], entry.Hooks.PostInstall);
+    Assert.Equal(["github.com/user/dep"], Dependencies(entry));
   }
 
   [Fact]
-  public async Task Convert_V2_MapsAssetUrlRemoveFilesAndScripts() {
+  public void Derive_V2_MapsAssetUrlRemoveFilesAndScripts() {
     // Arrange
-    ToothArchiveDocument document = await ParseDocument("""
+    PackageManifest manifest = Manifest("""
         {
           "format_version": 2,
           "tooth": "github.com/LiteLDev/LeviLamina",
@@ -264,35 +441,32 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothConversion? conversion = ToothCompat.Convert(document.Manifest, "", _serverWin);
+    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    Assert.NotNull(conversion);
-    McmodPackage package = conversion.Package;
-    Assert.Equal(SemVersion.Parse("1.1.0"), package.Version);
-    Assert.Equal(["github.com/LiteLDev/bds"], EdgeRefs(package));
-    Assert.True(package.InstallEdges[0].Version!.IsSatisfiedBy(SemVersion.Parse("1.21.60")));
-    ToothAsset asset = Assert.Single(conversion.Assets);
-    Assert.Equal(PackageManifestAsset.AssetType.Zip, asset.Type);
+    Assert.Equal(SemVersion.Parse("1.1.0"), tooth.Version);
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(["github.com/LiteLDev/bds"], Dependencies(entry));
+    Assert.True(entry.Dependencies[0].Range.IsSatisfiedBy(SemVersion.Parse("1.21.60")));
+    EntryAsset asset = Assert.Single(entry.Assets);
+    Assert.Equal(AssetType.Zip, asset.Type);
     Assert.Equal(["https://example.com/v1.1.0/levilamina.zip"], asset.Urls);
     Assert.Equal(
         ["bedrock_server_mod.exe", "bedrock_server_mod.exe/"],
-        package.Document.Remove.Select(g => g.Pattern));
-    Assert.Equal([".\\PeEditor.exe -mb"], package.Document.Hooks.PostInstall);
+        entry.RemoveFiles.Select(g => g.Pattern));
+    Assert.Equal([".\\PeEditor.exe -mb"], entry.Hooks.PostInstall);
   }
 
-  [Fact]
-  public async Task Convert_Version_ReplacesVersionInDocumentAndManifest() {
-    // Arrange
-    ToothArchiveDocument document = await ParseDocument(_multiPlatformV3);
-
-    // Act
-    McmodPackage package = ToothCompat.Convert(
-        document.Manifest, "", _serverWin, SemVersion.Parse("1.2.4"))!.Package;
-
-    // Assert
-    Assert.Equal(SemVersion.Parse("1.2.4"), package.Version);
-    Assert.Equal("1.2.4", package.Manifest.GetProperty("version").GetString());
+  [Theory]
+  [InlineData("github.com/user/repo", "repo")]
+  [InlineData("github.com/user/repo/v2", "repo")]
+  [InlineData("github.com/user/repo/v", "v")]
+  [InlineData("github.com/user/repo/v2x", "v2x")]
+  [InlineData("example.com/v3", "example.com")]
+  [InlineData("example.com", "example.com")]
+  public void GetToothName_StripsMajorVersionSuffix(string tooth, string name) {
+    // Act & Assert
+    Assert.Equal(name, ToothCompat.GetToothName(tooth));
   }
 
   [Fact]
@@ -340,117 +514,92 @@ public class ToothCompatTests {
     Assert.Equal(["postun"], converted.PostUninstall);
   }
 
-  [Fact]
-  public async Task OpenArchive_Assets_MountsSelfAndDownloadsUrlAssetsOnFirstUse() {
-    // Arrange
-    ToothArchiveDocument document = await ParseDocument($$"""
-        {
-          "format_version": 3, "format_uuid": "{{_uuid}}",
-          "tooth": "github.com/user/repo", "version": "1.0.0",
-          "variants": [{
-            "assets": [
-              { "type": "self" },
-              { "type": "zip", "urls": ["https://example.com/a.zip"] },
-              { "type": "uncompressed", "urls": ["https://example.com/b.bin"] }
-            ]
-          }]
-        }
-        """);
-    ToothConversion conversion = ToothCompat.Convert(document.Manifest, "", _serverWin)!;
-    ArchiveHandle self = new(
-        "github.com/user/repo@1.0.0",
-        new InMemorySource(new() { ["tooth.json"] = "{}" }),
-        new GitArchiveIdentity("https://github.com/user/repo.git", "abc", ""));
-    Mock<IArchiveProvider> provider = new();
-    provider.Setup(p => p.OpenAsset(
-        It.Is<IReadOnlyList<string>>(u => u.SequenceEqual(new[] { "https://example.com/a.zip" })), true))
-        .ReturnsAsync(new InMemorySource(new() { ["dir/x.txt"] = "x" }));
-    provider.Setup(p => p.OpenAsset(
-        It.Is<IReadOnlyList<string>>(u => u.SequenceEqual(new[] { "https://example.com/b.bin" })), false))
-        .ReturnsAsync(new InMemorySource(new() { [""] = "b" }));
-
+  [Theory]
+  [InlineData("**/config.json", true)]
+  [InlineData("logs/", true)]
+  [InlineData("", false)]
+  [InlineData("/abs", false)]
+  [InlineData("a//b", false)]
+  public void TryParseGlob_InvalidPattern_ReturnsNull(string pattern, bool valid) {
     // Act
-    ArchiveHandle archive = conversion.OpenArchive(self, provider.Object);
+    PathGlob? glob = ToothCompat.TryParseGlob(pattern);
 
     // Assert
-    Assert.Equal(self.Key, archive.Key);
-    Assert.Equal(self.Identity, archive.Identity);
-    provider.VerifyNoOtherCalls();
-    Assert.Equal(["0/tooth.json", "1/dir/x.txt", "2"], archive.Source.Keys);
-    using StreamReader reader = new(await archive.Source.OpenRead("2"));
-    Assert.Equal("b", await reader.ReadToEndAsync(TestContext.Current.CancellationToken));
+    Assert.Equal(valid, glob is not null);
   }
 
   [Fact]
-  public async Task FromLocked_LockEntry_ConvertsRecordedToothJsonForChainVariant() {
-    // Arrange
-    PackageManifest manifest = (await ParseDocument(_multiPlatformV3)).Manifest;
-    LockedPackage locked = new() {
-      Identity = "github.com/user/repo",
-      Version = "1.2.5",
-      Kind = "tooth",
-      Explicit = true,
-      Chain = [new LockedHop("github.com/user/repo#client", null)],
-      ArchiveKey = "github.com/user/repo@1.2.5",
-      Manifest = JsonSerializer.SerializeToElement(manifest),
-    };
+  public void ParseEntry_LegacyEntry_ConvertsPreserveAndRemoveFiles() {
+    // Arrange: an entry of the workspace file derived from format 3 (protocol/workspace.md §7.1).
+    using JsonDocument json = JsonDocument.Parse("""
+        {
+          "platform": "server", "runtime": "win-x64",
+          "dependencies": { "github.com/user/a#client": "^1.0.0" },
+          "assets": [
+            { "type": "uncompressed", "urls": ["https://example.com/a.exe"],
+              "placements": [ { "type": "file", "src": "", "dest": "a.exe" } ] },
+            { "type": "self", "placements": [ { "type": "dir", "src": "/x\\", "dest": "../y" } ] }
+          ],
+          "preserve_files": ["config.json", "data\\", "/bad", "a//b"],
+          "remove_files": ["logs", "tmp/"],
+          "hooks": { "post_install": ["x"] }
+        }
+        """);
 
     // Act
-    McmodPackage? package = (await ToothCompat.FromLocked(locked, _serverWin))?.Package;
+    ToothEntry entry = ToothParser.ParseEntry(json.RootElement, legacy: true);
 
     // Assert
-    Assert.NotNull(package);
-    Assert.Equal("tooth", package.Kind);
-    Assert.Equal("repo-client", package.Identity);
-    Assert.Equal(SemVersion.Parse("1.2.5"), package.Version);
-    Assert.Equal(["github.com/user/clientdep"], EdgeRefs(package));
+    Assert.True(entry.Legacy);
+    ToothDependency dependency = Assert.Single(entry.Dependencies);
+    Assert.True(dependency.ClientCompat);
+    Assert.Equal("client", dependency.Source.Variant);
+    Assert.Equal([AssetType.Uncompressed, AssetType.Self], entry.Assets.Select(a => a.Type));
+    Assert.Equal([new EntryPlacement("", "a.exe", false)], entry.Assets[0].Placements);
+    Assert.Equal([new EntryPlacement("/x\\", "../y", true)], entry.Assets[1].Placements);
+    Assert.Equal(["**/config.json", "data/"], entry.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(["logs", "logs/", "tmp/"], entry.RemoveFiles.Select(g => g.Pattern));
+    Assert.Equal(["x"], entry.Hooks.PostInstall);
   }
 
   [Theory]
-  [InlineData("", "server", "repo")]
-  [InlineData("client", "server", "repo-client")]
-  [InlineData("", "client", "repo-client")]
-  public async Task Convert_Variant_IdentityCarriesSelectedLabel(
-      string variant, string platform, string identity) {
+  [InlineData("""{ "platform": "server", "runtime": "win-x64", "assets": [ { "type": "mcmod", "urls": [] } ] }""")]
+  [InlineData("""{ "platform": "server", "runtime": "win-x64", "assets": [ { "type": "self", "placements": [ { "type": "glob", "src": "", "dest": "" } ] } ] }""")]
+  [InlineData("""{ "platform": "any", "runtime": "win-x64" }""")]
+  [InlineData("""{ "platform": "server" }""")]
+  [InlineData("""{ "platform": "server", "runtime": "win-x64", "preserve_files": [ 1 ] }""")]
+  public void ParseEntry_InvalidLegacyEntry_Throws(string entry) {
     // Arrange
-    PackageManifest manifest = (await ParseDocument(_multiPlatformV3)).Manifest;
-    McmodPlatformExtensions.TryParse(platform, out McmodPlatform parsed);
-    LipEnvironment environment = new(parsed, "win-x64");
+    using JsonDocument json = JsonDocument.Parse(entry);
 
-    // Act
-    McmodPackage? package = ToothCompat.Convert(manifest, variant, environment)?.Package;
-
-    // Assert
-    Assert.NotNull(package);
-    Assert.Equal(identity, package.Identity);
-    Assert.Equal(identity == "repo" ? "" : "client", package.Variant);
+    // Act & Assert
+    Assert.Throws<ToothFormatException>(() => ToothParser.ParseEntry(json.RootElement, legacy: true));
   }
 
   [Fact]
-  public async Task FromLocked_VariantForOtherRid_ReturnsNull() {
+  public void ParseEntry_LegacyRuntime_IsNotValidatedAsRid() {
     // Arrange
-    PackageManifest manifest = (await ParseDocument(_multiPlatformV3)).Manifest;
-    LockedPackage locked = new() {
-      Identity = "github.com/user/repo",
-      Version = "1.2.3",
-      Kind = "tooth",
-      Explicit = true,
-      Chain = [new LockedHop("github.com/user/repo#extra", null)],
-      ArchiveKey = "github.com/user/repo@1.2.3",
-      Manifest = JsonSerializer.SerializeToElement(manifest),
-    };
+    using JsonDocument json = JsonDocument.Parse("""{ "platform": "client", "runtime": "x y" }""");
 
     // Act
-    McmodPackage? package = (await ToothCompat.FromLocked(locked, _serverWin))?.Package;
+    ToothEntry entry = ToothParser.ParseEntry(json.RootElement, legacy: true);
 
     // Assert
-    Assert.Null(package);
+    Assert.Equal("x y", entry.Runtime);
+    Assert.Throws<ToothFormatException>(() => ToothParser.ParseEntry(json.RootElement, legacy: false));
   }
 
-  private sealed class InMemorySource(Dictionary<string, string> files) : ISource {
-    public IEnumerable<string> Keys => files.Keys;
+  [Fact]
+  public void Derive_DerivedDocumentJson_IsUtf8Json() {
+    // Arrange
+    ToothFile tooth = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
 
-    public Task<Stream> OpenRead(string key) =>
-        Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(files[key])));
+    // Act
+    byte[] bytes = Encoding.UTF8.GetBytes(tooth.Json.GetRawText());
+
+    // Assert: the derived document is not of format 4 as a file (its entries are legacy), but
+    // is strict JSON.
+    using JsonDocument document = ToothParser.ParseJson(bytes);
+    Assert.Equal(4, ToothParser.FormatVersion(document.RootElement));
   }
 }

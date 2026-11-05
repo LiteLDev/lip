@@ -1,6 +1,6 @@
 # lip init
 
-在当前目录创建 `manifest.json`，以初始化新项目。
+在当前目录创建 `tooth.json`，以初始化一个新包。
 
 ## 概要
 
@@ -10,14 +10,14 @@ lip init
 
 ## 说明
 
-会创建一个描述 LeviLamina 原生 mod 的 `manifest.json` 包文档，取值如下：
+在终端上询问包的 tooth 路径，即 [Go 模块路径](https://go.dev/ref/mod#module-path)，例如 `github.com/user/repo`，直到回答合法为止，然后创建一个格式版本 4 的 `tooth.json`，内容如下：
 
-- `format`：`"bf45b1"`
-- `id`：当前目录的名称（ASCII 字母、数字、`.`、`_` 和 `-` 以外的字符替换为 `-`）。
+- `format_version`：`4`
+- `format_uuid`：`"f74a5fda-cb2a-4de8-959f-a1a76bad3102"`
+- `tooth`：你输入的 tooth 路径。
 - `version`：`"0.1.0"`
-- `dependencies`：`{}`
-- `mod`：`{ "loader": "native", "entry": "<id>.dll" }`
+- `variants`：`{ "": [ { "platform": "server", "runtime": "win-x64" } ] }`
 
-若当前目录已存在 `manifest.json`，或得到的 id 不是有效的包 id（例如以 `_` 或 `-` 开头），命令会失败，且不写入任何内容。
+若当前目录已存在 `tooth.json`，命令会失败且不写入任何内容。若标准输入或标准错误不是终端，则无法询问，命令同样会失败。[`lip rpc`](rpc.md) 的 `Init` 方法从不询问，因此会以同样的方式失败。
 
-后续步骤参见[创建包](../../guides/creating_packages.md)。
+接下来的步骤请参阅[创建包](../../guides/creating_packages.md)。

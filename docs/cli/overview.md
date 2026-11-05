@@ -11,21 +11,21 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 
 `lip` without arguments prints help.
 
-Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md), [`list`](commands/list.md), and [`versions`](commands/versions.md).
+Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md), [`list`](commands/list.md), and [`versions`](commands/versions.md). [`view`](commands/view.md) always prints JSON.
 
-[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) accept `--rid <RID>` to set the RID of the workspace [environment](../concepts/package_manifest.md#environment); [`pack`](commands/pack.md) accepts it to choose the RID to pack for. lip manages server workspaces only.
+[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) accept `--rid <RID>` to set the RID of the workspace [environment](../concepts/tooth_json.md#environment). lip manages server workspaces only.
 
 ## Commands
 
 -   [`lip cache clean`](commands/cache_clean.md): Clean the local cache.
 -   [`lip config`](commands/config.md): Get, set, list, and delete configuration values.
--   [`lip init`](commands/init.md): Create a `manifest.json` for a new project.
+-   [`lip init`](commands/init.md): Create a `tooth.json` for a new package.
 -   [`lip install`](commands/install.md): Install packages.
 -   [`lip list`](commands/list.md): List installed packages.
--   [`lip migrate`](commands/migrate.md): Migrate the package repository in the current directory from `tooth.json` or a LeviLamina manifest to `manifest.json`.
--   [`lip pack`](commands/pack.md): Pack the `manifest.json` in the current directory into a package document or a `.mcmod` file.
+-   [`lip migrate`](commands/migrate.md): Migrate the `tooth.json` in the current directory to format version 4.
+-   [`lip pack`](commands/pack.md): Pack a directory into a ZIP archive.
 -   [`lip rpc`](commands/rpc.md): Serve the JSON-RPC interface over stdio.
 -   [`lip uninstall`](commands/uninstall.md): Uninstall packages.
 -   [`lip update`](commands/update.md): Update packages.
 -   [`lip versions`](commands/versions.md): Show available versions for a package.
--   [`lip view`](commands/view.md): Show the manifest of a package.
+-   [`lip view`](commands/view.md): Show the `tooth.json` of a package.

@@ -1,52 +1,44 @@
 # lip pack
 
-Pack the `manifest.json` in the current directory into a package document, or into a `.mcmod` file.
+Pack a directory into a ZIP archive.
 
 ## Synopsis
 
 ```shell
-lip pack [DIR] [options]
+lip pack [DIR] -o <FILE>
 ```
 
 ## Arguments
 
 | Argument | Description |
 | --- | --- |
-| `[DIR]` | The directory whose files go into the `.mcmod` file with `--output`. Defaults to the current directory. |
+| `[DIR]` | The directory whose files go into the archive. Defaults to the current directory. |
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `--variant <VARIANT>` | The variant to pack. Defaults to `""`, the default variant. |
-| `--platform <PLATFORM>` | The platform to pack for: `server` or `client`. Defaults to `server`. |
-| `--rid <RID>` | The .NET RID to pack for, e.g. `win-x64`. Defaults to the RID lip runs on. |
-| `-o, --output <FILE>` | Write a `.mcmod` file to `<FILE>` instead of printing the package document. |
+| `-o, --output <FILE>` | The ZIP archive to write. Required. |
 
 ## Description
 
-Reads the `manifest.json` in the current directory, which must have `"format": "bf45b1"` (see [Package Manifest](../../concepts/package_manifest.md)), and turns it into the package document of one platform and RID:
+Writes to `<FILE>`, replacing any existing file, a ZIP archive holding every regular file below `DIR` at its path relative to `DIR`. `<FILE>` itself, and everything in `.git/` and `.lip/` at the root of `DIR`, are left out. The files are packed as they are: `lip pack` does not read or check `tooth.json` or `manifest.json`.
 
-- For a meta document, lip selects the target for `--variant`, `--platform` and `--rid` as `lip install` would, and [packs](../../concepts/package_manifest.md#packing) it: the document's other keys, completed with the keys of the target, and with `platform` and `runtime` set when the target names them.
-- For a package document, the result is the document itself: `--variant` must then be empty or not given, and `--platform` and `--rid` are not used.
+Use it to build:
 
-Without `--output`, the package document is printed to standard output as JSON. With `--output`, lip writes a ZIP archive to `<FILE>`, replacing any existing file: the package document as `manifest.json` at its root, and every file below `DIR` at its path relative to `DIR`. The `manifest.json` at the root of `DIR`, everything in `.git/` and `.lip/` at the root of `DIR`, and `<FILE>` itself are left out.
-
-The command fails and writes nothing when `manifest.json` is missing or not a valid document of format `bf45b1`, when no target or more than one matches the variant, platform and RID, or when the result is not a valid package document.
-
-Publish each `.mcmod` file where the `source` of its target points, e.g. as a release asset. See [Creating Packages](../../guides/creating_packages.md#pointing-to-release-assets).
+- the archive of an `mcmod` asset, from a directory with the LeviLamina `manifest.json` of the mod at its root, e.g. the output directory of your build. Attach it to the release and list its URL in the `urls` of the asset. See [A Mod](../../guides/creating_packages.md#a-mod).
+- a package as a single ZIP file, from a directory with a `tooth.json` at its root, to install it with [`lip install`](install.md) or to publish it at a URL.
 
 ## Examples
 
-Print the package document for a `win-x64` server:
+Pack the files of `build/` as the `mcmod` archive of a mod:
 
 ```shell
-lip pack --rid win-x64
+lip pack build/ -o MyMod-server-win-x64.zip
 ```
 
-Pack the files of `build/` into the server and client packages of a mod:
+Pack the package in the current directory:
 
 ```shell
-lip pack build/ --platform server --rid win-x64 -o LegacyMoney-server-win-x64.mcmod
-lip pack build/ --platform client --rid win-x64 -o LegacyMoney-client-win-x64.mcmod
+lip pack -o MyTool.zip
 ```

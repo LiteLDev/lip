@@ -12,9 +12,9 @@ lip uninstall <PACKAGES> [options]
 
 | 参数 | 说明 |
 | --- | --- |
-| `<PACKAGES>` | 要卸载的包，可以是包名（例如 `LegacyMoney`，不区分大小写），也可以是安装时使用的 `<path>` 或 `<path>#<variant>`（例如 `github.com/LiteLDev/LegacyMoney`）。以 `<path>#<variant>` 安装的 `tooth.json` 包，其包名为 `<tooth 名称>-<variant>`（例如 `LegacyScriptEngine-lua`）。不带 variant 的路径匹配从它安装的所有变体。 |
+| `<PACKAGES>` | 要卸载的包，可以是身份（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`），也可以是安装时使用的来源（例如 `github.com/user/repo@branch:main` 或 `./package.zip`）。不带变体的来源匹配从它安装的所有变体，不带 git 引用的来源匹配所有 git 引用。 |
 
-包名可通过 [`lip list`](list.md) 查看。
+身份可通过 [`lip list`](list.md) 查看。
 
 ## 说明
 
@@ -27,6 +27,6 @@ lip uninstall <PACKAGES> [options]
 | 选项 | 说明 |
 | --- | --- |
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
-| `--ignore-scripts` | 跳过执行 `preUninstall` 和 `postUninstall` 钩子（`tooth.json` 包为 `pre_uninstall`、`uninstall` 和 `post_uninstall`）。 |
+| `--ignore-scripts` | 跳过执行 `pre_uninstall` 和 `post_uninstall` 钩子。 |
 | `--no-dependencies` | 只卸载给定的包（依赖也可以），不移除其他依赖。这可能导致工作区损坏。 |
 | `--rid <RID>` | 工作区的 .NET RID，例如 `win-x64`。 |

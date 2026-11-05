@@ -4,7 +4,7 @@
 
 - **command**: An invocation of `lip` with a command name, such as `lip install`; not a hook command.
 - **usage error**: An unknown command or option, or a missing required argument.
-- **result**: The data a command is asked for; only `list`, `versions`, `view`, `config get`, `config list`, and `pack` without `--output` have one.
+- **result**: The data a command is asked for; only `list`, `versions`, `view`, `config get` and `config list` have one.
 - **message**: Any text other than a result (progress, information, warnings, errors, the final success line); its wording is not defined here.
 - **workspace operation**: `install`, `uninstall` or `update` without `--dry-run`; it is an operation.
 - **RID lip runs on**: The runtime of the process running `lip`.
@@ -28,7 +28,7 @@ Every command's workspace is the current working directory, to which relative pa
 
 - A result is written to standard output, a message to standard error; `lip rpc` writes to standard output only as Section 5.12 defines.
 - With `--json`, standard output receives only the result, as JSON [RFC8259] of the shape the command defines, and a line break. Without it, a result's layout is not defined.
-- The results of `view` and of `pack` without `--output` are always written as with `--json`.
+- The result of `view` is always written as with `--json`.
 
 A command that succeeds exits with code 0; one that fails, including on a usage error, writes a message describing the cause and exits with a non-zero code.
 
@@ -41,7 +41,7 @@ A **package argument** is an argument of `install`, `update`, `uninstall`, `vers
    - L starts with `./`, `../`, `.\` or `..\`; or
    - L is `.` or `..`; or
    - L is an absolute path; or
-   - the argument contains no `@`, and L ends with `.mcmod` or `.zip` (ASCII case-insensitively) or names an existing file or directory.
+   - the argument contains no `@`, and L ends with `.zip` (ASCII case-insensitively) or names an existing file or directory.
 
    The source is the `file:` URI [RFC8089] of the absolute path of L, followed by the rest of the argument. When L does not exist, the argument is invalid.
 3. Any other argument is the remote repository source of that string.
@@ -89,7 +89,7 @@ Without `--no-dependencies`, `lip install` installs a set of packages satisfying
 - An installed package keeps its version when that satisfies Section 3 of [WORKSPACE]; otherwise a dependency package may change version. Each dependency package that no explicitly installed package needs is uninstalled.
 - When a requested package is already explicitly installed, or two package arguments request the same identity, the command fails.
 
-With `--no-dependencies`, `lip` installs, for each package argument, exactly the first candidate of its request as explicitly installed, replacing an installed package of the same identity, following no install edge, and installing or uninstalling no other package. An installed package with the identity, version, archive name and archive identifier of that candidate is only marked explicitly installed. Section 3 of [WORKSPACE] may no longer hold afterwards.
+With `--no-dependencies`, `lip` installs, for each package argument, exactly the first candidate of its request as explicitly installed, replacing an installed package of the same identity, following no dependency, and installing or uninstalling no other package. An installed package with the identity, version, archive identifier and asset identifiers of that candidate is only marked explicitly installed. Section 3 of [WORKSPACE] may no longer hold afterwards.
 
 ### 5.2. `lip uninstall`
 
@@ -100,7 +100,7 @@ lip uninstall <PACKAGES>... [common options] [--no-dependencies]
 Each argument names the installed packages that match it by the first of these rules that matches any installed package:
 
 1. Its identity equals the argument.
-2. The first source of its chain equals the argument made into a source as in Section 3, with the locations compared ASCII case-insensitively. An argument without a variant matches every variant, and an argument without a ref matches every ref.
+2. Its source equals the argument made into a source as in Section 3, with the locations compared ASCII case-insensitively. An argument without a variant matches every variant, and an argument without a ref matches every ref.
 
 When an argument names no installed package, the command fails.
 
@@ -121,7 +121,7 @@ Each of `[PACKAGES]` is a package argument.
 
 With arguments, `lip update` makes a request of each package argument again, as "Updating" in Section 5 of [WORKSPACE] defines for the source. Every requested package MUST already be installed; otherwise the command fails. The requested packages become explicitly installed.
 
-Without arguments, `lip update` updates every explicitly installed package as "Updating" in Section 5 of [WORKSPACE] defines, except that a package whose first chain source is a local path that no longer exists is kept as it is.
+Without arguments, `lip update` updates every explicitly installed package as "Updating" in Section 5 of [WORKSPACE] defines, except that a package whose source is a local path that no longer exists is kept as it is.
 
 A package is replaced only as "Updating" in Section 5 of [WORKSPACE] defines. Dependency packages are updated as far as Section 3 of [WORKSPACE] requires. Updating a package installed from a source with a ref, giving that source without the ref, moves the package back to the version tags.
 
@@ -155,7 +155,7 @@ With `--json`, the result is a JSON array of strings.
 lip view <PACKAGE>
 ```
 
-`<PACKAGE>` is a package argument. Writes as its result, as JSON, the manifest of the first archive that its source names (Section 3 step 1 of [PACKAGE]), without following the `targets` of a meta package. It changes nothing.
+`<PACKAGE>` is a package argument. Writes as its result, as JSON, the tooth file of the first archive that its source names (Section 4 step 1 of [PACKAGE]), as Section 5 of [PACKAGE] reads it for the environment of Section 4 when it is of an earlier format. It changes nothing.
 
 ### 5.7. `lip init`
 
@@ -163,9 +163,9 @@ lip view <PACKAGE>
 lip init
 ```
 
-Writes `manifest.json` in the current directory: a manifest with the members of `{ "format": "bf45b1", "id": "<id>", "version": "0.1.0", "dependencies": {}, "mod": { "loader": "native", "entry": "<id>.dll" } }`, `<id>` being the name of the current directory with every character other than an ASCII letter, an ASCII digit, `.`, `_` and `-` replaced by `-`.
+Writes `tooth.json` in the current directory: a tooth file with the members of `{ "format_version": 4, "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102", "tooth": "<tooth>", "version": "0.1.0", "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] } }`. `lip` asks the user on the terminal for `<tooth>` until the answer is a Go module path [GO-MODULE]. When standard input or standard error is not a terminal, the command fails instead.
 
-When `manifest.json` exists, or `<id>` is not an id, the command fails and writes nothing.
+When `tooth.json` exists, the command fails and writes nothing.
 
 ### 5.8. `lip migrate`
 
@@ -173,13 +173,9 @@ When `manifest.json` exists, or `<id>` is not an id, the command fails and write
 lip migrate
 ```
 
-Converts a `tooth.json` of lip v0.x, or a LeviLamina `manifest.json` without the key `format`, in the current directory to a `manifest.json` with `"format": "bf45b1"`, written as JSON indented by two spaces.
+Rewrites the `tooth.json` in the current directory, of `format_version` 1, 2 or 3, as a tooth file of `format_version` 4, written as JSON indented by two spaces. When `tooth.json` is missing, is already of `format_version` 4, or cannot be read, the command fails and changes nothing.
 
-- When `tooth.json` exists, it is the source of the conversion, and is deleted after `manifest.json` has been written.
-- Otherwise `manifest.json` is the source of the conversion, and is rewritten in place.
-- When both or neither exist, when `manifest.json` has the key `format`, or when a file cannot be read, the command fails and changes nothing.
-
-The mapping of the members of the source to those of the output is not defined here. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
+The mapping is not defined here; it SHOULD agree with Section 5 of [PACKAGE] for every environment. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
 
 ### 5.9. `lip cache clean`
 
@@ -208,17 +204,10 @@ When `<KEY>` is not a configuration key, the command fails. `set` and `delete` r
 ### 5.11. `lip pack`
 
 ```
-lip pack [<DIR>] [--variant <VARIANT>] [--platform <PLATFORM>] [--rid <RID>] [-o, --output <FILE>]
+lip pack [<DIR>] -o, --output <FILE>
 ```
 
-Packs the `manifest.json` in the current directory into the manifest of a concrete package for one environment. `--variant` defaults to `""`, `--platform` (`server` or `client`) to `server`, and `--rid` to the RID lip runs on; `--platform` and `--rid` together are the environment.
-
-- For a meta package, the target is the one Section 3 step 2 of [PACKAGE] selects for the variant and the environment. The output is the manifest without `targets`, with each key of the target other than `variant`, `platform`, `runtime` and `source` set to its value in the target, or deleted when that is `null`, and with `platform` and `runtime` each set to the corresponding component of the environment when the target has that key.
-- For a concrete package, `--variant` MUST be `""`, `--platform` and `--rid` are not used, and the output is the manifest itself.
-
-Without `--output`, the output is the result. With `--output`, `lip` writes to `<FILE>`, replacing it, a ZIP archive holding the output as `manifest.json` at its root and every regular file below `<DIR>` (default: the current directory) at its path relative to `<DIR>`, except `<FILE>` itself and, at the root of `<DIR>`, `manifest.json` and everything below `.git/` and `.lip/`.
-
-The command fails and writes nothing when `manifest.json` is missing or is not a valid manifest, when no target or more than one is selected, or when the output is not a valid manifest of a concrete package.
+Writes to `<FILE>`, replacing it, a ZIP archive holding every regular file below `<DIR>` (default: the current directory) at its path relative to `<DIR>`, except `<FILE>` itself and, at the root of `<DIR>`, everything below `.git/` and `.lip/`. Such an archive can be an asset of type `"mcmod"`.
 
 ### 5.12. `lip rpc`
 
@@ -244,6 +233,6 @@ The server has one method for each command other than `pack` and `rpc`, named as
 
 The result of a method is the result of the command, as the command writes it with `--json`, or `null` when the command has none. The result of `List` is an array of two arrays of strings: the explicitly installed packages, then the dependency packages.
 
-A method that fails responds with a JSON-RPC error whose `message` describes the cause, and leaves everything as the failing command would. `Migrate` asks no questions: where `lip migrate` would ask, the method fails, naming the value. The client MAY cancel a pending JSON-RPC request with the notification `$/cancelRequest` and parameters `{ "id": <request id> }`; a cancelled `Install`, `Uninstall` or `Update` undoes its changes and responds with an error. Requests MAY be sent before earlier ones are answered; a workspace operation that finds the workspace lock held, including by another request, fails at once.
+A method that fails responds with a JSON-RPC error whose `message` describes the cause, and leaves everything as the failing command would. `Init` and `Migrate` ask no questions: where `lip init` or `lip migrate` would ask, the method fails, naming the value. The client MAY cancel a pending JSON-RPC request with the notification `$/cancelRequest` and parameters `{ "id": <request id> }`; a cancelled `Install`, `Uninstall` or `Update` undoes its changes and responds with an error. Requests MAY be sent before earlier ones are answered; a workspace operation that finds the workspace lock held, including by another request, fails at once.
 
 The server sends the messages to the client as JSON-RPC requests, which the client answers with `null`: `PrintInfo(message)`, `PrintSuccess(message)`, `PrintWarning(message)`, `PrintError(message)` and `ReportProgress(id, message, percentage)`.

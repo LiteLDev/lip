@@ -4,88 +4,108 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// How the final archive of a package is identified in the lock (spec §9).
+/// The archive identifier of a package (protocol/workspace.md §7.1), which identifies the content
+/// of its archive.
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(ZipArchiveIdentity), "zip")]
 [JsonDerivedType(typeof(GitArchiveIdentity), "git")]
-public abstract record ArchiveIdentity;
-
-/// A ZIP archive (downloaded, local or nested), identified by the SHA-256 of its bytes
-/// (lowercase hex). Url is where it was read from: the https URL it was downloaded from, the file
-/// URI of a local file, or null for a ZIP archive nested in another archive.
-public record ZipArchiveIdentity(
-    [property: JsonPropertyName("sha256")] string Sha256,
-    [property: JsonPropertyName("url")] string? Url) : ArchiveIdentity {
-  /// The directory inside the ZIP file that is the archive root (a directory ref into a ZIP
-  /// archive), without leading or trailing '/'; null for the root of the ZIP file.
-  [JsonPropertyName("path")]
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public string? Path { get; init; }
+[JsonDerivedType(typeof(DirectoryArchiveIdentity), "directory")]
+public abstract record ArchiveIdentity {
+  /// A string equal for two identifiers exactly when they identify the same content.
+  [JsonIgnore]
+  public abstract string Canonical { get; }
 }
 
-/// A git archive: a commit of a repository, and the path of the archive root inside it ("" for
-/// the repository root, otherwise without leading or trailing '/').
+/// A ZIP archive, identified by the SHA-256 of its bytes (lowercase hex). Url is the URL it was
+/// downloaded from, without its fragment, or the file: URI of the absolute path of a local file.
+public record ZipArchiveIdentity(
+    [property: JsonPropertyName("sha256")] string Sha256,
+    [property: JsonPropertyName("url")] string Url) : ArchiveIdentity {
+  [JsonIgnore]
+  public override string Canonical => $"zip {Sha256.ToLowerInvariant()}";
+}
+
+/// A git archive: a commit (lowercase hex) of the repository at RepoUrl, https://&lt;repo&gt;.git.
 public record GitArchiveIdentity(
     [property: JsonPropertyName("repo")] string RepoUrl,
-    [property: JsonPropertyName("commit")] string Commit,
-    [property: JsonPropertyName("path")] string Path) : ArchiveIdentity;
+    [property: JsonPropertyName("commit")] string Commit) : ArchiveIdentity {
+  [JsonIgnore]
+  public override string Canonical =>
+      $"git {PackageNames.Fold(RepoUrl)} {Commit.ToLowerInvariant()}";
+}
 
-/// An opened archive: its archive key (spec §5.2 table), its file tree, and its identity.
+/// A directory archive on the local file system, identified by its absolute path.
+public record DirectoryArchiveIdentity(
+    [property: JsonPropertyName("path")] string Path) : ArchiveIdentity {
+  [JsonIgnore]
+  public override string Canonical => $"directory {Path}";
+}
+
+/// The asset identifier of an asset other than "self" (protocol/workspace.md §7.1): the URL it was
+/// downloaded from and the SHA-256 of the file (lowercase hex).
+public record AssetIdentity(
+    [property: JsonPropertyName("url")] string Url,
+    [property: JsonPropertyName("sha256")] string Sha256);
+
+/// An opened archive: a key naming it in messages and caches, its file tree, and its identity.
 /// Source keys are '/'-separated relative file paths, as for every ISource.
 public record ArchiveHandle(string Key, ISource Source, ArchiveIdentity Identity);
 
-/// A version of a spec ref: a "v" + SemVer 2.0.0 tag.
+/// A downloaded asset: its files, and its identifier.
+public record OpenedAsset(ISource Source, AssetIdentity Identity);
+
+/// What a downloaded asset must be.
+public enum AssetFormat {
+  /// A ZIP archive (protocol/package.md §1): the assets of type "zip" and "mcmod".
+  Zip,
+
+  /// A ZIP, tar or gzipped tar archive, told apart by content, whose files are not checked: the
+  /// assets of type "zip", "tar" and "tgz" of format 3, as lip v0.37.0 read them.
+  LegacyArchive,
+
+  /// A single file with the key "": the assets of type "uncompressed" of format 3.
+  LegacyFile,
+}
+
+/// A version of a remote repository: a version tag "v" + version.
 public record SpecVersion(SemVersion Version, string Tag);
 
-/// Thrown when an archive cannot be obtained or is invalid (spec §2). For resolution this
-/// means "no candidate" on that path, not a failure of the whole operation.
+/// Thrown when an archive or an asset cannot be obtained or is invalid (protocol/package.md §2).
+/// For resolution this means "no candidate" on that path, not a failure of the whole operation.
 public class ArchiveUnavailableException(string message, Exception? inner = null)
     : Exception(message, inner);
 
-/// Obtains archives for ref targets (spec §3, §5.2 step 1).
+/// Obtains archives of sources and assets (protocol/package.md §2, §4 step 1).
 public interface IArchiveProvider {
-  /// Opens a relative, url or file target. Relative targets are resolved inside baseArchive,
-  /// which the other targets ignore. Throws ArchiveUnavailableException when the archive cannot
-  /// be obtained or is invalid.
-  public Task<ArchiveHandle> Open(Ref target, ArchiveHandle? baseArchive);
+  /// Opens the archive of a URL or a local path (a ZIP file or a directory). Throws
+  /// ArchiveUnavailableException when the archive cannot be obtained or is invalid.
+  public Task<ArchiveHandle> Open(Ref target);
 
-  /// Lists the "v" + SemVer tags of a spec target, highest precedence first; equal
-  /// precedence is ordered by tag name, lexicographically larger first. Other tags are ignored.
+  /// Lists the version tags of a remote repository, highest precedence first; equal precedence
+  /// is ordered by tag name, lexicographically larger first. Other tags are ignored.
   public Task<IReadOnlyList<SpecVersion>> ListVersions(string spec);
 
-  /// Opens the git archive of one version of a spec target. Its key is "spec@version".
+  /// Opens the git archive of one version of a remote repository. Its key is "spec@version".
   public Task<ArchiveHandle> OpenVersion(string spec, SpecVersion version);
 
-  /// Resolves the git ref of a pinned spec ref to a commit id (spec §3): the head of a branch,
-  /// the commit a tag points to (peeled), or the commit id of a rev itself. Throws
-  /// ArchiveUnavailableException when the repository has no such branch or tag.
+  /// Resolves the ref of a remote repository to a commit id (protocol/package.md §2.1): the tag
+  /// of a version, the head of a branch, the commit a tag points to (peeled), or the commit id of
+  /// a rev itself. Throws ArchiveUnavailableException when the repository has no such ref.
   public Task<string> ResolveGitRef(string spec, GitRef gitRef);
 
-  /// Whether the repository of a spec target is the repository of another spec target because
-  /// it redirects there, as GitHub redirects the old path of a repository that was transferred
-  /// or renamed. False when the specs name the same path, when the repository answers at its
-  /// own path or elsewhere, and when lip cannot tell (e.g. the repository is unreachable).
-  public Task<bool> RedirectsTo(string spec, string target);
-
-  /// Opens the git archive of a commit of a spec target. Its key is "spec@rev:commit".
+  /// Opens the git archive of a commit of a remote repository. Its key is "spec@rev:commit".
   public Task<ArchiveHandle> OpenCommit(string spec, string commit);
 
-  /// Re-opens an archive recorded in the lock and verifies its identity (spec §9).
+  /// Opens the archive an archive identifier recorded in the workspace file identifies, and
+  /// verifies its identity (protocol/workspace.md §5, "Reinstalling").
   public Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity);
 
-  /// Downloads a tooth.json asset (spec §10.2 rule 4) from the first of its URLs that works, cached
-  /// under the key of that URL like url archives. An archive asset (ZIP, tar or gzipped tar, told
-  /// apart by content) is opened as its files; any other asset is a single file with the key "".
-  /// Unlike url archives, the files are not checked against §2, as lip v3 did not check them.
-  /// Throws ArchiveUnavailableException when no URL works.
-  public Task<ISource> OpenAsset(IReadOnlyList<string> urls, bool isArchive);
+  /// Downloads an asset from the first of its URLs that can be obtained (protocol/workspace.md §4
+  /// step 2), cached under the key of that URL like the archives of URLs. Throws
+  /// ArchiveUnavailableException when none can.
+  public Task<OpenedAsset> OpenAsset(IReadOnlyList<string> urls, AssetFormat format);
 
-  /// Downloads an "archives" entry of a file package (spec §7 "Archives") from the first of its
-  /// URLs that can be downloaded and, when sha256 is given, has that SHA-256 (lowercase hex). A
-  /// "file" archive is a single file with the key ""; any other is opened as its files, which
-  /// must have the given format (or any of zip, tar and tgz for Detect) and whose paths must obey
-  /// spec §2.1. Throws ArchiveUnavailableException when no URL works.
-  public Task<ISource> OpenAsset(
-      IReadOnlyList<string> urls, PackageArchiveFormat format, string? sha256) =>
-      throw new NotSupportedException("This provider does not download archives.");
+  /// Opens an asset an asset identifier recorded in the workspace file identifies, and verifies
+  /// its SHA-256.
+  public Task<ISource> OpenLockedAsset(AssetIdentity identity, AssetFormat format);
 }

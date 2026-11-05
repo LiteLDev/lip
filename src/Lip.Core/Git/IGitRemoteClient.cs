@@ -18,10 +18,6 @@ public interface IGitRemoteClient {
   /// commit or tag object id without downloading any blob content. Gitlinks are excluded.
   Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish);
 
-  /// The URL of the repository that answers for repoUrl: repoUrl itself, or where it redirects
-  /// (e.g. GitHub redirects the old path of a repository that was transferred or renamed).
-  Task<Url> GetRepositoryUrl(Url repoUrl);
-
   /// Downloads the given blobs; onBlob is invoked once per object id with a readable content stream.
   Task FetchBlobs(Url repoUrl, IReadOnlyCollection<string> blobObjectIds, Func<string, Stream, Task> onBlob);
 }

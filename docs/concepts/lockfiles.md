@@ -1,36 +1,34 @@
-# Lockfiles
+# Workspace File
 
-`lip` uses a lockfile to maintain the state of the current workspace. This file records exactly which packages are installed, their specific versions, where they came from, and the files they placed on the disk.
+`lip` records the state of a workspace in its **workspace file**: which packages are installed, their exact versions, where they came from, and the files they placed on the disk.
 
 ## Location
 
-The lockfile is `.lip/workspace.json` in the workspace root. On Windows lip creates the `.lip` directory with the hidden attribute; elsewhere its name hides it.
+The workspace file is `.lip/workspace.json` in the workspace root. On Windows lip creates the `.lip` directory with the hidden attribute; elsewhere its name hides it.
 
-Because the lock lives in the workspace directory rather than being tied to its path, a workspace that is moved, renamed or copied keeps its lock, and so its installed packages.
+Because the workspace file lives in the workspace directory rather than being tied to its path, a workspace that is moved, renamed or copied keeps its workspace file, and so its installed packages.
 
-`.lip` is reserved for lip: installing a package that would write a file to `.lip` at the workspace root, or anywhere below it, fails, and a `remove` pattern never matches `.lip` or anything below it.
-
-lip v0.36 kept the lock in `.lip/lock.json`, in the same format: when there is no `.lip/workspace.json`, lip reads it, and the next install, uninstall or update writes `.lip/workspace.json` and deletes it. lip v0.x kept the lock in `tooth_lock.json` in the workspace root. When there is neither, lip migrates it (see [below](#legacy-tooth-lock-json)).
+`.lip` is reserved for lip: installing a package that would write a file to `.lip` at the workspace root, or anywhere below it, fails, and a `remove_files` pattern never matches `.lip` or anything below it.
 
 ## Purpose
 
-The lockfile serves several critical purposes in `lip`:
+The workspace file serves several purposes:
 
-1.  **State Tracking**: It acts as the single source of truth for what is currently installed in the workspace.
-2.  **Reproducibility**: It records the exact archive of every installed package. When lip needs a package again (for example to uninstall it), it opens that archive directly and verifies its identity instead of resolving the package again.
+1.  **State Tracking**: It is the single source of truth for what is installed in the workspace.
+2.  **Reproducibility**: It records the exact archive and assets of every installed package, and the entry that was installed. When lip needs a package again, it opens that archive and those assets and checks that they have not changed, instead of resolving the package again.
 3.  **Uninstallation**: `lip` tracks every file written to disk by a package. This allows `lip uninstall` to cleanly delete all files associated with a package, preventing "file rot" in the workspace.
-4.  **Dependency Graph**: It distinguishes between packages explicitly installed by the user and those installed implicitly as dependencies. This allows `lip uninstall` to also remove dependencies that no explicitly installed package needs any more (unless `--no-dependencies` is given), and `lip list` to show the two groups separately.
-5.  **Environment**: It records the platform and RID of the workspace once they are known, so later commands use the same [environment](package_manifest.md#environment).
+4.  **Dependency Graph**: It distinguishes between packages explicitly installed by the user and those installed as dependencies. This allows `lip uninstall` to also remove dependencies that no explicitly installed package needs any more (unless `--no-dependencies` is given), and `lip list` to show the two groups separately.
+5.  **Environment**: It records the platform and RID of the workspace once they are known, so later commands use the same [environment](tooth_json.md#environment).
 
-The lockfile is saved once, after every package of an operation has been installed or uninstalled. If the operation fails, lip undoes its changes to the workspace and the lockfile stays as it was, so the two always match (see [Internal Mechanism](../guides/internal_mechanism.md#pipeline)).
+The workspace file is replaced once, after every package of an operation has been installed or uninstalled. If the operation fails, lip undoes its changes to the workspace and the workspace file stays as it was, so the two always match (see [Internal Mechanism](../guides/internal_mechanism.md#pipeline)).
 
 ## Structure
 
-The lockfile is a JSON file described by the JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json):
+The workspace file is a JSON file described by the JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json):
 
 ```json
 {
-  "format": "bf45b1",
+  "format_version": 4,
   "platform": "server",
   "runtime": "win-x64",
   "packages": [
@@ -41,88 +39,70 @@ The lockfile is a JSON file described by the JSON Schema [`workspace.schema.json
 
 ### Fields
 
-*   **`format`**: The format of the lockfile, `"bf45b1"`.
-*   **`platform`**: The platform of the workspace. lip writes `"server"`; it is `null` in a lock migrated from `tooth_lock.json` until lip saves it.
-*   **`runtime`**: The [.NET RID](https://learn.microsoft.com/en-us/dotnet/core/rid-catalog) of the workspace.
-*   **`packages`**: The installed packages, in install order.
+*   **`format_version`**: The format of the workspace file, `4`.
+*   **`platform`**: The platform of the workspace, `null` until it is known. lip writes `"server"`.
+*   **`runtime`**: The [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog) of the workspace, `null` until it is known.
+*   **`packages`**: The installed packages, in installation order: a package comes after the packages that satisfy its dependencies.
 
 ### Package Entry
 
-*   **`id`**: The identity of the package: the `id` of its `manifest.json` (the `name` of a LeviLamina manifest), or for a `tooth.json` package its tooth name, followed by `-<label>` for a labeled variant (e.g. `LegacyScriptEngine-lua`).
+*   **`tooth`**: The tooth path of the package, from its `tooth.json`.
+*   **`variant`**: The variant of the source it was installed from, `""` for the default variant. With `tooth`, it makes the [identity](tooth_json.md#identity) of the package.
 *   **`version`**: The installed version.
-*   **`kind`**: `"mcmod"` for a `manifest.json` package (of format `bf45b1`, or a LeviLamina manifest), `"tooth"` for a `tooth.json` package. Both are installed and uninstalled the same way; the kind says what `manifest` holds.
 *   **`explicit`**:
     *   `true`: The package was explicitly installed by the user (e.g., `lip install <package>`).
-    *   `false`: The package was installed implicitly as a dependency of another package.
-*   **`chain`**: How the package was resolved: one entry per hop, with
-    *   `ref`: the ref of the hop as it was resolved, e.g. `github.com/user/repo`, `github.com/user/repo@branch:main` for a [git ref](../cli/commands/install.md#git-refs), an `https://` URL, `./sub/` inside the previous archive, or the `file:///` URI of a local file given to `lip install`;
-    *   `target`: the index of the target chosen at that hop in a meta document (`null` when the hop reached a package document);
-    *   `commit` (only for package paths): the commit the hop's repository was at: the commit of the version tag, or the commit the git ref resolved to. Entries migrated from `tooth_lock.json` have none.
+    *   `false`: The package was installed as a dependency of another package.
+*   **`source`**: What the package was installed from: the argument given to `lip install` or `lip update` (e.g. `github.com/user/repo`, `github.com/user/repo#lua@branch:main` or an `https://` URL; a local path is recorded as the `file:` URI of its absolute path), or, for a dependency, the key of the dependency. [`lip update`](../cli/commands/update.md) requests it again.
+*   **`archive`**: The archive of the package:
+    *   `{ "kind": "git", "repo": ..., "commit": ... }`: a commit of a git repository; `repo` is `https://<repo>.git`.
+    *   `{ "kind": "zip", "sha256": ..., "url": ... }`: a ZIP archive. `url` is the `https://` URL it was downloaded from, without the `#<variant>`, or the `file:` URI of a local file.
+    *   `{ "kind": "directory", "path": ... }`: a local directory, by its absolute path.
+*   **`assets`**: One member for each asset of the entry, in order: `null` for a `self` asset, and `{ "url": ..., "sha256": ... }` for a downloaded one, `url` being the URL it was downloaded from.
+*   **`entry`**: The entry of the `tooth.json` that was installed. For a `tooth.json` of an [earlier format](tooth_json.md#earlier-formats), it is the format 4 entry lip read it as.
+*   **`files`**: The files the package owns, relative to the workspace root and `/`-separated. Since `plugins` is a link to `mods` on a server, a file under `plugins/` is recorded under `mods/`.
 
-    The first hop is what [`lip update`](../cli/commands/update.md) requests again: a branch is followed to its new head, a tag is resolved again, a rev stays.
-*   **`archiveKey`**: The key of the final archive, e.g. `github.com/user/repo@1.0.0`, or `github.com/user/repo@rev:<commit>` for a package path with a `branch:`, `tag:` or `rev:` git ref.
-*   **`archive`**: The identity of the final archive:
-    *   `{ "kind": "zip", "sha256": ..., "url": ... }`: a ZIP archive. `url` is the `https://` URL it was downloaded from, the `file:///` URI of a local file, or `null` for a ZIP file nested in another archive; `path` is set when the package is a directory inside the ZIP file.
-    *   `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`: a commit of a git repository; `path` is `""` for the repository root.
-    *   `null`: an entry migrated from `tooth_lock.json`.
+SHA-256 values and commit ids are written in lowercase hexadecimal.
 
-    When lip needs the files of an installed package again, it opens this archive and checks its identity: a git archive is fetched at the recorded commit (even if it came from a branch that has moved on), and a downloaded or local ZIP file must still have the recorded SHA-256. Uninstalling needs neither.
-*   **`files`**: The files the package owns, relative to the workspace root and `/`-separated. Since `plugins` is a link to `mods` on a server, a file under `plugins/` is recorded under `mods/`; lip rewrites the `plugins/` paths of entries migrated from `tooth_lock.json`.
-*   **`manifest`**: The package's document (`manifest.json`, or `tooth.json` for `tooth` packages, which lip converts to a file package again when it needs the package), so lip does not have to fetch it again.
+When lip needs the files of an installed package again, it installs what the workspace file records, whatever the source names now: a git archive is fetched at the recorded commit (even if it came from a branch that has moved on), and a ZIP archive or asset must still have the recorded SHA-256, otherwise the operation fails. Uninstalling needs neither.
 
 ## Example
 
 ```json
 {
-  "id": "LegacyMoney",
-  "version": "0.22.0",
-  "kind": "mcmod",
+  "tooth": "github.com/example/MyMod",
+  "variant": "",
+  "version": "1.0.0",
   "explicit": true,
-  "chain": [
-    { "ref": "github.com/LiteLDev/LegacyMoney", "target": 0 },
+  "source": "github.com/example/MyMod",
+  "archive": {
+    "kind": "git",
+    "repo": "https://github.com/example/MyMod.git",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "assets": [
     {
-      "ref": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod",
-      "target": null
+      "url": "https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
-  "archiveKey": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod",
-  "archive": {
-    "kind": "zip",
-    "sha256": "…",
-    "url": "https://github.com/LiteLDev/LegacyMoney/releases/download/v0.22.0/LegacyMoney-server-win-x64.mcmod"
+  "entry": {
+    "platform": "server",
+    "runtime": "win-x64",
+    "dependencies": { "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0" },
+    "assets": [
+      {
+        "type": "mcmod",
+        "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
+      }
+    ]
   },
   "files": [
-    "mods/LegacyMoney/LegacyMoney.dll",
-    "mods/LegacyMoney/manifest.json"
-  ],
-  "manifest": { "...": "..." }
-}
-```
-
-## Legacy: tooth_lock.json
-
-lip v0.x used `tooth_lock.json` (format 3) in the workspace root. If there is no `.lip/workspace.json` but there is a `tooth_lock.json`, lip migrates it when it loads it, writes `.lip/workspace.json` on the next save and deletes `tooth_lock.json`. Migrated entries have the kind `"tooth"` and no `archive`; when lip needs their files it resolves the tag `path@version` again.
-
-`tooth_lock.json` recorded the absolute paths of the files. If the workspace was moved after those packages were installed, the paths point to its old location: lip infers the old root from where the recorded files now exist under the workspace and rebases the paths onto the workspace, so the packages still own their files and can be uninstalled.
-
-The old format is described by [`tooth_lock.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v3/tooth_lock.schema.yaml):
-
-```json
-{
-  "format_version": 3,
-  "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-  "packages": [
-    {
-      "manifest": { "...": "the tooth.json" },
-      "variant": "",
-      "locked": true,
-      "files": ["bin/example.exe"]
-    }
+    "mods/MyMod/MyMod.dll",
+    "mods/MyMod/manifest.json"
   ]
 }
 ```
 
-*   **`manifest`**: The full `tooth.json` of the package.
-*   **`variant`**: The label of the installed variant.
-*   **`locked`**: `true` if the package was explicitly installed.
-*   **`files`**: The files the package placed.
+## Earlier Formats
+
+lip does not take over workspaces of earlier lip versions: a `.lip/workspace.json` that is not of `format_version` 4, the `.lip/lock.json` of lip v0.36, and the `tooth_lock.json` that lip v0.x kept in the workspace root. In a workspace with one of them, lip fails with a message instead of installing, uninstalling, updating or listing packages, so that it never writes over files those packages own. Uninstall the packages with the lip version that installed them, or delete the file to start over; lip then knows nothing about the files they installed.

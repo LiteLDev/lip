@@ -1,38 +1,32 @@
 using Lip.Core.Mcmod.Compat;
+using Lip.Core.Mcmod.Install;
 using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
 
-/// Finds the package set S of spec §6 and returns it in the install order of spec §7.
+/// Finds the package set S of protocol/workspace.md §3 and returns it in the installation order
+/// of Section 5.
 ///
 /// The search is a depth-first backtracking search over the open requirements (the requests,
-/// then the install edges of each member in the order members are added). For each open
+/// then the dependencies of each member in the order members are added). For each open
 /// requirement the candidates are tried in their sequence order, so earlier candidates win
-/// (spec §6). To avoid exponential blowup it uses conflict-directed backjumping and learns
+/// (Section 3). To avoid exponential blowup it uses conflict-directed backjumping and learns
 /// candidates that can never be part of S; a step limit bounds pathological inputs.
 ///
-/// Candidates are produced lazily (IResolver.ResolveLazy): a spec ref with hundreds of tags only
-/// opens the tags the search actually reaches. Whether a member already satisfies a requirement
-/// is decided without enumerating every candidate: the loaded candidates are checked first, then
-/// each member whose version is in range and whose identity is that of a loaded candidate is
-/// looked up directly: the requirement's spec refs are resolved for exactly that version. This
-/// shortcut misses a member routed from a tag of another version (a meta document without a
-/// version key) and a member named differently from the loaded candidates (a package renamed
-/// between versions); the search then meets the member while walking the candidates, and takes
-/// it there as satisfying the requirement.
+/// Candidates are produced lazily (IResolver.ResolveLazy): a remote repository with hundreds of
+/// tags only opens the tags the search actually reaches. Whether a member already satisfies a
+/// requirement is decided without enumerating every candidate: the loaded candidates are checked
+/// first, then each member whose version is in range and whose identity is that of a loaded
+/// candidate is looked up directly: the requirement's remote repository is resolved for exactly
+/// that version.
 ///
-/// A tooth.json package renamed between versions (a repository that moved names its new path in
-/// "tooth") is one package: a candidate converted from the same repository and label as a member
-/// of another identity is blocked by it, as if it had its identity (IsRenamed). A member from a
-/// git archive also satisfies a ref to another spec that reaches the same commit, so the same
-/// tag reached through the old and the new path of a moved repository is one package
-/// (IsMember).
-///
-/// A member resolved from a pinned spec ref stands in for the versions of that spec (spec §6),
-/// but pinned candidates are not candidates of an unpinned requirement. When an unpinned
-/// requirement is decided before a pinned one for the same spec, its choice clashes with the
-/// pinned package; once every candidate has failed so, the requirement is deferred to the end
-/// of the agenda, where the pinned package may satisfy it.
+/// Two members clash when they have the same identity, or are both mods of the same mod name
+/// (Section 3 rule 3). A member resolved from a remote repository with a ref stands in for the
+/// versions of that repository (Section 3), but its candidates are not candidates of a source
+/// without the ref. When a requirement without a ref is decided before one with a ref for the
+/// same repository, its choice clashes with the package of the ref; once every candidate has
+/// failed so, the requirement is deferred to the end of the agenda, where that package may
+/// satisfy it.
 public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultMaxSteps)
     : IGraphSolver {
   /// The default maximum number of candidates the search examines before giving up.
@@ -53,7 +47,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     return await search.Run(requests, pinned);
   }
 
-  /// Orders a package set for installation (spec §7): every package comes after the packages
+  /// Orders a package set for installation (protocol/workspace.md §5): every package comes after the packages
   /// it depends on; packages in a dependency cycle are ordered by lowercase identity (ordinal);
   /// remaining ties are broken by lowercase identity as well. Dependencies outside the set are
   /// ignored. Reverse the result to get an uninstall order.
@@ -65,7 +59,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     foreach (Candidate candidate in set
         .OrderBy(c => FoldCase(c.Package.Identity), StringComparer.Ordinal)
         .ThenBy(c => c.Package.Version, SemVersion.SortOrderComparer)
-        .ThenBy(c => c.Archive.Key, StringComparer.Ordinal)) {
+        .ThenBy(c => c.Archive.Identity.Canonical, StringComparer.Ordinal)) {
       if (indexOf.TryAdd(PackageKey.Of(candidate), nodes.Count)) {
         nodes.Add(candidate);
       }
@@ -141,7 +135,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
   }
 
   /// Whether two candidates are the same package: same identity (ignoring ASCII case), same
-  /// version, same archive key and same variant (IPackage.Variant).
+  /// version and same archive identifier.
   public static bool IsSamePackage(Candidate a, Candidate b) {
     return PackageKey.Of(a).Equals(PackageKey.Of(b));
   }
@@ -150,7 +144,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     return a.Length == b.Length && FoldCase(a) == FoldCase(b);
   }
 
-  /// Lowercases ASCII letters only, matching identity comparison (spec §1).
+  /// Lowercases ASCII letters only, matching identity comparison (protocol/package.md §1).
   private static string FoldCase(string identity) {
     return identity.Any(char.IsAsciiLetterUpper)
         ? string.Create(identity.Length, identity, (span, s) => {
@@ -224,72 +218,22 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     return component;
   }
 
-  /// The "same package" identity of a candidate. The variant tells apart the packages of one
-  /// archive (the variants of a tooth.json), so that a member never satisfies a requirement for
-  /// another package of its archive; two such packages of one identity clash (spec §6 condition 3).
-  private readonly record struct PackageKey(
-      string Identity,
-      SemVersion Version,
-      string Archive,
-      string Variant) {
+  /// The "same package" identity of a candidate: its identity, version and archive content.
+  private readonly record struct PackageKey(string Identity, SemVersion Version, string Archive) {
     public static PackageKey Of(Candidate candidate) {
       return new(
           FoldCase(candidate.Package.Identity),
           candidate.Package.Version,
-          candidate.Archive.Key,
-          candidate.Package.Variant);
+          candidate.Archive.Identity.Canonical);
     }
   }
 
-  /// Whether a member is the package a candidate (with key) is: the same package key, or the
-  /// same package from the same commit of a git repository reached through another spec. The
-  /// same tag of a moved repository, whose old path redirects to the new one, has archive keys
-  /// that differ only in the spec they start with ("spec@..."), so a package installed from either
-  /// path satisfies a ref to the other. What follows the spec still tells a tag version from a
-  /// pinned commit (spec §6).
-  private static bool IsMember(Member member, PackageKey key, Candidate candidate) {
-    if (member.Key == key) {
-      return true;
-    }
+  private readonly record struct ResolveKey(string Ref, object Range, bool Compat);
 
-    ArchiveHandle a = member.Candidate.Archive;
-    ArchiveHandle b = candidate.Archive;
-    int i = a.Key.IndexOf('@', StringComparison.Ordinal);
-    int j = b.Key.IndexOf('@', StringComparison.Ordinal);
-    return (member.Key with { Archive = "" }) == (key with { Archive = "" })
-        && a.Identity is GitArchiveIdentity { Commit.Length: > 0 } x
-        && b.Identity is GitArchiveIdentity y
-        && string.Equals(x.Commit, y.Commit, StringComparison.OrdinalIgnoreCase)
-        && x.Path == y.Path
-        && i > 0 && j > 0 && a.Key.AsSpan(i).SequenceEqual(b.Key.AsSpan(j));
-  }
-
-  private readonly record struct ResolveKey(string Ref, string Base, object Range, bool Compat);
-
-  /// Identifies the candidate list of a requirement by what determines it. Base is "" when no
-  /// ref is relative, since only relative refs depend on the base archive.
-  private readonly record struct ChoicesKey(
-      string Refs,
-      string Base,
-      object Range,
-      bool Compat,
-      string? Name) {
-    public static ChoicesKey Of(
-        IReadOnlyList<Ref> refs,
-        ArchiveHandle? baseArchive,
-        IVersionConstraint? range,
-        bool compat,
-        string? name) {
-      return new(
-          string.Join("\n", refs),
-          BaseKey(refs, baseArchive),
-          RangeKey(range),
-          compat,
-          name is null ? null : FoldCase(name));
-    }
-
-    public static string BaseKey(IEnumerable<Ref> refs, ArchiveHandle? baseArchive) {
-      return refs.Any(r => r.Kind == RefKind.Relative) ? baseArchive?.Key ?? "" : "";
+  /// Identifies the candidate list of a requirement by what determines it.
+  private readonly record struct ChoicesKey(string Ref, object Range, bool Compat) {
+    public static ChoicesKey Of(Ref source, IVersionConstraint? range, bool compat) {
+      return new(source.ToString(), RangeKey(range), compat);
     }
 
     /// Ranges are keyed by text for the known range types and by value equality for others.
@@ -297,25 +241,22 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       return range switch {
         null => "",
         VersionRange r => $"range:{r.Text}",
-        SemVersionRangeConstraint r => $"semver:{r.Range}",
         ExactVersionConstraint r => $"exact:{r.Version}",
         _ => range,
       };
     }
   }
 
-  /// An open obligation: a request (Owner null), or an install edge of a member. OwnerLevel is
-  /// the decision level that added the owner, or -1 for requests and pinned owners.
+  /// An open obligation: a request (Owner null), or a dependency of a member. OwnerLevel is the
+  /// decision level that added the owner, or -1 for requests and pinned owners.
   private sealed record Requirement(
       ChoicesKey Key,
       Candidate? Owner,
       string Description,
       int OwnerLevel,
-      IReadOnlyList<Ref> Refs,
-      ArchiveHandle? Base,
+      Ref Ref,
       IVersionConstraint? Range,
       bool Compat,
-      string? Name,
       bool Deferred = false) {
     public Choices? Loaded { get; set; }
   }
@@ -347,20 +288,17 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     }
   }
 
-  /// The candidates that satisfy a requirement, in preference order and without duplicates:
-  /// the concatenated sequences of its refs, filtered by name. Loaded on demand.
-  private sealed class Choices(IReadOnlyList<(Ref Ref, LazySequence Sequence)> sources, string? name) {
+  /// The candidates that satisfy a requirement, in preference order and without duplicates.
+  /// Loaded on demand.
+  private sealed class Choices(LazySequence sequence) {
     private readonly HashSet<PackageKey> _keys = [];
-    private readonly List<string> _filtered = [];
-    private int _source;
     private int _position;
 
     public List<Candidate> Candidates { get; } = [];
 
     public List<PackageKey> CandidateKeys { get; } = [];
 
-    public IEnumerable<string> Diagnostics =>
-        sources.SelectMany(s => s.Sequence.Diagnostics).Concat(_filtered);
+    public IEnumerable<string> Diagnostics => sequence.Diagnostics;
 
     /// Whether every candidate has been loaded.
     public bool Complete { get; private set; }
@@ -378,21 +316,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     }
 
     private async ValueTask LoadNext() {
-      while (_source < sources.Count) {
-        (Ref reference, LazySequence sequence) = sources[_source];
-        if (!await sequence.Has(_position)) {
-          _source++;
-          _position = 0;
-          continue;
-        }
-
+      while (await sequence.Has(_position)) {
         Candidate candidate = sequence.Items[_position++];
-        if (name is not null && !SameIdentity(name, candidate.Package.Identity)) {
-          _filtered.Add($"{reference}: {candidate.Package.Identity}@{candidate.Package.Version}"
-              + $" is not named {name}");
-          continue;
-        }
-
         PackageKey key = PackageKey.Of(candidate);
         if (_keys.Add(key)) {
           Candidates.Add(candidate);
@@ -438,15 +363,13 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       for (int i = 0; i < requests.Count; i++) {
         PackageRequest request = requests[i];
         _agenda.Add(new Requirement(
-            ChoicesKey.Of([request.Ref], request.Base, request.Range, false, null),
+            ChoicesKey.Of(request.Ref, request.Range, false),
             null,
             $"request {request.Ref} {Show(request.Range)}",
             -1,
-            [request.Ref],
-            request.Base,
+            request.Ref,
             request.Range,
-            false,
-            null));
+            false));
       }
 
       foreach (Candidate candidate in pinned) {
@@ -460,16 +383,14 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
               + " have the same identity.");
         }
 
-        foreach (Member member in _members.Values) {
-          if (Conflicts(member.Candidate.Package, candidate.Package)
-              || Conflicts(candidate.Package, member.Candidate.Package)) {
-            throw Fail($"Installed packages {Show(member.Candidate)} and {Show(candidate)} "
-                + "conflict.");
+        if (await ModName(candidate) is string modName) {
+          foreach (Member member in _members.Values) {
+            if (await ModName(member.Candidate) is string otherName
+                && SameIdentity(modName, otherName)) {
+              throw Fail($"Installed packages {ShowSource(member.Candidate)} and "
+                  + $"{ShowSource(candidate)} are mods of the same mod name '{modName}'.");
+            }
           }
-        }
-
-        if (Conflicts(candidate.Package, candidate.Package)) {
-          throw Fail($"Installed package {Show(candidate)} conflicts with itself.");
         }
 
         _members.Add(key.Identity, new Member(candidate, key, -1));
@@ -482,7 +403,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         // recent ones are closest to the requests that finally failed.
         List<string> lines = [.. _unresolvable, .. Enumerable.Reverse(_failures)];
         if (lines.Count == 0) {
-          lines.Add("no combination of candidates is free of identity clashes and conflicts");
+          lines.Add("no combination of candidates is free of identity and mod name clashes");
         }
 
         throw Fail("No package set satisfies the request:"
@@ -492,8 +413,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
                 : ""));
       }
 
-      // On success the agenda holds exactly the requests and the edges of every member, each
-      // satisfied by a member.
+      // On success the agenda holds exactly the requests and the dependencies of every member,
+      // each satisfied by a member.
       Dictionary<PackageKey, List<Candidate>> dependencies =
           _members.Values.ToDictionary(m => m.Key, _ => new List<Candidate>());
       List<Candidate?> requestSatisfiers = [];
@@ -571,7 +492,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         }
 
         if (_members.TryGetValue(key.Identity, out Member? existing)
-            && IsMember(existing, key, candidate)) {
+            && existing.Key == key) {
           // A member the shortcut of SatisfyingMember missed (see the class remarks). Nothing is
           // decided here, so no nogood of the rest contains this level.
           HashSet<int>? rest = await Solve(index + 1, level + 1);
@@ -588,7 +509,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
           break;
         }
 
-        if (Blocker(candidate, key) is (int blockerLevel, string reason)) {
+        if (await Blocker(candidate, key) is (int blockerLevel, string reason)) {
           if (blockerLevel >= 0) {
             blame.Add(blockerLevel);
             if (IsPinned(candidate) && _members.TryGetValue(key.Identity, out Member? clash)
@@ -628,7 +549,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       }
 
       if (!requirement.Deferred && _pinnedClashes.Contains(level)
-          && requirement.Refs.Any(r => r.Kind == RefKind.Spec && r.GitRef is null)) {
+          && requirement.Ref is { Kind: RefKind.Spec, GitRef: null }) {
         // A pinned package clashed with every choice made here; it may stand in for this
         // requirement once it is a member (see the class remarks). The deferred copy belongs to
         // this level, so its failure leads back here.
@@ -663,7 +584,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
     /// Returns why a candidate cannot join the current members, with the decision level of the
     /// member responsible (-1 when no member or only fixed ones are), or null when it can.
-    private (int Level, string Reason)? Blocker(Candidate candidate, PackageKey key) {
+    private async Task<(int Level, string Reason)?> Blocker(Candidate candidate, PackageKey key) {
       if (_dead.TryGetValue(key, out string? dead)) {
         return (-1, dead);
       }
@@ -673,37 +594,36 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
             + $"{ShowSource(same.Candidate)}{(same.Level < 0 ? " (installed)" : "")}");
       }
 
-      foreach (Member member in _members.Values) {
-        if (IsRenamed(member.Candidate, candidate)) {
-          return (member.Level, $"{ShowSource(candidate)} is "
-              + $"{ShowSource(member.Candidate)}{(member.Level < 0 ? " (installed)" : "")}"
-              + " under another identity");
-        }
+      string? modName;
+      try {
+        modName = await candidate.GetModManifest() is ModManifest manifest ? manifest.Name : null;
+      }
+      catch (McmodInstallException ex) {
+        // A missing or invalid mod manifest fails whatever the other members are.
+        _dead[key] = ex.Message;
+        return (-1, ex.Message);
       }
 
-      if (Conflicts(candidate.Package, candidate.Package)) {
-        return (-1, $"{Show(candidate)} conflicts with itself");
+      if (modName is null) {
+        return null;
       }
 
       (int Level, string Reason)? best = null;
       foreach (Member member in _members.Values) {
-        if (best is not null && best.Value.Level <= member.Level) {
-          continue;
-        }
-
-        if (Conflicts(member.Candidate.Package, candidate.Package)) {
-          best = (member.Level, $"{Show(member)} conflicts with {Show(candidate)}");
-        } else if (Conflicts(candidate.Package, member.Candidate.Package)) {
-          best = (member.Level, $"{Show(candidate)} conflicts with {Show(member)}");
+        if ((best is null || member.Level < best.Value.Level)
+            && await ModName(member.Candidate) is string other && SameIdentity(modName, other)) {
+          best = (member.Level, $"{ShowSource(candidate)} is a mod of the same mod name"
+              + $" '{modName}' as {ShowSource(member.Candidate)}"
+              + (member.Level < 0 ? " (installed)" : ""));
         }
       }
 
       return best;
     }
 
-    /// Returns the member that satisfies a requirement (spec §6: a member that is one of the
-    /// requirement's candidates), or null. See the class remarks for how this avoids loading
-    /// every candidate.
+    /// Returns the member that satisfies a requirement (protocol/workspace.md §3: a member that
+    /// is one of the requirement's candidates, or stands in for one), or null. See the class
+    /// remarks for how this avoids loading every candidate.
     private async Task<Candidate?> SatisfyingMember(Requirement requirement, Choices choices) {
       if (_members.Count == 0) {
         return null;
@@ -711,12 +631,12 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
       for (int i = 0; i < choices.Candidates.Count; i++) {
         if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
-            && IsMember(member, choices.CandidateKeys[i], choices.Candidates[i])) {
+            && member.Key == choices.CandidateKeys[i]) {
           return member.Candidate;
         }
       }
 
-      if (requirement.Refs.Any(r => r.Kind == RefKind.Spec && r.GitRef is null)) {
+      if (requirement.Ref is { Kind: RefKind.Spec, GitRef: null }) {
         foreach (Member member in _members.Values) {
           if (IsPinnedSatisfier(requirement, member.Candidate)) {
             return member.Candidate;
@@ -728,11 +648,11 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         return null;
       }
 
-      // Only spec refs can have long candidate sequences; load the others completely.
-      if (requirement.Refs.All(r => r.Kind != RefKind.Spec)) {
+      // Only remote repositories can have long candidate sequences; load the others completely.
+      if (requirement.Ref.Kind != RefKind.Spec) {
         for (int i = choices.Candidates.Count; await choices.Has(i); i++) {
           if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
-              && IsMember(member, choices.CandidateKeys[i], choices.Candidates[i])) {
+              && member.Key == choices.CandidateKeys[i]) {
             return member.Candidate;
           }
         }
@@ -760,7 +680,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     private async Task<Candidate?> MemberAmongCandidates(Choices choices) {
       for (int i = 0; await choices.Has(i); i++) {
         if (_members.TryGetValue(choices.CandidateKeys[i].Identity, out Member? member)
-            && IsMember(member, choices.CandidateKeys[i], choices.Candidates[i])) {
+            && member.Key == choices.CandidateKeys[i]) {
           return member.Candidate;
         }
       }
@@ -768,34 +688,29 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       return null;
     }
 
-    /// Whether two tooth.json packages of different identities are one package renamed between
-    /// versions: converted from the same variant label of the tooth.json at the root of one
-    /// repository. A tooth.json names its own path in "tooth", so a repository that moved names
-    /// the new path in its newer tags (spec §10.2 rule 1); its versions are still one package, of which
-    /// S holds one (spec §6 condition 3), and installing a newer one replaces the installed one.
-    private static bool IsRenamed(Candidate a, Candidate b) {
-      return a.Package.Kind == ToothCompat.KindName && b.Package.Kind == ToothCompat.KindName
-          && a.Package.Variant == b.Package.Variant
-          && !SameIdentity(a.Package.Identity, b.Package.Identity)
-          && a.Archive.Identity is GitArchiveIdentity x
-          && b.Archive.Identity is GitArchiveIdentity y
-          && x.Path == y.Path
-          && string.Equals(x.RepoUrl, y.RepoUrl, StringComparison.OrdinalIgnoreCase);
+    /// The mod name of a candidate, or null for a file package and for a mod whose mod manifest
+    /// cannot be read (which installing it reports).
+    private static async Task<string?> ModName(Candidate candidate) {
+      try {
+        return (await candidate.GetModManifest())?.Name;
+      }
+      catch (McmodInstallException) {
+        return null;
+      }
     }
 
     private static bool IsPinned(Candidate candidate) {
-      return candidate.Chain.Count > 0
-          && candidate.Chain[0].Ref is { Kind: RefKind.Spec, GitRef: not null };
+      return candidate.Source is { Kind: RefKind.Spec, GitRef: not null };
     }
 
-    /// Whether a candidate resolved from a spec ref pinned by a git ref satisfies a requirement
-    /// through one of its unpinned spec refs (spec §6): same module path (ignoring ASCII case, as
-    /// the hosts do) and variant, and a version in the requirement's range. A pinned build thus
-    /// stands in for the tag versions of its repository, while a pinned requirement still needs
-    /// exactly its pin.
+    /// Whether a candidate resolved from a remote repository with a ref stands in for a
+    /// requirement without a ref (protocol/workspace.md §3): same repository (ignoring ASCII
+    /// case) and variant, and a version in the requirement's range. A package of a ref thus
+    /// stands in for the tag versions of its repository, while a requirement with a ref still
+    /// needs exactly its own candidates.
     private static bool IsPinnedSatisfier(Requirement requirement, Candidate candidate) {
-      if (candidate.Chain.Count == 0
-          || candidate.Chain[0].Ref is not { Kind: RefKind.Spec, GitRef: not null } pinned) {
+      if (candidate.Source is not { Kind: RefKind.Spec, GitRef: not null } pinned
+          || requirement.Ref is not { Kind: RefKind.Spec, GitRef: null } wanted) {
         return false;
       }
 
@@ -804,20 +719,13 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         return false;
       }
 
-      if (requirement.Name is not null
-          && !SameIdentity(requirement.Name, candidate.Package.Identity)) {
-        return false;
-      }
-
-      // §10.2 rule 3: "client" means "" only when the pinned archive uses manifest.json; a package
-      // converted from the tooth.json at that archive itself is reached in one hop.
-      bool manifestArchive = candidate.Chain.Count > 1
-          || candidate.Package.Kind != ToothCompat.KindName;
-      return requirement.Refs.Any(r => r.Kind == RefKind.Spec && r.GitRef is null
-          && string.Equals(r.Target, pinned.Target, StringComparison.OrdinalIgnoreCase)
-          && (r.Variant == pinned.Variant
-              || (requirement.Compat && manifestArchive && r.Variant == "client"
-                  && pinned.Variant == "")));
+      // protocol/package.md §5: a dependency of format 3 on "client" names the variant "" of a
+      // package of format 4.
+      return SameIdentity(wanted.Target, pinned.Target)
+          && (wanted.Variant == candidate.Package.Variant
+              || (requirement.Compat && !candidate.Package.Entry.Legacy
+                  && wanted.Variant == ToothCompat.ClientLabel
+                  && candidate.Package.Variant == ""));
     }
 
     /// Whether a member is one of the candidates of a requirement, without enumerating the
@@ -828,23 +736,15 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         return false;
       }
 
-      if (requirement.Name is not null
-          && !SameIdentity(requirement.Name, member.Candidate.Package.Identity)) {
-        return false;
-      }
-
-      foreach (Ref reference in requirement.Refs) {
-        LazySequence sequence = Resolve(
-            reference,
-            requirement.Base,
-            reference.Kind == RefKind.Spec
-                ? new ExactVersionConstraint(version)
-                : requirement.Range,
-            requirement.Compat);
-        for (int i = 0; await sequence.Has(i); i++) {
-          if (IsMember(member, PackageKey.Of(sequence.Items[i]), sequence.Items[i])) {
-            return true;
-          }
+      LazySequence sequence = Resolve(
+          requirement.Ref,
+          requirement.Ref.Kind == RefKind.Spec
+              ? new ExactVersionConstraint(version)
+              : requirement.Range,
+          requirement.Compat);
+      for (int i = 0; await sequence.Has(i); i++) {
+        if (member.Key == PackageKey.Of(sequence.Items[i])) {
+          return true;
         }
       }
 
@@ -852,35 +752,21 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     }
 
     private void AddEdges(Candidate owner, int level, string suffix) {
-      IReadOnlyList<InstallEdge> edges = owner.Package.InstallEdges;
-      foreach (InstallEdge edge in edges) {
+      foreach (ToothDependency dependency in owner.Package.Entry.Dependencies) {
         _agenda.Add(new Requirement(
-            EdgeKey(owner, edge),
+            ChoicesKey.Of(dependency.Source, dependency.Range, dependency.ClientCompat),
             owner,
-            $"{Show(owner)}{suffix} requires {edge.Name ?? "a package"} {Show(edge.Version)} "
-                + $"from {string.Join(", ", edge.Refs)}",
+            $"{Show(owner)}{suffix} requires {dependency.Source} {Show(dependency.Range)}",
             level,
-            edge.Refs,
-            owner.Archive,
-            edge.Version,
-            edge.ToothClientCompat,
-            edge.Name));
+            dependency.Source,
+            dependency.Range,
+            dependency.ClientCompat));
       }
-    }
-
-    private static ChoicesKey EdgeKey(Candidate owner, InstallEdge edge) {
-      return ChoicesKey.Of(edge.Refs, owner.Archive, edge.Version, edge.ToothClientCompat,
-          edge.Name);
     }
 
     private Task<Choices> GetChoices(Requirement requirement) {
       if (!_choices.TryGetValue(requirement.Key, out Choices? choices)) {
-        choices = new Choices(
-            [
-              .. requirement.Refs.Select(r => (r, Resolve(
-                  r, requirement.Base, requirement.Range, requirement.Compat))),
-            ],
-            requirement.Name);
+        choices = new Choices(Resolve(requirement.Ref, requirement.Range, requirement.Compat));
         _choices[requirement.Key] = choices;
       }
 
@@ -888,19 +774,11 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       return Task.FromResult(choices);
     }
 
-    private LazySequence Resolve(
-        Ref reference,
-        ArchiveHandle? baseArchive,
-        IVersionConstraint? range,
-        bool compat) {
-      ResolveKey key = new(
-          reference.ToString(),
-          ChoicesKey.BaseKey([reference], baseArchive),
-          ChoicesKey.RangeKey(range),
-          compat);
+    private LazySequence Resolve(Ref reference, IVersionConstraint? range, bool compat) {
+      ResolveKey key = new(reference.ToString(), ChoicesKey.RangeKey(range), compat);
       if (!_resolved.TryGetValue(key, out LazySequence? sequence)) {
         sequence = new LazySequence(sink => resolver.ResolveLazy(
-            reference, baseArchive, range, environment, compat, sink));
+            reference, range, environment, compat, sink));
         _resolved[key] = sequence;
       }
 
@@ -968,20 +846,13 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       return new DependencyResolutionException(message, [.. _diagnostics]);
     }
 
-    private static bool Conflicts(IPackage package, IPackage other) {
-      return package.Conflicts.Any(d => SameIdentity(d.Id, other.Identity)
-          && (d.Version is null || d.Version.IsSatisfiedBy(other.Version)));
-    }
-
     private static string Show(Candidate candidate) {
       return $"{candidate.Package.Identity}@{candidate.Package.Version}";
     }
 
     /// A candidate with where it comes from, to tell apart packages of one identity.
     private static string ShowSource(Candidate candidate) {
-      return $"{Show(candidate)} (from {candidate.Archive.Key}"
-          + (candidate.Package.Variant == "" ? "" : $", variant \"{candidate.Package.Variant}\"")
-          + ")";
+      return $"{Show(candidate)} (from {candidate.Archive.Key})";
     }
 
     private static string Show(Member member) {

@@ -32,32 +32,24 @@ public class ArchiveProviderTests {
   [WinX64Theory]
   [InlineData("github.com/LiteLDev/LeviLamina")]
   [InlineData("github.com/LiteLDev/LegacyMoney")]
-  public async Task ListVersionsOpenVersion_NewestVersion_ReadsRootDocument(string spec) {
+  public async Task ListVersionsOpenVersion_NewestVersion_ReadsToothFile(string spec) {
     // Arrange
     ArchiveProvider provider = CreateProvider();
-    Mock<IDocumentParser> parser = new();
-    parser.Setup(p => p.Parse(It.IsAny<byte[]>())).Returns(new MetaDocument {
-      Targets = [],
-    });
 
     // Act
     IReadOnlyList<SpecVersion> versions = await provider.ListVersions(spec);
     ArchiveHandle archive = await provider.OpenVersion(spec, versions[0]);
-    ArchiveDocument document = await new ArchiveReader(parser.Object).Read(archive);
+    ToothDocument document = await new ArchiveReader().Read(archive);
 
     // Assert
     TestContext.Current.TestOutputHelper?.WriteLine(
-        $"{spec}: {versions.Count} versions, newest {versions[0].Tag}, {document.GetType().Name}");
+        $"{spec}: {versions.Count} versions, newest {versions[0].Tag}, format {document.FormatVersion}");
     Assert.True(versions.Count > 10);
     Assert.Equal($"{spec}@{versions[0].Version}", archive.Key);
     GitArchiveIdentity identity = Assert.IsType<GitArchiveIdentity>(archive.Identity);
     Assert.Equal($"https://{spec}.git", identity.RepoUrl);
     Assert.Equal(40, identity.Commit.Length);
-    if (document is ToothArchiveDocument tooth) {
-      Assert.Equal(spec, tooth.Manifest.Path, ignoreCase: true);
-    } else {
-      Assert.IsType<MetaArchiveDocument>(document);
-    }
+    Assert.Equal(spec, document.Tooth, ignoreCase: true);
   }
 
   [WinX64Theory]
@@ -67,7 +59,7 @@ public class ArchiveProviderTests {
     ArchiveProvider provider = CreateProvider();
 
     // Act
-    ArchiveHandle archive = await provider.Open(Ref.Parse(url), null!);
+    ArchiveHandle archive = await provider.Open(Ref.Parse(url));
     ArchiveHandle locked = await CreateProvider().OpenLocked(archive.Key, archive.Identity);
 
     // Assert

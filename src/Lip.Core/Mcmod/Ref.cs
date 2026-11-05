@@ -3,18 +3,17 @@ using System.Text.RegularExpressions;
 
 namespace Lip.Core.Mcmod;
 
+/// The forms of a source (protocol/package.md §2).
 public enum RefKind {
-  /// "./path" inside the archive of the referring document.
-  Relative,
-
-  /// "https://..." pointing to a ZIP archive.
+  /// "https://..." naming a ZIP archive (a URL).
   Url,
 
-  /// A Go module path; its "v" + SemVer tags are the versions, unless a git ref pins it.
+  /// A Go module path naming a git repository (a remote repository); its version tags are the
+  /// versions, unless a ref pins it.
   Spec,
 
-  /// "file:///..." naming a local ZIP file. Only user requests (and the lock entries they
-  /// produce) have file refs; documents must not contain them (spec §3).
+  /// "file:///..." naming a local ZIP file or a local directory (a local path). Requests have
+  /// local paths as the file: URI of their absolute path (protocol/cli.md §3).
   File,
 }
 
@@ -26,8 +25,8 @@ public enum GitRefKind {
   Rev,
 }
 
-/// A git ref pinning a spec ref (spec §3): a version, "branch:" name, "tag:" name or "rev:"
-/// commit id.
+/// The ref of a remote repository (protocol/package.md §2.1): a version, "branch:" name,
+/// "tag:" name or "rev:" commit id.
 public sealed partial record GitRef {
   private GitRef(GitRefKind kind, string name) {
     Kind = kind;
@@ -114,8 +113,8 @@ public sealed partial record GitRef {
   private static partial Regex CommitIdRegex();
 }
 
-/// A reference to a package location (spec §3): target [ "#" variant ], where a spec target may
-/// be followed by [ "@" git-ref ] after the variant.
+/// A source (protocol/package.md §2): target [ "#" variant ], where a remote repository may be
+/// followed by [ "@" ref ] after the variant.
 public partial record Ref {
   private const string _fileScheme = "file:";
 
@@ -128,8 +127,8 @@ public partial record Ref {
 
   public RefKind Kind { get; }
 
-  /// The location without the variant and the git ref: the relative path or URL exactly as
-  /// written, the module path of a spec ref, or the absolute file URI of a file ref.
+  /// The location without the variant and the git ref: the URL exactly as written, the module
+  /// path of a spec ref, or the absolute file URI of a file ref.
   public string Target { get; }
 
   /// The part after the "#", or "" when there is none.
@@ -137,14 +136,6 @@ public partial record Ref {
 
   /// The git ref pinning a spec ref, or null when the spec ref selects by tag version.
   public GitRef? GitRef { get; }
-
-  /// For relative refs, the path without the leading "./" and without a trailing '/'.
-  public string RelativePath => Kind == RefKind.Relative
-      ? Target[2..].TrimEnd('/')
-      : throw new InvalidOperationException($"Not a relative ref: {this}");
-
-  /// For relative refs, whether the ref points to a directory (written with a trailing '/').
-  public bool IsDirectory => Kind == RefKind.Relative && Target.EndsWith('/');
 
   /// For file refs, the absolute local path.
   public string LocalPath => Kind == RefKind.File
@@ -173,10 +164,10 @@ public partial record Ref {
         : throw new ArgumentException($"Not a local path: {absolutePath}", nameof(absolutePath));
   }
 
-  /// Parses a ref of a document. File refs are rejected.
+  /// Parses a source that is not a local path.
   public static Ref Parse(string s) => Parse(s, allowFile: false);
 
-  /// Parses a ref; allowFile also accepts file refs, which only user requests and the lock have.
+  /// Parses a source; allowFile also accepts local paths as file: URIs.
   public static Ref Parse(string s, bool allowFile) =>
       TryParse(s, allowFile, out Ref? r, out string? error)
           ? r
@@ -194,7 +185,6 @@ public partial record Ref {
       [NotNullWhen(false)] out string? error) {
     result = null;
 
-    bool isRelative = s.StartsWith("./", StringComparison.Ordinal);
     bool isUrl = s.StartsWith("https://", StringComparison.Ordinal);
     bool isFile = s.StartsWith(_fileScheme, StringComparison.OrdinalIgnoreCase);
 
@@ -202,7 +192,7 @@ public partial record Ref {
     // everything after the first '@' of a spec ref is its git ref, which may contain '#'.
     string head = s;
     GitRef? gitRef = null;
-    if (!isRelative && !isUrl && !isFile) {
+    if (!isUrl && !isFile) {
       int at = s.IndexOf('@');
       if (at >= 0) {
         head = s[..at];
@@ -223,21 +213,7 @@ public partial record Ref {
       return false;
     }
 
-    if (isRelative) {
-      string path = target[2..];
-      if (path.EndsWith('/')) {
-        path = path[..^1];
-      }
-
-      if (path == "" || path.Contains('\\')
-          || path.Split('/').Any(seg => seg is "" or "." or "..")) {
-        error = "relative path must be non-empty and must not contain empty, '.' or '..' "
-            + "segments or '\\'";
-        return false;
-      }
-
-      result = new Ref(RefKind.Relative, target, variant);
-    } else if (isUrl) {
+    if (isUrl) {
       if (!IsUriText(target) || !Uri.TryCreate(target, UriKind.Absolute, out Uri? uri)
           || uri.Scheme != "https" || uri.Host == "") {
         error = "not an absolute https URL";
@@ -247,7 +223,7 @@ public partial record Ref {
       result = new Ref(RefKind.Url, target, variant);
     } else if (isFile) {
       if (!allowFile) {
-        error = "file refs are only allowed on the command line";
+        error = "local paths are only allowed on the command line";
         return false;
       }
 

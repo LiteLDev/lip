@@ -1,11 +1,11 @@
 using DotNet.Globbing;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
-using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// The v3 placement matching (formerly PlacementMatcher) that the tooth.json conversion keeps.
+/// The placements of entries derived from format 3, carried out by the matching rules of lip
+/// v0.37.0 (protocol/package.md §5).
 public class ToothPlacementsTests {
   private static AssetPlacement File(string src, string dst) => new("0", false, src, dst);
 
@@ -186,39 +186,31 @@ public class ToothPlacementsTests {
     ];
 
     // Act
-    List<PackageFile> expanded = [.. ToothPlacements.Expand(placements, keys)];
+    List<(string Key, string Target)> expanded = [.. ToothPlacements.Expand(placements, keys)];
 
     // Assert
     Assert.Equal(
         [
-          new PackageFile(null, "0/a.dll", "plugins/p/a.dll"),
-          new PackageFile(null, "0/a.dll", "plugins/p/a2.dll"),
-          new PackageFile(null, "0/b.dll", "plugins/p/b.dll"),
-          new PackageFile(null, "1/x/c.txt", "plugins/x/data/c.txt"),
-          new PackageFile(null, "2", "plugins/p/node.zip"),
+          ("0/a.dll", "plugins/p/a.dll"),
+          ("0/a.dll", "plugins/p/a2.dll"),
+          ("0/b.dll", "plugins/p/b.dll"),
+          ("1/x/c.txt", "plugins/x/data/c.txt"),
+          ("2", "plugins/p/node.zip"),
         ],
         expanded);
   }
 
   [Fact]
-  public void Expand_Document_PrependsFilesAndClearsAssetPlacements() {
+  public void Expand_AssetWithoutPlacements_PlacesNothing() {
     // Arrange
-    PackageDocument document = new() {
-      Id = "repo",
-      Version = SemVersion.Parse("1.0.0"),
-      IsMod = false,
-      AssetPlacements = [new("0", false, "a.dll", "a.dll")],
-      Files = [new PackageFile(null, "0/b.dll", "b.dll")],
-    };
+    string[] keys = ["0/a.dll", "1/b.dll"];
+    AssetPlacement[] placements = [new("1", false, "b.dll", "b.dll")];
 
     // Act
-    PackageDocument expanded = ToothPlacements.Expand(document, ["0/a.dll", "0/b.dll"]);
+    List<(string Key, string Target)> expanded = [.. ToothPlacements.Expand(placements, keys)];
 
     // Assert
-    Assert.Empty(expanded.AssetPlacements);
-    Assert.Equal(
-        [new PackageFile(null, "0/a.dll", "a.dll"), new PackageFile(null, "0/b.dll", "b.dll")],
-        expanded.Files);
+    Assert.Equal([("1/b.dll", "b.dll")], expanded);
   }
 
   [Theory]

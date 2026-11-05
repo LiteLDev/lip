@@ -16,9 +16,9 @@ lip update [PACKAGES] [options]
 
 ## Description
 
-The packages must already be installed, and become explicitly installed. Updating a package uninstalls the old version and installs the new one; its dependencies are updated as needed. A package is reinstalled only when the result differs from what is installed: another version, another archive, or the same archive with other content.
+The packages must already be installed, and become explicitly installed. Updating a package uninstalls the old version and installs the new one; its dependencies are updated as needed. A package is reinstalled only when the result differs from what is installed: another identity, another version, another archive, or other assets.
 
-Without arguments, every explicitly installed package is requested again by what it was installed from, as recorded in the [lock](../../concepts/lockfiles.md):
+Without arguments, every explicitly installed package is requested again by the source it was installed from, as recorded in the [workspace file](../../concepts/lockfiles.md):
 
 | Installed from | `lip update` installs |
 | --- | --- |
@@ -27,14 +27,11 @@ Without arguments, every explicitly installed package is requested again by what
 | `<path>@branch:<branch>` | The current head of the branch. |
 | `<path>@tag:<tag>` | The commit the tag points to now (it only changes if the tag was moved). |
 | `<path>@rev:<commit>` | The same commit: nothing changes. |
-| An `https://` URL | The same URL. Downloads are cached by URL, so the cached copy is used; run [`lip cache clean`](cache_clean.md) first to download it again. |
-| A local `.mcmod` or `.zip` file | The same file; if its content changed, the package is reinstalled from it. If the file no longer exists, the package is kept as it is, with a warning. |
+| An `https://` URL | The ZIP file downloaded again from that URL. |
+| A local ZIP file | The same file; if its content changed, the package is reinstalled from it. If the file no longer exists, the package is kept as it is. |
+| A local directory | The same directory, read again. A directory is identified by its path, so the package is reinstalled only when its version or its assets changed. If the directory no longer exists, the package is kept as it is. |
 
-To move a package installed from a git ref back to released versions, update it by its plain package path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
-
-A package whose repository moved (for example, transferred to another GitHub organization) can still be updated by its old path, which GitHub redirects. When the `tooth.json` of a newer version declares the new path, the package keeps its identity as long as the repository keeps its name (the identity of a `tooth.json` package is the last element of its path), so updating it by its old or its new path is a normal update that also switches the package to the new path, keeping its preserved files. Likewise, a repository of the same name elsewhere has the same identity: `lip update <that path>` replaces the installed package with the package from that path. Installing the package by the other path does not install a second copy, and a dependency declared on either path is satisfied by the same version installed from the other.
-
-When a package path without a git ref redirects to the path that the `tooth.json` declares, lip requests the package by the declared path instead, keeping its variant, and the [lock](../../concepts/lockfiles.md) records that path. Later updates then go straight to the new repository and no longer depend on the redirect. This applies to `lip install` by the old path, and to explicitly installed packages that lip v0.36.0 replaced but still recorded under the old path: the next `lip update` reinstalls them from the new path. A package installed from a git ref keeps its path, and a dependency is requested by the path its dependent declares. A fork, or another repository whose `tooth.json` declares some other path, does not redirect there, so it is still requested by its own path. `lip uninstall` also accepts the old path of such a package.
+To move a package installed from a git ref back to released versions, update it by its plain tooth path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
 
 ## Options
 

@@ -52,10 +52,6 @@ public class LipClient(
     ICacheService cacheService,
     IConfigService configService,
     McmodService mcmodService) : ILipClient, IDisposable {
-  private static readonly JsonSerializerOptions _jsonSerializerOptions = new() {
-    WriteIndented = true
-  };
-
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;
   private readonly ICacheService _cacheService = cacheService;
@@ -77,7 +73,6 @@ public class LipClient(
     GitRemoteClient gitRemoteClient = new(githubProxy);
 
     CommandRunner commandRunner = new();
-    DocumentParser documentParser = new();
     ArchiveProvider archiveProvider = new(
         gitRemoteClient, cacheService, fileSystem, fileDownloader, githubProxy);
 
@@ -86,11 +81,8 @@ public class LipClient(
         userInteraction,
         new LockStore(fileSystem),
         archiveProvider,
-        new ArchiveReader(documentParser),
-        new ToothCompat(),
-        documentParser,
-        [new McmodInstaller(
-            fileSystem, commandRunner, documentParser, userInteraction, archiveProvider)]);
+        new ArchiveReader(),
+        new McmodInstaller(fileSystem, commandRunner, userInteraction));
 
     LipClient lipClient = new(
         fileSystem, userInteraction, cacheService, configService, mcmodService);
@@ -129,36 +121,38 @@ public class LipClient(
     await _configService.Set(key, value);
   }
 
-  /// Writes a manifest.json package document describing a native mod, its id named after the
-  /// current directory (specs/cli.md §5.7). Fails when that id is not a valid id.
+  /// Writes a tooth.json of format 4 with one entry for the server on win-x64 (protocol/cli.md
+  /// §5.7), asking the user for its tooth path. Fails when tooth.json exists, or when the user
+  /// cannot be asked.
   public async Task Init() {
-    string path = ManifestFormat.ManifestFileName;
+    string path = ToothFormat.ToothFileName;
     if (_fileSystem.File.Exists(path)) {
       throw new InvalidOperationException($"{path} already exists.");
     }
 
-    string directoryName = _fileSystem.Path.GetFileName(
-        Path.TrimEndingDirectorySeparator(_fileSystem.Directory.GetCurrentDirectory()));
-    string id = PackageNames.ReplaceInvalidCharacters(directoryName);
-    if (!PackageNames.IsValid(id)) {
-      throw new InvalidOperationException(
-          $"Cannot name the package after the directory '{directoryName}': '{id}' is not a "
-          + "valid id. Rename the directory, or write manifest.json yourself.");
-    }
+    string tooth = await ToothMigrator.AskValid(
+        _userInteraction,
+        "the tooth path of the package (a Go module path, e.g. github.com/owner/repo)",
+        answer => Golang.Org.X.Mod.Module.CheckPath(answer) is Exception ex
+            ? $"'{answer}' is not a Go module path ({ex.Message})."
+            : null);
 
-    JsonObject manifest = new() {
-      [ManifestFormat.FormatKey] = ManifestFormat.Format,
-      ["id"] = id,
+    JsonObject document = new() {
+      [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
+      ["format_uuid"] = ToothFormat.FormatUuid,
+      ["tooth"] = tooth,
       ["version"] = "0.1.0",
-      ["dependencies"] = new JsonObject(),
-      ["mod"] = new JsonObject {
-        ["loader"] = "native",
-        ["entry"] = $"{id}.dll",
+      ["variants"] = new JsonObject {
+        [""] = new JsonArray(new JsonObject {
+          ["platform"] = "server",
+          ["runtime"] = "win-x64",
+        }),
       },
     };
 
-    using Stream stream = _fileSystem.CreateFileWithDirectory(path);
-    await JsonSerializer.SerializeAsync(stream, manifest, _jsonSerializerOptions);
+    // Asking may take a while; a tooth.json written meanwhile is not replaced.
+    using Stream stream = _fileSystem.File.Open(path, FileMode.CreateNew);
+    await stream.WriteAsync(ToothMigrator.Serialize(document));
   }
 
   public async Task Install(
@@ -172,7 +166,8 @@ public class LipClient(
         [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
   }
 
-  /// Installed packages as "identity@version": explicitly installed ones and dependencies.
+  /// Installed packages as "identity@version": explicitly installed ones and dependency packages,
+  /// in installation order (protocol/cli.md §5.4).
   public async Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List() {
     IReadOnlyList<InstalledPackage> packages = await _mcmodService.List();
 
@@ -181,10 +176,9 @@ public class LipClient(
         packages.Where(p => !p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct());
   }
 
-  /// Migrates the package repository in the current directory to a manifest.json of format
-  /// bf45b1, from tooth.json or a LeviLamina manifest (RepositoryMigrator), asking the user for
-  /// missing values. Everything dropped or converted with another meaning is reported as a
-  /// warning.
+  /// Rewrites the tooth.json of format 1, 2 or 3 in the current directory as a tooth.json of
+  /// format 4 (RepositoryMigrator, protocol/cli.md §5.8), asking the user for missing values.
+  /// Everything dropped or converted with another meaning is reported as a warning.
   public async Task Migrate() {
     IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(
         _fileSystem, _fileSystem.Directory.GetCurrentDirectory(), _userInteraction);

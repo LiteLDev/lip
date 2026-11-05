@@ -1,140 +1,443 @@
-using System.IO.Abstractions.TestingHelpers;
-using System.Text;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
-using Lip.Core.Mcmod.Lock;
+using Lip.Core.Mcmod.Install;
 using Moq;
 
 namespace Lip.Core.Tests.Mcmod;
 
+/// End-to-end tests of install, uninstall, update and list (protocol/cli.md §5.1–§5.4,
+/// protocol/workspace.md §3–§5 and §7.1) through the whole pipeline of WorkspaceHarness.
 public class McmodServiceTests {
   private const string Lib = "example.com/lib";
   private const string App = "example.com/app";
 
-  // The identities of the tooth.json packages at Lib and App: their tooth names (spec §10.2).
-  private const string LibId = "lib";
-  private const string AppId = "app";
-
-  private static readonly OperationOptions s_options = new();
+  private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
 
   private readonly WorkspaceHarness _ws = new();
 
+  #region Install
+
   [Fact]
-  public async Task Install_ToothSpec_InstallsAndLocksServerPlatform() {
+  public async Task Install_RemoteRepository_RecordsWorkspaceFile() {
     // Arrange
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
-      ["file.dll"] = "lib 1",
+    string commit = _ws.Git.AddTag(Lib, "v1.0.0", new() {
+      ["tooth.json"] = LibTooth("1.0.0"),
+      ["lib.dll"] = "lib 1.0.0",
     });
 
     // Act
-    await _ws.Service.Install([Lib], s_options);
+    await _ws.Service.Install([Lib], _options);
 
     // Assert
-    Assert.Equal("lib 1", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+    Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     LockFile lockFile = await _ws.Lock();
+    Assert.Equal(4, lockFile.FormatVersion);
     Assert.Equal("server", lockFile.Platform);
-    Assert.NotNull(lockFile.Runtime);
+    Assert.Equal(WorkspaceHarness.Runtime, lockFile.Runtime);
     LockedPackage package = Assert.Single(lockFile.Packages);
-    Assert.Equal(LibId, package.Identity);
-    Assert.Equal("1.0.0", package.Version);
-    Assert.Equal("tooth", package.Kind);
-    Assert.True(package.Explicit);
+    Assert.Equal((Lib, "", "1.0.0", true, Lib), (
+        package.Tooth, package.Variant, package.Version, package.Explicit, package.Source));
+    Assert.Equal(new GitArchiveIdentity("https://example.com/lib.git", commit), package.Archive);
+    Assert.Equal([null], package.Assets);
     Assert.Equal(["lib/lib.dll"], package.Files);
-    Assert.Equal($"{Lib}@1.0.0", package.ArchiveKey);
-    Assert.IsType<GitArchiveIdentity>(package.Archive);
-    Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
+    Assert.True(JsonNode.DeepEquals(
+        JsonNode.Parse(LibTooth("1.0.0"))!["variants"]![""]![0],
+        JsonNode.Parse(package.Entry.GetRawText())));
+  }
+
+  [Fact]
+  public async Task Install_LocalZip_RecordsFileUriSourceAndIdentifiers() {
+    // Arrange: a self asset placing through plugins/, and a zip asset.
+    byte[] extra = WorkspaceHarness.Zip(new() { ["y.txt"] = "y" });
+    _ws.AddDownload("https://example.com/extra.zip", extra);
+    string tooth = WorkspaceHarness.Tooth4("example.com/pkg", "1.0.0", """
+        "assets": [
+          { "type": "self", "placements": [ { "src": "x.txt", "dest": "plugins/pkg/x.txt" } ] },
+          {
+            "type": "zip",
+            "urls": [ "https://example.com/extra.zip" ],
+            "placements": [ { "src": "y.txt", "dest": "extra/y.txt" } ]
+          }
+        ]
+        """);
+    string path = _ws.AddZip("pkg.zip", new() { ["tooth.json"] = tooth, ["x.txt"] = "x" });
+
+    // Act
+    await _ws.Service.Install(["pkg.zip"], _options);
+
+    // Assert
+    Assert.Equal("x", _ws.Fs.File.ReadAllText(_ws.Path("mods/pkg/x.txt")));
+    Assert.Equal("y", _ws.Fs.File.ReadAllText(_ws.Path("extra/y.txt")));
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    string uri = Ref.FromFile(path).ToString();
+    Assert.StartsWith("file:", uri);
+    Assert.Equal(uri, package.Source);
+    Assert.Equal(
+        new ZipArchiveIdentity(Sha256(_ws.Fs.File.ReadAllBytes(path)), uri), package.Archive);
+    Assert.Equal(
+        [null, new AssetIdentity("https://example.com/extra.zip", Sha256(extra))],
+        package.Assets);
+    Assert.Equal(["mods/pkg/x.txt", "extra/y.txt"], package.Files);
+    Assert.True(JsonNode.DeepEquals(
+        JsonNode.Parse(tooth)!["variants"]![""]![0], JsonNode.Parse(package.Entry.GetRawText())));
   }
 
   [Fact]
   public async Task Install_NewestVersion_OpensOnlyTheNewestTag() {
     // Arrange
     for (int i = 0; i < 20; i++) {
-      _ws.AddTag(Lib, $"1.{i}.0", new() {
-        ["tooth.json"] = WorkspaceHarness.Tooth(Lib, $"1.{i}.0", "lib/lib.dll"),
-        ["file.dll"] = $"lib {i}",
-      });
+      AddLib($"1.{i}.0");
     }
 
     // Act
-    await _ws.Service.Install([Lib], s_options);
+    await _ws.Service.Install([Lib], _options);
 
     // Assert
-    Assert.Equal("lib 19", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+    Assert.Equal("lib 1.19.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     Assert.Single(_ws.Git.ListedTrees.Distinct());
   }
 
   [Fact]
-  public async Task Install_ToothWithDependency_InstallsDependencyAsImplicit() {
+  public async Task Install_WithDependency_InstallsDependencyPackage() {
     // Arrange
     AddLibAndApp();
 
     // Act
-    await _ws.Service.Install([$"{App}@1.0.0"], s_options);
+    await _ws.Service.Install([$"{App}@1.0.0"], _options);
 
-    // Assert
-    IReadOnlyList<InstalledPackage> packages = await _ws.Service.List();
+    // Assert: in installation order, the dependency first.
     Assert.Equal(
-        [(LibId, "1.1.0", false), (AppId, "1.0.0", true)],
-        packages.Select(p => (p.Identity, p.Version, p.Explicit)));
+        [(Lib, "1.1.0", false), (App, "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    LockFile lockFile = await _ws.Lock();
+    Assert.Equal([Lib, $"{App}@1.0.0"], lockFile.Packages.Select(p => p.Source));
     Assert.True(_ws.Exists("lib/lib.dll"));
     Assert.True(_ws.Exists("app/app.dll"));
+  }
+
+  [Fact]
+  public async Task Install_FormatThreeDependency_InstallsBoth() {
+    // Arrange: app of format 4 depends on lib of format 3.
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
+      ["file.dll"] = "lib 1.0.0",
+    });
+    AddApp("1.0.0", ">=1.0.0");
+
+    // Act
+    await _ws.Service.Install([App], _options);
+
+    // Assert
+    LockFile lockFile = await _ws.Lock();
+    Assert.Equal(
+        [(Lib, (int?)3, false), (App, null, true)],
+        lockFile.Packages.Select(p => (p.Tooth, p.ToothFormatVersion, p.Explicit)));
+    Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
   }
 
   [Fact]
   public async Task Install_AlreadyExplicit_Throws() {
     // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([Lib], s_options);
+    await _ws.Service.Install([Lib], _options);
 
     // Act & Assert
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Install([Lib], s_options));
+        () => _ws.Service.Install([Lib], _options));
     Assert.Contains("already explicitly installed", ex.Message);
   }
 
   [Fact]
-  public async Task Install_ImplicitPackage_MarksItExplicit() {
+  public async Task Install_TwoArgumentsOfOneIdentity_ThrowsWithoutChanges() {
     // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([App], s_options);
+
+    // Act & Assert
+    await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install([Lib, $"{Lib}@1.0.0"], _options));
+    Assert.False(_ws.Exists("lib/lib.dll"));
+    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
+  }
+
+  [Fact]
+  public async Task Install_DependencyPackage_MarksItExplicit() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([App], _options);
 
     // Act
-    await _ws.Service.Install([$"{Lib}@1.1.0"], s_options);
+    await _ws.Service.Install([$"{Lib}@1.1.0"], _options);
 
-    // Assert
-    Assert.All(await _ws.Service.List(), p => Assert.True(p.Explicit));
+    // Assert: kept as it is, now with the source of the request.
+    LockedPackage lib = (await _ws.Lock()).Packages.Single(p => p.Tooth == Lib);
+    Assert.Equal((true, "1.1.0", $"{Lib}@1.1.0"), (lib.Explicit, lib.Version, lib.Source));
   }
 
   [Fact]
   public async Task Install_InstalledDependencyTooOld_ReplacesIt() {
     // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
-    await _ws.Service.Install([$"{App}@1.0.0"], s_options);
-    await _ws.Service.Uninstall([Lib], s_options);
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+    await _ws.Service.Install([$"{App}@1.0.0"], _options);
+    await _ws.Service.Uninstall([Lib], _options);
     Assert.Equal(
-        [(LibId, "1.0.0", false), (AppId, "1.0.0", true)],
+        [(Lib, "1.0.0", false), (App, "1.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
 
     // Act: app 2.0.0 needs lib >=1.1.0, so the installed lib cannot stay.
-    await _ws.Service.Update([$"{App}@2.0.0"], s_options);
+    await _ws.Service.Update([$"{App}@2.0.0"], _options);
 
     // Assert
     Assert.Equal(
-        [(LibId, "1.1.0", false), (AppId, "2.0.0", true)],
+        [(Lib, "1.1.0", false), (App, "2.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
     Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
   }
 
   [Fact]
+  public async Task Install_NoDependencies_InstallsOnlyTheRequest() {
+    // Arrange
+    AddLibAndApp();
+
+    // Act
+    await _ws.Service.Install([App], _options with { NoDependencies = true });
+
+    // Assert
+    LockedPackage app = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((App, "2.0.0", true), (app.Tooth, app.Version, app.Explicit));
+    Assert.False(_ws.Exists("lib/lib.dll"));
+    Assert.True(_ws.Exists("app/app.dll"));
+  }
+
+  [Fact]
+  public async Task Install_NoDependenciesOfInstalledDependency_OnlyMarksIt() {
+    // Arrange
+    AddLibAndApp(hook: true);
+    await _ws.Service.Install([App], _options);
+    LockedPackage before = (await _ws.Lock()).Packages.Single(p => p.Tooth == Lib);
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { NoDependencies = true });
+
+    // Assert: same identity, version, archive and assets, so nothing is reinstalled.
+    LockedPackage after = (await _ws.Lock()).Packages.Single(p => p.Tooth == Lib);
+    Assert.True(after.Explicit);
+    Assert.Equal(before.Archive, after.Archive);
+    Assert.Equal(before.Files, after.Files);
+    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Once);
+  }
+
+  [Fact]
+  public async Task Install_NoDependenciesOtherVersion_ReplacesInstalledPackageOnly() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([$"{App}@1.0.0", $"{Lib}@1.0.0"], _options);
+
+    // Act
+    await _ws.Service.Install([$"{Lib}@1.1.0"], _options with { NoDependencies = true });
+
+    // Assert
+    Assert.Equal(
+        [(App, "1.0.0", true), (Lib, "1.1.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)).Order());
+    Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Fact]
+  public async Task Install_NoDependenciesDryRunOfInstalledDependency_ReportsMarkingIt() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([App], _options);
+    List<string> infos = [];
+    _ws.Ui.Setup(u => u.PrintInfo(It.IsAny<string>()))
+        .Callback((string message) => infos.Add(message))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { NoDependencies = true, DryRun = true });
+
+    // Assert: protocol/cli.md §4, a dry run reports the packages it would mark as explicitly
+    // installed.
+    Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{Lib}'"));
+    Assert.False((await _ws.Lock()).Packages.Single(p => p.Tooth == Lib).Explicit);
+  }
+
+  [Fact]
+  public async Task Install_DryRun_ChangesNothing() {
+    // Arrange
+    AddLibAndApp(hook: true);
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act
+    await _ws.Service.Install([App], _options with { DryRun = true });
+
+    // Assert
+    Assert.Equal(before, WorkspaceSnapshot());
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path(".lip")));
+    _ws.CommandRunner.Verify(
+        r => r.Run(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task Install_IgnoreScripts_RunsNoHook() {
+    // Arrange
+    AddLibAndApp(hook: true);
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { IgnoreScripts = true });
+
+    // Assert
+    Assert.True(_ws.Exists("lib/lib.dll"));
+    _ws.CommandRunner.Verify(
+        r => r.Run(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task Install_VariantsTogether_RecordsVariantIdentities() {
+    // Arrange
+    AddVariantsTooth();
+
+    // Act
+    await _ws.Service.Install([$"{Lib}#a", $"{Lib}#b"], _options);
+
+    // Assert
+    LockFile lockFile = await _ws.Lock();
+    Assert.Equal(
+        [($"{Lib}#a", "a", $"{Lib}#a"), ($"{Lib}#b", "b", $"{Lib}#b")],
+        lockFile.Packages.Select(p => (p.Identity, p.Variant, p.Source)));
+    Assert.Equal("a", _ws.Fs.File.ReadAllText(_ws.Path("a.dll")));
+    Assert.Equal("b", _ws.Fs.File.ReadAllText(_ws.Path("b.dll")));
+  }
+
+  [Fact]
+  public async Task Install_BranchRef_RecordsCommitAndUpdateFollowsHead() {
+    // Arrange
+    string first = _ws.Git.AddBranch(Lib, "main", new() {
+      ["tooth.json"] = LibTooth("1.2.0"),
+      ["lib.dll"] = "head 1",
+    });
+
+    // Act
+    await _ws.Service.Install([$"{Lib}@branch:main"], _options);
+    LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
+    string second = _ws.Git.AddBranch(Lib, "main", new() {
+      ["tooth.json"] = LibTooth("1.2.0"),
+      ["lib.dll"] = "head 2",
+    });
+    _ws.Restart();
+    await _ws.Service.Update([], _options);
+
+    // Assert: the version is the tooth file's, as a branch has no tag version; the new commit
+    // differs in archive identifier, so the package is replaced.
+    Assert.Equal(("1.2.0", $"{Lib}@branch:main"), (installed.Version, installed.Source));
+    Assert.Equal(first, Assert.IsType<GitArchiveIdentity>(installed.Archive).Commit);
+    Assert.Equal("head 2", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+    LockedPackage updated = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(second, Assert.IsType<GitArchiveIdentity>(updated.Archive).Commit);
+    Assert.Equal($"{Lib}@branch:main", updated.Source);
+  }
+
+  [Fact]
+  public async Task Install_TagAndRevRefs_UseToothVersionAndExactCommit() {
+    // Arrange
+    _ws.Git.AddTag(Lib, "nightly", new() {
+      ["tooth.json"] = LibTooth("3.0.0-nightly"),
+      ["lib.dll"] = "nightly",
+    });
+    string rev = _ws.Git.AddBranch(App, "dev", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(App, "0.1.0"),
+    });
+    _ws.Git.AddBranch(App, "dev", new() { ["tooth.json"] = WorkspaceHarness.Tooth4(App, "0.2.0") });
+
+    // Act
+    await _ws.Service.Install([$"{Lib}@tag:nightly", $"{App}@rev:{rev}"], _options);
+
+    // Assert: the rev stays at the commit the branch has moved away from.
+    Assert.Equal(
+        [(App, "0.1.0", $"{App}@rev:{rev}"), (Lib, "3.0.0-nightly", $"{Lib}@tag:nightly")],
+        (await _ws.Lock()).Packages.Select(p => (p.Tooth, p.Version, p.Source)).Order());
+  }
+
+  [Fact]
+  public async Task Install_FormatThreeTagDeclaresOtherVersion_UsesTagVersionAndWarns() {
+    // Arrange
+    _ws.AddTag(Lib, "2.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.9.0", "lib/lib.dll"),
+      ["file.dll"] = "lib",
+    });
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal("2.0.0", package.Version);
+    Assert.NotEmpty(_ws.Warnings);
+  }
+
+  [Fact]
+  public async Task Install_ClientPlatformRecorded_ThrowsWithoutChanges() {
+    // Arrange
+    AddLibAndApp();
+    _ws.AddFile(".lip/workspace.json", """
+        { "format_version": 4, "platform": "client", "runtime": "win-x64", "packages": [] }
+        """);
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act & Assert
+    await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install([Lib], _options));
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Fact]
+  public async Task Install_RidOption_RecordsRuntime() {
+    // Arrange: lib has entries for win-x64 and linux-x64.
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = $$"""
+          {
+            "format_version": 4,
+            "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+            "tooth": "{{Lib}}",
+            "version": "1.0.0",
+            "variants": {
+              "": [
+                { "platform": "server", "runtime": "win-x64",
+                  "assets": [ { "type": "self", "placements": [ { "src": "win.dll", "dest": "lib.dll" } ] } ] },
+                { "platform": "server", "runtime": "linux-x64",
+                  "assets": [ { "type": "self", "placements": [ { "src": "linux.so", "dest": "lib.so" } ] } ] }
+              ]
+            }
+          }
+          """,
+      ["win.dll"] = "win",
+      ["linux.so"] = "linux",
+    });
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { Rid = "linux-x64" });
+
+    // Assert
+    Assert.Equal("linux", _ws.Fs.File.ReadAllText(_ws.Path("lib.so")));
+    Assert.False(_ws.Exists("lib.dll"));
+    Assert.Equal("linux-x64", (await _ws.Lock()).Runtime);
+  }
+
+  #endregion
+
+  #region Uninstall
+
+  [Fact]
   public async Task Uninstall_ExplicitPackage_RemovesItsUnneededDependencies() {
     // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([App], s_options);
+    await _ws.Service.Install([App], _options);
 
     // Act
-    await _ws.Service.Uninstall([App], s_options);
+    await _ws.Service.Uninstall([App], _options);
 
     // Assert
     Assert.Empty((await _ws.Lock()).Packages);
@@ -146,447 +449,78 @@ public class McmodServiceTests {
   public async Task Uninstall_DependencyOfAnotherPackage_KeepsItAsDependency() {
     // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([$"{Lib}@1.1.0", App], s_options);
+    await _ws.Service.Install([$"{Lib}@1.1.0", App], _options);
 
     // Act
-    await _ws.Service.Uninstall([Lib], s_options);
+    await _ws.Service.Uninstall([Lib], _options);
 
     // Assert
-    LockFile lockFile = await _ws.Lock();
-    Assert.False(lockFile.Packages.Single(p => p.Identity == LibId).Explicit);
+    Assert.False((await _ws.Lock()).Packages.Single(p => p.Tooth == Lib).Explicit);
     Assert.True(_ws.Exists("lib/lib.dll"));
   }
 
   [Fact]
-  public async Task Uninstall_ImplicitPackage_ThrowsUnlessNoDependencies() {
+  public async Task Uninstall_DependencyPackage_ThrowsUnlessNoDependencies() {
     // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([App], s_options);
+    await _ws.Service.Install([App], _options);
 
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Uninstall([Lib], s_options));
-    await _ws.Service.Uninstall([Lib], s_options with { NoDependencies = true });
-    Assert.Equal([AppId], (await _ws.Lock()).Packages.Select(p => p.Identity));
+        () => _ws.Service.Uninstall([Lib], _options));
+    await _ws.Service.Uninstall([Lib], _options with { NoDependencies = true });
+    Assert.Equal([App], (await _ws.Lock()).Packages.Select(p => p.Identity));
     Assert.False(_ws.Exists("lib/lib.dll"));
+    Assert.True(_ws.Exists("app/app.dll"));
+  }
+
+  [Fact]
+  public async Task Uninstall_NoDependenciesOfExplicitPackage_KeepsItsDependencies() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([App], _options);
+
+    // Act
+    await _ws.Service.Uninstall([App], _options with { NoDependencies = true });
+
+    // Assert
+    LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal((Lib, false), (lib.Tooth, lib.Explicit));
+    Assert.True(_ws.Exists("lib/lib.dll"));
+    Assert.False(_ws.Exists("app/app.dll"));
   }
 
   [Fact]
   public async Task Uninstall_NotInstalled_Throws() {
-    await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Uninstall(["Nothing"], s_options));
-  }
-
-  [Fact]
-  public async Task Update_NoArguments_UpdatesExplicitPackagesToNewest() {
-    // Arrange
-    AddLibAndApp(withApp2: false);
-    await _ws.Service.Install([App], s_options);
-    AddApp2();
-    _ws.Restart();
-
-    // Act
-    await _ws.Service.Update([], s_options);
-
-    // Assert
-    Assert.Equal(
-        [(LibId, "1.1.0", false), (AppId, "2.0.0", true)],
-        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
-    Assert.Equal("app 2", _ws.Fs.File.ReadAllText(_ws.Path("app/app.dll")));
-  }
-
-  [Fact]
-  public async Task Update_Dependency_BecomesExplicitlyInstalled() {
-    // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([App], s_options);
-
-    // Act
-    await _ws.Service.Update([Lib], s_options);
-
-    // Assert
-    Assert.True((await _ws.Lock()).Packages.Single(p => p.Identity == LibId).Explicit);
-  }
-
-  [Fact]
-  public async Task Update_NotInstalled_Throws() {
-    AddLibAndApp();
+    await _ws.Service.Install([Lib], _options);
 
     await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Update([App], s_options));
+        () => _ws.Service.Uninstall([App], _options));
+    Assert.Single((await _ws.Lock()).Packages);
   }
 
   [Fact]
-  public async Task Install_DryRun_ChangesNothing() {
+  public async Task Uninstall_IdentityInOtherCase_RemovesPackage() {
     // Arrange
     AddLibAndApp();
+    await _ws.Service.Install([Lib], _options);
 
     // Act
-    await _ws.Service.Install([App], s_options with { DryRun = true });
+    await _ws.Service.Uninstall(["Example.COM/Lib"], _options);
 
     // Assert
-    Assert.False(_ws.Exists("app/app.dll"));
-    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
-  }
-
-  [Fact]
-  public async Task Install_NoDependencies_InstallsOnlyTheRequest() {
-    // Arrange
-    AddLibAndApp();
-
-    // Act
-    await _ws.Service.Install([App], s_options with { NoDependencies = true });
-
-    // Assert
-    Assert.Equal([AppId], (await _ws.Lock()).Packages.Select(p => p.Identity));
-    Assert.False(_ws.Exists("lib/lib.dll"));
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesDryRunOfInstalledDependency_ReportsMarkingIt() {
-    // Arrange
-    AddLibAndApp();
-    await _ws.Service.Install([App], s_options);
-    List<string> infos = [];
-    _ws.Ui.Setup(u => u.PrintInfo(It.IsAny<string>()))
-        .Callback((string message) => infos.Add(message))
-        .Returns(Task.CompletedTask);
-
-    // Act
-    await _ws.Service.Install([Lib], s_options with { NoDependencies = true, DryRun = true });
-
-    // Assert: specs/cli.md §4, a dry run reports the packages it would mark as explicitly
-    // installed.
-    Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{LibId}'"));
-    Assert.False((await _ws.Lock()).Packages.Single(p => p.Identity == LibId).Explicit);
-  }
-
-  [Fact]
-  public async Task Install_MetaDirectoryByPlatform_InstallsServerModUnderMods() {
-    // Arrange
-    AddMetaFixture();
-
-    // Act
-    await _ws.Service.Install(["./fixture.mcmod"], s_options);
-
-    // Assert
-    Assert.Equal("server", _ws.Fs.File.ReadAllText(_ws.Path("mods/Demo/Demo.dll")));
-    Assert.True(_ws.Exists("mods/Demo/manifest.json"));
-    Assert.False(_ws.Exists("mods/Demo/client/Demo.dll"));
-    LockFile lockFile = await _ws.Lock();
-    Assert.Equal("server", lockFile.Platform);
-    LockedPackage package = Assert.Single(lockFile.Packages);
-    Assert.Equal("Demo", package.Identity);
-    Assert.Equal("mcmod", package.Kind);
-    string file = Ref.FromFile(_ws.Path("fixture.mcmod")).ToString();
-    Assert.Equal(
-        [(file, (int?)0), ("./server/", null)],
-        package.Chain.Select(h => (h.Ref, h.Target)));
-    Assert.Equal($"{file}!server/", package.ArchiveKey);
-    ZipArchiveIdentity identity = Assert.IsType<ZipArchiveIdentity>(package.Archive);
-    Assert.Equal(file, identity.Url);
-    Assert.Equal("server", identity.Path);
-  }
-
-  [Fact]
-  public async Task Install_Directory_ThrowsWithoutChanges() {
-    // Arrange
-    _ws.AddFile("pkg/manifest.json", WorkspaceHarness.Package("Dir", "1.0.0", "native"));
-
-    // Act & Assert
-    ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(
-        () => _ws.Service.Install(["./pkg"], s_options));
-    Assert.Contains("is a directory", ex.Message);
-    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
-    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
-  }
-
-  [Fact]
-  public async Task Update_LocalFileChanged_ReinstallsSameVersion() {
-    // Arrange
-    _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
-      ["Zipped.dll"] = "v1",
-    });
-    await _ws.Service.Install(["x.mcmod"], s_options);
-    _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
-      ["Zipped.dll"] = "v2",
-    });
-
-    // Act
-    await _ws.Service.Update([], s_options);
-
-    // Assert
-    Assert.Equal("v2", _ws.Fs.File.ReadAllText(_ws.Path("mods/Zipped/Zipped.dll")));
-  }
-
-  [Theory]
-  [InlineData("./x.mcmod")]
-  [InlineData("x.mcmod")]
-  public async Task Uninstall_ByLocalPath_RemovesPackageInstalledFromIt(string argument) {
-    // Arrange
-    string path = _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
-      ["Zipped.dll"] = "v1",
-    });
-    await _ws.Service.Install([path], s_options);
-    _ws.Fs.File.Delete(path);
-
-    // Act
-    await _ws.Service.Uninstall([argument], s_options);
-
-    // Assert
-    Assert.Empty((await _ws.Lock()).Packages);
-    Assert.False(_ws.Exists("mods/Zipped/Zipped.dll"));
-  }
-
-  [Fact]
-  public async Task Update_LocalFileGone_KeepsPackageAndWarns() {
-    // Arrange
-    string path = _ws.AddZip("x.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "1.0.0", "native"),
-      ["Zipped.dll"] = "v1",
-    });
-    await _ws.Service.Install([path], s_options);
-    _ws.Fs.File.Delete(path);
-
-    // Act
-    await _ws.Service.Update([], s_options);
-
-    // Assert
-    Assert.Equal("v1", _ws.Fs.File.ReadAllText(_ws.Path("mods/Zipped/Zipped.dll")));
-    Assert.Contains(_ws.Warnings, w => w.Contains("does not exist any more"));
-    await _ws.Service.Uninstall(["Zipped"], s_options);
-    Assert.False(_ws.Exists("mods/Zipped/Zipped.dll"));
-  }
-
-  [Fact]
-  public async Task Install_LockRecordsClientPlatform_ThrowsWithoutChanges() {
-    // Arrange
-    AddMetaFixture();
-    _ws.AddFile(".lip/workspace.json", $$"""
-        {
-          "format": "{{ManifestFormat.Format}}",
-          "platform": "client",
-          "packages": []
-        }
-        """);
-
-    // Act & Assert
-    await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Install(["./fixture.mcmod"], s_options));
-    Assert.False(_ws.Exists("plugins/Demo/Demo.dll"));
-    Assert.False(_ws.Exists("mods/Demo/Demo.dll"));
-  }
-
-  [Fact]
-  public async Task Uninstall_ByCaseInsensitiveName_RemovesModFiles() {
-    // Arrange
-    AddMetaFixture();
-    await _ws.Service.Install(["./fixture.mcmod"], s_options);
-
-    // Act
-    await _ws.Service.Uninstall(["demo"], s_options);
-
-    // Assert
-    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods/Demo")));
     Assert.Empty((await _ws.Lock()).Packages);
   }
 
   [Fact]
-  public async Task Install_FilePackageWithPlacements_WritesPlacementsAndUninstallRemovesThem() {
-    // Arrange
-    _ws.AddZip("pkg.zip", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Tool", "1.0.0", "files", """
-            "files": [
-              { "src": "bin/", "dest": "tools/" },
-              { "src": "readme.txt", "dest": "docs/tool.txt" }
-            ]
-          """),
-      ["bin/tool.exe"] = "exe",
-      ["readme.txt"] = "readme",
-    });
-
-    // Act
-    await _ws.Service.Install(["pkg.zip"], s_options);
-
-    // Assert
-    Assert.Equal("exe", _ws.Fs.File.ReadAllText(_ws.Path("tools/tool.exe")));
-    Assert.Equal("readme", _ws.Fs.File.ReadAllText(_ws.Path("docs/tool.txt")));
-    Assert.Equal(
-        ["tools/tool.exe", "docs/tool.txt"], Assert.Single((await _ws.Lock()).Packages).Files);
-
-    await _ws.Service.Uninstall(["Tool"], s_options);
-    Assert.False(_ws.Exists("tools/tool.exe"));
-    Assert.False(_ws.Exists("docs/tool.txt"));
-  }
-
-  [Fact]
-  public async Task Install_McmodFile_InstallsPackageZip() {
-    // Arrange
-    _ws.Fs.AddFile(_ws.Path("x.mcmod"), new MockFileData(WorkspaceHarness.Zip(new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Zipped", "2.0.0", "native"),
-      ["Zipped.dll"] = "zipped",
-    })));
-
-    // Act
-    await _ws.Service.Install(["./x.mcmod"], s_options);
-
-    // Assert
-    Assert.Equal("zipped", _ws.Fs.File.ReadAllText(_ws.Path("mods/Zipped/Zipped.dll")));
-    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.IsType<ZipArchiveIdentity>(package.Archive);
-  }
-
-  [Fact]
-  public async Task Install_PinnedPackageWithRelativeEdgeAfterCacheClean_ReResolvesNestedZip() {
-    // Arrange: a nested ZIP whose package depends on a directory inside it.
-    _ws.Fs.AddFile(_ws.Path("outer.mcmod"), new MockFileData(WorkspaceHarness.ZipBytes(
-        new Dictionary<string, byte[]> {
-          ["manifest.json"] = Encoding.UTF8.GetBytes("""
-              {
-                "format": "bf45b1",
-                "targets": [ { "source": "./inner.mcmod" } ]
-              }
-              """),
-          ["inner.mcmod"] = WorkspaceHarness.Zip(new() {
-            ["manifest.json"] = WorkspaceHarness.Package("Inner", "1.0.0", "files", """
-                  "files": [ { "src": "a.txt", "dest": "a.txt" } ],
-                  "dependencies": { "Dep": { "source": "./dep/" } }
-                """),
-            ["a.txt"] = "a",
-            ["dep/manifest.json"] = WorkspaceHarness.Package("Dep", "1.0.0", "files", """
-                  "files": [ { "src": "b.txt", "dest": "b.txt" } ]
-                """),
-            ["dep/b.txt"] = "b",
-          }),
-        })));
-    _ws.AddZip("other.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Other", "1.0.0", "files"),
-    });
-    await _ws.Service.Install(["./outer.mcmod"], s_options);
-    await _ws.Cache.Clean();
-
-    // Act: the installed Inner is pinned; its edge ./dep/ needs its archive again.
-    await _ws.Service.Install(["./other.mcmod"], s_options);
-
-    // Assert
-    Assert.Equal(
-        ["Dep", "Inner", "Other"],
-        (await _ws.Lock()).Packages.Select(p => p.Identity).Order());
-    Assert.True(_ws.Exists("b.txt"));
-  }
-
-  [Fact]
-  public async Task Operations_V3Lock_MigrateAndKeepEntries() {
-    // Arrange: a v3 lock with lib installed explicitly, and its file.
-    AddLibAndApp();
-    string manifest = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll");
-    _ws.AddFile("tooth_lock.json", $$"""
-        {
-          "format_version": 3,
-          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-          "packages": [
-            {
-              "files": ["{{_ws.Path("lib/lib.dll").Replace("\\", "\\\\")}}"],
-              "locked": true,
-              "manifest": {{manifest}},
-              "variant": ""
-            }
-          ]
-        }
-        """);
-    _ws.AddFile("lib/lib.dll", "lib 1");
-
-    // Act
-    await _ws.Service.Install([$"{App}@1.0.0"], s_options);
-
-    // Assert: lib 1.0.0 is kept (app needs >=1.0.0), the lock is migrated.
-    Assert.False(_ws.Exists(LockStore.LegacyFileName));
-    Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
-    LockFile lockFile = await _ws.Lock();
-    Assert.Equal(
-        [(LibId, "1.0.0", true), (AppId, "1.0.0", true)],
-        lockFile.Packages.Select(p => (p.Identity, p.Version, p.Explicit)));
-    Assert.Null(lockFile.Packages[0].Archive);
-
-    await _ws.Service.Uninstall([App, Lib], s_options);
-    Assert.Empty((await _ws.Lock()).Packages);
-    Assert.False(_ws.Exists("lib/lib.dll"));
-  }
-
-  [Fact]
-  public async Task Uninstall_V3LockWithTwoVariants_RemovesOnlyTheNamedVariant() {
-    // Arrange
-    string manifest = $$"""
-        {
-          "format_version": 3,
-          "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-          "tooth": "{{Lib}}",
-          "version": "1.0.0",
-          "variants": [
-            { "label": "a", "assets": [ { "type": "self", "placements": [
-              { "type": "file", "src": "a.dll", "dest": "a.dll" } ] } ] },
-            { "label": "b", "assets": [ { "type": "self", "placements": [
-              { "type": "file", "src": "b.dll", "dest": "b.dll" } ] } ] }
-          ]
-        }
-        """;
-    string Entry(string variant) => $$"""
-        {
-          "files": ["{{variant}}.dll"],
-          "locked": true,
-          "manifest": {{manifest}},
-          "variant": "{{variant}}"
-        }
-        """;
-    _ws.AddFile("tooth_lock.json", $$"""
-        { "format_version": 3, "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-          "packages": [ {{Entry("a")}}, {{Entry("b")}} ] }
-        """);
-    _ws.AddFile("a.dll", "a");
-    _ws.AddFile("b.dll", "b");
-
-    // Act
-    IReadOnlyList<InstalledPackage> listed = await _ws.Service.List();
-    await _ws.Service.Uninstall([$"{Lib}#a"], s_options);
-
-    // Assert
-    Assert.Equal(2, listed.Count);
-    Assert.False(_ws.Exists("a.dll"));
-    Assert.True(_ws.Exists("b.dll"));
-    LockedPackage remaining = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal($"{Lib}#b", remaining.Chain[0].Ref);
-  }
-
-  [Fact]
-  public async Task Install_ToothDefaultVariantNeedsItsLabelledVariants_InstallsEachVariant() {
-    // Arrange: like LegacyScriptEngine, the default variant only depends on its engines.
+  public async Task Uninstall_SourceWithoutVariant_MatchesEveryVariant() {
+    // Arrange: the identities are lib#a and lib#b, so only rule 2 of protocol/cli.md §5.2 matches.
     AddVariantsTooth();
+    await _ws.Service.Install([$"{Lib}#a", $"{Lib}#b"], _options);
 
     // Act
-    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
-
-    // Assert
-    Assert.Equal(
-        [("lib-a", false), ("lib-b", false), (LibId, true)],
-        (await _ws.Service.List()).Select(p => (p.Identity, p.Explicit)));
-    Assert.Equal("a", _ws.Fs.File.ReadAllText(_ws.Path("a.dll")));
-    Assert.Equal("b", _ws.Fs.File.ReadAllText(_ws.Path("b.dll")));
-    LockFile lockFile = await _ws.Lock();
-    Assert.Equal($"{Lib}#a", lockFile.Packages[0].Chain[0].Ref);
-    Assert.Equal(["a.dll"], lockFile.Packages[0].Files);
-  }
-
-  [Fact]
-  public async Task Uninstall_ToothDefaultVariant_RemovesItsLabelledVariants() {
-    // Arrange
-    AddVariantsTooth();
-    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
-
-    // Act
-    await _ws.Service.Uninstall([LibId], s_options);
+    await _ws.Service.Uninstall([Lib], _options);
 
     // Assert
     Assert.Empty((await _ws.Lock()).Packages);
@@ -595,303 +529,470 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_TwoLabelledVariantsTogether_InstallsBothAndUninstallsOneByRef() {
+  public async Task Uninstall_IdentityWithVariant_RemovesOnlyThatVariant() {
     // Arrange
     AddVariantsTooth();
-    await _ws.Service.Install([$"{Lib}#a@1.0.0", $"{Lib}#b@1.0.0"], s_options);
+    await _ws.Service.Install([$"{Lib}#a", $"{Lib}#b"], _options);
 
     // Act
-    await _ws.Service.Uninstall([$"{Lib}#a"], s_options);
+    await _ws.Service.Uninstall([$"{Lib}#a"], _options);
 
     // Assert
     Assert.False(_ws.Exists("a.dll"));
     Assert.Equal("b", _ws.Fs.File.ReadAllText(_ws.Path("b.dll")));
     LockedPackage remaining = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal("lib-b", remaining.Identity);
-    Assert.True(remaining.Explicit);
+    Assert.Equal(($"{Lib}#b", true), (remaining.Identity, remaining.Explicit));
   }
 
   [Fact]
-  public async Task Install_ToothTagDeclaresOtherVersion_UsesTagVersionAndWarns() {
-    // Arrange
-    _ws.AddTag(Lib, "2.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.9.0", "lib/lib.dll"),
-      ["file.dll"] = "lib",
-    });
+  public async Task Uninstall_SourceWithRef_MatchesOnlyThatRef() {
+    // Arrange: lib installed from lib@1.0.0, whose identity is lib.
+    AddLibAndApp();
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+
+    // Act & Assert: another ref names nothing; the same ref, in another case, names it.
+    await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Uninstall([$"{Lib}@1.1.0"], _options));
+    await _ws.Service.Uninstall(["example.com/LIB@1.0.0"], _options);
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("lib/lib.dll"));
+  }
+
+  [Fact]
+  public async Task Uninstall_SourceWithoutRef_MatchesEveryRef() {
+    // Arrange: the identity is example.com/lib; the argument is the location in other case
+    // with a variant-free, ref-free source.
+    _ws.Git.AddBranch(Lib, "main", new() { ["tooth.json"] = LibTooth("1.5.0"), ["lib.dll"] = "x" });
+    await _ws.Service.Install([$"{Lib}@branch:main"], _options);
 
     // Act
-    await _ws.Service.Install([Lib], s_options);
+    await _ws.Service.Uninstall([Lib], _options);
 
     // Assert
-    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal("2.0.0", package.Version);
-    Assert.Equal("2.0.0", package.Manifest.GetProperty("version").GetString());
-    Assert.Contains(_ws.Warnings, w => w.Contains("using the tag version 2.0.0"));
+    Assert.Empty((await _ws.Lock()).Packages);
+  }
+
+  [Theory]
+  [InlineData("./src")]
+  [InlineData("src")]
+  [InlineData("./SRC")]
+  public async Task Uninstall_ByLocalPath_RemovesPackageInstalledFromIt(string argument) {
+    // Arrange
+    AddLocalDirectory("src", "1.0.0", "x");
+    await _ws.Service.Install(["./src"], _options);
+
+    // Act
+    await _ws.Service.Uninstall([argument], _options);
+
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("out/x.txt"));
   }
 
   [Fact]
-  public async Task Install_BranchRef_LocksCommitAndUpdateFollowsHead() {
+  public async Task Uninstall_ByDeletedLocalPath_RemovesPackageInstalledFromIt() {
     // Arrange
-    string first = _ws.Git.AddBranch(Lib, "main", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.2.0", "lib/lib.dll"),
-      ["file.dll"] = "head 1",
+    string path = _ws.AddZip("x.zip", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(
+          "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "x",
     });
+    await _ws.Service.Install(["x.zip"], _options);
+    _ws.Fs.File.Delete(path);
 
     // Act
-    await _ws.Service.Install([$"{Lib}@branch:main"], s_options);
-    LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
-    string second = _ws.Git.AddBranch(Lib, "main", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.2.0", "lib/lib.dll"),
-      ["file.dll"] = "head 2",
-    });
-    await _ws.Service.Update([], s_options);
+    await _ws.Service.Uninstall(["./x.zip"], _options);
 
-    // Assert: the version is the tooth.json's, as a branch has no tag version.
-    Assert.Equal("1.2.0", installed.Version);
-    Assert.Equal($"{Lib}@branch:main", installed.Chain[0].Ref);
-    Assert.Equal(first, installed.Chain[0].Commit);
-    Assert.Equal(first, Assert.IsType<GitArchiveIdentity>(installed.Archive).Commit);
-    Assert.Equal($"{Lib}@rev:{first}", installed.ArchiveKey);
-    Assert.Equal("head 2", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
-    LockedPackage updated = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(second, updated.Chain[0].Commit);
-    Assert.Equal($"{Lib}@branch:main", updated.Chain[0].Ref);
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("x.txt"));
   }
 
+  #endregion
+
+  #region Update
+
   [Fact]
-  public async Task Install_TagAndRevRefs_UseDocumentVersionAndExactCommit() {
+  public async Task Update_NoArguments_UpdatesExplicitPackagesToNewest() {
     // Arrange
-    _ws.Git.AddTag(Lib, "nightly", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Lib", "3.0.0-nightly", "native"),
-    });
-    string rev = _ws.Git.AddBranch(App, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("App", "0.1.0", "native"),
-    });
-    _ws.Git.AddBranch(App, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("App", "0.2.0", "native"),
-    });
+    AddLibAndApp(withApp2: false);
+    await _ws.Service.Install([App], _options);
+    AddApp("2.0.0", ">=1.1.0");
+    _ws.Restart();
 
     // Act
-    await _ws.Service.Install([$"{Lib}@tag:nightly", $"{App}@rev:{rev}"], s_options);
+    await _ws.Service.Update([], _options);
 
-    // Assert: the rev stays at the commit the branch has moved away from.
-    LockFile lockFile = await _ws.Lock();
+    // Assert
     Assert.Equal(
-        [("App", "0.1.0", $"{App}@rev:{rev}"), ("Lib", "3.0.0-nightly", $"{Lib}@tag:nightly")],
-        lockFile.Packages.Select(p => (p.Identity, p.Version, p.Chain[0].Ref)).Order());
+        [(Lib, "1.1.0", false), (App, "2.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal("app 2.0.0", _ws.Fs.File.ReadAllText(_ws.Path("app/app.dll")));
+  }
+
+  [Fact]
+  public async Task Update_NothingDiffers_ReplacesNothing() {
+    // Arrange
+    AddLibAndApp(hook: true);
+    await _ws.Service.Install([Lib], _options);
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Update([], _options);
+    await _ws.Service.Update([Lib], _options);
+
+    // Assert: the post_install hook ran only for the install.
+    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Once);
+    Assert.Equal("1.1.0", Assert.Single((await _ws.Lock()).Packages).Version);
+  }
+
+  [Fact]
+  public async Task Update_TagMovedToOtherCommit_ReplacesPackage() {
+    // Arrange
+    AddLib("1.0.0");
+    await _ws.Service.Install([Lib], _options);
+    string moved = _ws.Git.AddTag(Lib, "v1.0.0", new() {
+      ["tooth.json"] = LibTooth("1.0.0"),
+      ["lib.dll"] = "lib moved",
+    });
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Update([], _options);
+
+    // Assert: same version, other archive identifier.
+    Assert.Equal("lib moved", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+    Assert.Equal(
+        moved,
+        Assert.IsType<GitArchiveIdentity>(Assert.Single((await _ws.Lock()).Packages).Archive).Commit);
   }
 
   [Fact]
   public async Task Update_VersionRefWhoseTagMoved_KeepsTheRecordedCommit() {
     // Arrange
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
-      ["file.dll"] = "lib 1.0.0",
-    });
-    await _ws.Service.Install([$"{Lib}@1.0.0"], s_options);
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
-      ["file.dll"] = "lib 1.0.0 moved",
-    });
-    _ws.AddTag(Lib, "1.1.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.1.0", "lib/lib.dll"),
-      ["file.dll"] = "lib 1.1.0",
-    });
+    AddLib("1.0.0");
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+    _ws.Git.AddTag(Lib, "v1.0.0", new() { ["tooth.json"] = LibTooth("1.0.0"), ["lib.dll"] = "moved" });
+    AddLib("1.1.0");
     _ws.Restart();
 
     // Act
-    await _ws.Service.Update([], s_options);
+    await _ws.Service.Update([], _options);
 
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal(
-        ("1.0.0", $"{Lib}@1.0.0", $"{Lib}@1.0.0"),
-        (package.Version, package.Chain[0].Ref, package.ArchiveKey));
+    Assert.Equal(("1.0.0", $"{Lib}@1.0.0"), (package.Version, package.Source));
     Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
   }
 
   [Fact]
-  public async Task Install_VersionRefOfInstalledDependency_RecordsTheVersionRef() {
-    // Arrange: lib 1.1.0 is installed as a dependency, through the unpinned path.
-    AddLibAndApp(withApp2: false);
-    await _ws.Service.Install([App], s_options);
-
-    // Act
-    await _ws.Service.Install([$"{Lib}@1.1.0"], s_options);
-    _ws.AddTag(Lib, "1.2.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.2.0", "lib/lib.dll"),
-      ["file.dll"] = "lib 1.2.0",
-    });
-    _ws.Restart();
-    await _ws.Service.Update([], s_options);
-
-    // Assert: the version ref pins lib.
-    LockedPackage lib = (await _ws.Lock()).Packages.Single(p => p.Identity == LibId);
-    Assert.Equal(("1.1.0", true, $"{Lib}@1.1.0"), (lib.Version, lib.Explicit, lib.Chain[0].Ref));
-  }
-
-  [Fact]
-  public async Task Install_UnpinnedEdgeAfterBranchInstall_KeepsBranchBuild() {
-    // Arrange: lib's tags are 1.0.0 and 1.1.0; its branch declares 1.5.0.
+  public async Task Update_SourceWithoutRef_MovesBackToVersionTags() {
+    // Arrange
     AddLibAndApp();
-    _ws.Git.AddBranch(Lib, "main", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.5.0", "lib/lib.dll"),
-      ["file.dll"] = "lib head",
-    });
-    await _ws.Service.Install([$"{Lib}@branch:main"], s_options);
+    _ws.Git.AddBranch(Lib, "main", new() { ["tooth.json"] = LibTooth("1.5.0"), ["lib.dll"] = "head" });
+    await _ws.Service.Install([$"{Lib}@branch:main"], _options);
 
-    // Act: app 2.0.0 requires lib >=1.1.0 through the unpinned ref.
-    await _ws.Service.Install([App], s_options);
+    // Act
+    await _ws.Service.Update([Lib], _options);
 
     // Assert
-    Assert.Equal("lib head", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
-    Assert.Equal(
-        [(AppId, "2.0.0"), (LibId, "1.5.0")],
-        (await _ws.Lock()).Packages.Select(p => (p.Identity, p.Version)).Order());
+    LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(("1.1.0", Lib, true), (package.Version, package.Source, package.Explicit));
+    Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
   }
 
   [Fact]
-  public async Task Install_ManifestDependencyWithGitRef_InstallsPinnedDependency() {
-    // Arrange
-    _ws.Git.AddBranch(Lib, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Lib", "2.1.0", "native"),
-    });
-    _ws.AddZip("app.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("App", "1.0.0", "native", $$"""
-            "dependencies": { "Lib": { "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } }
+  public async Task Update_AssetChanged_ReplacesPackage() {
+    // Arrange: same tag, but the asset its URL serves changes.
+    _ws.AddDownload("https://example.com/data.zip", WorkspaceHarness.Zip(new() { ["d.txt"] = "1" }));
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(Lib, "1.0.0", """
+          "assets": [ { "type": "zip", "urls": [ "https://example.com/data.zip" ],
+            "placements": [ { "src": "d.txt", "dest": "d.txt" } ] } ]
           """),
+    });
+    await _ws.Service.Install([Lib], _options);
+    byte[] changed = WorkspaceHarness.Zip(new() { ["d.txt"] = "2" });
+    _ws.AddDownload("https://example.com/data.zip", changed);
+    ClearCache();
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Update([], _options);
+
+    // Assert
+    Assert.Equal("2", _ws.Fs.File.ReadAllText(_ws.Path("d.txt")));
+    Assert.Equal(
+        [new AssetIdentity("https://example.com/data.zip", Sha256(changed))],
+        Assert.Single((await _ws.Lock()).Packages).Assets);
+  }
+
+  [Fact]
+  public async Task Update_LocalZipChanged_ReinstallsSameVersion() {
+    // Arrange
+    _ws.AddZip("x.zip", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(
+          "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "v1",
+    });
+    await _ws.Service.Install(["x.zip"], _options);
+    _ws.AddZip("x.zip", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(
+          "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "v2",
     });
 
     // Act
-    await _ws.Service.Install(["app.mcmod"], s_options);
+    await _ws.Service.Update([], _options);
 
-    // Assert
-    LockedPackage lib = Assert.Single(
-        (await _ws.Lock()).Packages, p => p.Identity == "Lib");
-    Assert.False(lib.Explicit);
-    Assert.Equal($"{Lib}@branch:dev", lib.Chain[0].Ref);
+    // Assert: the archive identifier (its SHA-256) differs.
+    Assert.Equal("v2", _ws.Fs.File.ReadAllText(_ws.Path("x.txt")));
   }
 
   [Fact]
-  public async Task Install_GitRefDocumentOutOfRange_Throws() {
+  public async Task Update_LocalDirectoryOfSameVersion_ReplacesNothing() {
+    // Arrange: a directory archive is identified by its path.
+    AddLocalDirectory("src", "1.0.0", "v1");
+    await _ws.Service.Install(["./src"], _options);
+    AddLocalDirectory("src", "1.0.0", "v2");
+
+    // Act
+    await _ws.Service.Update([], _options);
+
+    // Assert
+    Assert.Equal("v1", _ws.Fs.File.ReadAllText(_ws.Path("out/x.txt")));
+
+    // Act: a new version is a new package.
+    AddLocalDirectory("src", "1.0.1", "v3");
+    await _ws.Service.Update([], _options);
+
+    // Assert
+    Assert.Equal("v3", _ws.Fs.File.ReadAllText(_ws.Path("out/x.txt")));
+    Assert.Equal("1.0.1", Assert.Single((await _ws.Lock()).Packages).Version);
+  }
+
+  [Fact]
+  public async Task Update_LocalPathGone_KeepsPackageAndWarns() {
     // Arrange
-    _ws.Git.AddBranch(Lib, "dev", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Lib", "1.0.0", "native"),
+    string path = _ws.AddZip("x.zip", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(
+          "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "v1",
     });
-    _ws.AddZip("app.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("App", "1.0.0", "native", $$"""
-            "dependencies": { "Lib": { "version": ">=2.0.0", "source": "{{Lib}}@branch:dev" } }
-          """),
-    });
+    await _ws.Service.Install([path], _options);
+    _ws.Fs.File.Delete(path);
+
+    // Act
+    await _ws.Service.Update([], _options);
+
+    // Assert
+    Assert.Equal("v1", _ws.Fs.File.ReadAllText(_ws.Path("x.txt")));
+    Assert.Contains(_ws.Warnings, w => w.Contains("does not exist any more"));
+    Assert.Single((await _ws.Lock()).Packages);
+  }
+
+  [Fact]
+  public async Task Update_Dependency_BecomesExplicitlyInstalled() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([App], _options);
+
+    // Act
+    await _ws.Service.Update([Lib], _options);
+
+    // Assert
+    Assert.True((await _ws.Lock()).Packages.Single(p => p.Tooth == Lib).Explicit);
+  }
+
+  [Fact]
+  public async Task Update_NotInstalled_Throws() {
+    AddLibAndApp();
+
+    await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Update([App], _options));
+    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
+  }
+
+  #endregion
+
+  #region Reinstalling and list
+
+  [Fact]
+  public async Task Install_InstalledModAssetUnchangedAfterCacheClean_IsReadAgain() {
+    // Arrange
+    AddMod("example.com/base", "Base");
+    AddMod("example.com/top", "Top", """ "dependencies": { "example.com/base": "^1.0.0" }, """);
+    await _ws.Service.Install(["example.com/base"], _options);
+    ClearCache();
+    _ws.Restart();
+
+    // Act: installing Top needs the mod name of the installed Base again.
+    await _ws.Service.Install(["example.com/top"], _options);
+
+    // Assert
+    using JsonDocument top = JsonDocument.Parse(
+        _ws.Fs.File.ReadAllText(_ws.Path("mods/Top/manifest.json")));
+    Assert.Equal(
+        "Base", top.RootElement.GetProperty("dependencies")[0].GetProperty("name").GetString());
+  }
+
+  [Fact]
+  public async Task Install_InstalledModAssetChanged_FailsOrKeepsModDependency() {
+    // Arrange: the URL of Base's asset serves other bytes since Base was installed.
+    AddMod("example.com/base", "Base");
+    AddMod("example.com/top", "Top", """ "dependencies": { "example.com/base": "^1.0.0" }, """);
+    await _ws.Service.Install(["example.com/base"], _options);
+    _ws.AddDownload("https://example.com/Base.mcmod", WorkspaceHarness.Mcmod("Base", "\"x\": 1"));
+    ClearCache();
+    _ws.Restart();
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act
+    Exception? ex = await Record.ExceptionAsync(
+        () => _ws.Service.Install(["example.com/top"], _options));
+
+    // Assert: the recorded asset of Base cannot be obtained, an early failure
+    // (protocol/workspace.md §6 rule 1); or else the installed Base, of mod name Base, satisfies
+    // the dependency of Top (protocol/workspace.md §4 step 3).
+    if (ex is not null) {
+      Assert.Equal(before, WorkspaceSnapshot());
+      return;
+    }
+
+    using JsonDocument top = JsonDocument.Parse(
+        _ws.Fs.File.ReadAllText(_ws.Path("mods/Top/manifest.json")));
+    JsonElement dependency = Assert.Single(top.RootElement.GetProperty("dependencies").EnumerateArray());
+    Assert.Equal("Base", dependency.GetProperty("name").GetString());
+  }
+
+  [Fact]
+  public async Task List_ReturnsPackagesInInstallationOrder() {
+    // Arrange
+    AddLibAndApp();
+    AddVariantsTooth("example.com/var");
+    await _ws.Service.Install([App, "example.com/var#a"], _options);
+
+    // Act
+    IReadOnlyList<InstalledPackage> packages = await _ws.Service.List();
+
+    // Assert
+    Assert.Equal(
+        [(Lib, "1.1.0", false), (App, "2.0.0", true), ("example.com/var#a", "1.0.0", true)],
+        packages.Select(p => (p.Identity, p.Version, p.Explicit)));
+  }
+
+  [Fact]
+  public async Task List_NewWorkspace_IsEmpty() {
+    Assert.Empty(await _ws.Service.List());
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path(".lip")));
+  }
+
+  #endregion
+
+  #region Earlier workspace files
+
+  [Theory]
+  [InlineData(".lip/workspace.json", """{ "format": "bf45b1", "platform": "server", "packages": [] }""")]
+  [InlineData(".lip/workspace.json", """{ "format_version": 3, "packages": [] }""")]
+  [InlineData(".lip/lock.json", """{ "packages": [] }""")]
+  [InlineData("tooth_lock.json", """{ "format_version": 3, "packages": [] }""")]
+  public async Task Operations_EarlierWorkspaceFile_FailWithoutChanges(string file, string content) {
+    // Arrange
+    AddLibAndApp();
+    _ws.AddFile(file, content);
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
 
     // Act & Assert
-    await Assert.ThrowsAsync<DependencyResolutionException>(
-        () => _ws.Service.Install(["app.mcmod"], s_options));
-    Assert.Empty((await _ws.Lock()).Packages);
+    await Assert.ThrowsAnyAsync<Exception>(() => _ws.Service.Install([Lib], _options));
+    await Assert.ThrowsAnyAsync<Exception>(() => _ws.Service.Uninstall([Lib], _options));
+    await Assert.ThrowsAnyAsync<Exception>(() => _ws.Service.Update([], _options));
+    await Assert.ThrowsAnyAsync<Exception>(_ws.Service.List);
+    Assert.Equal(before, WorkspaceSnapshot());
+    Assert.False(_ws.Exists("lib/lib.dll"));
   }
 
-  [Fact]
-  public async Task View_BranchRef_PrintsDocumentAtHead() {
-    // Arrange
-    _ws.Git.AddBranch(Lib, "main", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Lib", "9.0.0", "native"),
-    });
+  #endregion
 
-    // Act
-    string json = await _ws.Service.View($"{Lib}@branch:main");
+  /// The files, directories and links of the workspace, without lip's cache outside it.
+  private SortedDictionary<string, string> WorkspaceSnapshot() => new(
+      _ws.Snapshot().Where(e => e.Key.StartsWith(_ws.Root, StringComparison.Ordinal))
+          .ToDictionary(e => e.Key, e => e.Value),
+      StringComparer.Ordinal);
 
-    // Assert
-    Assert.Equal("9.0.0", JsonDocument.Parse(json).RootElement.GetProperty("version").GetString());
+  /// Deletes lip's cache, as lip cache clean in another process does.
+  private void ClearCache() {
+    if (_ws.Fs.Directory.Exists(LipDirectories.Cache)) {
+      _ws.Fs.Directory.Delete(LipDirectories.Cache, recursive: true);
+    }
   }
 
-  [Fact]
-  public async Task View_SpecRef_PrintsRootDocumentOfNewestTag() {
-    // Arrange
-    AddLibAndApp();
+  private static string Sha256(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
 
-    // Act
-    string json = await _ws.Service.View(App);
+  private static string LibTooth(string version, bool hook = false) => WorkspaceHarness.Tooth4(
+      Lib,
+      version,
+      WorkspaceHarness.SelfAsset("lib.dll", "lib/lib.dll")
+          + (hook ? """, "hooks": { "post_install": [ "lib-installed" ] }""" : ""));
 
-    // Assert
-    Assert.Equal("2.0.0", JsonDocument.Parse(json).RootElement.GetProperty("version").GetString());
-  }
+  private void AddLib(string version, bool hook = false) => _ws.AddTag(Lib, version, new() {
+    ["tooth.json"] = LibTooth(version, hook),
+    ["lib.dll"] = $"lib {version}",
+  });
 
-  [Fact]
-  public async Task Versions_SpecRef_ListsVersionsLowestFirst() {
-    AddLibAndApp();
-
-    Assert.Equal(["1.0.0", "2.0.0"], await _ws.Service.Versions(App));
-  }
+  private void AddApp(string version, string libRange) => _ws.AddTag(App, version, new() {
+    ["tooth.json"] = WorkspaceHarness.Tooth4(
+        App,
+        version,
+        $$""" "dependencies": { "{{Lib}}": "{{libRange}}" }, """
+            + WorkspaceHarness.SelfAsset("app.dll", "app/app.dll")),
+    ["app.dll"] = $"app {version}",
+  });
 
   /// lib 1.0.0 and 1.1.0; app 1.0.0 (lib >=1.0.0) and 2.0.0 (lib >=1.1.0).
-  private void AddLibAndApp(bool withApp2 = true) {
-    foreach (string version in new[] { "1.0.0", "1.1.0" }) {
-      _ws.AddTag(Lib, version, new() {
-        ["tooth.json"] = WorkspaceHarness.Tooth(Lib, version, "lib/lib.dll"),
-        ["file.dll"] = $"lib {version}",
-      });
-    }
-
-    _ws.AddTag(App, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(App, "1.0.0", "app/app.dll",
-          $$"""{ "{{Lib}}": ">=1.0.0" }"""),
-      ["file.dll"] = "app 1",
-    });
+  private void AddLibAndApp(bool withApp2 = true, bool hook = false) {
+    AddLib("1.0.0", hook);
+    AddLib("1.1.0", hook);
+    AddApp("1.0.0", ">=1.0.0");
     if (withApp2) {
-      AddApp2();
+      AddApp("2.0.0", ">=1.1.0");
     }
   }
 
-  private void AddApp2() {
-    _ws.AddTag(App, "2.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(App, "2.0.0", "app/app.dll",
-          $$"""{ "{{Lib}}": ">=1.1.0" }"""),
-      ["file.dll"] = "app 2",
-    });
+  /// Version 1.0.0 of a tooth of format 4 whose variants "a" and "b" place a.dll and b.dll.
+  private void AddVariantsTooth(string tooth = Lib) => _ws.AddTag(tooth, "1.0.0", new() {
+    ["tooth.json"] = $$"""
+        {
+          "format_version": 4,
+          "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+          "tooth": "{{tooth}}",
+          "version": "1.0.0",
+          "variants": {
+            "a": [ { "platform": "server", "runtime": "{{WorkspaceHarness.Runtime}}",
+              "assets": [ { "type": "self", "placements": [ { "src": "a.dll", "dest": "a.dll" } ] } ] } ],
+            "b": [ { "platform": "server", "runtime": "{{WorkspaceHarness.Runtime}}",
+              "assets": [ { "type": "self", "placements": [ { "src": "b.dll", "dest": "b.dll" } ] } ] } ]
+          }
+        }
+        """,
+    ["a.dll"] = "a",
+    ["b.dll"] = "b",
+  });
+
+  /// A local directory holding a package example.com/local placing x.txt at out/x.txt.
+  private void AddLocalDirectory(string relative, string version, string content) {
+    _ws.AddFile($"{relative}/tooth.json", WorkspaceHarness.Tooth4(
+        "example.com/local", version, WorkspaceHarness.SelfAsset("x.txt", "out/x.txt")));
+    _ws.AddFile($"{relative}/x.txt", content);
   }
 
-  /// Lib 1.0.0: a tooth.json whose default variant has no assets and depends on its variants
-  /// "a" and "b", which place a.dll and b.dll.
-  private void AddVariantsTooth() {
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = $$"""
-          {
-            "format_version": 3,
-            "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-            "tooth": "{{Lib}}",
-            "version": "1.0.0",
-            "variants": [
-              { "label": "", "dependencies": { "{{Lib}}#a": "1.0.0", "{{Lib}}#b": "1.0.0" } },
-              { "label": "a", "assets": [ { "type": "self", "placements": [
-                { "type": "file", "src": "a.dll", "dest": "a.dll" } ] } ] },
-              { "label": "b", "assets": [ { "type": "self", "placements": [
-                { "type": "file", "src": "b.dll", "dest": "b.dll" } ] } ] }
-            ]
-          }
-          """,
-      ["a.dll"] = "a",
-      ["b.dll"] = "b",
-    });
-  }
-
-  /// fixture.mcmod: a meta document selecting ./server/ or ./client/ by platform.
-  private void AddMetaFixture() {
-    _ws.AddZip("fixture.mcmod", new() {
-      ["manifest.json"] = """
-          {
-            "format": "bf45b1",
-            "targets": [
-              { "platform": "server", "source": "./server/" },
-              { "platform": "client", "source": "./client/" }
-            ]
-          }
-          """,
-      ["server/manifest.json"] =
-          WorkspaceHarness.Package("Demo", "1.0.0", "native", "\"platform\": \"server\""),
-      ["server/Demo.dll"] = "server",
-      ["client/manifest.json"] =
-          WorkspaceHarness.Package("Demo", "1.0.0", "native", "\"platform\": \"client\""),
-      ["client/Demo.dll"] = "client",
+  /// Version 1.0.0 of a mod: a tooth whose asset of type "mcmod" is
+  /// https://example.com/&lt;name&gt;.mcmod; entry holds extra members, each followed by a comma.
+  private void AddMod(string tooth, string name, string entry = "") {
+    string url = $"https://example.com/{name}.mcmod";
+    _ws.AddDownload(url, WorkspaceHarness.Mcmod(name));
+    _ws.AddTag(tooth, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(tooth, "1.0.0",
+          $$"""{{entry}} "assets": [ { "type": "mcmod", "urls": [ "{{url}}" ] } ]"""),
     });
   }
 }

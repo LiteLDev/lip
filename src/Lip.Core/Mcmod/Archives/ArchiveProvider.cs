@@ -10,18 +10,16 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Obtains archives for ref targets (spec §2, §3, §5.2 step 1, §7, §9).
+/// Obtains archives of sources and assets (protocol/package.md §2, §4 step 1; protocol/workspace.md
+/// §4 step 2, §5).
 ///
-/// Downloaded ZIP archives are cached under the key of their URL (CacheKeys.Http), so a URL is
-/// downloaded once; the lock records their SHA-256, which is verified when they are reopened.
-/// ZIP archives nested in another archive are not cached: they are read into memory from their
-/// parent archive, which is reopened (or re-resolved through the recorded chain) to get them back.
-/// Local ZIP files (file refs of user requests) are read into memory where they are, not cached;
-/// reopening one from the lock verifies its SHA-256. git archives are lazy GitTreeSources: only
-/// the tree is listed, blobs are fetched on demand. A git ref (branch, tag) is resolved with
-/// ls-refs; a rev must be a full commit id, since an abbreviated one cannot be resolved without
-/// fetching the history. tooth.json assets (OpenAsset) are downloaded into the same cache as url
-/// archives.
+/// Downloaded ZIP archives and assets are cached under the key of their URL (CacheKeys.Http), so a
+/// URL is downloaded once; the workspace file records their SHA-256, which is verified when they
+/// are reopened. Local ZIP files are read into memory where they are, not cached; reopening one
+/// from the workspace file verifies its SHA-256. Local directories are read where they are. git
+/// archives are lazy GitTreeSources: only the tree is listed, blobs are fetched on demand. A ref
+/// (branch, tag) is resolved with ls-refs; a rev must be a full commit id, since an abbreviated
+/// one cannot be resolved without fetching the history.
 public class ArchiveProvider(
     IGitRemoteClient gitRemoteClient,
     ICacheService cacheService,
@@ -41,20 +39,14 @@ public class ArchiveProvider(
   private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<TaggedVersion>>>>
       _tagCache = new();
 
-  public async Task<ArchiveHandle> Open(Ref target, ArchiveHandle? baseArchive) {
-    if (target.Kind == RefKind.Relative && baseArchive is null) {
-      throw new ArchiveUnavailableException(
-          $"{target}: a relative ref is only meaningful inside an archive.");
-    }
-
+  public async Task<ArchiveHandle> Open(Ref target) {
     return target.Kind switch {
-      RefKind.Relative => target.IsDirectory
-          ? await OpenSubdirectory(target, baseArchive!)
-          : await OpenNestedZip(target, baseArchive!),
       RefKind.Url => await OpenUrl(target.Target),
-      RefKind.File => OpenFile(target.Target, target.Target, target.LocalPath),
+      RefKind.File => _fileSystem.Directory.Exists(target.LocalPath)
+          ? OpenDirectory(target.Target, target.LocalPath)
+          : OpenFile(target.Target, target.Target, target.LocalPath),
       _ => throw new ArgumentException(
-          $"Spec refs are opened with OpenVersion or OpenCommit, not Open: {target}",
+          $"Remote repositories are opened with OpenVersion or OpenCommit, not Open: {target}",
           nameof(target)),
     };
   }
@@ -87,26 +79,10 @@ public class ArchiveProvider(
     return found.PeeledObjectId ?? found.ObjectId;
   }
 
-  public async Task<bool> RedirectsTo(string spec, string target) {
-    string from = GitRemoteClient.GetRepoKey(GetRepoUrl(spec));
-    string to = GitRemoteClient.GetRepoKey(GetRepoUrl(target));
-    if (from == to) {
-      return false;
-    }
-
-    try {
-      Url? url = await _gitRemoteClient.GetRepositoryUrl(GetRepoUrl(spec));
-      return url is not null && GitRemoteClient.GetRepoKey(url) == to;
-    }
-    catch (Exception ex) when (IsUnavailable(ex)) {
-      return false;
-    }
-  }
-
   public Task<ArchiveHandle> OpenCommit(string spec, string commit) {
     string normalized = GitRef.Rev(commit).Name;
     return OpenGit(
-        $"{spec}@rev:{normalized}", new GitArchiveIdentity(GetRepoUrl(spec), normalized, ""));
+        $"{spec}@rev:{normalized}", new GitArchiveIdentity(GetRepoUrl(spec), normalized));
   }
 
   public async Task<IReadOnlyList<SpecVersion>> ListVersions(string spec) {
@@ -120,7 +96,7 @@ public class ArchiveProvider(
             $"{GetRepoUrl(spec)} has no version tag {version.Tag}.");
 
     return await OpenGit(
-        $"{spec}@{version.Version}", new GitArchiveIdentity(GetRepoUrl(spec), tagged.Commit, ""));
+        $"{spec}@{version.Version}", new GitArchiveIdentity(GetRepoUrl(spec), tagged.Commit));
   }
 
   public async Task<ArchiveHandle> OpenLocked(string key, ArchiveIdentity identity) {
@@ -129,12 +105,6 @@ public class ArchiveProvider(
         return await OpenGit(key, git);
 
       case ZipArchiveIdentity zip: {
-          if (zip.Url is null) {
-            // The caller reopens the parent archive by resolving the recorded chain again.
-            throw new ArchiveUnavailableException(
-                $"{key}: a nested ZIP archive is not cached; it is read from its parent archive.");
-          }
-
           string sha256 = zip.Sha256.ToLowerInvariant();
           if (Ref.TryParse(zip.Url, allowFile: true, out Ref? fileRef, out _)
               && fileRef.Kind == RefKind.File) {
@@ -144,53 +114,46 @@ public class ArchiveProvider(
             if (found != sha256) {
               throw new ArchiveUnavailableException(
                   $"{key}: {fileRef.LocalPath} now has sha256:{found}, "
-                      + $"but the lock records sha256:{sha256}.");
+                      + $"but the workspace file records sha256:{sha256}.");
             }
 
-            return zip.Path is null ? local : OpenZip(key, (ZipSource)local.Source, zip);
+            return local;
           }
 
-          IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(zip.Url));
-          if (file is null || await ComputeSha256(file) != sha256) {
-            // Missing, corrupted, or the URL served other bytes since: download it again.
-            file?.Delete();
-            file = await Download(zip.Url, key);
-
-            string actual = await ComputeSha256(file);
-            if (actual != sha256) {
-              throw new ArchiveUnavailableException(
-                  $"{key}: {zip.Url} now has sha256:{actual}, "
-                      + $"but the lock records sha256:{sha256}.");
-            }
-          }
-
-          return OpenZipFile(key, file, zip);
+          IFileInfo file = await DownloadVerified(zip.Url, key, sha256, ZipValidator.Validate);
+          ZipValidator.Validate(file, key);
+          return new ArchiveHandle(key, new ZipSource(file), zip);
         }
+
+      case DirectoryArchiveIdentity directory:
+        return OpenDirectory(key, directory.Path);
 
       default:
         throw new ArgumentException($"Unknown archive identity: {identity}", nameof(identity));
     }
   }
 
-  public async Task<ISource> OpenAsset(IReadOnlyList<string> urls, bool isArchive) {
+  public async Task<OpenedAsset> OpenAsset(IReadOnlyList<string> urls, AssetFormat format) {
     List<string> errors = [];
     foreach (string url in urls) {
       try {
-        if (!isArchive) {
-          return new SingleFileSource(await Download(url, url, validate: null));
+        if (format == AssetFormat.Zip && !url.StartsWith("https://", StringComparison.Ordinal)) {
+          throw new ArchiveUnavailableException($"{url} is not an https URL.");
         }
 
-        // A cached copy that is no archive (e.g. corrupted) is downloaded again.
+        // A cached copy that is not what the asset must be (e.g. corrupted) is downloaded again.
         IFileInfo? cached = await _cacheService.TryGetFile(CacheKeys.Http(url));
-        if (cached is not null && !IsArchive(cached)) {
+        if (cached is not null && CheckAsset(cached, url, format) is not null) {
           cached.Delete();
         }
 
-        return new ArchiveSource(await Download(url, url, validate: (file, key) => {
-          if (!IsArchive(file)) {
-            throw new ArchiveUnavailableException($"{key} is not an archive.");
+        IFileInfo file = await Download(url, url, (f, key) => {
+          if (CheckAsset(f, key, format) is string error) {
+            throw new ArchiveUnavailableException(error);
           }
-        }));
+        });
+        return new OpenedAsset(
+            AssetSource(file, format), new AssetIdentity(url, await ComputeSha256(file)));
       }
       catch (ArchiveUnavailableException ex) {
         errors.Add(ex.Message);
@@ -202,147 +165,69 @@ public class ArchiveProvider(
         : $"Failed to download the asset: {string.Join("; ", errors)}");
   }
 
-  public async Task<ISource> OpenAsset(
-      IReadOnlyList<string> urls, PackageArchiveFormat format, string? sha256) {
-    List<string> errors = [];
-    foreach (string url in urls) {
-      try {
-        // A cached copy with other content (e.g. corrupted, or another version behind the URL)
-        // is downloaded again once.
-        IFileInfo? cached = await _cacheService.TryGetFile(CacheKeys.Http(url));
-        if (cached is not null && CheckAsset(cached, url, format, sha256) is not null) {
-          cached.Delete();
-        }
-
-        IFileInfo file = await Download(url, url, validate: (f, key) => {
-          if (CheckAsset(f, key, format, sha256) is string error) {
+  public async Task<ISource> OpenLockedAsset(AssetIdentity identity, AssetFormat format) {
+    IFileInfo file = await DownloadVerified(
+        identity.Url, identity.Url, identity.Sha256.ToLowerInvariant(), (f, key) => {
+          if (CheckAsset(f, key, format) is string error) {
             throw new ArchiveUnavailableException(error);
           }
         });
-        if (format == PackageArchiveFormat.File) {
-          return new SingleFileSource(file);
-        }
-
-        ArchiveSource source = new(file);
-        if (source.Keys.FirstOrDefault(k => !IsValidEntryPath(k)) is string invalid) {
-          throw new ArchiveUnavailableException($"{url}: invalid entry path '{invalid}'.");
-        }
-
-        return source;
-      }
-      catch (ArchiveUnavailableException ex) {
-        errors.Add(ex.Message);
-      }
-    }
-
-    throw new ArchiveUnavailableException(
-        $"Failed to download the archive: {string.Join("; ", errors)}");
+    return AssetSource(file, format);
   }
 
-  /// Why a downloaded file is not the archive an "archives" entry describes, or null.
-  private static string? CheckAsset(
-      IFileInfo file, string key, PackageArchiveFormat format, string? sha256) {
-    if (sha256 is not null) {
-      using Stream stream = file.OpenRead();
-      string actual = Convert.ToHexStringLower(SHA256.HashData(stream));
+  /// The files of a downloaded asset.
+  private static ISource AssetSource(IFileInfo file, AssetFormat format) => format switch {
+    AssetFormat.Zip => new ZipSource(file),
+    AssetFormat.LegacyFile => new SingleFileSource(file),
+    _ => new ArchiveSource(file),
+  };
+
+  /// Why a downloaded file is not what an asset of the format must be, or null.
+  private static string? CheckAsset(IFileInfo file, string key, AssetFormat format) {
+    switch (format) {
+      case AssetFormat.Zip:
+        try {
+          ZipValidator.Validate(file, key);
+          return null;
+        }
+        catch (ArchiveUnavailableException ex) {
+          return ex.Message;
+        }
+
+      case AssetFormat.LegacyArchive:
+        return IsArchive(file) ? null : $"{key} is not an archive.";
+      default:
+        return null;
+    }
+  }
+
+  /// The cached download of a URL, downloaded again when it is missing or has other content;
+  /// fails when the URL serves other content than the SHA-256 recorded.
+  private async Task<IFileInfo> DownloadVerified(
+      string url, string key, string sha256, Action<IFileInfo, string> validate) {
+    IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
+    if (file is null || await ComputeSha256(file) != sha256) {
+      // Missing, corrupted, or the URL served other bytes since: download it again.
+      file?.Delete();
+      file = await Download(url, key, validate);
+
+      string actual = await ComputeSha256(file);
       if (actual != sha256) {
-        return $"{key} has SHA-256 {actual}, not {sha256}.";
+        throw new ArchiveUnavailableException(
+            $"{key}: {url} now has sha256:{actual}, "
+                + $"but the workspace file records sha256:{sha256}.");
       }
     }
 
-    if (format == PackageArchiveFormat.File) {
-      return null;
-    }
-
-    byte[] magic = new byte[2];
-    using (Stream stream = file.OpenRead()) {
-      _ = stream.ReadAtLeast(magic, magic.Length, throwOnEndOfStream: false);
-    }
-
-    bool isZip = magic[0] == (byte)'P' && magic[1] == (byte)'K';
-    bool isGzip = magic[0] == 0x1f && magic[1] == 0x8b;
-    bool matches = format switch {
-      PackageArchiveFormat.Zip => isZip,
-      PackageArchiveFormat.Tgz => isGzip,
-      PackageArchiveFormat.Tar => !isZip && !isGzip,
-      _ => true,
-    };
-    return matches && IsArchive(file)
-        ? null
-        : $"{key} is not {(format == PackageArchiveFormat.Detect ? "a zip, tar or tgz archive" : $"a {format.ToString().ToLowerInvariant()} archive")}.";
+    return file;
   }
 
-  /// Whether an entry path obeys spec §2.1: '/'-separated, relative, without "..", "\\" or
-  /// empty segments.
-  private static bool IsValidEntryPath(string path) =>
-      path != "" && !path.StartsWith('/') && !path.Contains('\\')
-      && path.Split('/').All(s => s is not ("" or ".."));
-
-  /// Gets the git repository URL of a spec (spec §3), without any GitHub proxy applied.
+  /// The git repository URL of a remote repository (protocol/package.md §2.1), without any
+  /// GitHub proxy applied.
   public static string GetRepoUrl(string spec) => $"https://{spec}.git";
 
-  private async Task<ArchiveHandle> OpenSubdirectory(Ref target, ArchiveHandle baseArchive) {
-    string key = GetRelativeKey(target, baseArchive);
-    string relativePath = target.RelativePath;
-
-    ArchiveHandle handle;
-    switch (baseArchive.Identity) {
-      case GitArchiveIdentity git:
-        handle = await OpenGit(key, git with { Path = JoinPath(git.Path, relativePath) });
-        break;
-
-      case ZipArchiveIdentity zip:
-        handle = new ArchiveHandle(
-            key,
-            new PrefixSource(baseArchive.Source, relativePath),
-            zip with { Path = JoinPath(zip.Path ?? "", relativePath) });
-        break;
-
-      default:
-        throw new ArgumentException(
-            $"Unknown archive identity: {baseArchive.Identity}", nameof(baseArchive));
-    }
-
-    EnsureNotEmpty(handle.Source, key);
-    return handle;
-  }
-
-  private async Task<ArchiveHandle> OpenNestedZip(Ref target, ArchiveHandle baseArchive) {
-    string key = GetRelativeKey(target, baseArchive);
-    string relativePath = target.RelativePath;
-
-    byte[] content;
-    try {
-      HashSet<string> keys = [.. baseArchive.Source.Keys];
-      if (!keys.Contains(relativePath)) {
-        string reason = keys.Any(
-            k => k.StartsWith(relativePath + "/", StringComparison.Ordinal))
-            ? "is a directory (directory refs end with '/')"
-            : "does not exist";
-        throw new ArchiveUnavailableException(
-            $"{key}: '{relativePath}' {reason} in {baseArchive.Key}.");
-      }
-
-      using Stream stream = await baseArchive.Source.OpenRead(relativePath);
-      using MemoryStream memory = new();
-      await stream.CopyToAsync(memory);
-      content = memory.ToArray();
-    }
-    catch (Exception ex) when (IsUnavailable(ex)) {
-      throw new ArchiveUnavailableException(
-          $"{key}: failed to read '{relativePath}' from {baseArchive.Key}: {ex.Message}", ex);
-    }
-
-    string sha256 = Convert.ToHexStringLower(SHA256.HashData(content));
-    using (MemoryStream stream = new(content, writable: false)) {
-      ZipValidator.Validate(stream, key);
-    }
-
-    return OpenZip(key, new ZipSource(content), new ZipArchiveIdentity(sha256, null));
-  }
-
   private async Task<ArchiveHandle> OpenUrl(string url) {
-    // Ref targets never contain the fragment, but strip it anyway since it is part of no key.
+    // Sources never contain the fragment here, but strip it anyway since it is part of no key.
     string key = url.Split('#', 2)[0];
 
     IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(key));
@@ -358,37 +243,27 @@ public class ArchiveProvider(
     }
 
     // Download validates what it downloads.
-    file ??= await Download(key, key);
+    file ??= await Download(key, key, ZipValidator.Validate);
 
-    return OpenZip(
+    return new ArchiveHandle(
         key, new ZipSource(file), new ZipArchiveIdentity(await ComputeSha256(file), key));
   }
 
-  /// Validates a ZIP file (§2) and opens it, restricted to identity.Path if that is set.
-  private static ArchiveHandle OpenZipFile(
-      string key, IFileInfo file, ZipArchiveIdentity identity) {
-    ZipValidator.Validate(file, key);
-    return OpenZip(key, new ZipSource(file), identity);
-  }
-
-  /// Opens a validated ZIP archive, restricted to identity.Path if that is set.
-  private static ArchiveHandle OpenZip(string key, ZipSource zip, ZipArchiveIdentity identity) {
-    ISource source = zip;
-    if (identity.Path is string path) {
-      source = new PrefixSource(source, path);
-      EnsureNotEmpty(source, key);
+  /// Opens a local directory, identified by its absolute path.
+  private ArchiveHandle OpenDirectory(string key, string path) {
+    string full = _fileSystem.Path.TrimEndingDirectorySeparator(_fileSystem.Path.GetFullPath(path));
+    if (!_fileSystem.Directory.Exists(full)) {
+      throw new ArchiveUnavailableException($"{key}: {full} is not a directory.");
     }
 
-    return new ArchiveHandle(key, source, identity);
+    return new ArchiveHandle(
+        key, new DirectorySource(_fileSystem, full), new DirectoryArchiveIdentity(full));
   }
 
-  /// Opens a local ZIP file (a file ref of a user request), identified by its content.
+  /// Opens a local ZIP file, identified by its content.
   private ArchiveHandle OpenFile(string key, string url, string path) {
     if (!_fileSystem.File.Exists(path)) {
-      throw new ArchiveUnavailableException(_fileSystem.Directory.Exists(path)
-          ? $"{key}: {path} is a directory; lip installs a local package only from a .mcmod or "
-              + ".zip file."
-          : $"{key}: {path} does not exist.");
+      throw new ArchiveUnavailableException($"{key}: {path} does not exist.");
     }
 
     // Read once, so that the files installed are exactly the bytes validated and hashed, even if
@@ -414,13 +289,9 @@ public class ArchiveProvider(
   private async Task<ArchiveHandle> OpenGit(string key, GitArchiveIdentity identity) {
     try {
       // Lists the tree up front, so a missing commit fails here rather than on first access.
-      // Only regular files are exposed: symlinks and gitlinks are not part of git archives (§2.2).
+      // Only regular files are exposed: symlinks and gitlinks are not part of git archives.
       GitTreeSource source = await GitTreeSource.Create(
-          _gitRemoteClient, _cacheService, identity.RepoUrl, identity.Commit, identity.Path);
-      if (identity.Path != "") {
-        EnsureNotEmpty(source, key);
-      }
-
+          _gitRemoteClient, _cacheService, identity.RepoUrl, identity.Commit);
       return new ArchiveHandle(key, source, identity);
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
@@ -469,7 +340,7 @@ public class ArchiveProvider(
         .ThenByDescending(v => v.Version.Tag, StringComparer.Ordinal)];
   }
 
-  /// Parses a tag ref name into a version if the tag is named exactly "v" + SemVer 2.0.0 (§3).
+  /// Parses a tag ref name into a version if the tag is a version tag (protocol/package.md §2.1).
   public static SemVersion? ParseVersionTag(string refName) {
     if (!refName.StartsWith(_versionTagRefPrefix, StringComparison.Ordinal)) {
       return null;
@@ -484,11 +355,7 @@ public class ArchiveProvider(
   /// Downloads a URL into the cache under CacheKeys.Http(url), via the GitHub proxy first if one
   /// is configured, unless it is cached already. The download goes to the cache's staging
   /// directory and is moved into place once complete. A candidate whose response validate
-  /// rejects (by default: one that is not a valid ZIP archive, e.g. a proxy error page) is
-  /// skipped.
-  private Task<IFileInfo> Download(string url, string archiveKey) =>
-      Download(url, archiveKey, ZipValidator.Validate);
-
+  /// rejects (e.g. one that is not a valid ZIP archive, like a proxy error page) is skipped.
   private async Task<IFileInfo> Download(
       string url, string archiveKey, Action<IFileInfo, string>? validate) {
     try {
@@ -541,7 +408,6 @@ public class ArchiveProvider(
     return proxyUrl.ToString() == original.ToString() ? [original] : [proxyUrl, original];
   }
 
-
   /// Whether a file is an archive ArchiveSource can open.
   private static bool IsArchive(IFileInfo file) {
     try {
@@ -557,18 +423,6 @@ public class ArchiveProvider(
     using Stream stream = file.OpenRead();
     return Convert.ToHexStringLower(await SHA256.HashDataAsync(stream));
   }
-
-  private static void EnsureNotEmpty(ISource source, string key) {
-    if (!source.Keys.Any()) {
-      throw new ArchiveUnavailableException($"{key}: directory does not exist or is empty.");
-    }
-  }
-
-  private static string GetRelativeKey(Ref target, ArchiveHandle baseArchive) =>
-      $"{baseArchive.Key}!{target.Target[2..]}";
-
-  private static string JoinPath(string directory, string relativePath) =>
-      directory == "" ? relativePath : $"{directory}/{relativePath}";
 
   // Everything but cancellation and programming errors makes an archive unavailable.
   private static bool IsUnavailable(Exception ex) =>

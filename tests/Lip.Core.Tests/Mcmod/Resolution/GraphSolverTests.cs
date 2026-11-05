@@ -1,25 +1,25 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Resolution;
-using Lip.Core.Sources;
 using Moq;
 using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Resolution;
 
+/// The package set S (protocol/workspace.md §3) and the installation order (§5).
 public class GraphSolverTests {
   private const string LeviLamina = "github.com/LiteLDev/LeviLamina";
 
-  private static readonly LipEnvironment s_environment = new(McmodPlatform.Server, "win-x64");
-
-  private static readonly ArchiveHandle s_workspace = Archive("C:/workspace");
+  private static readonly LipEnvironment s_environment = TestCandidates.Environment;
 
   [Fact]
   public async Task Solve_SingleRequest_PicksFirstCandidate() {
     // Arrange
     FakeResolver resolver = new();
-    resolver.AddVersions("github.com/a/a", "A", ["2.0.0", "1.0.0"]);
+    resolver.AddVersions("github.com/a/a", ["2.0.0", "1.0.0"]);
     GraphSolver solver = new(resolver);
 
     // Act
@@ -27,33 +27,32 @@ public class GraphSolverTests {
         [Request("github.com/a/a")], [], s_environment);
 
     // Assert
-    Assert.Equal(["A@2.0.0"], Names(result));
+    Assert.Equal(["github.com/a/a@2.0.0"], Names(result));
   }
 
   [Fact]
   public async Task Solve_LeviLaminaWithManyVersionsAndTenMods_PicksNewestCommonVersion() {
     // Arrange
     FakeResolver resolver = new();
-    string[] levilaminaVersions = [
+    resolver.AddVersions(LeviLamina, [
       .. Enumerable.Range(0, 3).SelectMany(major => Enumerable.Range(0, 100)
           .Select(minor => $"{major}.{minor}.0")).Reverse(),
-    ];
-    resolver.AddVersions(LeviLamina, "LeviLamina", levilaminaVersions);
+    ]);
 
     List<PackageRequest> requests = [];
     for (int i = 0; i < 10; i++) {
       string spec = $"github.com/mods/mod{i}";
-      resolver.Add(spec, Package($"Mod{i}", "2.0.0", spec,
-          edges: [Edge(LeviLamina, Between($"1.{i * 5}.0", $"2.{(i * 5) + 50}.0"))]));
-      resolver.Add(spec, Package($"Mod{i}", "1.0.0", spec, edges: [Edge(LeviLamina)]));
+      resolver.Add(Package(spec, "2.0.0",
+          dependencies: [Dependency(LeviLamina, $">=1.{i * 5}.0 <2.{(i * 5) + 50}.0")]));
+      resolver.Add(Package(spec, "1.0.0", dependencies: [Dependency(LeviLamina)]));
       requests.Add(Request(spec));
     }
 
     // The newest Old needs an ancient LeviLamina, so Old must fall back to 1.0.0.
-    resolver.Add("github.com/mods/old", Package("Old", "2.0.0", "github.com/mods/old",
-        edges: [Edge(LeviLamina, Between("0.0.0", "1.0.0"))]));
-    resolver.Add("github.com/mods/old", Package("Old", "1.0.0", "github.com/mods/old",
-        edges: [Edge(LeviLamina, Between("2.0.0", "3.0.0"))]));
+    resolver.Add(Package("github.com/mods/old", "2.0.0",
+        dependencies: [Dependency(LeviLamina, "<1.0.0")]));
+    resolver.Add(Package("github.com/mods/old", "1.0.0",
+        dependencies: [Dependency(LeviLamina, ">=2.0.0 <3.0.0")]));
     requests.Add(Request("github.com/mods/old"));
     GraphSolver solver = new(resolver);
 
@@ -61,21 +60,21 @@ public class GraphSolverTests {
     IReadOnlyList<Candidate> result = await solver.Solve(requests, [], s_environment);
 
     // Assert
-    Assert.Equal("LeviLamina@2.49.0", Names(result)[0]);
-    Assert.Contains("Old@1.0.0", Names(result));
-    Assert.All(Enumerable.Range(0, 10), i => Assert.Contains($"Mod{i}@2.0.0", Names(result)));
+    Assert.Equal($"{LeviLamina}@2.49.0", Names(result)[0]);
+    Assert.Contains("github.com/mods/old@1.0.0", Names(result));
+    Assert.All(Enumerable.Range(0, 10),
+        i => Assert.Contains($"github.com/mods/mod{i}@2.0.0", Names(result)));
     Assert.Equal(12, result.Count);
     Assert.Equal(resolver.Calls.Count, resolver.Calls.Distinct().Count());
   }
 
   [Fact]
-  public async Task Solve_ToothPackageDependsOnPathWithoutName_UsesCompatFlagAndAnyIdentity() {
+  public async Task Solve_DependencyOfLegacyEntry_IsResolvedWithClientCompat() {
     // Arrange
     FakeResolver resolver = new();
-    resolver.Add("github.com/legacy/tooth", Package("github.com/legacy/tooth", "1.0.0",
-        "github.com/legacy/tooth", kind: "tooth",
-        edges: [new InstallEdge(null, null, [Ref.Parse("github.com/new/lib")], true)]));
-    resolver.Add("github.com/new/lib", Package("NewLib", "4.0.0", "github.com/new/lib"));
+    resolver.Add(Package("github.com/legacy/tooth", "1.0.0", legacy: true,
+        dependencies: [Dependency("github.com/new/lib#client", compat: true)]));
+    resolver.Add(Package("github.com/new/lib", "4.0.0", source: "github.com/new/lib#client"));
     GraphSolver solver = new(resolver);
 
     // Act
@@ -83,38 +82,160 @@ public class GraphSolverTests {
         [Request("github.com/legacy/tooth")], [], s_environment);
 
     // Assert
-    Assert.Equal(["NewLib@4.0.0", "github.com/legacy/tooth@1.0.0"], Names(result));
-    Assert.Contains(resolver.Calls, c => c.Ref == "github.com/new/lib" && c.Compat);
+    Assert.Equal(["github.com/new/lib@4.0.0", "github.com/legacy/tooth@1.0.0"], Names(result));
+    Assert.Contains(resolver.Calls, c => c.Ref == "github.com/new/lib#client" && c.Compat);
+    Assert.Contains(resolver.Calls, c => c.Ref == "github.com/legacy/tooth" && !c.Compat);
   }
 
+  // Identities (protocol/package.md §4, protocol/workspace.md §3 rule 3)
+
   [Fact]
-  public async Task Solve_NamedInstallDependency_SkipsCandidatesWithOtherIdentity() {
-    // Arrange
+  public async Task Solve_DefaultVariantDependsOnItsVariants_SolvesThreeIdentities() {
+    // Arrange: the variants of one tooth file have the identities tooth and tooth#variant.
     FakeResolver resolver = new();
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        edges: [new InstallEdge("foo", null, [Ref.Parse("./sub/")])]));
-    resolver.Add("github.com/a/a@1.0.0!sub", Package("Bar", "1.0.0", "github.com/a/a@1.0.0!sub"));
-    resolver.Add("github.com/a/a@1.0.0!sub", Package("FOO", "1.0.0", "github.com/a/a@1.0.0!sub"));
+    resolver.Add(Package("github.com/t/t", "1.0.0",
+        dependencies: [Dependency("github.com/t/t#b"), Dependency("github.com/t/t#a")]));
+    resolver.Add(Package("github.com/t/t", "1.0.0", variant: "a"));
+    resolver.Add(Package("github.com/t/t", "1.0.0", variant: "b"));
     GraphSolver solver = new(resolver);
 
     // Act
     IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a")], [], s_environment);
+        [Request("github.com/t/t")], [], s_environment);
 
     // Assert
-    Assert.Equal(["FOO@1.0.0", "A@1.0.0"], Names(result));
+    Assert.Equal(["github.com/t/t#a@1.0.0", "github.com/t/t#b@1.0.0", "github.com/t/t@1.0.0"],
+        Names(result));
   }
 
   [Fact]
-  public async Task Solve_ConflictsWithNewerVersions_BacktracksToOlderVersions() {
+  public async Task SolveGraph_TwoVariantsRequested_SolvesBothWithSharedDependency() {
     // Arrange
     FakeResolver resolver = new();
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        conflicts: [new Dep { Id = "b", Version = Between("2.0.0", "99.0.0") }]));
-    resolver.AddVersions("github.com/b/b", "B", ["3.0.0", "2.0.0", "1.0.0"]);
-    resolver.Add("github.com/c/c", Package("C", "2.0.0", "github.com/c/c",
-        conflicts: [new Dep { Id = "A" }]));
-    resolver.Add("github.com/c/c", Package("C", "1.0.0", "github.com/c/c"));
+    resolver.Add(Package("github.com/t/t", "1.0.0", variant: "a",
+        dependencies: [Dependency("github.com/l/l")]));
+    resolver.Add(Package("github.com/t/t", "1.0.0", variant: "b",
+        dependencies: [Dependency("github.com/l/l")]));
+    resolver.AddVersions("github.com/l/l", ["1.0.0"]);
+    GraphSolver solver = new(resolver);
+
+    // Act
+    SolvedGraph graph = await solver.SolveGraph(
+        [Request("github.com/t/t#a"), Request("github.com/t/t#b")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/l/l@1.0.0", "github.com/t/t#a@1.0.0", "github.com/t/t#b@1.0.0"],
+        Names(graph.Order));
+    Assert.Equal([1, 2], graph.RequestSatisfiers);
+    Assert.Empty(graph.Dependencies[0]);
+    Assert.Equal([0], graph.Dependencies[1]);
+    Assert.Equal([0], graph.Dependencies[2]);
+  }
+
+  [Theory]
+  [InlineData("github.com/x/x")]
+  [InlineData("github.com/X/x")]
+  public async Task Solve_TwoSourcesOfSameIdentity_Fails(string otherTooth) {
+    // Arrange: a URL whose tooth file names the tooth path of a remote repository.
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/x", ["1.0.0"]);
+    resolver.Add(Package(otherTooth, "1.0.0", source: "https://example.com/x.zip"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/x/x"), Request("https://example.com/x.zip")], [], s_environment));
+
+    // Assert
+    Assert.Contains($"{otherTooth}@1.0.0 (from https://example.com/x.zip@1.0.0) has the same "
+        + "identity as github.com/x/x@1.0.0 (from github.com/x/x@1.0.0)", exception.Message);
+  }
+
+  [Fact]
+  public async Task Solve_SameIdentityClash_BacktracksToOtherVersion() {
+    // Arrange: A@2 needs a URL package of the identity of B, which is requested at 2.0.0 only;
+    // A@1 does not.
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/a/a", "2.0.0",
+        dependencies: [Dependency("https://example.com/b.zip")]));
+    resolver.Add(Package("github.com/a/a", "1.0.0"));
+    resolver.Add(Package("github.com/b/b", "1.0.0", source: "https://example.com/b.zip"));
+    resolver.AddVersions("github.com/b/b", ["2.0.0"]);
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/a/a@1.0.0", "github.com/b/b@2.0.0"], Names(result));
+  }
+
+  // Mod names (protocol/package.md §4, protocol/workspace.md §3 rule 3)
+
+  [Fact]
+  public async Task Solve_ModNameClash_BacktracksToOlderVersion() {
+    // Arrange: A@2 is a mod named like B's mod (ignoring case); A@1 has its own mod name.
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/a/a", "2.0.0", mod: "Shared"));
+    resolver.Add(Package("github.com/a/a", "1.0.0", mod: "A"));
+    resolver.Add(Package("github.com/b/b", "1.0.0", mod: "sHARED"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/a/a@1.0.0", "github.com/b/b@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_ModNameClashDeepInGraph_BacktracksEarlierChoice() {
+    // Arrange: X@2 needs Y, a mod named like the requested Z; X falls back to 1.
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/x/x", "2.0.0", dependencies: [Dependency("github.com/y/y")]));
+    resolver.Add(Package("github.com/x/x", "1.0.0"));
+    resolver.Add(Package("github.com/y/y", "1.0.0", mod: "Z"));
+    resolver.Add(Package("github.com/z/z", "1.0.0", mod: "z"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/x/x"), Request("github.com/z/z")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/x/x@1.0.0", "github.com/z/z@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_ModNameClashUnavoidable_ListsBlockedCandidates() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/a/a", "1.0.0", mod: "Foo"));
+    resolver.Add(Package("github.com/b/b", "1.0.0", mod: "FOO"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment));
+
+    // Assert
+    Assert.Contains("request github.com/b/b *: no candidate fits (github.com/b/b@1.0.0 (from "
+        + "github.com/b/b@1.0.0) is a mod of the same mod name 'FOO' as github.com/a/a@1.0.0 "
+        + "(from github.com/a/a@1.0.0))", exception.Message);
+  }
+
+  [Fact]
+  public async Task Solve_ModAmongFilePackages_DownloadsOnlyItsMcmodAssetOnce() {
+    // Arrange: only mods have mod names, read from their asset of type "mcmod".
+    FakeResolver resolver = new();
+    List<string> downloads = [];
+    resolver.Add(Package("github.com/a/a", "1.0.0", mod: "Same", downloads: downloads));
+    resolver.Add(Package("github.com/b/b", "1.0.0"));
+    resolver.Add(Package("github.com/c/c", "1.0.0"));
     GraphSolver solver = new(resolver);
 
     // Act
@@ -124,285 +245,24 @@ public class GraphSolverTests {
         s_environment);
 
     // Assert
-    Assert.Equal(["A@1.0.0", "B@1.0.0", "C@1.0.0"], Names(result));
+    Assert.Equal(3, result.Count);
+    Assert.Equal(["https://example.com/github.com/a/a/1.0.0.mcmod"], downloads);
   }
 
-  [Fact]
-  public async Task Solve_ConflictDeepInGraph_BacktracksEarlierChoice() {
-    // Arrange: X@2 needs Y, which conflicts with Z; Z is requested, so X falls back to 1.
-    FakeResolver resolver = new();
-    resolver.Add("github.com/x/x", Package("X", "2.0.0", "github.com/x/x",
-        edges: [Edge("github.com/y/y")]));
-    resolver.Add("github.com/x/x", Package("X", "1.0.0", "github.com/x/x"));
-    resolver.Add("github.com/y/y", Package("Y", "1.0.0", "github.com/y/y",
-        conflicts: [new Dep { Id = "Z" }]));
-    resolver.Add("github.com/z/z", Package("Z", "1.0.0", "github.com/z/z"));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/x/x"), Request("github.com/z/z")], [], s_environment);
-
-    // Assert
-    Assert.Equal(["X@1.0.0", "Z@1.0.0"], Names(result));
-  }
-
-  [Fact]
-  public async Task Solve_Unsatisfiable_ThrowsWithFailingEdgeAndResolverDiagnostics() {
+  [Theory]
+  [InlineData("missing")]
+  [InlineData("""{ "entry": "x.dll" }""")]
+  [InlineData("""{ "name": "bad name" }""")]
+  [InlineData("""{ "name": 1 }""")]
+  [InlineData("""[ "name" ]""")]
+  [InlineData("not json")]
+  public async Task Solve_InvalidModManifest_BlocksCandidate(string manifest) {
     // Arrange
     FakeResolver resolver = new();
-    resolver.AddVersions(LeviLamina, "LeviLamina", ["1.2.0", "1.1.0"]);
-    resolver.Add("github.com/mods/mod", Package("Mod", "1.0.0", "github.com/mods/mod",
-        edges: [Edge(LeviLamina, Between("99.0.0", "100.0.0"))]));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
-            [Request("github.com/mods/mod")], [], s_environment));
-
-    // Assert
-    Assert.Contains($"Mod@1.0.0 requires a package [99.0.0, 100.0.0) from {LeviLamina}: "
-        + "no candidates", exception.Message);
-    Assert.Contains(exception.Diagnostics, d => d.Contains($"{LeviLamina}: no version matches"));
-  }
-
-  [Fact]
-  public async Task Solve_UnsatisfiableDueToConflict_ListsBlockedCandidates() {
-    // Arrange
-    FakeResolver resolver = new();
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        conflicts: [new Dep { Id = "B" }]));
-    resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b"));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
-            [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment));
-
-    // Assert
-    Assert.Contains("request github.com/b/b *: no candidate fits (A@1.0.0 conflicts with B@1.0.0)",
-        exception.Message);
-  }
-
-  [Fact]
-  public async Task Solve_DependencyCycle_OrdersCycleByLowercaseIdentity() {
-    // Arrange: Zed -> beta <-> Alpha -> Base.
-    FakeResolver resolver = new();
-    resolver.Add("github.com/z/z", Package("Zed", "1.0.0", "github.com/z/z",
-        edges: [Edge("github.com/b/b")]));
-    resolver.Add("github.com/b/b", Package("beta", "1.0.0", "github.com/b/b",
-        edges: [Edge("github.com/a/a")]));
-    resolver.Add("github.com/a/a", Package("Alpha", "1.0.0", "github.com/a/a",
-        edges: [Edge("github.com/b/b"), Edge("github.com/base/base")]));
-    resolver.Add("github.com/base/base", Package("Base", "1.0.0", "github.com/base/base"));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/z/z")], [], s_environment);
-
-    // Assert
-    Assert.Equal(["Base@1.0.0", "Alpha@1.0.0", "beta@1.0.0", "Zed@1.0.0"], Names(result));
-  }
-
-  [Fact]
-  public async Task Solve_PinnedWithSameIdentity_BlocksRequest() {
-    // Arrange
-    FakeResolver resolver = new();
-    resolver.AddVersions("github.com/x/x", "X", ["2.0.0"]);
-    Candidate pinned = ToCandidate(Package("x", "1.0.0", "github.com/x/x"));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
-            [Request("github.com/x/x")], [pinned], s_environment));
-
-    // Assert
-    Assert.Contains(
-        "X@2.0.0 (from github.com/x/x@2.0.0) has the same identity as x@1.0.0 "
-            + "(from github.com/x/x@1.0.0) (installed)",
-        exception.Message);
-  }
-
-  [Fact]
-  public async Task Solve_DefaultVariantDependsOnItsLabelledVariants_SolvesThreePackages() {
-    // Arrange: a converted tooth.json like LegacyScriptEngine; its variants share one archive.
-    FakeResolver resolver = new();
-    resolver.Add("github.com/t/t", Variant("t", "", [Edge("github.com/t/t#a"),
-        Edge("github.com/t/t#b")]));
-    resolver.Add("github.com/t/t#a", Variant("t#a", "a"));
-    resolver.Add("github.com/t/t#b", Variant("t#b", "b"));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/t/t")], [], s_environment);
-
-    // Assert
-    Assert.Equal(["t#a@1.0.0", "t#b@1.0.0", "t@1.0.0"], Names(result));
-  }
-
-  [Fact]
-  public async Task Solve_TwoLabelledVariantsRequested_SolvesBoth() {
-    // Arrange
-    FakeResolver resolver = new();
-    resolver.Add("github.com/t/t#a", Variant("t#a", "a", [Edge("github.com/l/l")]));
-    resolver.Add("github.com/t/t#b", Variant("t#b", "b", [Edge("github.com/l/l")]));
-    resolver.AddVersions("github.com/l/l", "L", ["1.0.0"]);
-    GraphSolver solver = new(resolver);
-
-    // Act
-    SolvedGraph graph = await solver.SolveGraph(
-        [Request("github.com/t/t#a"), Request("github.com/t/t#b")], [], s_environment);
-
-    // Assert
-    Assert.Equal(["L@1.0.0", "t#a@1.0.0", "t#b@1.0.0"], Names(graph.Order));
-    Assert.Equal([1, 2], graph.RequestSatisfiers);
-  }
-
-  [Fact]
-  public async Task Solve_PinnedToothDefaultVariant_DoesNotStandInForClientVariant() {
-    // Arrange: "client" means "" only for archives that use manifest.json (spec §10.2 rule 3).
-    FakeResolver resolver = new();
-    resolver.Add("github.com/t/t#client", Variant("t#client", "client"));
-    resolver.Add("github.com/r/r", Package("R", "1.0.0", "github.com/r/r", edges: [
-      new InstallEdge(null, null, [Ref.Parse("github.com/t/t#client")], ToothClientCompat: true),
-    ]));
-    Candidate pinned = new(
-        Variant("t", ""),
-        Archive("github.com/t/t@rev:abc"),
-        [new ChainHop(Ref.Parse("github.com/t/t@branch:main"), null)]);
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/r/r")], [pinned], s_environment);
-
-    // Assert
-    Assert.Equal(["t@1.0.0", "t#client@1.0.0", "R@1.0.0"], Names(result));
-  }
-
-  [Fact]
-  public async Task Solve_VariantOfSameArchiveWithSameIdentity_FailsInsteadOfMerging() {
-    // Arrange: two packages of one archive and one identity; the root does not satisfy the
-    // edge to its sibling.
-    FakeResolver resolver = new();
-    resolver.Add("github.com/t/t", Variant("t", "", [Edge("github.com/t/t#a")]));
-    resolver.Add("github.com/t/t#a", Variant("t", "a"));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
-            [Request("github.com/t/t")], [], s_environment));
-
-    // Assert
-    Assert.Contains(
-        "t@1.0.0 (from github.com/t/t@1.0.0, variant \"a\") has the same identity as t@1.0.0 "
-            + "(from github.com/t/t@1.0.0)",
-        exception.Message);
-  }
-
-  [Fact]
-  public async Task Solve_TwoArchivesWithSameIdentity_FailsWithBothSources() {
-    // Arrange
-    FakeResolver resolver = new();
-    resolver.AddVersions("github.com/x/x", "dup", ["1.0.0"]);
-    resolver.AddVersions("github.com/y/y", "dup", ["1.0.0"]);
-    GraphSolver solver = new(resolver);
-
-    // Act
-    DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
-            [Request("github.com/x/x"), Request("github.com/y/y")], [], s_environment));
-
-    // Assert
-    Assert.Contains(
-        "dup@1.0.0 (from github.com/y/y@1.0.0) has the same identity as dup@1.0.0 "
-            + "(from github.com/x/x@1.0.0)",
-        exception.Message);
-  }
-
-  [Fact]
-  public async Task Solve_PinnedSamePackage_SatisfiesRequestAndPinnedEdges() {
-    // Arrange
-    FakeResolver resolver = new();
-    resolver.AddVersions("github.com/x/x", "X", ["2.0.0", "1.0.0"]);
-    resolver.AddVersions("github.com/dep/dep", "Dep", ["1.0.0"]);
-    Candidate pinnedX = ToCandidate(Package("X", "1.0.0", "github.com/x/x"));
-    Candidate pinnedP = ToCandidate(Package("P", "1.0.0", "github.com/p/p",
-        edges: [Edge("github.com/dep/dep")]));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/x/x")], [pinnedX, pinnedP], s_environment);
-
-    // Assert
-    Assert.Equal(["Dep@1.0.0", "P@1.0.0", "X@1.0.0"], Names(result));
-    Assert.Same(pinnedX, result[2]);
-  }
-
-  [Fact]
-  public async Task Solve_MemberRoutedFromTagOfOtherVersion_SatisfiesEdge() {
-    // Arrange: the meta document at tag v1.0.0 has no version and routes to R 1.0.1, which
-    // is installed; Mod's edge must accept it although no tag is named v1.0.1 (spec §5.2, §6).
-    FakeResolver resolver = new();
-    resolver.Add("github.com/r/r", Package("R", "2.0.0", "github.com/r/r"));
-    FakePackage routed = Package("R", "1.0.1", "github.com/r/r") with {
-      ArchiveKey = "https://example.com/R-1.0.1.mcmod",
-    };
-    resolver.Add("github.com/r/r", routed, tag: "1.0.0");
-    resolver.Add("github.com/mod/mod", Package("Mod", "1.0.0", "github.com/mod/mod",
-        edges: [Edge("github.com/r/r", Between("1.0.0", "3.0.0"))]));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/mod/mod")], [ToCandidate(routed)], s_environment);
-
-    // Assert
-    Assert.Equal(["R@1.0.1", "Mod@1.0.0"], Names(result));
-  }
-
-  [Fact]
-  public async Task Solve_MemberWithNameOfOlderVersion_SatisfiesEdge() {
-    // Arrange: the package was renamed from Old to New in 2.0.0; Old 1.0.0 is installed and New
-    // conflicts with it, so Mod's edge is satisfied only by the installed Old (spec §6).
-    FakeResolver resolver = new();
-    resolver.Add("github.com/n/n", Package("New", "2.0.0", "github.com/n/n",
-        conflicts: [new Dep { Id = "Old" }]));
-    FakePackage old = Package("Old", "1.0.0", "github.com/n/n");
-    resolver.Add("github.com/n/n", old);
-    resolver.Add("github.com/mod/mod", Package("Mod", "1.0.0", "github.com/mod/mod",
-        edges: [Edge("github.com/n/n")]));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    SolvedGraph graph = await solver.SolveGraph(
-        [Request("github.com/mod/mod")], [ToCandidate(old)], s_environment);
-
-    // Assert
-    Assert.Equal(["Old@1.0.0", "Mod@1.0.0"], Names(graph.Order));
-    Assert.Equal([0], graph.Dependencies[1]);
-  }
-
-  [Fact]
-  public async Task Solve_UnpinnedEdgeBeforePinnedEdge_PinnedPackageSatisfiesBoth() {
-    // Arrange: A requires S (any version) and B; B requires S at branch main. The package at
-    // the branch stands in for the versions of S (spec §6), so it satisfies both edges.
-    FakeResolver resolver = new();
-    resolver.AddVersions("github.com/s/s", "S", ["2.0.0", "1.0.0"]);
-    resolver.Add("github.com/s/s@branch:main", Package("S", "2.5.0", "github.com/s/s") with {
-      ArchiveKey = "github.com/s/s@rev:0123456789abcdef0123456789abcdef01234567",
-    });
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        edges: [Edge("github.com/s/s"), Edge("github.com/b/b")]));
-    resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b",
-        edges: [Edge("github.com/s/s@branch:main")]));
+    resolver.Add(Package("github.com/a/a", "2.0.0", mcmod: manifest == "missing"
+        ? WorkspaceHarness.Zip(new() { ["A.dll"] = "" })
+        : WorkspaceHarness.Zip(new() { ["manifest.json"] = manifest })));
+    resolver.Add(Package("github.com/a/a", "1.0.0", mod: "A"));
     GraphSolver solver = new(resolver);
 
     // Act
@@ -410,21 +270,206 @@ public class GraphSolverTests {
         [Request("github.com/a/a")], [], s_environment);
 
     // Assert
-    Assert.Equal(["S@2.5.0", "B@1.0.0", "A@1.0.0"], Names(result));
+    Assert.Equal(["github.com/a/a@1.0.0"], Names(result));
   }
 
   [Fact]
-  public async Task Solve_UnpinnedEdgeOutsidePinnedVersion_Fails() {
+  public async Task Solve_OnlyCandidateHasNoModManifest_FailsNamingIt() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/a/a", "1.0.0",
+        mcmod: WorkspaceHarness.Zip(new() { ["A.dll"] = "" })));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/a/a")], [], s_environment));
+
+    // Assert
+    Assert.Contains("github.com/a/a: the asset of type \"mcmod\" has no manifest.json",
+        exception.Message);
+  }
+
+  [Fact]
+  public async Task Solve_McmodAssetCannotBeObtained_BlocksCandidate() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/a/a", "2.0.0", mod: "A", unavailable: true));
+    resolver.Add(Package("github.com/a/a", "1.0.0", mod: "A"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/a/a@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_InstalledModOfSameModName_BlocksCandidate() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/a/a", "2.0.0", mod: "Taken"));
+    resolver.Add(Package("github.com/a/a", "1.0.0", mod: "A"));
+    Candidate installed = Package("github.com/other/other", "1.0.0", mod: "taken");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a")], [installed], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/a/a@1.0.0", "github.com/other/other@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_InstalledModsOfSameModName_Throws() {
+    // Arrange
+    Candidate a = Package("github.com/a/a", "1.0.0", mod: "Same");
+    Candidate b = Package("github.com/b/b", "1.0.0", mod: "same");
+    GraphSolver solver = new(new FakeResolver());
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve([], [a, b], s_environment));
+
+    // Assert
+    Assert.Contains("are mods of the same mod name", exception.Message);
+  }
+
+  [Fact]
+  public async Task Solve_InstalledPackagesOfSameIdentity_Throws() {
+    // Arrange
+    Candidate a = Package("github.com/a/a", "1.0.0");
+    Candidate b = Package("github.com/A/a", "2.0.0");
+    GraphSolver solver = new(new FakeResolver());
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve([], [a, b], s_environment));
+
+    // Assert
+    Assert.Contains("have the same identity", exception.Message);
+  }
+
+  // Installed packages
+
+  [Fact]
+  public async Task Solve_InstalledWithSameIdentity_BlocksRequest() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/x", ["2.0.0"]);
+    Candidate installed = Package("github.com/X/x", "1.0.0");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/x/x")], [installed], s_environment));
+
+    // Assert
+    Assert.Contains("github.com/x/x@2.0.0 (from github.com/x/x@2.0.0) has the same identity as "
+        + "github.com/X/x@1.0.0 (from github.com/X/x@1.0.0) (installed)", exception.Message);
+  }
+
+  [Fact]
+  public async Task Solve_InstalledSamePackage_SatisfiesRequestAndInstalledDependencies() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/x", ["2.0.0", "1.0.0"]);
+    resolver.AddVersions("github.com/dep/dep", ["1.0.0"]);
+    Candidate installedX = Package("github.com/x/x", "1.0.0");
+    Candidate installedP = Package("github.com/p/p", "1.0.0",
+        dependencies: [Dependency("github.com/dep/dep")]);
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/x/x")], [installedX, installedP], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/dep/dep@1.0.0", "github.com/p/p@1.0.0", "github.com/x/x@1.0.0"],
+        Names(result));
+    Assert.Same(installedX, result[2]);
+  }
+
+  [Fact]
+  public async Task Solve_SamePackageSatisfiesSeveralDependencies_AddsItOnce() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/a/a", "1.0.0",
+        dependencies: [Dependency(LeviLamina), Dependency(LeviLamina.ToLowerInvariant())]));
+    resolver.AddVersions(LeviLamina, ["1.0.0"]);
+    resolver.Add(Package(LeviLamina, "1.0.0", source: LeviLamina.ToLowerInvariant()));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/a/a"), Request(LeviLamina)], [], s_environment);
+
+    // Assert
+    Assert.Equal([$"{LeviLamina}@1.0.0", "github.com/a/a@1.0.0"], Names(result));
+  }
+
+  // Refs: stand-in (protocol/workspace.md §3)
+
+  [Fact]
+  public async Task Solve_DependencyWithoutRefBeforeRef_PackageOfRefSatisfiesBoth() {
+    // Arrange: A requires S (any version) and B; B requires S at branch main. The package at
+    // the branch stands in for the versions of S, so it satisfies both.
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/s/s", ["2.0.0", "1.0.0"]);
+    resolver.Add(Package("github.com/s/s", "2.5.0", source: "github.com/s/s@branch:main"));
+    resolver.Add(Package("github.com/a/a", "1.0.0",
+        dependencies: [Dependency("github.com/s/s"), Dependency("github.com/b/b")]));
+    resolver.Add(Package("github.com/b/b", "1.0.0",
+        dependencies: [Dependency("github.com/s/s@branch:main")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    SolvedGraph graph = await solver.SolveGraph(
+        [Request("github.com/a/a")], [], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/s/s@2.5.0", "github.com/b/b@1.0.0", "github.com/a/a@1.0.0"],
+        Names(graph.Order));
+    Assert.Equal(new[] { 0, 1 }, graph.Dependencies[2].Order());
+  }
+
+  [Theory]
+  [InlineData(true)]
+  [InlineData(false)]
+  public async Task Solve_RequestsWithAndWithoutRef_PackageOfRefStandsIn(bool refFirst) {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/s/s", ["2.0.0", "1.0.0"]);
+    resolver.Add(Package("github.com/s/s", "2.5.0", source: "github.com/s/s@rev:"
+        + new string('a', 40)));
+    PackageRequest pinned = Request($"github.com/s/s@rev:{new string('a', 40)}");
+    PackageRequest plain = Request("github.com/s/s");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    SolvedGraph graph = await solver.SolveGraph(
+        refFirst ? [pinned, plain] : [plain, pinned], [], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/s/s@2.5.0"], Names(graph.Order));
+    Assert.Equal([0, 0], graph.RequestSatisfiers);
+  }
+
+  [Fact]
+  public async Task Solve_DependencyWithoutRefOutsideVersionOfRef_Fails() {
     // Arrange: as above, but A needs S below 2.0.0, which the package at the branch is not.
     FakeResolver resolver = new();
-    resolver.AddVersions("github.com/s/s", "S", ["2.0.0", "1.0.0"]);
-    resolver.Add("github.com/s/s@branch:main", Package("S", "2.5.0", "github.com/s/s") with {
-      ArchiveKey = "github.com/s/s@rev:0123456789abcdef0123456789abcdef01234567",
-    });
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        edges: [Edge("github.com/s/s", Between("1.0.0", "2.0.0")), Edge("github.com/b/b")]));
-    resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b",
-        edges: [Edge("github.com/s/s@branch:main")]));
+    resolver.AddVersions("github.com/s/s", ["2.0.0", "1.0.0"]);
+    resolver.Add(Package("github.com/s/s", "2.5.0", source: "github.com/s/s@branch:main"));
+    resolver.Add(Package("github.com/a/a", "1.0.0",
+        dependencies: [Dependency("github.com/s/s", "<2.0.0"), Dependency("github.com/b/b")]));
+    resolver.Add(Package("github.com/b/b", "1.0.0",
+        dependencies: [Dependency("github.com/s/s@branch:main")]));
     GraphSolver solver = new(resolver);
 
     // Act & Assert
@@ -433,34 +478,94 @@ public class GraphSolverTests {
   }
 
   [Fact]
-  public async Task Solve_PinnedPackagesConflict_Throws() {
-    // Arrange
+  public async Task Solve_TwoRefsOfSameRepository_DoNotStandInForEachOther() {
+    // Arrange: a source with a ref is satisfied only by its own candidates.
     FakeResolver resolver = new();
-    Candidate a = ToCandidate(Package("A", "1.0.0", "github.com/a/a",
-        conflicts: [new Dep { Id = "B" }]));
-    Candidate b = ToCandidate(Package("B", "1.0.0", "github.com/b/b"));
+    resolver.Add(Package("github.com/s/s", "2.5.0", source: "github.com/s/s@branch:main"));
+    resolver.Add(Package("github.com/s/s", "1.0.0", source: "github.com/s/s@1.0.0"));
     GraphSolver solver = new(resolver);
 
     // Act & Assert
-    await Assert.ThrowsAsync<DependencyResolutionException>(
-        () => solver.Solve([], [a, b], s_environment));
+    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.Solve(
+        [Request("github.com/s/s@branch:main"), Request("github.com/s/s@1.0.0")],
+        [],
+        s_environment));
   }
 
   [Fact]
-  public async Task Solve_SamePackageSatisfiesSeveralEdges_AddsItOnce() {
+  public async Task Solve_PackageOfRef_DoesNotStandInForOtherVariant() {
     // Arrange
     FakeResolver resolver = new();
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        edges: [Edge(LeviLamina), new InstallEdge("LeviLamina", null, [Ref.Parse(LeviLamina)])]));
-    resolver.AddVersions(LeviLamina, "LeviLamina", ["1.0.0"]);
+    resolver.Add(Package("github.com/s/s", "2.5.0", source: "github.com/s/s@branch:main"));
+    resolver.Add(Package("github.com/s/s", "2.0.0", variant: "lua"));
     GraphSolver solver = new(resolver);
 
     // Act
     IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a"), Request(LeviLamina)], [], s_environment);
+        [Request("github.com/s/s@branch:main"), Request("github.com/s/s#lua")], [], s_environment);
 
     // Assert
-    Assert.Equal(["LeviLamina@1.0.0", "A@1.0.0"], Names(result));
+    Assert.Equal(["github.com/s/s@2.5.0", "github.com/s/s#lua@2.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_InstalledPackageOfRef_StandsInForClientCompatDependency() {
+    // Arrange: a format 3 dependency on t#client names the variant "" of the format 4 package
+    // t (protocol/package.md §5), so the installed t from a branch stands in for it.
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/t/t", "1.0.0", source: "github.com/t/t#client"));
+    resolver.Add(Package("github.com/r/r", "1.0.0", legacy: true,
+        dependencies: [Dependency("github.com/t/t#client", compat: true)]));
+    Candidate installed = Package("github.com/t/t", "2.5.0", source: "github.com/t/t@branch:main");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/r/r")], [installed], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/t/t@2.5.0", "github.com/r/r@1.0.0"], Names(result));
+  }
+
+  [Fact]
+  public async Task Solve_InstalledPackageOfRef_DoesNotStandInForClientVariantWithoutCompat() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.Add(Package("github.com/t/t", "1.0.0", variant: "client"));
+    resolver.Add(Package("github.com/r/r", "1.0.0",
+        dependencies: [Dependency("github.com/t/t#client")]));
+    Candidate installed = Package("github.com/t/t", "2.5.0", source: "github.com/t/t@branch:main");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = await solver.Solve(
+        [Request("github.com/r/r")], [installed], s_environment);
+
+    // Assert
+    Assert.Equal(["github.com/t/t@2.5.0", "github.com/t/t#client@1.0.0", "github.com/r/r@1.0.0"],
+        Names(result));
+  }
+
+  // Failures
+
+  [Fact]
+  public async Task Solve_Unsatisfiable_ThrowsWithFailingDependencyAndResolverDiagnostics() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions(LeviLamina, ["1.2.0", "1.1.0"]);
+    resolver.Add(Package("github.com/mods/mod", "1.0.0",
+        dependencies: [Dependency(LeviLamina, ">=99.0.0")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.Solve(
+            [Request("github.com/mods/mod")], [], s_environment));
+
+    // Assert
+    Assert.Contains($"github.com/mods/mod@1.0.0 requires {LeviLamina} >=99.0.0: no candidates",
+        exception.Message);
+    Assert.Contains(exception.Diagnostics, d => d.Contains($"{LeviLamina}: no version matches"));
   }
 
   [Fact]
@@ -471,12 +576,12 @@ public class GraphSolverTests {
     for (int i = 0; i < 50; i++) {
       string spec = $"github.com/p/p{i}";
       for (int v = 99; v >= 0; v--) {
-        List<InstallEdge> edges = [];
+        List<ToothDependency> dependencies = [];
         for (int j = i + 1; j <= Math.Min(i + 2, 49); j++) {
-          edges.Add(Edge($"github.com/p/p{j}", Between("0.0.0", "90.0.0")));
+          dependencies.Add(Dependency($"github.com/p/p{j}", "<90.0.0"));
         }
 
-        resolver.Add(spec, Package($"P{i}", $"{v}.0.0", spec, edges: edges));
+        resolver.Add(Package(spec, $"{v}.0.0", dependencies: dependencies));
       }
     }
 
@@ -491,8 +596,8 @@ public class GraphSolverTests {
     // Assert
     stopwatch.Stop();
     Assert.Equal(50, result.Count);
-    Assert.Equal("P49@89.0.0", Names(result)[0]);
-    Assert.Equal("P0@99.0.0", Names(result)[^1]);
+    Assert.Equal("github.com/p/p49@89.0.0", Names(result)[0]);
+    Assert.Equal("github.com/p/p0@99.0.0", Names(result)[^1]);
     Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed}");
   }
 
@@ -504,8 +609,9 @@ public class GraphSolverTests {
     for (int i = 0; i < 50; i++) {
       string spec = $"github.com/p/p{i}";
       for (int v = 99; v >= 0; v--) {
-        InstallEdge edge = Edge(i == 49 ? "github.com/missing/missing" : $"github.com/p/p{i + 1}");
-        resolver.Add(spec, Package($"P{i}", $"{v}.0.0", spec, edges: [edge]));
+        ToothDependency dependency = Dependency(
+            i == 49 ? "github.com/missing/missing" : $"github.com/p/p{i + 1}");
+        resolver.Add(Package(spec, $"{v}.0.0", dependencies: [dependency]));
       }
     }
 
@@ -520,7 +626,7 @@ public class GraphSolverTests {
 
     // Assert
     stopwatch.Stop();
-    Assert.Contains("P49@99.0.0 requires a package * from github.com/missing/missing: "
+    Assert.Contains("github.com/p/p49@99.0.0 requires github.com/missing/missing *: "
         + "no candidates", exception.Message);
     Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed}");
   }
@@ -531,9 +637,8 @@ public class GraphSolverTests {
     const int length = 5000;
     FakeResolver resolver = new();
     for (int i = 0; i < length; i++) {
-      string spec = $"github.com/c/c{i}";
-      resolver.Add(spec, Package($"C{i}", "1.0.0", spec,
-          edges: i + 1 < length ? [Edge($"github.com/c/c{i + 1}")] : []));
+      resolver.Add(Package($"github.com/c/c{i}", "1.0.0",
+          dependencies: i + 1 < length ? [Dependency($"github.com/c/c{i + 1}")] : []));
     }
 
     GraphSolver solver = new(resolver);
@@ -544,17 +649,19 @@ public class GraphSolverTests {
 
     // Assert
     Assert.Equal(length, result.Count);
-    Assert.Equal($"C{length - 1}@1.0.0", Names(result)[0]);
-    Assert.Equal("C0@1.0.0", Names(result)[^1]);
+    Assert.Equal($"github.com/c/c{length - 1}@1.0.0", Names(result)[0]);
+    Assert.Equal("github.com/c/c0@1.0.0", Names(result)[^1]);
   }
 
   [Fact]
   public async Task Solve_StepLimitExceeded_ThrowsWithClearMessage() {
-    // Arrange
+    // Arrange: every version of A is a mod named like B.
     FakeResolver resolver = new();
-    resolver.AddVersions("github.com/a/a", "A", ["3.0.0", "2.0.0", "1.0.0"]);
-    resolver.Add("github.com/b/b", Package("B", "1.0.0", "github.com/b/b",
-        conflicts: [new Dep { Id = "A" }]));
+    foreach (string version in new[] { "3.0.0", "2.0.0", "1.0.0" }) {
+      resolver.Add(Package("github.com/a/a", version, mod: "B"));
+    }
+
+    resolver.Add(Package("github.com/b/b", "1.0.0", mod: "B"));
     GraphSolver solver = new(resolver, maxSteps: 2);
 
     // Act
@@ -567,236 +674,215 @@ public class GraphSolverTests {
         exception.Message);
   }
 
+  // Installation order (protocol/workspace.md §5)
+
   [Fact]
-  public async Task Solve_DependencyOnMovedRepositoryPath_IsSatisfiedByPackageAtSameCommit() {
-    // Arrange: the package was installed from the new path; the old path redirects to the same
-    // repository, so its tag is the same commit, reached under another archive key.
+  public async Task Solve_DependencyCycle_OrdersCycleByLowercaseIdentity() {
+    // Arrange: Zed -> beta <-> Alpha -> Base.
     FakeResolver resolver = new();
-    const string identity = "github.com/new/mod";
-    Candidate installed = ToCandidate(Package(identity, "1.0.0", "github.com/new/mod", "tooth")
-        with { Git = new GitArchiveIdentity("https://github.com/new/mod.git", "C1", "") });
-    resolver.Add("github.com/old/mod", Package(identity, "1.0.0", "github.com/old/mod", "tooth")
-        with { Git = new GitArchiveIdentity("https://github.com/old/mod.git", "c1", "") });
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        edges: [Edge("github.com/old/mod")]));
+    resolver.Add(Package("example.com/Zed", "1.0.0", dependencies: [Dependency("example.com/beta")]));
+    resolver.Add(Package("example.com/beta", "1.0.0",
+        dependencies: [Dependency("example.com/Alpha")]));
+    resolver.Add(Package("example.com/Alpha", "1.0.0",
+        dependencies: [Dependency("example.com/beta"), Dependency("example.com/Base")]));
+    resolver.Add(Package("example.com/Base", "1.0.0"));
     GraphSolver solver = new(resolver);
 
     // Act
     IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a")], [installed], s_environment);
+        [Request("example.com/Zed")], [], s_environment);
 
     // Assert
-    Assert.Equal([$"{identity}@1.0.0", "A@1.0.0"], Names(result));
-    Assert.Same(installed, result[0]);
+    Assert.Equal(["example.com/Base@1.0.0", "example.com/Alpha@1.0.0", "example.com/beta@1.0.0",
+        "example.com/Zed@1.0.0"], Names(result));
   }
 
   [Fact]
-  public async Task Solve_ToothRenamedBetweenVersions_KeepsTheInstalledVersionAsOnePackage() {
-    // Arrange: the newer tag of the repository names a new path in "tooth" (the repository
-    // moved); the installed older version still has the old identity.
-    FakeResolver resolver = new();
-    GitArchiveIdentity Git(string commit) => new("https://github.com/old/mod.git", commit, "");
-    Candidate installed = ToCandidate(
-        Package("github.com/old/mod", "1.0.0", "github.com/old/mod", "tooth")
-            with { Git = Git("c1") });
-    resolver.Add("github.com/old/mod",
-        Package("github.com/new/mod", "1.1.0", "github.com/old/mod", "tooth")
-            with { Git = Git("c2") });
-    resolver.Add("github.com/old/mod",
-        Package("github.com/old/mod", "1.0.0", "github.com/old/mod", "tooth")
-            with { Git = Git("c1") });
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        edges: [Edge("github.com/old/mod")]));
-    GraphSolver solver = new(resolver);
+  public void InstallOrder_Cycle_OrdersByLowercaseIdentityNotOrdinal() {
+    // Arrange: ordinal order would put "B" before "a"; '#' sorts before letters.
+    Candidate b = Package("example.com/B", "1.0.0");
+    Candidate a = Package("example.com/a", "1.0.0");
+    Candidate variant = Package("example.com/a", "1.0.0", variant: "x");
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a")], [installed], s_environment);
+    IReadOnlyList<Candidate> order = GraphSolver.InstallOrder(
+        [b, variant, a], c => c == a ? [b, variant] : c == b ? [variant] : [a]);
 
     // Assert
-    Assert.Equal(["github.com/old/mod@1.0.0", "A@1.0.0"], Names(result));
-  }
-
-  [Fact]
-  public async Task Solve_ToothRenamedBetweenVersionsAndNewerNeeded_FailsInsteadOfInstallingBoth() {
-    // Arrange
-    FakeResolver resolver = new();
-    GitArchiveIdentity Git(string commit) => new("https://github.com/old/mod.git", commit, "");
-    Candidate installed = ToCandidate(
-        Package("github.com/old/mod", "1.0.0", "github.com/old/mod", "tooth")
-            with { Git = Git("c1") });
-    resolver.Add("github.com/old/mod",
-        Package("github.com/new/mod", "1.1.0", "github.com/old/mod", "tooth")
-            with { Git = Git("c2") });
-    resolver.Add("github.com/a/a", Package("A", "1.0.0", "github.com/a/a",
-        edges: [Edge("github.com/old/mod", Between("1.1.0", "2.0.0"))]));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
-            [Request("github.com/a/a")], [installed], s_environment));
-
-    // Assert
-    Assert.Contains("under another identity", exception.Message);
+    Assert.Equal(["example.com/a@1.0.0", "example.com/a#x@1.0.0", "example.com/B@1.0.0"],
+        Names(order));
   }
 
   [Fact]
   public void InstallOrder_DisconnectedPackages_OrdersByLowercaseIdentity() {
     // Arrange
-    Candidate b = ToCandidate(Package("b", "1.0.0", "github.com/b/b"));
-    Candidate a = ToCandidate(Package("A", "1.0.0", "github.com/a/a"));
-    Candidate c = ToCandidate(Package("C", "1.0.0", "github.com/c/c"));
+    Candidate b = Package("example.com/b", "1.0.0");
+    Candidate a = Package("example.com/A", "1.0.0");
+    Candidate c = Package("example.com/C", "1.0.0");
 
     // Act
     IReadOnlyList<Candidate> order = GraphSolver.InstallOrder([c, b, a], _ => []);
 
     // Assert
-    Assert.Equal(["A@1.0.0", "b@1.0.0", "C@1.0.0"], Names(order));
+    Assert.Equal(["example.com/A@1.0.0", "example.com/b@1.0.0", "example.com/C@1.0.0"],
+        Names(order));
   }
 
   [Fact]
   public void InstallOrder_DependencyOutsideSet_IsIgnored() {
     // Arrange
-    Candidate a = ToCandidate(Package("A", "1.0.0", "github.com/a/a"));
-    Candidate outside = ToCandidate(Package("Z", "1.0.0", "github.com/z/z"));
-    Candidate b = ToCandidate(Package("B", "1.0.0", "github.com/b/b"));
+    Candidate a = Package("example.com/a", "1.0.0");
+    Candidate outside = Package("example.com/z", "1.0.0");
+    Candidate b = Package("example.com/b", "1.0.0");
 
     // Act
     IReadOnlyList<Candidate> order = GraphSolver.InstallOrder(
         [b, a], c => c == a ? [b, outside] : []);
 
     // Assert
-    Assert.Equal(["B@1.0.0", "A@1.0.0"], Names(order));
+    Assert.Equal(["example.com/b@1.0.0", "example.com/a@1.0.0"], Names(order));
   }
 
-  private static string[] Names(IEnumerable<Candidate> candidates) {
-    return [.. candidates.Select(c => $"{c.Package.Identity}@{c.Package.Version}")];
-  }
+  private static string[] Names(IEnumerable<Candidate> candidates) =>
+      [.. candidates.Select(c => $"{c.Package.Identity}@{c.Package.Version}")];
 
-  private static ArchiveHandle Archive(string key) {
-    return new ArchiveHandle(key, Mock.Of<ISource>(), new ZipArchiveIdentity(TestIdentity.Sha256, key));
-  }
+  private static PackageRequest Request(string source) => new(Ref.Parse(source), null);
 
-  private static PackageRequest Request(string reference) {
-    return new PackageRequest(Ref.Parse(reference), null, s_workspace);
-  }
+  private static ToothDependency Dependency(
+      string source, string range = "*", bool compat = false) =>
+      new(Ref.Parse(source), VersionRange.Parse(range)) { ClientCompat = compat };
 
-  private static InstallEdge Edge(string reference, IVersionConstraint? range = null) {
-    return new InstallEdge(null, range, [Ref.Parse(reference)]);
-  }
-
-  private static HalfOpen Between(string min, string max) {
-    return new HalfOpen(SemVersion.Parse(min), SemVersion.Parse(max));
-  }
-
-  private static FakePackage Package(
-      string name,
+  private static Candidate Package(
+      string tooth,
       string version,
-      string spec,
-      string kind = "mcmod",
-      IReadOnlyList<InstallEdge>? edges = null,
-      IReadOnlyList<Dep>? conflicts = null) {
-    return new FakePackage(kind, name, SemVersion.Parse(version), edges ?? [], conflicts ?? [],
-        $"{spec}@{version}");
-  }
+      string? source = null,
+      string variant = "",
+      IReadOnlyList<ToothDependency>? dependencies = null,
+      string? mod = null,
+      byte[]? mcmod = null,
+      bool legacy = false,
+      bool unavailable = false,
+      List<string>? downloads = null) =>
+      TestCandidates.Make(tooth, version, source, variant, dependencies,
+          mod is null ? mcmod : WorkspaceHarness.Mcmod(mod), legacy, unavailable, downloads);
 
-  /// A package of the converted tooth.json at github.com/t/t@1.0.0 (one archive for every
-  /// variant).
-  private static FakePackage Variant(
-      string name, string variant, IReadOnlyList<InstallEdge>? edges = null) {
-    return Package(name, "1.0.0", "github.com/t/t", "tooth", edges) with { Variant = variant };
-  }
+  private sealed record ResolveCall(string Ref, string? Range, bool Compat);
 
-  private static Candidate ToCandidate(FakePackage package) {
-    return new Candidate(package, ArchiveOf(package), []);
-  }
-
-  /// The archive of a package: a git archive when the package names one, otherwise a ZIP
-  /// archive.
-  private static ArchiveHandle ArchiveOf(FakePackage package) {
-    return package.Git is null
-        ? Archive(package.ArchiveKey)
-        : new ArchiveHandle(package.ArchiveKey, Mock.Of<ISource>(), package.Git);
-  }
-
-  /// [Min, Max).
-  private sealed record HalfOpen(SemVersion Min, SemVersion Max) : IVersionConstraint {
-    public bool IsSatisfiedBy(SemVersion version) {
-      return version.ComparePrecedenceTo(Min) >= 0 && version.ComparePrecedenceTo(Max) < 0;
-    }
-
-    public override string ToString() {
-      return $"[{Min}, {Max})";
-    }
-  }
-
-  private sealed record FakePackage(
-      string Kind,
-      string Identity,
-      SemVersion Version,
-      IReadOnlyList<InstallEdge> InstallEdges,
-      IReadOnlyList<Dep> Conflicts,
-      string ArchiveKey,
-      string Variant = "") : IPackage {
-    public JsonElement Manifest => default;
-
-    /// The git archive the package comes from; null for a ZIP archive.
-    public GitArchiveIdentity? Git { get; init; }
-  }
-
-  private sealed record ResolveCall(string Ref, string Base, string? Range, bool Compat);
-
-  /// Maps a spec ref (or "<base key>!<path>" for relative refs) to its candidates in order and
-  /// filters them by range, like the real resolver for spec refs.
+  /// Maps a source, as written, to its candidates in order, and filters them by range like the
+  /// real resolver.
   private sealed class FakeResolver : IResolver {
-    private readonly Dictionary<string, List<(FakePackage Package, SemVersion? Tag)>> _packages = [];
+    private readonly Dictionary<string, List<Candidate>> _candidates = [];
 
     public List<ResolveCall> Calls { get; } = [];
 
-    /// Adds a candidate; tag is the version of the tag it is reached from when that differs
-    /// from the package's (a meta document without a version), which the range must accept
-    /// as well (spec §5.2 step 1).
-    public void Add(string location, FakePackage package, string? tag = null) {
-      if (!_packages.TryGetValue(location, out List<(FakePackage, SemVersion?)>? list)) {
+    /// Adds a candidate of its source.
+    public void Add(Candidate candidate) {
+      string key = candidate.Source.ToString();
+      if (!_candidates.TryGetValue(key, out List<Candidate>? list)) {
         list = [];
-        _packages[location] = list;
+        _candidates[key] = list;
       }
 
-      list.Add((package, tag is null ? null : SemVersion.Parse(tag)));
+      list.Add(candidate);
     }
 
-    public void AddVersions(string spec, string name, IEnumerable<string> versions) {
+    public void AddVersions(string spec, IEnumerable<string> versions) {
       foreach (string version in versions) {
-        Add(spec, Package(name, version, spec));
+        Add(Package(spec, version));
       }
     }
 
     public Task<ResolveResult> Resolve(
-        Ref reference,
-        ArchiveHandle? baseArchive,
+        Ref source,
         IVersionConstraint? range,
         LipEnvironment environment,
-        bool toothClientCompat = false) {
-      Calls.Add(new ResolveCall(reference.ToString(), baseArchive?.Key ?? "", range?.ToString(),
-          toothClientCompat));
-      string location = reference.Kind == RefKind.Relative
-          ? $"{baseArchive?.Key}!{reference.RelativePath}"
-          : reference.GitRef is not null ? reference.ToString()
-          : reference.Variant == "" ? reference.Target : $"{reference.Target}#{reference.Variant}";
+        bool clientCompat = false) {
+      Calls.Add(new ResolveCall(source.ToString(), range?.ToString(), clientCompat));
       List<Candidate> candidates = [
-        .. _packages.GetValueOrDefault(location, [])
-            .Where(p => range is null || (range.IsSatisfiedBy(p.Package.Version)
-                && (p.Tag is null || range.IsSatisfiedBy(p.Tag))))
-            .Select(p => reference.GitRef is null
-                ? ToCandidate(p.Package)
-                : new Candidate(p.Package, ArchiveOf(p.Package),
-                    [new ChainHop(reference, null)])),
+        .. _candidates.GetValueOrDefault(source.ToString(), [])
+            .Where(c => range is null || range.IsSatisfiedBy(c.Package.Version)),
       ];
       List<string> diagnostics = candidates.Count == 0
-          ? [$"{location}: no version matches {range?.ToString() ?? "*"}"]
+          ? [$"{source}: no version matches {range?.ToString() ?? "*"}"]
           : [];
       return Task.FromResult(new ResolveResult(candidates, diagnostics));
     }
   }
+}
+
+/// Candidates for solver tests: a package with one entry for TestCandidates.Environment.
+internal static class TestCandidates {
+  public static readonly LipEnvironment Environment = new(McmodPlatform.Server, "win-x64");
+
+  private static readonly JsonElement s_emptyEntry = JsonDocument.Parse("{}").RootElement.Clone();
+
+  /// The provider of packages without assets, which is never asked for one.
+  private static readonly IArchiveProvider s_noAssets =
+      new Mock<IArchiveProvider>(MockBehavior.Strict).Object;
+
+  /// The files of every archive, which the solver never reads.
+  private static readonly Lip.Core.Sources.ISource s_archiveSource =
+      Mock.Of<Lip.Core.Sources.ISource>(MockBehavior.Strict);
+
+  /// A candidate of the package tooth[#variant]@version resolved for source (by default the
+  /// tooth path with the variant), in the git archive of a commit named after its source and
+  /// version. With mcmod, the package is a mod whose asset of type "mcmod" has those bytes; it
+  /// is downloaded (recorded in downloads) when first opened, or fails to be when unavailable.
+  public static Candidate Make(
+      string tooth,
+      string version,
+      string? source = null,
+      string variant = "",
+      IReadOnlyList<ToothDependency>? dependencies = null,
+      byte[]? mcmod = null,
+      bool legacy = false,
+      bool unavailable = false,
+      List<string>? downloads = null) {
+    Ref reference = Ref.Parse(source ?? (variant == "" ? tooth : $"{tooth}#{variant}"));
+    string key = $"{reference}@{version}";
+    string url = $"https://example.com/{tooth}/{version}.mcmod";
+    List<EntryAsset> assets = mcmod is null ? [] : [new EntryAsset(AssetType.Mcmod, [url], [])];
+    ToothEntry entry = new() {
+      Platform = Environment.Platform,
+      Runtime = Environment.Runtime,
+      Dependencies = dependencies ?? [],
+      Assets = assets,
+      Legacy = legacy,
+      Json = s_emptyEntry,
+    };
+
+    if (mcmod is null) {
+      return Candidate.Create(
+          new Package(tooth, variant, SemVersion.Parse(version), entry),
+          Archive(key, reference),
+          reference,
+          s_noAssets);
+    }
+
+    Mock<IArchiveProvider> provider = new();
+    provider
+        .Setup(p => p.OpenAsset(It.IsAny<IReadOnlyList<string>>(), It.IsAny<AssetFormat>()))
+        .Returns((IReadOnlyList<string> urls, AssetFormat _) => {
+          downloads?.Add(urls[0]);
+          return unavailable
+              ? throw new ArchiveUnavailableException($"404 {urls[0]}")
+              : Task.FromResult(new OpenedAsset(
+                  new ZipSource(mcmod!),
+                  new AssetIdentity(urls[0], Convert.ToHexStringLower(SHA256.HashData(mcmod!)))));
+        });
+
+    return Candidate.Create(
+        new Package(tooth, variant, SemVersion.Parse(version), entry),
+        Archive(key, reference),
+        reference,
+        provider.Object);
+  }
+
+  /// The git archive of a candidate, of a commit named after its key (ignoring ASCII case).
+  private static ArchiveHandle Archive(string key, Ref reference) => new(
+      key,
+      s_archiveSource,
+      new GitArchiveIdentity(
+          $"https://{reference.Target}.git",
+          Convert.ToHexStringLower(SHA1.HashData(Encoding.UTF8.GetBytes(PackageNames.Fold(key))))));
 }

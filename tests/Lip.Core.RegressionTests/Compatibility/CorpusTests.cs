@@ -16,7 +16,7 @@ using Semver;
 namespace Lip.Core.RegressionTests.Compatibility;
 
 /// Checks that every corpus entry lip v3 could install (<c>baseline_installable && git_tag</c> in
-/// corpus.json) still resolves and solves on the manifest.json pipeline:
+/// corpus.json) still resolves and solves, read through protocol/package.md §5:
 /// - Resolve(package, workspace, =version, (server, win-x64)) yields a candidate, unless the
 ///   tooth.json at the tag declares the variant only for other platforms (not installable on
 ///   win-x64, with or without lip v4);
@@ -165,7 +165,7 @@ public class CorpusTests {
     RecordingGitRemoteClient recorder = new(_cachedClient);
     ArchiveProvider provider = CreateProvider(recorder);
     ResolveResult result = await CreateResolver(provider).Resolve(
-        reference, null, version, _environment);
+        reference, version, _environment);
 
     if (result.Candidates.Count == 0) {
       // Declared, but not for this platform: not installable here, with or without git.
@@ -179,23 +179,19 @@ public class CorpusTests {
     Candidate candidate = result.Candidates[0];
 
     // 2. Self-asset placements are resolved against the git tree. Only the root document is
-    // downloaded.
-    // The self assets of a converted tooth.json are the mounts of the tag itself; the other
-    // mounts (URL assets) are not opened.
-    if (candidate.Package is McmodPackage { Kind: ToothCompat.KindName } tooth
-        && candidate.Archive.Source is MountSource mounts) {
-      foreach ((string mount, Sources.ISource source) in mounts.Mounts.Where(
-          m => m.Source is not DeferredSource)) {
-        List<string> keys = [.. source.Keys];
-        foreach (AssetPlacement placement in tooth.Document.AssetPlacements.Where(
-            p => p.Mount == mount)) {
-          // Many manifests place build outputs that are not committed, so a placement may match
-          // nothing (as before). It must match, though, whenever the tree has the path it names.
-          if (ToothPlacements.Match(keys, [placement]).Count == 0
-              && TreeHasPath(keys, placement)) {
-            return $"self placement {(placement.IsDirectory ? "dir" : "file")} "
-                + $"'{placement.Src}' -> '{placement.Dest}' matches no key";
-          }
+    // downloaded; the other assets (URL assets) are not opened.
+    ToothEntry entry0 = candidate.Package.Entry;
+    List<string> keys = [.. candidate.Archive.Source.Keys];
+    foreach (EntryAsset asset in entry0.Assets.Where(a => a.Type == AssetType.Self)) {
+      foreach (EntryPlacement placement in asset.Placements) {
+        AssetPlacement legacy = new(
+            "", placement.LegacyDirectory ?? placement.Form == PlacementForm.Directory,
+            placement.Src, placement.Dest);
+        // Many manifests place build outputs that are not committed, so a placement may match
+        // nothing (as before). It must match, though, whenever the tree has the path it names.
+        if (ToothPlacements.Match(keys, [legacy]).Count == 0 && TreeHasPath(keys, legacy)) {
+          return $"self placement {(legacy.IsDirectory ? "dir" : "file")} "
+              + $"'{legacy.Src}' -> '{legacy.Dest}' matches no key";
         }
       }
     }
@@ -231,17 +227,17 @@ public class CorpusTests {
       return false;
     }
 
-    ArchiveDocument document = await new ArchiveReader(new DocumentParser()).Read(
+    ToothDocument document = await new ArchiveReader().Read(
         await provider.OpenVersion(reference.Target, tag));
-    return document is ToothArchiveDocument tooth
-        && tooth.Manifest.Variants.Any(v => v.Label == reference.Variant);
+    return document.Legacy?.Variants.Any(v => v.Label == reference.Variant)
+        ?? document.File!.Variants.ContainsKey(reference.Variant);
   }
 
   private static ArchiveProvider CreateProvider(IGitRemoteClient client) => new(
       client, _cacheService, new FileSystem(), new FileDownloader(_userInteraction));
 
   private static Resolver CreateResolver(ArchiveProvider provider) => new(
-      provider, new ArchiveReader(new DocumentParser()), new ToothCompat());
+      provider, new ArchiveReader());
 
   private static bool TreeHasPath(List<string> keys, AssetPlacement placement) {
     string src = placement.Src.Replace('\\', '/');
@@ -313,8 +309,6 @@ public class CorpusTests {
     public Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) =>
         inner.ListTree(repoUrl, commitish);
 
-    public Task<Url> GetRepositoryUrl(Url repoUrl) => inner.GetRepositoryUrl(repoUrl);
-
     public Task FetchBlobs(Url repoUrl, IReadOnlyCollection<string> blobObjectIds, Func<string, Stream, Task> onBlob) =>
         inner.FetchBlobs(repoUrl, blobObjectIds, onBlob);
   }
@@ -325,17 +319,15 @@ public class CorpusTests {
     private readonly ConcurrentBag<string> _fetched = [];
     private readonly ConcurrentDictionary<string, byte> _rootDocuments = new();
 
-    /// Blobs downloaded that are not a root tooth.json or manifest.json.
+    /// Blobs downloaded that are not a root tooth.json.
     public List<string> UnexpectedBlobs() => [.. _fetched.Where(id => !_rootDocuments.ContainsKey(id))];
 
     public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) =>
         inner.ListRefs(repoUrl, refPrefixes);
 
-    public Task<Url> GetRepositoryUrl(Url repoUrl) => inner.GetRepositoryUrl(repoUrl);
-
     public async Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {
       IReadOnlyList<GitTreeEntry> tree = await inner.ListTree(repoUrl, commitish);
-      foreach (GitTreeEntry entry in tree.Where(e => e.Path is "tooth.json" or "manifest.json")) {
+      foreach (GitTreeEntry entry in tree.Where(e => e.Path is "tooth.json")) {
         _rootDocuments[entry.ObjectId] = 0;
       }
 

@@ -4,7 +4,7 @@ The lip protocol is normative and consists of:
 
 | Document | Defines |
 |---|---|
-| [PACKAGE] | Packages, sources and resolution; `manifest.json` by [`manifest.schema.json`](manifest.schema.json). |
+| [PACKAGE] | Packages, sources and resolution; `tooth.json` by [`tooth.schema.json`](tooth.schema.json). |
 | [WORKSPACE] | Workspaces and operations on them; the workspace file by [`workspace.schema.json`](workspace.schema.json). |
 | [USERSPACE] | Per-user configuration and cache; the configuration file by [`config.schema.json`](config.schema.json). |
 | [CLI] | The command line interface of `lip`. |
@@ -32,7 +32,6 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 - [GO-MODULE] "golang.org/x/mod/module: CheckPath", <https://pkg.go.dev/golang.org/x/mod/module#CheckPath>.
 - [JSON-RPC] JSON-RPC Working Group, "JSON-RPC 2.0 Specification", <https://www.jsonrpc.org/specification>.
 - [LSP] Microsoft, "Language Server Protocol Specification 3.17, Base Protocol", <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol>.
-- [NODE-SEMVER] "node-semver: Ranges", <https://github.com/npm/node-semver#ranges>.
 - [PACKAGE] [`package.md`](package.md).
 - [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <https://www.rfc-editor.org/info/rfc2119>.
 - [RFC3339] Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, DOI 10.17487/RFC3339, July 2002, <https://www.rfc-editor.org/info/rfc3339>.
@@ -42,6 +41,7 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 - [RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017, <https://www.rfc-editor.org/info/rfc8174>.
 - [RFC8259] Bray, T., Ed., "The JavaScript Object Notation (JSON) Data Interchange Format", STD 90, RFC 8259, DOI 10.17487/RFC8259, December 2017, <https://www.rfc-editor.org/info/rfc8259>.
 - [RID] Microsoft, ".NET RID catalog", <https://learn.microsoft.com/dotnet/core/rid-catalog>.
+- [SEMVER-NET] Walker, J., "Semver for .NET", version 3.0.0, `SemVersionRange.Parse`, <https://github.com/WalkerCodeRanger/semver/tree/v3.0.0>.
 - [SEMVER] Preston-Werner, T., "Semantic Versioning 2.0.0", <https://semver.org/spec/v2.0.0.html>.
 - [TOOTH-V3] LiteLDev, "Package Manifest", lip v0.37.0, <https://github.com/LiteLDev/lip/blob/v0.37.0/docs/concepts/package_manifest.md>, and its JSON Schema, <https://github.com/LiteLDev/lip/blob/v0.37.0/schemas/manifest.schema.json>.
 - [USERSPACE] [`userspace.md`](userspace.md).

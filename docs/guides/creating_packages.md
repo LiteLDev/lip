@@ -1,139 +1,191 @@
 # Creating Packages
 
-This guide walks you through creating a new package with lip. A package is a `manifest.json` at the root of an archive; see [Package Manifest](../concepts/package_manifest.md) for every field.
+This guide walks you through creating a new package with lip. A package is an archive, usually a git repository, with a `tooth.json` at its root; see [tooth.json](../concepts/tooth_json.md) for every field.
 
 ## Using `lip init`
 
-The easiest way to start a new project is using the `lip init` command.
+The easiest way to start a new package is using the `lip init` command in the root directory of your repository.
 
 ```sh
 lip init
 ```
 
-This command creates a `manifest.json` in your current directory. It fails if a `manifest.json` already exists there.
-
-For a directory named `MyMod`, the generated `manifest.json` looks like this:
+lip asks for the tooth path of the package, a [Go module path](https://go.dev/ref/mod#module-path) such as `github.com/user/MyTool`, and asks again until the answer is valid. It then creates `tooth.json` in the current directory:
 
 ```json
 {
-  "format": "bf45b1",
-  "id": "MyMod",
+  "format_version": 4,
+  "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+  "tooth": "github.com/user/MyTool",
   "version": "0.1.0",
-  "dependencies": {},
-  "mod": { "loader": "native", "entry": "MyMod.dll" }
+  "variants": {
+    "": [
+      {
+        "platform": "server",
+        "runtime": "win-x64"
+      }
+    ]
+  }
 }
 ```
 
-This is both a LeviLamina mod manifest and a lip package. Edit `id` and `mod` to match your mod.
+The command fails if a `tooth.json` already exists there, or if it cannot ask (when standard input or standard error is not a terminal).
+
+The package does not install anything yet: add `dependencies`, `assets` and the other fields to its entry, as below.
 
 ## Publishing a Version
 
-A package path such as `github.com/user/MyMod` is the git repository `https://github.com/user/MyMod.git`. To publish a version, push a tag named `v` followed by the [SemVer 2.0.0](https://semver.org/) version, e.g. `v1.0.0`. The `version` in the `manifest.json` at the tag must be the same version. Tags that are not exactly `v<SemVer>`, such as `v1.0`, are ignored.
-
-## A Mod
-
-A mod is a package with a `mod` key. The whole archive is written to `mods/<id>/`, on a server (by lip) as on a client (by launchers such as LeviLauncher). On a server, `plugins` is a link to `mods`, so LeviLamina finds the mod under `plugins/<id>/` as well.
-
-`dependencies` maps the id of each dependency to a version range, or to an object with `version` and `source`. Dependencies with a `source` are installed by lip; LeviLamina reads all of them and requires each to be a loaded mod. Add `"mod": false` to a dependency that is not a mod LeviLamina loads, such as a file package:
-
-```json
-{
-  "format": "bf45b1",
-  "id": "LegacyMoney",
-  "version": "0.22.0",
-  "platform": "server",
-  "runtime": "win-x64",
-  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
-  "dependencies": {
-    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  },
-  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
-  "preserve": ["config/", "data/"]
-}
-```
-
-Version ranges use the syntax of [node-semver](https://github.com/npm/node-semver#ranges), e.g. `^0.17.0` or `>=26.51.0 <26.52.0`. A bare version such as `1.2.3` matches exactly that version.
+A tooth path such as `github.com/user/MyTool` is the git repository `https://github.com/user/MyTool.git`, and the `tooth` of the `tooth.json` in that repository must be exactly that path. To publish a version, push a tag named `v` followed by the [SemVer 2.0.0](https://semver.org/) version, e.g. `v1.0.0`. The `version` in the `tooth.json` at the tag must be the same version. Tags that are not exactly `v<SemVer>`, such as `v1.0`, are not versions.
 
 ## A File Package
 
-A file package (without `mod`) places files in the workspace with `files`. Each entry copies a file, a directory or the files matching a glob, from the package itself or from an archive listed in `archives` that lip downloads:
+A file package places files in the workspace. Each asset is an archive to take files from: `self` is the package's own archive (the repository at the tag), and `zip` is a ZIP file that lip downloads. Its `placements` copy a file, a directory or the files matching a glob:
 
 ```json
 {
-  "format": "bf45b1",
-  "id": "PeEditor",
-  "version": "3.9.0",
-  "runtime": "win-x64",
-  "files": [{ "src": "PeEditor.exe", "dest": "PeEditor.exe" }]
+  "format_version": 4,
+  "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+  "tooth": "github.com/user/MyTool",
+  "version": "1.0.0",
+  "variants": {
+    "": [
+      {
+        "platform": "server",
+        "runtime": "win-x64",
+        "assets": [
+          {
+            "type": "self",
+            "placements": [{ "src": "config/", "dest": "config/mytool/" }]
+          },
+          {
+            "type": "zip",
+            "urls": ["https://github.com/user/MyTool/releases/download/v1.0.0/MyTool-win-x64.zip"],
+            "placements": [{ "src": "MyTool.exe", "dest": "MyTool.exe" }]
+          }
+        ],
+        "preserve_files": ["config/mytool/"]
+      }
+    ]
+  }
 }
 ```
 
-## Packing a `.mcmod`
+`preserve_files` keeps the configuration a user has changed: an existing file is not overwritten, and is not deleted on uninstall. Its globs are relative to the workspace.
 
-A `.mcmod` file is a ZIP archive with the `manifest.json` at its root, next to the files of the package. [`lip pack`](../cli/commands/pack.md) builds one from the `manifest.json` in the current directory and the files of a directory, e.g. the output directory of your build:
+## A Mod
 
-```sh
-lip pack build/ -o LegacyMoney-server-win-x64.mcmod
-```
+A mod is an entry with an `mcmod` asset: a ZIP archive with the LeviLamina `manifest.json` of the mod at its root. lip writes the whole archive into `mods/<name>/`, where `<name>` is the `name` in that `manifest.json`. On a server, `plugins` is a link to `mods`, so LeviLamina finds the mod under `plugins/<name>/` as well.
 
-You can test it before publishing:
+Build the archive from the output directory of your build, which holds `manifest.json` and the files of the mod, with [`lip pack`](../cli/commands/pack.md), and attach it to the release:
 
 ```sh
-lip install ./LegacyMoney-server-win-x64.mcmod
+lip pack build/ -o MyMod-server-win-x64.zip
 ```
 
-## Pointing to Release Assets
-
-Built mods usually do not live in the repository. Instead, the repository's `manifest.json` at each tag is a meta document whose `targets` point to the `.mcmod` files attached to the release, one per platform and RID. Its other keys are the template of those packages:
+Then point to it from `tooth.json`:
 
 ```json
 {
-  "format": "bf45b1",
-  "id": "LegacyMoney",
-  "version": "0.22.0",
-  "info": { "name": "Legacy Money", "authors": ["LiteLDev"] },
-  "dependencies": {
-    "LeviLamina": { "version": ">=26.51.0 <26.52.0", "source": "github.com/LiteLDev/LeviLamina" },
-    "iListenAttentively": { "version": "^0.17.0", "source": "github.com/MiracleForest/iListenAttentively" }
-  },
-  "mod": { "loader": "native", "entry": "LegacyMoney.dll" },
-  "preserve": ["config/", "data/"],
-  "targets": [
-    {
-      "platform": ["server", "client"],
-      "runtime": "win-x64",
-      "source": "https://github.com/LiteLDev/LegacyMoney/releases/download/v{{version}}/{{id}}-{{platform}}-{{runtime}}.mcmod"
-    }
-  ]
+  "format_version": 4,
+  "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+  "tooth": "github.com/user/MyMod",
+  "version": "1.0.0",
+  "info": { "name": "My Mod" },
+  "variants": {
+    "": [
+      {
+        "platform": "server",
+        "runtime": "win-x64",
+        "dependencies": {
+          "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0",
+          "github.com/user/MyLib": "^0.3.0"
+        },
+        "assets": [
+          {
+            "type": "mcmod",
+            "urls": ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
+          }
+        ],
+        "preserve_files": ["mods/MyMod/config/"]
+      }
+    ]
+  }
 }
 ```
 
-On a `win-x64` server, `lip install github.com/LiteLDev/LegacyMoney` reads this document at the newest tag and installs `LegacyMoney-server-win-x64.mcmod`.
+`dependencies` maps the tooth path of each dependency to a version range, e.g. `^0.3.0` or `>=1.0.0 <2.0.0`, in the syntax of [Semver for .NET](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0). lip installs the dependencies, and keeps them in line with the LeviLamina `manifest.json` of the mod: for each dependency that is installed as a mod, the mod's `manifest.json` lists `{ "name": "<that mod's name>" }` in its `dependencies`, in the order of the `tooth.json` dependencies. Leave `dependencies` out of the mod's `manifest.json` and lip writes it in when it installs the mod; if you write it yourself, it must be exactly that list, or the installation fails.
 
-To build the `.mcmod` of each platform and RID, run `lip pack` in the repository: it completes the template with the selected target into a package document, and packs it with your files. A target may also override keys of the template, or remove them with `null`:
+On the client, mods are also installed to `mods/<name>/`, by launchers such as LeviLauncher; lip itself installs to servers only.
 
-```sh
-lip pack build/ --platform server --rid win-x64 -o LegacyMoney-server-win-x64.mcmod
-lip pack build/ --platform client --rid win-x64 -o LegacyMoney-client-win-x64.mcmod
+## Several Platforms and Runtimes
+
+An entry applies to exactly one platform and one runtime, which must equal those of the workspace. Add an entry for each platform and runtime the package supports, each with its own assets:
+
+```json
+{
+  "variants": {
+    "": [
+      {
+        "platform": "server",
+        "runtime": "win-x64",
+        "assets": [{ "type": "mcmod", "urls": ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"] }]
+      },
+      {
+        "platform": "client",
+        "runtime": "win-x64",
+        "assets": [{ "type": "mcmod", "urls": ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"] }]
+      },
+      {
+        "platform": "client",
+        "runtime": "win-arm64",
+        "assets": [{ "type": "mcmod", "urls": ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-arm64.zip"] }]
+      }
+    ]
+  }
+}
 ```
+
+A workspace whose platform and runtime has no entry cannot install the package.
 
 ## Variants
 
-Use variants to offer several packages from one repository. Users select one with `path#variant`, e.g. `lip install github.com/user/repo#lua`:
+Use variants to offer several packages from one repository. Users select one with `path#variant`, e.g. `lip install github.com/user/repo#lua`, and the variant `""` is used without `#`:
 
 ```json
 {
-  "format": "bf45b1",
-  "targets": [
-    { "variant": "quickjs", "source": "./quickjs/" },
-    { "variant": "lua", "source": "./lua/" }
-  ]
+  "variants": {
+    "lua": [
+      {
+        "platform": "server",
+        "runtime": "win-x64",
+        "assets": [{ "type": "self", "placements": [{ "src": "lua/", "dest": "myengine/lua/" }] }]
+      }
+    ],
+    "quickjs": [
+      {
+        "platform": "server",
+        "runtime": "win-x64",
+        "assets": [{ "type": "self", "placements": [{ "src": "quickjs/", "dest": "myengine/quickjs/" }] }]
+      }
+    ]
+  }
 }
 ```
 
-Each of `./quickjs/` and `./lua/` is a directory of the repository with its own package `manifest.json`.
+Each variant installs as a package of its own, with the identity `<tooth path>#<variant>`, so several variants of one repository can be installed side by side. Another package depends on a variant with the key `<tooth path>#<variant>` in its `dependencies`.
+
+## Testing Locally
+
+You can install a package from your disk before publishing it, from its directory or from a ZIP file with `tooth.json` at its root:
+
+```sh
+lip install ../MyTool
+lip pack ../MyTool -o MyTool.zip
+lip install ./MyTool.zip
+```
+
+A `self` asset then takes its files from that directory or ZIP file.
 
 ## Existing `tooth.json` Packages
 
-lip still installs packages that use `tooth.json`, but no longer creates them. See [Migrating Packages](migrating_packages.md) to convert one.
+lip still installs packages whose `tooth.json` has format version 1, 2 or 3, but no longer creates them. See [Migrating Packages](migrating_packages.md) to convert one.

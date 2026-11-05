@@ -1,12 +1,11 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/workspace.schema.json",
-  "title": "lip workspace file (<workspace>/.lip/workspace.json), format bf45b1",
+  "title": "lip workspace file (<workspace>/.lip/workspace.json), format_version 4",
   "type": "object",
   "properties": {
-    "format": {
-      "type": "string",
-      "const": "bf45b1"
+    "format_version": {
+      "const": 4
     },
     "platform": {
       "enum": ["server", "client", null]
@@ -22,67 +21,68 @@
       }
     }
   },
-  "required": ["format", "packages"],
+  "required": ["format_version", "platform", "runtime", "packages"],
   "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "package": {
       "type": "object",
       "properties": {
-        "id": {
+        "tooth": {
+          "type": "string"
+        },
+        "variant": {
           "type": "string"
         },
         "version": {
           "type": "string"
         },
-        "kind": {
-          "type": "string"
-        },
         "explicit": {
           "type": "boolean"
         },
-        "chain": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "properties": {
-              "ref": {
-                "type": "string"
-              },
-              "target": {
-                "type": ["integer", "null"],
-                "minimum": 0
-              },
-              "commit": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{40}$"
-              }
-            },
-            "required": ["ref", "target"]
-          }
-        },
-        "archiveKey": {
+        "source": {
           "type": "string"
         },
         "archive": {
-          "description": "null when unknown (packages taken over from tooth_lock.json).",
           "oneOf": [
-            { "type": "null" },
             { "$ref": "#/definitions/zipArchive" },
             { "$ref": "#/definitions/gitArchive" },
             { "$ref": "#/definitions/directoryArchive" }
           ]
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "$ref": "#/definitions/sha256"
+                  }
+                },
+                "required": ["url", "sha256"]
+              }
+            ]
+          }
+        },
+        "entry": {
+          "type": "object"
         },
         "files": {
           "type": "array",
           "items": {
             "type": "string"
           }
-        },
-        "manifest": {
-          "type": "object"
         }
       },
-      "required": ["id", "version", "kind", "explicit", "chain", "archiveKey", "manifest"]
+      "required": ["tooth", "variant", "version", "explicit", "source", "archive", "assets", "entry", "files"]
     },
     "zipArchive": {
       "type": "object",
@@ -91,13 +91,9 @@
           "const": "zip"
         },
         "sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "$ref": "#/definitions/sha256"
         },
         "url": {
-          "type": ["string", "null"]
-        },
-        "path": {
           "type": "string"
         }
       },
@@ -116,12 +112,9 @@
         "commit": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
-        },
-        "path": {
-          "type": "string"
         }
       },
-      "required": ["kind", "repo", "commit", "path"]
+      "required": ["kind", "repo", "commit"]
     },
     "directoryArchive": {
       "type": "object",

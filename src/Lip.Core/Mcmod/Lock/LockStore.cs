@@ -1,7 +1,8 @@
 using System.IO.Abstractions;
 using System.Text.Json;
-using Lip.Core.Entities;
+using System.Text.RegularExpressions;
 using Lip.Core.Infrastructure;
+using Semver;
 
 namespace Lip.Core.Mcmod.Lock;
 
@@ -9,31 +10,17 @@ namespace Lip.Core.Mcmod.Lock;
 public class LockFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Reads and writes the workspace file (protocol/workspace.md §7.1), called the lock in the code.
+/// Reads and writes the workspace file (protocol/workspace.md §7.1, workspace.schema.json), called
+/// the lock in the code.
 ///
-/// The workspace file (format bf45b1) lives inside the workspace, in &lt;root&gt;/.lip/workspace.json,
-/// so that it follows the workspace when the workspace is moved, renamed or copied. Next to it in
-/// .lip are the workspace lock (WorkspaceMutex) and the journal (WorkspaceTransaction).
+/// The workspace file lives inside the workspace, in &lt;root&gt;/.lip/workspace.json, so that it
+/// follows the workspace when the workspace is moved, renamed or copied. Next to it in .lip are
+/// the workspace lock (WorkspaceMutex) and the journal (WorkspaceTransaction).
 ///
-/// When it is absent, the &lt;root&gt;/.lip/lock.json of lip v0.36, which has the same format, is read
-/// instead, and else a v3 &lt;root&gt;/tooth_lock.json written by lip v0.x is migrated. The next save
-/// writes .lip/workspace.json and deletes the file it was read from (protocol/workspace.md §7.6).
-///
-/// v3 recorded the absolute paths of the files a package placed (relative to the working
-/// directory, which was the workspace root). Migration turns paths under the workspace root into
-/// workspace-relative '/'-separated paths, under mods for those under plugins (spec §7). When
-/// the workspace was moved after install, its paths are under the old root: the old root is
-/// inferred from where the recorded files are now (see MovedRoot), and paths under it are rebased
-/// onto the workspace. Other paths outside the root (a v3 placement that escaped the root) are
-/// kept verbatim as absolute paths; lip never deletes them, as they are not inside the workspace.
-///
-/// Migrated entries have kind "tooth" and record the tooth.json (spec §10.2), like the entries of
-/// tooth.json packages lip installs itself: they are read as file packages when used.
-///
-/// v3 keyed packages by (tooth path, variant); the lock keys them by identity, which for a
-/// tooth.json package is the tooth name followed by "-label" for a labelled variant (spec §10.2
-/// rule 1), so the variants of one tooth migrate to entries of distinct identities.
-public class LockStore(IFileSystem fs) : ILockStore {
+/// Workspaces of earlier lip versions (protocol/workspace.md §7.6) are not taken over: a
+/// .lip/workspace.json without format_version 4, a .lip/lock.json or a tooth_lock.json at the root
+/// cannot be read, so that lip never writes over the files the packages they record own.
+public partial class LockStore(IFileSystem fs) : ILockStore {
   /// The directory of lip's own files in the workspace root, and the files in it.
   public const string LipDirectory = ".lip";
   public const string FileName = "workspace.json";
@@ -44,16 +31,13 @@ public class LockStore(IFileSystem fs) : ILockStore {
   /// The workspace file of lip v0.36, in .lip.
   public const string V036FileName = "lock.json";
 
-  /// The v3 lock lip v0.x kept in the workspace root.
+  /// The workspace file lip v0.x kept in the workspace root.
   public const string LegacyFileName = "tooth_lock.json";
-
-  /// Kind of packages migrated from a v3 lock (IPackage.Kind).
-  public const string ToothKind = Compat.ToothCompat.KindName;
 
   private static readonly JsonSerializerOptions _readOptions = new() {
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
-    // Hand-edited locks may put the archive "kind" after the other properties.
+    // Hand-edited files may put the archive "kind" after the other properties.
     AllowOutOfOrderMetadataProperties = true,
   };
 
@@ -76,16 +60,19 @@ public class LockStore(IFileSystem fs) : ILockStore {
   public async Task<LockFile> Load(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
 
-    foreach (string name in (string[])[FileName, V036FileName]) {
-      string path = LipPath(root, name);
-      if (_fs.File.Exists(path)) {
-        return Parse(await _fs.File.ReadAllBytesAsync(path), path);
-      }
+    string path = LipPath(root, FileName);
+    if (_fs.File.Exists(path)) {
+      return Parse(await _fs.File.ReadAllBytesAsync(path), path);
     }
 
-    string legacyPath = _fs.Path.Combine(root, LegacyFileName);
-    if (_fs.File.Exists(legacyPath)) {
-      return Migrate(await _fs.File.ReadAllBytesAsync(legacyPath), legacyPath, root);
+    foreach (string earlier in (string[])[
+        LipPath(root, V036FileName), _fs.Path.Join(root, LegacyFileName)]) {
+      if (_fs.File.Exists(earlier)) {
+        throw new LockFormatException(
+            $"'{earlier}' is the workspace file of an earlier lip version, which this lip cannot "
+            + "take over. Uninstall its packages with that lip version, or delete it to start "
+            + "over (lip then knows nothing about the files they installed).");
+      }
     }
 
     return new LockFile();
@@ -98,11 +85,6 @@ public class LockStore(IFileSystem fs) : ILockStore {
 
   public async Task Stage(string workspaceRoot, LockFile lockFile) {
     try {
-      if (lockFile.Format != ManifestFormat.Format) {
-        throw new LockFormatException(
-            $"format \"{lockFile.Format}\" is not \"{ManifestFormat.Format}\".");
-      }
-
       Validate(lockFile);
     }
     catch (LockFormatException ex) {
@@ -128,30 +110,9 @@ public class LockStore(IFileSystem fs) : ILockStore {
 
   public void CommitStaged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
-    string path = LipPath(root, FileName);
     string tempPath = LipPath(root, StagedFileName);
-    if (!_fs.File.Exists(tempPath)) {
-      return;
-    }
-
-    // Migrating: the lock was read from the file of an earlier format, which is deleted below.
-    // Once .lip/workspace.json exists, files of those names are not lip's.
-    string? migratedFrom = null;
-    if (!_fs.File.Exists(path)) {
-      string v036Path = LipPath(root, V036FileName);
-      migratedFrom = _fs.File.Exists(v036Path) ? v036Path : _fs.Path.Combine(root, LegacyFileName);
-    }
-
-    _fs.File.Move(tempPath, path, overwrite: true);
-
-    // The lock is in place; what follows must not fail the operation.
-    try {
-      if (migratedFrom is not null && _fs.File.Exists(migratedFrom)) {
-        _fs.File.Delete(migratedFrom);
-      }
-    }
-    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-      // A leftover file of an earlier format is not read once .lip/workspace.json exists.
+    if (_fs.File.Exists(tempPath)) {
+      _fs.File.Move(tempPath, LipPath(root, FileName), overwrite: true);
     }
   }
 
@@ -190,13 +151,12 @@ public class LockStore(IFileSystem fs) : ILockStore {
         throw new LockFormatException("the top level is not an object.");
       }
 
-      if (!root.TryGetProperty(ManifestFormat.FormatKey, out JsonElement format)
-          || format.ValueKind != JsonValueKind.String
-          || format.GetString() != ManifestFormat.Format) {
+      if (ToothParser.FormatVersion(root) != ToothFormat.FormatVersion) {
         throw new LockFormatException(
-            $"unsupported {ManifestFormat.FormatKey}"
-            + $" {Describe(root, ManifestFormat.FormatKey)},"
-            + $" expected \"{ManifestFormat.Format}\".");
+            $"it is not of {ToothFormat.FormatVersionKey} {ToothFormat.FormatVersion}, but of an "
+            + "earlier lip version, which this lip cannot take over. Uninstall its packages with "
+            + "that lip version, or delete it to start over (lip then knows nothing about the "
+            + "files they installed).");
       }
 
       LockFile lockFile = root.Deserialize<LockFile>(_readOptions)
@@ -206,13 +166,19 @@ public class LockStore(IFileSystem fs) : ILockStore {
     }
     catch (Exception ex) when (ex is JsonException or LockFormatException or ArgumentException
         or NotSupportedException or InvalidOperationException) {
-      throw new LockFormatException($"Cannot read lock '{path}': {ex.Message}", ex);
+      throw new LockFormatException($"Cannot read the workspace file '{path}': {ex.Message}", ex);
     }
   }
 
+  /// Checks what workspace.schema.json requires beyond what deserializing checks.
   private static void Validate(LockFile lockFile) {
-    if (lockFile.Packages is null || lockFile.Format is null) {
-      throw new LockFormatException("packages or format is null.");
+    if (lockFile.Packages is null) {
+      throw new LockFormatException("packages is null.");
+    }
+
+    if (lockFile.FormatVersion != ToothFormat.FormatVersion) {
+      throw new LockFormatException(
+          $"{ToothFormat.FormatVersionKey} is not {ToothFormat.FormatVersion}.");
     }
 
     if (lockFile.Platform is not null
@@ -228,139 +194,47 @@ public class LockStore(IFileSystem fs) : ILockStore {
     for (int i = 0; i < lockFile.Packages.Count; i++) {
       LockedPackage package = lockFile.Packages[i]
           ?? throw new LockFormatException($"packages[{i}] is null.");
-      if (package.Chain.Any(h => h is null) || package.Files.Any(f => f is null)) {
-        throw new LockFormatException($"packages[{i}] ({package.Identity}) has a null entry.");
+      string at = $"packages[{i}] ({package.Tooth})";
+      if (package.Files is null || package.Files.Any(f => f is null) || package.Assets is null) {
+        throw new LockFormatException($"{at} has a null entry.");
       }
 
-      if (package.Manifest.ValueKind != JsonValueKind.Object) {
-        throw new LockFormatException(
-            $"packages[{i}] ({package.Identity}) has a manifest that is not an object.");
+      if (package.Variant != "" && !Ref.IsValidVariant(package.Variant)) {
+        throw new LockFormatException($"{at} has the invalid variant \"{package.Variant}\".");
+      }
+
+      if (!SemVersion.TryParse(package.Version, SemVersionStyles.Strict, out _)) {
+        throw new LockFormatException($"{at} has the invalid version \"{package.Version}\".");
+      }
+
+      if (package.Entry.ValueKind != JsonValueKind.Object) {
+        throw new LockFormatException($"{at} has an entry that is not an object.");
+      }
+
+      string? invalid = package.Archive switch {
+        null => "no archive",
+        ZipArchiveIdentity zip when !Sha256Regex().IsMatch(zip.Sha256) =>
+            $"the invalid sha256 \"{zip.Sha256}\"",
+        GitArchiveIdentity git when !CommitRegex().IsMatch(git.Commit) =>
+            $"the invalid commit \"{git.Commit}\"",
+        GitArchiveIdentity git when !RepoRegex().IsMatch(git.RepoUrl) =>
+            $"the invalid repo \"{git.RepoUrl}\"",
+        DirectoryArchiveIdentity { Path: "" } => "an empty archive path",
+        _ => package.Assets.FirstOrDefault(a => a is not null && !Sha256Regex().IsMatch(a.Sha256))
+            is AssetIdentity asset ? $"the invalid asset sha256 \"{asset.Sha256}\"" : null,
+      };
+      if (invalid is not null) {
+        throw new LockFormatException($"{at} has {invalid}.");
       }
     }
   }
 
-  private LockFile Migrate(byte[] bytes, string path, string workspaceRoot) {
-    WorkspaceState state;
-    try {
-      state = JsonSerializer.Deserialize<WorkspaceState>(bytes)
-          ?? throw new LockFormatException("the lock is null.");
-      if (state.Packages is null || state.Packages.Any(p => p is null)) {
-        throw new LockFormatException("packages is null or has a null entry.");
-      }
-    }
-    catch (Exception ex) when (ex is JsonException or LockFormatException or ArgumentException
-        or FormatException or NotSupportedException or InvalidOperationException) {
-      throw new LockFormatException($"Cannot read legacy lock '{path}': {ex.Message}", ex);
-    }
+  [GeneratedRegex(@"^[0-9a-f]{64}\z")]
+  private static partial Regex Sha256Regex();
 
-    string root = _fs.Path.GetFullPath(workspaceRoot);
-    string? movedRoot = MovedRoot(
-        [.. state.Packages.SelectMany(p => p.Files ?? []).Where(f => IsOutside(f, root))], root);
+  [GeneratedRegex(@"^[0-9a-f]{40}\z")]
+  private static partial Regex CommitRegex();
 
-    return new LockFile {
-      Packages = [.. state.Packages.Select(p => MigratePackage(p, root, movedRoot))],
-    };
-  }
-
-  /// The root a moved v3 workspace had: of the directories containing the recorded paths outside
-  /// the workspace, the one under which most of them exist at the same relative path in the
-  /// workspace (on a tie, the one containing most of them). Null when none does.
-  private string? MovedRoot(IReadOnlyList<string> outside, string root) {
-    List<string> files = [.. outside
-        .Where(_fs.Path.IsPathRooted)
-        .Select(f => _fs.Path.GetFullPath(f))
-        .Distinct(WorkspaceLayout.PathComparer)];
-    HashSet<string> candidates = new(WorkspaceLayout.PathComparer);
-    foreach (string file in files) {
-      for (string? dir = _fs.Path.GetDirectoryName(file);
-          dir is not null;
-          dir = _fs.Path.GetDirectoryName(dir)) {
-        candidates.Add(dir);
-      }
-    }
-
-    string? best = null;
-    (int Found, int Contained) bestScore = (0, 0);
-    foreach (string candidate in candidates) {
-      List<string> contained = [.. files.Where(f => IsUnder(candidate, f))];
-      int found = contained.Count(f => _fs.File.Exists(
-          _fs.Path.Join(root, _fs.Path.GetRelativePath(candidate, f))));
-      if (found > bestScore.Found
-          || (found == bestScore.Found && found > 0 && contained.Count > bestScore.Contained)) {
-        best = candidate;
-        bestScore = (found, contained.Count);
-      }
-    }
-
-    return best;
-  }
-
-  /// The identity, the chain and the archive key all come from the recorded "tooth", so they
-  /// agree with each other and with the package FromLocked rebuilds from the recorded manifest.
-  /// lip v0.34.9 and earlier only installed a package by the path its tooth.json declares; v0.35.0
-  /// recorded the path it was requested by in "tooth" instead (e.g. the old path of a repository
-  /// that moved), which still resolves to the repository. When a later version declares another
-  /// path, updating the package replaces it under its new identity (see McmodService.Update).
-  private LockedPackage MigratePackage(
-      WorkspaceStatePackage package, string root, string? movedRoot) {
-    string path = package.Manifest.Path;
-    string version = package.Manifest.Version.ToString();
-
-    return new LockedPackage {
-      Identity = Compat.ToothCompat.GetIdentity(path, package.Variant),
-      Version = version,
-      Kind = ToothKind,
-      Explicit = package.IsExplicit,
-      Chain = [new LockedHop(new PackageId(path, package.Variant).ToString(), null)],
-      ArchiveKey = $"{path}@{version}",
-      Archive = null,
-      Files = [
-        .. (package.Files ?? [])
-            .Select(f => WorkspaceLayout.CanonicalPath(MigrateFilePath(f, root, movedRoot)))
-            .Distinct(WorkspaceLayout.PathComparer),
-      ],
-      Manifest = JsonSerializer.SerializeToElement(package.Manifest),
-    };
-  }
-
-  private string MigrateFilePath(string file, string root, string? movedRoot) {
-    if (IsOutside(file, root)) {
-      return movedRoot is not null && _fs.Path.IsPathRooted(file)
-          && IsUnder(movedRoot, _fs.Path.GetFullPath(file))
-          ? _fs.Path.GetRelativePath(movedRoot, _fs.Path.GetFullPath(file)).Replace('\\', '/')
-          : file;
-    }
-
-    return _fs.Path.GetRelativePath(root, _fs.Path.GetFullPath(_fs.Path.Combine(root, file)))
-        .Replace('\\', '/');
-  }
-
-  /// Whether a v3 path names no file inside the workspace root. A Windows absolute path read on
-  /// another OS (a lock copied across machines) is foreign: it is outside rather than mistaken
-  /// for a relative path.
-  private bool IsOutside(string file, string root) {
-    if (!_fs.Path.IsPathRooted(file) && IsWindowsAbsolute(file)) {
-      return true;
-    }
-
-    string full = _fs.Path.GetFullPath(_fs.Path.Combine(root, file));
-    string relative = _fs.Path.GetRelativePath(root, full);
-    return relative == "." || relative == ".." || _fs.Path.IsPathRooted(relative)
-        || relative.StartsWith(".." + _fs.Path.DirectorySeparatorChar)
-        || relative.StartsWith("../");
-  }
-
-  /// Whether path is strictly below directory.
-  private bool IsUnder(string directory, string path) =>
-      path.StartsWith(
-          _fs.Path.TrimEndingDirectorySeparator(directory) + _fs.Path.DirectorySeparatorChar,
-          OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-
-  private static bool IsWindowsAbsolute(string path) =>
-      path.StartsWith(@"\\")
-      || (path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':'
-          && path[2] is '\\' or '/');
-
-  private static string Describe(JsonElement root, string key) =>
-      root.TryGetProperty(key, out JsonElement value) ? value.GetRawText() : "(missing)";
+  [GeneratedRegex(@"^https://.+\.git\z")]
+  private static partial Regex RepoRegex();
 }

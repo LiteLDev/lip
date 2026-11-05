@@ -6,7 +6,7 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Install;
 
-/// Changes to a workspace that can be undone (spec §7): an operation applies all of its file
+/// Changes to a workspace that can be undone (protocol/workspace.md §6, §7): an operation applies all of its file
 /// changes through one transaction, and either commits them or rolls all of them back.
 ///
 /// - A created directory or file is recorded, and deleted again on rollback.

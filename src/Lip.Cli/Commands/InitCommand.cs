@@ -13,7 +13,7 @@ public class InitCommand(ILipClient lipClient, IUserInteraction userInteraction)
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     await _lipClient.Init();
-    await _userInteraction.PrintSuccess("Created manifest.json.");
+    await _userInteraction.PrintSuccess("Created tooth.json.");
     return 0;
   }
 }

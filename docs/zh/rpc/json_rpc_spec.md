@@ -22,11 +22,11 @@
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `rid` | `string \| null` | .NET RID，例如 `"win-x64"`。为 `null`、`""` 或省略时使用锁中的值或 lip 自身的 RID。 |
+| `rid` | `string \| null` | .NET RID，例如 `"win-x64"`。为 `null`、`""` 或省略时使用工作区文件记录的 RID 或 lip 自身的 RID。 |
 
 `Update` 的 `packages` 参数可以为空，表示更新所有显式安装的包。
 
-`Migrate` 不会询问：在 [`lip migrate`](../cli/commands/migrate.md) 会于终端上询问某个值的情况下，该方法会失败，并指明该值。
+`Init` 和 `Migrate` 不会询问：在 [`lip init`](../cli/commands/init.md) 或 [`lip migrate`](../cli/commands/migrate.md) 会于终端上询问某个值的情况下，该方法会失败，并指明该值。`lip pack` 没有对应的方法。
 
 ## 错误与取消
 

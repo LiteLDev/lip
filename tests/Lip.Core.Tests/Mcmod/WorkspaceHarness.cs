@@ -37,6 +37,7 @@ internal sealed class WorkspaceHarness {
     Cache = new CacheService(Fs, Ui.Object);
     LockStore = new LockStore(Fs);
     Linker = new MockDirectoryLinker(Fs);
+    SetUpDownloader();
     Restart();
   }
 
@@ -44,20 +45,40 @@ internal sealed class WorkspaceHarness {
   /// tags added since are seen.
   [MemberNotNull(nameof(ArchiveProvider), nameof(Service))]
   public void Restart() {
-    DocumentParser parser = new();
-    ArchiveProvider = new ArchiveProvider(
-        Git, Cache, Fs, new Mock<IFileDownloader>().Object);
+    ArchiveProvider = new ArchiveProvider(Git, Cache, Fs, Downloader.Object);
     Service = new McmodService(
         Faults,
         Ui.Object,
         LockStore,
         ArchiveProvider,
-        new ArchiveReader(parser),
-        new ToothCompat(),
-        parser,
-        [new McmodInstaller(Faults, CommandRunner.Object, parser, Ui.Object)],
+        new ArchiveReader(),
+        new McmodInstaller(Faults, CommandRunner.Object, Ui.Object),
         workspaceRoot: () => Root,
         directoryLinker: Linker);
+  }
+
+  /// Downloads: every URL added by AddDownload serves its bytes; any other fails.
+  public Mock<IFileDownloader> Downloader { get; } = CreateDownloader();
+
+  private readonly Dictionary<string, byte[]> _downloads = [];
+
+  /// Makes a URL serve the given bytes (e.g. a ZIP file of an asset).
+  public void AddDownload(string url, byte[] content) => _downloads[url] = content;
+
+  private static Mock<IFileDownloader> CreateDownloader() => new();
+
+  private void SetUpDownloader() {
+    Downloader
+        .Setup(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<System.IO.Abstractions.IFileInfo>()))
+        .Returns((Url url, System.IO.Abstractions.IFileInfo destination) => {
+          if (!_downloads.TryGetValue(url.ToString(), out byte[]? content)) {
+            throw new HttpRequestException($"404 {url}");
+          }
+
+          Fs.Directory.CreateDirectory(destination.DirectoryName!);
+          Fs.File.WriteAllBytes(destination.FullName, content);
+          return Task.CompletedTask;
+        });
   }
 
   public MockFileSystem Fs { get; }
@@ -135,8 +156,8 @@ internal sealed class WorkspaceHarness {
   public void AddTag(string spec, string version, Dictionary<string, string> files) =>
       Git.AddTag(spec, $"v{version}", files);
 
-  /// A tooth.json (format 3) with one unlabeled variant placing the file "<name>.dll" at
-  /// "<dest>" and the given dependencies.
+  /// A tooth.json (format 3) with one unlabeled variant placing the file "file.dll" at
+  /// "&lt;dest&gt;" and the given dependencies.
   public static string Tooth(
       string path,
       string version,
@@ -163,20 +184,36 @@ internal sealed class WorkspaceHarness {
       }
       """;
 
-  /// A package document: a mod with the loader type and the entry "&lt;name&gt;.dll", or a file
-  /// package for the type "files"; extra holds further keys.
-  public static string Package(string name, string version, string type, string extra = "") =>
-      $$"""
+  /// The runtime of the environment the tests install for.
+  public const string Runtime = "win-x64";
+
+  /// A tooth.json of format 4 whose variant "" has one entry for (server, Runtime) with the
+  /// given members (e.g. "\"assets\": [...]"), comma-separated JSON members without braces.
+  public static string Tooth4(string tooth, string version, string entry = "") => $$"""
       {
-        "format": "bf45b1",
-        "id": "{{name}}",
-        "version": "{{version}}"{{ModKey(name, type)}}{{(extra == "" ? "" : ",\n" + extra)}}
+        "format_version": 4,
+        "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+        "tooth": "{{tooth}}",
+        "version": "{{version}}",
+        "variants": {
+          "": [ { "platform": "server", "runtime": "{{Runtime}}"{{(entry == "" ? "" : ", " + entry)}} } ]
+        }
       }
       """;
 
-  private static string ModKey(string name, string type) => type == "files"
-      ? ""
-      : $",\n  \"mod\": {{ \"loader\": \"{type}\", \"entry\": \"{name}.dll\" }}";
+  /// The member "assets" of an entry with one asset of type "self" placing the file "src" at
+  /// "dest".
+  public static string SelfAsset(string src, string dest) =>
+      $$"""
+      "assets": [ { "type": "self", "placements": [ { "src": "{{src}}", "dest": "{{dest}}" } ] } ]
+      """;
+
+  /// The bytes of the ZIP file of an asset of type "mcmod": a mod manifest named name (with
+  /// the given extra members) and the file "&lt;name&gt;.dll".
+  public static byte[] Mcmod(string name, string extra = "") => Zip(new() {
+    ["manifest.json"] = $$"""{ "name": "{{name}}", "entry": "{{name}}.dll", "type": "native"{{(extra == "" ? "" : ", " + extra)}} }""",
+    [$"{name}.dll"] = $"{name} binary",
+  });
 
   /// The bytes of a ZIP file holding the given files.
   public static byte[] Zip(Dictionary<string, string> files) =>
@@ -200,17 +237,12 @@ internal sealed class WorkspaceHarness {
     private readonly Dictionary<string, Dictionary<string, string>> _refs = [];
     private readonly Dictionary<string, List<GitTreeEntry>> _trees = [];
     private readonly Dictionary<string, byte[]> _blobs = [];
-    private readonly Dictionary<string, string> _redirects = [];
 
     public List<string> ListedTrees { get; } = [];
 
     /// The repository URL and ref prefixes of every ListRefs call, e.g.
     /// "https://example.com/x.git refs/tags/v".
     public List<string> ListedRefs { get; } = [];
-
-    /// Whether GetRepositoryUrl tells where a repository redirects, as lip v0.36.0 did not ask:
-    /// when false, every repository answers at its own URL.
-    public bool ReportsRedirects { get; set; } = true;
 
     /// Adds (or moves) a tag to a new commit holding the given files; returns the commit.
     public string AddTag(string spec, string tag, Dictionary<string, string> files) =>
@@ -220,30 +252,12 @@ internal sealed class WorkspaceHarness {
     public string AddBranch(string spec, string branch, Dictionary<string, string> files) =>
         SetRef(spec, $"refs/heads/{branch}", files);
 
-    /// Makes the repository of one spec answer for another, like GitHub does for a repository
-    /// that was transferred or renamed: the old path redirects to the new one.
-    public void AddRedirect(string fromSpec, string toSpec) =>
-        _redirects[ArchiveProvider.GetRepoUrl(fromSpec)] = ArchiveProvider.GetRepoUrl(toSpec);
-
-    /// Points a ref of one repository at the commit a ref of another has, like a fork created
-    /// after the tag: both repositories have the tag at the same commit.
-    public void CopyRef(string fromSpec, string toSpec, string refName) {
-      string commit = _refs[ArchiveProvider.GetRepoUrl(fromSpec)][refName];
-      string repo = ArchiveProvider.GetRepoUrl(toSpec);
-      if (!_refs.TryGetValue(repo, out Dictionary<string, string>? refs)) {
-        refs = [];
-        _refs[repo] = refs;
-      }
-
-      refs[refName] = commit;
-    }
-
     public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
       List<string> prefixes = [.. refPrefixes];
       string repo = repoUrl.ToString();
       ListedRefs.Add($"{repo} {string.Join(" ", prefixes)}");
       IReadOnlyList<GitRemoteRef> refs = [
-        .. _refs.GetValueOrDefault(_redirects.GetValueOrDefault(repo, repo), [])
+        .. _refs.GetValueOrDefault(repo, [])
             .Where(r => prefixes.Any(p => r.Key.StartsWith(p, StringComparison.Ordinal)))
             .Select(r => new GitRemoteRef(r.Key, r.Value, null)),
       ];
@@ -278,15 +292,6 @@ internal sealed class WorkspaceHarness {
       return _trees.TryGetValue(commitish, out List<GitTreeEntry>? tree)
           ? Task.FromResult<IReadOnlyList<GitTreeEntry>>(tree)
           : throw new InvalidOperationException($"No commit {commitish}");
-    }
-
-    /// Where a repository answers. GitHub tells a transferred repository by redirecting its web
-    /// page, while it serves the git endpoints at the old path (as ListRefs does here); this
-    /// answer stands for either.
-    public Task<Url> GetRepositoryUrl(Url repoUrl) {
-      string repo = repoUrl.ToString();
-      return Task.FromResult(Url.Parse(
-          ReportsRedirects ? _redirects.GetValueOrDefault(repo, repo) : repo));
     }
 
     public async Task FetchBlobs(

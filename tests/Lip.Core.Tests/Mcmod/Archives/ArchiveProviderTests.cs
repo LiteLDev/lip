@@ -14,11 +14,13 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod.Archives;
 
+/// Archives of sources (protocol/package.md §1, §2) and of assets (protocol/workspace.md §4 step
+/// 2), and reopening them from the workspace file (protocol/workspace.md §5, §7.1).
 public class ArchiveProviderTests {
   private const string _spec = "example.com/owner/repo";
   private const string _repoUrl = "https://example.com/owner/repo.git";
   private const string _commit = "0123456789abcdef0123456789abcdef01234567";
-  private const string _url = "https://example.com/releases/pkg.mcmod";
+  private const string _url = "https://example.com/releases/pkg.zip";
 
   private static readonly string _workspace =
       Path.Combine(Path.GetTempPath(), "lip-archive-provider-tests", "workspace");
@@ -101,57 +103,119 @@ public class ArchiveProviderTests {
   private static string Sha256(byte[] content) =>
       Convert.ToHexStringLower(SHA256.HashData(content));
 
-  private static async Task<string> Read(ArchiveHandle archive, string key) {
-    using StreamReader reader = new(await archive.Source.OpenRead(key));
+  private static async Task<string> Read(ArchiveHandle archive, string key) =>
+      await Read(archive.Source, key);
+
+  private static async Task<string> Read(ISource source, string key) {
+    using StreamReader reader = new(await source.OpenRead(key));
     return await reader.ReadToEndAsync();
   }
 
-  private ArchiveHandle OpenGitBase(ArchiveProvider provider) =>
-      provider.OpenLocked($"{_spec}@1.0.0", new GitArchiveIdentity(_repoUrl, _commit, ""))
-          .GetAwaiter().GetResult();
+  private string[] CachedFiles() =>
+      [.. _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName)!];
+
+  // Local files and directories (protocol/package.md §2.3).
 
   [Fact]
   public async Task Open_LocalFile_ReturnsZipArchiveKeyedByFileUri() {
     // Arrange
-    byte[] zip = Zip(("manifest.json", "local"), ("sub/manifest.json", "sub"));
-    string path = Path.Combine(_workspace, "pkg.mcmod");
+    byte[] zip = Zip(("tooth.json", "local"), ("sub/a.txt", "sub"));
+    string path = Path.Combine(_workspace, "pkg.zip");
     _fileSystem.AddFile(path, new MockFileData(zip));
-    Ref file = Ref.FromFile(path);
+    Ref file = Ref.FromFile(path, "lua");
 
     // Act
-    ArchiveHandle archive = await CreateProvider().Open(file, null);
-    ArchiveHandle sub = await CreateProvider().Open(Ref.Parse("./sub/"), archive);
+    ArchiveHandle archive = await CreateProvider().Open(file);
 
     // Assert
     Assert.Equal(file.Target, archive.Key);
     Assert.Equal(new ZipArchiveIdentity(Sha256(zip), file.Target), archive.Identity);
-    Assert.Equal("local", await Read(archive, "manifest.json"));
-    Assert.Equal("sub", await Read(sub, "manifest.json"));
+    Assert.IsType<ZipSource>(archive.Source);
+    Assert.Equal("local", await Read(archive, "tooth.json"));
+    Assert.Equal("sub", await Read(archive, "sub/a.txt"));
+    _downloader.VerifyNoOtherCalls();
+    Assert.False(_fileSystem.Directory.Exists(LipDirectories.Cache));
   }
 
   [Fact]
-  public async Task Open_LocalDirectory_ThrowsArchiveUnavailable() {
+  public async Task Open_LocalFileOfAnyName_IsAZipArchiveByContent() {
     // Arrange
-    _fileSystem.AddFile(Path.Combine(_workspace, "manifest.json"), new MockFileData("{}"));
+    byte[] zip = Zip(("tooth.json", "{}"));
+    string path = Path.Combine(_workspace, "pkg.bin");
+    _fileSystem.AddFile(path, new MockFileData(zip));
+
+    // Act
+    ArchiveHandle archive = await CreateProvider().Open(Ref.FromFile(path));
+
+    // Assert
+    Assert.Equal(["tooth.json"], archive.Source.Keys);
+  }
+
+  [Fact]
+  public async Task Open_LocalFileNotAZip_ThrowsArchiveUnavailable() {
+    // Arrange
+    string path = Path.Combine(_workspace, "pkg.zip");
+    _fileSystem.AddFile(path, new MockFileData("not a zip"));
 
     // Act & Assert
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().Open(Ref.FromFile(_workspace), null));
-    Assert.Contains("is a directory", ex.Message);
+        () => CreateProvider().Open(Ref.FromFile(path)));
+    Assert.Contains("not a ZIP archive", ex.Message);
   }
 
   [Fact]
-  public async Task Open_RelativeWithoutBase_ThrowsArchiveUnavailable() {
+  public async Task Open_LocalFileMissing_ThrowsArchiveUnavailable() {
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().Open(Ref.Parse("./pkg/"), null));
+        () => CreateProvider().Open(Ref.FromFile(Path.Combine(_workspace, "missing.zip"))));
+  }
+
+  [Fact]
+  public async Task Open_LocalDirectory_ReturnsDirectoryArchiveOfItsAbsolutePath() {
+    // Arrange
+    string directory = Path.Combine(_workspace, "pkg");
+    _fileSystem.AddFile(Path.Combine(directory, "tooth.json"), new MockFileData("{}"));
+    _fileSystem.AddFile(Path.Combine(directory, "lib", "a.dll"), new MockFileData("a"));
+    Ref source = Ref.FromFile(directory + Path.DirectorySeparatorChar);
+
+    // Act
+    ArchiveHandle archive = await CreateProvider().Open(source);
+
+    // Assert
+    Assert.Equal(source.Target, archive.Key);
+    Assert.Equal(new DirectoryArchiveIdentity(directory), archive.Identity);
+    Assert.IsType<DirectorySource>(archive.Source);
+    Assert.Equal(["lib/a.dll", "tooth.json"], archive.Source.Keys);
+    Assert.Equal("a", await Read(archive, "lib/a.dll"));
+    _downloader.VerifyNoOtherCalls();
+  }
+
+  [Fact]
+  public async Task Open_LocalDirectory_ReadsItWhereItIs() {
+    // Arrange
+    string directory = Path.Combine(_workspace, "pkg");
+    string file = Path.Combine(directory, "tooth.json");
+    _fileSystem.AddFile(file, new MockFileData("v1"));
+    ArchiveHandle archive = await CreateProvider().Open(Ref.FromFile(directory));
+
+    // Act
+    _fileSystem.File.WriteAllText(file, "v2");
+
+    // Assert
+    Assert.Equal("v2", await Read(archive, "tooth.json"));
+  }
+
+  [Fact]
+  public async Task Open_RemoteRepository_Throws() {
+    // Act & Assert
+    await Assert.ThrowsAsync<ArgumentException>(() => CreateProvider().Open(Ref.Parse(_spec)));
   }
 
   [Fact]
   public async Task OpenLocked_LocalFile_VerifiesContent() {
     // Arrange
-    string path = Path.Combine(_workspace, "pkg.mcmod");
-    byte[] zip = Zip(("manifest.json", "v1"));
+    string path = Path.Combine(_workspace, "pkg.zip");
+    byte[] zip = Zip(("tooth.json", "v1"));
     _fileSystem.AddFile(path, new MockFileData(zip));
     Ref file = Ref.FromFile(path);
     ZipArchiveIdentity identity = new(Sha256(zip), file.Target);
@@ -159,19 +223,58 @@ public class ArchiveProviderTests {
 
     // Act
     ArchiveHandle locked = await provider.OpenLocked(file.Target, identity);
-    string content = await Read(locked, "manifest.json");
-    _fileSystem.File.WriteAllBytes(path, Zip(("manifest.json", "v2")));
+    string content = await Read(locked, "tooth.json");
+    _fileSystem.File.WriteAllBytes(path, Zip(("tooth.json", "v2")));
 
     // Assert
+    Assert.Equal(identity, locked.Identity);
     Assert.Equal("v1", content);
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
         () => provider.OpenLocked(file.Target, identity));
+    Assert.Contains(identity.Sha256, ex.Message);
+    _downloader.VerifyNoOtherCalls();
   }
+
+  [Fact]
+  public async Task OpenLocked_LocalFileGone_ThrowsArchiveUnavailable() {
+    // Arrange
+    Ref file = Ref.FromFile(Path.Combine(_workspace, "gone.zip"));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
+        file.Target, new ZipArchiveIdentity(new string('0', 64), file.Target)));
+  }
+
+  [Fact]
+  public async Task OpenLocked_Directory_OpensItsPath() {
+    // Arrange
+    string directory = Path.Combine(_workspace, "pkg");
+    _fileSystem.AddFile(Path.Combine(directory, "tooth.json"), new MockFileData("{}"));
+
+    // Act
+    ArchiveHandle archive = await CreateProvider().OpenLocked(
+        "k", new DirectoryArchiveIdentity(directory));
+
+    // Assert
+    Assert.Equal("k", archive.Key);
+    Assert.Equal(new DirectoryArchiveIdentity(directory), archive.Identity);
+    Assert.Equal(["tooth.json"], archive.Source.Keys);
+  }
+
+  [Fact]
+  public async Task OpenLocked_DirectoryGone_ThrowsArchiveUnavailable() {
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
+        "k", new DirectoryArchiveIdentity(Path.Combine(_workspace, "gone"))));
+  }
+
+  // Remote repositories (protocol/package.md §2.1).
 
   [Theory]
   [InlineData("branch:main", "refs/heads/main")]
   [InlineData("tag:release-1", "refs/tags/release-1")]
-  public async Task ResolveGitRef_BranchOrTag_ReturnsExactRefCommitPeeled(
+  [InlineData("1.0.0", "refs/tags/v1.0.0")]
+  public async Task ResolveGitRef_VersionBranchOrTag_ReturnsExactRefCommitPeeled(
       string gitRef, string refName) {
     // Arrange: a longer name sharing the prefix, and an annotated tag object.
     string other = new('1', 40);
@@ -190,37 +293,6 @@ public class ArchiveProviderTests {
         It.Is<IEnumerable<string>>(p => p.SequenceEqual(new[] { refName }))));
   }
 
-  [Theory]
-  [InlineData("https://github.com/New/Repo.git", true)]
-  [InlineData("https://github.com/new/repo", true)]
-  [InlineData("https://github.com/Old/Repo.git", false)]
-  [InlineData("https://github.com/Other/Repo.git", false)]
-  public async Task RedirectsTo_ComparesWhereTheRepositoryAnswers(string answersAt, bool expected) {
-    _git.Setup(c => c.GetRepositoryUrl(
-            It.Is<Url>(u => u.ToString() == "https://github.com/Old/Repo.git")))
-        .ReturnsAsync(new Url(answersAt));
-
-    Assert.Equal(
-        expected,
-        await CreateProvider().RedirectsTo("github.com/Old/Repo", "github.com/New/Repo"));
-  }
-
-  [Fact]
-  public async Task RedirectsTo_SamePathIgnoringGithubCase_IsFalseWithoutNetwork() {
-    Assert.False(
-        await CreateProvider().RedirectsTo("github.com/Owner/Repo", "github.com/owner/repo"));
-    _git.Verify(c => c.GetRepositoryUrl(It.IsAny<Url>()), Times.Never);
-  }
-
-  [Fact]
-  public async Task RedirectsTo_UnreachableRepository_IsFalse() {
-    _git.Setup(c => c.GetRepositoryUrl(It.IsAny<Url>()))
-        .ThrowsAsync(new HttpRequestException("offline"));
-
-    Assert.False(
-        await CreateProvider().RedirectsTo("github.com/Old/Repo", "github.com/New/Repo"));
-  }
-
   [Fact]
   public async Task ResolveGitRef_MissingBranch_ThrowsArchiveUnavailable() {
     // Arrange
@@ -229,6 +301,17 @@ public class ArchiveProviderTests {
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
         () => CreateProvider().ResolveGitRef(_spec, GitRef.Parse("branch:gone")));
+  }
+
+  [Fact]
+  public async Task ResolveGitRef_ListRefsFails_ThrowsArchiveUnavailable() {
+    // Arrange
+    _git.Setup(c => c.ListRefs(It.IsAny<Url>(), It.IsAny<IEnumerable<string>>()))
+        .ThrowsAsync(new HttpRequestException("network"));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().ResolveGitRef(_spec, GitRef.Parse("branch:main")));
   }
 
   [Fact]
@@ -245,14 +328,15 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task OpenCommit_Commit_ReturnsGitArchiveKeyedByRev() {
     // Arrange
-    SetupTree(_commit, new GitTreeEntry("manifest.json", 100644, AddBlob("{}")));
+    SetupTree(_commit, new GitTreeEntry("tooth.json", 100644, AddBlob("{}")));
 
     // Act
-    ArchiveHandle archive = await CreateProvider().OpenCommit(_spec, _commit);
+    ArchiveHandle archive = await CreateProvider().OpenCommit(_spec, _commit.ToUpperInvariant());
 
     // Assert
     Assert.Equal($"{_spec}@rev:{_commit}", archive.Key);
-    Assert.Equal(new GitArchiveIdentity(_repoUrl, _commit, ""), archive.Identity);
+    Assert.Equal(new GitArchiveIdentity(_repoUrl, _commit), archive.Identity);
+    Assert.Equal("{}", await Read(archive, "tooth.json"));
   }
 
   [Fact]
@@ -312,7 +396,7 @@ public class ArchiveProviderTests {
   public async Task OpenVersion_AnnotatedTag_OpensPeeledCommit() {
     // Arrange
     SetupTags(new GitRemoteRef("refs/tags/v1.0.0", "tagobject", _commit));
-    SetupTree(_commit, new GitTreeEntry("manifest.json", 100644, AddBlob("{}")));
+    SetupTree(_commit, new GitTreeEntry("tooth.json", 100644, AddBlob("{}")));
     ArchiveProvider provider = CreateProvider();
     SpecVersion version = (await provider.ListVersions(_spec)).Single();
 
@@ -321,8 +405,8 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal($"{_spec}@1.0.0", archive.Key);
-    Assert.Equal(new GitArchiveIdentity(_repoUrl, _commit, ""), archive.Identity);
-    Assert.Equal("{}", await Read(archive, "manifest.json"));
+    Assert.Equal(new GitArchiveIdentity(_repoUrl, _commit), archive.Identity);
+    Assert.Equal("{}", await Read(archive, "tooth.json"));
   }
 
   [Fact]
@@ -336,139 +420,33 @@ public class ArchiveProviderTests {
   }
 
   [Fact]
-  public void Open_SymlinkInGitTree_IsNotPartOfArchive() {
+  public async Task OpenLocked_Git_OnlyRegularFilesArePartOfTheArchive() {
     // Arrange
     SetupTree(_commit,
-        new GitTreeEntry("manifest.json", 100644, AddBlob("{}")),
-        new GitTreeEntry("link", 120000, AddBlob("manifest.json")));
+        new GitTreeEntry("tooth.json", 100644, AddBlob("{}")),
+        new GitTreeEntry("run.sh", 100755, AddBlob("echo")),
+        new GitTreeEntry("link", 120000, AddBlob("tooth.json")));
 
     // Act
-    ArchiveHandle archive = OpenGitBase(CreateProvider());
+    ArchiveHandle archive = await CreateProvider().OpenLocked(
+        $"{_spec}@1.0.0", new GitArchiveIdentity(_repoUrl, _commit));
 
     // Assert
-    Assert.Equal(["manifest.json"], archive.Source.Keys);
+    Assert.Equal(["run.sh", "tooth.json"], archive.Source.Keys.Order(StringComparer.Ordinal));
   }
 
   [Fact]
-  public async Task Open_RelativeDirectoryInGit_OpensGitSubdirectory() {
+  public async Task OpenLocked_GitCommitUnavailable_ThrowsArchiveUnavailable() {
     // Arrange
-    SetupTree(_commit,
-        new GitTreeEntry("manifest.json", 100644, AddBlob("root")),
-        new GitTreeEntry("lua/manifest.json", 100644, AddBlob("lua")),
-        new GitTreeEntry("lua/sub/a.txt", 100644, AddBlob("a")));
-    ArchiveProvider provider = CreateProvider();
-    ArchiveHandle baseArchive = OpenGitBase(provider);
-
-    // Act
-    ArchiveHandle archive = await provider.Open(Ref.Parse("./lua/#x"), baseArchive);
-    ArchiveHandle nested = await provider.Open(Ref.Parse("./sub/"), archive);
-
-    // Assert
-    Assert.Equal($"{_spec}@1.0.0!lua/", archive.Key);
-    Assert.Equal(new GitArchiveIdentity(_repoUrl, _commit, "lua"), archive.Identity);
-    Assert.Equal("lua", await Read(archive, "manifest.json"));
-    Assert.Equal($"{_spec}@1.0.0!lua/!sub/", nested.Key);
-    Assert.Equal(new GitArchiveIdentity(_repoUrl, _commit, "lua/sub"), nested.Identity);
-    Assert.Equal(["a.txt"], nested.Source.Keys);
-  }
-
-  [Fact]
-  public async Task Open_RelativeDirectoryMissing_ThrowsArchiveUnavailable() {
-    // Arrange
-    SetupTree(_commit, new GitTreeEntry("manifest.json", 100644, AddBlob("{}")));
-    ArchiveProvider provider = CreateProvider();
+    _git.Setup(c => c.ListTree(It.IsAny<Url>(), It.IsAny<string>()))
+        .ThrowsAsync(new GitProtocolException("not our ref"));
 
     // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => provider.Open(Ref.Parse("./missing/"), OpenGitBase(provider)));
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
+        "k", new GitArchiveIdentity(_repoUrl, _commit)));
   }
 
-  [Fact]
-  public async Task Open_RelativeZipInGit_OpensZipByContentWithoutCachingIt() {
-    // Arrange
-    byte[] zip = Zip(("manifest.json", "inner"), ("dir/", null));
-    string zipOid = AddBlob(zip);
-    SetupTree(_commit,
-        new GitTreeEntry("manifest.json", 100644, AddBlob("root")),
-        new GitTreeEntry("dist/pkg.bin", 100644, zipOid));
-    ArchiveProvider provider = CreateProvider();
-
-    // Act
-    ArchiveHandle archive = await provider.Open(Ref.Parse("./dist/pkg.bin"), OpenGitBase(provider));
-
-    // Assert
-    Assert.Equal($"{_spec}@1.0.0!dist/pkg.bin", archive.Key);
-    Assert.Equal(new ZipArchiveIdentity(Sha256(zip), null), archive.Identity);
-    Assert.Equal("inner", await Read(archive, "manifest.json"));
-    Assert.Equal(
-        [CacheKeys.GitBlob(zipOid)],
-        _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName));
-  }
-
-  [Fact]
-  public async Task OpenLocked_NestedZip_ThrowsArchiveUnavailableToReopenItsParent() {
-    // Arrange
-    byte[] zip = Zip(("manifest.json", "inner"));
-    SetupTree(_commit, new GitTreeEntry("pkg.mcmod", 100644, AddBlob(zip)));
-    ArchiveProvider provider = CreateProvider();
-    ArchiveHandle archive = await provider.Open(Ref.Parse("./pkg.mcmod"), OpenGitBase(provider));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => provider.OpenLocked(archive.Key, archive.Identity));
-  }
-
-  [Fact]
-  public async Task Open_RelativeFileNotZip_ThrowsArchiveUnavailable() {
-    // Arrange
-    SetupTree(_commit, new GitTreeEntry("pkg.mcmod", 100644, AddBlob("not a zip")));
-    ArchiveProvider provider = CreateProvider();
-
-    // Act
-    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => provider.Open(Ref.Parse("./pkg.mcmod"), OpenGitBase(provider)));
-
-    // Assert
-    Assert.Contains("not a ZIP archive", ex.Message);
-  }
-
-  [Theory]
-  [InlineData("missing.mcmod", "does not exist")]
-  [InlineData("lua", "is a directory")]
-  public async Task Open_RelativeFileUnavailable_ThrowsWithReason(string path, string reason) {
-    // Arrange
-    SetupTree(_commit, new GitTreeEntry("lua/manifest.json", 100644, AddBlob("{}")));
-    ArchiveProvider provider = CreateProvider();
-
-    // Act
-    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => provider.Open(Ref.Parse("./" + path), OpenGitBase(provider)));
-
-    // Assert
-    Assert.Contains(reason, ex.Message);
-  }
-
-  [Fact]
-  public async Task Open_RelativeDirectoryInZip_OpensPrefixViewAndReopensLocked() {
-    // Arrange
-    byte[] zip = Zip(
-        ("manifest.json", "root"), ("a/manifest.json", "a"), ("a/b/manifest.json", "b"));
-    _downloads[_url] = zip;
-    ArchiveProvider provider = CreateProvider();
-    ArchiveHandle baseArchive = await provider.Open(Ref.Parse(_url), null!);
-
-    // Act
-    ArchiveHandle a = await provider.Open(Ref.Parse("./a/"), baseArchive);
-    ArchiveHandle b = await provider.Open(Ref.Parse("./b/"), a);
-    ArchiveHandle locked = await provider.OpenLocked(b.Key, b.Identity);
-
-    // Assert
-    Assert.Equal($"{_url}!a/!b/", b.Key);
-    Assert.Equal(new ZipArchiveIdentity(Sha256(zip), _url) { Path = "a/b" }, b.Identity);
-    Assert.Equal(["b/manifest.json", "manifest.json"], a.Source.Keys.Order(StringComparer.Ordinal));
-    Assert.Equal("b", await Read(b, "manifest.json"));
-    Assert.Equal("b", await Read(locked, "manifest.json"));
-  }
+  // URLs (protocol/package.md §2.2) and ZIP validation (protocol/package.md §1).
 
   [Theory]
   [InlineData("../evil.txt", 0)]
@@ -479,11 +457,29 @@ public class ArchiveProviderTests {
   [InlineData("link", unchecked((int)0xA1FF0000))]
   public async Task Open_ZipWithInvalidEntry_ThrowsArchiveUnavailable(string name, int attributes) {
     // Arrange
-    _downloads[_url] = Zip(("manifest.json", "{}", 0), (name, "x", attributes));
+    _downloads[_url] = Zip(("tooth.json", "{}", 0), (name, "x", attributes));
 
     // Act
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().Open(Ref.Parse(_url), null!));
+        () => CreateProvider().Open(Ref.Parse(_url)));
+
+    // Assert
+    Assert.Contains("not a valid archive", ex.Message);
+  }
+
+  [Theory]
+  [InlineData("../evil.txt", 0)]
+  [InlineData("a\\b.txt", 0)]
+  [InlineData("link", unchecked((int)0xA1FF0000))]
+  public async Task Open_LocalZipWithInvalidEntry_ThrowsArchiveUnavailable(
+      string name, int attributes) {
+    // Arrange
+    string path = Path.Combine(_workspace, "pkg.zip");
+    _fileSystem.AddFile(path, new MockFileData(Zip(("tooth.json", "{}", 0), (name, "x", attributes))));
+
+    // Act
+    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().Open(Ref.FromFile(path)));
 
     // Assert
     Assert.Contains("not a valid archive", ex.Message);
@@ -493,24 +489,24 @@ public class ArchiveProviderTests {
   public async Task Open_ZipWithUnixRegularFiles_Succeeds() {
     // Arrange
     _downloads[_url] = Zip(
-        ("manifest.json", "{}", unchecked((int)0x81A40000)), ("dir/", null, 0x41ED0000));
+        ("tooth.json", "{}", unchecked((int)0x81A40000)), ("dir/", null, 0x41ED0000));
 
     // Act
-    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url), null!);
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url));
 
     // Assert
-    Assert.Equal(["manifest.json"], archive.Source.Keys);
+    Assert.Equal(["tooth.json"], archive.Source.Keys);
   }
 
   [Fact]
   public async Task Open_Url_DownloadsOnceAndIdentifiesBySha256() {
     // Arrange
-    byte[] zip = Zip(("manifest.json", "{}"));
+    byte[] zip = Zip(("tooth.json", "{}"));
     _downloads[_url] = zip;
 
     // Act
-    ArchiveHandle first = await CreateProvider().Open(Ref.Parse(_url + "#variant"), null!);
-    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(_url), null!);
+    ArchiveHandle first = await CreateProvider().Open(Ref.Parse(_url + "#variant"));
+    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(_url));
 
     // Assert
     Assert.Equal(_url, first.Key);
@@ -522,64 +518,73 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task Open_Url_CachesOnlyUnderHttpKeyOfUrl() {
     // Arrange
-    _downloads[_url] = Zip(("manifest.json", "{}"));
+    _downloads[_url] = Zip(("tooth.json", "{}"));
 
     // Act
-    await CreateProvider().Open(Ref.Parse(_url), null!);
+    await CreateProvider().Open(Ref.Parse(_url));
 
     // Assert
-    Assert.Equal(
-        [CacheKeys.Http(_url)],
-        _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName));
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
     Assert.Empty(_fileSystem.Directory.GetFiles(LipDirectories.Staging));
+  }
+
+  [Fact]
+  public async Task Open_UrlNotAZip_ThrowsArchiveUnavailableAndCachesNothing() {
+    // Arrange
+    _downloads[_url] = Encoding.UTF8.GetBytes("<html>not found</html>");
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().Open(Ref.Parse(_url)));
+    Assert.Empty(CachedFiles());
   }
 
   [Fact]
   public async Task Open_CachedUrlCorrupted_Redownloads() {
     // Arrange
-    byte[] zip = Zip(("manifest.json", "{}"));
+    byte[] zip = Zip(("tooth.json", "{}"));
     _downloads[_url] = zip;
     _fileSystem.AddFile(
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
 
     // Act
-    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url), null!);
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url));
 
     // Assert
     Assert.Equal(new ZipArchiveIdentity(Sha256(zip), _url), archive.Identity);
-    Assert.Equal("{}", await Read(archive, "manifest.json"));
+    Assert.Equal("{}", await Read(archive, "tooth.json"));
   }
 
   [Fact]
   public async Task Open_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
     // Arrange
-    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.mcmod";
-    _downloads[githubUrl] = Zip(("manifest.json", "{}"));
+    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.zip";
+    _downloads[githubUrl] = Zip(("tooth.json", "{}"));
 
     // Act
     ArchiveHandle archive = await CreateProvider(new Url("https://proxy.example.com"))
-        .Open(Ref.Parse(githubUrl), null!);
+        .Open(Ref.Parse(githubUrl));
 
     // Assert
     Assert.Equal(githubUrl, archive.Key);
     _downloader.Verify(d => d.DownloadFile(
         It.Is<Url>(u => u.ToString() ==
-            "https://proxy.example.com/owner/repo/releases/download/v1.0.0/pkg.mcmod"),
+            "https://proxy.example.com/owner/repo/releases/download/v1.0.0/pkg.zip"),
         It.IsAny<IFileInfo>()), Times.Once);
   }
 
   [Fact]
   public async Task Open_GitHubUrlProxyReturnsNonZip_FallsBackToOriginal() {
     // Arrange
-    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.mcmod";
-    byte[] zip = Zip(("manifest.json", "{}"));
-    _downloads["https://proxy.example.com/owner/repo/releases/download/v1.0.0/pkg.mcmod"] =
+    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.zip";
+    byte[] zip = Zip(("tooth.json", "{}"));
+    _downloads["https://proxy.example.com/owner/repo/releases/download/v1.0.0/pkg.zip"] =
         Encoding.UTF8.GetBytes("<html>rate limited</html>");
     _downloads[githubUrl] = zip;
 
     // Act
     ArchiveHandle archive = await CreateProvider(new Url("https://proxy.example.com"))
-        .Open(Ref.Parse(githubUrl), null!);
+        .Open(Ref.Parse(githubUrl));
 
     // Assert
     Assert.Equal(new ZipArchiveIdentity(Sha256(zip), githubUrl), archive.Identity);
@@ -589,11 +594,11 @@ public class ArchiveProviderTests {
   public async Task Open_UrlLongerThanFileNames_DownloadsOnce() {
     // Arrange
     string url = _url + "?token=" + new string('x', 400);
-    _downloads[url] = Zip(("manifest.json", "{}"));
+    _downloads[url] = Zip(("tooth.json", "{}"));
 
     // Act
-    ArchiveHandle first = await CreateProvider().Open(Ref.Parse(url), null!);
-    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(url), null!);
+    ArchiveHandle first = await CreateProvider().Open(Ref.Parse(url));
+    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(url));
 
     // Assert
     Assert.Equal(first.Identity, second.Identity);
@@ -601,9 +606,19 @@ public class ArchiveProviderTests {
   }
 
   [Fact]
+  public async Task Open_UrlDownloadFails_ThrowsArchiveUnavailable() {
+    // Act
+    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().Open(Ref.Parse(_url)));
+
+    // Assert
+    Assert.Contains("download failed", ex.Message);
+  }
+
+  [Fact]
   public async Task OpenLocked_CachedZipCorrupted_RedownloadsAndReplacesIt() {
     // Arrange
-    byte[] zip = Zip(("manifest.json", "{}"));
+    byte[] zip = Zip(("tooth.json", "{}"));
     _downloads[_url] = zip;
     ZipArchiveIdentity identity = new(Sha256(zip), _url);
     await CreateProvider().OpenLocked(_url, identity);
@@ -614,52 +629,32 @@ public class ArchiveProviderTests {
     ArchiveHandle archive = await CreateProvider().OpenLocked(_url, identity);
 
     // Assert
-    Assert.Equal("{}", await Read(archive, "manifest.json"));
+    Assert.Equal("{}", await Read(archive, "tooth.json"));
     Assert.Equal(zip, _fileSystem.File.ReadAllBytes(cached.FullName));
   }
 
   [Fact]
   public async Task OpenLocked_CachedZipOtherContent_RedownloadsAndVerifiesHash() {
-    // Arrange: the cached copy is a valid ZIP, but not the one the lock records.
-    byte[] zip = Zip(("manifest.json", "locked"));
+    // Arrange: the cached copy is a valid ZIP, but not the one the workspace file records.
+    byte[] zip = Zip(("tooth.json", "locked"));
     _downloads[_url] = zip;
     _fileSystem.AddFile(
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)),
-        new MockFileData(Zip(("manifest.json", "other"))));
+        new MockFileData(Zip(("tooth.json", "other"))));
 
     // Act
     ArchiveHandle archive = await CreateProvider().OpenLocked(
         _url, new ZipArchiveIdentity(Sha256(zip), _url));
 
     // Assert
-    Assert.Equal("locked", await Read(archive, "manifest.json"));
+    Assert.Equal("locked", await Read(archive, "tooth.json"));
     _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
-  }
-
-  [Fact]
-  public async Task OpenLocked_GitPathMissing_ThrowsArchiveUnavailable() {
-    // Arrange
-    SetupTree(_commit, new GitTreeEntry("manifest.json", 100644, AddBlob("{}")));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
-        "k", new GitArchiveIdentity(_repoUrl, _commit, "missing")));
-  }
-
-  [Fact]
-  public async Task Open_UrlDownloadFails_ThrowsArchiveUnavailable() {
-    // Act
-    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().Open(Ref.Parse(_url), null!));
-
-    // Assert
-    Assert.Contains("download failed", ex.Message);
   }
 
   [Fact]
   public async Task OpenLocked_ZipNotCached_RedownloadsAndVerifiesHash() {
     // Arrange
-    byte[] zip = Zip(("manifest.json", "{}"));
+    byte[] zip = Zip(("tooth.json", "{}"));
     _downloads[_url] = zip;
 
     // Act
@@ -667,52 +662,113 @@ public class ArchiveProviderTests {
         _url, new ZipArchiveIdentity(Sha256(zip).ToUpperInvariant(), _url));
 
     // Assert
-    Assert.Equal("{}", await Read(archive, "manifest.json"));
+    Assert.Equal("{}", await Read(archive, "tooth.json"));
   }
 
   [Fact]
   public async Task OpenLocked_ZipHashMismatch_ThrowsArchiveUnavailable() {
     // Arrange
-    _downloads[_url] = Zip(("manifest.json", "changed"));
+    _downloads[_url] = Zip(("tooth.json", "changed"));
 
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
         _url, new ZipArchiveIdentity(new string('0', 64), _url)));
   }
 
-  [Fact]
-  public async Task OpenLocked_ZipNotCachedWithoutUrl_ThrowsArchiveUnavailable() {
-    // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
-        "x!pkg.mcmod", new ZipArchiveIdentity(new string('0', 64), null)));
-  }
+  // Assets (protocol/workspace.md §4 step 2).
 
   [Fact]
-  public async Task OpenLocked_GitCommitUnavailable_ThrowsArchiveUnavailable() {
+  public async Task OpenAsset_Zip_ReturnsFilesAndIdentifier() {
     // Arrange
-    _git.Setup(c => c.ListTree(It.IsAny<Url>(), It.IsAny<string>()))
-        .ThrowsAsync(new GitProtocolException("not our ref"));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<ArchiveUnavailableException>(() => CreateProvider().OpenLocked(
-        "k", new GitArchiveIdentity(_repoUrl, _commit, "")));
-  }
-
-  [Fact]
-  public async Task OpenAsset_Zip_IsNotValidatedLikeUrlArchives() {
-    // Arrange
-    _downloads[_url] = Zip(("dir\\a.dll", "a"), ("b.txt", "b"));
+    byte[] zip = Zip(("a.dll", "a"), ("lang/en.json", "{}"));
+    _downloads[_url] = zip;
 
     // Act
-    ISource source = await CreateProvider().OpenAsset([_url], isArchive: true);
+    OpenedAsset asset = await CreateProvider().OpenAsset([_url], AssetFormat.Zip);
 
     // Assert
-    Assert.Equal(["dir\\a.dll", "b.txt"], source.Keys);
-    Assert.Equal("a", await Read(source, "dir\\a.dll"));
+    Assert.Equal(new AssetIdentity(_url, Sha256(zip)), asset.Identity);
+    Assert.Equal(["a.dll", "lang/en.json"], asset.Source.Keys.Order(StringComparer.Ordinal));
+    Assert.Equal("a", await Read(asset.Source, "a.dll"));
+  }
+
+  [Theory]
+  [InlineData("dir\\a.dll", 0)]
+  [InlineData("../a.dll", 0)]
+  [InlineData("link", unchecked((int)0xA1FF0000))]
+  public async Task OpenAsset_ZipWithInvalidEntry_ThrowsArchiveUnavailable(
+      string name, int attributes) {
+    // Arrange
+    _downloads[_url] = Zip((name, "a", attributes), ("b.txt", "b", 0));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenAsset([_url], AssetFormat.Zip));
   }
 
   [Fact]
-  public async Task OpenAsset_Tgz_OpensItsFiles() {
+  public async Task OpenAsset_ZipNotAZip_TriesTheNextUrl() {
+    // Arrange
+    const string mirror = "https://mirror.example.com/pkg.zip";
+    byte[] zip = Zip(("a.txt", "a"));
+    _downloads[_url] = Encoding.UTF8.GetBytes("<html>gone</html>");
+    _downloads[mirror] = zip;
+
+    // Act
+    OpenedAsset asset = await CreateProvider().OpenAsset([_url, mirror], AssetFormat.Zip);
+
+    // Assert
+    Assert.Equal(new AssetIdentity(mirror, Sha256(zip)), asset.Identity);
+    Assert.Equal([CacheKeys.Http(mirror)], CachedFiles());
+  }
+
+  [Theory]
+  [InlineData("http://example.com/pkg.zip")]
+  [InlineData("ftp://example.com/pkg.zip")]
+  public async Task OpenAsset_ZipNotHttps_IsNotDownloaded(string url) {
+    // Arrange
+    _downloads[url] = Zip(("a.txt", "a"));
+
+    // Act & Assert
+    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenAsset([url], AssetFormat.Zip));
+    Assert.Contains("not an https URL", ex.Message);
+    _downloader.VerifyNoOtherCalls();
+  }
+
+  [Fact]
+  public async Task OpenAsset_ZipFirstUrlNotHttps_UsesTheNext() {
+    // Arrange
+    const string http = "http://example.com/pkg.zip";
+    byte[] zip = Zip(("a.txt", "a"));
+    _downloads[http] = Zip(("other.txt", "x"));
+    _downloads[_url] = zip;
+
+    // Act
+    OpenedAsset asset = await CreateProvider().OpenAsset([http, _url], AssetFormat.Zip);
+
+    // Assert
+    Assert.Equal(new AssetIdentity(_url, Sha256(zip)), asset.Identity);
+    _downloader.Verify(d => d.DownloadFile(
+        It.Is<Url>(u => u.ToString() == http), It.IsAny<IFileInfo>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task OpenAsset_LegacyArchive_IsNotValidatedLikeZipArchives() {
+    // Arrange: format 3 assets are read as lip v0.37.0 read them.
+    const string http = "http://example.com/pkg.zip";
+    _downloads[http] = Zip(("dir\\a.dll", "a"), ("b.txt", "b"));
+
+    // Act
+    OpenedAsset asset = await CreateProvider().OpenAsset([http], AssetFormat.LegacyArchive);
+
+    // Assert
+    Assert.Equal(["dir\\a.dll", "b.txt"], asset.Source.Keys);
+    Assert.Equal("a", await Read(asset.Source, "dir\\a.dll"));
+  }
+
+  [Fact]
+  public async Task OpenAsset_LegacyTgz_OpensItsFiles() {
     // Arrange
     using MemoryStream tgz = new();
     using (GZipStream gzip = new(tgz, CompressionMode.Compress, leaveOpen: true))
@@ -726,24 +782,45 @@ public class ArchiveProviderTests {
     _downloads[_url] = tgz.ToArray();
 
     // Act
-    ISource source = await CreateProvider().OpenAsset([_url], isArchive: true);
+    OpenedAsset asset = await CreateProvider().OpenAsset([_url], AssetFormat.LegacyArchive);
 
     // Assert
-    Assert.Equal(["bdsdown"], source.Keys);
-    Assert.Equal("elf", await Read(source, "bdsdown"));
+    Assert.Equal(["bdsdown"], asset.Source.Keys);
+    Assert.Equal("elf", await Read(asset.Source, "bdsdown"));
   }
 
   [Fact]
-  public async Task OpenAsset_Uncompressed_IsOneFileWithEmptyKey() {
+  public async Task OpenAsset_TgzAsZip_ThrowsArchiveUnavailable() {
     // Arrange
-    _downloads[_url] = Encoding.UTF8.GetBytes("not a zip");
+    using MemoryStream tgz = new();
+    using (GZipStream gzip = new(tgz, CompressionMode.Compress, leaveOpen: true))
+    using (TarWriter tar = new(gzip)) {
+      TarEntry entry = new UstarTarEntry(TarEntryType.RegularFile, "a") {
+        DataStream = new MemoryStream(Encoding.UTF8.GetBytes("a")),
+      };
+      await tar.WriteEntryAsync(entry, TestContext.Current.CancellationToken);
+    }
+
+    _downloads[_url] = tgz.ToArray();
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenAsset([_url], AssetFormat.Zip));
+  }
+
+  [Fact]
+  public async Task OpenAsset_LegacyFile_IsOneFileWithEmptyKey() {
+    // Arrange
+    byte[] content = Encoding.UTF8.GetBytes("not a zip");
+    _downloads[_url] = content;
 
     // Act
-    ISource source = await CreateProvider().OpenAsset([_url], isArchive: false);
+    OpenedAsset asset = await CreateProvider().OpenAsset([_url], AssetFormat.LegacyFile);
 
     // Assert
-    Assert.Equal([""], source.Keys);
-    Assert.Equal("not a zip", await Read(source, ""));
+    Assert.Equal([""], asset.Source.Keys);
+    Assert.Equal("not a zip", await Read(asset.Source, ""));
+    Assert.Equal(new AssetIdentity(_url, Sha256(content)), asset.Identity);
   }
 
   [Fact]
@@ -753,17 +830,32 @@ public class ArchiveProviderTests {
     _downloads[mirror] = Zip(("a.txt", "a"));
 
     // Act
-    ISource first = await CreateProvider().OpenAsset([_url, mirror], isArchive: true);
-    ISource second = await CreateProvider().OpenAsset([mirror], isArchive: true);
+    OpenedAsset first = await CreateProvider().OpenAsset([_url, mirror], AssetFormat.Zip);
+    OpenedAsset second = await CreateProvider().OpenAsset([mirror], AssetFormat.Zip);
 
     // Assert
-    Assert.Equal(["a.txt"], first.Keys);
-    Assert.Equal(["a.txt"], second.Keys);
-    Assert.Equal(
-        [CacheKeys.Http(mirror)],
-        _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName));
+    Assert.Equal(mirror, first.Identity.Url);
+    Assert.Equal(["a.txt"], first.Source.Keys);
+    Assert.Equal(["a.txt"], second.Source.Keys);
+    Assert.Equal([CacheKeys.Http(mirror)], CachedFiles());
     _downloader.Verify(d => d.DownloadFile(
         It.Is<Url>(u => u.ToString() == mirror), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task OpenAsset_FirstUrlWorks_DoesNotTryTheOthers() {
+    // Arrange
+    const string mirror = "https://mirror.example.com/pkg.zip";
+    _downloads[_url] = Zip(("a.txt", "a"));
+    _downloads[mirror] = Zip(("b.txt", "b"));
+
+    // Act
+    OpenedAsset asset = await CreateProvider().OpenAsset([_url, mirror], AssetFormat.Zip);
+
+    // Assert
+    Assert.Equal(_url, asset.Identity.Url);
+    _downloader.Verify(d => d.DownloadFile(
+        It.Is<Url>(u => u.ToString() == mirror), It.IsAny<IFileInfo>()), Times.Never);
   }
 
   [Fact]
@@ -773,11 +865,12 @@ public class ArchiveProviderTests {
     _downloads[githubUrl] = Zip(("a.txt", "a"));
 
     // Act
-    ISource source = await CreateProvider(new Url("https://proxy.example.com"))
-        .OpenAsset([githubUrl], isArchive: true);
+    OpenedAsset asset = await CreateProvider(new Url("https://proxy.example.com"))
+        .OpenAsset([githubUrl], AssetFormat.Zip);
 
     // Assert
-    Assert.Equal(["a.txt"], source.Keys);
+    Assert.Equal(["a.txt"], asset.Source.Keys);
+    Assert.Equal(githubUrl, asset.Identity.Url);
     _downloader.Verify(d => d.DownloadFile(
         It.Is<Url>(u => u.ToString() ==
             "https://proxy.example.com/owner/repo/releases/download/v1.0.0/a.zip"),
@@ -793,11 +886,11 @@ public class ArchiveProviderTests {
     _downloads[githubUrl] = Zip(("a.txt", "a"));
 
     // Act
-    ISource source = await CreateProvider(new Url("https://proxy.example.com"))
-        .OpenAsset([githubUrl], isArchive: true);
+    OpenedAsset asset = await CreateProvider(new Url("https://proxy.example.com"))
+        .OpenAsset([githubUrl], AssetFormat.Zip);
 
     // Assert
-    Assert.Equal(["a.txt"], source.Keys);
+    Assert.Equal(["a.txt"], asset.Source.Keys);
   }
 
   [Fact]
@@ -808,10 +901,10 @@ public class ArchiveProviderTests {
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
 
     // Act
-    ISource source = await CreateProvider().OpenAsset([_url], isArchive: true);
+    OpenedAsset asset = await CreateProvider().OpenAsset([_url], AssetFormat.Zip);
 
     // Assert
-    Assert.Equal(["a.txt"], source.Keys);
+    Assert.Equal(["a.txt"], asset.Source.Keys);
   }
 
   [Fact]
@@ -820,7 +913,7 @@ public class ArchiveProviderTests {
     _downloads[_url] = Zip(("a.txt", "a"));
 
     // Act
-    await CreateProvider(new Url("https://proxy.example.com")).OpenAsset([_url], isArchive: true);
+    await CreateProvider(new Url("https://proxy.example.com")).OpenAsset([_url], AssetFormat.Zip);
 
     // Assert
     _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
@@ -832,13 +925,69 @@ public class ArchiveProviderTests {
   public async Task OpenAsset_EveryUrlFails_ThrowsArchiveUnavailable() {
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().OpenAsset([_url], isArchive: true));
+        () => CreateProvider().OpenAsset([_url], AssetFormat.Zip));
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().OpenAsset([], isArchive: true));
+        () => CreateProvider().OpenAsset([], AssetFormat.Zip));
   }
 
-  private static async Task<string> Read(ISource source, string key) {
-    using StreamReader reader = new(await source.OpenRead(key));
-    return await reader.ReadToEndAsync();
+  [Fact]
+  public async Task OpenLockedAsset_Cached_ReturnsItWithoutDownloading() {
+    // Arrange
+    byte[] zip = Zip(("a.txt", "a"));
+    _downloads[_url] = zip;
+    await CreateProvider().OpenAsset([_url], AssetFormat.Zip);
+
+    // Act
+    ISource source = await CreateProvider().OpenLockedAsset(
+        new AssetIdentity(_url, Sha256(zip).ToUpperInvariant()), AssetFormat.Zip);
+
+    // Assert
+    Assert.Equal("a", await Read(source, "a.txt"));
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task OpenLockedAsset_CachedOtherContent_RedownloadsAndVerifiesHash() {
+    // Arrange
+    byte[] zip = Zip(("a.txt", "locked"));
+    _downloads[_url] = zip;
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)),
+        new MockFileData(Zip(("a.txt", "other"))));
+
+    // Act
+    ISource source = await CreateProvider().OpenLockedAsset(
+        new AssetIdentity(_url, Sha256(zip)), AssetFormat.Zip);
+
+    // Assert
+    Assert.Equal("locked", await Read(source, "a.txt"));
+  }
+
+  [Fact]
+  public async Task OpenLockedAsset_UrlServesOtherContent_ThrowsArchiveUnavailable() {
+    // Arrange
+    _downloads[_url] = Zip(("a.txt", "changed"));
+
+    // Act
+    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenLockedAsset(
+            new AssetIdentity(_url, new string('0', 64)), AssetFormat.Zip));
+
+    // Assert
+    Assert.Contains(new string('0', 64), ex.Message);
+  }
+
+  [Fact]
+  public async Task OpenLockedAsset_LegacyFile_VerifiesHash() {
+    // Arrange
+    byte[] content = Encoding.UTF8.GetBytes("binary");
+    _downloads[_url] = content;
+
+    // Act
+    ISource source = await CreateProvider().OpenLockedAsset(
+        new AssetIdentity(_url, Sha256(content)), AssetFormat.LegacyFile);
+
+    // Assert
+    Assert.Equal("binary", await Read(source, ""));
   }
 }

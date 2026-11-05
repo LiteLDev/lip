@@ -1,61 +1,57 @@
 using System.Collections.Concurrent;
-using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
-using Lip.Core.Mcmod.Compat;
 using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
 
-/// Resolve(ref, base, range) (spec §5.2), with the tooth.json bridge of spec §10.2.
+/// Resolve(source, range, environment) (protocol/package.md §4), reading tooth files of earlier
+/// formats as Section 5 does.
 ///
-/// One instance caches archives, spec version lists and documents by archive key, so a ref
-/// reached on several paths (or resolved again by the graph solver) is fetched and read once.
+/// One instance caches archives, version lists and tooth files by archive key, so a source reached
+/// on several paths (or resolved again by the graph solver) is fetched and read once.
 ///
-/// A tooth.json at a tag that declares another version than the tag is a candidate with the tag
-/// version, as in lip v3; onWarning is told once per archive. A spec ref pinned by a git ref
-/// (@branch:, @tag:, @rev:) has the single archive of the commit it resolves to; only a tag named
-/// "v" + SemVer gives it a tag version.
+/// A remote repository with a ref (@branch:, @tag:, @rev:, @version) has the single archive of the
+/// commit it resolves to; only a tag "v" + version gives it a tag version. The git archive must be
+/// a package whose tooth path equals the repository, and, for format 4, whose version equals its
+/// tag version; the version of a tooth file of format 3 is its tag version, whatever it declares
+/// (onWarning is told once per archive).
 public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
-    IToothCompat toothCompat,
     Action<string>? onWarning = null) : IResolver {
-  private const string _arrow = " → ";
-
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
-  private readonly IToothCompat _toothCompat = toothCompat;
   private readonly Action<string> _onWarning = onWarning ?? (_ => { });
   private readonly ConcurrentDictionary<string, byte> _warned = new();
 
   private readonly ConcurrentDictionary<string, Lazy<Task<ArchiveHandle>>> _archives = new();
   private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<SpecVersion>>>>
       _versions = new();
-  private readonly ConcurrentDictionary<string, Lazy<Task<ArchiveDocument>>> _documents = new();
+  private readonly ConcurrentDictionary<string, Lazy<Task<ToothDocument>>> _documents = new();
 
-  /// Commits of git refs ("spec@branch:name"), so that a branch resolves to one commit for the
-  /// whole operation.
+  /// Commits of refs ("spec@branch:name"), so that a branch resolves to one commit for the whole
+  /// operation.
   private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _commits = new();
 
   /// Makes a version ref resolve to the commit a workspace recorded for it, as updating it gives
-  /// the same commit even when its tag has moved since (spec §9, "Updating").
+  /// the same commit even when its tag has moved since (protocol/workspace.md §5, "Updating").
   public void PinCommit(Ref reference, string commit) {
     if (reference is { Kind: RefKind.Spec, GitRef: { Kind: GitRefKind.Version } gitRef }) {
       _commits.TryAdd(
-          $"{reference.Target}@{gitRef}", new(() => Task.FromResult(commit.ToLowerInvariant())));
+          $"{PackageNames.Fold(reference.Target)}@{gitRef}",
+          new(() => Task.FromResult(commit.ToLowerInvariant())));
     }
   }
 
   public async Task<ResolveResult> Resolve(
-      Ref reference,
-      ArchiveHandle? baseArchive,
+      Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
-      bool toothClientCompat = false) {
+      bool clientCompat = false) {
     List<Candidate> candidates = [];
     List<string> diagnostics = [];
     await foreach (Candidate candidate in ResolveLazy(
-        reference, baseArchive, range, environment, toothClientCompat, diagnostics.Add)) {
+        source, range, environment, clientCompat, diagnostics.Add)) {
       candidates.Add(candidate);
     }
 
@@ -63,56 +59,35 @@ public class Resolver(
   }
 
   public async IAsyncEnumerable<Candidate> ResolveLazy(
-      Ref reference,
-      ArchiveHandle? baseArchive,
+      Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
-      bool toothClientCompat = false,
+      bool clientCompat = false,
       Action<string>? onDiagnostic = null,
       [EnumeratorCancellation] CancellationToken cancellationToken = default) {
-    Walk walk = new(range, environment, onDiagnostic ?? (_ => { }), cancellationToken);
-    await foreach (Candidate candidate in ResolveRef(
-        walk, reference, baseArchive, toothClientCompat, ChainPath.Empty)) {
-      yield return candidate;
-    }
-  }
+    Walk walk = new(source, range, environment, clientCompat, onDiagnostic ?? (_ => { }));
 
-  /// Step 1: obtains the archive(s) a ref points to and resolves each of them.
-  private async IAsyncEnumerable<Candidate> ResolveRef(
-      Walk walk,
-      Ref reference,
-      ArchiveHandle? baseArchive,
-      bool toothClientCompat,
-      ChainPath path) {
-    walk.CancellationToken.ThrowIfCancellationRequested();
-    if (path.Hops.Count + 1 > ManifestFormat.MaxChainHops) {
-      walk.Report(path.Then(reference.ToString()),
-          $"the chain is longer than {ManifestFormat.MaxChainHops} hops");
-      yield break;
-    }
-
-    if (reference.Kind != RefKind.Spec) {
-      ChainPath refPath = path.Then(reference.ToString());
+    // Step 1: the archives the source names.
+    if (source.Kind != RefKind.Spec) {
       ArchiveHandle archive;
       try {
-        archive = await OpenArchive(reference, baseArchive);
+        archive = await Cached(
+            _archives, source.Target, () => _archiveProvider.Open(source.WithVariant("")));
       }
       catch (ArchiveUnavailableException ex) {
-        walk.Report(refPath, ex.Message);
+        walk.Report(source.ToString(), ex.Message);
         yield break;
       }
 
-      await foreach (Candidate candidate in ResolveArchive(
-          walk, reference, archive, tagVersion: null, toothClientCompat, path, refPath)) {
+      if (await ResolveArchive(walk, archive, tagVersion: null) is Candidate candidate) {
         yield return candidate;
       }
 
       yield break;
     }
 
-    if (reference.GitRef is GitRef gitRef) {
-      await foreach (Candidate candidate in ResolvePinned(
-          walk, reference, gitRef, toothClientCompat, path)) {
+    if (source.GitRef is GitRef gitRef) {
+      if (await ResolvePinned(walk, gitRef) is Candidate candidate) {
         yield return candidate;
       }
 
@@ -121,72 +96,64 @@ public class Resolver(
 
     IReadOnlyList<SpecVersion> versions;
     try {
-      versions = await ListVersions(reference.Target);
+      versions = await Cached(
+          _versions, source.Target, () => _archiveProvider.ListVersions(source.Target));
     }
     catch (ArchiveUnavailableException ex) {
-      walk.Report(path.Then(reference.ToString()), ex.Message);
+      walk.Report(source.ToString(), ex.Message);
       yield break;
     }
 
-    List<SpecVersion> matching = [
-      .. versions.Where(v => walk.Range?.IsSatisfiedBy(v.Version) ?? true),
-    ];
+    List<SpecVersion> matching = [.. versions.Where(v => range?.IsSatisfiedBy(v.Version) ?? true)];
     if (matching.Count == 0) {
-      walk.Report(path.Then(reference.ToString()), versions.Count == 0
-          ? "the repository has no v<SemVer> tags"
-          : $"no tag version satisfies {walk.Range}");
+      walk.Report(source.ToString(), versions.Count == 0
+          ? "the repository has no version tags"
+          : $"no tag version satisfies {range}");
       yield break;
     }
 
     foreach (SpecVersion version in matching) {
-      ChainPath refPath = path.Then($"{reference.Target}@{version.Tag}"
-          + (reference.Variant == "" ? "" : $"#{reference.Variant}"));
-      walk.CancellationToken.ThrowIfCancellationRequested();
+      cancellationToken.ThrowIfCancellationRequested();
       ArchiveHandle archive;
       try {
-        archive = await OpenVersion(reference.Target, version);
+        archive = await Cached(
+            _archives, $"{source.Target}@{version.Tag}",
+            () => _archiveProvider.OpenVersion(source.Target, version));
       }
       catch (ArchiveUnavailableException ex) {
-        walk.Report(refPath, ex.Message);
+        walk.Report($"{source.Target}@{version.Tag}", ex.Message);
         continue;
       }
 
-      await foreach (Candidate candidate in ResolveArchive(
-          walk, reference, archive, version.Version, toothClientCompat, path, refPath)) {
+      if (await ResolveArchive(walk, archive, version.Version) is Candidate candidate) {
         yield return candidate;
       }
     }
   }
 
-  /// Step 1 for a spec ref pinned by a git ref (spec §3): the single archive of the commit the
-  /// git ref resolves to. Only a tag named "v" + SemVer has a tag version (§4.3, §10.2 rule 1).
-  private async IAsyncEnumerable<Candidate> ResolvePinned(
-      Walk walk,
-      Ref reference,
-      GitRef gitRef,
-      bool toothClientCompat,
-      ChainPath path) {
-    ChainPath refPath = path.Then(reference.ToString());
+  /// Step 1 for a remote repository with a ref (protocol/package.md §2.1): the single archive of
+  /// the commit the ref selects. Only a version tag gives it a tag version.
+  private async Task<Candidate?> ResolvePinned(Walk walk, GitRef gitRef) {
+    Ref source = walk.Source;
     ArchiveHandle archive;
     try {
       string commit = await Cached(
-          _commits, $"{reference.Target}@{gitRef}",
-          () => _archiveProvider.ResolveGitRef(reference.Target, gitRef));
+          _commits, $"{PackageNames.Fold(source.Target)}@{gitRef}",
+          () => _archiveProvider.ResolveGitRef(source.Target, gitRef));
       // The archive of a version ref is named like that of the same version without a ref.
       archive = gitRef.Kind == GitRefKind.Version
           ? await Cached(
-              _archives, $"{reference.Target}@{gitRef} {commit}",
+              _archives, $"{source.Target}@{gitRef} {commit}",
               () => _archiveProvider.OpenLocked(
-                  $"{reference.Target}@{gitRef}",
-                  new GitArchiveIdentity(
-                      ArchiveProvider.GetRepoUrl(reference.Target), commit, "")))
+                  $"{source.Target}@{gitRef}",
+                  new GitArchiveIdentity(ArchiveProvider.GetRepoUrl(source.Target), commit)))
           : await Cached(
-              _archives, $"{reference.Target}@rev:{commit}",
-              () => _archiveProvider.OpenCommit(reference.Target, commit));
+              _archives, $"{source.Target}@rev:{commit}",
+              () => _archiveProvider.OpenCommit(source.Target, commit));
     }
     catch (ArchiveUnavailableException ex) {
-      walk.Report(refPath, ex.Message);
-      yield break;
+      walk.Report(source.ToString(), ex.Message);
+      return null;
     }
 
     SemVersion? tagVersion = gitRef.Kind switch {
@@ -194,227 +161,79 @@ public class Resolver(
       GitRefKind.Tag => ArchiveProvider.ParseVersionTag($"refs/tags/{gitRef.Name}"),
       _ => null,
     };
-    await foreach (Candidate candidate in ResolveArchive(
-        walk, reference, archive, tagVersion, toothClientCompat, path, refPath)) {
-      yield return candidate;
-    }
+    return await ResolveArchive(walk, archive, tagVersion);
   }
 
-  /// Steps 2–4 for one archive. path holds the hops before this ref; refPath the
-  /// diagnostic path including it.
-  private async IAsyncEnumerable<Candidate> ResolveArchive(
-      Walk walk,
-      Ref reference,
-      ArchiveHandle archive,
-      SemVersion? tagVersion,
-      bool toothClientCompat,
-      ChainPath path,
-      ChainPath refPath) {
-    ArchiveDocument document;
+  /// Step 2 for one archive: the candidate of the package, or null.
+  private async Task<Candidate?> ResolveArchive(
+      Walk walk, ArchiveHandle archive, SemVersion? tagVersion) {
+    Ref source = walk.Source;
+    ToothDocument document;
     try {
-      document = await ReadDocument(archive);
+      document = await Cached(_documents, archive.Key, () => _archiveReader.Read(archive));
     }
     catch (ArchiveUnavailableException ex) {
-      walk.Report(refPath, ex.Message);
-      yield break;
+      walk.Report(archive.Key, ex.Message);
+      return null;
     }
 
-    // §10.2 rule 3: a tooth.json dependency labelled "client" means the default variant of an
-    // archive that uses manifest.json.
-    string variant = reference.Variant;
-    if (toothClientCompat && variant == "client"
-        && document is MetaArchiveDocument or PackageArchiveDocument) {
+    // protocol/package.md §2.1: the git archive of a remote repository is a package of its own
+    // tooth path, whose version is the tag version, if any.
+    if (source.Kind == RefKind.Spec && !PackageNames.AreEqual(document.Tooth, source.Target)) {
+      walk.Report(archive.Key,
+          $"its tooth.json declares the tooth path {document.Tooth}, not {source.Target}");
+      return null;
+    }
+
+    SemVersion version = document.Version;
+    if (tagVersion is not null && !version.Equals(tagVersion)) {
+      if (!document.IsLegacy) {
+        walk.Report(archive.Key,
+            $"its tooth.json declares the version {version}, not the tag version {tagVersion}");
+        return null;
+      }
+
+      // protocol/package.md §5: the version of a format 3 package is its tag version.
+      if (SemVersion.PrecedenceComparer.Compare(version, tagVersion) != 0
+          && _warned.TryAdd(archive.Key, 0)) {
+        _onWarning($"{archive.Key}: tooth.json declares version {version}; "
+            + $"using the tag version {tagVersion}.");
+      }
+
+      version = tagVersion;
+    }
+
+    ToothFile tooth;
+    try {
+      tooth = document.ReadFor(walk.Environment);
+    }
+    catch (ToothFormatException ex) {
+      walk.Report(archive.Key, ex.Message);
+      return null;
+    }
+
+    // protocol/package.md §5: a dependency of format 3 on the variant "client" of a package of
+    // format 4 names its variant "".
+    string variant = source.Variant;
+    if (walk.ClientCompat && variant == Compat.ToothCompat.ClientLabel && !document.IsLegacy) {
       variant = "";
     }
 
-    // The chain records the ref as it was resolved, so that it reproduces the resolution.
-    Ref hopRef = variant == reference.Variant ? reference : reference.WithVariant(variant);
-
-    if (path.Visited.Contains((archive.Key, variant))) {
-      walk.Report(refPath, $"cycle: ({archive.Key}, \"{variant}\") already appears in the chain");
-      yield break;
+    ToothEntry? entry = tooth.SelectEntry(variant, walk.Environment);
+    if (entry is null) {
+      walk.Report(archive.Key, $"tooth.json has no entry of the variant \"{variant}\" for "
+          + $"({walk.Environment.Platform.ToSpecString()}, {walk.Environment.Runtime})");
+      return null;
     }
 
-    // §4.3: a document at the root of a tag must carry the tag's version, if any.
-    SemVersion? documentVersion = document switch {
-      MetaArchiveDocument meta => meta.Document.Version,
-      PackageArchiveDocument package => package.Document.Version,
-      _ => null,
-    };
-    if (tagVersion is not null && documentVersion is not null
-        && !documentVersion.Equals(tagVersion)) {
-      walk.Report(refPath,
-          $"the document version {documentVersion} differs from the tag version {tagVersion}");
-      yield break;
+    if (walk.Range is not null && !walk.Range.IsSatisfiedBy(version)) {
+      walk.Report(archive.Key, $"version {version} does not satisfy {walk.Range}");
+      return null;
     }
 
-    ImmutableHashSet<(string, string)> visited = path.Visited.Add((archive.Key, variant));
-
-    // The lock records the commit of every spec hop (spec §9).
-    string? commit = reference.Kind == RefKind.Spec && archive.Identity is GitArchiveIdentity git
-        ? git.Commit
-        : null;
-
-    switch (document) {
-      case MetaArchiveDocument meta: {
-          await foreach (Candidate candidate in ResolveMeta(
-              walk, hopRef, meta.Document, variant, archive, commit, path, refPath, visited)) {
-            yield return candidate;
-          }
-
-          break;
-        }
-
-      case PackageArchiveDocument package: {
-          string? reason = RejectPackage(walk, package.Document, variant);
-          if (reason is not null) {
-            walk.Report(refPath, reason);
-            break;
-          }
-
-          yield return new Candidate(
-              new McmodPackage(package.Document, package.Manifest),
-              archive,
-              path.Hops.Add(new ChainHop(hopRef, null, commit)));
-          break;
-        }
-
-      case ToothArchiveDocument tooth: {
-          // lip v3 always used the tag version, whatever the tooth.json at the tag declares.
-          ToothConversion? conversion = _toothCompat.Convert(
-              tooth, variant, walk.Environment, tagVersion);
-          if (conversion is null) {
-            walk.Report(refPath,
-                $"tooth.json has no variant for \"{variant}\" in this environment");
-            break;
-          }
-
-          SemVersion declared = tooth.Manifest.Version;
-          if (tagVersion is not null
-              && SemVersion.PrecedenceComparer.Compare(declared, tagVersion) != 0
-              && _warned.TryAdd(archive.Key, 0)) {
-            _onWarning($"{archive.Key}: tooth.json declares version {declared}; "
-                + $"using the tag version {tagVersion}.");
-          }
-
-          IPackage package = conversion.Package;
-          if (walk.Range is not null && !walk.Range.IsSatisfiedBy(package.Version)) {
-            walk.Report(refPath, $"version {package.Version} does not satisfy {walk.Range}");
-            break;
-          }
-
-          yield return new Candidate(
-              package,
-              conversion.OpenArchive(archive, _archiveProvider),
-              path.Hops.Add(new ChainHop(reference, null, commit)));
-          break;
-        }
-
-      default:
-        throw new InvalidOperationException($"Unknown document type: {document.GetType()}");
-    }
+    return Candidate.Create(
+        new Package(tooth.Tooth, variant, version, entry), archive, source, _archiveProvider);
   }
-
-  /// Step 3: selects the most specific matching target and resolves its source refs in order.
-  private async IAsyncEnumerable<Candidate> ResolveMeta(
-      Walk walk,
-      Ref reference,
-      MetaDocument document,
-      string variant,
-      ArchiveHandle archive,
-      string? commit,
-      ChainPath path,
-      ChainPath refPath,
-      ImmutableHashSet<(string, string)> visited) {
-    List<(MetaTarget Target, int Index)> matching = [
-      .. document.Targets
-          .Select((target, index) => (target, index))
-          .Where(t => t.target.Variant == variant)
-          .Where(t => t.target.Matches(walk.Environment)),
-    ];
-    if (matching.Count == 0) {
-      walk.Report(refPath, $"no target for variant \"{variant}\" matches the environment "
-          + $"({walk.Environment.Platform.ToSpecString()}, "
-          + $"{walk.Environment.Runtime})");
-      yield break;
-    }
-
-    int most = matching.Max(t => t.Target.SelectorCount);
-    List<(MetaTarget Target, int Index)> best = [
-      .. matching.Where(t => t.Target.SelectorCount == most),
-    ];
-    if (best.Count > 1) {
-      walk.Report(refPath, "targets "
-          + string.Join(", ", best.Select(t => t.Index))
-          + " match the environment equally well");
-      yield break;
-    }
-
-    (MetaTarget selected, int selectedIndex) = best[0];
-
-    List<Ref> refs = [];
-    foreach (string template in selected.Source) {
-      try {
-        refs.Add(RefTemplate.Expand(template, selected, walk.Environment));
-      }
-      catch (FormatException ex) {
-        walk.Report(refPath, $"invalid document: {ex.Message}");
-        yield break;
-      }
-    }
-
-    ChainPath next = new(
-        path.Hops.Add(new ChainHop(reference, selectedIndex, commit)),
-        visited,
-        refPath.Labels.SetItem(refPath.Labels.Count - 1,
-            $"{refPath.Labels[^1]}[target {selectedIndex}]"));
-    foreach (Ref r in refs) {
-      await foreach (Candidate candidate in ResolveRef(
-          walk, r, archive, toothClientCompat: false, next)) {
-        yield return candidate;
-      }
-    }
-  }
-
-  /// Step 4: returns why a package document is not a candidate, or null when it is. The
-  /// platform is consulted last so that an unknown platform only fails when it decides.
-  private static string? RejectPackage(Walk walk, PackageDocument document, string variant) {
-    if (variant != "") {
-      return $"{document.Id} is a package and has no variant \"{variant}\"";
-    }
-
-    if (walk.Range is not null && !walk.Range.IsSatisfiedBy(document.Version)) {
-      return $"version {document.Version} does not satisfy {walk.Range}";
-    }
-
-    if (document.Runtime is not null && document.Runtime != walk.Environment.Runtime) {
-      return $"runtime {document.Runtime} differs from the environment runtime "
-          + walk.Environment.Runtime;
-    }
-
-    if (document.Platform is McmodPlatform platform && platform != walk.Environment.Platform) {
-      return $"platform {platform.ToSpecString()} differs from the environment platform "
-          + walk.Environment.Platform.ToSpecString();
-    }
-
-    return null;
-  }
-
-  private Task<ArchiveHandle> OpenArchive(Ref reference, ArchiveHandle? baseArchive) {
-    string cacheKey = reference.Kind == RefKind.Relative
-        ? $"{baseArchive?.Key}!{reference.Target}"
-        : reference.Target;
-    return Cached(_archives, cacheKey, () => _archiveProvider.Open(reference, baseArchive));
-  }
-
-  private Task<IReadOnlyList<SpecVersion>> ListVersions(string spec) =>
-      Cached(_versions, spec, () => _archiveProvider.ListVersions(spec));
-
-  private Task<ArchiveHandle> OpenVersion(string spec, SpecVersion version) => Cached(
-      _archives, $"{spec}@{version.Tag}", () => _archiveProvider.OpenVersion(spec, version));
-
-  private Task<ArchiveDocument> ReadDocument(ArchiveHandle archive) =>
-      Cached(_documents, archive.Key, () => _archiveReader.Read(archive));
 
   /// Shares one task per key. Failed tasks are evicted so that a transient failure is retried
   /// by the next caller.
@@ -434,22 +253,11 @@ public class Resolver(
 
   /// The parameters shared by a whole Resolve call.
   private sealed record Walk(
+      Ref Source,
       IVersionConstraint? Range,
       LipEnvironment Environment,
-      Action<string> Sink,
-      CancellationToken CancellationToken) {
-    public void Report(ChainPath path, string reason) => Sink(
-        $"{string.Join(_arrow, path.Labels)}: {reason}");
-  }
-
-  /// The chain so far: hops before the current ref, the (archive key, variant) pairs they
-  /// visited, and human-readable labels for diagnostics.
-  private sealed record ChainPath(
-      ImmutableList<ChainHop> Hops,
-      ImmutableHashSet<(string, string)> Visited,
-      ImmutableList<string> Labels) {
-    public static readonly ChainPath Empty = new([], [], []);
-
-    public ChainPath Then(string label) => this with { Labels = Labels.Add(label) };
+      bool ClientCompat,
+      Action<string> Sink) {
+    public void Report(string archive, string reason) => Sink($"{archive}: {reason}");
   }
 }

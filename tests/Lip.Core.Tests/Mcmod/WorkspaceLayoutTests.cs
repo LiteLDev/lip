@@ -1,6 +1,5 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
-using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Lock;
@@ -8,26 +7,37 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// The server layout (spec §7): mods in mods/, plugins/ a link to mods/. The harness links with
+/// The server layout (protocol/workspace.md §2): mods in mods/, plugins/ a link to mods/. The harness links with
 /// symbolic links of the MockFileSystem, which does not resolve them.
 public class WorkspaceLayoutTests {
   private const string Lib = "example.com/lib";
+  private const string Demo = "example.com/demo";
+  private const string DemoUrl = "https://example.com/demo.mcmod";
 
-  private static readonly OperationOptions s_options = new();
+  private static readonly OperationOptions s_options = new(Rid: WorkspaceHarness.Runtime);
 
   private readonly WorkspaceHarness _ws = new();
 
-  private void AddMod(string name = "Demo") {
-    _ws.AddZip("pkg.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package(name, "1.0.0", "native"),
-      [$"{name}.dll"] = "dll",
+  /// The mod Demo: a package of format 4 with an asset of type "mcmod" holding Demo.dll.
+  private void AddMod() {
+    _ws.AddDownload(DemoUrl, WorkspaceHarness.Zip(new() {
+      ["manifest.json"] = """{ "name": "Demo", "dependencies": [] }""",
+      ["Demo.dll"] = "dll",
+    }));
+    _ws.AddTag(Demo, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4(Demo, "1.0.0",
+          $$""" "assets": [ { "type": "mcmod", "urls": [ "{{DemoUrl}}" ] } ] """),
     });
   }
 
   private string? LinkTarget(string relative) =>
       _ws.Fs.DirectoryInfo.New(_ws.Path(relative)).LinkTarget;
 
-  private SortedDictionary<string, string> Snapshot() => _ws.Snapshot();
+  /// The workspace part of the snapshot: lip's cache, outside it, may change.
+  private SortedDictionary<string, string> Snapshot() => new(
+      _ws.Snapshot().Where(e => e.Key.StartsWith(_ws.Root, StringComparison.Ordinal))
+          .ToDictionary(e => e.Key, e => e.Value),
+      StringComparer.Ordinal);
 
   [Theory]
   [InlineData("plugins", "mods")]
@@ -58,7 +68,7 @@ public class WorkspaceLayoutTests {
     AddMod();
 
     // Act
-    await _ws.Service.Install(["pkg.mcmod"], s_options);
+    await _ws.Service.Install([Demo], s_options);
 
     // Assert
     Assert.True(_ws.Exists("mods/Demo/Demo.dll"));
@@ -76,7 +86,7 @@ public class WorkspaceLayoutTests {
     _ws.Fs.Directory.CreateSymbolicLink(_ws.Path("plugins"), "mods");
 
     // Act
-    await _ws.Service.Install(["pkg.mcmod"], s_options);
+    await _ws.Service.Install([Demo], s_options);
 
     // Assert
     Assert.Empty(_ws.Linker.Created);
@@ -93,7 +103,7 @@ public class WorkspaceLayoutTests {
     _ws.AddFile("mods/Kept/Kept.dll", "kept");
 
     // Act
-    await _ws.Service.Install(["pkg.mcmod"], s_options);
+    await _ws.Service.Install([Demo], s_options);
 
     // Assert
     Assert.Equal("old", _ws.Fs.File.ReadAllText(_ws.Path("mods/Old/Old.dll")));
@@ -110,7 +120,7 @@ public class WorkspaceLayoutTests {
     _ws.AddFile("plugins/Old/Old.dll", "old");
 
     // Act
-    await _ws.Service.Install(["pkg.mcmod"], s_options);
+    await _ws.Service.Install([Demo], s_options);
 
     // Assert
     Assert.Equal("old", _ws.Fs.File.ReadAllText(_ws.Path("mods/Old/Old.dll")));
@@ -128,7 +138,7 @@ public class WorkspaceLayoutTests {
 
     // Act
     WorkspaceLayoutException ex = await Assert.ThrowsAsync<WorkspaceLayoutException>(
-        () => _ws.Service.Install(["pkg.mcmod"], s_options));
+        () => _ws.Service.Install([Demo], s_options));
 
     // Assert
     Assert.Contains("'B'", ex.Message);
@@ -147,7 +157,7 @@ public class WorkspaceLayoutTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<WorkspaceLayoutException>(
-        () => _ws.Service.Install(["pkg.mcmod"], s_options));
+        () => _ws.Service.Install([Demo], s_options));
     Assert.Equal(before, Snapshot());
   }
 
@@ -167,7 +177,7 @@ public class WorkspaceLayoutTests {
 
     // Act
     WorkspaceLayoutException ex = await Assert.ThrowsAsync<WorkspaceLayoutException>(
-        () => _ws.Service.Install(["pkg.mcmod"], s_options));
+        () => _ws.Service.Install([Demo], s_options));
 
     // Assert
     Assert.Contains("links are not supported", ex.Message);
@@ -182,7 +192,7 @@ public class WorkspaceLayoutTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<WorkspaceLayoutException>(
-        () => _ws.Service.Install(["pkg.mcmod"], s_options));
+        () => _ws.Service.Install([Demo], s_options));
     Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
   }
 
@@ -195,7 +205,7 @@ public class WorkspaceLayoutTests {
     SortedDictionary<string, string> before = Snapshot();
 
     // Act
-    await _ws.Service.Install(["pkg.mcmod"], s_options with { DryRun = true });
+    await _ws.Service.Install([Demo], s_options with { DryRun = true });
 
     // Assert
     Assert.Equal(before, Snapshot());
@@ -264,33 +274,22 @@ public class WorkspaceLayoutTests {
   }
 
   [Fact]
-  public async Task Uninstall_LockWithPluginsPaths_MigratesLayoutAndRemovesFiles() {
-    // Arrange: a mod installed while plugins was the server mod directory.
-    string manifest = WorkspaceHarness.Package("Demo", "1.0.0", "native");
-    _ws.AddFile("plugins/Demo/Demo.dll", "dll");
-    _ws.AddFile("plugins/Demo/manifest.json", manifest);
+  public async Task Uninstall_PluginsDirectory_MigratesLayoutAndRemovesFiles() {
+    // Arrange: a mod installed while plugins was a directory, the lock in the mods/ form.
+    AddMod();
+    await _ws.Service.Install([Demo], s_options);
+    LockFile lockFile = await _ws.Lock();
+    _ws.Fs.Directory.Delete(_ws.Path("plugins"));
+    _ws.Fs.Directory.Move(_ws.Path("mods"), _ws.Path("plugins"));
     _ws.AddFile("plugins/Other/Other.dll", "other");
-    await _ws.LockStore.Save(_ws.Root, new LockFile {
-      Platform = "server",
-      Packages = [
-        new LockedPackage {
-          Identity = "Demo",
-          Version = "1.0.0",
-          Kind = "mcmod",
-          Explicit = true,
-          Chain = [new LockedHop("https://example.com/pkg.mcmod", null)],
-          ArchiveKey = "https://example.com/pkg.mcmod",
-          Archive = new ZipArchiveIdentity(TestIdentity.Sha256, null),
-          Files = ["plugins/Demo/Demo.dll", "plugins/Demo/manifest.json"],
-          Manifest = JsonDocument.Parse(manifest).RootElement.Clone(),
-        },
-      ],
-    });
+    _ws.Linker.Created.Clear();
 
     // Act
-    await _ws.Service.Uninstall(["Demo"], s_options);
+    await _ws.Service.Uninstall([Demo], s_options);
 
     // Assert
+    Assert.Equal(["mods/Demo/Demo.dll", "mods/Demo/manifest.json"],
+        Assert.Single(lockFile.Packages).Files.Order(StringComparer.Ordinal));
     Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods/Demo")));
     Assert.True(_ws.Exists("mods/Other/Other.dll"));
     Assert.Equal(_ws.Path("mods"), LinkTarget("plugins"));
@@ -298,21 +297,20 @@ public class WorkspaceLayoutTests {
   }
 
   [Fact]
-  public async Task Install_FilePackagePlacingUnderPlugins_ConflictsWithModFiles() {
+  public async Task Install_PlacingUnderPlugins_ConflictsWithModFiles() {
     // Arrange
     AddMod();
-    await _ws.Service.Install(["pkg.mcmod"], s_options);
-    _ws.AddZip("files.mcmod", new() {
-      ["manifest.json"] = WorkspaceHarness.Package("Patch", "1.0.0", "files", """
-            "files": [ { "src": "Demo.dll", "dest": "plugins/Demo/Demo.dll" } ]
-          """),
+    await _ws.Service.Install([Demo], s_options);
+    _ws.AddTag("example.com/patch", "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/patch", "1.0.0",
+          WorkspaceHarness.SelfAsset("Demo.dll", "plugins/Demo/Demo.dll")),
       ["Demo.dll"] = "patched",
     });
 
     // Act & Assert
     Exception ex = await Assert.ThrowsAnyAsync<Exception>(
-        () => _ws.Service.Install(["files.mcmod"], s_options));
-    Assert.Contains("mods/Demo/Demo.dll (owned by Demo)", ex.Message);
+        () => _ws.Service.Install(["example.com/patch"], s_options));
+    Assert.Contains("mods/Demo/Demo.dll (owned by example.com/demo)", ex.Message);
     Assert.Equal("dll", _ws.Fs.File.ReadAllText(_ws.Path("mods/Demo/Demo.dll")));
   }
 }

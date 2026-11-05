@@ -3,7 +3,7 @@ using System.IO.Abstractions;
 namespace Lip.Core.Mcmod.Install;
 
 /// The workspace as it will be when the steps planned so far have run, for planning a whole
-/// operation before changing anything (spec §7): the file system, overlaid with the files the
+/// operation before changing anything (protocol/workspace.md §6): the file system, overlaid with the files the
 /// planned steps write and delete and with the layout the operation establishes first.
 ///
 /// Paths are absolute. Before the layout is made right, an entry of a plugins directory is

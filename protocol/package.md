@@ -7,14 +7,14 @@
   - **ZIP archive**: a file in the ZIP format [APPNOTE], by content, whatever its name. Each entry MUST be a regular file or directory; entry paths are decoded as UTF-8, MUST be `/`-separated, and MUST NOT start with `/` or contain a `..` segment or `\`.
   - **directory archive**: a directory, taken as the archive of its contents.
   - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees.
-- **manifest**: The file `manifest.json` at the root of an archive, which MUST be valid against `manifest.schema.json`. Its `version`, and each non-null `version` of its targets, MUST be a version; each string of the `source` of a dependency MUST be a source; in each string of the `source` of a target, every `{{` MUST begin `{{id}}`, `{{version}}`, `{{platform}}` or `{{runtime}}`.
-- **package**: An archive that has a manifest.
-- **meta package**: A package whose manifest has the key `targets`.
-- **concrete package**: Any other package.
+- **tooth file**: The file `tooth.json` at the root of an archive.
+- **package**: An archive whose tooth file is valid against `tooth.schema.json` and satisfies Section 3, or is of an earlier format (Section 5).
+- **tooth path**: The `tooth` of a package, a Go module path [GO-MODULE], compared ASCII case-insensitively.
+- **tooth name**: The last `/`-separated element of a tooth path, or the element before it when the last is `v` followed by one or more ASCII digits.
 - **id**: A string matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`, compared ASCII case-insensitively.
 - **version**: A [SEMVER] version, without a leading `v`.
-- **version of a package**: The tag version (Section 2.1) of its git archive, if any; otherwise its manifest's `version`.
-- **range**: A string with the syntax and matching semantics of a [NODE-SEMVER] range, as `semver.satisfies` applies it without the options `loose` and `includePrerelease`. A version satisfies a range that matches it.
+- **version of a package**: The `version` of its tooth file.
+- **range**: A string that `SemVersionRange.Parse` of [SEMVER-NET] accepts with its default options, with the matching semantics of that range. A version satisfies a range that matches it.
 - **variant**: `""`, or a string matching `^[a-z0-9_]+(/[a-z0-9_]+)?$`.
 - **platform**: `"server"` or `"client"`.
 - **runtime**: A .NET runtime identifier [RID].
@@ -24,12 +24,12 @@
 
 A **source** is a string naming packages, in one of four forms:
 
-| Form | Names | May be |
-|---|---|---|
-| Remote repository | A git repository; a git archive per selected commit | Meta package only |
-| URL | A ZIP archive downloaded over HTTPS | Any package |
-| Local file | A ZIP archive on the local file system | Any package |
-| Local directory | A directory archive on the local file system | Any package |
+| Form | Names |
+|---|---|
+| Remote repository | A git repository; a git archive per selected commit |
+| URL | A ZIP archive downloaded over HTTPS |
+| Local file | A ZIP archive on the local file system |
+| Local directory | A directory archive on the local file system |
 
 ```abnf
 source        = repo-source / url-source / local-source
@@ -38,7 +38,7 @@ url-source    = url [ "#" variant ]
 local-source  = local-path [ "#" variant ]
 repo          = <a Go module path, see Section 2.1>
 url           = "https://" <the rest of an absolute URI, RFC 3986>
-local-path    = <a path, see Section 2.3>
+local-path    = <a path on the local file system; its syntax is not defined here>
 variant       = <a variant other than "">
 ref           = version / "branch:" name / "tag:" name / "rev:" commit
 version       = <a version>
@@ -72,7 +72,7 @@ An annotated tag is peeled to its commit. `<name>` MUST be a valid ref name [GIT
 
 A commit selected through the tag `vV` (with no ref, the ref `V`, or the ref `tag:vV`) has the **tag version** V; any other selected commit has none.
 
-The git archive of each selected commit MUST be a meta package. When it has a tag version and its manifest has `version`, that `version` MUST equal the tag version.
+The git archive of each selected commit MUST be a package whose tooth path equals `<repo>`. When it has a tag version, the version of the package MUST equal it.
 
 ### 2.2. URLs
 
@@ -82,15 +82,20 @@ A **URL** names the ZIP archive in the response body of an HTTPS GET of the loca
 
 A **local file** is a local path naming a file, which MUST be a ZIP archive. A **local directory** is a local path naming a directory, which is a directory archive.
 
-Inside a manifest, a local path MUST start with `./`, followed by a non-empty path of `/`-separated segments, optionally ending with `/`, that MUST NOT contain an empty segment other than the trailing one, a `.` or `..` segment, `#` or `\`. It names a file or directory in the archive containing the manifest, relative to its root.
+## 3. Tooth Files
 
-Outside a manifest, a local path names a file or directory on the local file system; its syntax is not defined here.
+A tooth file of `format_version` 4 MUST also satisfy:
 
-## 3. Resolution
+- `tooth` is a valid Go module path [GO-MODULE], and `version` is a version.
+- Each key of `dependencies` is `<tooth path>` or `<tooth path>#<variant>`, the variant other than `""`, and each value is a range.
+- In each entry, `platform` is a platform and `runtime` is a runtime.
+- No two entries of the same variant have the same `platform` and the same `runtime`.
+- Each entry has at most one asset whose `type` is `"mcmod"`.
+- Each glob of `preserve_files` and `remove_files`, and each `src` in the glob form, is a glob as the schema describes it.
 
-Resolve(source, base, range, environment) is the ordered sequence of **candidates**, concrete packages, that `source` names for `environment`. `base` is the archive containing the manifest that holds `source`, if any (Section 2.3). An omitted `range` matches every version.
+## 4. Resolution
 
-The **chain** of a candidate is the sequence of sources followed to reach it, starting with `source`.
+Resolve(source, range, environment) is the ordered sequence of **candidates** that `source` names for `environment`. A candidate is a package together with one of its entries, the **selected entry**. An omitted `range` matches every version.
 
 1. Archives. The archives that `source` names, in this order:
    - a remote repository without a ref: the commit of each version tag whose version satisfies `range`, from highest to lowest [SEMVER] precedence, and at equal precedence the lexicographically greater tag name first;
@@ -98,14 +103,24 @@ The **chain** of a candidate is the sequence of sources followed to reach it, st
 
    An archive that cannot be obtained, or is not a package, contributes no candidate.
 
-2. Meta packages. For a meta package:
-   - Of its `targets`, keep each whose `variant` (default `""`) equals the variant of the source, and whose `platform` and `runtime`, when present, contain the corresponding component of `environment`. A single value contains only itself.
-   - Of those, select the one that writes the most of `platform` and `runtime`. When none is left, or more than one writes the most, the meta package contributes no candidate.
-   - The candidates are those of Resolve(s, this archive, range, environment) for each source s of the selected target's `source`, concatenated in order.
-   - Before s is parsed, `{{id}}` and `{{version}}` in it are replaced by the member of the same name in the selected target, or else in the manifest, and `{{platform}}` and `{{runtime}}` by the components of `environment`; for a git archive with a tag version, `version` is the version of the package. A source with a template that has no value contributes no candidate.
-3. Concrete packages. A concrete package is the single candidate if all of these hold, and none otherwise:
-   - the variant of the source is `""`;
-   - its manifest's `platform` and `runtime` are each omitted or equal to the corresponding component of `environment`;
-   - its version satisfies `range`.
+2. Entries. A package is a candidate, with the entry of `variants[v]` (v the variant of the source) whose `platform` and `runtime` equal the corresponding components of `environment`, when such an entry exists and the version of the package satisfies `range`. Otherwise it contributes no candidate.
 
-Loops. A chain contributes no candidate when it has more than 8 sources, or when the same archive with the same variant of the source occurs twice in it.
+The **identity** of a candidate is its tooth path, followed by `#` and the variant of the source when that is not `""`.
+
+A member (key k, range R) of the `dependencies` of the selected entry is a **dependency**; it names the candidates of Resolve(k, R, environment).
+
+A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`. The archive of that asset MUST have at its root a `manifest.json` that is a JSON object [RFC8259] whose `name` is an id: the **mod manifest**. Its `name` is the **mod name**.
+
+## 5. Earlier Formats
+
+A tooth file with `format_version` 1, 2 or 3 is read as the tooth file of `format_version` 4 that this section derives from it. Formats 1 and 2 are first read as format 3, as lip v0.37.0 [TOOTH-V3] reads them.
+
+A format 3 tooth file T is read, for an environment (p, r), as a tooth file with the `tooth`, `version` and `info` of T, and, for each label L of the variants of T:
+
+- Let V be the variants of T labeled L whose `platform` is `""` or matches r as [TOOTH-V3] matches it. When V is empty, the result has no variant L.
+- Otherwise the result maps L to one entry with `"platform": p`, `"runtime": r`, and, from the variants of V merged as [TOOTH-V3] merges them: `dependencies`; `assets`; `preserve_files` and `remove_files`; and `hooks`, whose `pre_install` is `pre_install`, `post_install` is `install` followed by `post_install`, `pre_uninstall` is `pre_uninstall` followed by `uninstall`, and `post_uninstall` is `post_uninstall`.
+- When p is `"client"` and T has a variant labeled `"client"`, the variant `""` of the result is the one derived from the label `"client"`.
+
+The assets, `preserve_files` and `remove_files` keep their meaning in [TOOTH-V3]: the asset types `tar`, `tgz` and `uncompressed`, and `placements` with `type`, are allowed, and are carried out as [TOOTH-V3] carries them out. The version of a format 3 package is the tag version of its git archive, when it has one, whatever its `version`.
+
+A dependency of a format 3 tooth file on the variant `client` of a package whose tooth file is of format 4 names the variant `""` of that package.

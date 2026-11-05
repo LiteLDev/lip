@@ -3,7 +3,7 @@ using Lip.Core.Sources;
 namespace Lip.Core.Mcmod.Install;
 
 /// What installing or uninstalling one package does to the workspace, planned and checked before
-/// anything changes (spec §7). Name: the package name, for messages. Root: the absolute
+/// anything changes (protocol/workspace.md §4). Name: the package name, for messages. Root: the absolute
 /// workspace root, where scripts run. OwnedFiles: for an install, the files the package owns
 /// afterwards (workspace-relative, '/'-separated).
 public sealed record PackagePlan(

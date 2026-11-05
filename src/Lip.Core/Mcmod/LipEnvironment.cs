@@ -26,7 +26,7 @@ public static class McmodPlatformExtensions {
     }
   }
 
-  /// The mod directory under the workspace root (spec §7). On servers, plugins links to it
+  /// The mod directory under the workspace root (protocol/workspace.md §2). On servers, plugins links to it
   /// (WorkspaceLayout).
   public static string ModsDirectory(this McmodPlatform platform) => platform switch {
     McmodPlatform.Server or McmodPlatform.Client => WorkspaceLayout.ModsDirectory,
@@ -34,7 +34,7 @@ public static class McmodPlatformExtensions {
   };
 }
 
-/// The environment (platform, runtime) of a workspace (spec §5.1). Runtime is a .NET RID.
+/// The environment (platform, runtime) of a workspace (protocol/package.md §1). Runtime is a .NET RID.
 ///
 /// lip manages server workspaces only: its operations always use McmodPlatform.Server. Client
 /// workspaces are left to launchers implementing the same spec (LeviLauncher). The client

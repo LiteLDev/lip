@@ -2,12 +2,11 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Tests.Mcmod;
 
+/// Sources (protocol/package.md §2).
 public class RefTests {
   [Theory]
-  [InlineData("./quickjs/", RefKind.Relative, "./quickjs/", "")]
-  [InlineData("./a/b.mcmod#lua", RefKind.Relative, "./a/b.mcmod", "lua")]
-  [InlineData("https://example.com/x.mcmod", RefKind.Url, "https://example.com/x.mcmod", "")]
-  [InlineData("https://example.com/x.mcmod#a/b", RefKind.Url, "https://example.com/x.mcmod", "a/b")]
+  [InlineData("https://example.com/x.zip", RefKind.Url, "https://example.com/x.zip", "")]
+  [InlineData("https://example.com/x.zip#a/b", RefKind.Url, "https://example.com/x.zip", "a/b")]
   [InlineData("github.com/LiteLDev/LeviLamina", RefKind.Spec, "github.com/LiteLDev/LeviLamina", "")]
   [InlineData("github.com/LiteLDev/LeviLamina#client", RefKind.Spec, "github.com/LiteLDev/LeviLamina", "client")]
   public void Parse_ValidRef_ReturnsParts(string s, RefKind kind, string target, string variant) {
@@ -24,11 +23,8 @@ public class RefTests {
   [Theory]
   [InlineData("github.com/a/b#")]
   [InlineData("github.com/a/b#UPPER")]
-  [InlineData("./")]
-  [InlineData("./a//b")]
-  [InlineData("./a/../b")]
-  [InlineData("./a/./b")]
-  [InlineData("./a\\b")]
+  [InlineData("./quickjs/")]
+  [InlineData("./a/b.zip#lua")]
   [InlineData("http://example.com/x.zip")]
   [InlineData("file:///c/x.zip")]
   [InlineData("github.com/a/b@v1.0.0")]
@@ -39,13 +35,14 @@ public class RefTests {
   [InlineData("github.com/a/b@rev:0123abc")]
   [InlineData("github.com/a/b@rev:0123456789abcdef0123456789abcdef01234567\n")]
   [InlineData("github.com/a/b#lua\n")]
-  [InlineData("./a#b#c")]
+  [InlineData("github.com/a/b#c#d")]
   [InlineData("https://")]
   [InlineData("https://example.com/a b.zip")]
   [InlineData("https://example.com/é.zip")]
   [InlineData("https://example.com/%zz.zip")]
   [InlineData("https://example.com/a[1].zip")]
   [InlineData("https://example.com/a.zip?x[0]=1")]
+  [InlineData("https://example.com/a.zip#lua#x")]
   [InlineData("")]
   public void Parse_InvalidRef_ThrowsFormatException(string s) {
     // Act & Assert
@@ -53,28 +50,17 @@ public class RefTests {
   }
 
   [Theory]
-  [InlineData("./a/@branch:main", RefKind.Relative)]
-  [InlineData("https://example.com/x.zip@tag:v1", RefKind.Url)]
-  [InlineData("https://example.com/a%20b.zip", RefKind.Url)]
-  [InlineData("https://[::1]/a.zip", RefKind.Url)]
-  public void Parse_AtInLocalPathOrUrl_IsPartOfTheLocation(string s, RefKind kind) {
+  [InlineData("https://example.com/x.zip@tag:v1")]
+  [InlineData("https://example.com/a%20b.zip")]
+  [InlineData("https://[::1]/a.zip")]
+  public void Parse_AtInUrl_IsPartOfTheLocation(string s) {
     // Act
     Ref r = Ref.Parse(s);
 
     // Assert
-    Assert.Equal(kind, r.Kind);
+    Assert.Equal(RefKind.Url, r.Kind);
     Assert.Equal(s, r.Target);
     Assert.Null(r.GitRef);
-  }
-
-  [Fact]
-  public void RelativePath_DirectoryRef_StripsPrefixAndTrailingSlash() {
-    // Arrange
-    Ref r = Ref.Parse("./sub/dir/");
-
-    // Act & Assert
-    Assert.Equal("sub/dir", r.RelativePath);
-    Assert.True(r.IsDirectory);
   }
 
   [Theory]
@@ -104,7 +90,7 @@ public class RefTests {
   [Fact]
   public void Parse_FileRef_OnlyWhenAllowed() {
     // Arrange
-    string path = OperatingSystem.IsWindows() ? @"C:\mods\a #1.mcmod" : "/mods/a #1.mcmod";
+    string path = OperatingSystem.IsWindows() ? @"C:\mods\a #1.zip" : "/mods/a #1.zip";
     string text = Ref.FromFile(path, "lua").ToString();
 
     // Act
@@ -118,11 +104,32 @@ public class RefTests {
   }
 
   [Fact]
+  public void FromFile_Directory_ReturnsFileRef() {
+    // Arrange
+    string path = OperatingSystem.IsWindows() ? @"C:\src\pkg" : "/src/pkg";
+
+    // Act
+    Ref r = Ref.FromFile(path);
+
+    // Assert
+    Assert.Equal(RefKind.File, r.Kind);
+    Assert.Equal(path, r.LocalPath);
+    Assert.Equal(r, Ref.Parse(r.ToString(), allowFile: true));
+  }
+
+  [Fact]
   public void WithVariant_ReplacesVariant() {
     // Act
     Ref r = Ref.Parse("github.com/a/b#client").WithVariant("");
 
     // Assert
     Assert.Equal("github.com/a/b", r.ToString());
+  }
+
+  [Fact]
+  public void WithGitRef_NotARemoteRepository_Throws() {
+    // Act & Assert
+    Assert.Throws<InvalidOperationException>(
+        () => Ref.Parse("https://example.com/x.zip").WithGitRef(GitRef.Parse("1.0.0")));
   }
 }

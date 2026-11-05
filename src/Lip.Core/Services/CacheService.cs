@@ -26,6 +26,7 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public async Task Clean() {
+    _cacheDirectory.Refresh();
     if (!_cacheDirectory.Exists) {
       return;
     }

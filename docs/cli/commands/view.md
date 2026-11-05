@@ -1,8 +1,8 @@
 # lip view
 
-Shows the manifest of a package.
+Shows the `tooth.json` of a package.
 
-The package argument takes the same forms as [`lip install`](install.md#arguments). For a package path, the newest version is shown, the given version with `@<version>` (e.g., `github.com/user/repo@1.0.0`), or the commit a git ref names (e.g., `github.com/user/repo@branch:main`). A local archive or URL is shown as it is.
+The package argument takes the same forms as [`lip install`](install.md#arguments). For a tooth path, the newest version is shown, the given version with `@<version>` (e.g., `github.com/user/repo@1.0.0`), or the commit a git ref names (e.g., `github.com/user/repo@branch:main`). A local ZIP file or directory, or a URL, is shown as it is.
 
 ## Synopsis
 
@@ -14,7 +14,7 @@ lip view <PACKAGE>
 
 | Argument | Description |
 | --- | --- |
-| `<PACKAGE>` | The package to view, e.g. `<path>`, `<path>@<version>`, `<path>@branch:<branch>`, `./package.mcmod` or an `https://` URL. |
+| `<PACKAGE>` | The package to view, e.g. `<path>`, `<path>@<version>`, `<path>@branch:<branch>`, `./package.zip`, `./MyTool` or an `https://` URL. |
 
 ## Examples
 
@@ -38,4 +38,6 @@ lip view github.com/user/repo@branch:main
 
 ## Description
 
-Reads the root document of the archive the argument points to and displays it as JSON: `tooth.json` if the archive has one, otherwise `manifest.json`. For a package path, the archive is the repository at the version's tag, or at the commit of the git ref. The document is shown as it is: a meta document is not followed.
+Reads the `tooth.json` at the root of the archive the argument names and prints it as JSON. For a tooth path, the archive is the repository at the newest version tag, at the tag of the given version, or at the commit of the git ref. It changes nothing.
+
+A `tooth.json` of an [earlier format](../../concepts/tooth_json.md#earlier-formats) is printed as lip reads it, as format 4, for the environment of the workspace: the platform `server` and the RID the [workspace file](../../concepts/lockfiles.md) records, or else the RID lip runs on.

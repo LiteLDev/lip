@@ -74,7 +74,7 @@ app.Configure(config => {
   });
 
   config.AddCommand<InitCommand>("init")
-      .WithDescription("Creates a manifest.json for a new package");
+      .WithDescription("Creates a tooth.json for a new package");
 
   config.AddCommand<InstallCommand>("install")
       .WithDescription("Installs packages");
@@ -83,10 +83,10 @@ app.Configure(config => {
       .WithDescription("Lists installed packages");
 
   config.AddCommand<MigrateCommand>("migrate")
-      .WithDescription("Migrates the package repository in the current directory to the current manifest.json format");
+      .WithDescription("Migrates the tooth.json in the current directory to format 4");
 
   config.AddCommand<PackCommand>("pack")
-      .WithDescription("Packs manifest.json into the package document of one target, or into a ZIP archive");
+      .WithDescription("Packs a directory into a ZIP archive");
 
   config.AddCommand<RpcCommand>("rpc")
       .WithDescription("Serves the commands over JSON-RPC on standard input and output");

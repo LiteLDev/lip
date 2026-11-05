@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.IO.Abstractions;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -15,9 +14,9 @@ using Semver;
 
 namespace Lip.Core.RegressionTests.Compatibility;
 
-/// Checks that the tooth.json conversion (spec §10.2) converts and installs real tooth packages like
-/// lip v3: ToothCompat.Convert must map the same merged variant PackageManifest.GetVariant picks,
-/// and McmodInstaller must write exactly the files it reports for the converted package.
+/// Checks that tooth.json files of format 3 are read through protocol/package.md §5 and installed
+/// like lip v3 did: ToothCompat.Derive must map the same merged variant PackageManifest.GetVariant
+/// picks, and McmodInstaller must write exactly the files it reports for the derived entry.
 public class ToothCompatCorpusTests {
   private static readonly LipEnvironment _environment = new(McmodPlatform.Server, "win-x64");
 
@@ -57,60 +56,55 @@ public class ToothCompatCorpusTests {
 
   [WinX64Theory]
   [MemberData(nameof(Entries))]
-  public async Task Convert_CorpusEntry_MapsGetVariant(string package, string version) {
+  public async Task Derive_CorpusEntry_MapsGetVariant(string package, string version) {
     // Arrange
     Ref reference = Ref.Parse(package);
     ArchiveHandle archive = await OpenArchive(
         reference.Target, SemVersion.Parse(version, SemVersionStyles.Strict));
-    ToothArchiveDocument document = Assert.IsType<ToothArchiveDocument>(
-        await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
+    ToothDocument document = await new ArchiveReader().Read(archive);
+    PackageManifest manifest = Assert.IsType<PackageManifest>(document.Legacy);
     PackageManifestVariant? expected;
     try {
-      expected = document.Manifest.GetVariant(reference.Variant, _environment.Runtime);
+      expected = manifest.GetVariant(reference.Variant, _environment.Runtime);
     }
     catch (KeyNotFoundException) {
       expected = null;
     }
 
     // Act
-    ToothConversion? actual = new ToothCompat().Convert(
-        document, reference.Variant, _environment, null);
+    ToothEntry? actual = document.ReadFor(_environment).SelectEntry(reference.Variant, _environment);
 
-    // Assert: a tooth.json whose identity is not an id has no candidate (spec §10.2 rule 1).
-    string identity = ToothCompat.GetIdentity(document.Manifest.Path, reference.Variant);
-    if (expected is null || !PackageNames.IsValid(identity)) {
+    // Assert
+    if (expected is null) {
       Assert.Null(actual);
       return;
     }
 
     Assert.NotNull(actual);
-    PackageDocument converted = actual.Package.Document;
-    Assert.Equal(identity, actual.Package.Identity);
+    Assert.True(actual.Legacy);
     Assert.Equal(
-        expected.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))),
-        actual.Assets.Select(a => (a.Type, string.Join(" ", a.Urls))));
+        expected.Assets.Select(a => (a.Type.ToString(), string.Join(" ", a.Urls))),
+        actual.Assets.Select(a => (a.Type.ToString(), string.Join(" ", a.Urls))));
     Assert.Equal(
-        expected.Assets.SelectMany((a, i) => a.Placements.Select(p => new AssetPlacement(
-            i.ToString(CultureInfo.InvariantCulture),
-            p.Type == PackageManifestAssetPlacement.PlacementType.Directory,
-            p.Src,
-            p.Dst))),
-        converted.AssetPlacements);
+        expected.Assets.SelectMany(a => a.Placements.Select(p => (
+            p.Type == PackageManifestAssetPlacement.PlacementType.Directory, p.Src, p.Dst))),
+        actual.Assets.SelectMany(a => a.Placements.Select(p => (
+            p.LegacyDirectory ?? false, p.Src, p.Dest))));
     Assert.Equal(
-        expected.Dependencies.Select(d => (d.Key.ToString(), d.Value.ToString())),
-        actual.Package.InstallEdges.Select(e => (
-            Assert.Single(e.Refs).ToString(),
-            ((SemVersionRangeConstraint)e.Version!).Range.ToString())));
-    Assert.All(actual.Package.InstallEdges, e => Assert.True(e.ToothClientCompat));
+        expected.Dependencies.Select(d => d.Key.ToString()),
+        actual.Dependencies.Select(d => d.Source.ToString()));
+    Assert.All(actual.Dependencies, d => Assert.True(d.ClientCompat));
     Assert.Equal(
-        ToothCompat.PreserveFiles(expected.PreserveFiles.Select(GlobListJsonConverter.Format)),
-        converted.Preserve.Select(g => g.Pattern));
+        ToothCompat.PreserveFiles(expected.PreserveFiles.Select(GlobListJsonConverter.Format))
+            .Where(p => ToothCompat.TryParseGlob(p) is not null),
+        actual.PreserveFiles.Select(g => g.Pattern));
     Assert.Equal(
-        ToothCompat.RemoveFiles(expected.RemoveFiles.Select(GlobListJsonConverter.Format)),
-        converted.Remove.Select(g => g.Pattern));
+        ToothCompat.RemoveFiles(expected.RemoveFiles.Select(GlobListJsonConverter.Format))
+            .Where(p => ToothCompat.TryParseGlob(p) is not null),
+        actual.RemoveFiles.Select(g => g.Pattern));
     Assert.Equal(
         JsonSerializer.Serialize(ToothCompat.ConvertScripts(expected.Scripts)),
-        JsonSerializer.Serialize(converted.Hooks));
+        JsonSerializer.Serialize(actual.Hooks));
   }
 
   [WinX64Theory]
@@ -121,20 +115,19 @@ public class ToothCompatCorpusTests {
     SpecVersion version = (await _archiveProvider.ListVersions(package))
         .First(v => !v.Version.IsPrerelease);
     ArchiveHandle archive = await _archiveProvider.OpenVersion(package, version);
-    ToothArchiveDocument document = Assert.IsType<ToothArchiveDocument>(
-        await new ArchiveReader(new Mock<IDocumentParser>().Object).Read(archive));
-    ToothConversion conversion = new ToothCompat().Convert(document, "", _environment, null)!;
-    McmodInstaller installer = new(
-        new FileSystem(), new CommandRunner(), new DocumentParser(), _userInteraction);
+    ToothDocument document = await new ArchiveReader().Read(archive);
+    ToothEntry entry = document.ReadFor(_environment).SelectEntry("", _environment)!;
+    McmodInstaller installer = new(new FileSystem(), new CommandRunner(), _userInteraction);
 
     string root = Directory.CreateTempSubdirectory("lip-tooth-v4-").FullName;
     try {
       // Act
       IReadOnlyList<string> files = await installer.Install(
-          new Candidate(
-              conversion.Package,
-              conversion.OpenArchive(archive, _archiveProvider),
-              [new ChainHop(Ref.Parse(package), null)]),
+          Candidate.Create(
+              new Package(document.Tooth, "", version.Version, entry),
+              archive,
+              Ref.Parse(package),
+              _archiveProvider),
           new InstallContext(
               root, _environment, new LockFile(), DryRun: false, IgnoreScripts: true));
 

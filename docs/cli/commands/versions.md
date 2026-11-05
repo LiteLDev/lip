@@ -2,7 +2,7 @@
 
 Shows available versions for a package.
 
-Versions are read from the git tags of the package repository (`https://<package path>.git`). Only tags named exactly `v<SemVer 2.0.0>` (e.g., `v1.2.3`) are versions; tags such as `v1.2` are ignored. The versions are listed lowest first, without the leading `v`.
+Versions are read from the git tags of the package repository (`https://<tooth path>.git`). Only tags named exactly `v<SemVer 2.0.0>` (e.g., `v1.2.3`) are versions; tags such as `v1.2` are ignored. The versions are listed lowest first, without the leading `v`.
 
 ## Synopsis
 
@@ -14,7 +14,7 @@ lip versions <PACKAGE> [options]
 
 | Argument | Description |
 | --- | --- |
-| `<PACKAGE>` | The package to show versions for, specified as `<path>` (e.g. `github.com/user/repo`). |
+| `<PACKAGE>` | The package to show versions for, specified as its tooth path `<path>` (e.g. `github.com/user/repo`), without a version or git ref. A `#<variant>` does not change the result. |
 
 ## Options
 

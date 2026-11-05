@@ -9,7 +9,7 @@ namespace Lip.Core.Mcmod;
 public class WorkspaceLayoutException(string message, Exception? inner = null)
     : InvalidOperationException(message, inner);
 
-/// The server workspace layout (spec §7): mods live in &lt;root&gt;/mods, and &lt;root&gt;/plugins is
+/// The server workspace layout (protocol/workspace.md §2): mods live in &lt;root&gt;/mods, and &lt;root&gt;/plugins is
 /// a link to mods, so that software looking in plugins keeps working.
 ///
 /// Workspace-relative paths are canonical when they go through mods: a path under plugins is the

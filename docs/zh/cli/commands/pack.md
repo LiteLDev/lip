@@ -1,52 +1,44 @@
 # lip pack
 
-把当前目录中的 `manifest.json` 打包为包文档或 `.mcmod` 文件。
+把一个目录打包为 ZIP 归档。
 
 ## 概要
 
 ```shell
-lip pack [DIR] [options]
+lip pack [DIR] -o <FILE>
 ```
 
 ## 参数
 
 | 参数 | 说明 |
 | --- | --- |
-| `[DIR]` | 使用 `--output` 时，其中的文件会放入 `.mcmod` 文件的目录。默认为当前目录。 |
+| `[DIR]` | 其文件要放入归档的目录。默认为当前目录。 |
 
 ## 选项
 
 | 选项 | 说明 |
 | --- | --- |
-| `--variant <VARIANT>` | 要打包的变体。默认为 `""`，即默认变体。 |
-| `--platform <PLATFORM>` | 打包的目标平台：`server` 或 `client`。默认为 `server`。 |
-| `--rid <RID>` | 打包的目标 .NET RID，例如 `win-x64`。默认为 lip 自身运行时的 RID。 |
-| `-o, --output <FILE>` | 把 `.mcmod` 文件写入 `<FILE>`，而不是输出包文档。 |
+| `-o, --output <FILE>` | 要写入的 ZIP 归档。必填。 |
 
 ## 说明
 
-读取当前目录中的 `manifest.json`（必须带有 `"format": "bf45b1"`，参见[包清单](../../concepts/package_manifest.md)），并把它转换为某个平台和 RID 的包文档：
+向 `<FILE>` 写入一个 ZIP 归档（若已存在则替换），其中包含 `DIR` 之下的每个普通文件，路径为其相对于 `DIR` 的路径。`<FILE>` 本身，以及 `DIR` 根部 `.git/` 和 `.lip/` 中的所有内容，都不会放入。文件按原样打包：`lip pack` 不读取也不检查 `tooth.json` 或 `manifest.json`。
 
-- 对于元文档，lip 像 `lip install` 那样按 `--variant`、`--platform` 和 `--rid` 选出 target，并对其[打包](../../concepts/package_manifest.md#打包)：文档的其余键以 target 的键补全，target 写出 `platform` 和 `runtime` 时还会设置这两个键。
-- 对于包文档，结果就是文档本身：此时 `--variant` 必须为空或不指定，`--platform` 和 `--rid` 不起作用。
+可用它构建：
 
-不带 `--output` 时，包文档以 JSON 形式输出到标准输出。带 `--output` 时，lip 把一个 ZIP 归档写入 `<FILE>`（替换已有文件）：包文档作为其根部的 `manifest.json`，`DIR` 下的每个文件按其相对于 `DIR` 的路径放入。`DIR` 根部的 `manifest.json`、`DIR` 根部 `.git/` 和 `.lip/` 中的全部内容，以及 `<FILE>` 本身不会放入。
-
-当 `manifest.json` 不存在或不是有效的 `bf45b1` 格式文档、没有或有多个 target 匹配该变体、平台和 RID，或者结果不是有效的包文档时，命令会失败，且不写入任何内容。
-
-请把每个 `.mcmod` 文件发布到其 target 的 `source` 所指的位置，例如作为 release 资源。参见[创建包](../../guides/creating_packages.md#指向发布资源)。
+- `mcmod` 资源的归档：从根部带有该 mod 的 LeviLamina `manifest.json` 的目录（例如构建输出目录）打包。把它附加到 Release，并把其 URL 列入该资源的 `urls`。参见 [mod](../../guides/creating_packages.md#mod)。
+- 单个 ZIP 文件形式的包：从根部带有 `tooth.json` 的目录打包，以便用 [`lip install`](install.md) 安装，或在某个 URL 上发布。
 
 ## 示例
 
-输出 `win-x64` 服务端的包文档：
+把 `build/` 中的文件打包为一个 mod 的 `mcmod` 归档：
 
 ```shell
-lip pack --rid win-x64
+lip pack build/ -o MyMod-server-win-x64.zip
 ```
 
-把 `build/` 中的文件打包为某个 mod 的服务端包和客户端包：
+打包当前目录中的包：
 
 ```shell
-lip pack build/ --platform server --rid win-x64 -o LegacyMoney-server-win-x64.mcmod
-lip pack build/ --platform client --rid win-x64 -o LegacyMoney-client-win-x64.mcmod
+lip pack -o MyTool.zip
 ```
