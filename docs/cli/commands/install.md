@@ -17,7 +17,7 @@ lip install <PACKAGES> [options]
 Each package argument takes one of the following forms:
 
 1. **Package path** — `<path>` or `<path>#<variant>` (e.g. `github.com/user/repo`): the newest version.
-2. **Package path with version** — `<path>@<version>` or `<path>#<variant>@<version>` (e.g. `github.com/user/repo#lua@1.0.0`): exactly that version. The version is a SemVer 2.0.0 version without the leading `v`.
+2. **Package path with version** — `<path>@<version>` or `<path>#<variant>@<version>` (e.g. `github.com/user/repo#lua@1.0.0`): exactly that version, the commit of the tag `v<version>`. The version is a SemVer 2.0.0 version without the leading `v`. Like a git ref, it pins the package: see [Git refs](#git-refs).
 3. **Package path with a git ref** — `<path>[#<variant>]@branch:<branch>`, `@tag:<tag>` or `@rev:<commit>` (e.g. `github.com/LiteLDev/LeviLamina@branch:main`): the commit that the branch head, the tag or the commit id names, whatever its version. Any branch or tag name is accepted, not only `v<SemVer>` tags; a commit id must be the full 40 hexadecimal digits. See [Git refs](#git-refs).
 4. **Remote archive** — an `https://` URL of a `.mcmod` or `.zip` file (e.g. `https://example.com/package.mcmod`), optionally followed by `#<variant>`. The download is cached under the URL.
 5. **Local archive** — a `.mcmod` or `.zip` file, by an absolute path or a path relative to the current directory (e.g. `./package.mcmod` or `C:\Downloads\package.zip`), optionally followed by `#<variant>`. An argument is local when it starts with `./`, `../`, `.\` or `..\`, is `.` or `..`, is an absolute path, or contains no `@` and either ends with `.mcmod` or `.zip` (ignoring case) or names an existing file or directory. Whether the file is a ZIP archive depends on its content, not on its extension.
@@ -30,6 +30,7 @@ The dependencies of the packages are installed too. Installing a package that is
 
 A git ref pins a package path to one commit of its repository:
 
+- `@<version>` takes the commit of the tag `v<version>`. `lip update` keeps that version.
 - `@branch:<branch>` takes the head of the branch now. [`lip update`](update.md) follows the branch to its new head.
 - `@tag:<tag>` takes the commit the tag points to; any tag name works, e.g. `@tag:nightly`. `lip update` resolves the tag again.
 - `@rev:<commit>` takes exactly that commit, which never changes. Abbreviated commit ids are not accepted, since resolving them would need the whole history of the repository.

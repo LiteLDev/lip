@@ -60,7 +60,7 @@ lip v0.36 把锁以相同格式保存在 `.lip/lock.json` 中：当不存在 `.l
   * `commit`（仅包路径）：该跳仓库所在的提交：版本标签的提交，或 git 引用解析到的提交。从 `tooth_lock.json` 迁移而来的条目没有此项。
 
   [`lip update`](../cli/commands/update.md) 会重新请求第一跳：分支跟随到新的头，标签重新解析，rev 保持不变。
-* **`archiveKey`**：最终归档的键，例如 `github.com/user/repo@1.0.0`；带 git 引用的包路径为 `github.com/user/repo@rev:<commit>`。
+* **`archiveKey`**：最终归档的键，例如 `github.com/user/repo@1.0.0`；带 `branch:`、`tag:` 或 `rev:` git 引用的包路径为 `github.com/user/repo@rev:<commit>`。
 * **`archive`**：最终归档的标识：
   * `{ "kind": "zip", "sha256": ..., "url": ... }`：ZIP 归档。`url` 是下载它的 `https://` URL、本地文件的 `file:///` URI，或对嵌套在其他归档中的 ZIP 文件为 `null`；包是 ZIP 文件内的一个目录时，会设置 `path`。
   * `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`：git 仓库的一个提交；仓库根目录的 `path` 为 `""`。

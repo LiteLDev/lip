@@ -71,17 +71,18 @@ followed by a git ref: `spec[#variant][@git-ref]`.
 | Relative file | `./LegacyMoney.mcmod` | A ZIP file inside the archive of the current document. |
 | URL | `https://example.com/pkg.mcmod` | A ZIP archive downloaded over HTTPS (redirects are followed). |
 | Spec | `github.com/LiteLDev/LeviLamina` | The git repository `https://<spec>.git`. |
+| Spec with a version | `github.com/LiteLDev/LeviLamina@1.0.0` | The commit of the tag `v1.0.0`. |
 | Spec with a git ref | `github.com/LiteLDev/LeviLamina@branch:main` | One commit of that repository. |
 
-- A relative target starts with `./`, must not contain empty, `.` or `..` segments or `\`.
+- A relative target starts with `./`, must not contain empty, `.` or `..` segments, `#` or `\`.
 - A spec must be a valid [Go module path](https://go.dev/ref/mod#module-path). Its versions are
   the tags named exactly `v<version>`, where `<version>` is a
   [SemVer 2.0.0](https://semver.org/) version (e.g. `v1.2.3`). Other tags, such as `v1.2`, are
   ignored.
-- A git ref pins a spec to one commit instead of its versions: `@branch:<branch>` (the head of
+- A git ref pins a spec to one commit instead of its versions: `@<version>` (the tag
+  `v<version>`), `@branch:<branch>` (the head of
   the branch), `@tag:<tag>` (any tag, e.g. `@tag:nightly`) or `@rev:<commit>` (a full
   40-digit commit id). It comes after the variant: `github.com/LiteLDev/LegacyScriptEngine#lua@branch:develop`.
-  Only spec refs may have one.
 - Other schemes, such as `http:` and `file:`, are not allowed.
 - The variant must match `^[a-z0-9_]+(/[a-z0-9_]+)?$`. A ref without `#` has the variant `""`.
 

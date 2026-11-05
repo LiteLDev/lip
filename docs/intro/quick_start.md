@@ -65,7 +65,7 @@ To update a package to a newer version, use the `update` command.
 lip update github.com/LiteLDev/LeviLamina
 ```
 
-To change to a specific version, including an older one, add it with `@`, e.g. `lip update github.com/LiteLDev/LeviLamina@1.0.0`. Running `lip update` without arguments updates every package you installed explicitly.
+To change to a specific version, including an older one, add it with `@`, e.g. `lip update github.com/LiteLDev/LeviLamina@1.0.0`. This pins the package to that version until you update it by its path without `@`. Running `lip update` without arguments updates every package you installed explicitly.
 
 ## Uninstalling Packages
 

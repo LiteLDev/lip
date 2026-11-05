@@ -60,7 +60,7 @@ The lockfile is a JSON file described by the JSON Schema [`workspace.schema.json
     *   `commit` (only for package paths): the commit the hop's repository was at: the commit of the version tag, or the commit the git ref resolved to. Entries migrated from `tooth_lock.json` have none.
 
     The first hop is what [`lip update`](../cli/commands/update.md) requests again: a branch is followed to its new head, a tag is resolved again, a rev stays.
-*   **`archiveKey`**: The key of the final archive, e.g. `github.com/user/repo@1.0.0`, or `github.com/user/repo@rev:<commit>` for a package path with a git ref.
+*   **`archiveKey`**: The key of the final archive, e.g. `github.com/user/repo@1.0.0`, or `github.com/user/repo@rev:<commit>` for a package path with a `branch:`, `tag:` or `rev:` git ref.
 *   **`archive`**: The identity of the final archive:
     *   `{ "kind": "zip", "sha256": ..., "url": ... }`: a ZIP archive. `url` is the `https://` URL it was downloaded from, the `file:///` URI of a local file, or `null` for a ZIP file nested in another archive; `path` is set when the package is a directory inside the ZIP file.
     *   `{ "kind": "git", "repo": ..., "commit": ..., "path": ... }`: a commit of a git repository; `path` is `""` for the repository root.

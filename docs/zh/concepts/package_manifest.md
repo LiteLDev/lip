@@ -65,16 +65,17 @@ LeviLamina 读取：LeviLamina 加载其描述的 mod，lip 负责安装它们�
 | 相对文件 | `./LegacyMoney.mcmod` | 当前文档所在归档内的一个 ZIP 文件。 |
 | URL | `https://example.com/pkg.mcmod` | 通过 HTTPS 下载的 ZIP 归档（会跟随重定向）。 |
 | spec | `github.com/LiteLDev/LeviLamina` | git 仓库 `https://<spec>.git`。 |
+| 带版本的 spec | `github.com/LiteLDev/LeviLamina@1.0.0` | 标签 `v1.0.0` 所指的提交。 |
 | 带 git 引用的 spec | `github.com/LiteLDev/LeviLamina@branch:main` | 该仓库的一个提交。 |
 
-- 相对 target 以 `./` 开头，不得包含空段、`.` 段、`..` 段或 `\`。
+- 相对 target 以 `./` 开头，不得包含空段、`.` 段、`..` 段、`#` 或 `\`。
 - spec 必须是合法的 [Go module path](https://go.dev/ref/mod#module-path)。其版本是名称恰为
   `v<version>` 的标签，其中 `<version>` 是 [SemVer 2.0.0](https://semver.org/) 版本（例如
   `v1.2.3`）。其他标签（例如 `v1.2`）会被忽略。
-- git 引用把 spec 固定到一个提交，而不是其各个版本：`@branch:<branch>`（分支的头）、
+- git 引用把 spec 固定到一个提交，而不是其各个版本：`@<version>`（标签 `v<version>`）、
+  `@branch:<branch>`（分支的头）、
   `@tag:<tag>`（任意标签，例如 `@tag:nightly`）或 `@rev:<commit>`（完整的 40 位提交 ID）。
-  它写在 variant 之后：`github.com/LiteLDev/LegacyScriptEngine#lua@branch:develop`。只有 spec
-  引用可以带 git 引用。
+  它写在 variant 之后：`github.com/LiteLDev/LegacyScriptEngine#lua@branch:develop`。
 - 不允许其他 scheme，例如 `http:` 和 `file:`。
 - variant 必须匹配 `^[a-z0-9_]+(/[a-z0-9_]+)?$`。不带 `#` 的 ref，其 variant 为 `""`。
 

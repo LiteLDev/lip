@@ -65,7 +65,7 @@ lip versions github.com/LiteLDev/LeviLamina
 lip update github.com/LiteLDev/LeviLamina
 ```
 
-如需切换到某个特定版本（包括更旧的版本），请用 `@` 指定，例如 `lip update github.com/LiteLDev/LeviLamina@1.0.0`。不带参数运行 `lip update` 会更新所有你显式安装的包。
+如需切换到某个特定版本（包括更旧的版本），请用 `@` 指定，例如 `lip update github.com/LiteLDev/LeviLamina@1.0.0`。这会把该包固定在该版本，直到你用不带 `@` 的路径更新它。不带参数运行 `lip update` 会更新所有你显式安装的包。
 
 ## 卸载包
 

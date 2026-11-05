@@ -22,7 +22,8 @@ lip update [PACKAGES] [options]
 
 | 安装来源 | `lip update` 安装 |
 | --- | --- |
-| `<path>` 或 `<path>@<version>` | 最新版本。 |
+| `<path>` | 最新版本。 |
+| `<path>@<version>` | 同一个版本：不会变化。 |
 | `<path>@branch:<branch>` | 分支当前的头。 |
 | `<path>@tag:<tag>` | 标签当前所指的提交（只有标签被移动过才会变化）。 |
 | `<path>@rev:<commit>` | 同一个提交：不会变化。 |

@@ -17,7 +17,7 @@ lip install <PACKAGES> [options]
 每个包参数可以是以下形式之一：
 
 1. **包路径** — `<path>` 或 `<path>#<variant>`（例如 `github.com/user/repo`）：最新版本。
-2. **带版本的包路径** — `<path>@<version>` 或 `<path>#<variant>@<version>`（例如 `github.com/user/repo#lua@1.0.0`）：恰好该版本。版本为不带前导 `v` 的 SemVer 2.0.0 版本。
+2. **带版本的包路径** — `<path>@<version>` 或 `<path>#<variant>@<version>`（例如 `github.com/user/repo#lua@1.0.0`）：恰好该版本，即标签 `v<version>` 所指的提交。版本为不带前导 `v` 的 SemVer 2.0.0 版本。它与 git 引用一样会固定该包：参见 [git 引用](#git-引用)。
 3. **带 git 引用的包路径** — `<path>[#<variant>]@branch:<branch>`、`@tag:<tag>` 或 `@rev:<commit>`（例如 `github.com/LiteLDev/LeviLamina@branch:main`）：分支头、标签或提交 ID 所指的提交，无论其版本为何。接受任意分支名或标签名，而不仅是 `v<SemVer>` 标签；提交 ID 必须是完整的 40 位十六进制数字。参见 [git 引用](#git-引用)。
 4. **远程归档** — `.mcmod` 或 `.zip` 文件的 `https://` URL（例如 `https://example.com/package.mcmod`），后面可跟 `#<variant>`。下载内容按 URL 缓存。
 5. **本地归档** — `.mcmod` 或 `.zip` 文件，使用绝对路径或相对于当前目录的路径（例如 `./package.mcmod` 或 `C:\Downloads\package.zip`），后面可跟 `#<variant>`。以 `./`、`../`、`.\` 或 `..\` 开头、为 `.` 或 `..`、为绝对路径，或不含 `@` 且以 `.mcmod` 或 `.zip` 结尾（不区分大小写）或指向已存在的文件或目录的参数，都按本地处理。文件是否为 ZIP 归档只取决于其内容，与扩展名无关。
@@ -30,6 +30,7 @@ lip install <PACKAGES> [options]
 
 git 引用把包路径固定到其仓库的某个提交：
 
+- `@<version>` 取标签 `v<version>` 所指的提交。`lip update` 会保持该版本。
 - `@branch:<branch>` 取分支当前的头。[`lip update`](update.md) 会跟随分支到新的头。
 - `@tag:<tag>` 取标签所指的提交；任意标签名均可，例如 `@tag:nightly`。`lip update` 会重新解析该标签。
 - `@rev:<commit>` 恰好取该提交，它永远不会变化。不接受缩写的提交 ID，因为解析缩写需要仓库的全部历史。

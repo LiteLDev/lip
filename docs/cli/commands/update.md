@@ -22,7 +22,8 @@ Without arguments, every explicitly installed package is requested again by what
 
 | Installed from | `lip update` installs |
 | --- | --- |
-| `<path>` or `<path>@<version>` | The newest version. |
+| `<path>` | The newest version. |
+| `<path>@<version>` | The same version: nothing changes. |
 | `<path>@branch:<branch>` | The current head of the branch. |
 | `<path>@tag:<tag>` | The commit the tag points to now (it only changes if the tag was moved). |
 | `<path>@rev:<commit>` | The same commit: nothing changes. |
