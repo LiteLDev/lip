@@ -10,7 +10,11 @@ public class WorkspaceMutexTests : IDisposable {
 
   private readonly FileSystem _fs = new();
 
-  private string LockPath => Path.Combine(_directory, "workspaces", "hash.lock");
+  public WorkspaceMutexTests() {
+    Directory.CreateDirectory(Path.GetDirectoryName(LockPath)!);
+  }
+
+  private string LockPath => Path.Combine(_directory, ".lip", "lock");
 
   public void Dispose() {
     if (Directory.Exists(_directory)) {
@@ -28,11 +32,11 @@ public class WorkspaceMutexTests : IDisposable {
     // Act & Assert
     WorkspaceBusyException ex = Assert.Throws<WorkspaceBusyException>(
         () => WorkspaceMutex.Acquire(_fs, LockPath, "C:/ws"));
-    Assert.Contains("Another lip process is changing the workspace 'C:/ws'", ex.Message);
+    Assert.Contains("Another process is changing the workspace 'C:/ws'", ex.Message);
   }
 
   [Fact]
-  public void Dispose_Held_ReleasesAndDeletesTheFile() {
+  public void Dispose_Held_ReleasesAndKeepsTheFile() {
     // Arrange
     WorkspaceMutex held = WorkspaceMutex.Acquire(_fs, LockPath, "C:/ws");
 
@@ -40,7 +44,7 @@ public class WorkspaceMutexTests : IDisposable {
     held.Dispose();
 
     // Assert
-    Assert.False(File.Exists(LockPath));
+    Assert.True(File.Exists(LockPath));
     using WorkspaceMutex again = WorkspaceMutex.Acquire(_fs, LockPath, "C:/ws");
     Assert.True(File.Exists(LockPath));
   }
@@ -48,7 +52,6 @@ public class WorkspaceMutexTests : IDisposable {
   [Fact]
   public void Acquire_LeftoverFileOfKilledProcess_TakesItOver() {
     // Arrange
-    Directory.CreateDirectory(Path.GetDirectoryName(LockPath)!);
     File.WriteAllText(LockPath, "");
 
     // Act

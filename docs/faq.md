@@ -15,7 +15,7 @@
 **No.** Running `lip install <package>` installs the package into your workspace and updates the [lockfile](concepts/lockfiles.md) to track the state, but it **does not** modify your `manifest.json`. You must manually add dependencies to `manifest.json` if you want them to be permanent parts of your package's requirements.
 
 ### What happened to `tooth_lock.json`?
-The lock is now `.lip/lock.json` in the workspace, so it moves with the workspace: a workspace that is moved, renamed or copied keeps its installed packages. lip migrates an existing `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it. See [Lockfiles](concepts/lockfiles.md#location).
+The lock is now `.lip/workspace.json` in the workspace, so it moves with the workspace: a workspace that is moved, renamed or copied keeps its installed packages. lip migrates an existing `tooth_lock.json` automatically the next time you install, uninstall or update a package, and then deletes it. See [Lockfiles](concepts/lockfiles.md#location).
 
 ### Can lip install client mods?
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same `manifest.json` packages.
@@ -38,12 +38,11 @@ Not currently. lip fetches packages anonymously over HTTPS and does not use the 
 ### Where does lip store installed packages?
 lip installs package files **directly into your workspace**. A mod is installed to `mods/<id>/`, and `plugins` is a link to `mods` (see [Installing Dependencies](guides/installing_dependencies.md#server-workspaces-only)); a file package places its files where its `manifest.json` says.
 
-The [lockfile](concepts/lockfiles.md) of a workspace is `.lip/lock.json` inside it. lip keeps its other files in per-user directories that follow the platform conventions:
+The [lockfile](concepts/lockfiles.md) of a workspace is `.lip/workspace.json` inside it; the operation lock (`.lip/lock`) and journal (`.lip/journal`) are next to it. lip keeps its other files in per-user directories that follow the platform conventions:
 
 | What | Windows | Linux / macOS |
 | --- | --- | --- |
 | Configuration (`config.yaml`) | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`) |
-| Operation journals and locks (`workspaces/<hash>.journal`, `workspaces/<hash>.lock`) | `%LOCALAPPDATA%\lip` | `$XDG_DATA_HOME/lip` (by default `~/.local/share/lip`) |
 | Cache | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) |
 
 The cache is safe to delete at any time, e.g. with `lip cache clean`. Downloads in progress are written to the hidden `.staging` directory inside the cache; lip writes nothing to the system temporary directory.
@@ -52,4 +51,4 @@ The cache is safe to delete at any time, e.g. with `lip cache clean`. Downloads 
 Nothing changes. `lip install`, `lip uninstall` and `lip update` are all or nothing, including the dependencies they install or remove: lip checks and downloads everything before it touches the workspace, and if a file cannot be written, a hook command fails, or you press Ctrl+C, it undoes every change it made and keeps the lock as it was. Only what the hook commands of packages did cannot be undone. If lip is killed in the middle, the next `lip install`, `uninstall` or `update` of the workspace first completes the interrupted operation, if it had already saved the lock, or undoes it otherwise, and tells you so. See [Internal Mechanism](guides/internal_mechanism.md#workspace-state).
 
 ### Can I run two lip commands at the same time?
-Not on the same workspace: while one `lip install`, `uninstall` or `update` is changing a workspace, another one on that workspace fails at once with "Another lip process is changing the workspace". Commands on different workspaces, and commands that only read (such as `lip list` or `lip view`), can run at any time.
+Not on the same workspace: while one `lip install`, `uninstall` or `update` is changing a workspace, another one on that workspace fails at once with "Another process is changing the workspace". Commands on different workspaces, and commands that only read (such as `lip list` or `lip view`), can run at any time.

@@ -4,13 +4,13 @@
 
 ## 位置
 
-锁文件是工作区根目录下的 `.lip/lock.json`。在 Windows 上，lip 创建 `.lip` 目录时会为其设置隐藏属性；在其他平台上，它的名称本身就使其隐藏。
+锁文件是工作区根目录下的 `.lip/workspace.json`。在 Windows 上，lip 创建 `.lip` 目录时会为其设置隐藏属性；在其他平台上，它的名称本身就使其隐藏。
 
 由于锁位于工作区目录之中，而不是与其路径绑定，移动、重命名或复制工作区后，锁会随之保留，已安装的包也随之保留。
 
 `.lip` 为 lip 保留：安装的包若要把文件写入工作区根目录下的 `.lip` 或其下任何位置，安装会失败；`remove` 模式也永远不会匹配 `.lip` 及其下的任何内容。
 
-lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当不存在 `.lip/lock.json` 时，lip 会迁移它（参见[下文](#旧格式-tooth-lock-json)）。
+lip v0.36 把锁以相同格式保存在 `.lip/lock.json` 中：当不存在 `.lip/workspace.json` 时，lip 会读取它，下一次 install、uninstall 或 update 会写入 `.lip/workspace.json` 并删除它。lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当两者都不存在时，lip 会迁移它（参见[下文](#旧格式-tooth-lock-json)）。
 
 ## 作用
 
@@ -26,7 +26,7 @@ lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当不�
 
 ## 结构
 
-锁文件是一个 JSON 文件，由 JSON Schema [`lock.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/lock.schema.json) 描述：
+锁文件是一个 JSON 文件，由 JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/workspace.schema.json) 描述：
 
 ```json
 {
@@ -101,7 +101,7 @@ lip v0.x 把锁保存在工作区根目录下的 `tooth_lock.json` 中。当不�
 
 ## 旧格式：tooth_lock.json
 
-lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若没有 `.lip/lock.json`，但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时写入 `.lip/lock.json` 并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
+lip v0.x 在工作区根目录使用 `tooth_lock.json`（格式 3）。若没有 `.lip/workspace.json`，但有 `tooth_lock.json`，lip 会在加载时迁移它，在下一次保存时写入 `.lip/workspace.json` 并删除 `tooth_lock.json`。迁移而来的条目类型为 `"tooth"`，没有 `archive`；当 lip 需要它们的文件时，会重新解析标签 `path@version`。
 
 `tooth_lock.json` 记录的是文件的绝对路径。若工作区在这些包安装之后被移动过，这些路径会指向旧位置：lip 会根据所记录的文件现在在工作区中的位置推断出旧的根目录，并把这些路径改写到当前工作区下，因此这些包仍然拥有各自的文件，也仍然可以卸载。
 

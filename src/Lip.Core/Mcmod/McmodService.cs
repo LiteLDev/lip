@@ -35,10 +35,10 @@ public record InstalledPackage(string Identity, string Version, bool Explicit, s
 /// Operations are all or nothing (spec §7). An operation first plans every uninstall and install
 /// against a view of the workspace as the earlier steps leave it, checking everything and
 /// fetching every archive; a failure then changes nothing. It then applies the plans through one
-/// WorkspaceTransaction, journaled next to the lock, and writes the lock last; a failure (or
-/// cancellation) undoes every change and leaves the lock as it was. A mutating operation holds
-/// the workspace's WorkspaceMutex throughout, and first finishes or undoes what an interrupted
-/// operation left in the journal.
+/// WorkspaceTransaction, journaled next to the lock in .lip, and writes the lock last; a failure
+/// (or cancellation) undoes every change and leaves the lock as it was. An operation other than a
+/// dry run holds the workspace's WorkspaceMutex throughout, and first finishes or undoes what an
+/// interrupted operation left in the journal (protocol/workspace §8.4).
 ///
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the lock
 /// without network access, and their archives are opened from the lock only when needed. If the
@@ -85,7 +85,7 @@ public class McmodService(
       fileSystem, directoryLinker ?? new DirectoryLinker(fileSystem), userInteraction);
 
   public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
-    using WorkspaceMutex mutex = await BeginOperation(options);
+    using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
     List<(string Argument, PackageRequest Request)> requests = ParseRequests(packages);
 
@@ -129,7 +129,7 @@ public class McmodService(
   }
 
   public async Task Uninstall(IReadOnlyList<string> packages, OperationOptions options) {
-    using WorkspaceMutex mutex = await BeginOperation(options);
+    using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
 
     List<LockedPackage> targets = [];
@@ -204,7 +204,7 @@ public class McmodService(
   }
 
   public async Task Update(IReadOnlyList<string> packages, OperationOptions options) {
-    using WorkspaceMutex mutex = await BeginOperation(options);
+    using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
 
     List<(string Argument, PackageRequest Request)> requests;
@@ -352,12 +352,17 @@ public class McmodService(
     return new Workspace(root, lockFile, environment, resolver, _createSolver(resolver));
   }
 
-  /// Takes the workspace's inter-process lock for a mutating operation, then finishes or undoes
-  /// what an interrupted operation left in the journal.
-  private async Task<WorkspaceMutex> BeginOperation(OperationOptions options) {
+  /// Takes the workspace lock, then finishes or undoes what an interrupted operation left in the
+  /// journal. A dry run writes nothing, so it takes no lock and only reports the journal.
+  private async Task<WorkspaceMutex?> BeginOperation(OperationOptions options) {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
-    WorkspaceMutex mutex = WorkspaceMutex.Acquire(
-        _fs, _lockStore.GetStatePath(root) + ".lock", root);
+    if (options.DryRun) {
+      await RecoverInterrupted(root, options);
+      return null;
+    }
+
+    _lockStore.CreateLipDirectory(root);
+    WorkspaceMutex mutex = WorkspaceMutex.Acquire(_fs, _lockStore.GetMutexPath(root), root);
     try {
       await RecoverInterrupted(root, options);
     }
@@ -370,7 +375,7 @@ public class McmodService(
   }
 
   /// The journal of the operation applying changes to a workspace.
-  private string JournalPath(string root) => _lockStore.GetStatePath(root) + ".journal";
+  private string JournalPath(string root) => _lockStore.GetJournalPath(root);
 
   private async Task RecoverInterrupted(string root, OperationOptions options) {
     string journal = JournalPath(root);

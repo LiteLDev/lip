@@ -5,8 +5,7 @@ namespace Lip.Core.Tests.Mcmod.Install;
 
 public class WorkspaceTransactionTests {
   private static readonly string _root = OperatingSystem.IsWindows() ? @"C:\ws" : "/ws";
-  private static readonly string _journal =
-      OperatingSystem.IsWindows() ? @"C:\data\ws.journal" : "/data/ws.journal";
+  private static readonly string _journal = Path.Combine(_root, ".lip", "journal");
 
   private readonly MockFileSystem _fs = new();
 
@@ -28,8 +27,10 @@ public class WorkspaceTransactionTests {
 
   private SortedDictionary<string, string> Snapshot() {
     SortedDictionary<string, string> snapshot = new(StringComparer.Ordinal);
+    string lip = Path.Combine(_root, ".lip");
     foreach (string path in _fs.AllPaths.Where(
-        p => p.StartsWith(_root, StringComparison.Ordinal))) {
+        p => p.StartsWith(_root, StringComparison.Ordinal)
+            && !p.StartsWith(lip, StringComparison.Ordinal))) {
       snapshot[path] = _fs.File.Exists(path)
           ? $"{_fs.File.ReadAllText(path)} ({_fs.File.GetAttributes(path)})"
           : "<dir>";
@@ -135,6 +136,43 @@ public class WorkspaceTransactionTests {
     Assert.True(discarded);
     Assert.Equal(before, Snapshot());
     Assert.False(_fs.File.Exists(_journal));
+  }
+
+  [Fact]
+  public async Task Journal_Changes_RecordsPathsRelativeToWorkspace() {
+    // Arrange: disposed of without commit or rollback, as by a killed process.
+    using (WorkspaceTransaction transaction = new(_fs, _journal)) {
+      await Change(transaction);
+    }
+
+    // Act
+    string journal = _fs.File.ReadAllText(_journal);
+
+    // Assert
+    Assert.DoesNotContain(_root, journal, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains("""{"op":"CreateFile","path":"new/deep/created.txt",""", journal);
+    Assert.Contains("""{"op":"Backup","path":"replace.txt","to":".replace.txt.bak",""", journal);
+  }
+
+  [Fact]
+  public async Task Recover_WorkspaceMovedAfterKill_UndoesChangesAtNewPath() {
+    // Arrange
+    string moved = OperatingSystem.IsWindows() ? @"C:\moved" : "/moved";
+    SortedDictionary<string, string> before = Snapshot();
+    using (WorkspaceTransaction transaction = new(_fs, _journal)) {
+      await Change(transaction);
+    }
+
+    _fs.Directory.Move(_root, moved);
+
+    // Act
+    WorkspaceTransaction.RecoveryResult? result = WorkspaceTransaction.Recover(
+        _fs, Path.Combine(moved, ".lip", "journal"), () => { }, () => { });
+
+    // Assert: moved back, the workspace is as it was before the operation.
+    Assert.Empty(result!.Errors);
+    _fs.Directory.Move(moved, _root);
+    Assert.Equal(before, Snapshot());
   }
 
   [Fact]

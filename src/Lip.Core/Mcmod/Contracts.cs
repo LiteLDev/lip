@@ -146,7 +146,8 @@ public interface IMcmodInstaller {
       PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken);
 }
 
-/// Reads and writes the workspace lock (spec §9), which lives in &lt;root&gt;/.lip/lock.json.
+/// Reads and writes the workspace file (protocol/workspace §8.1), called the lock in the code,
+/// which lives in &lt;root&gt;/.lip/workspace.json, and names the other files in &lt;root&gt;/.lip.
 public interface ILockStore {
   /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json left in the workspace
   /// by lip v0.x. Throws when the lock exists but cannot be read.
@@ -158,11 +159,16 @@ public interface ILockStore {
   /// The path of the lock of a workspace.
   public string GetLockPath(string workspaceRoot);
 
-  /// The path, without extension, of lip's files about the process changing a workspace (its
-  /// journal and its inter-process lock), in the per-user data directory.
-  public string GetStatePath(string workspaceRoot);
+  /// The path of the workspace lock file (WorkspaceMutex), &lt;root&gt;/.lip/lock.
+  public string GetMutexPath(string workspaceRoot);
 
-  /// Writes the lock to a hidden temporary file next to it, replacing an earlier staged lock.
+  /// The path of the journal (WorkspaceTransaction), &lt;root&gt;/.lip/journal.
+  public string GetJournalPath(string workspaceRoot);
+
+  /// Creates &lt;root&gt;/.lip when it does not exist.
+  public void CreateLipDirectory(string workspaceRoot);
+
+  /// Writes the lock to &lt;root&gt;/.lip/workspace.json.new, replacing an earlier staged lock.
   public Task Stage(string workspaceRoot, LockFile lockFile);
 
   /// Moves the staged lock into place in one rename, the point at which an operation commits.

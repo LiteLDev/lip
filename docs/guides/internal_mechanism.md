@@ -17,7 +17,7 @@ Both interfaces share the same core logic, ensuring consistent behavior regardle
 
 `lip install`, `lip uninstall` and `lip update` run the same steps:
 
-1.  **Lock**: Load the workspace's lock from `.lip/lock.json`, or migrate the legacy `tooth_lock.json` of lip v0.x (see [Lockfiles](../concepts/lockfiles.md)).
+1.  **Lock**: Load the workspace's lock from `.lip/workspace.json`, or migrate the legacy `tooth_lock.json` of lip v0.x (see [Lockfiles](../concepts/lockfiles.md)).
 2.  **Environment**: Determine the platform and RID (see [Environment](../concepts/package_manifest.md#environment)).
 3.  **Resolver**: Turn every ref into a sequence of candidate packages, following meta documents.
 4.  **Graph solver**: Choose one candidate per request and per install edge, so that every identity appears once and no `conflicts` entry is violated.
@@ -56,25 +56,25 @@ A `manifest.json` at a tag that has a `version` must declare the tag's version. 
 
 ## Manifest Validation
 
-`manifest.json` is described by the JSON Schema [`protocol/package/manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json). The lock is described by [`protocol/workspace/lock.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/lock.schema.json). The legacy formats were described by JSON Schemas, written in YAML, in the former [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) directory, under `legacy/v<format>/`: `tooth.schema.yaml` for tooth.json formats 1, 2 and 3, `tooth_lock.schema.yaml` for tooth_lock.json and `liprc.schema.yaml` for liprc.json (all format 3). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
+`manifest.json` is described by the JSON Schema [`protocol/package/manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json). The lock is described by [`protocol/workspace/workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/workspace.schema.json). The legacy formats were described by JSON Schemas, written in YAML, in the former [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) directory, under `legacy/v<format>/`: `tooth.schema.yaml` for tooth.json formats 1, 2 and 3, `tooth_lock.schema.yaml` for tooth_lock.json and `liprc.schema.yaml` for liprc.json (all format 3). The schemas are meant for editors and other tools; lip itself does not run JSON Schema validation.
 
 -   **Validation**: lip parses `manifest.json` strictly (UTF-8, no comments, no duplicate keys) and rejects a document whose keys have the wrong type, such as an invalid `id`, `version`, ref, range, glob or template. A ref to an invalid document yields no candidate, and lip reports why.
 -   **Versioning**: A `manifest.json` with `"format": "bf45b1"` is a document of the current format; one without `format` is a LeviLamina manifest, read as a mod (spec §10.1). `tooth.json` in format 1 or 2 is converted to format 3 in memory when it is read, and then to a file package (spec §10.2); run `lip migrate` in a package repository to migrate it from `tooth.json` or a LeviLamina manifest to `manifest.json`.
 
 ## Workspace State
 
-lip maintains the state of your installed packages in a lockfile kept in the workspace, at `.lip/lock.json` (see [Lockfiles](../concepts/lockfiles.md#location)). This tracks:
+lip maintains the state of your installed packages in a lockfile kept in the workspace, at `.lip/workspace.json` (see [Lockfiles](../concepts/lockfiles.md#location)). This tracks:
 -   Which packages are explicitly requested versus implicit dependencies.
 -   The exact versions installed, and the archives they came from.
 -   The files each package owns.
 -   The platform and RID of the workspace.
 
-Files written to make an operation atomic are hidden and sit next to their target: the lock is first written to `.<name>.tmp` beside it and then renamed over it, and a file that an operation overwrites or deletes is first renamed to `.<name>.bak` (or `.<name>.bak1`, `.<name>.bak2`, … if that name is taken) in the same directory. The backups are deleted once the lock is saved (one that cannot be deleted, for example because a program has it open, is left and named in a warning), or renamed back if the operation fails. Directories that an uninstallation empties are deleted at the same time. On Windows these files also get the hidden attribute.
+Files written to make an operation atomic are hidden and sit next to their target: the lock is first written to `.lip/workspace.json.new` and then renamed over `.lip/workspace.json`, and a file that an operation overwrites or deletes is first renamed to `.<name>.bak` (or `.<name>.bak1`, `.<name>.bak2`, … if that name is taken) in the same directory. The backups are deleted once the lock is saved (one that cannot be deleted, for example because a program has it open, is left and named in a warning), or renamed back if the operation fails. Directories that an uninstallation empties are deleted at the same time. On Windows these files also get the hidden attribute.
 
-The journal and the operation lock below are kept in lip's per-user data directory, in `%LOCALAPPDATA%\lip\workspaces\` on Windows or `$XDG_DATA_HOME/lip/workspaces/` (by default `~/.local/share/lip/workspaces/`) on Linux and macOS. `<hash>` is the lowercase hexadecimal SHA-256 of the workspace's absolute path, so they stay with the path: a moved or copied workspace does not take an interrupted operation of the original with it.
+The journal and the operation lock below are kept in `.lip` next to the lock, so they move with the workspace: a moved or copied workspace takes an interrupted operation with it, and the journal records paths relative to the workspace. Their formats are defined in [`protocol/workspace`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/README.md#8-the-lip-directory), so that other programs can take part.
 
--   **Journal**: While an operation changes the workspace, lip records every change, before making it, in `<hash>.journal`. If lip is killed, the next `lip install`, `uninstall` or `update` of the workspace reads the journal first: it undoes the interrupted operation (restoring the backups) and reports it, or, if the operation had already reached the point of saving its lock, finishes it by deleting the backups. A dry run only reports the journal.
--   **One operation at a time**: An operation holds `<hash>.lock` open exclusively (deleted when it ends). A second `lip install`, `uninstall` or `update` of the same workspace fails at once with "Another lip process is changing the workspace"; run it again when the first one has finished.
+-   **Journal**: While an operation changes the workspace, lip records every change, before making it, in `.lip/journal`. If lip is killed, the next `lip install`, `uninstall` or `update` of the workspace reads the journal first: it undoes the interrupted operation (restoring the backups) and reports it, or, if the operation had already reached the point of saving its lock, finishes it by deleting the backups. A dry run takes no lock and only reports the journal.
+-   **One operation at a time**: An operation holds `.lip/lock` open exclusively (an exclusive `flock` on Linux and macOS; the file is kept). A second `lip install`, `uninstall` or `update` of the same workspace fails at once with "Another process is changing the workspace"; run it again when the first one has finished.
 
 ## Notes on the Specification
 

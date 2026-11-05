@@ -18,15 +18,17 @@ namespace Lip.Core.Mcmod.Install;
 /// - Moves, directory removals and directory links (the workspace layout) are recorded and undone
 ///   too.
 ///
-/// With a journal path, every change is appended to the journal (one JSON object per line) and
-/// flushed to the operating system before it is made, so that a later process can undo the
-/// changes of a process that was killed (Recover). Commit appends a "commit" line; from then on
+/// With a journal path (&lt;root&gt;/.lip/journal, protocol/workspace §8.3), every change is appended
+/// to the journal (one JSON object per line, its paths relative to &lt;root&gt; and '/'-separated)
+/// and flushed to the operating system before it is made, so that a later process can undo the
+/// changes of a process that was killed (Recover). Commit appends a "Commit" line; from then on
 /// recovery finishes the operation (deleting the backups) instead of undoing it.
 public sealed class WorkspaceTransaction : IDisposable {
   private static int s_open;
 
   private readonly IFileSystem _fs;
   private readonly string? _journalPath;
+  private readonly string? _root;
   private readonly HashSet<string> _reserved;
   private readonly List<JournalEntry> _entries = [];
   private Stream? _journal;
@@ -38,6 +40,7 @@ public sealed class WorkspaceTransaction : IDisposable {
       IFileSystem fileSystem, string? journalPath = null, IEnumerable<string>? reserved = null) {
     _fs = fileSystem;
     _journalPath = journalPath;
+    _root = journalPath is null ? null : JournalRoot(fileSystem, journalPath);
     _reserved = new(reserved ?? [], WorkspaceLayout.PathComparer);
     Interlocked.Increment(ref s_open);
   }
@@ -161,7 +164,7 @@ public sealed class WorkspaceTransaction : IDisposable {
       try {
         _journal.Dispose();
         _journal = null;
-        WriteJournal(_fs, _journalPath!, _entries, committed: false);
+        WriteJournal(_fs, _journalPath!, _root!, _entries, committed: false);
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
         // Undoing is still right; only recovery after a crash during it would finish instead.
@@ -219,7 +222,8 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   private void Append(JournalEntry entry) {
-    _journal!.Write(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(entry, s_json) + "\n"));
+    _journal!.Write(Encoding.UTF8.GetBytes(
+        JsonSerializer.Serialize(ToJournal(_fs, _root!, entry), s_json) + "\n"));
     // To the operating system, which keeps it when lip is killed.
     _journal.Flush();
   }
@@ -241,7 +245,7 @@ public sealed class WorkspaceTransaction : IDisposable {
           _fs.File.Delete(_journalPath);
         }
       } else {
-        WriteJournal(_fs, _journalPath, left, committed);
+        WriteJournal(_fs, _journalPath, _root!, left, committed);
       }
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
@@ -250,18 +254,53 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   private static void WriteJournal(
-      IFileSystem fs, string path, List<JournalEntry> entries, bool committed) {
+      IFileSystem fs, string path, string root, List<JournalEntry> entries, bool committed) {
     StringBuilder text = new();
     foreach (JournalEntry entry in (List<JournalEntry>)[
         new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O"), false),
         .. entries,
         .. committed ? [new JournalEntry(JournalOp.Commit, "")] : (JournalEntry[])[]]) {
-      text.Append(JsonSerializer.Serialize(entry, s_json)).Append('\n');
+      text.Append(JsonSerializer.Serialize(ToJournal(fs, root, entry), s_json)).Append('\n');
     }
 
     string temp = path + ".tmp";
     fs.File.WriteAllText(temp, text.ToString());
     fs.File.Move(temp, path, overwrite: true);
+  }
+
+  /// The workspace root of a journal at &lt;root&gt;/.lip/journal.
+  private static string JournalRoot(IFileSystem fs, string journalPath) =>
+      fs.Path.GetDirectoryName(fs.Path.GetDirectoryName(fs.Path.GetFullPath(journalPath))!)!;
+
+  /// Whether the path of an entry, and the destination of a Backup or Move, are workspace paths.
+  private static bool HasPaths(JournalOp op) => op is not (JournalOp.Begin or JournalOp.Commit);
+
+  private static bool HasDestination(JournalOp op) => op is JournalOp.Backup or JournalOp.Move;
+
+  /// An entry as the journal records it: its paths relative to the root, '/'-separated.
+  private static JournalEntry ToJournal(IFileSystem fs, string root, JournalEntry entry) {
+    if (!HasPaths(entry.Op)) {
+      return entry;
+    }
+
+    string Relative(string path) => fs.Path.GetRelativePath(root, path).Replace('\\', '/');
+    return entry with {
+      Path = Relative(entry.Path),
+      To = HasDestination(entry.Op) ? Relative(entry.To!) : entry.To,
+    };
+  }
+
+  /// An entry read from the journal: its paths made absolute against the root.
+  private static JournalEntry FromJournal(IFileSystem fs, string root, JournalEntry entry) {
+    if (!HasPaths(entry.Op)) {
+      return entry;
+    }
+
+    string Absolute(string path) => fs.Path.GetFullPath(fs.Path.Combine(root, path));
+    return entry with {
+      Path = Absolute(entry.Path),
+      To = HasDestination(entry.Op) && entry.To is not null ? Absolute(entry.To) : entry.To,
+    };
   }
 
   private static readonly JsonSerializerOptions s_json = new() {
@@ -286,6 +325,7 @@ public sealed class WorkspaceTransaction : IDisposable {
       return null;
     }
 
+    string root = JournalRoot(fs, journalPath);
     List<JournalEntry> entries = [];
     bool committed = false;
     string? started = null;
@@ -310,7 +350,7 @@ public sealed class WorkspaceTransaction : IDisposable {
           committed = true;
           break;
         default:
-          entries.Add(entry);
+          entries.Add(FromJournal(fs, root, entry));
           break;
       }
     }
@@ -329,7 +369,7 @@ public sealed class WorkspaceTransaction : IDisposable {
     if (left.Count == 0) {
       fs.File.Delete(journalPath);
     } else {
-      WriteJournal(fs, journalPath, left, committed);
+      WriteJournal(fs, journalPath, root, left, committed);
     }
 
     return new RecoveryResult(committed, started, entries.Count, errors);

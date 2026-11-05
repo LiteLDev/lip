@@ -1,23 +1,23 @@
 using System.IO.Abstractions;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Lock;
 
-/// Thrown when a workspace lock exists but cannot be read.
+/// Thrown when a workspace file exists but cannot be read.
 public class LockFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Reads and writes the workspace lock (spec §9).
+/// Reads and writes the workspace file (protocol/workspace §8.1), called the lock in the code.
 ///
-/// The lock (format bf45b1) lives inside the workspace, in &lt;root&gt;/.lip/lock.json, so that it
-/// follows the workspace when the workspace is moved, renamed or copied.
+/// The workspace file (format bf45b1) lives inside the workspace, in &lt;root&gt;/.lip/workspace.json,
+/// so that it follows the workspace when the workspace is moved, renamed or copied. Next to it in
+/// .lip are the workspace lock (WorkspaceMutex) and the journal (WorkspaceTransaction).
 ///
-/// When that lock is absent, a v3 &lt;root&gt;/tooth_lock.json written by lip v0.x is migrated. The
-/// next Save writes .lip/lock.json and deletes tooth_lock.json.
+/// When it is absent, the &lt;root&gt;/.lip/lock.json of lip v0.36, which has the same format, is read
+/// instead, and else a v3 &lt;root&gt;/tooth_lock.json written by lip v0.x is migrated. The next save
+/// writes .lip/workspace.json and deletes the file it was read from (protocol/workspace §8.6).
 ///
 /// v3 recorded the absolute paths of the files a package placed (relative to the working
 /// directory, which was the workspace root). Migration turns paths under the workspace root into
@@ -33,10 +33,16 @@ public class LockFormatException(string message, Exception? inner = null)
 /// v3 keyed packages by (tooth path, variant); the lock keys them by identity, which for a
 /// tooth.json package is the tooth name followed by "-label" for a labelled variant (spec §10.2
 /// rule 1), so the variants of one tooth migrate to entries of distinct identities.
-public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStore {
-  /// The directory of lip's own files in the workspace root, and the lock in it.
+public class LockStore(IFileSystem fs) : ILockStore {
+  /// The directory of lip's own files in the workspace root, and the files in it.
   public const string LipDirectory = ".lip";
-  public const string FileName = "lock.json";
+  public const string FileName = "workspace.json";
+  public const string StagedFileName = "workspace.json.new";
+  public const string MutexFileName = "lock";
+  public const string JournalFileName = "journal";
+
+  /// The workspace file of lip v0.36, in .lip.
+  public const string V036FileName = "lock.json";
 
   /// The v3 lock lip v0.x kept in the workspace root.
   public const string LegacyFileName = "tooth_lock.json";
@@ -56,24 +62,25 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
   };
 
   private readonly IFileSystem _fs = fs;
-  private readonly string _dataDirectory = dataDirectory ?? LipDirectories.Data;
 
   /// The path of the lock of a workspace.
-  public string GetLockPath(string workspaceRoot) =>
-      _fs.Path.Join(NormalizeRoot(workspaceRoot), LipDirectory, FileName);
+  public string GetLockPath(string workspaceRoot) => LipPath(workspaceRoot, FileName);
 
-  /// The data directory path, without extension, of lip's files about the process changing a
-  /// workspace (its journal and its inter-process lock). They stay with the path: a workspace
-  /// moved or copied does not take an interrupted operation of the original with it.
-  public string GetStatePath(string workspaceRoot) =>
-      _fs.Path.Join(_dataDirectory, "workspaces", GetWorkspaceHash(workspaceRoot));
+  public string GetMutexPath(string workspaceRoot) => LipPath(workspaceRoot, MutexFileName);
+
+  public string GetJournalPath(string workspaceRoot) => LipPath(workspaceRoot, JournalFileName);
+
+  private string LipPath(string workspaceRoot, string name) =>
+      _fs.Path.Join(NormalizeRoot(workspaceRoot), LipDirectory, name);
 
   public async Task<LockFile> Load(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
 
-    string path = GetLockPath(root);
-    if (_fs.File.Exists(path)) {
-      return Parse(await _fs.File.ReadAllBytesAsync(path), path);
+    foreach (string name in (string[])[FileName, V036FileName]) {
+      string path = LipPath(root, name);
+      if (_fs.File.Exists(path)) {
+        return Parse(await _fs.File.ReadAllBytesAsync(path), path);
+      }
     }
 
     string legacyPath = _fs.Path.Combine(root, LegacyFileName);
@@ -103,19 +110,12 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     }
 
     string root = NormalizeRoot(workspaceRoot);
-    string path = GetLockPath(root);
     CreateLipDirectory(root);
-    string tempPath = StagedPath(path);
+    string tempPath = LipPath(root, StagedFileName);
 
     byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(lockFile, _writeOptions);
     try {
-      // A leftover of an interrupted save; on Windows a hidden file cannot be overwritten.
-      if (_fs.File.Exists(tempPath)) {
-        _fs.File.Delete(tempPath);
-      }
-
       await _fs.File.WriteAllBytesAsync(tempPath, bytes);
-      _fs.SetHidden(tempPath, true);
     }
     catch {
       if (_fs.File.Exists(tempPath)) {
@@ -128,39 +128,43 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
 
   public void CommitStaged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
-    string path = GetLockPath(root);
-    string tempPath = StagedPath(path);
+    string path = LipPath(root, FileName);
+    string tempPath = LipPath(root, StagedFileName);
     if (!_fs.File.Exists(tempPath)) {
       return;
     }
 
-    // Migrating: the lock was read from tooth_lock.json, which is deleted below. Once
-    // .lip/lock.json exists, a file of that name is not lip's.
-    bool migrating = !_fs.File.Exists(path);
+    // Migrating: the lock was read from the file of an earlier format, which is deleted below.
+    // Once .lip/workspace.json exists, files of those names are not lip's.
+    string? migratedFrom = null;
+    if (!_fs.File.Exists(path)) {
+      string v036Path = LipPath(root, V036FileName);
+      migratedFrom = _fs.File.Exists(v036Path) ? v036Path : _fs.Path.Combine(root, LegacyFileName);
+    }
+
     _fs.File.Move(tempPath, path, overwrite: true);
 
     // The lock is in place; what follows must not fail the operation.
     try {
-      _fs.SetHidden(path, false);
-      string legacyPath = _fs.Path.Combine(root, LegacyFileName);
-      if (migrating && _fs.File.Exists(legacyPath)) {
-        _fs.File.Delete(legacyPath);
+      if (migratedFrom is not null && _fs.File.Exists(migratedFrom)) {
+        _fs.File.Delete(migratedFrom);
       }
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-      // A hidden lock or a leftover tooth_lock.json is read correctly.
+      // A leftover file of an earlier format is not read once .lip/workspace.json exists.
     }
   }
 
   public void DiscardStaged(string workspaceRoot) {
-    string tempPath = StagedPath(GetLockPath(NormalizeRoot(workspaceRoot)));
+    string tempPath = LipPath(NormalizeRoot(workspaceRoot), StagedFileName);
     if (_fs.File.Exists(tempPath)) {
       _fs.File.Delete(tempPath);
     }
   }
 
   /// Creates &lt;root&gt;/.lip, hidden like on other platforms, where its name hides it.
-  private void CreateLipDirectory(string root) {
+  public void CreateLipDirectory(string workspaceRoot) {
+    string root = NormalizeRoot(workspaceRoot);
     string directory = _fs.Path.Join(root, LipDirectory);
     if (_fs.Directory.Exists(directory)) {
       return;
@@ -173,22 +177,6 @@ public class LockStore(IFileSystem fs, string? dataDirectory = null) : ILockStor
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
       // A visible .lip works the same.
     }
-  }
-
-  /// The hidden temporary file a lock is staged in, next to the lock.
-  private string StagedPath(string lockPath) =>
-      _fs.Path.Join(
-          _fs.Path.GetDirectoryName(lockPath)!, $".{_fs.Path.GetFileName(lockPath)}.tmp");
-
-  /// The lowercase hex SHA-256 of the normalised absolute workspace path: the full path without
-  /// a trailing separator, lower-cased on Windows, where paths are case-insensitive.
-  public string GetWorkspaceHash(string workspaceRoot) {
-    string root = NormalizeRoot(workspaceRoot);
-    if (OperatingSystem.IsWindows()) {
-      root = root.ToLowerInvariant();
-    }
-
-    return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(root)));
   }
 
   private string NormalizeRoot(string workspaceRoot) =>

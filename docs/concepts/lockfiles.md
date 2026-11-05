@@ -4,13 +4,13 @@
 
 ## Location
 
-The lockfile is `.lip/lock.json` in the workspace root. On Windows lip creates the `.lip` directory with the hidden attribute; elsewhere its name hides it.
+The lockfile is `.lip/workspace.json` in the workspace root. On Windows lip creates the `.lip` directory with the hidden attribute; elsewhere its name hides it.
 
 Because the lock lives in the workspace directory rather than being tied to its path, a workspace that is moved, renamed or copied keeps its lock, and so its installed packages.
 
 `.lip` is reserved for lip: installing a package that would write a file to `.lip` at the workspace root, or anywhere below it, fails, and a `remove` pattern never matches `.lip` or anything below it.
 
-lip v0.x kept the lock in `tooth_lock.json` in the workspace root. When there is no `.lip/lock.json`, lip migrates it (see [below](#legacy-tooth-lock-json)).
+lip v0.36 kept the lock in `.lip/lock.json`, in the same format: when there is no `.lip/workspace.json`, lip reads it, and the next install, uninstall or update writes `.lip/workspace.json` and deletes it. lip v0.x kept the lock in `tooth_lock.json` in the workspace root. When there is neither, lip migrates it (see [below](#legacy-tooth-lock-json)).
 
 ## Purpose
 
@@ -26,7 +26,7 @@ The lockfile is saved once, after every package of an operation has been install
 
 ## Structure
 
-The lockfile is a JSON file described by the JSON Schema [`lock.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/lock.schema.json):
+The lockfile is a JSON file described by the JSON Schema [`workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/workspace.schema.json):
 
 ```json
 {
@@ -101,7 +101,7 @@ The lockfile is a JSON file described by the JSON Schema [`lock.schema.json`](ht
 
 ## Legacy: tooth_lock.json
 
-lip v0.x used `tooth_lock.json` (format 3) in the workspace root. If there is no `.lip/lock.json` but there is a `tooth_lock.json`, lip migrates it when it loads it, writes `.lip/lock.json` on the next save and deletes `tooth_lock.json`. Migrated entries have the kind `"tooth"` and no `archive`; when lip needs their files it resolves the tag `path@version` again.
+lip v0.x used `tooth_lock.json` (format 3) in the workspace root. If there is no `.lip/workspace.json` but there is a `tooth_lock.json`, lip migrates it when it loads it, writes `.lip/workspace.json` on the next save and deletes `tooth_lock.json`. Migrated entries have the kind `"tooth"` and no `archive`; when lip needs their files it resolves the tag `path@version` again.
 
 `tooth_lock.json` recorded the absolute paths of the files. If the workspace was moved after those packages were installed, the paths point to its old location: lip infers the old root from where the recorded files now exist under the workspace and rebases the paths onto the workspace, so the packages still own their files and can be uninstalled.
 

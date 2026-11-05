@@ -15,7 +15,7 @@
 **不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[锁文件](concepts/lockfiles.md)来记录状态，但**不会**修改你的 `manifest.json`。如果你希望依赖长期保留在包的要求中，需要手动把它加入 `manifest.json`。
 
 ### `tooth_lock.json` 去哪了？
-锁现在是工作区中的 `.lip/lock.json`，因此会随工作区一起移动：移动、重命名或复制工作区后，已安装的包仍然保留。下次安装、卸载或更新包时，lip 会自动迁移已有的 `tooth_lock.json`，然后删除它。参见[锁文件](concepts/lockfiles.md#位置)。
+锁现在是工作区中的 `.lip/workspace.json`，因此会随工作区一起移动：移动、重命名或复制工作区后，已安装的包仍然保留。下次安装、卸载或更新包时，lip 会自动迁移已有的 `tooth_lock.json`，然后删除它。参见[锁文件](concepts/lockfiles.md#位置)。
 
 ### lip 能安装客户端 mod 吗？
 不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的 `manifest.json` 包。
@@ -38,12 +38,11 @@
 ### lip 会把安装的包放在哪里？
 lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<id>/`，而 `plugins` 是指向 `mods` 的链接（参见[安装依赖](guides/installing_dependencies.md#仅限服务端工作区)）；文件包按其 `manifest.json` 的规定放置文件。
 
-工作区的[锁文件](concepts/lockfiles.md)是其中的 `.lip/lock.json`。lip 自己的其他文件保存在遵循平台惯例的用户目录中：
+工作区的[锁文件](concepts/lockfiles.md)是其中的 `.lip/workspace.json`；操作锁（`.lip/lock`）和日志（`.lip/journal`）位于它旁边。lip 自己的其他文件保存在遵循平台惯例的用户目录中：
 
 | 内容 | Windows | Linux / macOS |
 | --- | --- | --- |
 | 配置（`config.yaml`） | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip`（默认 `~/.config/lip`） |
-| 操作日志和操作锁（`workspaces/<hash>.journal`、`workspaces/<hash>.lock`） | `%LOCALAPPDATA%\lip` | `$XDG_DATA_HOME/lip`（默认 `~/.local/share/lip`） |
 | 缓存 | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip`（默认 `~/.cache/lip`） |
 
 缓存可以随时删除，例如使用 `lip cache clean`。正在进行的下载会写入缓存中隐藏的 `.staging` 目录；lip 不向系统临时目录写入任何内容。
@@ -52,4 +51,4 @@ lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<id>
 什么都不会改变。`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、钩子命令失败或按下 Ctrl+C，它会撤销已做的全部修改，锁保持原样。只有包的钩子命令所做的事无法撤销。若 lip 在中途被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先处理被中断的操作：若它已保存锁，则将其完成，否则将其撤销，并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。
 
 ### 可以同时运行两个 lip 命令吗？
-不能作用于同一个工作区：一个 `lip install`、`uninstall` 或 `update` 正在修改某个工作区时，对该工作区的另一个此类命令会立即失败，并提示"Another lip process is changing the workspace"。作用于不同工作区的命令，以及只读取的命令（如 `lip list` 或 `lip view`），随时都可以运行。
+不能作用于同一个工作区：一个 `lip install`、`uninstall` 或 `update` 正在修改某个工作区时，对该工作区的另一个此类命令会立即失败，并提示"Another process is changing the workspace"。作用于不同工作区的命令，以及只读取的命令（如 `lip list` 或 `lip view`），随时都可以运行。

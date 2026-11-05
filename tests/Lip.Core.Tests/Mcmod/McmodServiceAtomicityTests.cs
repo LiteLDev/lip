@@ -306,6 +306,18 @@ public class McmodServiceAtomicityTests {
   }
 
   [Fact]
+  public async Task DryRun_NewWorkspace_CreatesNoLipDirectory() {
+    // Arrange
+    AddMod("base.mcmod", "Base");
+
+    // Act
+    await _ws.Service.Install(["base.mcmod"], s_options with { DryRun = true });
+
+    // Assert
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path(".lip")));
+  }
+
+  [Fact]
   public async Task Install_Succeeds_LeavesNoBackupJournalOrMutex() {
     // Arrange
     AddMod("demo.mcmod", "Demo");
@@ -317,9 +329,8 @@ public class McmodServiceAtomicityTests {
     // Assert
     Assert.Equal("Demo 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("mods/Demo/Demo.dll")));
     Assert.Equal(
-        [_ws.LockPath], _ws.Fs.Directory.GetFiles(_ws.Fs.Path.GetDirectoryName(_ws.LockPath)!));
-    string state = _ws.LockStore.GetStatePath(_ws.Root);
-    Assert.DoesNotContain(_ws.Fs.AllFiles, f => f.StartsWith(state, StringComparison.Ordinal));
+        [_ws.LockStore.GetMutexPath(_ws.Root), _ws.LockPath],
+        _ws.Fs.Directory.GetFiles(_ws.Fs.Path.GetDirectoryName(_ws.LockPath)!).Order());
     Assert.DoesNotContain(_ws.Fs.AllFiles, f => f.Contains(".bak", StringComparison.Ordinal));
   }
 }
