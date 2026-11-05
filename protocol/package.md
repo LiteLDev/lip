@@ -7,7 +7,7 @@
   - **ZIP archive**: a file in the ZIP format [APPNOTE], by content, whatever its name. Each entry MUST be a regular file or directory; entry paths are decoded as UTF-8, MUST be `/`-separated, and MUST NOT start with `/` or contain a `..` segment or `\`.
   - **directory archive**: a directory, taken as the archive of its contents.
   - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees.
-- **manifest**: The file `manifest.json` at the root of an archive, which MUST be valid against `manifest.schema.json`.
+- **manifest**: The file `manifest.json` at the root of an archive, which MUST be valid against `manifest.schema.json`. Its `version`, and each non-null `version` of its targets, MUST be a version; each string of the `source` of a dependency MUST be a source; in each string of the `source` of a target, every `{{` MUST begin `{{id}}`, `{{version}}`, `{{platform}}` or `{{runtime}}`.
 - **package**: An archive that has a manifest.
 - **meta package**: A package whose manifest has the key `targets`.
 - **concrete package**: Any other package.
@@ -76,13 +76,13 @@ The git archive of each selected commit MUST be a meta package. When it has a ta
 
 ### 2.2. URLs
 
-A **URL** names the ZIP archive in the response body of an HTTPS GET of the location, following redirects; the location MUST be an absolute URI [RFC3986].
+A **URL** names the ZIP archive in the response body of an HTTPS GET of the location, following redirects; the location MUST be an absolute URI [RFC3986] with a non-empty host.
 
 ### 2.3. Local Paths
 
 A **local file** is a local path naming a file, which MUST be a ZIP archive. A **local directory** is a local path naming a directory, which is a directory archive.
 
-Inside a manifest, a local path MUST start with `./`, followed by a non-empty path of `/`-separated segments, optionally ending with `/`, that MUST NOT contain an empty segment other than the trailing one, a `.` or `..` segment, or `\`. It names a file or directory in the archive containing the manifest, relative to its root.
+Inside a manifest, a local path MUST start with `./`, followed by a non-empty path of `/`-separated segments, optionally ending with `/`, that MUST NOT contain an empty segment other than the trailing one, a `.` or `..` segment, `#` or `\`. It names a file or directory in the archive containing the manifest, relative to its root.
 
 Outside a manifest, a local path names a file or directory on the local file system; its syntax is not defined here.
 
@@ -103,7 +103,6 @@ The **chain** of a candidate is the sequence of sources followed to reach it, st
    - Of those, select the one that writes the most of `platform` and `runtime`. When none is left, or more than one writes the most, the meta package contributes no candidate.
    - The candidates are those of Resolve(s, this archive, range, environment) for each source s of the selected target's `source`, concatenated in order.
    - Before s is parsed, `{{id}}` and `{{version}}` in it are replaced by the member of the same name in the selected target, or else in the manifest, and `{{platform}}` and `{{runtime}}` by the components of `environment`; for a git archive with a tag version, `version` is the version of the package. A source with a template that has no value contributes no candidate.
-
 3. Concrete packages. A concrete package is the single candidate if all of these hold, and none otherwise:
    - the variant of the source is `""`;
    - its manifest's `platform` and `runtime` are each omitted or equal to the corresponding component of `environment`;

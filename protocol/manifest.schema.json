@@ -23,8 +23,7 @@
   ],
   "definitions": {
     "semVer": {
-      "type": "string",
-      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:\\+[0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*)?$"
+      "type": "string"
     },
     "id": {
       "type": "string",
@@ -45,8 +44,7 @@
       "type": "string"
     },
     "source": {
-      "type": "string",
-      "pattern": "^(?:\\./(?!.*@(?:branch|tag|rev):)(?!\\.\\.?(?:/|#|$))[^/#\\\\]+(?:/(?!\\.\\.?(?:/|#|$))[^/#\\\\]+)*/?(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|https://(?!.*@(?:branch|tag|rev):)[^#]+(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|(?=[a-z0-9.-]*\\.)[a-z0-9](?:[a-z0-9.-]*[a-z0-9-])?(?:/[A-Za-z0-9_~{}-](?:[A-Za-z0-9._~{}-]*[A-Za-z0-9_~{}-])?)*(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?(?:@(?:(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:\\+[0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*)?|branch:(?!/|@$)(?!.*(?:\\.\\.|@\\{|//|/\\.|\\.lock(?:/|$)|[/.]$))[^\\u0000- \\u007f~^:?*\\[\\\\]+|tag:(?!/|@$)(?!.*(?:\\.\\.|@\\{|//|/\\.|\\.lock(?:/|$)|[/.]$))[^\\u0000- \\u007f~^:?*\\[\\\\]+|rev:[0-9a-fA-F]{40}))?)$"
+      "type": "string"
     },
     "sources": {
       "description": "One source, or alternatives in order.",
@@ -64,18 +62,14 @@
       ]
     },
     "templateSource": {
-      "type": "string",
-      "not": {
-        "pattern": "\\{\\{(?!(id|version|platform|runtime)\\}\\})"
-      }
+      "type": "string"
     },
     "range": {
       "type": "string"
     },
     "glob": {
-      "description": "POSIX fnmatch patterns with FNM_PATHNAME and without FNM_PERIOD, matched segment by segment ('*', '?', bracket expressions; no escape character); a '**' segment matches zero or more segments; a trailing '/' matches directories and everything below them.",
-      "type": "string",
-      "pattern": "^(?!/)(?!.*//)[^\\\\]+$"
+      "description": "POSIX fnmatch patterns with FNM_PATHNAME and without FNM_PERIOD, matched segment by segment ('*', '?', bracket expressions; no escape character); a '**' segment matches zero or more segments; a trailing '/' matches directories and everything below them. A glob MUST NOT be empty, start with '/', or contain '//' or '\\'.",
+      "type": "string"
     },
     "globs": {
       "type": "array",
@@ -90,8 +84,8 @@
       }
     },
     "path": {
-      "type": "string",
-      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*//)(?!(.*/)?\\.\\.(/|$))[^\\\\]*$"
+      "description": "'/'-separated; MUST NOT start with '/' or with an ASCII letter and ':', or contain '//', a '..' segment or '\\'.",
+      "type": "string"
     },
     "info": {
       "type": "object",
@@ -217,6 +211,7 @@
       ]
     },
     "file": {
+      "description": "The glob form when src contains '*', '?' or '['; otherwise the directory form when src is \"\" or ends with '/'; otherwise the file form. In the glob and directory forms, dest MUST be \"\" or end with '/'; in the file form, it MUST NOT.",
       "type": "object",
       "properties": {
         "src": {
@@ -229,44 +224,6 @@
       "required": [
         "src",
         "dest"
-      ],
-      "oneOf": [
-        {
-          "description": "Glob form: src contains \"*\", \"?\" or \"[\".",
-          "properties": {
-            "src": {
-              "pattern": "[*?\\[]"
-            },
-            "dest": {
-              "pattern": "(^|/)$"
-            }
-          }
-        },
-        {
-          "description": "Directory form: \"\" or a trailing \"/\".",
-          "properties": {
-            "src": {
-              "pattern": "^[^*?\\[]*$",
-              "not": {
-                "pattern": "[^/]$"
-              }
-            },
-            "dest": {
-              "pattern": "(^|/)$"
-            }
-          }
-        },
-        {
-          "description": "File form.",
-          "properties": {
-            "src": {
-              "pattern": "^[^*?\\[]*[^/*?\\[]$"
-            },
-            "dest": {
-              "pattern": "[^/]$"
-            }
-          }
-        }
       ]
     },
     "files": {
