@@ -314,7 +314,7 @@ public class McmodInstallerTests {
   }
 
   [Theory]
-  [InlineData(".lip/lock.json")]
+  [InlineData(".lip/workspace.json")]
   [InlineData(".lip")]
   [InlineData(".LIP/x.txt")]
   public async Task Install_DestInLipDirectory_Throws(string dest) {
@@ -870,21 +870,21 @@ public class McmodInstallerTests {
     // Arrange
     PackageDocument document = FilePackage("Pack", new PackageFile(null, "a.txt", "a.txt")) with {
       Remove = [
-        new PathGlob(".lip/"), new PathGlob(".lip/lock.json"), new PathGlob("*/"),
+        new PathGlob(".lip/"), new PathGlob(".lip/workspace.json"), new PathGlob("*/"),
         new PathGlob("**/*.json"),
       ],
     };
     IReadOnlyList<string> owned = await _installer.Install(
         Candidate(document, Source(new() { ["a.txt"] = "a" })), Context(_server));
-    AddFile(".lip/lock.json", "lock");
+    AddFile(".lip/workspace.json", "lock");
     AddFile("logs/a.json", "x");
 
     // Act
     await _installer.Uninstall(
-        Locked(document, [.. owned, ".lip/lock.json"]), Context(_server));
+        Locked(document, [.. owned, ".lip/workspace.json"]), Context(_server));
 
     // Assert
-    Assert.Equal("lock", Read(".lip/lock.json"));
+    Assert.Equal("lock", Read(".lip/workspace.json"));
     Assert.False(_fs.File.Exists(Full("a.txt")));
     Assert.False(_fs.File.Exists(Full("logs/a.json")));
   }

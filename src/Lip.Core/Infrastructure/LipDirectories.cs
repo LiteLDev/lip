@@ -9,11 +9,6 @@ public static class LipDirectories {
   /// ~/.config/lip) elsewhere. .NET maps SpecialFolder.ApplicationData to both.
   public static string Config => Path.Join(GetFolder(Environment.SpecialFolder.ApplicationData), AppName);
 
-  /// State lip cannot recreate, such as the workspace locks: %LOCALAPPDATA%\lip on Windows,
-  /// $XDG_DATA_HOME/lip (default ~/.local/share/lip) elsewhere. .NET maps
-  /// SpecialFolder.LocalApplicationData to both.
-  public static string Data => Path.Join(GetFolder(Environment.SpecialFolder.LocalApplicationData), AppName);
-
   /// Data that can be deleted without losing anything: %LOCALAPPDATA%\lip\Cache on Windows, which
   /// has no cache folder of its own, and $XDG_CACHE_HOME/lip (default ~/.cache/lip) elsewhere,
   /// for which .NET has no special folder.

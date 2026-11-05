@@ -17,7 +17,7 @@
 
 `lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：
 
-1. **锁**：从 `.lip/lock.json` 加载该工作区的锁，或迁移 lip v0.x 留下的旧 `tooth_lock.json`（参见[锁文件](../concepts/lockfiles.md)）。
+1. **锁**：从 `.lip/workspace.json` 加载该工作区的锁，或迁移 lip v0.x 留下的旧 `tooth_lock.json`（参见[锁文件](../concepts/lockfiles.md)）。
 2. **环境**：确定平台和 RID（参见[环境](../concepts/package_manifest.md#环境)）。
 3. **解析器**：把每个 ref 转换为一个包候选序列，途中跟随元文档。
 4. **依赖图求解器**：为每个请求和每条安装边各选出一个候选，使每个身份只出现一次，且不违反任何 `conflicts` 条目。
@@ -56,25 +56,25 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 
 ## 清单校验
 
-`manifest.json` 由 JSON Schema [`protocol/package/manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json) 描述。锁由 [`protocol/workspace/lock.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/lock.schema.json) 描述。旧格式曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
+`manifest.json` 由 JSON Schema [`protocol/package/manifest.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/package/manifest.schema.json) 描述。锁由 [`protocol/workspace/workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/workspace.schema.json) 描述。旧格式曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。这些 schema 供编辑器和其他工具使用，lip 本身不执行 JSON Schema 校验。
 
 - **校验**：lip 严格解析 `manifest.json`（UTF-8、不允许注释、不允许重复键），并拒绝键类型错误的文档，例如无效的 `id`、`version`、ref、范围、glob 或模板。指向无效文档的 ref 不产出候选，lip 会报告原因。
 - **版本**：带有 `"format": "bf45b1"` 的 `manifest.json` 是当前格式的文档；不带 `format` 的是 LeviLamina 清单，按 mod 读取（规范 §10.1）。格式版本为 1 或 2 的 `tooth.json` 会在读取时于内存中转换为版本 3，再转换为文件包（规范 §10.2）；如需把包仓库从 `tooth.json` 或 LeviLamina 清单迁移到 `manifest.json`，请在仓库中运行 `lip migrate`。
 
 ## 工作区状态
 
-lip 在保存于工作区中 `.lip/lock.json` 的锁文件里维护已安装包状态（参见[锁文件](../concepts/lockfiles.md#位置)），记录：
+lip 在保存于工作区中 `.lip/workspace.json` 的锁文件里维护已安装包状态（参见[锁文件](../concepts/lockfiles.md#位置)），记录：
 - 用户显式请求的包与隐式依赖；
 - 精确安装版本，以及其来源归档；
 - 每个包拥有的文件；
 - 工作区的平台和 RID。
 
-为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：锁先写入同目录下的 `.<name>.tmp`，再重命名覆盖锁；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。锁保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
+为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：锁先写入 `.lip/workspace.json.new`，再重命名覆盖 `.lip/workspace.json`；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。锁保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
 
-下面的日志和操作锁保存在 lip 的用户数据目录中：Windows 为 `%LOCALAPPDATA%\lip\workspaces\`，Linux 和 macOS 为 `$XDG_DATA_HOME/lip/workspaces/`（默认 `~/.local/share/lip/workspaces/`）。`<hash>` 是工作区绝对路径的 SHA-256，以小写十六进制表示，因此它们与路径绑定：移动或复制后的工作区不会带走原工作区被中断的操作。
+下面的日志和操作锁与锁文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/workspace`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace/README.md#8-the-lip-directory) 中，其他程序也可以参与。
 
-- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `<hash>.journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存锁的阶段，则删除备份以完成它。试运行（dry run）只报告日志的存在。
-- **同一时间只有一个操作**：操作期间独占打开 `<hash>.lock`（操作结束时删除）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another lip process is changing the workspace"；请在第一个操作结束后重新运行。
+- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存锁的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
+- **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。
 
 ## 关于规范的说明
 

@@ -363,7 +363,7 @@ public class McmodServiceTests {
   public async Task Install_LockRecordsClientPlatform_ThrowsWithoutChanges() {
     // Arrange
     AddMetaFixture();
-    _ws.AddFile(".lip/lock.json", $$"""
+    _ws.AddFile(".lip/workspace.json", $$"""
         {
           "format": "{{ManifestFormat.Format}}",
           "platform": "client",

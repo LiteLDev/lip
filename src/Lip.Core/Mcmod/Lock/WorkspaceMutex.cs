@@ -2,58 +2,36 @@ using System.IO.Abstractions;
 
 namespace Lip.Core.Mcmod.Lock;
 
-/// Thrown when another lip process is changing the same workspace.
+/// Thrown when another process is changing the same workspace.
 public class WorkspaceBusyException(string message, Exception? inner = null)
     : InvalidOperationException(message, inner);
 
-/// An exclusive lock of one workspace across processes, held while an install, uninstall or
-/// update runs, so that two lip processes never interleave their changes, their journals or
-/// their lock files.
+/// The workspace lock (protocol/workspace §8.2), held while an install, uninstall or update
+/// changes a workspace, so that two processes never interleave their changes, their journals or
+/// their workspace files.
 ///
-/// It is a file in the per-user data directory (&lt;Data&gt;/workspaces/&lt;hash&gt;.lock) opened without
-/// sharing: on Windows no other process can open it, elsewhere .NET takes an advisory lock
-/// (flock) on it. The file is deleted when the lock is released. A process that is killed
-/// releases the lock with its handles; the file it leaves is taken over by the next process.
+/// It is the file &lt;root&gt;/.lip/lock, opened without sharing: on Windows no other process can
+/// open it, elsewhere .NET takes an exclusive flock on it. The file is never deleted, so every
+/// process locks the same file. A process that is killed releases the lock with its handles.
 public sealed class WorkspaceMutex : IDisposable {
-  private readonly IFileSystem _fs;
-  private readonly string _path;
   private FileSystemStream? _stream;
 
-  private WorkspaceMutex(IFileSystem fs, string path, FileSystemStream stream) {
-    _fs = fs;
-    _path = path;
+  private WorkspaceMutex(FileSystemStream stream) {
     _stream = stream;
   }
 
   /// Takes the lock, or throws WorkspaceBusyException at once when another process holds it.
+  /// The directory of the lock file must exist.
   public static WorkspaceMutex Acquire(IFileSystem fs, string path, string workspaceRoot) {
-    fs.Directory.CreateDirectory(fs.Path.GetDirectoryName(path)!);
-    // A process releasing the lock elsewhere than on Windows deletes the file, then closes it: a
-    // process that opened the file just before then holds a lock on a deleted file. Such a lock
-    // is given up for one on the file at the path.
-    for (int attempt = 0; ; attempt++) {
-      FileSystemStream stream;
-      try {
-        stream = fs.FileStream.New(
-            path,
-            FileMode.OpenOrCreate,
-            FileAccess.ReadWrite,
-            FileShare.None,
-            bufferSize: 1,
-            OperatingSystem.IsWindows() ? FileOptions.DeleteOnClose : FileOptions.None);
-      }
-      catch (IOException ex) when (IsLocked(ex)) {
-        throw new WorkspaceBusyException(
-            $"Another lip process is changing the workspace '{workspaceRoot}'. Wait for it to"
-            + " finish, then try again.",
-            ex);
-      }
-
-      if (fs.File.Exists(path) || attempt >= 3) {
-        return new WorkspaceMutex(fs, path, stream);
-      }
-
-      stream.Dispose();
+    try {
+      return new WorkspaceMutex(fs.FileStream.New(
+          path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize: 1));
+    }
+    catch (IOException ex) when (IsLocked(ex)) {
+      throw new WorkspaceBusyException(
+          $"Another process is changing the workspace '{workspaceRoot}'. Wait for it to"
+          + " finish, then try again.",
+          ex);
     }
   }
 
@@ -63,20 +41,7 @@ public sealed class WorkspaceMutex : IDisposable {
       && (!OperatingSystem.IsWindows() || (ex.HResult & 0xFFFF) is 32 or 33);
 
   public void Dispose() {
-    if (_stream is null) {
-      return;
-    }
-
-    if (!OperatingSystem.IsWindows()) {
-      try {
-        _fs.File.Delete(_path);
-      }
-      catch (IOException) {
-        // Left for the next process to take over.
-      }
-    }
-
-    _stream.Dispose();
+    _stream?.Dispose();
     _stream = null;
   }
 }

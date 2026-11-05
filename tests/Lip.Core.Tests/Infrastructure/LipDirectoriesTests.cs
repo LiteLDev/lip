@@ -31,14 +31,6 @@ public class LipDirectoriesTests {
   }
 
   [Fact]
-  public void Data_IsLipUnderLocalApplicationData() {
-    // Act & Assert
-    Assert.Equal(
-        Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "lip"),
-        LipDirectories.Data);
-  }
-
-  [Fact]
   public void Staging_IsHiddenDirectoryInCache() {
     // Act & Assert
     Assert.Equal(Path.Join(LipDirectories.Cache, ".staging"), LipDirectories.Staging);
@@ -51,7 +43,7 @@ public class LipDirectoriesTests {
 
     // Act & Assert
     Assert.All(
-        [LipDirectories.Config, LipDirectories.Data, LipDirectories.Cache, LipDirectories.Staging],
+        [LipDirectories.Config, LipDirectories.Cache, LipDirectories.Staging],
         d => Assert.False(d.StartsWith(temp, StringComparison.OrdinalIgnoreCase), d));
   }
 }

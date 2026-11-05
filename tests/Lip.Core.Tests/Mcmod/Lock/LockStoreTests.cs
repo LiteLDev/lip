@@ -1,6 +1,4 @@
 using System.IO.Abstractions.TestingHelpers;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Mcmod;
@@ -13,10 +11,6 @@ public class LockStoreTests {
       ? @"C:\lip-workspace"
       : "/lip-workspace";
 
-  private static readonly string _dataDir = OperatingSystem.IsWindows()
-      ? @"C:\data\lip"
-      : "/data/lip";
-
   private static readonly string _fixtureDir =
       Path.Combine(AppContext.BaseDirectory, "Mcmod", "Lock", "Fixtures");
 
@@ -25,7 +19,7 @@ public class LockStoreTests {
 
   public LockStoreTests() {
     _fs.AddDirectory(_root);
-    _store = new LockStore(_fs, _dataDir);
+    _store = new LockStore(_fs);
   }
 
   private string LipLockPath => _store.GetLockPath(_root);
@@ -341,40 +335,38 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public void GetLockPath_Always_IsLockJsonInLipDirectoryOfWorkspace() {
+  public void GetLockPath_Always_IsWorkspaceJsonInLipDirectoryOfWorkspace() {
     // Act
     string path = _store.GetLockPath(_root + _fs.Path.DirectorySeparatorChar);
 
     // Assert
-    Assert.Equal(_fs.Path.Join(_root, ".lip", "lock.json"), path);
+    Assert.Equal(_fs.Path.Join(_root, ".lip", "workspace.json"), path);
   }
 
   [Fact]
-  public void GetStatePath_Always_IsSha256OfWorkspacePathInDataDirectory() {
+  public void GetMutexPathAndGetJournalPath_Always_AreInLipDirectoryOfWorkspace() {
+    // Act & Assert
+    Assert.Equal(_fs.Path.Join(_root, ".lip", "lock"), _store.GetMutexPath(_root));
+    Assert.Equal(_fs.Path.Join(_root, ".lip", "journal"), _store.GetJournalPath(_root));
+  }
+
+  [Fact]
+  public async Task Save_V036LockJson_WritesWorkspaceJsonAndDeletesLockJson() {
     // Arrange
-    string normalized = OperatingSystem.IsWindows() ? _root.ToLowerInvariant() : _root;
-    string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
+    string v036 = _fs.Path.Join(_root, ".lip", "lock.json");
+    _fs.AddFile(v036, new MockFileData(JsonSerializer.Serialize(
+        new LockFile { Packages = [SamplePackage("A", null)] })));
+    _fs.AddFile(ToothLockPath, new MockFileData("{}"));
 
     // Act
-    string path = _store.GetStatePath(_root);
+    LockFile loaded = await _store.Load(_root);
+    await _store.Save(_root, loaded);
 
     // Assert
-    Assert.Equal(_fs.Path.Join(_dataDir, "workspaces", hash), path);
-  }
-
-  [Fact]
-  public void GetStatePath_TrailingSeparatorOrCase_SamePathWhereFileSystemAgrees() {
-    // Act
-    string withSeparator = _store.GetStatePath(_root + _fs.Path.DirectorySeparatorChar);
-    string upperCase = _store.GetStatePath(_root.ToUpperInvariant());
-
-    // Assert
-    Assert.Equal(_store.GetStatePath(_root), withSeparator);
-    if (OperatingSystem.IsWindows()) {
-      Assert.Equal(_store.GetStatePath(_root), upperCase);
-    } else {
-      Assert.NotEqual(_store.GetStatePath(_root), upperCase);
-    }
+    Assert.Equal(["A"], loaded.Packages.Select(p => p.Identity));
+    Assert.True(_fs.File.Exists(LipLockPath));
+    Assert.False(_fs.File.Exists(v036));
+    Assert.True(_fs.File.Exists(ToothLockPath));
   }
 
   [Fact]
@@ -386,7 +378,6 @@ public class LockStoreTests {
     JsonElement root = JsonDocument.Parse(_fs.File.ReadAllText(LipLockPath)).RootElement;
     Assert.False(root.TryGetProperty("workspace", out _));
     Assert.Equal([_fs.Path.Join(_root, ".lip")], _fs.Directory.GetFileSystemEntries(_root));
-    Assert.False(_fs.Directory.Exists(_dataDir));
   }
 
   [Fact]
