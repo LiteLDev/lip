@@ -40,4 +40,3 @@ msbuild.wrn
 
 .tmp/
 
-!packaging/npm/**

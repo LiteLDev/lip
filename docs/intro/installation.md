@@ -2,28 +2,6 @@
 
 `lip` is a general package installer. To get started, you need to install the `lip` executable on your system.
 
-## npm
-
-The default installation method for all platforms is npm:
-
-```shell
-npm install -g @levimc/lip
-```
-
-This installs `lip` and works on Windows, Linux, and macOS.
-
-If you only want to run `lip` without installing it globally, you can also use `npx`:
-
-```shell
-npx @levimc/lip --help
-```
-
-This is useful for trying `lip` or running one-off commands.
-
-::: tip
-This package was previously published as `@futrime/lip`. If you installed it under the old name, uninstall it first with `npm uninstall -g @futrime/lip`.
-:::
-
 ## winget <Badge platform="windows" />
 
 ```shell
@@ -51,3 +29,7 @@ Each [release](https://github.com/LiteLDev/lip/releases/latest) provides two ins
   ```
 
 Running a newer installer upgrades `lip` in place, and replaces an installation made by the `setup.exe` of lip 0.35.0 or earlier. Uninstall `lip` from **Settings > Apps > Installed apps**.
+
+## Portable archive
+
+Each [release](https://github.com/LiteLDev/lip/releases/latest) also provides a portable archive for every platform: `lip-<version>-<runtime>.tar.xz` for Linux and `lip-<version>-<runtime>.zip` for macOS and Windows, where `<runtime>` is one of `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and `win-arm64`. Install the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first, extract the archive to a directory of your choice and add that directory to `PATH`.
