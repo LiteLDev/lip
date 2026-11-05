@@ -146,7 +146,7 @@ public interface IMcmodInstaller {
       PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken);
 }
 
-/// Reads and writes the workspace file (protocol/workspace.md §8.1), called the lock in the code,
+/// Reads and writes the workspace file (protocol/workspace.md §7.1), called the lock in the code,
 /// which lives in &lt;root&gt;/.lip/workspace.json, and names the other files in &lt;root&gt;/.lip.
 public interface ILockStore {
   /// Returns an empty lock when none exists; migrates a v3 tooth_lock.json left in the workspace

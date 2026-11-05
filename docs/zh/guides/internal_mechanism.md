@@ -71,7 +71,7 @@ lip 在保存于工作区中 `.lip/workspace.json` 的锁文件里维护已安�
 
 为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：锁先写入 `.lip/workspace.json.new`，再重命名覆盖 `.lip/workspace.json`；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。锁保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
 
-下面的日志和操作锁与锁文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#8-the-lip-directory) 中，其他程序也可以参与。
+下面的日志和操作锁与锁文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#7-the-lip-directory) 中，其他程序也可以参与。
 
 - **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存锁的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
 - **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。

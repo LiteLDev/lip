@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/manifest.schema.json",
   "title": "lip manifest.json (format bf45b1)",
-  "description": "The manifest.json at the root of a package: a concrete package, or a meta package (with \"targets\") naming other packages. Keys not described here are ignored. Not expressible here: two targets with the same variant must not write the same selector keys (platform, runtime) with intersecting values.",
+  "description": "Keys not described here are ignored. Two targets with the same variant must not write the same selector keys (platform, runtime) with intersecting values.",
   "type": "object",
   "properties": {
     "format": {
@@ -42,11 +42,9 @@
       ]
     },
     "runtime": {
-      "description": "A .NET runtime identifier.",
       "type": "string"
     },
     "source": {
-      "description": "target [ \"#\" variant ], where target is a local path starting with \"./\" (relative to the root of the package containing this manifest), an https URL, or a remote repository given as a Go module path (golang.org/x/mod/module.CheckPath; the pattern checks only its general shape). A remote repository may be followed by [ \"@\" ref ] after the variant: a version (the tag \"v<version>\"), \"branch:<name>\", \"tag:<name>\" or \"rev:<40-digit commit id>\".",
       "type": "string",
       "pattern": "^(?:\\./(?!.*@(?:branch|tag|rev):)(?!\\.\\.?(?:/|#|$))[^/#\\\\]+(?:/(?!\\.\\.?(?:/|#|$))[^/#\\\\]+)*/?(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|https://(?!.*@(?:branch|tag|rev):)[^#]+(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?|(?=[a-z0-9.-]*\\.)[a-z0-9](?:[a-z0-9.-]*[a-z0-9-])?(?:/[A-Za-z0-9_~{}-](?:[A-Za-z0-9._~{}-]*[A-Za-z0-9_~{}-])?)*(?:#[a-z0-9_]+(?:/[a-z0-9_]+)?)?(?:@(?:(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:\\+[0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*)?|branch:(?!/|@$)(?!.*(?:\\.\\.|@\\{|//|/\\.|\\.lock(?:/|$)|[/.]$))[^\\u0000- \\u007f~^:?*\\[\\\\]+|tag:(?!/|@$)(?!.*(?:\\.\\.|@\\{|//|/\\.|\\.lock(?:/|$)|[/.]$))[^\\u0000- \\u007f~^:?*\\[\\\\]+|rev:[0-9a-fA-F]{40}))?)$"
     },
@@ -66,14 +64,12 @@
       ]
     },
     "templateSource": {
-      "description": "A source that may contain {{id}}, {{version}}, {{platform}} and {{runtime}}.",
       "type": "string",
       "not": {
         "pattern": "\\{\\{(?!(id|version|platform|runtime)\\}\\})"
       }
     },
     "range": {
-      "description": "A node-semver range (semver.satisfies without the loose and includePrerelease options). A full version without an operator matches exactly that version.",
       "type": "string"
     },
     "glob": {
@@ -221,7 +217,6 @@
       ]
     },
     "file": {
-      "description": "src is a path in the package, dest a path in the workspace.",
       "type": "object",
       "properties": {
         "src": {
@@ -500,7 +495,6 @@
       ]
     },
     "metaPackage": {
-      "description": "Only id and version are used in resolution (in templates); the other keys are the template packing completes with a target.",
       "properties": {
         "id": {
           "$ref": "#/definitions/id"

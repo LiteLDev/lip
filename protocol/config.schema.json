@@ -2,11 +2,9 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/config.schema.json",
   "title": "lip config.yaml",
-  "description": "The configuration of lip, a YAML mapping of configuration keys to values. Absent keys have their default values; other keys are ignored.",
   "type": "object",
   "properties": {
     "github_proxy": {
-      "description": "The URI prefix through which lip sends requests to GitHub (git repositories and downloads). When a request through it fails, lip sends the request to GitHub directly. Default: none.",
       "type": "string",
       "format": "uri"
     }
