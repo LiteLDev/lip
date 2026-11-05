@@ -61,7 +61,7 @@ public static partial class ToothCompat {
       ["format_uuid"] = ToothFormat.FormatUuid,
       ["tooth"] = manifest.Path,
       ["version"] = manifest.Version.ToString(),
-      ["info"] = JsonSerializer.SerializeToNode(manifest.Info),
+      ["info"] = Info(manifest.Info),
       ["variants"] = variants,
     };
 
@@ -77,6 +77,34 @@ public static partial class ToothCompat {
       Json = json,
     };
   }
+
+  /// The info of format 4 for the info of format 3 (protocol/package.md §5): its members other than
+  /// empty strings and empty tags, with "avatar_url" as "logo" when it starts with "https://" and
+  /// dropped otherwise.
+  public static JsonObject Info(PackageManifestInfo info) {
+    JsonObject result = [];
+    if (info.Name != "") {
+      result["name"] = info.Name;
+    }
+
+    if (info.Description != "") {
+      result["description"] = info.Description;
+    }
+
+    if (info.Tags.Count > 0) {
+      result["tags"] = new JsonArray([.. info.Tags.Select(t => (JsonNode)t)]);
+    }
+
+    if (IsLogo(info.AvatarUrl)) {
+      result["logo"] = info.AvatarUrl;
+    }
+
+    return result;
+  }
+
+  /// Whether an "avatar_url" of format 3 is a "logo" of format 4: it starts with "https://".
+  public static bool IsLogo(string avatarUrl) =>
+      avatarUrl.StartsWith("https://", StringComparison.Ordinal);
 
   /// The derived entry of a merged variant, as JSON (protocol/package.md §5).
   private static JsonObject Entry(PackageManifestVariant merged, LipEnvironment environment) {
@@ -99,12 +127,12 @@ public static partial class ToothCompat {
     }
 
     if (merged.PreserveFiles.Count > 0) {
-      entry["preserve_files"] = new JsonArray(
+      entry["preserve"] = new JsonArray(
           [.. merged.PreserveFiles.Select(g => (JsonNode)GlobListJsonConverter.Format(g))]);
     }
 
     if (merged.RemoveFiles.Count > 0) {
-      entry["remove_files"] = new JsonArray(
+      entry["purge"] = new JsonArray(
           [.. merged.RemoveFiles.Select(g => (JsonNode)GlobListJsonConverter.Format(g))]);
     }
 

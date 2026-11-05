@@ -34,8 +34,10 @@
             "type": "string"
           }
         },
-        "avatar_url": {
-          "type": "string"
+        "logo": {
+          "description": "An https URL whose response, directly or after 3xx redirects, is the logo image.",
+          "type": "string",
+          "pattern": "^https://"
         }
       }
     },
@@ -49,7 +51,114 @@
         "type": "array",
         "minItems": 1,
         "items": {
-          "$ref": "#/definitions/entry"
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "enum": [
+                "server",
+                "client"
+              ]
+            },
+            "runtime": {
+              "description": "A .NET runtime identifier.",
+              "type": "string"
+            },
+            "dependencies": {
+              "description": "Maps \"<tooth>\" or \"<tooth>#<variant>\" to a version range.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "assets": {
+              "description": "At most one asset has the type \"mcmod\".",
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "description": "The archive of the tooth.json itself.",
+                    "properties": {
+                      "type": {
+                        "const": "self"
+                      },
+                      "place": {
+                        "$ref": "#/definitions/place"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "description": "A ZIP archive downloaded from urls.",
+                    "properties": {
+                      "type": {
+                        "const": "zip"
+                      },
+                      "urls": {
+                        "$ref": "#/definitions/urls"
+                      },
+                      "place": {
+                        "$ref": "#/definitions/place"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "urls"
+                    ]
+                  },
+                  {
+                    "description": "A ZIP archive downloaded from urls, with a LeviLamina manifest.json at its root, written whole into mods/<the name in that manifest.json>/.",
+                    "properties": {
+                      "type": {
+                        "const": "mcmod"
+                      },
+                      "urls": {
+                        "$ref": "#/definitions/urls"
+                      }
+                    },
+                    "not": {
+                      "required": [
+                        "place"
+                      ]
+                    },
+                    "required": [
+                      "type",
+                      "urls"
+                    ]
+                  }
+                ]
+              }
+            },
+            "preserve": {
+              "$ref": "#/definitions/globs"
+            },
+            "purge": {
+              "$ref": "#/definitions/globs"
+            },
+            "hooks": {
+              "type": "object",
+              "properties": {
+                "pre_install": {
+                  "$ref": "#/definitions/commands"
+                },
+                "post_install": {
+                  "$ref": "#/definitions/commands"
+                },
+                "pre_uninstall": {
+                  "$ref": "#/definitions/commands"
+                },
+                "post_uninstall": {
+                  "$ref": "#/definitions/commands"
+                }
+              }
+            }
+          },
+          "required": [
+            "platform",
+            "runtime"
+          ]
         }
       }
     }
@@ -62,13 +171,6 @@
     "variants"
   ],
   "definitions": {
-    "platform": {
-      "type": "string",
-      "enum": [
-        "server",
-        "client"
-      ]
-    },
     "urls": {
       "description": "HTTPS URLs of the same file, tried in order.",
       "type": "array",
@@ -94,7 +196,7 @@
         "type": "string"
       }
     },
-    "placements": {
+    "place": {
       "description": "The glob form when src contains '*', '?' or '['; otherwise the directory form when src is \"\" or ends with '/'; otherwise the file form. In the glob and directory forms, dest MUST be \"\" or end with '/'; in the file form, it MUST NOT. dest is relative to the workspace.",
       "type": "array",
       "items": {
@@ -112,115 +214,6 @@
           "dest"
         ]
       }
-    },
-    "asset": {
-      "oneOf": [
-        {
-          "description": "The archive of the tooth.json itself.",
-          "properties": {
-            "type": {
-              "const": "self"
-            },
-            "placements": {
-              "$ref": "#/definitions/placements"
-            }
-          },
-          "required": [
-            "type"
-          ]
-        },
-        {
-          "description": "A ZIP archive downloaded from urls.",
-          "properties": {
-            "type": {
-              "const": "zip"
-            },
-            "urls": {
-              "$ref": "#/definitions/urls"
-            },
-            "placements": {
-              "$ref": "#/definitions/placements"
-            }
-          },
-          "required": [
-            "type",
-            "urls"
-          ]
-        },
-        {
-          "description": "A ZIP archive downloaded from urls, with a LeviLamina manifest.json at its root, written whole into mods/<the name in that manifest.json>/.",
-          "properties": {
-            "type": {
-              "const": "mcmod"
-            },
-            "urls": {
-              "$ref": "#/definitions/urls"
-            }
-          },
-          "not": {
-            "required": [
-              "placements"
-            ]
-          },
-          "required": [
-            "type",
-            "urls"
-          ]
-        }
-      ]
-    },
-    "entry": {
-      "type": "object",
-      "properties": {
-        "platform": {
-          "$ref": "#/definitions/platform"
-        },
-        "runtime": {
-          "description": "A .NET runtime identifier.",
-          "type": "string"
-        },
-        "dependencies": {
-          "description": "Maps \"<tooth>\" or \"<tooth>#<variant>\" to a version range.",
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "assets": {
-          "description": "At most one asset has the type \"mcmod\".",
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/asset"
-          }
-        },
-        "preserve_files": {
-          "$ref": "#/definitions/globs"
-        },
-        "remove_files": {
-          "$ref": "#/definitions/globs"
-        },
-        "hooks": {
-          "type": "object",
-          "properties": {
-            "pre_install": {
-              "$ref": "#/definitions/commands"
-            },
-            "post_install": {
-              "$ref": "#/definitions/commands"
-            },
-            "pre_uninstall": {
-              "$ref": "#/definitions/commands"
-            },
-            "post_uninstall": {
-              "$ref": "#/definitions/commands"
-            }
-          }
-        }
-      },
-      "required": [
-        "platform",
-        "runtime"
-      ]
     }
   }
 }

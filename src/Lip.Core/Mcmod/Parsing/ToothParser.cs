@@ -148,8 +148,8 @@ public static partial class ToothParser {
       }),
       Dependencies = ReadOptional(element, "dependencies", path, ReadDependencies) ?? [],
       Assets = assets,
-      PreserveFiles = ReadOptional(element, "preserve_files", path, ArrayOf(ReadGlob)) ?? [],
-      RemoveFiles = ReadOptional(element, "remove_files", path, ArrayOf(ReadGlob)) ?? [],
+      PreserveFiles = ReadOptional(element, "preserve", path, ArrayOf(ReadGlob)) ?? [],
+      RemoveFiles = ReadOptional(element, "purge", path, ArrayOf(ReadGlob)) ?? [],
       Hooks = ReadOptional(element, "hooks", path, ReadHooks) ?? new(),
       Json = element.Clone(),
     };
@@ -171,12 +171,12 @@ public static partial class ToothParser {
       Assets = assets,
       PreserveFiles = [
         .. ToothCompat.PreserveFiles(
-                ReadOptional(element, "preserve_files", path, ArrayOf(ReadString)) ?? [])
+                ReadOptional(element, "preserve", path, ArrayOf(ReadString)) ?? [])
             .Select(ToothCompat.TryParseGlob).OfType<PathGlob>(),
       ],
       RemoveFiles = [
         .. ToothCompat.RemoveFiles(
-                ReadOptional(element, "remove_files", path, ArrayOf(ReadString)) ?? [])
+                ReadOptional(element, "purge", path, ArrayOf(ReadString)) ?? [])
             .Select(ToothCompat.TryParseGlob).OfType<PathGlob>(),
       ],
       Hooks = ReadOptional(element, "hooks", path, ReadHooks) ?? new(),
@@ -191,7 +191,10 @@ public static partial class ToothParser {
     _ = ReadOptional(element, "name", path, ReadString);
     _ = ReadOptional(element, "description", path, ReadString);
     _ = ReadOptional(element, "tags", path, ArrayOf(ReadString));
-    _ = ReadOptional(element, "avatar_url", path, ReadString);
+    if (ReadOptional(element, "logo", path, ReadString) is string logo
+        && !logo.StartsWith("https://", StringComparison.Ordinal)) {
+      throw Invalid($"{path}.logo", $"'{logo}' does not start with \"https://\"");
+    }
   }
 
   private static McmodPlatform ReadPlatform(JsonElement element, string path) =>
@@ -234,15 +237,15 @@ public static partial class ToothParser {
     switch (type) {
       case "self":
         return new EntryAsset(
-            AssetType.Self, [], ReadOptional(element, "placements", path, ReadPlacements) ?? []);
+            AssetType.Self, [], ReadOptional(element, "place", path, ReadPlacements) ?? []);
       case "zip":
         return new EntryAsset(
             AssetType.Zip,
             ReadRequired(element, "urls", path, ReadUrls),
-            ReadOptional(element, "placements", path, ReadPlacements) ?? []);
+            ReadOptional(element, "place", path, ReadPlacements) ?? []);
       case "mcmod":
-        if (element.TryGetProperty("placements", out _)) {
-          throw Invalid($"{path}.placements", "is not allowed for an asset of type \"mcmod\"");
+        if (element.TryGetProperty("place", out _)) {
+          throw Invalid($"{path}.place", "is not allowed for an asset of type \"mcmod\"");
         }
 
         return new EntryAsset(AssetType.Mcmod, ReadRequired(element, "urls", path, ReadUrls), []);

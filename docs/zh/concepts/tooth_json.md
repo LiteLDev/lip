@@ -49,7 +49,7 @@ lip 包是根部带有 `tooth.json` 的归档。`tooth.json` 给出包的名称�
             "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
           }
         ],
-        "preserve_files": ["mods/MyMod/config/"]
+        "preserve": ["mods/MyMod/config/"]
       },
       {
         "platform": "client",
@@ -64,7 +64,7 @@ lip 包是根部带有 `tooth.json` 的归档。`tooth.json` 给出包的名称�
             "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"]
           }
         ],
-        "preserve_files": ["mods/MyMod/config/"]
+        "preserve": ["mods/MyMod/config/"]
       }
     ]
   }
@@ -97,7 +97,7 @@ lip 包是根部带有 `tooth.json` 的归档。`tooth.json` 给出包的名称�
 | `name` | `string` | 显示名称。 |
 | `description` | `string` | 简短描述。 |
 | `tags` | `string[]` | 标签。 |
-| `avatar_url` | `string` | 头像图片 URL。 |
+| `logo` | `string` | 徽标图片的 URL，必须以 `https://` 开头；其响应（直接或经重定向后）即为该图片。 |
 
 lip 不使用 `info`。
 
@@ -120,8 +120,8 @@ lip 不使用 `info`。
 | `runtime` | `string` | 是 | [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)，例如 `win-x64`。 |
 | `dependencies` | `object` | 否 | 参见[依赖](#依赖)。 |
 | `assets` | `array` | 否 | 参见[资源](#资源)。 |
-| `preserve_files` | `string[]` | 否 | 需保留文件的 [glob](#glob)：安装时不覆盖已存在的文件，卸载时也不删除它。 |
-| `remove_files` | `string[]` | 否 | 卸载时额外删除的路径的 [glob](#glob)。匹配到的目录会连同其下所有内容一起删除。 |
+| `preserve` | `string[]` | 否 | 需保留文件的 [glob](#glob)：安装时不覆盖已存在的文件，卸载时也不删除它。 |
+| `purge` | `string[]` | 否 | 卸载时额外删除的路径的 [glob](#glob)。匹配到的目录会连同其下所有内容一起删除。 |
 | `hooks` | `object` | 否 | 参见[钩子](#钩子)。 |
 
 ### 依赖
@@ -150,16 +150,16 @@ lip 不使用 `info`。
 
 | 类型 | 字段 | 说明 |
 | --- | --- | --- |
-| `self` | `placements`（可选） | `tooth.json` 自身所在的归档，例如标签处的仓库。 |
-| `zip` | `urls`、`placements`（可选） | 通过 HTTPS 下载的 ZIP 归档。 |
-| `mcmod` | `urls` | 通过 HTTPS 下载、包含一个 LeviLamina mod 的 ZIP 归档；它没有 `placements`。参见 [Mod](#mod)。 |
+| `self` | `place`（可选） | `tooth.json` 自身所在的归档，例如标签处的仓库。 |
+| `zip` | `urls`、`place`（可选） | 通过 HTTPS 下载的 ZIP 归档。 |
+| `mcmod` | `urls` | 通过 HTTPS 下载、包含一个 LeviLamina mod 的 ZIP 归档；它没有 `place`。参见 [Mod](#mod)。 |
 
 `urls` 是同一文件的 HTTPS URL 组成的非空数组，按顺序尝试。一个条目最多有一个 `mcmod` 资源。资源按
 顺序写入；两个资源或放置规则写入同一路径时，以后者为准。
 
 ### 放置规则
 
-放置规则 `{ "src": ..., "dest": ... }` 把资源归档中的文件写入工作区。`src` 是归档中的路径，`dest` 是
+`place` 的每个成员都是一条放置规则 `{ "src": ..., "dest": ... }`，把资源归档中的文件写入工作区。`src` 是归档中的路径，`dest` 是
 相对于工作区的路径。两者都以 `/` 分隔，不得以 `/` 或盘符开头，也不得包含 `//`、`..` 段或 `\`。
 放置规则的形式由 `src` 决定：
 
@@ -174,7 +174,7 @@ lip 不使用 `info`。
 {
   "type": "zip",
   "urls": ["https://example.com/tool-1.0.0-win-x64.zip"],
-  "placements": [
+  "place": [
     { "src": "bin/", "dest": "tools/" },
     { "src": "README.md", "dest": "tools/README.md" },
     { "src": "plugins/*.dll", "dest": "tools/plugins/" }
@@ -186,13 +186,13 @@ lip 不使用 `info`。
 
 ### glob
 
-`preserve_files`、`remove_files` 以及 glob 形式的放置规则使用 POSIX `fnmatch` 模式，按段逐一匹配：
+`preserve`、`purge` 以及 glob 形式的放置规则使用 POSIX `fnmatch` 模式，按段逐一匹配：
 `*` 匹配除 `/` 以外的任意字符（包括开头的 `.`），`?` 匹配除 `/` 以外的单个字符，`[...]` 匹配集合中的
 单个字符。`**` 段匹配零个或多个段；以 `/` 结尾的模式匹配一个目录及其下的所有内容。没有转义字符。
 glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 
-`preserve_files` 和 `remove_files` 匹配的是相对于工作区的路径，对 mod 也是如此：应写
-`mods/MyMod/config/`，而不是 `config/`。`remove_files` 永远不会匹配工作区根目录下的 `mods`、`plugins`
+`preserve` 和 `purge` 匹配的是相对于工作区的路径，对 mod 也是如此：应写
+`mods/MyMod/config/`，而不是 `config/`。`purge` 永远不会匹配工作区根目录下的 `mods`、`plugins`
 或 `.lip`，也不会匹配 `.lip` 之下的任何内容，且永远不会通过 `mods` 或 `plugins` 删除其下的任何内容。
 
 ### 钩子
@@ -250,15 +250,15 @@ lip 读取格式版本 1、2 和 3 的 `tooth.json`（为 lip v0.37.0 及更早�
 [`lip migrate`](../cli/commands/migrate.md) 转换你的包。格式 1 和 2 先像 lip v0.37.0 那样读取为格式 3。
 格式 3 的 `tooth.json` 随后针对工作区的环境读取为格式 4 的 `tooth.json`：
 
-- 保留 `tooth`、`version` 和 `info`。
+- 保留 `tooth` 和 `version`，`info` 也保留，但其 `avatar_url` 以 `https://` 开头时变为 `logo`，否则被丢弃。
 - 对每个标签，将该标签下 `platform` 为空或与运行时匹配（作为 RID 模式，例如 `win-*`）的变体，按 lip
   v0.37.0 的方式合并为一个对应该环境平台和运行时的条目。没有这类变体的标签不构成变体。
 - 在客户端上，标签为 `client` 的变体被用作变体 `""`。
 - scripts 变为 `hooks`：`pre_install` 仍为 `pre_install`；`install` 和随后的 `post_install` 变为
   `post_install`；`pre_uninstall` 和随后的 `uninstall` 变为 `pre_uninstall`；`post_uninstall` 仍为
   `post_uninstall`。
-- 资源、`preserve_files` 和 `remove_files` 保持其在 lip v0.37.0 中的含义，包括 `tar`、`tgz` 和
-  `uncompressed` 资源类型以及带 `type` 的放置规则。
+- `preserve_files` 变为 `preserve`，`remove_files` 变为 `purge`。它们和资源都保持其在 lip v0.37.0 中的
+  含义，包括 `tar`、`tgz` 和 `uncompressed` 资源类型以及带 `type` 的 `placements`。
 - 在版本标签处，包的版本为标签版本，而不论其 `version` 写的是什么。
 - 对某个格式 4 包的 `client` 变体的依赖，指向该包的变体 `""`。
 

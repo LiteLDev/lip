@@ -285,7 +285,7 @@ public class RepositoryMigratorTests {
     Assert.Contains(notes, n => n.StartsWith("variants[0].scripts.build:"));
     Assert.StartsWith(
         "The result is not a valid tooth.json of format 4 yet:", notes[^1]);
-    Assert.Contains("placements[0].src", notes[^1]);
+    Assert.Contains("place[0].src", notes[^1]);
     Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
   }
 

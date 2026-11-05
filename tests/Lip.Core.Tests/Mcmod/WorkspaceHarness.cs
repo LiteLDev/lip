@@ -205,7 +205,7 @@ internal sealed class WorkspaceHarness {
   /// "dest".
   public static string SelfAsset(string src, string dest) =>
       $$"""
-      "assets": [ { "type": "self", "placements": [ { "src": "{{src}}", "dest": "{{dest}}" } ] } ]
+      "assets": [ { "type": "self", "place": [ { "src": "{{src}}", "dest": "{{dest}}" } ] } ]
       """;
 
   /// The bytes of the ZIP file of an asset of type "mcmod": a mod manifest named name (with

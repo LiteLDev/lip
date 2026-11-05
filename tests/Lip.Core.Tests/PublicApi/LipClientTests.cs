@@ -167,7 +167,7 @@ public class LipClientTests {
     Assert.True(JsonNode.DeepEquals(
         JsonNode.Parse("""["echo install", "echo post"]"""), server["hooks"]!["post_install"]));
     Assert.True(JsonNode.DeepEquals(
-        JsonNode.Parse("""[ { "type": "self", "placements": [ { "src": "a.txt", "dest": "a.txt" } ] } ]"""),
+        JsonNode.Parse("""[ { "type": "self", "place": [ { "src": "a.txt", "dest": "a.txt" } ] } ]"""),
         server["assets"]));
     Assert.Equal(["a.txt", "tooth.json"], _ws.Fs.Directory.GetFiles(_ws.Root).Select(
         f => _ws.Fs.Path.GetFileName(f)).Order());

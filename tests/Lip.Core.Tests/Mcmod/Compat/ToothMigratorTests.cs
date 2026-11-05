@@ -54,7 +54,7 @@ public class ToothMigratorTests {
             .OrderBy(e => e.Item1, StringComparer.Ordinal).ThenBy(e => e.Item2));
     JsonObject info = result.Document["info"]!.AsObject();
     Assert.Equal(
-        """{"name":"Legacy Money","description":"d","tags":["economy"],"avatar_url":"https://example.com/a.png"}""",
+        """{"name":"Legacy Money","description":"d","tags":["economy"],"logo":"https://example.com/a.png"}""",
         info.ToJsonString());
     Assert.Equal(
         ["format_version", "format_uuid", "tooth", "version", "info", "variants"],
@@ -233,7 +233,7 @@ public class ToothMigratorTests {
     Assert.Equal(AssetType.Self, entry.Assets[1].Type);
     Assert.Empty(entry.Assets[1].Placements);
     Assert.False(result.Document["variants"]![""]![0]!["assets"]![1]!.AsObject()
-        .ContainsKey("placements"));
+        .ContainsKey("place"));
   }
 
   [Fact]
@@ -397,6 +397,105 @@ public class ToothMigratorTests {
         result.Notes,
         n => n.StartsWith("variants (label '', win-x64).preserve_files: 'config.json' has no '/'"));
     Assert.Equal(2, result.Notes.Count(n => n.Contains("contains '{'")));
+  }
+
+  [Fact]
+  public async Task Migrate_Entry_WritesKeysOfFormat4() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "variants": [
+            { "platform": "win-x64",
+              "assets": [ { "type": "self", "placements": [
+                { "type": "file", "src": "a.dll", "dest": "plugins/a.dll" } ] } ],
+              "preserve_files": ["config/"], "remove_files": ["logs/"] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    JsonObject entry = result.Document["variants"]![""]![0]!.AsObject();
+    Assert.Equal(
+        ["platform", "runtime", "assets", "preserve", "purge"], entry.Select(p => p.Key));
+    Assert.Equal("""["config/"]""", entry["preserve"]!.ToJsonString());
+    Assert.Equal("""["logs/"]""", entry["purge"]!.ToJsonString());
+    JsonObject asset = entry["assets"]![0]!.AsObject();
+    Assert.Equal(["type", "place"], asset.Select(p => p.Key));
+    Assert.Equal(
+        """[{"src":"a.dll","dest":"plugins/a.dll"}]""", asset["place"]!.ToJsonString());
+    ToothEntry reparsed = Reparse(result).Variants[""][0];
+    Assert.Equal(["config/"], reparsed.PreserveFiles.Select(g => g.Pattern));
+    Assert.Equal(["logs/"], reparsed.RemoveFiles.Select(g => g.Pattern));
+  }
+
+  [Theory]
+  [InlineData("http://example.com/a.png")]
+  [InlineData("a.png")]
+  public async Task Migrate_AvatarUrlNotHttps_IsDroppedWithNote(string avatarUrl) {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "info": { "name": "Tool", "avatar_url": "{{avatarUrl}}" },
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    string note = Assert.Single(result.Notes);
+    Assert.StartsWith("info.avatar_url:", note);
+    Assert.Contains($"'{avatarUrl}'", note);
+    Assert.Equal("""{"name":"Tool"}""", result.Document["info"]!.ToJsonString());
+    Reparse(result);
+  }
+
+  [Fact]
+  public async Task Migrate_OnlyAvatarUrlNotHttps_WritesNoInfo() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "info": { "avatar_url": "a.png" },
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    Assert.StartsWith("info.avatar_url:", Assert.Single(result.Notes));
+    Assert.False(result.Document.ContainsKey("info"));
+  }
+
+  [Fact]
+  public async Task Migrate_EmptyAvatarUrl_WritesNoLogoAndNoNote() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "info": { "name": "Tool", "avatar_url": "" },
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    Assert.Empty(result.Notes);
+    Assert.Equal("""{"name":"Tool"}""", result.Document["info"]!.ToJsonString());
   }
 
   [Fact]

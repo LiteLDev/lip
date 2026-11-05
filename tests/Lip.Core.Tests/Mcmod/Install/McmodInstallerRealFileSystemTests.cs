@@ -51,7 +51,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
           "platform": "server",
           "runtime": "win-x64",
           "assets": [ { "type": "mcmod", "urls": [ "{{ModUrl}}" ] } ],
-          "remove_files": [ "plugins/LegacyMoney/data/" ],
+          "purge": [ "plugins/LegacyMoney/data/" ],
           "hooks": {
             "pre_install": [ "echo pre> pre_install.txt" ],
             "post_install": [ "echo post> post_install.txt" ],

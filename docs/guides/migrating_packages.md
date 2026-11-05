@@ -30,14 +30,14 @@ Everything that is dropped, or converted with another meaning, is printed as a w
 
 ## What Changes
 
-`format_version` and `format_uuid` are set to those of format 4, and `tooth`, `version` and `info` are copied. The variants are rewritten as follows:
+`format_version` and `format_uuid` are set to those of format 4, and `tooth`, `version` and `info` are copied, except that `info.avatar_url` becomes `info.logo` when it starts with `https://` and is dropped otherwise, with a warning. The variants are rewritten as follows:
 
 -   Each label becomes a variant of the same name; the empty label becomes the variant `""`.
 -   For each runtime a label applies to (its platforms, with patterns expanded to the RIDs you gave), the variants of the label that apply to that runtime are merged as lip v0.37.0 merged them, and the result becomes an entry for the server and an entry for the client, with that runtime.
 -   When there is a `client` label (the usual server/client split), the variant `""` gets server entries only, and the entries of the `client` variant are also written as the client entries of the variant `""`.
 -   `dependencies` are copied with their ranges. A range that cannot be written in the format 4 syntax with the same meaning is left out, with a warning.
--   `self` and `zip` assets are kept, and their placements become placements of format 4: a `dir` placement takes the directory form (`src` and `dest` ending with `/`, or `""`), and a `file` placement the file form, or the glob form when its `src` is a pattern. `\` in `dest` becomes `/`. The `tar`, `tgz` and `uncompressed` asset types have no equivalent and are dropped.
--   `preserve_files` and `remove_files` are kept, with `\` replaced by `/` (see [Limitations](#limitations) for the patterns that change).
+-   `self` and `zip` assets are kept, and their `placements` become `place` of format 4: a `dir` placement takes the directory form (`src` and `dest` ending with `/`, or `""`), and a `file` placement the file form, or the glob form when its `src` is a pattern. `\` in `dest` becomes `/`. The `tar`, `tgz` and `uncompressed` asset types have no equivalent and are dropped.
+-   `preserve_files` becomes `preserve` and `remove_files` becomes `purge`, with `\` replaced by `/` (see [Limitations](#limitations) for the patterns that change).
 -   The scripts become `hooks`: `pre_install`, `post_install` (`install` first, then `post_install`), `pre_uninstall` (`pre_uninstall`, then `uninstall`) and `post_uninstall`.
 -   Empty values are omitted.
 

@@ -111,7 +111,7 @@ public enum PlacementForm {
 
 /// A placement of an asset. LegacyDirectory is the type of a placement of format 3 (true for
 /// "dir", false for "file"), which is carried out as lip v0.37.0 did (ToothPlacements); null for
-/// a placement of format 4, whose form Src decides (tooth.schema.json "placements").
+/// a placement of format 4, whose form Src decides (tooth.schema.json "place").
 public record EntryPlacement(string Src, string Dest, bool? LegacyDirectory = null) {
   public PlacementForm Form =>
       PathGlob.HasMetacharacters(Src) ? PlacementForm.Glob

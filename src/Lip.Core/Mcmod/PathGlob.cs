@@ -56,7 +56,7 @@ public class PathGlob {
 
   public override string ToString() => Pattern;
 
-  /// Whether a path contains '*', '?' or '[', which make it a pattern (tooth.schema.json "placements").
+  /// Whether a path contains '*', '?' or '[', which make it a pattern (tooth.schema.json "place").
   public static bool HasMetacharacters(string path) => path.AsSpan().IndexOfAny("*?[") >= 0;
 
   /// The leading segments of a pattern that contain no metacharacter, each followed by '/'

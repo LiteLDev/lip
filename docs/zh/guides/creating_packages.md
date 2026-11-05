@@ -39,7 +39,7 @@ lip 会询问包的 tooth 路径，即 [Go 模块路径](https://go.dev/ref/mod#
 
 ## 文件包
 
-文件包在工作区中放置文件。每个资源都是一个取文件的归档：`self` 是包自身的归档（标签处的仓库），`zip` 是 lip 下载的 ZIP 文件。其 `placements` 复制一个文件、一个目录或与 glob 匹配的文件：
+文件包在工作区中放置文件。每个资源都是一个取文件的归档：`self` 是包自身的归档（标签处的仓库），`zip` 是 lip 下载的 ZIP 文件。其 `place` 复制一个文件、一个目录或与 glob 匹配的文件：
 
 ```json
 {
@@ -55,22 +55,22 @@ lip 会询问包的 tooth 路径，即 [Go 模块路径](https://go.dev/ref/mod#
         "assets": [
           {
             "type": "self",
-            "placements": [{ "src": "config/", "dest": "config/mytool/" }]
+            "place": [{ "src": "config/", "dest": "config/mytool/" }]
           },
           {
             "type": "zip",
             "urls": ["https://github.com/user/MyTool/releases/download/v1.0.0/MyTool-win-x64.zip"],
-            "placements": [{ "src": "MyTool.exe", "dest": "MyTool.exe" }]
+            "place": [{ "src": "MyTool.exe", "dest": "MyTool.exe" }]
           }
         ],
-        "preserve_files": ["config/mytool/"]
+        "preserve": ["config/mytool/"]
       }
     ]
   }
 }
 ```
 
-`preserve_files` 保留用户修改过的配置：已存在的文件不会被覆盖，卸载时也不会被删除。其 glob 相对于工作区。
+`preserve` 保留用户修改过的配置：已存在的文件不会被覆盖，卸载时也不会被删除。其 glob 相对于工作区。
 
 ## mod
 
@@ -106,7 +106,7 @@ lip pack build/ -o MyMod-server-win-x64.zip
             "urls": ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
           }
         ],
-        "preserve_files": ["mods/MyMod/config/"]
+        "preserve": ["mods/MyMod/config/"]
       }
     ]
   }
@@ -158,14 +158,14 @@ lip pack build/ -o MyMod-server-win-x64.zip
       {
         "platform": "server",
         "runtime": "win-x64",
-        "assets": [{ "type": "self", "placements": [{ "src": "lua/", "dest": "myengine/lua/" }] }]
+        "assets": [{ "type": "self", "place": [{ "src": "lua/", "dest": "myengine/lua/" }] }]
       }
     ],
     "quickjs": [
       {
         "platform": "server",
         "runtime": "win-x64",
-        "assets": [{ "type": "self", "placements": [{ "src": "quickjs/", "dest": "myengine/quickjs/" }] }]
+        "assets": [{ "type": "self", "place": [{ "src": "quickjs/", "dest": "myengine/quickjs/" }] }]
       }
     ]
   }

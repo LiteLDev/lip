@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Lip.Core.Entities;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
@@ -251,13 +252,153 @@ public class ToothCompatTests {
     Assert.Equal("Repo", json.GetProperty("info").GetProperty("name").GetString());
     JsonElement entry = Assert.Single(json.GetProperty("variants").GetProperty("").EnumerateArray());
     Assert.Equal(
-        ["platform", "runtime", "dependencies", "assets", "preserve_files", "hooks"],
+        ["platform", "runtime", "dependencies", "assets", "preserve", "hooks"],
         entry.EnumerateObject().Select(p => p.Name));
     Assert.Equal("server", entry.GetProperty("platform").GetString());
     Assert.Equal("win-x64", entry.GetProperty("runtime").GetString());
     Assert.Equal(
         """{"post_install":["echo win"]}""", entry.GetProperty("hooks").GetRawText());
     Assert.Equal(entry.GetRawText(), tooth.Variants[""][0].Json.GetRawText());
+  }
+
+  [Theory]
+  [InlineData("https://example.com/a.png", "https://example.com/a.png")]
+  [InlineData("http://example.com/a.png", null)]
+  [InlineData("a.png", null)]
+  [InlineData("", null)]
+  public void Derive_AvatarUrl_IsLogoOnlyWhenHttps(string avatarUrl, string? logo) {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "info": { "name": "Repo", "avatar_url": "{{avatarUrl}}" },
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    JsonElement info = ToothCompat.Derive(manifest, _serverWin).Json.GetProperty("info");
+
+    // Assert
+    Assert.Equal(
+        logo is null ? ["name"] : ["name", "logo"], info.EnumerateObject().Select(p => p.Name));
+    Assert.Equal(
+        logo, info.TryGetProperty("logo", out JsonElement value) ? value.GetString() : null);
+  }
+
+  [Fact]
+  public void Derive_NoAvatarUrl_HasNoLogo() {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "info": { "name": "Repo", "description": "d", "tags": ["a"] },
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    JsonElement info = ToothCompat.Derive(manifest, _serverWin).Json.GetProperty("info");
+
+    // Assert
+    Assert.Equal(["name", "description", "tags"], info.EnumerateObject().Select(p => p.Name));
+  }
+
+  [Theory]
+  [InlineData("https://example.com/a.png", true)]
+  [InlineData("https://", true)]
+  [InlineData("http://example.com/a.png", false)]
+  [InlineData("HTTPS://example.com/a.png", false)]
+  [InlineData("a.png", false)]
+  [InlineData("", false)]
+  public void IsLogo_ChecksHttpsPrefix(string avatarUrl, bool expected) {
+    // Act & Assert
+    Assert.Equal(expected, ToothCompat.IsLogo(avatarUrl));
+  }
+
+  [Fact]
+  public void Info_EmptyMembers_AreDropped() {
+    // Arrange
+    PackageManifestInfo info = new() {
+      Name = "",
+      Description = "",
+      Tags = [],
+      AvatarUrl = "a.png",
+    };
+
+    // Act
+    JsonObject result = ToothCompat.Info(info);
+
+    // Assert
+    Assert.Empty(result);
+  }
+
+  [Fact]
+  public void Info_HttpsAvatarUrl_IsLogo() {
+    // Arrange
+    PackageManifestInfo info = new() {
+      Name = "n",
+      Description = "d",
+      Tags = ["a"],
+      AvatarUrl = "https://example.com/a.png",
+    };
+
+    // Act
+    JsonObject result = ToothCompat.Info(info);
+
+    // Assert
+    Assert.Equal(
+        """{"name":"n","description":"d","tags":["a"],"logo":"https://example.com/a.png"}""",
+        result.ToJsonString());
+  }
+
+  [Fact]
+  public void Derive_DerivedEntry_HasPreserveAndPurge() {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [ { "platform": "win-x64",
+                          "assets": [ { "type": "self", "placements": [
+                            { "type": "file", "src": "a.dll", "dest": "plugins/a.dll" } ] } ],
+                          "preserve_files": ["config.json"], "remove_files": ["logs"] } ]
+        }
+        """);
+
+    // Act
+    JsonElement entry = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]).Json;
+
+    // Assert: the globs use the keys of format 4; the assets keep the placements of format 3.
+    Assert.Equal(
+        ["platform", "runtime", "assets", "preserve", "purge"],
+        entry.EnumerateObject().Select(p => p.Name));
+    Assert.Equal("""["config.json"]""", entry.GetProperty("preserve").GetRawText());
+    Assert.Equal("""["logs"]""", entry.GetProperty("purge").GetRawText());
+    JsonElement asset = Assert.Single(entry.GetProperty("assets").EnumerateArray());
+    Assert.False(asset.TryGetProperty("place", out _));
+    Assert.Equal(
+        "file",
+        Assert.Single(asset.GetProperty("placements").EnumerateArray()).GetProperty("type")
+            .GetString());
+  }
+
+  [Fact]
+  public void ParseEntry_LegacyEntryWithOldGlobKeys_IgnoresThem() {
+    // Arrange
+    using JsonDocument json = JsonDocument.Parse("""
+        { "platform": "server", "runtime": "win-x64",
+          "preserve_files": ["config.json"], "remove_files": ["logs"] }
+        """);
+
+    // Act
+    ToothEntry entry = ToothParser.ParseEntry(json.RootElement, legacy: true);
+
+    // Assert
+    Assert.Empty(entry.PreserveFiles);
+    Assert.Empty(entry.RemoveFiles);
   }
 
   [Fact]
@@ -529,7 +670,7 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void ParseEntry_LegacyEntry_ConvertsPreserveAndRemoveFiles() {
+  public void ParseEntry_LegacyEntry_ConvertsPreserveAndPurge() {
     // Arrange: an entry of the workspace file derived from format 3 (protocol/workspace.md §7.1).
     using JsonDocument json = JsonDocument.Parse("""
         {
@@ -540,8 +681,8 @@ public class ToothCompatTests {
               "placements": [ { "type": "file", "src": "", "dest": "a.exe" } ] },
             { "type": "self", "placements": [ { "type": "dir", "src": "/x\\", "dest": "../y" } ] }
           ],
-          "preserve_files": ["config.json", "data\\", "/bad", "a//b"],
-          "remove_files": ["logs", "tmp/"],
+          "preserve": ["config.json", "data\\", "/bad", "a//b"],
+          "purge": ["logs", "tmp/"],
           "hooks": { "post_install": ["x"] }
         }
         """);
@@ -567,7 +708,7 @@ public class ToothCompatTests {
   [InlineData("""{ "platform": "server", "runtime": "win-x64", "assets": [ { "type": "self", "placements": [ { "type": "glob", "src": "", "dest": "" } ] } ] }""")]
   [InlineData("""{ "platform": "any", "runtime": "win-x64" }""")]
   [InlineData("""{ "platform": "server" }""")]
-  [InlineData("""{ "platform": "server", "runtime": "win-x64", "preserve_files": [ 1 ] }""")]
+  [InlineData("""{ "platform": "server", "runtime": "win-x64", "preserve": [ 1 ] }""")]
   public void ParseEntry_InvalidLegacyEntry_Throws(string entry) {
     // Arrange
     using JsonDocument json = JsonDocument.Parse(entry);

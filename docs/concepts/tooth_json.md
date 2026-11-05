@@ -51,7 +51,7 @@ client on Windows x64:
             "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
           }
         ],
-        "preserve_files": ["mods/MyMod/config/"]
+        "preserve": ["mods/MyMod/config/"]
       },
       {
         "platform": "client",
@@ -66,7 +66,7 @@ client on Windows x64:
             "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"]
           }
         ],
-        "preserve_files": ["mods/MyMod/config/"]
+        "preserve": ["mods/MyMod/config/"]
       }
     ]
   }
@@ -100,7 +100,7 @@ package, and lip does not install it.
 | `name` | `string` | Display name. |
 | `description` | `string` | Short description. |
 | `tags` | `string[]` | Tags. |
-| `avatar_url` | `string` | Avatar image URL. |
+| `logo` | `string` | URL of the logo image. It must start with `https://`; the image is the response, directly or after redirects. |
 
 lip does not use `info`.
 
@@ -126,8 +126,8 @@ and `runtime`.
 | `runtime` | `string` | Yes | A [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog), e.g. `win-x64`. |
 | `dependencies` | `object` | No | See [Dependencies](#dependencies). |
 | `assets` | `array` | No | See [Assets](#assets). |
-| `preserve_files` | `string[]` | No | [Globs](#globs) of files that are kept: an existing file is not overwritten on install, and is not deleted on uninstall. |
-| `remove_files` | `string[]` | No | [Globs](#globs) of extra paths to delete on uninstall. A matching directory is deleted with everything below it. |
+| `preserve` | `string[]` | No | [Globs](#globs) of files that are kept: an existing file is not overwritten on install, and is not deleted on uninstall. |
+| `purge` | `string[]` | No | [Globs](#globs) of extra paths to delete on uninstall. A matching directory is deleted with everything below it. |
 | `hooks` | `object` | No | See [Hooks](#hooks). |
 
 ### Dependencies
@@ -159,9 +159,9 @@ version such as `1.2.3` matches exactly that version.
 
 | Type | Fields | Description |
 | --- | --- | --- |
-| `self` | `placements` (optional) | The archive of the `tooth.json` itself, e.g. the repository at the tag. |
-| `zip` | `urls`, `placements` (optional) | A ZIP archive downloaded over HTTPS. |
-| `mcmod` | `urls` | A ZIP archive downloaded over HTTPS that holds a LeviLamina mod; it has no `placements`. See [Mods](#mods). |
+| `self` | `place` (optional) | The archive of the `tooth.json` itself, e.g. the repository at the tag. |
+| `zip` | `urls`, `place` (optional) | A ZIP archive downloaded over HTTPS. |
+| `mcmod` | `urls` | A ZIP archive downloaded over HTTPS that holds a LeviLamina mod; it has no `place`. See [Mods](#mods). |
 
 `urls` is a non-empty array of HTTPS URLs of the same file, tried in order. An entry has at most
 one `mcmod` asset. Assets are written in order; when two assets or placements write the same
@@ -169,7 +169,7 @@ path, the later one wins.
 
 ### Placements
 
-A placement `{ "src": ..., "dest": ... }` writes files of the asset's archive into the workspace.
+Each member of `place` is a placement `{ "src": ..., "dest": ... }` that writes files of the asset's archive into the workspace.
 `src` is a path in the archive, `dest` a path relative to the workspace. Both are `/`-separated
 and must not start with `/` or a drive letter, or contain `//`, a `..` segment or `\`. The form
 of a placement is decided by `src`:
@@ -187,7 +187,7 @@ of a placement is decided by `src`:
 {
   "type": "zip",
   "urls": ["https://example.com/tool-1.0.0-win-x64.zip"],
-  "placements": [
+  "place": [
     { "src": "bin/", "dest": "tools/" },
     { "src": "README.md", "dest": "tools/README.md" },
     { "src": "plugins/*.dll", "dest": "tools/plugins/" }
@@ -199,14 +199,14 @@ The root `tooth.json` of the package is never written.
 
 ### Globs
 
-`preserve_files`, `remove_files` and the glob form of placements use POSIX `fnmatch` patterns,
+`preserve`, `purge` and the glob form of placements use POSIX `fnmatch` patterns,
 matched segment by segment: `*` matches any characters except `/` (a leading `.` included), `?`
 one character except `/`, and `[...]` one character of a set. A `**` segment matches zero or more
 segments; a pattern ending with `/` matches a directory and everything below it. There is no
 escape character. A glob must not be empty, start with `/`, or contain `//` or `\`.
 
-`preserve_files` and `remove_files` are matched against paths relative to the workspace, also for
-a mod: write `mods/MyMod/config/`, not `config/`. `remove_files` never matches `mods`, `plugins`
+`preserve` and `purge` are matched against paths relative to the workspace, also for
+a mod: write `mods/MyMod/config/`, not `config/`. `purge` never matches `mods`, `plugins`
 or `.lip` at the workspace root, nor anything below `.lip`, and never deletes anything below
 `mods` or `plugins` through them.
 
@@ -272,7 +272,8 @@ but never writes them; convert yours with [`lip migrate`](../cli/commands/migrat
 and 2 are first read as format 3, as lip v0.37.0 did. A format 3 `tooth.json` is then read, for
 the environment of the workspace, as a format 4 `tooth.json`:
 
-- `tooth`, `version` and `info` are kept.
+- `tooth` and `version` are kept, and so is `info`, except that `avatar_url` becomes `logo`
+  when it starts with `https://` and is dropped otherwise.
 - For each label, the variants with that label whose `platform` is empty or matches the runtime
   (as a RID pattern, e.g. `win-*`) are merged as lip v0.37.0 merged them, into one entry for the
   platform and runtime of the environment. A label without such variants is no variant.
@@ -280,8 +281,9 @@ the environment of the workspace, as a format 4 `tooth.json`:
 - The scripts become `hooks`: `pre_install` stays `pre_install`, `install` and then
   `post_install` become `post_install`, `pre_uninstall` and then `uninstall` become
   `pre_uninstall`, and `post_uninstall` stays `post_uninstall`.
-- The assets, `preserve_files` and `remove_files` keep the meaning they had in lip v0.37.0,
-  including the `tar`, `tgz` and `uncompressed` asset types and placements with `type`.
+- `preserve_files` becomes `preserve` and `remove_files` becomes `purge`. They and the assets
+  keep the meaning they had in lip v0.37.0, including the `tar`, `tgz` and `uncompressed` asset
+  types and `placements` with `type`.
 - At a version tag, the version of the package is the tag version, whatever its `version` says.
 - A dependency on the variant `client` of a package whose `tooth.json` is of format 4 names its
   variant `""`.

@@ -91,7 +91,7 @@ A tooth file of `format_version` 4 MUST also satisfy:
 - In each entry, `platform` is a platform and `runtime` is a runtime.
 - No two entries of the same variant have the same `platform` and the same `runtime`.
 - Each entry has at most one asset whose `type` is `"mcmod"`.
-- Each glob of `preserve_files` and `remove_files`, and each `src` in the glob form, is a glob as the schema describes it.
+- Each glob of `preserve` and `purge`, and each `src` in the glob form, is a glob as the schema describes it.
 
 ## 4. Resolution
 
@@ -115,12 +115,12 @@ A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`.
 
 A tooth file with `format_version` 1, 2 or 3 is read as the tooth file of `format_version` 4 that this section derives from it. Formats 1 and 2 are first read as format 3, as lip v0.37.0 [TOOTH-V3] reads them.
 
-A format 3 tooth file T is read, for an environment (p, r), as a tooth file with the `tooth`, `version` and `info` of T, and, for each label L of the variants of T:
+A format 3 tooth file T is read, for an environment (p, r), as a tooth file with the `tooth` and `version` of T, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
 
 - Let V be the variants of T labeled L whose `platform` is `""` or matches r as [TOOTH-V3] matches it. When V is empty, the result has no variant L.
-- Otherwise the result maps L to one entry with `"platform": p`, `"runtime": r`, and, from the variants of V merged as [TOOTH-V3] merges them: `dependencies`; `assets`; `preserve_files` and `remove_files`; and `hooks`, whose `pre_install` is `pre_install`, `post_install` is `install` followed by `post_install`, `pre_uninstall` is `pre_uninstall` followed by `uninstall`, and `post_uninstall` is `post_uninstall`.
+- Otherwise the result maps L to one entry with `"platform": p`, `"runtime": r`, and, from the variants of V merged as [TOOTH-V3] merges them: `dependencies`; `assets`; `preserve` from `preserve_files` and `purge` from `remove_files`; and `hooks`, whose `pre_install` is `pre_install`, `post_install` is `install` followed by `post_install`, `pre_uninstall` is `pre_uninstall` followed by `uninstall`, and `post_uninstall` is `post_uninstall`.
 - When p is `"client"` and T has a variant labeled `"client"`, the variant `""` of the result is the one derived from the label `"client"`.
 
-The assets, `preserve_files` and `remove_files` keep their meaning in [TOOTH-V3]: the asset types `tar`, `tgz` and `uncompressed`, and `placements` with `type`, are allowed, and are carried out as [TOOTH-V3] carries them out. The version of a format 3 package is the tag version of its git archive, when it has one, whatever its `version`.
+The assets, `preserve` and `purge` keep the meaning that the assets, `preserve_files` and `remove_files` have in [TOOTH-V3]: the asset types `tar`, `tgz` and `uncompressed`, and `placements` with `type`, are allowed, and are carried out as [TOOTH-V3] carries them out. The version of a format 3 package is the tag version of its git archive, when it has one, whatever its `version`.
 
 A dependency of a format 3 tooth file on the variant `client` of a package whose tooth file is of format 4 names the variant `""` of that package.

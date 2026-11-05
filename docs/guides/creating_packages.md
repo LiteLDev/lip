@@ -39,7 +39,7 @@ A tooth path such as `github.com/user/MyTool` is the git repository `https://git
 
 ## A File Package
 
-A file package places files in the workspace. Each asset is an archive to take files from: `self` is the package's own archive (the repository at the tag), and `zip` is a ZIP file that lip downloads. Its `placements` copy a file, a directory or the files matching a glob:
+A file package places files in the workspace. Each asset is an archive to take files from: `self` is the package's own archive (the repository at the tag), and `zip` is a ZIP file that lip downloads. Its `place` copy a file, a directory or the files matching a glob:
 
 ```json
 {
@@ -55,22 +55,22 @@ A file package places files in the workspace. Each asset is an archive to take f
         "assets": [
           {
             "type": "self",
-            "placements": [{ "src": "config/", "dest": "config/mytool/" }]
+            "place": [{ "src": "config/", "dest": "config/mytool/" }]
           },
           {
             "type": "zip",
             "urls": ["https://github.com/user/MyTool/releases/download/v1.0.0/MyTool-win-x64.zip"],
-            "placements": [{ "src": "MyTool.exe", "dest": "MyTool.exe" }]
+            "place": [{ "src": "MyTool.exe", "dest": "MyTool.exe" }]
           }
         ],
-        "preserve_files": ["config/mytool/"]
+        "preserve": ["config/mytool/"]
       }
     ]
   }
 }
 ```
 
-`preserve_files` keeps the configuration a user has changed: an existing file is not overwritten, and is not deleted on uninstall. Its globs are relative to the workspace.
+`preserve` keeps the configuration a user has changed: an existing file is not overwritten, and is not deleted on uninstall. Its globs are relative to the workspace.
 
 ## A Mod
 
@@ -106,7 +106,7 @@ Then point to it from `tooth.json`:
             "urls": ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
           }
         ],
-        "preserve_files": ["mods/MyMod/config/"]
+        "preserve": ["mods/MyMod/config/"]
       }
     ]
   }
@@ -158,14 +158,14 @@ Use variants to offer several packages from one repository. Users select one wit
       {
         "platform": "server",
         "runtime": "win-x64",
-        "assets": [{ "type": "self", "placements": [{ "src": "lua/", "dest": "myengine/lua/" }] }]
+        "assets": [{ "type": "self", "place": [{ "src": "lua/", "dest": "myengine/lua/" }] }]
       }
     ],
     "quickjs": [
       {
         "platform": "server",
         "runtime": "win-x64",
-        "assets": [{ "type": "self", "placements": [{ "src": "quickjs/", "dest": "myengine/quickjs/" }] }]
+        "assets": [{ "type": "self", "place": [{ "src": "quickjs/", "dest": "myengine/quickjs/" }] }]
       }
     ]
   }

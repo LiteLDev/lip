@@ -30,14 +30,14 @@ git commit -m "Migrate tooth.json to format 4"
 
 ## 变化内容
 
-`format_version` 和 `format_uuid` 设为格式 4 的值，`tooth`、`version` 和 `info` 原样复制。变体按以下方式改写：
+`format_version` 和 `format_uuid` 设为格式 4 的值，`tooth`、`version` 和 `info` 原样复制，但 `info.avatar_url` 以 `https://` 开头时变为 `info.logo`，否则被丢弃并给出警告。变体按以下方式改写：
 
 - 每个标签变为同名变体；空标签变为变体 `""`。
 - 对标签适用的每个运行时（其各平台，模式展开为你给出的 RID），该标签下适用于该运行时的变体按 lip v0.37.0 的方式合并，结果变为该运行时的一个服务端条目和一个客户端条目。
 - 存在 `client` 标签时（常见的服务端/客户端拆分），变体 `""` 只得到服务端条目，`client` 变体的条目同时也作为变体 `""` 的客户端条目写入。
 - `dependencies` 连同其范围一起复制。无法以相同含义写成格式 4 语法的范围会被省略，并给出警告。
-- `self` 和 `zip` 资源保留，其放置规则变为格式 4 的放置规则：`dir` 放置规则采用目录形式（`src` 和 `dest` 以 `/` 结尾，或为 `""`），`file` 放置规则采用文件形式，其 `src` 为模式时采用 glob 形式。`dest` 中的 `\` 变为 `/`。`tar`、`tgz` 和 `uncompressed` 资源类型没有对应项，会被丢弃。
-- `preserve_files` 和 `remove_files` 保留，其中的 `\` 替换为 `/`（会改变的模式参见[局限](#局限)）。
+- `self` 和 `zip` 资源保留，其 `placements` 变为格式 4 的 `place`：`dir` 放置规则采用目录形式（`src` 和 `dest` 以 `/` 结尾，或为 `""`），`file` 放置规则采用文件形式，其 `src` 为模式时采用 glob 形式。`dest` 中的 `\` 变为 `/`。`tar`、`tgz` 和 `uncompressed` 资源类型没有对应项，会被丢弃。
+- `preserve_files` 变为 `preserve`，`remove_files` 变为 `purge`，其中的 `\` 替换为 `/`（会改变的模式参见[局限](#局限)）。
 - scripts 变为 `hooks`：`pre_install`、`post_install`（先 `install`，再 `post_install`）、`pre_uninstall`（先 `pre_uninstall`，再 `uninstall`）和 `post_uninstall`。
 - 空值会被省略。
 

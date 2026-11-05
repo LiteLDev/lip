@@ -59,13 +59,13 @@ public static partial class ToothMigrator {
       ["tooth"] = tooth.Path,
       ["version"] = tooth.Version.ToString(),
     };
-    JsonObject info = [];
-    AddString(info, "name", tooth.Info.Name);
-    AddString(info, "description", tooth.Info.Description);
-    if (tooth.Info.Tags.Count > 0) {
-      info["tags"] = new JsonArray([.. tooth.Info.Tags.Select(t => (JsonNode)t)]);
+    JsonObject info = ToothCompat.Info(tooth.Info);
+    if (tooth.Info.AvatarUrl != "" && !ToothCompat.IsLogo(tooth.Info.AvatarUrl)) {
+      notes.Add($"info.avatar_url: '{tooth.Info.AvatarUrl}' does not start with \"https://\", "
+          + "which info.logo of format 4 must; it was dropped. Set info.logo to the https URL of "
+          + "the logo image.");
     }
-    AddString(info, "avatar_url", tooth.Info.AvatarUrl);
+
     if (info.Count > 0) {
       document["info"] = info;
     }
@@ -227,7 +227,7 @@ public static partial class ToothMigrator {
             ["urls"] = new JsonArray([.. asset.Urls.Select(u => (JsonNode)u.ToString())]),
           };
       if (placements.Count > 0) {
-        result["placements"] = placements;
+        result["place"] = placements;
       }
 
       assets.Add(result);
@@ -243,9 +243,9 @@ public static partial class ToothMigrator {
           + $"against file names in every directory; it became '**/{pattern}'.");
     }
 
-    AddGlobs(content, "preserve_files", ToothCompat.PreserveFiles(preserveFiles), notes,
+    AddGlobs(content, "preserve", ToothCompat.PreserveFiles(preserveFiles), notes,
         $"{field}.preserve_files");
-    AddGlobs(content, "remove_files", ToothCompat.RemoveFiles(
+    AddGlobs(content, "purge", ToothCompat.RemoveFiles(
         variant.RemoveFiles.Select(GlobListJsonConverter.Format)), notes,
         $"{field}.remove_files");
 
@@ -392,12 +392,6 @@ public static partial class ToothMigrator {
   private static void AddCommands(JsonObject hooks, string key, IReadOnlyList<string> commands) {
     if (commands.Count > 0) {
       hooks[key] = new JsonArray([.. commands.Select(c => (JsonNode)c)]);
-    }
-  }
-
-  private static void AddString(JsonObject target, string key, string value) {
-    if (value != "") {
-      target[key] = value;
     }
   }
 

@@ -14,7 +14,7 @@ lip migrate
 
 - `tooth`、`version` 和 `info` 原样复制。
 - 每个标签变为一个变体。对其适用的每个运行时，该标签下的变体按 lip v0.37.0 的方式合并，变为一个服务端条目和一个客户端条目。存在 `client` 标签时，变体 `""` 只得到服务端条目，`client` 的条目同时也用作 `""` 的客户端条目。
-- `self` 和 `zip` 资源保留其放置规则，并转换为格式 4。`tar`、`tgz` 和 `uncompressed` 资源类型会被丢弃。
+- `self` 和 `zip` 资源保留其 `placements`，并转换为格式 4 的 `place`。`preserve_files` 和 `remove_files` 变为 `preserve` 和 `purge`，以 `https://` 开头的 `info.avatar_url` 变为 `info.logo`。`tar`、`tgz` 和 `uncompressed` 资源类型会被丢弃。
 - scripts 变为 `hooks`。
 
 格式 4 没有 RID 模式。当结果需要的某个值缺失或无效时，例如 `win-*` 这样的平台模式所代表的 RID，或没有 platform 的变体所适用的 RID，lip 会在终端上询问，直到回答有效为止。若标准输入或标准错误不是终端，则会失败，指明本应询问的值，且不做任何修改。

@@ -8,7 +8,7 @@ The workspace file is `.lip/workspace.json` in the workspace root. On Windows li
 
 Because the workspace file lives in the workspace directory rather than being tied to its path, a workspace that is moved, renamed or copied keeps its workspace file, and so its installed packages.
 
-`.lip` is reserved for lip: installing a package that would write a file to `.lip` at the workspace root, or anywhere below it, fails, and a `remove_files` pattern never matches `.lip` or anything below it.
+`.lip` is reserved for lip: installing a package that would write a file to `.lip` at the workspace root, or anywhere below it, fails, and a `purge` pattern never matches `.lip` or anything below it.
 
 ## Purpose
 

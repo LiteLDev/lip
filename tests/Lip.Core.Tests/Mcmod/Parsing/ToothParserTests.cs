@@ -85,21 +85,21 @@ public class ToothParserTests {
     JsonObject document = WithMembers("""
         "dependencies": { "example.com/a": "^1.0.0", "example.com/b#lua": ">=2.0.0 <3.0.0" },
         "assets": [
-          { "type": "self", "placements": [ { "src": "bin/", "dest": "tools/x/" } ] },
+          { "type": "self", "place": [ { "src": "bin/", "dest": "tools/x/" } ] },
           { "type": "zip", "urls": [ "https://a.example/x.zip", "https://b.example/x.zip" ],
-            "placements": [ { "src": "x.dll", "dest": "plugins/x.dll" },
+            "place": [ { "src": "x.dll", "dest": "plugins/x.dll" },
                             { "src": "lib/*.dll", "dest": "" } ] },
           { "type": "mcmod", "urls": [ "https://a.example/x.mcmod" ] }
         ],
-        "preserve_files": [ "config/**", "data/" ],
-        "remove_files": [ "logs/" ],
+        "preserve": [ "config/**", "data/" ],
+        "purge": [ "logs/" ],
         "hooks": {
           "pre_install": [ "a" ], "post_install": [ "b", "c" ],
           "pre_uninstall": [ "d" ], "post_uninstall": [ "e" ]
         }
         """);
     document["info"] = JsonNode.Parse("""
-        { "name": "Tool", "description": "d", "tags": [ "x" ], "avatar_url": "https://a.example/a.png" }
+        { "name": "Tool", "description": "d", "tags": [ "x" ], "logo": "https://a.example/a.png" }
         """);
 
     // Act
@@ -536,9 +536,9 @@ public class ToothParserTests {
   [InlineData("""{ "type": "mcmod" }""", ".urls")]
   [InlineData("""{ "type": "mcmod", "urls": [] }""", ".urls")]
   [InlineData(
-      """{ "type": "mcmod", "urls": [ "https://a.example/x.mcmod" ], "placements": [] }""",
-      ".placements")]
-  [InlineData("""{ "type": "self", "placements": {} }""", ".placements")]
+      """{ "type": "mcmod", "urls": [ "https://a.example/x.mcmod" ], "place": [] }""",
+      ".place")]
+  [InlineData("""{ "type": "self", "place": {} }""", ".place")]
   [InlineData("\"self\"", "")]
   public void Parse_InvalidAsset_Throws(string asset, string member) {
     // Arrange
@@ -562,6 +562,84 @@ public class ToothParserTests {
     Assert.Equal(AssetType.Self, asset.Type);
     Assert.Empty(asset.Urls);
     Assert.Empty(asset.Placements);
+  }
+
+  [Fact]
+  public void Parse_McmodAssetWithPlace_Throws() {
+    // Arrange
+    JsonObject document = WithMembers("""
+        "assets": [ { "type": "mcmod", "urls": [ "https://a.example/x.mcmod" ],
+                      "place": [ { "src": "a.dll", "dest": "a.dll" } ] } ]
+        """);
+
+    // Act
+    ToothFormatException ex = AssertInvalid(document, "$.variants[\"\"][0].assets[0].place");
+
+    // Assert
+    Assert.Contains("mcmod", ex.Message);
+  }
+
+  [Fact]
+  public void Parse_McmodAssetWithPlacements_IgnoresThem() {
+    // Arrange
+    JsonObject document = WithMembers("""
+        "assets": [ { "type": "mcmod", "urls": [ "https://a.example/x.mcmod" ],
+                      "placements": [ { "src": "a.dll", "dest": "a.dll" } ] } ]
+        """);
+
+    // Act
+    EntryAsset asset = Assert.Single(ParseEntry(document).Assets);
+
+    // Assert
+    Assert.Equal(AssetType.Mcmod, asset.Type);
+    Assert.Empty(asset.Placements);
+  }
+
+  [Theory]
+  [InlineData("""{ "type": "self", "placements": [ { "src": "a.dll", "dest": "b.dll" } ] }""")]
+  [InlineData("""{ "type": "self", "placements": [{ "type": "file", "src": "", "dest": "" }] }""")]
+  [InlineData("""{ "type": "self", "placements": {} }""")]
+  [InlineData("""{ "type": "zip", "urls": [ "https://a.example/x.zip" ], "placements": 1 }""")]
+  public void Parse_AssetWithPlacements_IgnoresThem(string asset) {
+    // Arrange
+    JsonObject document = WithMembers($$""" "assets": [ {{asset}} ] """);
+
+    // Act
+    EntryAsset parsed = Assert.Single(ParseEntry(document).Assets);
+
+    // Assert
+    Assert.Empty(parsed.Placements);
+  }
+
+  [Fact]
+  public void Parse_AssetWithPlaceAndPlacements_ReadsPlace() {
+    // Arrange
+    JsonObject document = WithMembers("""
+        "assets": [ { "type": "self",
+                      "place": [ { "src": "a.dll", "dest": "plugins/a.dll" } ],
+                      "placements": [ { "src": "b.dll", "dest": "plugins/b.dll" } ] } ]
+        """);
+
+    // Act
+    EntryAsset asset = Assert.Single(ParseEntry(document).Assets);
+
+    // Assert
+    Assert.Equal([new EntryPlacement("a.dll", "plugins/a.dll")], asset.Placements);
+  }
+
+  [Fact]
+  public void Parse_OldGlobKeys_AreIgnored() {
+    // Arrange
+    JsonObject document = WithMembers("""
+        "preserve_files": [ "/not a glob" ], "remove_files": [ 1 ]
+        """);
+
+    // Act
+    ToothEntry entry = ParseEntry(document);
+
+    // Assert
+    Assert.Empty(entry.PreserveFiles);
+    Assert.Empty(entry.RemoveFiles);
   }
 
   [Fact]
@@ -619,7 +697,7 @@ public class ToothParserTests {
   public void Parse_Placement_IsAcceptedWithItsForm(string src, string dest, PlacementForm form) {
     // Arrange
     JsonObject document = WithMembers($$"""
-        "assets": [ { "type": "self", "placements": [ { "src": "{{src}}", "dest": "{{dest}}" } ] } ]
+        "assets": [ { "type": "self", "place": [ { "src": "{{src}}", "dest": "{{dest}}" } ] } ]
         """);
 
     // Act
@@ -656,11 +734,11 @@ public class ToothParserTests {
     // Arrange
     JsonObject document = WithMembers($$"""
         "assets": [ { "type": "zip", "urls": [ "https://a.example/x.zip" ],
-                      "placements": [ { "src": "{{src}}", "dest": "{{dest}}" } ] } ]
+                      "place": [ { "src": "{{src}}", "dest": "{{dest}}" } ] } ]
         """);
 
     // Act & Assert
-    AssertInvalid(document, $"$.variants[\"\"][0].assets[0].placements[0].{member}");
+    AssertInvalid(document, $"$.variants[\"\"][0].assets[0].place[0].{member}");
   }
 
   [Theory]
@@ -671,16 +749,16 @@ public class ToothParserTests {
   public void Parse_PlacementWithoutStringSrcAndDest_Throws(string placement, string member) {
     // Arrange
     JsonObject document = WithMembers($$"""
-        "assets": [ { "type": "self", "placements": [ {{placement}} ] } ]
+        "assets": [ { "type": "self", "place": [ {{placement}} ] } ]
         """);
 
     // Act & Assert
-    AssertInvalid(document, $"$.variants[\"\"][0].assets[0].placements[0]{member}");
+    AssertInvalid(document, $"$.variants[\"\"][0].assets[0].place[0]{member}");
   }
 
   [Theory]
-  [InlineData("preserve_files")]
-  [InlineData("remove_files")]
+  [InlineData("preserve")]
+  [InlineData("purge")]
   public void Parse_Globs_AreAccepted(string key) {
     // Arrange
     JsonObject document = WithMembers($$"""
@@ -691,7 +769,7 @@ public class ToothParserTests {
     ToothEntry entry = ParseEntry(document);
 
     // Assert
-    IReadOnlyList<PathGlob> globs = key == "preserve_files" ? entry.PreserveFiles : entry.RemoveFiles;
+    IReadOnlyList<PathGlob> globs = key == "preserve" ? entry.PreserveFiles : entry.RemoveFiles;
     Assert.Equal(
         ["config.json", "**/*.json", "data/", "plugins/[a-z]?/*", ".hidden"],
         globs.Select(g => g.Pattern));
@@ -700,15 +778,15 @@ public class ToothParserTests {
   }
 
   [Theory]
-  [InlineData("preserve_files", "\"\"")]
-  [InlineData("preserve_files", "\"/config.json\"")]
-  [InlineData("preserve_files", "\"config//a.json\"")]
-  [InlineData("preserve_files", "\"config\\\\a.json\"")]
-  [InlineData("preserve_files", "1")]
-  [InlineData("remove_files", "\"\"")]
-  [InlineData("remove_files", "\"/logs/\"")]
-  [InlineData("remove_files", "\"logs//\"")]
-  [InlineData("remove_files", "\"logs\\\\\"")]
+  [InlineData("preserve", "\"\"")]
+  [InlineData("preserve", "\"/config.json\"")]
+  [InlineData("preserve", "\"config//a.json\"")]
+  [InlineData("preserve", "\"config\\\\a.json\"")]
+  [InlineData("preserve", "1")]
+  [InlineData("purge", "\"\"")]
+  [InlineData("purge", "\"/logs/\"")]
+  [InlineData("purge", "\"logs//\"")]
+  [InlineData("purge", "\"logs\\\\\"")]
   public void Parse_NotAGlob_Throws(string key, string glob) {
     // Arrange
     JsonObject document = WithMembers($$""" "{{key}}": [ {{glob}} ] """);
@@ -736,7 +814,7 @@ public class ToothParserTests {
   [InlineData("""{ "description": [] }""", ".description")]
   [InlineData("""{ "tags": "a" }""", ".tags")]
   [InlineData("""{ "tags": [ 1 ] }""", ".tags[0]")]
-  [InlineData("""{ "avatar_url": null }""", ".avatar_url")]
+  [InlineData("""{ "logo": null }""", ".logo")]
   [InlineData("\"Tool\"", "")]
   public void Parse_InvalidInfo_Throws(string info, string member) {
     // Arrange
@@ -747,6 +825,50 @@ public class ToothParserTests {
     AssertInvalid(document, $"$.info{member}");
   }
 
+  [Theory]
+  [InlineData("https://a.example/logo.png")]
+  [InlineData("https://")]
+  public void Parse_HttpsLogo_IsAccepted(string logo) {
+    // Arrange
+    JsonObject document = Valid();
+    document["info"] = new JsonObject { ["logo"] = logo };
+
+    // Act
+    ToothFile file = Parse(document);
+
+    // Assert
+    Assert.Equal(logo, file.Json.GetProperty("info").GetProperty("logo").GetString());
+  }
+
+  [Theory]
+  [InlineData("\"http://a.example/logo.png\"")]
+  [InlineData("\"logo.png\"")]
+  [InlineData("\"HTTPS://a.example/logo.png\"")]
+  [InlineData("\"\"")]
+  [InlineData("1")]
+  [InlineData("[ \"https://a.example/logo.png\" ]")]
+  public void Parse_LogoNotAnHttpsUrl_Throws(string logo) {
+    // Arrange
+    JsonObject document = Valid();
+    document["info"] = JsonNode.Parse($$"""{ "logo": {{logo}} }""");
+
+    // Act & Assert
+    AssertInvalid(document, "$.info.logo");
+  }
+
+  [Fact]
+  public void Parse_AvatarUrl_IsIgnored() {
+    // Arrange
+    JsonObject document = Valid();
+    document["info"] = JsonNode.Parse("""{ "avatar_url": "logo.png" }""");
+
+    // Act
+    ToothFile file = Parse(document);
+
+    // Assert
+    Assert.Equal("example.com/owner/tool", file.Tooth);
+  }
+
   [Fact]
   public void Parse_UnknownKeys_AreIgnored() {
     // Arrange
@@ -754,7 +876,7 @@ public class ToothParserTests {
         "x-entry": { "anything": [] },
         "assets": [
           { "type": "self", "x": 1,
-            "placements": [ { "src": "a.dll", "dest": "b.dll", "type": "dir" } ] },
+            "place": [ { "src": "a.dll", "dest": "b.dll", "type": "dir" } ] },
           { "type": "mcmod", "urls": [ "https://a.example/a.mcmod" ], "sha256": "?" }
         ],
         "hooks": { "pre_pack": [ "x" ], "install": 5 }

@@ -55,11 +55,11 @@ public class McmodServiceTests {
     _ws.AddDownload("https://example.com/extra.zip", extra);
     string tooth = WorkspaceHarness.Tooth4("example.com/pkg", "1.0.0", """
         "assets": [
-          { "type": "self", "placements": [ { "src": "x.txt", "dest": "plugins/pkg/x.txt" } ] },
+          { "type": "self", "place": [ { "src": "x.txt", "dest": "plugins/pkg/x.txt" } ] },
           {
             "type": "zip",
             "urls": [ "https://example.com/extra.zip" ],
-            "placements": [ { "src": "y.txt", "dest": "extra/y.txt" } ]
+            "place": [ { "src": "y.txt", "dest": "extra/y.txt" } ]
           }
         ]
         """);
@@ -406,9 +406,9 @@ public class McmodServiceTests {
             "variants": {
               "": [
                 { "platform": "server", "runtime": "win-x64",
-                  "assets": [ { "type": "self", "placements": [ { "src": "win.dll", "dest": "lib.dll" } ] } ] },
+                  "assets": [ { "type": "self", "place": [ { "src": "win.dll", "dest": "lib.dll" } ] } ] },
                 { "platform": "server", "runtime": "linux-x64",
-                  "assets": [ { "type": "self", "placements": [ { "src": "linux.so", "dest": "lib.so" } ] } ] }
+                  "assets": [ { "type": "self", "place": [ { "src": "linux.so", "dest": "lib.so" } ] } ] }
               ]
             }
           }
@@ -708,7 +708,7 @@ public class McmodServiceTests {
     _ws.AddTag(Lib, "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth4(Lib, "1.0.0", """
           "assets": [ { "type": "zip", "urls": [ "https://example.com/data.zip" ],
-            "placements": [ { "src": "d.txt", "dest": "d.txt" } ] } ]
+            "place": [ { "src": "d.txt", "dest": "d.txt" } ] } ]
           """),
     });
     await _ws.Service.Install([Lib], _options);
@@ -937,9 +937,9 @@ public class McmodServiceTests {
           "version": "1.0.0",
           "variants": {
             "a": [ { "platform": "server", "runtime": "{{WorkspaceHarness.Runtime}}",
-              "assets": [ { "type": "self", "placements": [ { "src": "a.dll", "dest": "a.dll" } ] } ] } ],
+              "assets": [ { "type": "self", "place": [ { "src": "a.dll", "dest": "a.dll" } ] } ] } ],
             "b": [ { "platform": "server", "runtime": "{{WorkspaceHarness.Runtime}}",
-              "assets": [ { "type": "self", "placements": [ { "src": "b.dll", "dest": "b.dll" } ] } ] } ]
+              "assets": [ { "type": "self", "place": [ { "src": "b.dll", "dest": "b.dll" } ] } ] } ]
           }
         }
         """,

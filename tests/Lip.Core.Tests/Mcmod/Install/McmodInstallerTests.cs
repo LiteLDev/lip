@@ -101,7 +101,7 @@ public class McmodInstallerTests {
 
   /// The entry members of one asset of type "self" with the given placements (JSON objects).
   private static string SelfPlacements(params string[] placements) =>
-      $$""" "assets": [ { "type": "self", "placements": [ {{string.Join(", ", placements)}} ] } ]""";
+      $$""" "assets": [ { "type": "self", "place": [ {{string.Join(", ", placements)}} ] } ]""";
 
   private static string Placement(string src, string dest) =>
       $$"""{ "src": "{{src}}", "dest": "{{dest}}" }""";
@@ -319,8 +319,8 @@ public class McmodInstallerTests {
         """
         "assets": [
           { "type": "zip", "urls": [ "https://example.com/a.zip" ],
-            "placements": [ { "src": "one.txt", "dest": "out.txt" } ] },
-          { "type": "self", "placements": [ { "src": "one.txt", "dest": "out.txt" } ] }
+            "place": [ { "src": "one.txt", "dest": "out.txt" } ] },
+          { "type": "self", "place": [ { "src": "one.txt", "dest": "out.txt" } ] }
         ]
         """,
         new() { ["one.txt"] = "self" });
@@ -345,8 +345,8 @@ public class McmodInstallerTests {
         """
         "assets": [
           { "type": "zip", "urls": [ "https://mirror.invalid/bds.zip", "https://example.com/bds.zip" ],
-            "placements": [ { "src": "", "dest": "" } ] },
-          { "type": "self", "placements": [ { "src": "defaults/", "dest": "" } ] }
+            "place": [ { "src": "", "dest": "" } ] },
+          { "type": "self", "place": [ { "src": "defaults/", "dest": "" } ] }
         ]
         """,
         new() { ["tooth.json"] = "{}", ["defaults/server.properties"] = "props" });
@@ -374,7 +374,7 @@ public class McmodInstallerTests {
     Candidate candidate = Candidate(
         """
         "assets": [ { "type": "zip", "urls": [ "https://example.com/gone.zip" ],
-                      "placements": [ { "src": "", "dest": "" } ] } ],
+                      "place": [ { "src": "", "dest": "" } ] } ],
         "hooks": { "pre_install": [ "pre" ] }
         """);
     SortedDictionary<string, string> before = Snapshot();
@@ -481,7 +481,7 @@ public class McmodInstallerTests {
         $$"""
         "assets": [
           { "type": "mcmod", "urls": [ "{{LegacyMoneyUrl}}" ] },
-          { "type": "self", "placements": [ { "src": "patch.dll", "dest": "mods/LegacyMoney/LegacyMoney.dll" } ] }
+          { "type": "self", "place": [ { "src": "patch.dll", "dest": "mods/LegacyMoney/LegacyMoney.dll" } ] }
         ]
         """,
         new() { ["patch.dll"] = "patched" });
@@ -646,7 +646,7 @@ public class McmodInstallerTests {
     Candidate other = Candidate("", tooth: "example.com/other");
     LockFile lockFile = new() { Packages = [Locked(other, ["cfg.ini"])] };
     Candidate candidate = Candidate(
-        SelfPlacements(Placement("cfg.ini", "cfg.ini")) + """, "preserve_files": [ "cfg.ini" ]""",
+        SelfPlacements(Placement("cfg.ini", "cfg.ini")) + """, "preserve": [ "cfg.ini" ]""",
         new() { ["cfg.ini"] = "default" });
 
     // Act & Assert
@@ -688,7 +688,7 @@ public class McmodInstallerTests {
 
   [Fact]
   public async Task Install_PreservedExistingFile_KeepsItAndDoesNotOwnIt() {
-    // Arrange: preserve_files is relative to the workspace, here through plugins.
+    // Arrange: preserve is relative to the workspace, here through plugins.
     AddFile("mods/LegacyMoney/config/config.json", "user");
     InMemorySource source = new(new() {
       ["manifest.json"] = """{"name":"LegacyMoney","dependencies":[]}""",
@@ -697,7 +697,7 @@ public class McmodInstallerTests {
       ["config/other.json"] = "default",
     });
     Candidate candidate = LegacyMoney(
-        """ "preserve_files": [ "plugins/LegacyMoney/config/" ] """, source);
+        """ "preserve": [ "plugins/LegacyMoney/config/" ] """, source);
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
@@ -713,14 +713,14 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Install_PreserveFilesRelativeToModDirectory_DoNotMatch() {
-    // Arrange: preserve_files is relative to the workspace, not to the mod directory.
+  public async Task Install_PreserveRelativeToModDirectory_DoNotMatch() {
+    // Arrange: preserve is relative to the workspace, not to the mod directory.
     AddFile("mods/LegacyMoney/config/config.json", "user");
     InMemorySource source = new(new() {
       ["manifest.json"] = """{"name":"LegacyMoney","dependencies":[]}""",
       ["config/config.json"] = "default",
     });
-    Candidate candidate = LegacyMoney(""" "preserve_files": [ "config/*.json" ] """, source);
+    Candidate candidate = LegacyMoney(""" "preserve": [ "config/*.json" ] """, source);
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
@@ -739,7 +739,7 @@ public class McmodInstallerTests {
           LegacyMoney(version: "0.21.0"), ["mods/LegacyMoney/config/config.json"])],
     };
     Candidate candidate = LegacyMoney(
-        """ "preserve_files": [ "mods/LegacyMoney/config/*.json" ] """,
+        """ "preserve": [ "mods/LegacyMoney/config/*.json" ] """,
         new InMemorySource(new() {
           ["manifest.json"] = """{"name":"LegacyMoney","dependencies":[]}""",
           ["config/config.json"] = "default",
@@ -758,7 +758,7 @@ public class McmodInstallerTests {
   public async Task Install_PreservedNewFile_IsWritten() {
     // Arrange
     Candidate candidate = Candidate(
-        SelfPlacements(Placement("cfg/", "cfg/")) + """, "preserve_files": [ "cfg/*.ini" ]""",
+        SelfPlacements(Placement("cfg/", "cfg/")) + """, "preserve": [ "cfg/*.ini" ]""",
         new() { ["cfg/a.ini"] = "default", ["cfg/b.ini"] = "b" });
     AddFile("cfg/a.ini", "user");
 
@@ -938,8 +938,8 @@ public class McmodInstallerTests {
         {
           "platform": "server", "runtime": "win-x64",
           "assets": [ { "type": "zip", "urls": [ "https://example.com/gone.zip" ] } ],
-          "preserve_files": [ "keep.txt" ],
-          "remove_files": [ "logs/" ],
+          "preserve": [ "keep.txt" ],
+          "purge": [ "logs/" ],
           "hooks": { "pre_uninstall": [ "pre" ] }
         }
         """);
@@ -983,7 +983,7 @@ public class McmodInstallerTests {
     // Arrange
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.dll", "plugins/X/a.dll"), Placement("c.json", "plugins/X/c.json"))
-            + """, "preserve_files": [ "plugins/X/*.json" ], "remove_files": [ "plugins/X/logs/" ]""",
+            + """, "preserve": [ "plugins/X/*.json" ], "purge": [ "plugins/X/logs/" ]""",
         new() { ["a.dll"] = "a", ["c.json"] = "c" });
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
     AddFile("mods/X/logs/today.log", "log");
@@ -1015,10 +1015,10 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Uninstall_PreserveFiles_KeepsMatchingOwnedFiles() {
+  public async Task Uninstall_Preserve_KeepsMatchingOwnedFiles() {
     // Arrange
     Candidate candidate = LegacyMoney(
-        """ "preserve_files": [ "mods/LegacyMoney/config/" ] """,
+        """ "preserve": [ "mods/LegacyMoney/config/" ] """,
         new InMemorySource(new() {
           ["manifest.json"] = """{"name":"LegacyMoney","dependencies":[]}""",
           ["LegacyMoney.dll"] = "dll",
@@ -1053,10 +1053,10 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Uninstall_RemoveFilesDirectoryPattern_DeletesRecursivelyExceptOthers() {
+  public async Task Uninstall_PurgeDirectoryPattern_DeletesRecursivelyExceptOthers() {
     // Arrange
     Candidate candidate = LegacyMoney(
-        """ "remove_files": [ "mods/LegacyMoney/data/", "mods/LegacyMoney/*.log" ] """);
+        """ "purge": [ "mods/LegacyMoney/data/", "mods/LegacyMoney/*.log" ] """);
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
     AddFile("mods/LegacyMoney/data/db/money.db", "db");
     AddFile("mods/LegacyMoney/data/top.txt", "t");
@@ -1086,11 +1086,11 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Uninstall_RemoveFiles_RelativeToWorkspaceRoot() {
+  public async Task Uninstall_Purge_RelativeToWorkspaceRoot() {
     // Arrange
     Candidate candidate = Candidate(
         SelfPlacements(Placement("PeEditor.exe", "PeEditor.exe"))
-            + """, "remove_files": [ "PeEditor.log", "cache/" ]""",
+            + """, "purge": [ "PeEditor.log", "cache/" ]""",
         new() { ["PeEditor.exe"] = "exe" });
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
     AddFile("PeEditor.log", "log");
@@ -1115,10 +1115,10 @@ public class McmodInstallerTests {
   [InlineData("plugins/")]
   [InlineData("*/")]
   [InlineData("plugins")]
-  public async Task Uninstall_RemoveFilesNamingLayoutDirectories_RemovesNothingThroughThem(
+  public async Task Uninstall_PurgeNamingLayoutDirectories_RemovesNothingThroughThem(
       string pattern) {
     // Arrange
-    Candidate candidate = Candidate($$""" "remove_files": [ "{{pattern}}" ] """);
+    Candidate candidate = Candidate($$""" "purge": [ "{{pattern}}" ] """);
     AddFile("mods/Other/other.dll", "dll");
 
     // Act
@@ -1130,11 +1130,11 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Uninstall_RemoveFilesMatchingLipDirectory_LeavesIt() {
+  public async Task Uninstall_PurgeMatchingLipDirectory_LeavesIt() {
     // Arrange
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", "a.txt"))
-            + """, "remove_files": [ ".lip/", ".lip/workspace.json", "*/", "**/*.json" ]""",
+            + """, "purge": [ ".lip/", ".lip/workspace.json", "*/", "**/*.json" ]""",
         new() { ["a.txt"] = "a" });
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
     AddFile(".lip/workspace.json", "lock");
@@ -1151,11 +1151,11 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Uninstall_RemoveFilesGlobs_MatchOnlyAsDeepAsThePattern() {
+  public async Task Uninstall_PurgeGlobs_MatchOnlyAsDeepAsThePattern() {
     // Arrange
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", "a.txt"))
-            + """, "remove_files": [ "*.log", "logs/**/*.txt" ]""",
+            + """, "purge": [ "*.log", "logs/**/*.txt" ]""",
         new() { ["a.txt"] = "a" });
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
     AddFile("top.log", "x");
@@ -1240,7 +1240,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Update_UninstallOldThenInstallNew_PreservesConfigAndReplacesFiles() {
     // Arrange
-    const string Preserve = """ "preserve_files": [ "mods/LegacyMoney/config/config.json" ] """;
+    const string Preserve = """ "preserve": [ "mods/LegacyMoney/config/config.json" ] """;
     Candidate v1 = LegacyMoney(Preserve, new InMemorySource(new() {
       ["manifest.json"] = """{"name":"LegacyMoney","dependencies":[]}""",
       ["LegacyMoney.dll"] = "v1",
@@ -1322,7 +1322,7 @@ public class McmodInstallerAssetDownloadTests {
 
   private static string ZipEntry(params string[] urls) => $$"""
       "assets": [ { "type": "zip", "urls": [ {{string.Join(", ", urls.Select(u => $"\"{u}\""))}} ],
-                    "placements": [ { "src": "", "dest": "out/" } ] } ]
+                    "place": [ { "src": "", "dest": "out/" } ] } ]
       """;
 
   /// The workspace part of the snapshot (lip's cache, outside it, may change).

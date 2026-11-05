@@ -14,7 +14,7 @@ Run it in the root directory of your package repository. It rewrites the `tooth.
 
 - `tooth`, `version` and `info` are copied.
 - Each label becomes a variant. For each runtime it applies to, its variants are merged as lip v0.37.0 merged them, into an entry for the server and an entry for the client. With a `client` label, the variant `""` gets server entries only, and the `client` entries are also used as the client entries of `""`.
-- `self` and `zip` assets keep their placements, converted to format 4. The `tar`, `tgz` and `uncompressed` asset types are dropped.
+- `self` and `zip` assets keep their `placements`, converted to `place` of format 4. `preserve_files` and `remove_files` become `preserve` and `purge`, and an `info.avatar_url` starting with `https://` becomes `info.logo`. The `tar`, `tgz` and `uncompressed` asset types are dropped.
 - The scripts become `hooks`.
 
 Format 4 has no RID patterns. When a value the result needs is missing or invalid, such as the RIDs a platform pattern like `win-*` stands for, or the RIDs that variants without a platform apply to, lip asks for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, it fails instead, naming the value it would ask for, and changes nothing.

@@ -48,29 +48,29 @@ A package **owns** every file it writes to the workspace by the steps below.
 
 1. Run `hooks.pre_install`.
 2. Write the files of each asset of the entry, in order. The archive of an asset is the archive of P for `"self"`, and the ZIP archive downloaded over HTTPS from the first of its `urls` that can be obtained otherwise; when none can, it is a failure.
-   - `"self"` and `"zip"`: every member of `placements` is carried out, in order, its `src` a path in the archive of the asset:
+   - `"self"` and `"zip"`: every member of `place` is carried out, in order, its `src` a path in the archive of the asset:
      - File form: the file `src` is written to `dest`; without that file, it is a failure.
      - Directory form: every file below the directory `src` is written into `dest`, at its path relative to `src`; without a file below `src`, it is a failure.
      - Glob form: every file whose path matches the glob `src` is written into `dest`, at its path relative to the leading segments of `src` containing none of `*`, `?` and `[`. A glob matching no file writes nothing.
      - The tooth file of P is never written.
    - `"mcmod"`: every file of the archive of the asset is written into the mod directory, at its path in the archive.
 
-   When two placements or assets write the same path, the later one wins.
+   When two members of `place` or two assets write the same path, the later one wins.
 3. Run `hooks.post_install`.
 
 **Write rules.** When a file is written to the workspace:
 
 - When it is `.lip` or below it, or is owned by another installed package, it is a failure.
-- When it exists and matches a glob of the `preserve_files` of P, the existing file is kept.
+- When it exists and matches a glob of the `preserve` of P, the existing file is kept.
 - Otherwise it is written, replacing an existing one.
 
-The globs of `preserve_files` and `remove_files` are matched against paths relative to the workspace.
+The globs of `preserve` and `purge` are matched against paths relative to the workspace.
 
 **Uninstalling** a package P is, in order:
 
 1. Run `hooks.pre_uninstall`.
-2. Delete each file owned by P that matches no glob of its `preserve_files`.
-3. Delete each path that matches a glob of its `remove_files` and is not owned by another package; a directory is deleted with everything below it. `mods`, `plugins` and `.lip` at the workspace root never match, and nothing below `mods` or `plugins` is deleted through them; nothing below `.lip` matches.
+2. Delete each file owned by P that matches no glob of its `preserve`.
+3. Delete each path that matches a glob of its `purge` and is not owned by another package; a directory is deleted with everything below it. `mods`, `plugins` and `.lip` at the workspace root never match, and nothing below `mods` or `plugins` is deleted through them; nothing below `.lip` matches.
 4. Delete each directory that steps 2 and 3 left empty, except `mods` and `plugins`.
 5. Run `hooks.post_uninstall`.
 

@@ -270,7 +270,7 @@ public class McmodServiceAtomicityTests {
     });
     await _ws.Service.Install(["demo.zip"], _options);
     _ws.AddFile("mods/Demo/config.json", "user");
-    AddMod("demo.zip", "Demo", "2.0.0", "\"preserve_files\": [\"mods/Demo/config.json\"]", new() {
+    AddMod("demo.zip", "Demo", "2.0.0", "\"preserve\": [\"mods/Demo/config.json\"]", new() {
       ["Demo.dll"] = "dll 2",
       ["data/a.txt"] = "a 2",
       ["new/c.txt"] = "c 2",
