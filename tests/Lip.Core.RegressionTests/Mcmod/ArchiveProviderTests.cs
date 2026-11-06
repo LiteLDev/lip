@@ -57,8 +57,8 @@ public class ArchiveProviderTests {
     ArchiveProvider provider = CreateProvider();
 
     // Act
-    ArchiveHandle archive = await provider.Open(Ref.Parse(url));
-    ArchiveHandle again = await CreateProvider().Open(Ref.Parse(url));
+    ArchiveHandle archive = await provider.Open(Ref.Parse(url, allowFile: false));
+    ArchiveHandle again = await CreateProvider().Open(Ref.Parse(url, allowFile: false));
 
     // Assert
     Assert.Equal(url, archive.Key);

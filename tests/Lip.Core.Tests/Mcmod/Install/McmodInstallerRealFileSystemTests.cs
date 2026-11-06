@@ -3,6 +3,7 @@ using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Install;
+using Lip.Core.Mcmod.Lock;
 using Moq;
 using Semver;
 
@@ -60,17 +61,19 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         }
         """);
     ToothEntry entry = ToothParser.ParseEntry(entryJson.RootElement);
-    Package package = new("example.com/legacymoney", "", SemVersion.Parse("0.22.0"), entry);
+    Package package = new("example.com/legacymoney", "", SemVersion.Parse("0.22.0"), entry) {
+      Manifest = Resolution.TestCandidates.Manifest("example.com/legacymoney", "0.22.0", "", entry),
+    };
     ArchiveHandle archive = new(
         "example.com/legacymoney@0.22.0",
         new ZipSource(WorkspaceHarness.Zip(new() { ["tooth.json"] = "{}" })),
         new string('0', 40));
     Candidate candidate = Candidate.Create(
-        package, archive, Ref.Parse("example.com/legacymoney"), provider.Object);
+        package, archive, Ref.Parse("example.com/legacymoney", allowFile: false), provider.Object);
 
     FileSystem fs = new();
-    McmodInstaller installer =
-        new(fs, new CommandRunner(), new Mock<IUserInteraction>().Object);
+    SoloInstaller installer =
+        new(fs, new McmodInstaller(fs, new CommandRunner(), new Mock<IUserInteraction>().Object));
     InstallContext context = new(
         _root,
         new LipEnvironment(McmodPlatform.Server, "win-x64"),
@@ -78,8 +81,14 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         false,
         false);
     // The server layout: plugins links to mods.
-    await new WorkspaceLayout(fs, new DirectoryLinker(fs), new Mock<IUserInteraction>().Object)
-        .Prepare(_root, dryRun: false);
+    WorkspaceLayout layout =
+        new(fs, new DirectoryLinker(fs), new Mock<IUserInteraction>().Object);
+    using (WorkspaceTransaction transaction = new(
+        fs, new LockStore(fs).GetJournalPath(_root))) {
+      await layout.Apply(layout.Plan(_root), transaction);
+      transaction.Commit();
+      transaction.Complete();
+    }
 
     // Act: install
     IReadOnlyList<string> owned = await installer.Install(candidate, context);

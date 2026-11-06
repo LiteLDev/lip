@@ -1,9 +1,6 @@
-using System.Runtime.InteropServices;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotNet.Globbing;
 using Lip.Core.Json;
-using Lip.Core.Migration.PackageManifests;
 using Semver;
 
 namespace Lip.Core.Entities;
@@ -48,20 +45,12 @@ public record PackageManifest {
   [JsonPropertyName("version")]
   public required SemVersion Version { get; init; }
 
+  /// Null when the tooth file has no info.
   [JsonPropertyName("info")]
-  public PackageManifestInfo Info { get; init; } = new();
+  public PackageManifestInfo? Info { get; init; }
 
   [JsonPropertyName("variants")]
   public List<PackageManifestVariant> Variants { get; init; } = [];
-
-  public static async Task<PackageManifest> FromStream(Stream stream) {
-    JsonDocument jsonDocument = await JsonDocument.ParseAsync(stream);
-
-    return PackageManifestMigration.Migrate(jsonDocument);
-  }
-
-  public PackageManifestVariant GetVariant(string label) =>
-      GetVariant(label, RuntimeInformation.RuntimeIdentifier);
 
   /// Merges every variant with the given label whose platform matches the runtime identifier
   /// (exactly or as a glob). Throws KeyNotFoundException when no variant matches.

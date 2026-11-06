@@ -21,8 +21,6 @@ features:
     details: Install packages directly from Git repositories using Go module paths.
   - title: Dependency Resolution
     details: Automatic dependency solving with topological ordering.
-  - title: Built for Integration
-    details: Exposes a JSON-RPC interface (lip rpc) for seamless integration with IDEs and tools.
   - title: Cross-Platform
     details: Available on Windows, Linux, and macOS with platform-aware variants.
 ---

@@ -19,8 +19,6 @@ public sealed class PktLineReader(Stream stream) {
   private readonly byte[] _header = new byte[4];
   private readonly byte[] _buffer = new byte[MaxLineLength];
 
-  public long BytesRead { get; private set; }
-
   public ReadOnlyMemory<byte> Payload { get; private set; }
 
   /// The payload of the last data line decoded as UTF-8, without the trailing LF.
@@ -44,7 +42,6 @@ public sealed class PktLineReader(Stream stream) {
     if (headerLength < 4) {
       throw new GitProtocolException("Unexpected end of stream in pkt-line header.");
     }
-    BytesRead += 4;
 
     if (!int.TryParse(
         Encoding.ASCII.GetString(_header),
@@ -73,7 +70,6 @@ public sealed class PktLineReader(Stream stream) {
     catch (EndOfStreamException ex) {
       throw new GitProtocolException("Unexpected end of stream in pkt-line payload.", ex);
     }
-    BytesRead += length - 4;
     Payload = _buffer.AsMemory(0, length - 4);
     return PktLineType.Data;
   }
@@ -106,11 +102,6 @@ public sealed class PktLineWriter {
 
   public PktLineWriter WriteDelimiter() {
     _stream.Write("0001"u8);
-    return this;
-  }
-
-  public PktLineWriter WriteResponseEnd() {
-    _stream.Write("0002"u8);
     return this;
   }
 

@@ -11,7 +11,7 @@ namespace Lip.Core.Mcmod.Resolution;
 /// then the dependencies of each member in the order members are added). For each open
 /// requirement the candidates are tried in their sequence order, so earlier candidates win
 /// (Section 3). To avoid exponential blowup it uses conflict-directed backjumping and learns
-/// candidates that can never be part of S; a step limit bounds pathological inputs.
+/// candidates that can never be part of S.
 ///
 /// Candidates are produced lazily (IResolver.ResolveLazy): a remote repository with hundreds of
 /// tags only opens the tags the search actually reaches. Whether a member already satisfies a
@@ -27,23 +27,16 @@ namespace Lip.Core.Mcmod.Resolution;
 /// same repository, its choice clashes with the package of the ref; once every candidate has
 /// failed so, the requirement is deferred to the end of the agenda, where that package may
 /// satisfy it.
-public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultMaxSteps)
-    : IGraphSolver {
-  /// The default maximum number of candidates the search examines before giving up.
-  public const int DefaultMaxSteps = 1_000_000;
-
-  public async Task<IReadOnlyList<Candidate>> Solve(
-      IReadOnlyList<PackageRequest> requests,
-      IReadOnlyList<Candidate> pinned,
-      LipEnvironment environment) {
-    return (await SolveGraph(requests, pinned, environment)).Order;
-  }
-
+public class GraphSolver(IResolver resolver) {
+  /// Pinned candidates (installed packages to keep) are members of S as they are; their
+  /// dependencies must be satisfied too. Returns S in installation order (protocol/workspace.md
+  /// §5), with which member satisfies which dependency and request. Throws
+  /// DependencyResolutionException.
   public async Task<SolvedGraph> SolveGraph(
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyList<Candidate> pinned,
       LipEnvironment environment) {
-    Search search = new(resolver, environment, maxSteps);
+    Search search = new(resolver, environment);
     return await search.Run(requests, pinned);
   }
 
@@ -57,7 +50,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     List<Candidate> nodes = [];
     Dictionary<PackageKey, int> indexOf = [];
     foreach (Candidate candidate in set
-        .OrderBy(c => FoldCase(c.Package.Identity), StringComparer.Ordinal)
+        .OrderBy(c => PackageNames.Fold(c.Package.Identity), StringComparer.Ordinal)
         .ThenBy(c => c.Package.Version, SemVersion.SortOrderComparer)
         .ThenBy(c => c.Archive.Commit ?? "", StringComparer.Ordinal)) {
       if (indexOf.TryAdd(PackageKey.Of(candidate), nodes.Count)) {
@@ -134,27 +127,6 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     return order;
   }
 
-  /// Whether two candidates are the same package: same identity (ignoring ASCII case), same
-  /// version and same commit (protocol/workspace.md §5).
-  public static bool IsSamePackage(Candidate a, Candidate b) {
-    return PackageKey.Of(a).Equals(PackageKey.Of(b));
-  }
-
-  private static bool SameIdentity(string a, string b) {
-    return a.Length == b.Length && FoldCase(a) == FoldCase(b);
-  }
-
-  /// Lowercases ASCII letters only, matching identity comparison (protocol/package.md §1).
-  private static string FoldCase(string identity) {
-    return identity.Any(char.IsAsciiLetterUpper)
-        ? string.Create(identity.Length, identity, (span, s) => {
-          for (int i = 0; i < s.Length; i++) {
-            span[i] = char.IsAsciiLetterUpper(s[i]) ? (char)(s[i] | 0x20) : s[i];
-          }
-        })
-        : identity;
-  }
-
   /// Tarjan's algorithm, iterative. Returns the component index of every node.
   private static int[] StronglyConnectedComponents(List<int>[] edges, out int count) {
     int n = edges.Length;
@@ -223,22 +195,21 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
   private readonly record struct PackageKey(string Identity, SemVersion Version, string Commit) {
     public static PackageKey Of(Candidate candidate) {
       return new(
-          FoldCase(candidate.Package.Identity),
+          PackageNames.Fold(candidate.Package.Identity),
           candidate.Package.Version,
           candidate.Archive.Commit?.ToLowerInvariant() ?? "");
     }
   }
 
-  private readonly record struct ResolveKey(string Ref, object Range, bool Compat);
-
-  /// Identifies the candidate list of a requirement by what determines it.
-  private readonly record struct ChoicesKey(string Ref, object Range, bool Compat) {
-    public static ChoicesKey Of(Ref source, IVersionConstraint? range, bool compat) {
+  /// Identifies a candidate sequence by what determines it: the source, the range and whether
+  /// the source is resolved as a dependency of format 3 (clientCompat).
+  private readonly record struct ResolveKey(string Ref, object Range, bool Compat) {
+    public static ResolveKey Of(Ref source, IVersionConstraint? range, bool compat) {
       return new(source.ToString(), RangeKey(range), compat);
     }
 
     /// Ranges are keyed by text for the known range types and by value equality for others.
-    public static object RangeKey(IVersionConstraint? range) {
+    private static object RangeKey(IVersionConstraint? range) {
       return range switch {
         null => "",
         VersionRange r => $"range:{r.Text}",
@@ -251,32 +222,28 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
   /// An open obligation: a request (Owner null), or a dependency of a member. OwnerLevel is the
   /// decision level that added the owner, or -1 for requests and pinned owners.
   private sealed record Requirement(
-      ChoicesKey Key,
+      ResolveKey Key,
       Candidate? Owner,
       string Description,
       int OwnerLevel,
       Ref Ref,
       IVersionConstraint? Range,
       bool Compat,
-      bool Deferred = false) {
-    public Choices? Loaded { get; set; }
-  }
+      bool Deferred = false);
 
   /// The candidate sequence of one Resolve call, produced on demand and shared by every
   /// requirement that resolves the same ref.
-  private sealed class LazySequence(Func<Action<string>, IAsyncEnumerable<Candidate>> start) {
+  private sealed class LazySequence(Func<IAsyncEnumerable<Candidate>> start) {
     private IAsyncEnumerator<Candidate>? _enumerator;
 
     public List<Candidate> Items { get; } = [];
-
-    public List<string> Diagnostics { get; } = [];
 
     public bool Complete { get; private set; }
 
     /// Whether the sequence has an item at index, producing items up to it if needed.
     public async ValueTask<bool> Has(int index) {
       while (Items.Count <= index && !Complete) {
-        _enumerator ??= start(Diagnostics.Add).GetAsyncEnumerator();
+        _enumerator ??= start().GetAsyncEnumerator();
         if (await _enumerator.MoveNextAsync()) {
           Items.Add(_enumerator.Current);
         } else {
@@ -298,8 +265,6 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     public List<Candidate> Candidates { get; } = [];
 
     public List<PackageKey> CandidateKeys { get; } = [];
-
-    public IEnumerable<string> Diagnostics => sequence.Diagnostics;
 
     /// Whether every candidate has been loaded.
     public bool Complete { get; private set; }
@@ -333,15 +298,14 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
   private sealed record Member(Candidate Candidate, PackageKey Key, int Level);
 
-  private sealed class Search(IResolver resolver, LipEnvironment environment, int maxSteps) {
+  private sealed class Search(IResolver resolver, LipEnvironment environment) {
     private const int MaxRecordedFailures = 100;
-    private const int MaxDiagnostics = 1000;
     private const int LevelsPerYield = 128;
     private const int MaxReportedFailures = 10;
     private const int MaxListedReasons = 5;
 
     private readonly Dictionary<ResolveKey, LazySequence> _resolved = [];
-    private readonly Dictionary<ChoicesKey, Choices> _choices = [];
+    private readonly Dictionary<ResolveKey, Choices> _choices = [];
     /// Members by case-folded identity.
     private readonly Dictionary<string, Member> _members = new(StringComparer.Ordinal);
     private readonly List<Requirement> _agenda = [];
@@ -354,9 +318,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
     private readonly List<string> _failures = [];
     private readonly List<string> _unresolvable = [];
-    private readonly List<string> _diagnostics = [];
     private readonly HashSet<string> _reported = [];
-    private int _steps;
 
     public async Task<SolvedGraph> Run(
         IReadOnlyList<PackageRequest> requests,
@@ -364,7 +326,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       for (int i = 0; i < requests.Count; i++) {
         PackageRequest request = requests[i];
         _agenda.Add(new Requirement(
-            ChoicesKey.Of(request.Ref, request.Range, false),
+            ResolveKey.Of(request.Ref, request.Range, false),
             null,
             $"request {request.Ref} {Show(request.Range)}",
             -1,
@@ -387,7 +349,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         if (await ModName(candidate) is string modName) {
           foreach (Member member in _members.Values) {
             if (await ModName(member.Candidate) is string otherName
-                && SameIdentity(modName, otherName)) {
+                && PackageNames.AreEqual(modName, otherName)) {
               throw Fail($"Installed packages {ShowSource(member.Candidate)} and "
                   + $"{ShowSource(candidate)} are mods of the same mod name '{modName}'.");
             }
@@ -410,7 +372,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         throw Fail("No package set satisfies the request:"
             + string.Concat(lines.Take(MaxReportedFailures).Select(l => $"\n  - {l}"))
             + (lines.Count > MaxReportedFailures
-                ? $"\n  ... and {lines.Count - MaxReportedFailures} more (see diagnostics)"
+                ? $"\n  ... and {lines.Count - MaxReportedFailures} more"
                 : ""));
       }
 
@@ -487,11 +449,6 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       for (int i = 0; !choices.Unsatisfiable && await choices.Has(i); i++) {
         Candidate candidate = choices.Candidates[i];
         PackageKey key = choices.CandidateKeys[i];
-        if (++_steps > maxSteps) {
-          throw Fail($"Gave up resolving dependencies after examining {maxSteps} candidates; "
-              + $"last open requirement: {requirement.Description}.");
-        }
-
         if (_members.TryGetValue(key.Identity, out Member? existing)
             && existing.Key == key) {
           // A member the shortcut of SatisfyingMember missed (see the class remarks). Nothing is
@@ -612,7 +569,8 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       (int Level, string Reason)? best = null;
       foreach (Member member in _members.Values) {
         if ((best is null || member.Level < best.Value.Level)
-            && await ModName(member.Candidate) is string other && SameIdentity(modName, other)) {
+            && await ModName(member.Candidate) is string other
+            && PackageNames.AreEqual(modName, other)) {
           best = (member.Level, $"{ShowSource(candidate)} is a mod of the same mod name"
               + $" '{modName}' as {ShowSource(member.Candidate)}"
               + (member.Level < 0 ? " (installed)" : ""));
@@ -722,7 +680,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
 
       // protocol/package.md §5: a dependency of format 3 on "client" names the variant "" of a
       // package of format 4.
-      return SameIdentity(wanted.Target, pinned.Target)
+      return PackageNames.AreEqual(wanted.Target, pinned.Target)
           && (wanted.Variant == candidate.Package.Variant
               || (requirement.Compat && !candidate.Package.Entry.Derived
                   && wanted.Variant == ToothCompat.ClientLabel
@@ -755,7 +713,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     private void AddEdges(Candidate owner, int level, string suffix) {
       foreach (ToothDependency dependency in owner.Package.Entry.Dependencies) {
         _agenda.Add(new Requirement(
-            ChoicesKey.Of(dependency.Source, dependency.Range, dependency.ClientCompat),
+            ResolveKey.Of(dependency.Source, dependency.Range, dependency.ClientCompat),
             owner,
             $"{Show(owner)}{suffix} requires {dependency.Source} {Show(dependency.Range)}",
             level,
@@ -771,15 +729,14 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         _choices[requirement.Key] = choices;
       }
 
-      requirement.Loaded = choices;
       return Task.FromResult(choices);
     }
 
     private LazySequence Resolve(Ref reference, IVersionConstraint? range, bool compat) {
-      ResolveKey key = new(reference.ToString(), ChoicesKey.RangeKey(range), compat);
+      ResolveKey key = ResolveKey.Of(reference, range, compat);
       if (!_resolved.TryGetValue(key, out LazySequence? sequence)) {
-        sequence = new LazySequence(sink => resolver.ResolveLazy(
-            reference, range, environment, compat, sink));
+        sequence = new LazySequence(() => resolver.ResolveLazy(
+            reference, range, environment, compat));
         _resolved[key] = sequence;
       }
 
@@ -794,7 +751,7 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       string line;
       if (choices.Candidates.Count > 0 && blocked.Count == 0 && failedDeeper == 0) {
         // Skipped: the candidates were already found unsatisfiable for another owner.
-        AddFailure($"{requirement.Description}: no candidate can be installed", []);
+        AddFailure($"{requirement.Description}: no candidate can be installed");
         return;
       }
 
@@ -802,7 +759,6 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         line = $"{requirement.Description}: no candidates";
         if (_unresolvable.Count < MaxRecordedFailures && _reported.Add(line)) {
           _unresolvable.Add(line);
-          AddDiagnostics(line, choices.Diagnostics);
         }
 
         return;
@@ -817,13 +773,11 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
         reasons.Add($"{failedDeeper} failed on their own requirements");
       }
 
-      AddFailure(
-          $"{requirement.Description}: no candidate fits ({string.Join("; ", reasons)})",
-          choices.Diagnostics);
+      AddFailure($"{requirement.Description}: no candidate fits ({string.Join("; ", reasons)})");
     }
 
     /// Keeps the most recent distinct failures.
-    private void AddFailure(string line, IEnumerable<string> diagnostics) {
+    private void AddFailure(string line) {
       if (!_reported.Add(line)) {
         return;
       }
@@ -833,18 +787,10 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
       }
 
       _failures.Add(line);
-      AddDiagnostics(line, diagnostics);
     }
 
-    private void AddDiagnostics(string line, IEnumerable<string> diagnostics) {
-      if (_diagnostics.Count < MaxDiagnostics) {
-        _diagnostics.Add(line);
-        _diagnostics.AddRange(diagnostics.Select(d => $"    {d}"));
-      }
-    }
-
-    private DependencyResolutionException Fail(string message) {
-      return new DependencyResolutionException(message, [.. _diagnostics]);
+    private static DependencyResolutionException Fail(string message) {
+      return new DependencyResolutionException(message);
     }
 
     private static string Show(Candidate candidate) {
@@ -854,10 +800,6 @@ public class GraphSolver(IResolver resolver, int maxSteps = GraphSolver.DefaultM
     /// A candidate with where it comes from, to tell apart packages of one identity.
     private static string ShowSource(Candidate candidate) {
       return $"{Show(candidate)} (from {candidate.Archive.Key})";
-    }
-
-    private static string Show(Member member) {
-      return Show(member.Candidate) + (member.Level < 0 ? " (installed)" : "");
     }
 
     private static string Show(IVersionConstraint? range) {

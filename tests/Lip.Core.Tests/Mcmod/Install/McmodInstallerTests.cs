@@ -27,7 +27,7 @@ public class McmodInstallerTests {
 
   /// The assets the provider serves, by URL.
   private readonly Dictionary<string, ISource> _assets = [];
-  private readonly McmodInstaller _installer;
+  private readonly SoloInstaller _installer;
 
   public McmodInstallerTests() {
     _fs.AddDirectory(_root);
@@ -40,7 +40,8 @@ public class McmodInstallerTests {
                 ? Task.FromResult(_assets[url])
                 : Task.FromException<ISource>(
                     new ArchiveUnavailableException($"none of {string.Join(", ", urls)}")));
-    _installer = new McmodInstaller(_fs, _commandRunner.Object, _ui.Object);
+    _installer = new SoloInstaller(
+        _fs, new McmodInstaller(_fs, _commandRunner.Object, _ui.Object));
   }
 
   private static readonly Dictionary<string, string> _legacyMoneyFiles = new() {
@@ -77,9 +78,12 @@ public class McmodInstallerTests {
 
   private Candidate Candidate(
       ToothEntry entry, ISource self, string tooth = Pack, string version = "1.0.0") {
-    Package package = new(tooth, "", SemVersion.Parse(version), entry);
+    Package package = new(tooth, "", SemVersion.Parse(version), entry) {
+      Manifest = Resolution.TestCandidates.Manifest(tooth, version, "", entry),
+    };
     ArchiveHandle archive = new($"{tooth}@{version}", self, new string('0', 40));
-    return Lip.Core.Mcmod.Candidate.Create(package, archive, Ref.Parse(tooth), _provider.Object);
+    return Lip.Core.Mcmod.Candidate.Create(
+        package, archive, Ref.Parse(tooth, allowFile: false), _provider.Object);
   }
 
   /// The mod LegacyMoney (an asset of type "mcmod") with the given extra entry members.
@@ -519,8 +523,11 @@ public class McmodInstallerTests {
   [Theory]
   [InlineData("trailing./a.txt")]
   [InlineData("a.txt ")]
-  public async Task Install_AliasingDest_Throws(string dest) {
-    // Arrange
+  [InlineData("config/a:b.txt")]
+  public async Task Install_AliasingDestOnWindows_Throws(string dest) {
+    // Arrange: Windows drops trailing dots and spaces, and takes ':' for an alternate data
+    // stream, so the path would alias another one.
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "Such names can be written elsewhere.");
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", dest)), new() { ["a.txt"] = "a" });
     SortedDictionary<string, string> before = Snapshot();
@@ -538,6 +545,39 @@ public class McmodInstallerTests {
   [InlineData(".git/hooks/pre-commit")]
   public async Task Install_DestNamedLikeLipOrGitFile_Writes(string dest) {
     // Arrange
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("a.txt", dest)), new() { ["a.txt"] = "a" });
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
+
+    // Assert
+    Assert.Equal([dest], owned);
+    Assert.Equal("a", Read(dest));
+  }
+
+  [Fact]
+  public async Task Install_DestWithDotSegment_WritesAndOwnsThePathWithoutIt() {
+    // Arrange: tooth.schema.json #/definitions/path allows "." segments.
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("a.txt", "x/./a.txt")), new() { ["a.txt"] = "a" });
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
+
+    // Assert
+    Assert.Equal(["x/a.txt"], owned);
+    Assert.Equal("a", Read("x/a.txt"));
+  }
+
+  [Theory]
+  [InlineData("config/a:b.txt")]
+  [InlineData("trailing./a.txt")]
+  [InlineData("a.txt ")]
+  public async Task Install_SchemaValidDestOutsideWindows_Writes(string dest) {
+    // Arrange: tooth.schema.json #/definitions/path allows ':' after the first segment and
+    // segments ending in '.' or ' '.
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows cannot write such names as they are.");
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", dest)), new() { ["a.txt"] = "a" });
 
@@ -729,7 +769,7 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Install_PreservedFileAlreadyOwnedBySamePackage_StaysOwned() {
+  public async Task Install_PreservedFileOwnedBySamePackage_IsKeptAndNotOwned() {
     // Arrange
     AddFile("mods/LegacyMoney/config/config.json", "user");
     LockFile lockFile = Lock() with {
@@ -746,9 +786,9 @@ public class McmodInstallerTests {
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context(lockFile: lockFile));
 
-    // Assert
-    Assert.Equal(
-        ["mods/LegacyMoney/manifest.json", "mods/LegacyMoney/config/config.json"], owned);
+    // Assert: a kept file is not written, so the package does not own it
+    // (protocol/workspace.md §4).
+    Assert.Equal(["mods/LegacyMoney/manifest.json"], owned);
     Assert.Equal("user", Read("mods/LegacyMoney/config/config.json"));
   }
 
@@ -932,18 +972,27 @@ public class McmodInstallerTests {
     AddFile("a.txt", "a");
     AddFile("keep.txt", "k");
     AddFile("logs/x.log", "x");
-    using JsonDocument entry = JsonDocument.Parse("""
+    using JsonDocument manifest = JsonDocument.Parse($$"""
         {
-          "platform": "server", "runtime": "win-x64",
-          "assets": [ { "type": "zip", "urls": [ "https://example.com/gone.zip" ] } ],
-          "preserve": [ "keep.txt" ],
-          "purge": [ "logs/" ],
-          "hooks": { "pre_uninstall": [ "pre" ] }
+          "format_version": 4,
+          "format_uuid": "{{ToothFormat.FormatUuid}}",
+          "tooth": "{{Pack}}",
+          "version": "1.0.0",
+          "variants": {
+            "": [
+              {
+                "platform": "server", "runtime": "win-x64",
+                "assets": [ { "type": "zip", "urls": [ "https://example.com/gone.zip" ] } ],
+                "preserve": [ "keep.txt" ],
+                "purge": [ "logs/" ],
+                "hooks": { "pre_uninstall": [ "pre" ] }
+              }
+            ]
+          }
         }
         """);
     LockedPackage locked = new() {
-      Manifest = new Package(
-          Pack, "", SemVersion.Parse("1.0.0"), ToothParser.ParseEntry(entry.RootElement)).Manifest,
+      Manifest = manifest.RootElement,
       Variant = "",
       Explicit = true,
       Source = Pack,
@@ -1046,6 +1095,28 @@ public class McmodInstallerTests {
 
     // Assert
     Assert.True(Exists("shared.txt"));
+  }
+
+  [Fact]
+  public async Task Uninstall_RecordedPathsWithDotSegments_KeepLipAndOthersFiles() {
+    // Arrange
+    AddFile(".lip/lock", "l");
+    AddFile("shared.txt", "s");
+    AddFile("own.txt", "o");
+    Candidate candidate = Candidate("");
+    Candidate other = Candidate("", tooth: "example.com/other");
+    string[] recorded = ["./.lip/lock", "./shared.txt", "./own.txt"];
+    LockFile lockFile = Lock() with {
+      Packages = [Locked(candidate, recorded), Locked(other, ["shared.txt"])],
+    };
+
+    // Act
+    await _installer.Uninstall(Locked(candidate, recorded), Context(lockFile: lockFile));
+
+    // Assert
+    Assert.True(Exists(".lip/lock"));
+    Assert.True(Exists("shared.txt"));
+    Assert.False(Exists("own.txt"));
   }
 
   [Fact]

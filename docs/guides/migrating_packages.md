@@ -22,7 +22,7 @@ Format 4 has no RID patterns: every entry names one runtime. When the result nee
 -   the RIDs a platform pattern such as `win-*` stands for, as a comma-separated list (each must match the pattern);
 -   the RIDs that variants without a `platform` apply to, when there are such variants.
 
-When standard input or standard error is not a terminal (in CI, for example), `lip migrate` fails instead, naming the value it would ask for, and changes nothing. The `Migrate` method of [`lip rpc`](../cli/commands/rpc.md) never asks: it fails in the same way.
+When standard input or standard error is not a terminal (in CI, for example), `lip migrate` fails instead, naming the value it would ask for, and changes nothing.
 
 ### Warnings
 
@@ -35,12 +35,12 @@ Everything that is dropped, or converted with another meaning, is printed as a w
 -   Each label becomes a variant of the same name; the empty label becomes the variant `""`.
 -   For each runtime a label applies to (its platforms, with patterns expanded to the RIDs you gave), the variants of the label that apply to that runtime are merged as lip v0.37.0 merged them, and the result becomes an entry for the server and an entry for the client, with that runtime.
 -   When there is a `client` label (the usual server/client split), the variant `""` gets server entries only, and the entries of the `client` variant are also written as the client entries of the variant `""`.
--   `dependencies` are copied as they are, with their ranges. A range that is not a range of format 4 is kept, with a warning, and makes the result invalid until you fix it.
+-   `dependencies` are copied as they are, with their ranges. A range that is not a range of format 4 is asked for on the terminal until the answer is one; without a terminal the command fails and changes nothing.
 -   Each asset keeps its `type` and `urls`, and its `placements` become `place`, converted exactly as lip reads a `tooth.json` of an [earlier format](../concepts/tooth_json.md#earlier-formats): after `\` is replaced by `/` and empty and `.` segments are removed, a `dir` placement takes the directory form (`src` and `dest` ending with `/`, or `""`), a `file` placement whose `src` contains `*`, `?` or `[` the glob form (`dest` ending with `/`, or `""`), and any other `file` placement the file form. A placement that is not valid in format 4 is left out, with a warning.
 -   Format 4 has no `tar`, `tgz` and `uncompressed` asset types. A runtime whose merged variants have such an asset gets no entry, with a warning, just as lip installs no entry of it for that runtime.
 -   `preserve_files` becomes `preserve` and `remove_files` becomes `purge`, with `\` replaced by `/`; a `preserve_files` pattern without `/` gets a `**/` prefix, and a `remove_files` pattern without a trailing `/` is also written with one (see [Limitations](#limitations)).
 -   The scripts become `hooks`: `pre_install`, `post_install` (`install` first, then `post_install`), `pre_uninstall` (`pre_uninstall`, then `uninstall`) and `post_uninstall`.
--   Empty values are omitted.
+-   Other empty values, outside `info`, are omitted.
 
 ## Limitations
 

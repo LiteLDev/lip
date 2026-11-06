@@ -11,8 +11,6 @@ public interface IUserInteraction {
   Task RunWithProgress(string message, Func<IProgress<double>, Task> action);
 
   /// Asks the user for a value and returns the answer. Throws CannotAskException when the user
-  /// cannot be asked (e.g. standard input is not a terminal); the default implementation always
-  /// does.
-  Task<string> Ask(string question) =>
-      throw new CannotAskException($"lip needs {question}, but cannot ask for it here.");
+  /// cannot be asked (e.g. standard input is not a terminal).
+  Task<string> Ask(string question);
 }

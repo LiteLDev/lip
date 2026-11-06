@@ -22,7 +22,7 @@ public class LockStoreTests {
     _store = new LockStore(_fs);
   }
 
-  private string LipLockPath => _store.GetLockPath(_root);
+  private string LipLockPath => _fs.Path.Join(_root, ".lip", "workspace.json");
   private string V036LockPath => _fs.Path.Join(_root, ".lip", "lock.json");
   private string ToothLockPath => _fs.Path.Join(_root, "tooth_lock.json");
 
@@ -203,15 +203,6 @@ public class LockStoreTests {
     // Assert
     Assert.False(_fs.File.Exists(_fs.Path.Join(_root, ".lip", "workspace.json.new")));
     Assert.Equal("linux-x64", (await _store.Load(_root))!.Runtime);
-  }
-
-  [Fact]
-  public void GetLockPath_Always_IsWorkspaceJsonInLipDirectoryOfWorkspace() {
-    // Act
-    string path = _store.GetLockPath(_root + _fs.Path.DirectorySeparatorChar);
-
-    // Assert
-    Assert.Equal(_fs.Path.Join(_root, ".lip", "workspace.json"), path);
   }
 
   [Fact]

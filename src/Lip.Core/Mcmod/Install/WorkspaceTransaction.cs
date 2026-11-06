@@ -1,7 +1,7 @@
 using System.IO.Abstractions;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Install;
@@ -18,8 +18,8 @@ namespace Lip.Core.Mcmod.Install;
 /// - Moves, directory removals and directory links (the workspace layout) are recorded and undone
 ///   too.
 ///
-/// With a journal path (&lt;root&gt;/.lip/journal, protocol/workspace.md §7.3), every change is appended
-/// to the journal (one JSON object per line, its paths relative to &lt;root&gt; and '/'-separated)
+/// Every change is appended to the journal (&lt;root&gt;/.lip/journal, protocol/workspace.md §7.3;
+/// one JSON object per line, its paths relative to &lt;root&gt; and '/'-separated)
 /// and flushed to the operating system before it is made, so that a later process can undo the
 /// changes of a process that was killed (Recover). Commit appends a "Commit" line; from then on
 /// recovery finishes the operation (deleting the backups) instead of undoing it.
@@ -27,8 +27,8 @@ public sealed class WorkspaceTransaction : IDisposable {
   private static int s_open;
 
   private readonly IFileSystem _fs;
-  private readonly string? _journalPath;
-  private readonly string? _root;
+  private readonly string _journalPath;
+  private readonly string _root;
   private readonly HashSet<string> _reserved;
   private readonly List<JournalEntry> _entries = [];
   private Stream? _journal;
@@ -37,10 +37,10 @@ public sealed class WorkspaceTransaction : IDisposable {
 
   /// reserved: paths that backups must never take, such as the files the operation writes.
   public WorkspaceTransaction(
-      IFileSystem fileSystem, string? journalPath = null, IEnumerable<string>? reserved = null) {
+      IFileSystem fileSystem, string journalPath, IEnumerable<string>? reserved = null) {
     _fs = fileSystem;
     _journalPath = journalPath;
-    _root = journalPath is null ? null : JournalRoot(fileSystem, journalPath);
+    _root = JournalRoot(fileSystem, journalPath);
     _reserved = new(reserved ?? [], WorkspaceLayout.PathComparer);
     Interlocked.Increment(ref s_open);
   }
@@ -132,7 +132,7 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// Marks the transaction committed: from now on, recovery finishes it instead of undoing it.
   /// The caller makes the operation's result durable (the lock) right after this.
   public void Commit() {
-    if (_journalPath is not null && _entries.Count > 0) {
+    if (_journal is not null) {
       Append(new JournalEntry(JournalOp.Commit, ""));
     }
 
@@ -154,25 +154,30 @@ public sealed class WorkspaceTransaction : IDisposable {
     return errors;
   }
 
-  /// Undoes every change in reverse order. Best effort; returns what could not be undone, in
+  /// Undoes the operation (protocol/workspace.md §7.5): discardLock throws its result away, then
+  /// every change is undone in reverse order. Best effort; returns what could not be undone, in
   /// which case the journal keeps those changes so that the next operation tries again. Also
   /// undoes a committed transaction whose result could not be made durable: the journal loses
-  /// its "commit" line first, so that recovery undoes it too.
-  public IReadOnlyList<string> Rollback() {
+  /// its "Commit" record first (§7.4), so that recovery undoes it too; when it cannot, nothing is
+  /// undone and the journal is left for the next operation to complete.
+  public IReadOnlyList<string> Rollback(Action discardLock) {
     List<string> errors = [];
     if (_committed && _journal is not null) {
       try {
         _journal.Dispose();
         _journal = null;
-        WriteJournal(_fs, _journalPath!, _root!, _entries, committed: false);
+        WriteJournal(_fs, _journalPath, _root, _entries, committed: false);
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-        // Undoing is still right; only recovery after a crash during it would finish instead.
+        // The journal still commits the operation, and the staged workspace file is kept, so
+        // that the next operation completes it rather than finding it partly undone.
         errors.Add($"cannot update the journal {_journalPath}: {ex.Message}");
+        return errors;
       }
     }
 
-    List<JournalEntry> left = Undo(_fs, _entries, replay: false, out List<string> undoErrors);
+    discardLock();
+    List<JournalEntry> left = Undo(_fs, _entries, out List<string> undoErrors);
     errors.AddRange(undoErrors);
     CloseJournal(left, committed: false, errors);
     _entries.Clear();
@@ -200,30 +205,25 @@ public sealed class WorkspaceTransaction : IDisposable {
       throw new InvalidOperationException("The transaction is committed.");
     }
 
-    if (_journalPath is not null) {
-      if (_journal is null) {
-        if (_entries.Count > 0) {
-          throw new InvalidOperationException("The journal is closed.");
-        }
-
-        // CreateNew: the journal of an interrupted operation is recovered before a new
-        // operation starts, and never overwritten.
-        _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(_journalPath)!);
-        _journal = _fs.FileStream.New(
-            _journalPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
-        Append(new JournalEntry(
-            JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O"), false));
+    if (_journal is null) {
+      if (_entries.Count > 0) {
+        throw new InvalidOperationException("The journal is closed.");
       }
 
-      Append(entry);
+      // CreateNew: the journal of an interrupted operation is recovered before a new operation
+      // starts, and never overwritten.
+      _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(_journalPath)!);
+      _journal = _fs.FileStream.New(
+          _journalPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+      Append(new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O")));
     }
 
+    Append(entry);
     _entries.Add(entry);
   }
 
   private void Append(JournalEntry entry) {
-    _journal!.Write(Encoding.UTF8.GetBytes(
-        JsonSerializer.Serialize(ToJournal(_fs, _root!, entry), s_json) + "\n"));
+    _journal!.Write(Encoding.UTF8.GetBytes(Serialize(ToJournal(_fs, _root, entry)) + "\n"));
     // To the operating system, which keeps it when lip is killed.
     _journal.Flush();
   }
@@ -235,7 +235,7 @@ public sealed class WorkspaceTransaction : IDisposable {
     bool written = _journal is not null || _entries.Count > 0;
     _journal?.Dispose();
     _journal = null;
-    if (_journalPath is null || !written) {
+    if (!written) {
       return;
     }
 
@@ -245,7 +245,7 @@ public sealed class WorkspaceTransaction : IDisposable {
           _fs.File.Delete(_journalPath);
         }
       } else {
-        WriteJournal(_fs, _journalPath, _root!, left, committed);
+        WriteJournal(_fs, _journalPath, _root, left, committed);
       }
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
@@ -257,10 +257,10 @@ public sealed class WorkspaceTransaction : IDisposable {
       IFileSystem fs, string path, string root, List<JournalEntry> entries, bool committed) {
     StringBuilder text = new();
     foreach (JournalEntry entry in (List<JournalEntry>)[
-        new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O"), false),
+        new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O")),
         .. entries,
         .. committed ? [new JournalEntry(JournalOp.Commit, "")] : (JournalEntry[])[]]) {
-      text.Append(JsonSerializer.Serialize(ToJournal(fs, root, entry), s_json)).Append('\n');
+      text.Append(Serialize(ToJournal(fs, root, entry))).Append('\n');
     }
 
     string temp = path + ".tmp";
@@ -303,9 +303,68 @@ public sealed class WorkspaceTransaction : IDisposable {
     };
   }
 
-  private static readonly JsonSerializerOptions s_json = new() {
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-  };
+  /// A record as a line of the journal, with only the members its op has (protocol/workspace.md
+  /// §7.3).
+  private static string Serialize(JournalEntry entry) {
+    JsonObject record = new() { ["op"] = entry.Op.ToString() };
+    if (entry.Op != JournalOp.Commit) {
+      record["path"] = entry.Path;
+    }
+
+    if (HasDestination(entry.Op) || (entry.Op == JournalOp.Begin && entry.To is not null)) {
+      record["to"] = entry.To;
+    }
+
+    if (entry.Op == JournalOp.Backup) {
+      record["hidden"] = entry.Hidden;
+    }
+
+    return record.ToJsonString();
+  }
+
+  /// A line of the journal as a record, or null when it is none (protocol/workspace.md §7.3): a
+  /// JSON object whose op is one of the table, with the members of that op of their types.
+  private static JournalEntry? Parse(ReadOnlyMemory<byte> line) {
+    try {
+      using JsonDocument document = JsonDocument.Parse(line);
+      JsonElement root = document.RootElement;
+      string? name = root.ValueKind == JsonValueKind.Object
+          && root.TryGetProperty("op", out JsonElement op)
+          && op.ValueKind == JsonValueKind.String
+              ? op.GetString()
+              : null;
+      // Only the names of the table, not numbers.
+      if (name is null || !Enum.GetNames<JournalOp>().Contains(name)) {
+        return null;
+      }
+
+      JournalOp kind = Enum.Parse<JournalOp>(name);
+      if (kind == JournalOp.Commit) {
+        return new JournalEntry(kind, "");
+      }
+
+      bool hasTo = root.TryGetProperty("to", out JsonElement to);
+      bool hasHidden = root.TryGetProperty("hidden", out JsonElement hidden);
+      if (!root.TryGetProperty("path", out JsonElement path)
+          || path.ValueKind != JsonValueKind.String
+          || ((HasDestination(kind) || (kind == JournalOp.Begin && hasTo))
+              && (!hasTo || to.ValueKind != JsonValueKind.String))
+          || (kind == JournalOp.Backup && hasHidden
+              && hidden.ValueKind is not (JsonValueKind.True or JsonValueKind.False))) {
+        return null;
+      }
+
+      return new JournalEntry(
+          kind,
+          path.GetString()!,
+          hasTo && to.ValueKind == JsonValueKind.String ? to.GetString() : null,
+          kind == JournalOp.Backup && hasHidden && hidden.GetBoolean());
+    }
+    catch (Exception ex) when (ex is JsonException or InvalidOperationException) {
+      // Not JSON, or not UTF-8.
+      return null;
+    }
+  }
 
   /// What the journal of an interrupted operation held, and what was done about it.
   /// Committed: the operation had committed, and its backups were deleted; otherwise its
@@ -329,17 +388,12 @@ public sealed class WorkspaceTransaction : IDisposable {
     List<JournalEntry> entries = [];
     bool committed = false;
     string? started = null;
-    foreach (string line in fs.File.ReadAllLines(journalPath)) {
-      JournalEntry? entry;
-      try {
-        entry = JsonSerializer.Deserialize<JournalEntry>(line, s_json);
-      }
-      catch (JsonException) {
-        // The last line of a killed process may be cut off; the change it announced was not
-        // made yet.
-        continue;
-      }
-
+    byte[] journal = fs.File.ReadAllBytes(journalPath);
+    // A record is a line ended by LF: what follows the last LF, such as the cut-off last line of
+    // a killed process, whose change was not made yet, is none.
+    for (int start = 0, end; (end = Array.IndexOf(journal, (byte)'\n', start)) >= 0;
+        start = end + 1) {
+      JournalEntry? entry = Parse(journal.AsMemory(start, end - start));
       switch (entry?.Op) {
         case null:
           continue;
@@ -363,7 +417,7 @@ public sealed class WorkspaceTransaction : IDisposable {
       left = [];
     } else {
       discardLock();
-      left = Undo(fs, entries, replay: true, out errors);
+      left = Undo(fs, entries, out errors);
     }
 
     if (left.Count == 0) {
@@ -377,10 +431,10 @@ public sealed class WorkspaceTransaction : IDisposable {
 
   /// Undoes the entries in reverse order; returns those that could not be undone, in order.
   /// Every undo checks the state first, so undoing an entry whose change was never made (the
-  /// process was killed right after recording it) does nothing. With replay, the entries may
-  /// have been undone before (a journal left by a process killed while undoing it).
+  /// process was killed right after recording it) does nothing, and so does undoing an entry
+  /// undone before (a journal left by a process killed while undoing it).
   private static List<JournalEntry> Undo(
-      IFileSystem fs, List<JournalEntry> entries, bool replay, out List<string> errors) {
+      IFileSystem fs, List<JournalEntry> entries, out List<string> errors) {
     errors = [];
     List<JournalEntry> left = [];
     Dictionary<string, int> firstBackup = new(WorkspaceLayout.PathComparer);
@@ -392,9 +446,9 @@ public sealed class WorkspaceTransaction : IDisposable {
 
     for (int i = entries.Count - 1; i >= 0; i--) {
       JournalEntry entry = entries[i];
-      // A file created where an earlier change backed one up: once that backup is gone, the
-      // original is back at the path (undone before), and it is not to be deleted.
-      if (replay && entry.Op == JournalOp.CreateFile
+      // A file created where an earlier change backed one up: once that backup is gone (undone
+      // before, or deleted by someone else), the file at the path is not deleted.
+      if (entry.Op == JournalOp.CreateFile
           && firstBackup.TryGetValue(entry.Path, out int backup) && backup < i
           && !fs.File.Exists(entries[backup].To!)) {
         continue;
@@ -542,15 +596,10 @@ public sealed class WorkspaceTransaction : IDisposable {
     Commit,
   }
 
-  /// One line of the journal. To: the backup of a Backup, the destination of a Move, the start
+  /// One record of the journal. To: the backup of a Backup, the destination of a Move, the start
   /// time of a Begin. Hidden: whether the file of a Backup was hidden.
   private sealed record JournalEntry(
-      [property: JsonPropertyName("op")]
-      [property: JsonConverter(typeof(JsonStringEnumConverter<JournalOp>))]
-      JournalOp Op,
-      [property: JsonPropertyName("path")] string Path,
-      [property: JsonPropertyName("to")] string? To = null,
-      [property: JsonPropertyName("hidden")] bool Hidden = false) {
+      JournalOp Op, string Path, string? To = null, bool Hidden = false) {
     public string Describe() => Op switch {
       JournalOp.CreateFile => $"the creation of {Path}",
       JournalOp.Backup => $"the change of {Path} (the original is {To})",

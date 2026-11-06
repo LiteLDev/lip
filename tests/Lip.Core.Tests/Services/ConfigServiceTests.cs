@@ -224,4 +224,50 @@ public class ConfigServiceTests {
     Assert.Equal("https://proxy.com", result);
     mockUserInteraction.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
+
+  /// protocol/userspace.md §2: keys that are not configuration keys are ignored, whatever their
+  /// value.
+  [Theory]
+  [InlineData("foo:\n  a: 1\n")]
+  [InlineData("foo: [1, 2]\n")]
+  public async Task Get_UnknownYamlKeyWithNonScalarValue_IsIgnored(string unknown) {
+    // Arrange
+    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
+    {
+            { GetConfigPath(), new MockFileData(unknown + "github_proxy: https://proxy.com\n") }
+        });
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act
+    string result = await service.Get("github_proxy");
+
+    // Assert
+    Assert.Equal("https://proxy.com", result);
+    Assert.Equal("https://proxy.com", await service.GetGithubProxy());
+    mockUserInteraction.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task GetGithubProxy_FileNotExists_ReturnsNull() {
+    // Arrange
+    MockFileSystem mockFileSystem = new();
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act & Assert
+    Assert.Null(await service.GetGithubProxy());
+  }
+
+  [Fact]
+  public async Task Set_UnknownKey_ThrowsAndWritesNothing() {
+    // Arrange
+    MockFileSystem mockFileSystem = new();
+    Mock<IUserInteraction> mockUserInteraction = new();
+    ConfigService service = new(mockFileSystem, mockUserInteraction.Object);
+
+    // Act & Assert
+    await Assert.ThrowsAsync<KeyNotFoundException>(() => service.Set("go_module_proxy", "x"));
+    Assert.False(mockFileSystem.File.Exists(GetConfigPath()));
+  }
 }

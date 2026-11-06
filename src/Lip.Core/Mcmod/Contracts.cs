@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lip.Core.Mcmod.Install;
@@ -72,7 +71,7 @@ public record Candidate(
             + " a JSON object whose \"name\" is an id.");
       }
 
-      return new ModManifest(modName.GetString()!, root.Clone());
+      return new ModManifest(modName.GetString()!);
     }
     catch (Exception ex) when (ex is ArchiveUnavailableException or FormatException
         or IOException or InvalidDataException) {
@@ -97,52 +96,29 @@ public record Candidate(
 
 /// The manifest.json at the root of the mcmod asset of a mod (protocol/package.md §4), of which
 /// lip reads only the mod name, its "name".
-public record ModManifest(string Name, JsonElement Json);
-
-/// Diagnostics explain every path that produced no candidate.
-public record ResolveResult(IReadOnlyList<Candidate> Candidates, IReadOnlyList<string> Diagnostics);
+public record ModManifest(string Name);
 
 /// Resolve(source, range, environment) (protocol/package.md §4).
 public interface IResolver {
+  /// The candidate sequence, produced lazily: archives (e.g. older tags of a remote repository)
+  /// are opened only when the caller asks for more candidates. Diagnostics, which explain every
+  /// path that produced no candidate, are reported through onDiagnostic as they arise.
   /// clientCompat: the source is the key of a dependency of an entry derived from format 3,
   /// whose variant "client" names the variant "" of a package of format 4 (protocol/package.md
   /// §5).
-  public Task<ResolveResult> Resolve(
-      Ref source,
-      IVersionConstraint? range,
-      LipEnvironment environment,
-      bool clientCompat = false);
-
-  /// The same candidate sequence as Resolve, produced lazily: archives (e.g. older tags of a
-  /// remote repository) are opened only when the caller asks for more candidates. Diagnostics
-  /// are reported through onDiagnostic as they arise. The default implementation enumerates the
-  /// result of Resolve.
-  public async IAsyncEnumerable<Candidate> ResolveLazy(
+  public IAsyncEnumerable<Candidate> ResolveLazy(
       Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool clientCompat = false,
-      Action<string>? onDiagnostic = null,
-      [EnumeratorCancellation] CancellationToken cancellationToken = default) {
-    ResolveResult result = await Resolve(source, range, environment, clientCompat);
-    foreach (string diagnostic in result.Diagnostics) {
-      onDiagnostic?.Invoke(diagnostic);
-    }
-
-    foreach (Candidate candidate in result.Candidates) {
-      yield return candidate;
-    }
-  }
+      Action<string>? onDiagnostic = null);
 }
 
 /// A request (protocol/workspace.md §1): a source and a range.
 public record PackageRequest(Ref Ref, IVersionConstraint? Range);
 
 /// Thrown when no package set satisfies the requests (protocol/workspace.md §3).
-public class DependencyResolutionException(string message, IReadOnlyList<string> diagnostics)
-    : Exception(message) {
-  public IReadOnlyList<string> Diagnostics { get; } = diagnostics;
-}
+public class DependencyResolutionException(string message) : Exception(message);
 
 /// A solved package set: S in installation order; for every member (by index into Order) the
 /// members satisfying its dependencies; and for every request the member satisfying it.
@@ -151,85 +127,12 @@ public record SolvedGraph(
     IReadOnlyList<IReadOnlyList<int>> Dependencies,
     IReadOnlyList<int> RequestSatisfiers);
 
-/// Finds the package set S (protocol/workspace.md §3).
-public interface IGraphSolver {
-  /// Pinned candidates (installed packages to keep) are members of S as they are; their
-  /// dependencies must be satisfied too. Returns S in installation order (protocol/workspace.md
-  /// §5). Throws DependencyResolutionException.
-  public async Task<IReadOnlyList<Candidate>> Solve(
-      IReadOnlyList<PackageRequest> requests,
-      IReadOnlyList<Candidate> pinned,
-      LipEnvironment environment) =>
-      (await SolveGraph(requests, pinned, environment)).Order;
-
-  /// Like Solve, but also reports which member satisfies which dependency and request.
-  public Task<SolvedGraph> SolveGraph(
-      IReadOnlyList<PackageRequest> requests,
-      IReadOnlyList<Candidate> pinned,
-      LipEnvironment environment);
-}
-
 public record InstallContext(
     string WorkspaceRoot,
     LipEnvironment Environment,
     LockFile Lock,
     bool DryRun,
     bool IgnoreScripts);
-
-/// Installs and uninstalls packages (protocol/workspace.md §4), in two phases: planning, which
-/// checks everything and changes nothing, then applying the plan through a transaction that the
-/// caller commits or rolls back.
-public interface IMcmodInstaller {
-  /// Plans installing the package into the workspace as the view shows it, and adds the planned
-  /// writes to the view. Fetches the archive and the assets (a dry run reports the plan too).
-  /// Throws McmodInstallException when the package cannot be installed, e.g. when a file is
-  /// owned by another installed package.
-  public Task<PackagePlan> PlanInstall(
-      Candidate candidate, InstallContext context, WorkspaceView view);
-
-  /// Plans uninstalling the package from the workspace as the view shows it, and adds the
-  /// planned deletions to the view. A dry run reports the plan.
-  public Task<PackagePlan> PlanUninstall(
-      LockedPackage package, InstallContext context, WorkspaceView view);
-
-  /// Runs the steps of a plan, making every file change through the transaction. Throws
-  /// McmodInstallException when a step fails; the caller rolls the transaction back.
-  public Task Apply(
-      PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken);
-}
-
-/// Reads and writes the workspace file (protocol/workspace.md §7.1), called the lock in the code,
-/// which lives in &lt;root&gt;/.lip/workspace.json, and names the other files in &lt;root&gt;/.lip.
-public interface ILockStore {
-  /// Returns null when none exists. Throws LockFormatException when the lock exists
-  /// but cannot be read, or when the workspace has files of earlier formats (§7.6).
-  public Task<LockFile?> Load(string workspaceRoot);
-
-  /// Writes the lock: Stage, then CommitStaged.
-  public Task Save(string workspaceRoot, LockFile lockFile);
-
-  /// The path of the lock of a workspace.
-  public string GetLockPath(string workspaceRoot);
-
-  /// The path of the workspace lock file (WorkspaceMutex), &lt;root&gt;/.lip/lock.
-  public string GetMutexPath(string workspaceRoot);
-
-  /// The path of the journal (WorkspaceTransaction), &lt;root&gt;/.lip/journal.
-  public string GetJournalPath(string workspaceRoot);
-
-  /// Creates &lt;root&gt;/.lip when it does not exist.
-  public void CreateLipDirectory(string workspaceRoot);
-
-  /// Writes the lock to &lt;root&gt;/.lip/workspace.json.new, replacing an earlier staged lock.
-  public Task Stage(string workspaceRoot, LockFile lockFile);
-
-  /// Moves the staged lock into place in one rename, the point at which an operation commits.
-  /// Does nothing when no lock is staged. Throws only when the lock was not moved.
-  public void CommitStaged(string workspaceRoot);
-
-  /// Deletes the staged lock, if any.
-  public void DiscardStaged(string workspaceRoot);
-}
 
 /// The workspace file (protocol/workspace.md §7.1, workspace.schema.json).
 public record LockFile {

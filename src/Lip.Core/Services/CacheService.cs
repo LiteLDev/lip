@@ -5,9 +5,6 @@ namespace Lip.Core.Services;
 
 public interface ICacheService {
   Task Clean();
-  Task<IDirectoryInfo> GetOrCreateDirectory(
-      string key,
-      Func<IDirectoryInfo, Task> factory);
   Task<IFileInfo> GetOrCreateFile(
       string key,
       Func<IFileInfo, Task> factory);
@@ -50,42 +47,6 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
     }
     RemoveReadOnlyRecursive(_cacheDirectory);
     _cacheDirectory.Delete(recursive: true);
-  }
-
-  public async Task<IDirectoryInfo> GetOrCreateDirectory(string key, Func<IDirectoryInfo, Task> factory) {
-    string safeKey = Uri.EscapeDataString(key);
-
-    IDirectoryInfo cacheDir = _fileSystem.DirectoryInfo.New(Path.Join(_cacheDirectory.FullName, safeKey));
-
-    if (cacheDir.Exists) {
-      await _userInteraction.PrintInfo($"Cache hit for key '{key}'.");
-
-      return cacheDir;
-    }
-    cacheDir.Parent?.Create();
-
-    await _userInteraction.PrintInfo($"Caching directory for key '{key}'...");
-
-    IDirectoryInfo tempDir = _fileSystem.DirectoryInfo.New(Path.Join(_tempDirectory.FullName, Guid.NewGuid().ToString()));
-    tempDir.Parent?.Create();
-
-    try {
-      await factory(tempDir);
-
-      _fileSystem.Directory.Move(tempDir.FullName, cacheDir.FullName);
-    }
-    catch (IOException) when (_fileSystem.Directory.Exists(cacheDir.FullName)) {
-      // Another process has already created the cache directory, so we can ignore this exception.
-    }
-    finally {
-      if (tempDir.Exists) {
-        tempDir.Delete(recursive: true);
-      }
-    }
-
-    cacheDir.Refresh();
-
-    return cacheDir;
   }
 
   public async Task<IFileInfo> GetOrCreateFile(string key, Func<IFileInfo, Task> factory) {

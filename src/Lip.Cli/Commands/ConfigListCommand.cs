@@ -6,12 +6,12 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class ConfigListCommand(ILipClient lipClient) : AsyncCommand<ConfigListCommand.Settings> {
+public class ConfigListCommand(LipClient lipClient) : AsyncCommand<ConfigListCommand.Settings> {
   private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
     WriteIndented = true
   };
 
-  private readonly ILipClient _lipClient = lipClient;
+  private readonly LipClient _lipClient = lipClient;
 
   public class Settings : CommandSettings {
     [CommandOption("--json")]
@@ -30,7 +30,7 @@ public class ConfigListCommand(ILipClient lipClient) : AsyncCommand<ConfigListCo
       table.AddColumn("Value");
 
       foreach (KeyValuePair<string, string> kvp in config) {
-        table.AddRow(kvp.Key, kvp.Value);
+        table.AddRow(Markup.Escape(kvp.Key), Markup.Escape(kvp.Value));
       }
 
       AnsiConsole.Write(table);

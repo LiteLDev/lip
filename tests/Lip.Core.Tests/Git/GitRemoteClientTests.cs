@@ -85,7 +85,7 @@ public class GitRemoteClientTests {
   }
 
   [Fact]
-  public async Task ListRefs_GithubProxyFails_FallsBackToGithubAndSkipsProxyAfterwards() {
+  public async Task ListRefs_GithubProxyFails_FallsBackToGithubForEachRequest() {
     using HttpTest httpTest = new();
     httpTest.ForCallsTo("https://proxy.example.com/*").RespondWith("not found", 404);
     httpTest.ForCallsTo("https://github.com/*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
@@ -99,7 +99,9 @@ public class GitRemoteClientTests {
 
     Assert.Equal("refs/tags/v1.0.0", Assert.Single(first).Name);
     Assert.Equal(first, second);
-    httpTest.ShouldHaveCalled("https://proxy.example.com/*").Times(1);
+    // A request that fails through the proxy goes to GitHub directly; the next one tries the
+    // proxy again (protocol/userspace.md §2).
+    httpTest.ShouldHaveCalled("https://proxy.example.com/*").Times(2);
     httpTest.ShouldHaveCalled("https://github.com/LiteLDev/LeviLamina.git/git-upload-pack").Times(2);
   }
 
@@ -140,24 +142,13 @@ public class GitRemoteClientTests {
     httpTest.ShouldHaveCalled("https://github.com/owner/repo.git/git-upload-pack").Times(1);
   }
 
-  [Fact]
-  public async Task ListRefs_TransientServerError_Retries() {
+  [Theory]
+  [InlineData(404)]
+  [InlineData(429)]
+  [InlineData(502)]
+  public async Task ListRefs_HttpError_DoesNotRetry(int status) {
     using HttpTest httpTest = new();
-    httpTest.ForCallsTo("*/info/refs*")
-        .RespondWith("bad gateway", 502)
-        .RespondWith(() => Content(PackBuilder.Advertisement()));
-    httpTest.ForCallsTo("*/git-upload-pack").RespondWith(() => Content(PackBuilder.PktLines("FLUSH")));
-    GitRemoteClient client = new(githubProxy: null);
-
-    await client.ListRefs(new Url(RepoUrl), []);
-
-    httpTest.ShouldHaveCalled($"{RepoUrl}/info/refs*").Times(2);
-  }
-
-  [Fact]
-  public async Task ListRefs_NotFound_DoesNotRetry() {
-    using HttpTest httpTest = new();
-    httpTest.RespondWith("not found", 404);
+    httpTest.RespondWith("error", status);
     GitRemoteClient client = new(githubProxy: null);
 
     await Assert.ThrowsAsync<HttpRequestException>(() => client.ListRefs(new Url(RepoUrl), []));
@@ -226,13 +217,11 @@ public class GitRemoteClientTests {
     Assert.Contains("filter blob:none\n", body);
     Assert.Contains("no-progress\n", body);
     Assert.Contains("done\n", body);
-    Assert.True(client.BytesReceived > pack.Length);
   }
 
   [Theory]
   [InlineData("..")]
-  [InlineData(".git")]
-  [InlineData(@"a\b")]
+  [InlineData(".")]
   public async Task ListTree_UnsafeEntryName_Throws(string name) {
     byte[] tree = PackBuilder.Tree(("100644", name, new string('a', 40)));
     byte[] commit = PackBuilder.Commit(PackBuilder.ObjectId(GitObjectType.Tree, tree));
@@ -247,6 +236,38 @@ public class GitRemoteClientTests {
 
     await Assert.ThrowsAsync<GitProtocolException>(() => client.ListTree(
         new Url(RepoUrl), PackBuilder.ObjectId(GitObjectType.Commit, commit)));
+  }
+
+  [Theory]
+  [InlineData(".git")]
+  [InlineData(@"a\b")]
+  public async Task ListTree_NameGitDoesNotCheckOut_IsListed(string name) {
+    // protocol/package.md §1 puts no restriction on the names in a git archive.
+    string blobId = new('a', 40);
+    byte[] tree = PackBuilder.Tree(("100644", name, blobId));
+    byte[] commit = PackBuilder.Commit(PackBuilder.ObjectId(GitObjectType.Tree, tree));
+    PackBuilder builder = new();
+    builder.AddObject(GitObjectType.Commit, commit);
+    builder.AddObject(GitObjectType.Tree, tree);
+    byte[] pack = builder.Build();
+    using HttpTest httpTest = new();
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
+    httpTest.ForCallsTo("*/git-upload-pack").RespondWith(() => Content(PackBuilder.FetchResponse(pack)));
+    GitRemoteClient client = new(githubProxy: null);
+
+    IReadOnlyList<GitTreeEntry> entries = await client.ListTree(
+        new Url(RepoUrl), PackBuilder.ObjectId(GitObjectType.Commit, commit));
+
+    Assert.Equal([new GitTreeEntry(name, 100644, blobId)], entries);
+  }
+
+  [Theory]
+  [InlineData(100644, true)]
+  [InlineData(100755, true)]
+  [InlineData(100664, false)]
+  [InlineData(120000, false)]
+  public void IsRegularFile_OnlyModes100644And100755(int mode, bool expected) {
+    Assert.Equal(expected, new GitTreeEntry("a", mode, new string('a', 40)).IsRegularFile);
   }
 
   [Fact]

@@ -7,9 +7,8 @@ namespace Lip.Core.Mcmod;
 public static class Packer {
   /// Writes a ZIP archive to output, replacing it: every regular file below directory at its
   /// path relative to it, except output itself and everything below .git/ and .lip/ at its root.
-  /// Files are written in ordinal order of their paths; links are not followed. The archive is
-  /// written to output + ".tmp" first and then renamed, so that output is replaced only by a
-  /// complete archive.
+  /// Files are written in ordinal order of their paths; links are not followed, and an
+  /// inaccessible directory fails the command rather than being left out.
   public static async Task WriteArchive(IFileSystem fs, string directory, string output) {
     string root = fs.Path.GetFullPath(directory);
     if (!fs.Directory.Exists(root)) {
@@ -17,7 +16,6 @@ public static class Packer {
     }
 
     string outputPath = fs.Path.GetFullPath(output);
-    string tempPath = outputPath + ".tmp";
     StringComparison comparison = OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase
         : StringComparison.Ordinal;
@@ -25,14 +23,13 @@ public static class Packer {
     List<(string Entry, string Path)> files = [];
     EnumerationOptions options = new() {
       RecurseSubdirectories = true,
-      IgnoreInaccessible = true,
+      IgnoreInaccessible = false,
       AttributesToSkip = FileAttributes.ReparsePoint,
     };
     foreach (string file in fs.Directory.EnumerateFiles(root, "*", options)) {
       string full = fs.Path.GetFullPath(file);
       string entry = fs.Path.GetRelativePath(root, full).Replace('\\', '/');
       if (string.Equals(full, outputPath, comparison)
-          || string.Equals(full, tempPath, comparison)
           || entry.StartsWith(".git/", StringComparison.Ordinal)
           || entry.StartsWith(".lip/", StringComparison.Ordinal)) {
         continue;
@@ -43,22 +40,12 @@ public static class Packer {
 
     files.Sort((a, b) => string.CompareOrdinal(a.Entry, b.Entry));
 
-    try {
-      using (Stream stream = fs.File.Create(tempPath))
-      using (ZipArchive zip = new(stream, ZipArchiveMode.Create)) {
-        foreach ((string entry, string path) in files) {
-          await using Stream content = fs.File.OpenRead(path);
-          await using Stream target = zip.CreateEntry(entry, CompressionLevel.Optimal).Open();
-          await content.CopyToAsync(target);
-        }
-      }
-
-      fs.File.Move(tempPath, outputPath, overwrite: true);
-    }
-    finally {
-      if (fs.File.Exists(tempPath)) {
-        fs.File.Delete(tempPath);
-      }
+    using Stream stream = fs.File.Create(outputPath);
+    using ZipArchive zip = new(stream, ZipArchiveMode.Create);
+    foreach ((string entry, string path) in files) {
+      await using Stream content = fs.File.OpenRead(path);
+      await using Stream target = zip.CreateEntry(entry, CompressionLevel.Optimal).Open();
+      await content.CopyToAsync(target);
     }
   }
 }

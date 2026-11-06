@@ -1,10 +1,5 @@
 # 常见问题
 
-### 为什么 lip 要提供 `lip rpc`？
-[`lip rpc`](cli/commands/rpc.md) 是为**外部集成**设计的。它让 IDE、GUI 和其他工具可以通过标准 JSON-RPC 接口，以编程方式与 lip 交互。
-
-**注意**：`lip install` 等普通 `lip` 命令独立运行，**不会**经过 `lip rpc`。这样可保证 CLI 保持简单，并且日常命令没有额外启动开销。
-
 ### 什么是 `tooth.json`？
 `tooth.json` 描述一个 lip 包：它的 tooth 路径、版本，以及针对每个变体、平台和 RID 的依赖、要放置的文件、要安装的 mod 和要运行的命令。当前格式为格式版本 4。参见 [tooth.json](concepts/tooth_json.md)。
 

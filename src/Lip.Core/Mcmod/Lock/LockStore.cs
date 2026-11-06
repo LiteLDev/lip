@@ -19,7 +19,7 @@ public class LockFormatException(string message, Exception? inner = null)
 /// Workspaces of earlier lip versions (protocol/workspace.md §7.6) are not taken over: a
 /// .lip/workspace.json without format_version 4, a .lip/lock.json or a tooth_lock.json at the root
 /// cannot be read, so that lip never writes over the files the packages they record own.
-public partial class LockStore(IFileSystem fs) : ILockStore {
+public partial class LockStore(IFileSystem fs) {
   /// The directory of lip's own files in the workspace root, and the files in it.
   public const string LipDirectory = ".lip";
   public const string FileName = "workspace.json";
@@ -44,16 +44,17 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
 
   private readonly IFileSystem _fs = fs;
 
-  /// The path of the lock of a workspace.
-  public string GetLockPath(string workspaceRoot) => LipPath(workspaceRoot, FileName);
-
+  /// The path of the workspace lock file (WorkspaceMutex), &lt;root&gt;/.lip/lock.
   public string GetMutexPath(string workspaceRoot) => LipPath(workspaceRoot, MutexFileName);
 
+  /// The path of the journal (WorkspaceTransaction), &lt;root&gt;/.lip/journal.
   public string GetJournalPath(string workspaceRoot) => LipPath(workspaceRoot, JournalFileName);
 
   private string LipPath(string workspaceRoot, string name) =>
       _fs.Path.Join(NormalizeRoot(workspaceRoot), LipDirectory, name);
 
+  /// Returns null when none exists. Throws LockFormatException when the lock exists but cannot
+  /// be read, or when the workspace has files of earlier formats (§7.6).
   public async Task<LockFile?> Load(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
 
@@ -75,11 +76,13 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
     return null;
   }
 
+  /// Writes the lock: Stage, then CommitStaged.
   public async Task Save(string workspaceRoot, LockFile lockFile) {
     await Stage(workspaceRoot, lockFile);
     CommitStaged(workspaceRoot);
   }
 
+  /// Writes the lock to &lt;root&gt;/.lip/workspace.json.new, replacing an earlier staged lock.
   public async Task Stage(string workspaceRoot, LockFile lockFile) {
     try {
       Validate(lockFile);
@@ -105,6 +108,8 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
     }
   }
 
+  /// Moves the staged lock into place in one rename, the point at which an operation commits.
+  /// Does nothing when no lock is staged. Throws only when the lock was not moved.
   public void CommitStaged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
     string tempPath = LipPath(root, StagedFileName);
@@ -113,6 +118,7 @@ public partial class LockStore(IFileSystem fs) : ILockStore {
     }
   }
 
+  /// Deletes the staged lock, if any.
   public void DiscardStaged(string workspaceRoot) {
     string tempPath = LipPath(NormalizeRoot(workspaceRoot), StagedFileName);
     if (_fs.File.Exists(tempPath)) {

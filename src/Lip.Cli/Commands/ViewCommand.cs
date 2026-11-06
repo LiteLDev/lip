@@ -4,8 +4,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class ViewCommand(ILipClient lipClient) : AsyncCommand<ViewCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class ViewCommand(LipClient lipClient) : AsyncCommand<ViewCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
 
   public class Settings : CommandSettings {
     [CommandArgument(0, "<PACKAGE>")]

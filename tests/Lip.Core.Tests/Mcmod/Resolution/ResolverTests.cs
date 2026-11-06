@@ -66,6 +66,8 @@ public class ResolverTests {
 
   private static VersionRange Range(string range) => VersionRange.Parse(range);
 
+  private static Ref Source(string source) => Ref.Parse(source, allowFile: false);
+
   private static string MarkerOf(Candidate candidate) =>
       Assert.Single(candidate.Package.Entry.Dependencies).Source.Target["example.com/marker/".Length..];
 
@@ -84,8 +86,8 @@ public class ResolverTests {
         """));
 
     // Act
-    ResolveResult server = await CreateResolver().Resolve(Ref.Parse(Url), null, s_server);
-    ResolveResult client = await CreateResolver().Resolve(Ref.Parse(Url), null, s_client);
+    ResolveResult server = await CreateResolver().Resolve(Source(Url), null, s_server);
+    ResolveResult client = await CreateResolver().Resolve(Source(Url), null, s_client);
 
     // Assert
     Candidate candidate = Assert.Single(server.Candidates);
@@ -95,7 +97,7 @@ public class ResolverTests {
     Assert.Equal(Spec, candidate.Package.Identity);
     Assert.Equal("", candidate.Package.Variant);
     Assert.Equal(SemVersion.Parse("1.0.0"), candidate.Package.Version);
-    Assert.Equal(Ref.Parse(Url), candidate.Source);
+    Assert.Equal(Source(Url), candidate.Source);
     Assert.False(candidate.Package.Entry.Derived);
     Assert.Empty(server.Diagnostics);
     Assert.Equal("client-win", MarkerOf(Assert.Single(client.Candidates)));
@@ -111,7 +113,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
-        Ref.Parse(Url), null, new LipEnvironment(McmodPlatform.Server, runtime));
+        Source(Url), null, new LipEnvironment(McmodPlatform.Server, runtime));
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -124,7 +126,7 @@ public class ResolverTests {
     _archives.AddUrl(Url, Simple4(Spec, "1.0.0"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Url), null, s_client);
+    ResolveResult result = await CreateResolver().Resolve(Source(Url), null, s_client);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -142,7 +144,7 @@ public class ResolverTests {
         "lua": [ {Entry("server", "win-x64", Marker("lua"))} ],
         "node/v20": [ {Entry("server", "win-x64", Marker("node"))} ]
         """));
-    Ref source = Ref.Parse(Spec).WithVariant(variant);
+    Ref source = Source(Spec).WithVariant(variant);
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(source, null, s_server);
@@ -161,9 +163,9 @@ public class ResolverTests {
     _archives.AddUrl(Url, Tooth4(Spec, "1.0.0", $"\"lua\": [ {Entry("server", "win-x64")} ]"));
 
     // Act
-    ResolveResult withoutVariant = await CreateResolver().Resolve(Ref.Parse(Url), null, s_server);
+    ResolveResult withoutVariant = await CreateResolver().Resolve(Source(Url), null, s_server);
     ResolveResult otherVariant = await CreateResolver()
-        .Resolve(Ref.Parse(Url + "#quickjs"), null, s_server);
+        .Resolve(Source(Url + "#quickjs"), null, s_server);
 
     // Assert
     Assert.Empty(withoutVariant.Candidates);
@@ -181,7 +183,7 @@ public class ResolverTests {
     _archives.AddUrl(local, Simple4("example.com/local", "2.0.0"));
 
     // Act
-    ResolveResult url = await CreateResolver().Resolve(Ref.Parse(Url), null, s_server);
+    ResolveResult url = await CreateResolver().Resolve(Source(Url), null, s_server);
     ResolveResult file = await CreateResolver().Resolve(
         Ref.Parse(local, allowFile: true), null, s_server);
 
@@ -196,7 +198,7 @@ public class ResolverTests {
     _archives.AddUrl(Url, Simple4(Spec, "1.2.0"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Url), Range(">=2.0.0"), s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Url), Range(">=2.0.0"), s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -213,7 +215,7 @@ public class ResolverTests {
     _archives.AddUrl(Url, toothJson);
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Url), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Url), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -223,7 +225,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_ArchiveCannotBeObtained_NoCandidate() {
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Url), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Url), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -238,8 +240,8 @@ public class ResolverTests {
     Resolver resolver = CreateResolver();
 
     // Act
-    ResolveResult first = await resolver.Resolve(Ref.Parse(Url), null, s_server);
-    ResolveResult second = await resolver.Resolve(Ref.Parse(Url), null, s_server);
+    ResolveResult first = await resolver.Resolve(Source(Url), null, s_server);
+    ResolveResult second = await resolver.Resolve(Source(Url), null, s_server);
 
     // Assert
     Assert.Empty(first.Candidates);
@@ -259,7 +261,7 @@ public class ResolverTests {
     _archives.AddTag(Spec, "1.5.0", Simple4(Spec, "1.5.0"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), null, s_server);
 
     // Assert
     Assert.Equal(["2.0.0", "1.10.0", "1.2.0", "1.0.0"],
@@ -273,7 +275,7 @@ public class ResolverTests {
     _archives.AddTag(Spec, "latest", Simple4(Spec, "1.0.0"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -286,7 +288,7 @@ public class ResolverTests {
     _archives.AddTag(Spec, "v1.0.0", Simple4("github.com/user/other", "1.0.0"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -301,7 +303,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse("github.com/USER/pkg"), null, s_server);
+        .Resolve(Source("github.com/USER/pkg"), null, s_server);
 
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
@@ -318,7 +320,7 @@ public class ResolverTests {
     _archives.AddTag(Spec, "v0.9.0", Simple4(Spec, "0.9.0"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), null, s_server);
 
     // Assert
     Assert.Equal("0.9.0", Assert.Single(result.Candidates).Package.Version.ToString());
@@ -333,8 +335,8 @@ public class ResolverTests {
     Resolver resolver = CreateResolver();
 
     // Act
-    ResolveResult first = await resolver.Resolve(Ref.Parse(Spec), null, s_server);
-    ResolveResult second = await resolver.Resolve(Ref.Parse(Spec), Range(">=1.0.0"), s_server);
+    ResolveResult first = await resolver.Resolve(Source(Spec), null, s_server);
+    ResolveResult second = await resolver.Resolve(Source(Spec), Range(">=1.0.0"), s_server);
 
     // Assert
     Assert.Equal(SemVersion.Parse("1.0.0"), Assert.Single(first.Candidates).Package.Version);
@@ -349,7 +351,7 @@ public class ResolverTests {
     _archives.AddTag(Spec, "v2.0.0", WorkspaceHarness.Tooth(Spec, "1.0.0", "file.dll"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), Range("^2.0.0"), s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), Range("^2.0.0"), s_server);
 
     // Assert
     Assert.Equal("2.0.0", Assert.Single(result.Candidates).Package.Version.ToString());
@@ -361,7 +363,7 @@ public class ResolverTests {
     _archives.AddUrl(Url, WorkspaceHarness.Tooth(Spec, "1.0.1", "file.dll"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Url), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Url), null, s_server);
 
     // Assert
     Assert.Equal("1.0.1", Assert.Single(result.Candidates).Package.Version.ToString());
@@ -386,7 +388,7 @@ public class ResolverTests {
     }
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), Range(range), s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), Range(range), s_server);
 
     // Assert
     Assert.Equal(expected.Split(','), result.Candidates.Select(c => c.Package.Version.ToString()));
@@ -400,7 +402,7 @@ public class ResolverTests {
     }
 
     // Act
-    await CreateResolver().Resolve(Ref.Parse(Spec), Range("<2.0.0"), s_server);
+    await CreateResolver().Resolve(Source(Spec), Range("<2.0.0"), s_server);
 
     // Assert
     Assert.Equal([$"{Spec}@v1.5.0", $"{Spec}@v1.0.0"], _archives.Opened);
@@ -412,7 +414,7 @@ public class ResolverTests {
     _archives.AddTag(Spec, "v1.0.0", Simple4(Spec, "1.0.0"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), Range(">=2.0.0"), s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), Range(">=2.0.0"), s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -428,8 +430,7 @@ public class ResolverTests {
 
     // Act
     Candidate first = await CreateResolver()
-        .ResolveLazy(Ref.Parse(Spec), null, s_server,
-            cancellationToken: TestContext.Current.CancellationToken)
+        .ResolveLazy(Source(Spec), null, s_server)
         .FirstAsync(TestContext.Current.CancellationToken);
 
     // Assert
@@ -445,8 +446,8 @@ public class ResolverTests {
     Resolver resolver = CreateResolver();
 
     // Act
-    await resolver.Resolve(Ref.Parse(Spec), null, s_server);
-    ResolveResult second = await resolver.Resolve(Ref.Parse(Spec), Range("^1.0.0"), s_server);
+    await resolver.Resolve(Source(Spec), null, s_server);
+    ResolveResult second = await resolver.Resolve(Source(Spec), Range("^1.0.0"), s_server);
 
     // Assert
     Assert.Single(second.Candidates);
@@ -464,14 +465,14 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}@1.0.0"), null, s_server);
+        .Resolve(Source($"{Spec}@1.0.0"), null, s_server);
 
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
     Assert.Equal("1.0.0", candidate.Package.Version.ToString());
     Assert.Equal(commit, candidate.Archive.Commit);
     Assert.Equal($"{Spec}@1.0.0", candidate.Archive.Key);
-    Assert.Equal(Ref.Parse($"{Spec}@1.0.0"), candidate.Source);
+    Assert.Equal(Source($"{Spec}@1.0.0"), candidate.Source);
     Assert.Equal(0, _archives.ListCount);
     Assert.Equal([$"{Spec}@rev:{commit}"], _archives.Opened);
   }
@@ -497,7 +498,7 @@ public class ResolverTests {
     string source = gitRef == "rev" ? $"{Spec}@rev:{commit}" : $"{Spec}@{gitRef}";
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(source), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(source), null, s_server);
 
     // Assert
     Assert.Equal(expectCandidate ? 1 : 0, result.Candidates.Count);
@@ -520,7 +521,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}@{gitRef}"), null, s_server);
+        .Resolve(Source($"{Spec}@{gitRef}"), null, s_server);
 
     // Assert
     Assert.Equal(expected, Assert.Single(result.Candidates).Package.Version.ToString());
@@ -533,9 +534,9 @@ public class ResolverTests {
     Resolver resolver = CreateResolver();
 
     // Act
-    ResolveResult first = await resolver.Resolve(Ref.Parse($"{Spec}@branch:main"), null, s_server);
+    ResolveResult first = await resolver.Resolve(Source($"{Spec}@branch:main"), null, s_server);
     _archives.AddBranch(Spec, "main", Simple4(Spec, "3.0.1-dev"));
-    ResolveResult second = await resolver.Resolve(Ref.Parse($"{Spec}@branch:main"), null, s_server);
+    ResolveResult second = await resolver.Resolve(Source($"{Spec}@branch:main"), null, s_server);
 
     // Assert: one operation sees one commit of the branch.
     Assert.Equal("3.0.0-dev", Assert.Single(first.Candidates).Package.Version.ToString());
@@ -552,7 +553,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}@branch:main"), Range(">=2.0.0"), s_server);
+        .Resolve(Source($"{Spec}@branch:main"), Range(">=2.0.0"), s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -566,7 +567,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}@branch:main"), null, s_server);
+        .Resolve(Source($"{Spec}@branch:main"), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -583,7 +584,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}@{gitRef}"), null, s_server);
+        .Resolve(Source($"{Spec}@{gitRef}"), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -598,8 +599,8 @@ public class ResolverTests {
     Resolver resolver = CreateResolver();
 
     // Act: the workspace recorded the source with another case and an uppercase commit.
-    resolver.PinCommit(Ref.Parse("github.com/USER/pkg@1.0.0"), recorded.ToUpperInvariant());
-    ResolveResult result = await resolver.Resolve(Ref.Parse($"{Spec}@1.0.0"), null, s_server);
+    resolver.PinCommit(Source("github.com/USER/pkg@1.0.0"), recorded.ToUpperInvariant());
+    ResolveResult result = await resolver.Resolve(Source($"{Spec}@1.0.0"), null, s_server);
 
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
@@ -619,8 +620,8 @@ public class ResolverTests {
     Resolver resolver = CreateResolver();
 
     // Act
-    resolver.PinCommit(Ref.Parse($"{Spec}@{gitRef}"), old);
-    ResolveResult result = await resolver.Resolve(Ref.Parse($"{Spec}@{gitRef}"), null, s_server);
+    resolver.PinCommit(Source($"{Spec}@{gitRef}"), old);
+    ResolveResult result = await resolver.Resolve(Source($"{Spec}@{gitRef}"), null, s_server);
 
     // Assert
     Assert.Equal(now, Assert.Single(result.Candidates).Archive.Commit);
@@ -636,11 +637,11 @@ public class ResolverTests {
         Variant3("", "win-x64", "win")));
 
     // Act
-    ResolveResult server = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
+    ResolveResult server = await CreateResolver().Resolve(Source(Spec), null, s_server);
     ResolveResult linux = await CreateResolver().Resolve(
-        Ref.Parse(Spec), null, new LipEnvironment(McmodPlatform.Server, "linux-x64"));
+        Source(Spec), null, new LipEnvironment(McmodPlatform.Server, "linux-x64"));
     ResolveResult osx = await CreateResolver().Resolve(
-        Ref.Parse(Spec), null, new LipEnvironment(McmodPlatform.Server, "osx-arm64"));
+        Source(Spec), null, new LipEnvironment(McmodPlatform.Server, "osx-arm64"));
 
     // Assert
     Candidate candidate = Assert.Single(server.Candidates);
@@ -662,7 +663,7 @@ public class ResolverTests {
         Variant3("", "linux-x64", "linux")));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
+    ResolveResult result = await CreateResolver().Resolve(Source(Spec), null, s_server);
 
     // Assert
     Assert.Equal(["example.com/marker/any", "example.com/marker/win"],
@@ -677,12 +678,12 @@ public class ResolverTests {
         Variant3("client", "", "client")));
 
     // Act
-    ResolveResult server = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
-    ResolveResult client = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_client);
+    ResolveResult server = await CreateResolver().Resolve(Source(Spec), null, s_server);
+    ResolveResult client = await CreateResolver().Resolve(Source(Spec), null, s_client);
     ResolveResult clientLabel = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}#client"), null, s_client);
+        .Resolve(Source($"{Spec}#client"), null, s_client);
     ResolveResult serverLabel = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}#client"), null, s_server);
+        .Resolve(Source($"{Spec}#client"), null, s_server);
 
     // Assert
     Assert.Equal("default", MarkerOf(Assert.Single(server.Candidates)));
@@ -701,8 +702,8 @@ public class ResolverTests {
     _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0", Variant3("client", "", "client")));
 
     // Act
-    ResolveResult client = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_client);
-    ResolveResult server = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
+    ResolveResult client = await CreateResolver().Resolve(Source(Spec), null, s_client);
+    ResolveResult server = await CreateResolver().Resolve(Source(Spec), null, s_server);
 
     // Assert
     Assert.Equal("client", MarkerOf(Assert.Single(client.Candidates)));
@@ -718,7 +719,7 @@ public class ResolverTests {
         Variant3("client", "linux-x64", "client")));
 
     // Act
-    ResolveResult client = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_client);
+    ResolveResult client = await CreateResolver().Resolve(Source(Spec), null, s_client);
 
     // Assert
     Assert.Empty(client.Candidates);
@@ -731,8 +732,8 @@ public class ResolverTests {
     _archives.AddUrl(Url, Simple4("example.com/b", "1.0.0", Marker("b")));
 
     // Act
-    ResolveResult legacy = await CreateResolver().Resolve(Ref.Parse(Spec), null, s_server);
-    ResolveResult format4 = await CreateResolver().Resolve(Ref.Parse(Url), null, s_server);
+    ResolveResult legacy = await CreateResolver().Resolve(Source(Spec), null, s_server);
+    ResolveResult format4 = await CreateResolver().Resolve(Source(Url), null, s_server);
 
     // Assert
     ToothDependency dependency = Assert.Single(legacy.Candidates[0].Package.Entry.Dependencies);
@@ -751,9 +752,9 @@ public class ResolverTests {
 
     // Act
     ResolveResult compat = await CreateResolver().Resolve(
-        Ref.Parse($"{Spec}#client"), null, s_client, clientCompat: true);
+        Source($"{Spec}#client"), null, s_client, clientCompat: true);
     ResolveResult plain = await CreateResolver()
-        .Resolve(Ref.Parse($"{Spec}#client"), null, s_client);
+        .Resolve(Source($"{Spec}#client"), null, s_client);
 
     // Assert
     Candidate candidate = Assert.Single(compat.Candidates);
@@ -773,7 +774,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
-        Ref.Parse($"{Spec}#client"), null, s_server, clientCompat: true);
+        Source($"{Spec}#client"), null, s_server, clientCompat: true);
 
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
@@ -790,7 +791,7 @@ public class ResolverTests {
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
-        Ref.Parse($"{Spec}#lua"), null, s_server, clientCompat: true);
+        Source($"{Spec}#lua"), null, s_server, clientCompat: true);
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -929,5 +930,26 @@ public class ResolverTests {
 
       public Dictionary<string, string> Commits { get; } = [];
     }
+  }
+}
+
+/// Every candidate of a source, in order, with the diagnostics reported on the way.
+internal sealed record ResolveResult(List<Candidate> Candidates, List<string> Diagnostics);
+
+internal static class ResolverTestExtensions {
+  /// Collects the whole candidate sequence of ResolveLazy.
+  public static async Task<ResolveResult> Resolve(
+      this Resolver resolver,
+      Ref source,
+      IVersionConstraint? range,
+      LipEnvironment environment,
+      bool clientCompat = false) {
+    ResolveResult result = new([], []);
+    await foreach (Candidate candidate in resolver.ResolveLazy(
+        source, range, environment, clientCompat, result.Diagnostics.Add)) {
+      result.Candidates.Add(candidate);
+    }
+
+    return result;
   }
 }

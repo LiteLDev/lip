@@ -96,7 +96,7 @@ public class ArchiveProvider(
   }
 
   public async Task Forget(string url) {
-    IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url.Split('#', 2)[0]));
+    IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
     file?.Delete();
   }
 
@@ -124,14 +124,14 @@ public class ArchiveProvider(
   public static string GetRepoUrl(string spec) => $"https://{spec}.git";
 
   private async Task<ArchiveHandle> OpenUrl(string url) {
-    // Sources never contain the fragment here, but strip it anyway since it is part of no key.
-    string key = url.Split('#', 2)[0];
-    return new ArchiveHandle(key, new ZipSource(await DownloadZip(key)));
+    return new ArchiveHandle(url, new ZipSource(await DownloadZip(url)));
   }
 
-  /// The cached download of the ZIP archive of a URL. A cached copy that is not a valid ZIP
-  /// archive (e.g. corrupted) is downloaded again.
+  /// The cached download of the ZIP archive of a URL, keyed by the URL without its fragment
+  /// (protocol/userspace.md §3). A cached copy that is not a valid ZIP archive (e.g. corrupted)
+  /// is downloaded again.
   private async Task<IFileInfo> DownloadZip(string url) {
+    url = url.Split('#', 2)[0];
     IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
     if (file is not null) {
       try {
@@ -144,25 +144,17 @@ public class ArchiveProvider(
     }
 
     // Download validates what it downloads.
-    return await Download(url, url, ZipValidator.Validate);
+    return await Download(url);
   }
 
   /// Opens a local directory.
   private ArchiveHandle OpenDirectory(string key, string path) {
     string full = _fileSystem.Path.TrimEndingDirectorySeparator(_fileSystem.Path.GetFullPath(path));
-    if (!_fileSystem.Directory.Exists(full)) {
-      throw new ArchiveUnavailableException($"{key}: {full} is not a directory.");
-    }
-
     return new ArchiveHandle(key, new DirectorySource(_fileSystem, full));
   }
 
   /// Opens a local ZIP file.
   private ArchiveHandle OpenFile(string key, string path) {
-    if (!_fileSystem.File.Exists(path)) {
-      throw new ArchiveUnavailableException($"{key}: {path} does not exist.");
-    }
-
     // Read once, so that the files installed are exactly the bytes validated and hashed, even if
     // the file changes meanwhile.
     byte[] content;
@@ -248,10 +240,9 @@ public class ArchiveProvider(
 
   /// Downloads a URL into the cache under CacheKeys.Http(url), via the GitHub proxy first if one
   /// is configured, unless it is cached already. The download goes to the cache's staging
-  /// directory and is moved into place once complete. A candidate whose response validate
-  /// rejects (e.g. one that is not a valid ZIP archive, like a proxy error page) is skipped.
-  private async Task<IFileInfo> Download(
-      string url, string archiveKey, Action<IFileInfo, string>? validate) {
+  /// directory and is moved into place once complete. A candidate whose response is not a valid
+  /// ZIP archive (e.g. a proxy error page) is skipped.
+  private async Task<IFileInfo> Download(string url) {
     try {
       return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), async destination => {
         List<Exception> exceptions = [];
@@ -266,7 +257,7 @@ public class ArchiveProvider(
 
             await _fileDownloader.DownloadFile(downloadUrl, destination);
             destination.Refresh();
-            validate?.Invoke(destination, archiveKey);
+            ZipValidator.Validate(destination, url);
             return;
           }
           catch (Exception ex) when (IsUnavailable(ex) || ex is ArchiveUnavailableException) {
@@ -275,31 +266,20 @@ public class ArchiveProvider(
         }
 
         throw new ArchiveUnavailableException(
-            $"{archiveKey}: download failed: "
+            $"{url}: download failed: "
                 + string.Join("; ", exceptions.Select(e => e.InnerException?.Message ?? e.Message)),
             new AggregateException(exceptions));
       });
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException(
-          $"{archiveKey}: cannot store the download in the cache: {ex.Message}", ex);
+          $"{url}: cannot store the download in the cache: {ex.Message}", ex);
     }
   }
 
   private IEnumerable<Url> GetDownloadUrls(string url) {
     Url original = Url.Parse(url);
-
-    if (_githubProxy is null
-        || !string.Equals(original.Host, "github.com", StringComparison.OrdinalIgnoreCase)) {
-      return [original];
-    }
-
-    Url proxyUrl = _githubProxy.Clone().AppendPathSegments(original.PathSegments);
-    if (!string.IsNullOrEmpty(original.Query)) {
-      proxyUrl.Query = original.Query;
-    }
-
-    return proxyUrl.ToString() == original.ToString() ? [original] : [proxyUrl, original];
+    return GithubProxy.Rewrite(_githubProxy, original) is Url proxied ? [proxied, original] : [original];
   }
 
   // Everything but cancellation and programming errors makes an archive unavailable.

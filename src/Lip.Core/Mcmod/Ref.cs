@@ -146,10 +146,6 @@ public partial record Ref {
       ? new Ref(Kind, Target, variant, GitRef)
       : throw new FormatException($"Invalid variant: {variant}");
 
-  public Ref WithGitRef(GitRef? gitRef) => Kind == RefKind.Spec || gitRef is null
-      ? new Ref(Kind, Target, Variant, gitRef)
-      : throw new InvalidOperationException($"Only spec refs take a git ref: {this}");
-
   public override string ToString() => Target
       + (Variant == "" ? "" : $"#{Variant}")
       + (GitRef is null ? "" : $"@{GitRef}");
@@ -163,9 +159,6 @@ public partial record Ref {
         ? new Ref(RefKind.File, uri.AbsoluteUri, "").WithVariant(variant)
         : throw new ArgumentException($"Not a local path: {absolutePath}", nameof(absolutePath));
   }
-
-  /// Parses a source that is not a local path.
-  public static Ref Parse(string s) => Parse(s, allowFile: false);
 
   /// Parses a source; allowFile also accepts local paths as file: URIs.
   public static Ref Parse(string s, bool allowFile) =>

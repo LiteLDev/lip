@@ -152,7 +152,7 @@ internal sealed class WorkspaceHarness {
       await LockStore.Load(Root) ?? throw new InvalidOperationException("No workspace file.");
 
   /// Where the lock of the workspace lives, in .lip inside the workspace.
-  public string LockPath => LockStore.GetLockPath(Root);
+  public string LockPath => Fs.Path.Join(Root, LockStore.LipDirectory, LockStore.FileName);
 
   /// Adds a tag of a spec repository, whose tree holds the given files.
   public void AddTag(string spec, string version, Dictionary<string, string> files) =>
@@ -300,6 +300,54 @@ internal sealed class WorkspaceHarness {
         Url repoUrl, IReadOnlyCollection<string> blobObjectIds, Func<string, Stream, Task> onBlob) {
       foreach (string id in blobObjectIds) {
         await onBlob(id, new MemoryStream(_blobs[id]));
+      }
+    }
+  }
+}
+
+/// Installs or uninstalls one package on its own, as an operation of McmodService applies it:
+/// plans it, then applies the plan through a transaction journaled in .lip, and commits it or
+/// rolls it back. Leaves no .lip that was not there before.
+internal sealed class SoloInstaller(
+    System.IO.Abstractions.IFileSystem fs, McmodInstaller installer) {
+  /// Returns the files the package owns.
+  public async Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context) {
+    PackagePlan plan = await installer.PlanInstall(candidate, context, new WorkspaceView(fs));
+    if (!context.DryRun) {
+      await Apply(plan, context.WorkspaceRoot);
+    }
+
+    return plan.OwnedFiles;
+  }
+
+  public async Task Uninstall(LockedPackage package, InstallContext context) {
+    PackagePlan plan = await installer.PlanUninstall(package, context, new WorkspaceView(fs));
+    if (!context.DryRun) {
+      await Apply(plan, context.WorkspaceRoot);
+    }
+  }
+
+  private async Task Apply(PackagePlan plan, string root) {
+    string lip = fs.Path.Join(fs.Path.GetFullPath(root), LockStore.LipDirectory);
+    bool lipExisted = fs.Directory.Exists(lip);
+    try {
+      using WorkspaceTransaction transaction = new(
+          fs, new LockStore(fs).GetJournalPath(root), plan.WrittenPaths);
+      try {
+        await installer.Apply(plan, transaction, CancellationToken.None);
+      }
+      catch {
+        transaction.Rollback(() => { });
+        throw;
+      }
+
+      transaction.Commit();
+      transaction.Complete();
+    }
+    finally {
+      if (!lipExisted && fs.Directory.Exists(lip)
+          && !fs.Directory.EnumerateFileSystemEntries(lip).Any()) {
+        fs.Directory.Delete(lip);
       }
     }
   }

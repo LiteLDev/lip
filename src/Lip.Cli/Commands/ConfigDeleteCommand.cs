@@ -5,8 +5,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class ConfigDeleteCommand(ILipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<ConfigDeleteCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class ConfigDeleteCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<ConfigDeleteCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public class Settings : CommandSettings {

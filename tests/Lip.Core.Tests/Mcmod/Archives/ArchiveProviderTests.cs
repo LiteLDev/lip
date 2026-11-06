@@ -205,7 +205,8 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task Open_RemoteRepository_Throws() {
     // Act & Assert
-    await Assert.ThrowsAsync<ArgumentException>(() => CreateProvider().Open(Ref.Parse(_spec)));
+    await Assert.ThrowsAsync<ArgumentException>(
+        () => CreateProvider().Open(Ref.Parse(_spec, allowFile: false)));
   }
 
   // Remote repositories (protocol/package.md §2.1).
@@ -391,7 +392,6 @@ public class ArchiveProviderTests {
   [InlineData("../evil.txt", 0)]
   [InlineData("a/../../evil.txt", 0)]
   [InlineData("/abs.txt", 0)]
-  [InlineData("C:/evil.txt", 0)]
   [InlineData("a\\b.txt", 0)]
   [InlineData("link", unchecked((int)0xA1FF0000))]
   public async Task Open_ZipWithInvalidEntry_ThrowsArchiveUnavailable(string name, int attributes) {
@@ -400,7 +400,7 @@ public class ArchiveProviderTests {
 
     // Act
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().Open(Ref.Parse(_url)));
+        () => CreateProvider().Open(Ref.Parse(_url, allowFile: false)));
 
     // Assert
     Assert.Contains("not a valid archive", ex.Message);
@@ -425,13 +425,23 @@ public class ArchiveProviderTests {
   }
 
   [Fact]
+  public async Task Open_ZipWithDriveLetterEntry_Succeeds() {
+    // protocol/package.md §1 forbids only a leading '/', '..' segments and '\' in entry paths.
+    _downloads[_url] = Zip(("tooth.json", "{}", 0), ("C:x", "x", 0));
+
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
+
+    Assert.Equal(["tooth.json", "C:x"], archive.Source.Keys);
+  }
+
+  [Fact]
   public async Task Open_ZipWithUnixRegularFiles_Succeeds() {
     // Arrange
     _downloads[_url] = Zip(
         ("tooth.json", "{}", unchecked((int)0x81A40000)), ("dir/", null, 0x41ED0000));
 
     // Act
-    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url));
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
     // Assert
     Assert.Equal(["tooth.json"], archive.Source.Keys);
@@ -444,8 +454,9 @@ public class ArchiveProviderTests {
     _downloads[_url] = zip;
 
     // Act
-    ArchiveHandle first = await CreateProvider().Open(Ref.Parse(_url + "#variant"));
-    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(_url));
+    ArchiveHandle first = await CreateProvider()
+        .Open(Ref.Parse(_url + "#variant", allowFile: false));
+    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
     // Assert
     Assert.Equal(_url, first.Key);
@@ -461,7 +472,7 @@ public class ArchiveProviderTests {
     _downloads[_url] = Zip(("tooth.json", "{}"));
 
     // Act
-    await CreateProvider().Open(Ref.Parse(_url));
+    await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
     // Assert
     Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
@@ -475,7 +486,7 @@ public class ArchiveProviderTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().Open(Ref.Parse(_url)));
+        () => CreateProvider().Open(Ref.Parse(_url, allowFile: false)));
     Assert.Empty(CachedFiles());
   }
 
@@ -488,7 +499,7 @@ public class ArchiveProviderTests {
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
 
     // Act
-    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url));
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
     // Assert
     Assert.Equal("{}", await Read(archive, "tooth.json"));
@@ -504,7 +515,7 @@ public class ArchiveProviderTests {
 
     // Act
     ArchiveHandle archive = await CreateProvider(new Url("https://proxy.example.com"))
-        .Open(Ref.Parse(githubUrl));
+        .Open(Ref.Parse(githubUrl, allowFile: false));
 
     // Assert
     Assert.Equal(githubUrl, archive.Key);
@@ -525,7 +536,7 @@ public class ArchiveProviderTests {
 
     // Act
     ArchiveHandle archive = await CreateProvider(new Url("https://proxy.example.com"))
-        .Open(Ref.Parse(githubUrl));
+        .Open(Ref.Parse(githubUrl, allowFile: false));
 
     // Assert
     Assert.Equal("{}", await Read(archive, "tooth.json"));
@@ -538,8 +549,8 @@ public class ArchiveProviderTests {
     _downloads[url] = Zip(("tooth.json", "{}"));
 
     // Act
-    ArchiveHandle first = await CreateProvider().Open(Ref.Parse(url));
-    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(url));
+    ArchiveHandle first = await CreateProvider().Open(Ref.Parse(url, allowFile: false));
+    ArchiveHandle second = await CreateProvider().Open(Ref.Parse(url, allowFile: false));
 
     // Assert
     Assert.Equal(first.Key, second.Key);
@@ -550,7 +561,7 @@ public class ArchiveProviderTests {
   public async Task Open_UrlDownloadFails_ThrowsArchiveUnavailable() {
     // Act
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
-        () => CreateProvider().Open(Ref.Parse(_url)));
+        () => CreateProvider().Open(Ref.Parse(_url, allowFile: false)));
 
     // Assert
     Assert.Contains("download failed", ex.Message);
@@ -732,6 +743,19 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal(["a.txt"], asset.Keys);
+  }
+
+  [Fact]
+  public async Task OpenAsset_UrlWithFragment_CachesUnderUrlWithoutFragment() {
+    // Arrange: http-<H> hashes the URL without its fragment (protocol/userspace.md §3).
+    _downloads[_url] = Zip(("a.txt", "a"));
+
+    // Act
+    ISource asset = await CreateProvider().OpenAsset([_url + "#part"]);
+
+    // Assert
+    Assert.Equal(["a.txt"], asset.Keys);
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
   }
 
   [Fact]

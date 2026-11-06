@@ -161,7 +161,6 @@ public class McmodServiceTests {
               "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
               "tooth": "{{Lib}}",
               "version": "1.0.0",
-              "info": {},
               "variants": {
                 "": [ {
                   "platform": "server",
@@ -647,8 +646,9 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Uninstall_ByDeletedLocalPath_RemovesPackageInstalledFromIt() {
-    // Arrange
+  public async Task Uninstall_ByDeletedLocalPath_FailsWithoutChanges() {
+    // Arrange: a local path that does not exist is an invalid package argument
+    // (protocol/cli.md §3), which names no installed package (§5.2).
     string path = _ws.AddZip("x.zip", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth4(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
@@ -656,13 +656,27 @@ public class McmodServiceTests {
     });
     await _ws.Service.Install(["x.zip"], _options);
     _ws.Fs.File.Delete(path);
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
 
-    // Act
-    await _ws.Service.Uninstall(["./x.zip"], _options);
+    // Act & Assert
+    await Assert.ThrowsAsync<ArgumentException>(
+        () => _ws.Service.Uninstall(["./x.zip"], _options));
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
 
-    // Assert
-    Assert.Empty((await _ws.Lock()).Packages);
-    Assert.False(_ws.Exists("x.txt"));
+  [Fact]
+  public async Task Uninstall_FileUriArgument_FailsWithoutChanges() {
+    // Arrange: an argument starting with "file://" is invalid (protocol/cli.md §3 rule 1), even
+    // when it is the recorded source.
+    AddLocalDirectory("src", "1.0.0", "x");
+    await _ws.Service.Install(["./src"], _options);
+    string source = Assert.Single((await _ws.Lock()).Packages).Source;
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArgumentException>(
+        () => _ws.Service.Uninstall([source], _options));
+    Assert.Equal(before, WorkspaceSnapshot());
   }
 
   #endregion
@@ -923,6 +937,20 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Update_TwoArgumentsOfOneIdentity_UpdatesItByTheFirst() {
+    // Arrange: protocol/cli.md §5.3 defines no failure for this.
+    AddLibAndApp();
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+
+    // Act
+    await _ws.Service.Update([Lib, $"{Lib}@1.0.0"], _options);
+
+    // Assert
+    LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(("1.1.0", Lib), (lib.Version, lib.Source));
+  }
+
+  [Fact]
   public async Task Update_NotInstalled_Throws() {
     AddLibAndApp();
 
@@ -972,6 +1000,77 @@ public class McmodServiceTests {
   public async Task List_NewWorkspace_IsEmpty() {
     Assert.Empty(await _ws.Service.List());
     Assert.False(_ws.Fs.Directory.Exists(_ws.Path(".lip")));
+  }
+
+  #endregion
+
+  #region Environment
+
+  [Fact]
+  public async Task Install_InstalledPackageWithoutEntryForTheRuntime_FailsWithoutChanges() {
+    // Arrange: lib has an entry for win-x64 only, so it is no candidate for linux-x64
+    // (protocol/workspace.md §3).
+    AddLib("1.0.0");
+    await _ws.Service.Install([Lib], _options);
+    const string any = "example.com/any";
+    _ws.AddTag(any, "1.0.0", new() {
+      ["tooth.json"] = $$"""
+          {
+            "format_version": 4,
+            "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+            "tooth": "{{any}}",
+            "version": "1.0.0",
+            "variants": { "": [ { "platform": "server", "runtime": "linux-x64" } ] }
+          }
+          """,
+    });
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install([any], _options with { Rid = "linux-x64" }));
+
+    // Assert
+    Assert.Contains($"'{Lib}'", ex.Message);
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  #endregion
+
+  #region Versions
+
+  [Fact]
+  public async Task Versions_RemoteRepository_ListsVersionsLowestFirst() {
+    // Arrange
+    AddLib("1.1.0");
+    AddLib("1.0.0");
+
+    // Act
+    IReadOnlyList<string> versions = await _ws.Service.Versions(Lib);
+
+    // Assert
+    Assert.Equal(["1.0.0", "1.1.0"], versions);
+  }
+
+  [Theory]
+  [InlineData("example.com/lib@1.0.0")]
+  [InlineData("file:///lib")]
+  [InlineData("http://example.com/lib")]
+  [InlineData("https://example.com/lib.zip")]
+  [InlineData("lib.zip")]
+  public async Task Versions_NotARemoteRepositoryWithoutRef_Throws(string argument) {
+    // Act & Assert (protocol/cli.md §5.5)
+    await Assert.ThrowsAsync<ArgumentException>(() => _ws.Service.Versions(argument));
+  }
+
+  [Fact]
+  public async Task Versions_ArgumentNamingAnExistingDirectory_IsALocalPathAndThrows() {
+    // Arrange: such an argument is a local path (protocol/cli.md §3 rule 2).
+    AddLib("1.0.0");
+    _ws.Fs.AddDirectory(_ws.Path(Lib));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArgumentException>(() => _ws.Service.Versions(Lib));
   }
 
   #endregion

@@ -59,10 +59,6 @@ public record ToothEntry {
   public bool Contains(LipEnvironment environment) =>
       Platform == environment.Platform && Runtime == environment.Runtime;
 
-  /// Whether a package with this entry is a mod (protocol/package.md §4): it has an asset of
-  /// type "mcmod".
-  public bool IsMod => McmodAsset is not null;
-
   /// The index of the asset of type "mcmod", or null.
   public int? McmodAsset {
     get {

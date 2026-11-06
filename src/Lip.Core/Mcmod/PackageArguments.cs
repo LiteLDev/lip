@@ -46,7 +46,7 @@ public static partial class PackageArguments {
   /// The source of an argument that names a local path (see the class remarks), whether or not
   /// it exists; null when the argument is no local path. A variant follows the last '#' unless
   /// the whole argument names an existing path, so that file names may contain '#'.
-  public static Ref? LocalFileRef(
+  private static Ref? LocalFileRef(
       string argument, string currentDirectory, IFileSystem fileSystem) {
     string path = argument;
     string variant = "";

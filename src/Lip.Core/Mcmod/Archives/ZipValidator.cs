@@ -49,10 +49,6 @@ public static class ZipValidator {
     if (path.StartsWith('/')) {
       return "starts with '/'";
     }
-    // Absolute on Windows, like a leading '/': Path.Combine would discard the target directory.
-    if (path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':') {
-      return "starts with a drive letter";
-    }
     if (path.Split('/').Contains("..")) {
       return "contains a '..' segment";
     }

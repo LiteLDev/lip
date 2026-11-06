@@ -137,9 +137,6 @@ public static partial class ToothParser {
   /// Whether a string is a runtime: a .NET runtime identifier, without wildcards.
   public static bool IsRuntime(string value) => RuntimeRegex().IsMatch(value);
 
-  /// Whether a string is an id (protocol/package.md §1).
-  public static bool IsId(string value) => IdRegex().IsMatch(value);
-
   private static ToothEntry ParseEntryAt(JsonElement element, string path) {
     RequireObject(element, path);
 
@@ -390,9 +387,6 @@ public static partial class ToothParser {
       string reason,
       Exception? inner = null) =>
       new($"Invalid tooth.json at {path}: {reason}.", inner);
-
-  [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*\z")]
-  private static partial Regex IdRegex();
 
   /// A RID: dot- or dash-separated parts of letters, digits and '_' (e.g. "win-x64",
   /// "linux-musl-arm64", "osx.13-arm64").

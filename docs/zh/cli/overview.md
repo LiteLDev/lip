@@ -24,7 +24,6 @@
 - [`lip list`](commands/list.md)：列出已安装包。
 - [`lip migrate`](commands/migrate.md)：把当前目录中的 `tooth.json` 迁移到格式版本 4。
 - [`lip pack`](commands/pack.md)：把一个目录打包为 ZIP 归档。
-- [`lip rpc`](commands/rpc.md)：通过 stdio 提供 JSON-RPC 接口。
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。
 - [`lip versions`](commands/versions.md)：显示某个包的可用版本。

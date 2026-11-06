@@ -21,13 +21,13 @@ public class ToothInstallTests {
   private readonly MockFileSystem _fileSystem = new();
   private readonly Mock<IArchiveProvider> _archiveProvider = new();
   private readonly Mock<IUserInteraction> _userInteraction = new();
-  private readonly McmodInstaller _installer;
+  private readonly SoloInstaller _installer;
   private readonly string _root;
 
   public ToothInstallTests() {
     _userInteraction.Setup(u => u.PrintInfo(It.IsAny<string>())).Returns(Task.CompletedTask);
     _userInteraction.Setup(u => u.PrintWarning(It.IsAny<string>())).Returns(Task.CompletedTask);
-    _installer = new McmodInstaller(_fileSystem, _commandRunner.Object, _userInteraction.Object);
+    _installer = new SoloInstaller(_fileSystem, new McmodInstaller(_fileSystem, _commandRunner.Object, _userInteraction.Object));
     _root = _fileSystem.Path.GetFullPath("ws");
     _fileSystem.Directory.CreateDirectory(_root);
     _archiveProvider.Setup(p => p.OpenAsset(
@@ -103,7 +103,7 @@ public class ToothInstallTests {
     return Candidate.Create(
         new Package(tooth.Tooth, variant, tooth.Version, entry) { Manifest = tooth.Json },
         self,
-        Ref.Parse(tooth.Tooth).WithVariant(variant),
+        Ref.Parse(tooth.Tooth, allowFile: false).WithVariant(variant),
         _archiveProvider.Object);
   }
 

@@ -6,8 +6,6 @@ using Semver;
 namespace Lip.Core.RegressionTests.Git;
 
 public class GitRemoteClientTests {
-  private const long MaxBytesTransferred = 4 * 1024 * 1024;
-
   [Theory]
   [InlineData("https://github.com/LiteLDev/LeviLamina.git", 90)]
   [InlineData("https://github.com/LiteLDev/LegacyScriptEngine.git", 100)]
@@ -35,14 +33,12 @@ public class GitRemoteClientTests {
 
     // Assert
     TestContext.Current.TestOutputHelper?.WriteLine(
-        $"{repo}: {refs.Count} tags, latest {latest.Name}, {tree.Count} files, "
-        + $"{client.BytesReceived} bytes received");
+        $"{repo}: {refs.Count} tags, latest {latest.Name}, {tree.Count} files");
     Assert.True(refs.Count >= minTagCount);
     Assert.All(refs, r => Assert.StartsWith("refs/tags/v", r.Name));
     Assert.Equal(100644, tooth.Mode);
     Assert.NotNull(manifest);
     Assert.True(manifest.RootElement.TryGetProperty("format_version", out _));
-    Assert.True(client.BytesReceived < MaxBytesTransferred);
   }
 
   [Fact]

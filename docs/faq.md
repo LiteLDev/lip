@@ -1,10 +1,5 @@
 # Frequently Asked Questions
 
-### Why does lip provide `lip rpc`?
-[`lip rpc`](cli/commands/rpc.md) is designed for **external integrations**. It allows IDEs, GUIs, and other tools to interact with lip programmatically using a standard JSON-RPC interface.
-
-**Note**: Ordinary `lip` commands such as `lip install` run on their own and **do not** go through `lip rpc`. This keeps the CLI simple, with no extra startup overhead for standard operations.
-
 ### What is `tooth.json`?
 `tooth.json` describes a lip package: its tooth path, its version, and for each variant, platform and RID, the dependencies, the files to place, the mod to install and the commands to run. The current format is format version 4. See [tooth.json](concepts/tooth_json.md).
 

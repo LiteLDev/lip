@@ -1,8 +1,5 @@
 using System.IO.Abstractions;
-using System.Text.Json;
-using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
-using Lip.Core.Migration.PackageManifests;
 
 namespace Lip.Core.Mcmod.Compat;
 
@@ -10,22 +7,13 @@ namespace Lip.Core.Mcmod.Compat;
 /// 4 (lip migrate, protocol/cli.md §5.8), by ToothMigrator.
 ///
 /// - A repository without tooth.json, or whose tooth.json is already of format 4 or cannot be
-///   read, is a failure, and nothing is changed.
-/// - Questions are asked through IUserInteraction.Ask before anything is written.
-/// - tooth.json is written, indented by two spaces, through the hidden temporary file
-///   .tooth.json.tmp and a rename.
+///   read (ToothDocument.Parse), is a failure, and nothing is changed.
+/// - Questions are asked through IUserInteraction.Ask before anything is written, and a result
+///   that is not a valid tooth.json of format 4 is a failure.
+/// - tooth.json is written, indented by two spaces, through a temporary file and a rename.
 ///
-/// The notes are ToothMigrator's, those of ToothMigrator.DroppedFields, and a last one when the
-/// written tooth.json is not valid.
+/// The notes are ToothMigrator's and those of ToothMigrator.DroppedFields.
 public static class RepositoryMigrator {
-  public const string TempFileName = ".tooth.json.tmp";
-
-  private static readonly JsonDocumentOptions _strictJson = new() {
-    AllowDuplicateProperties = false,
-    AllowTrailingCommas = false,
-    CommentHandling = JsonCommentHandling.Disallow,
-  };
-
   public static async Task<IReadOnlyList<string>> Migrate(
       IFileSystem fs, string directory, IUserInteraction ui) {
     string toothPath = fs.Path.Join(directory, ToothFormat.ToothFileName);
@@ -35,53 +23,47 @@ public static class RepositoryMigrator {
           + "directory of the package repository.");
     }
 
-    List<string> notes = [];
-    ToothMigrator.Result result;
-    using (JsonDocument json = await ReadJson(fs, toothPath)) {
-      int? formatVersion = ToothParser.FormatVersion(json.RootElement);
-      if (formatVersion == ToothFormat.FormatVersion) {
-        throw new InvalidOperationException(
-            $"{ToothFormat.ToothFileName} is already of {ToothFormat.FormatVersionKey} "
-            + $"{ToothFormat.FormatVersion}: there is nothing to migrate.");
-      }
-
-      if (formatVersion is not (1 or 2 or 3)) {
-        throw new InvalidOperationException(
-            $"{ToothFormat.ToothFileName} has no {ToothFormat.FormatVersionKey} 1, 2 or 3.");
-      }
-
-      PackageManifest tooth;
-      try {
-        tooth = PackageManifestMigration.Migrate(json);
-      }
-      catch (Exception ex) when (ex is not OperationCanceledException) {
-        // The migration and the format 3 model throw many kinds of exceptions on bad input.
-        throw new InvalidOperationException(
-            $"{ToothFormat.ToothFileName} is not a valid tooth.json of format {formatVersion}: "
-            + ex.Message, ex);
-      }
-
-      result = await ToothMigrator.Migrate(tooth, ui);
-      notes.AddRange(result.Notes);
-      notes.AddRange(ToothMigrator.DroppedFields(json.RootElement, tooth));
+    ToothDocument document;
+    try {
+      document = ToothDocument.Parse(await fs.File.ReadAllBytesAsync(toothPath));
     }
+    catch (ToothFormatException ex) {
+      throw new InvalidOperationException(
+          $"Cannot read {ToothFormat.ToothFileName}: {ex.Message}", ex);
+    }
+
+    if (!document.IsLegacy) {
+      throw new InvalidOperationException(
+          $"{ToothFormat.ToothFileName} is already of {ToothFormat.FormatVersionKey} "
+          + $"{ToothFormat.FormatVersion}: there is nothing to migrate.");
+    }
+
+    ToothMigrator.Result result = await ToothMigrator.Migrate(document.Legacy!, ui);
+    List<string> notes = [
+      .. result.Notes, .. ToothMigrator.DroppedFields(document.Json, document.Legacy!),
+    ];
 
     byte[] bytes = ToothMigrator.Serialize(result.Document);
-    if (ToothMigrator.ValidationNote(bytes) is string validation) {
-      notes.Add(validation);
+    try {
+      _ = ToothParser.Parse(bytes);
+    }
+    catch (ToothFormatException ex) {
+      throw new InvalidOperationException(
+          $"Cannot migrate {ToothFormat.ToothFileName}: the result is not a valid tooth.json of "
+          + $"format {ToothFormat.FormatVersion}: {ex.Message}", ex);
     }
 
-    string tempPath = fs.Path.Join(directory, TempFileName);
+    // A temporary file of a new name, renamed over tooth.json, leaves it unchanged when writing
+    // fails. It takes the attributes of tooth.json, so a hidden one stays hidden.
+    string tempPath = fs.Path.Join(directory, $".tooth.json.{Guid.NewGuid():N}.tmp");
     try {
-      // A leftover of an interrupted migration; on Windows a hidden file cannot be overwritten.
-      if (fs.File.Exists(tempPath)) {
-        fs.File.Delete(tempPath);
+      using (Stream stream = fs.File.Open(tempPath, FileMode.CreateNew, FileAccess.Write)) {
+        await stream.WriteAsync(bytes);
       }
 
-      await fs.File.WriteAllBytesAsync(tempPath, bytes);
-      fs.SetHidden(tempPath, true);
+      fs.File.SetAttributes(
+          tempPath, fs.File.GetAttributes(toothPath) & ~FileAttributes.ReadOnly);
       fs.File.Move(tempPath, toothPath, overwrite: true);
-      fs.SetHidden(toothPath, false);
     }
     finally {
       if (fs.File.Exists(tempPath)) {
@@ -90,15 +72,5 @@ public static class RepositoryMigrator {
     }
 
     return notes;
-  }
-
-  private static async Task<JsonDocument> ReadJson(IFileSystem fs, string path) {
-    try {
-      return JsonDocument.Parse(await fs.File.ReadAllBytesAsync(path), _strictJson);
-    }
-    catch (JsonException ex) {
-      throw new InvalidOperationException(
-          $"Cannot read {ToothFormat.ToothFileName}: {ex.Message}", ex);
-    }
   }
 }

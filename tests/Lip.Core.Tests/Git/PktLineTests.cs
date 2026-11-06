@@ -8,13 +8,16 @@ public class PktLineTests {
   public async Task WriteAndRead_RoundTripsAllPacketTypes() {
     // Arrange
     byte[] binary = [1, 0, 255, 10];
-    byte[] bytes = new PktLineWriter()
-        .WriteLine("command=ls-refs")
-        .WriteDelimiter()
-        .WriteData(binary)
-        .WriteResponseEnd()
-        .WriteFlush()
-        .ToArray();
+    // Servers end v2 responses with a response-end packet, which clients never write.
+    byte[] bytes = [
+        .. new PktLineWriter()
+            .WriteLine("command=ls-refs")
+            .WriteDelimiter()
+            .WriteData(binary)
+            .ToArray(),
+        .. "0002"u8.ToArray(),
+        .. new PktLineWriter().WriteFlush().ToArray(),
+    ];
     PktLineReader reader = new(new MemoryStream(bytes));
 
     // Act & Assert
@@ -27,7 +30,6 @@ public class PktLineTests {
     Assert.Equal(PktLineType.ResponseEnd, await reader.Read());
     Assert.Equal(PktLineType.Flush, await reader.Read());
     Assert.Equal(PktLineType.EndOfStream, await reader.Read());
-    Assert.Equal(bytes.Length, reader.BytesRead);
   }
 
   [Fact]

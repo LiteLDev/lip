@@ -135,32 +135,13 @@ public class ModuleTests {
   }
 
   [Theory]
-  [InlineData("ascii.com/abcdefghijklmnopqrstuvwxyz.-/~_0123456789", "ascii.com/abcdefghijklmnopqrstuvwxyz.-/~_0123456789")]
-  [InlineData("github.com/GoogleCloudPlatform/omega", "github.com/!google!cloud!platform/omega")]
-  public void EscapePath_ValidInput_ReturnsExpectedOutput(string path, string expectedEsc) {
+  [InlineData("example.com/a\uD800b")]
+  [InlineData("example.com/\uDC00")]
+  public void CheckPath_LoneSurrogate_ReturnsError(string path) {
     // Act.
-    (string? esc, Exception? err) = Module.EscapePath(path);
+    Exception? err = Module.CheckPath(path);
 
-    // Assert.
-    Assert.Null(err);
-    Assert.Equal(expectedEsc, esc);
-  }
-
-  [Theory]
-  [MemberData(nameof(CheckPathTests))]
-#pragma warning disable xUnit1026 // Theory methods should use all of their parameters
-  public void EscapePath_InvalidPaths_ReturnsError(string path, bool ok, bool importOK, bool fileOK)
-#pragma warning restore xUnit1026 // Theory methods should use all of their parameters
-  {
-    // We want to reuse the CheckPath tests, but we need to skip the valid paths.
-    if (ok) {
-      return;
-    }
-
-    // Act.
-    (string _, Exception? err) = Module.EscapePath(path);
-
-    // Assert.
+    // Assert: a string that is not valid UTF-8 in Go is not a module path.
     Assert.NotNull(err);
   }
 

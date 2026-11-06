@@ -120,6 +120,16 @@ public static partial class PackageManifestMigration {
       return Scriban.Template.Parse(converted).Render(model);
     }
 
+    List<PackageManifestAssetPlacement> Placements(List<PackageManifestV2Place> places) => [
+      .. places.Select(pl => new PackageManifestAssetPlacement {
+        Src = RenderTemplate(pl.Src).TrimEnd('*'),
+        Dst = RenderTemplate(pl.Dest),
+        Type = pl.Src.EndsWith('*')
+              ? PackageManifestAssetPlacement.PlacementType.Directory
+              : PackageManifestAssetPlacement.PlacementType.File
+      }),
+    ];
+
     PackageManifest manifest = new() {
       Path = manifestV2.Tooth,
       Version = SemVersion.Parse(manifestV2.Version, SemVersionStyles.Any),
@@ -132,200 +142,95 @@ public static partial class PackageManifestMigration {
       Variants = []
     };
 
-    switch (manifestV2.Platforms) {
-      case not null: {
-          foreach (PackageManifestV2Platform p in manifestV2.Platforms) {
-            string prefix = p.GOOS switch {
-              "windows" => "win",
-              "darwin" => "osx",
-              "linux" => "linux",
-              "ios" => "ios",
-              "android" => "android",
-              _ => throw new PlatformNotSupportedException($"Unsupported GOOS: {p.GOOS}")
-            };
-
-            string suffix = p.GOARCH switch {
-              "amd64" => "x64",
-              "386" => "x86",
-              "arm64" => "arm64",
-              "arm" => "arm",
-              "loong64" => "loongarch64",
-              null => "*",
-              _ => throw new PlatformNotSupportedException($"Unsupported GOARCH: {p.GOARCH}")
-            };
-
-            Dictionary<PackageId, SemVersionRange> dependencies = [];
-            if (p.Dependencies is not null || manifestV2.Dependencies is not null) {
-              foreach (KeyValuePair<string, string> kvp in p.Dependencies ?? manifestV2.Dependencies!) {
-                try {
-                  dependencies[PackageId.Parse(kvp.Key)] = SemVersionRange.ParseNpm(kvp.Value);
-                }
-                catch {
-                  // Ignore invalid dependencies
-                }
-              }
-            }
-
-            List<PackageManifestAsset> assets = [];
-            string? assetUrl = p.AssetUrl ?? manifestV2.AssetUrl;
-            if (assetUrl is not null) {
-              string url = RenderTemplate(assetUrl);
-              PackageManifestAsset.AssetType type = url.Split('.').Last() switch {
-                "tar" => PackageManifestAsset.AssetType.Tar,
-                "tgz" => PackageManifestAsset.AssetType.Tgz,
-                "gz" => PackageManifestAsset.AssetType.Tgz,
-                "zip" => PackageManifestAsset.AssetType.Zip,
-                _ => PackageManifestAsset.AssetType.Uncompressed
-              };
-
-              List<PackageManifestAssetPlacement> placements = [];
-              List<PackageManifestV2Place>? places = p.Files?.Place ?? manifestV2.Files?.Place;
-              if (places is not null) {
-                foreach (PackageManifestV2Place pl in places) {
-                  string src = RenderTemplate(pl.Src)?.TrimEnd('*') ?? "";
-                  string dst = RenderTemplate(pl.Dest) ?? "";
-                  placements.Add(new PackageManifestAssetPlacement {
-                    Src = src,
-                    Dst = dst,
-                    Type = pl.Src.EndsWith('*')
-                          ? PackageManifestAssetPlacement.PlacementType.Directory
-                          : PackageManifestAssetPlacement.PlacementType.File
-                  });
-                }
-              }
-
-              assets.Add(new PackageManifestAsset {
-                Type = type,
-                Urls = [new Flurl.Url(url)],
-                Placements = placements
-              });
-            }
-
-            PackageManifestScripts scripts = new();
-            PackageManifestV2Commands? cmds = p.Commands ?? manifestV2.Commands;
-            if (cmds is not null) {
-              scripts = new PackageManifestScripts {
-                PreInstall = cmds.PreInstall?.Select(s => RenderTemplate(s)).ToList() ?? [],
-                PostInstall = cmds.PostInstall?.Select(s => RenderTemplate(s)).ToList() ?? [],
-                PreUninstall = cmds.PreUninstall?.Select(s => RenderTemplate(s)).ToList() ?? [],
-                PostUninstall = cmds.PostUninstall?.Select(s => RenderTemplate(s)).ToList() ?? []
-              };
-            }
-
-            manifest.Variants.Add(new PackageManifestVariant {
-              Platform = $"{prefix}-{suffix}",
-              Dependencies = dependencies,
-              Assets = assets,
-              PreserveFiles = (p.Files?.Preserve ?? manifestV2.Files?.Preserve)?.Select(s => RenderTemplate(s)).Select(s => Glob.Parse(s)).ToList() ?? [],
-              RemoveFiles = (p.Files?.Remove ?? manifestV2.Files?.Remove)?.Select(s => RenderTemplate(s)).Select(s => Glob.Parse(s)).ToList() ?? [],
-              Scripts = scripts
-            });
-          }
-
-          break;
+    // Without platforms, the root fields make one variant without a platform, whose ranges are
+    // read as SemVer ranges and whose places, without an asset_url, are of a self asset; a platform
+    // uses its own fields and else the root ones, with ranges read as npm ranges.
+    IEnumerable<PackageManifestV2Platform?> platforms =
+        (IEnumerable<PackageManifestV2Platform?>?)manifestV2.Platforms ?? [null];
+    foreach (PackageManifestV2Platform? p in platforms) {
+      Dictionary<PackageId, SemVersionRange> dependencies = [];
+      foreach (KeyValuePair<string, string> kvp in
+          p?.Dependencies ?? manifestV2.Dependencies ?? []) {
+        try {
+          dependencies[PackageId.Parse(kvp.Key)] = p is null
+              ? SemVersionRange.Parse(kvp.Value)
+              : SemVersionRange.ParseNpm(kvp.Value);
         }
-
-      default: {
-          Dictionary<PackageId, SemVersionRange> dependencies = [];
-          if (manifestV2.Dependencies is not null) {
-            foreach (KeyValuePair<string, string> kvp in manifestV2.Dependencies) {
-              try {
-                dependencies[PackageId.Parse(kvp.Key)] = SemVersionRange.Parse(kvp.Value);
-              }
-              catch {
-                // Ignore invalid dependencies
-              }
-            }
-          }
-
-          List<PackageManifestAsset> assets = [];
-          switch (manifestV2.AssetUrl) {
-            case not null: {
-                string url = RenderTemplate(manifestV2.AssetUrl);
-                PackageManifestAsset.AssetType type = url.Split('.').Last() switch {
-                  "tar" => PackageManifestAsset.AssetType.Tar,
-                  "tgz" => PackageManifestAsset.AssetType.Tgz,
-                  "gz" => PackageManifestAsset.AssetType.Tgz,
-                  "zip" => PackageManifestAsset.AssetType.Zip,
-                  _ => PackageManifestAsset.AssetType.Uncompressed
-                };
-
-                List<PackageManifestAssetPlacement> placements = [];
-                if (manifestV2.Files?.Place is not null) {
-                  foreach (PackageManifestV2Place pl in manifestV2.Files.Place) {
-                    string src = RenderTemplate(pl.Src)?.TrimEnd('*') ?? "";
-                    string dst = RenderTemplate(pl.Dest) ?? "";
-                    placements.Add(new PackageManifestAssetPlacement {
-                      Src = src,
-                      Dst = dst,
-                      Type = pl.Src.EndsWith('*')
-                            ? PackageManifestAssetPlacement.PlacementType.Directory
-                            : PackageManifestAssetPlacement.PlacementType.File
-                    });
-                  }
-                }
-
-                assets.Add(new PackageManifestAsset {
-                  Type = type,
-                  Urls = [new Flurl.Url(url)],
-                  Placements = placements
-                });
-                break;
-              }
-
-            default: {
-                List<PackageManifestAssetPlacement> placements = [];
-                if (manifestV2.Files?.Place is not null) {
-                  foreach (PackageManifestV2Place pl in manifestV2.Files.Place) {
-                    string src = RenderTemplate(pl.Src)?.TrimEnd('*') ?? "";
-                    string dst = RenderTemplate(pl.Dest) ?? "";
-                    placements.Add(new PackageManifestAssetPlacement {
-                      Src = src,
-                      Dst = dst,
-                      Type = pl.Src.EndsWith('*')
-                            ? PackageManifestAssetPlacement.PlacementType.Directory
-                            : PackageManifestAssetPlacement.PlacementType.File
-                    });
-                  }
-
-                  assets.Add(new PackageManifestAsset {
-                    Type = PackageManifestAsset.AssetType.Self,
-                    Placements = placements
-                  });
-                }
-
-                break;
-              }
-          }
-
-          PackageManifestScripts scripts = new();
-          if (manifestV2.Commands is not null) {
-            scripts = new PackageManifestScripts {
-              PreInstall = manifestV2.Commands.PreInstall?.Select(s => RenderTemplate(s)).ToList() ?? [],
-              PostInstall = manifestV2.Commands.PostInstall?.Select(s => RenderTemplate(s)).ToList() ?? [],
-              PreUninstall = manifestV2.Commands.PreUninstall?.Select(s => RenderTemplate(s)).ToList() ?? [],
-              PostUninstall = manifestV2.Commands.PostUninstall?.Select(s => RenderTemplate(s)).ToList() ?? []
-            };
-          }
-
-          manifest.Variants.Add(new PackageManifestVariant {
-            Dependencies = dependencies,
-            Assets = assets,
-            PreserveFiles = manifestV2.Files?.Preserve?.Select(s => RenderTemplate(s)).Select(s => Glob.Parse(s)).ToList() ?? [],
-            RemoveFiles = manifestV2.Files?.Remove?.Select(s => RenderTemplate(s)).Select(s => Glob.Parse(s)).ToList() ?? [],
-            Scripts = scripts
-          });
-          break;
+        catch {
+          // Ignore invalid dependencies
         }
+      }
+
+      List<PackageManifestV2Place>? places = p?.Files?.Place ?? manifestV2.Files?.Place;
+      List<PackageManifestAsset> assets = [];
+      string? assetUrl = p?.AssetUrl ?? manifestV2.AssetUrl;
+      if (assetUrl is not null) {
+        string url = RenderTemplate(assetUrl);
+        assets.Add(new PackageManifestAsset {
+          Type = url.Split('.').Last() switch {
+            "tar" => PackageManifestAsset.AssetType.Tar,
+            "tgz" => PackageManifestAsset.AssetType.Tgz,
+            "gz" => PackageManifestAsset.AssetType.Tgz,
+            "zip" => PackageManifestAsset.AssetType.Zip,
+            _ => PackageManifestAsset.AssetType.Uncompressed
+          },
+          Urls = [new Flurl.Url(url)],
+          Placements = Placements(places ?? [])
+        });
+      } else if (p is null && places is not null) {
+        assets.Add(new PackageManifestAsset {
+          Type = PackageManifestAsset.AssetType.Self,
+          Placements = Placements(places)
+        });
+      }
+
+      PackageManifestV2Commands? cmds = p?.Commands ?? manifestV2.Commands;
+      manifest.Variants.Add(new PackageManifestVariant {
+        Platform = p is null ? "" : PlatformOf(p),
+        Dependencies = dependencies,
+        Assets = assets,
+        PreserveFiles = (p?.Files?.Preserve ?? manifestV2.Files?.Preserve)?.Select(s => Glob.Parse(RenderTemplate(s))).ToList() ?? [],
+        RemoveFiles = (p?.Files?.Remove ?? manifestV2.Files?.Remove)?.Select(s => Glob.Parse(RenderTemplate(s))).ToList() ?? [],
+        Scripts = new PackageManifestScripts {
+          PreInstall = cmds?.PreInstall?.Select(RenderTemplate).ToList() ?? [],
+          PostInstall = cmds?.PostInstall?.Select(RenderTemplate).ToList() ?? [],
+          PreUninstall = cmds?.PreUninstall?.Select(RenderTemplate).ToList() ?? [],
+          PostUninstall = cmds?.PostUninstall?.Select(RenderTemplate).ToList() ?? []
+        }
+      });
     }
 
-    if (manifest.Variants.Any(variant =>
-            !string.IsNullOrEmpty(variant.Platform) &&
-            manifest.Variants.Any(s => s.Platform is not null && s.Platform.Contains('*')))) {
-      manifest.Variants.Insert(0, new PackageManifestVariant { Platform = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier });
+    // lip v0.37.0 added an empty variant for its own runtime when a platform is a pattern, so that
+    // label "" has a variant for every runtime: an empty variant without a platform, merged for
+    // the runtime being read, does the same.
+    if (manifest.Variants.Any(v => v.Platform.Contains('*'))) {
+      manifest.Variants.Insert(0, new PackageManifestVariant());
     }
 
     return manifest;
+  }
+
+  private static string PlatformOf(PackageManifestV2Platform p) {
+    string prefix = p.GOOS switch {
+      "windows" => "win",
+      "darwin" => "osx",
+      "linux" => "linux",
+      "ios" => "ios",
+      "android" => "android",
+      _ => throw new PlatformNotSupportedException($"Unsupported GOOS: {p.GOOS}")
+    };
+
+    string suffix = p.GOARCH switch {
+      "amd64" => "x64",
+      "386" => "x86",
+      "arm64" => "arm64",
+      "arm" => "arm",
+      "loong64" => "loongarch64",
+      null => "*",
+      _ => throw new PlatformNotSupportedException($"Unsupported GOARCH: {p.GOARCH}")
+    };
+
+    return $"{prefix}-{suffix}";
   }
 
   private static PackageManifest ParseV3(JsonDocument jsonDocument) {

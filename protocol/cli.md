@@ -26,7 +26,7 @@ These exit with code 0:
 
 Every command's workspace is the current working directory, to which relative paths in arguments are relative.
 
-- A result is written to standard output, a message to standard error; `lip rpc` writes to standard output only as Section 5.12 defines.
+- A result is written to standard output, a message to standard error.
 - With `--json`, standard output receives only the result, as JSON [RFC8259] of the shape the command defines, and a line break. Without it, a result's layout is not defined.
 - The result of `view` is always written as with `--json`.
 
@@ -208,31 +208,3 @@ lip pack [<DIR>] -o, --output <FILE>
 ```
 
 Writes to `<FILE>`, replacing it, a ZIP archive holding every regular file below `<DIR>` (default: the current directory) at its path relative to `<DIR>`, except `<FILE>` itself and, at the root of `<DIR>`, everything below `.git/` and `.lip/`. Such an archive can be an asset of type `"mcmod"`.
-
-### 5.12. `lip rpc`
-
-```
-lip rpc
-```
-
-Serves the commands over JSON-RPC 2.0 [JSON-RPC] on standard input and output, each JSON-RPC message preceded by a `Content-Length` header as in the base protocol of [LSP].
-
-The server has one method for each command other than `pack` and `rpc`, named as the command in PascalCase without spaces. Its parameters are the arguments and options of the command, by position in the order below or by name:
-
-| Method | Parameters |
-|---|---|
-| `Install` | `packages`, `dryRun`, `ignoreScripts`, `noDependencies`, `rid` |
-| `Uninstall` | `packages`, `dryRun`, `ignoreScripts`, `noDependencies`, `rid` |
-| `Update` | `packages`, `dryRun`, `ignoreScripts`, `rid` |
-| `Versions`, `View` | `package` |
-| `ConfigGet`, `ConfigDelete` | `key` |
-| `ConfigSet` | `key`, `value` |
-| `List`, `Init`, `Migrate`, `CacheClean`, `ConfigList` | none |
-
-`packages` is an array of strings, `dryRun`, `ignoreScripts` and `noDependencies` are booleans, and the others are strings. `rid` is optional: `null`, `""` or its omission means the runtime is determined as in Section 4. The `packages` of `Update` MAY be empty.
-
-The result of a method is the result of the command, as the command writes it with `--json`, or `null` when the command has none. The result of `List` is an array of two arrays of strings: the explicitly installed packages, then the dependency packages.
-
-A method that fails responds with a JSON-RPC error whose `message` describes the cause, and leaves everything as the failing command would. `Init` and `Migrate` ask no questions: where `lip init` or `lip migrate` would ask, the method fails, naming the value. The client MAY cancel a pending JSON-RPC request with the notification `$/cancelRequest` and parameters `{ "id": <request id> }`; a cancelled `Install`, `Uninstall` or `Update` undoes its changes and responds with an error. Requests MAY be sent before earlier ones are answered; a workspace operation that finds the workspace lock held, including by another request, fails at once.
-
-The server sends the messages to the client as JSON-RPC requests, which the client answers with `null`: `PrintInfo(message)`, `PrintSuccess(message)`, `PrintWarning(message)`, `PrintError(message)` and `ReportProgress(id, message, percentage)`.

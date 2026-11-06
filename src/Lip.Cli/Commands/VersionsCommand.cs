@@ -7,12 +7,12 @@ using Spectre.Console.Cli;
 namespace Lip.Cli.Commands;
 
 [Description("Shows available versions for a package")]
-public class VersionsCommand(ILipClient lipClient) : AsyncCommand<VersionsCommand.Settings> {
+public class VersionsCommand(LipClient lipClient) : AsyncCommand<VersionsCommand.Settings> {
   private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
     WriteIndented = true
   };
 
-  private readonly ILipClient _lipClient = lipClient;
+  private readonly LipClient _lipClient = lipClient;
 
   public class Settings : CommandSettings {
     [CommandArgument(0, "<PACKAGE>")]

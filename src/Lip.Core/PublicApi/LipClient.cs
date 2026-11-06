@@ -2,7 +2,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Flurl;
-using Lip.Core.Entities;
 using Lip.Core.Git;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
@@ -13,63 +12,32 @@ using Lip.Core.Services;
 
 namespace Lip.Core.PublicApi;
 
-public interface ILipClient {
-  Task CacheClean();
-  Task ConfigDelete(string key);
-  Task<string> ConfigGet(string key);
-  Task<IDictionary<string, string>> ConfigList();
-  Task ConfigSet(string key, string value);
-  Task Init();
-  Task Install(
-      IEnumerable<string> packages,
-      bool dryRun,
-      bool ignoreScripts,
-      bool noDependencies,
-      string? rid = null,
-      CancellationToken cancellationToken = default);
-  Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List();
-  Task Migrate();
-  Task Uninstall(
-      IEnumerable<string> packages,
-      bool dryRun,
-      bool ignoreScripts,
-      bool noDependencies,
-      string? rid = null,
-      CancellationToken cancellationToken = default);
-  Task Update(
-      IEnumerable<string> packages,
-      bool dryRun,
-      bool ignoreScripts,
-      string? rid = null,
-      CancellationToken cancellationToken = default);
-  Task<IEnumerable<string>> Versions(string package);
-  Task<string> View(string package);
-}
-
-public class LipClient(
+/// The commands of lip (protocol/cli.md §5), other than pack, over the services that carry them
+/// out.
+public sealed class LipClient(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
     ICacheService cacheService,
-    IConfigService configService,
-    McmodService mcmodService) : ILipClient, IDisposable {
+    ConfigService configService,
+    McmodService mcmodService) : IDisposable {
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;
   private readonly ICacheService _cacheService = cacheService;
-  private readonly IConfigService _configService = configService;
+  private readonly ConfigService _configService = configService;
   private readonly McmodService _mcmodService = mcmodService;
 
-  // Resources created by Create() and owned by this client.
-  private readonly List<IDisposable> _ownedResources = [];
+  // Created by Create() and owned by this client.
+  private GitRemoteClient? _gitRemoteClient;
 
-  public static async Task<LipClient> Create(
-      IUserInteraction userInteraction, IFileSystem? fileSystem = null) {
-    fileSystem ??= new FileSystem();
+  public static async Task<LipClient> Create(IUserInteraction userInteraction) {
+    FileSystem fileSystem = new();
 
     ConfigService configService = new(fileSystem, userInteraction);
 
     CacheService cacheService = new(fileSystem, userInteraction);
     FileDownloader fileDownloader = new(userInteraction);
-    Url? githubProxy = await configService.Get<Url?>("github_proxy");
+    string? githubProxyValue = await configService.GetGithubProxy();
+    Url? githubProxy = githubProxyValue is null ? null : Url.Parse(githubProxyValue);
     GitRemoteClient gitRemoteClient = new(githubProxy);
 
     CommandRunner commandRunner = new();
@@ -84,21 +52,14 @@ public class LipClient(
         new ArchiveReader(),
         new McmodInstaller(fileSystem, commandRunner, userInteraction));
 
-    LipClient lipClient = new(
-        fileSystem, userInteraction, cacheService, configService, mcmodService);
-    lipClient._ownedResources.Add(gitRemoteClient);
-
-    return lipClient;
+    return new(fileSystem, userInteraction, cacheService, configService, mcmodService) {
+      _gitRemoteClient = gitRemoteClient,
+    };
   }
 
-  // Implemented explicitly so that RPC hosts exposing the client's public methods (lip rpc)
-  // do not expose Dispose.
-  void IDisposable.Dispose() {
-    foreach (IDisposable resource in _ownedResources) {
-      resource.Dispose();
-    }
-    _ownedResources.Clear();
-    GC.SuppressFinalize(this);
+  public void Dispose() {
+    _gitRemoteClient?.Dispose();
+    _gitRemoteClient = null;
   }
 
   public async Task CacheClean() {

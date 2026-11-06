@@ -22,24 +22,25 @@ public class MountSourceTests {
   [Fact]
   public void Keys_SeveralSources_AreUnderTheirMountsInOrder() {
     // Arrange
-    MountSource source = new([("0", Source("b", "a/c").Object), ("1", Source("").Object)]);
+    MountSource source = new([("0", Source("b", "a/c").Object), ("1", Source("d").Object)]);
 
     // Act
     List<string> keys = [.. source.Keys];
 
     // Assert
-    Assert.Equal(["0/b", "0/a/c", "1"], keys);
+    Assert.Equal(["0/b", "0/a/c", "1/d"], keys);
   }
 
   [Fact]
   public async Task OpenRead_MountedKey_ReadsFromItsSource() {
     // Arrange
-    MountSource source = new([("0", Source("a/c").Object), ("1", Source("").Object)]);
+    MountSource source = new([("0", Source("a/c").Object), ("1", Source("d").Object)]);
 
     // Act & Assert
     Assert.Equal("<a/c>", await Read(source, "0/a/c"));
-    Assert.Equal("<>", await Read(source, "1"));
+    Assert.Equal("<d>", await Read(source, "1/d"));
     await Assert.ThrowsAsync<ArgumentException>(() => source.OpenRead("2/x"));
+    await Assert.ThrowsAsync<ArgumentException>(() => source.OpenRead("1"));
   }
 
   [Fact]
@@ -60,20 +61,5 @@ public class MountSourceTests {
     Assert.Equal(["a", "b"], firstKeys);
     first.Verify(s => s.Prefetch(It.IsAny<IEnumerable<string>>()), Times.Once);
     second.Verify(s => s.Prefetch(It.Is<IEnumerable<string>>(k => k.SequenceEqual(new[] { "c" }))));
-  }
-
-  [Theory]
-  [InlineData("")]
-  [InlineData("a/b")]
-  public void Constructor_InvalidMount_Throws(string mount) {
-    // Act & Assert
-    Assert.Throws<ArgumentException>(() => new MountSource([(mount, Source().Object)]));
-  }
-
-  [Fact]
-  public void Constructor_DuplicateMount_Throws() {
-    // Act & Assert
-    Assert.Throws<ArgumentException>(
-        () => new MountSource([("0", Source().Object), ("0", Source().Object)]));
   }
 }

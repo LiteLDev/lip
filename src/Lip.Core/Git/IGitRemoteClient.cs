@@ -7,7 +7,7 @@ public record GitRemoteRef(string Name, string ObjectId, string? PeeledObjectId)
 public record GitTreeEntry(string Path, int Mode, string ObjectId) {
   /// Whether the entry is a regular (possibly executable) file rather than a symlink. Mode holds
   /// git's octal mode digits read as a decimal number, e.g. 100644, 100755 or 120000.
-  public bool IsRegularFile => Mode is 100644 or 100755 or 100664;
+  public bool IsRegularFile => Mode is 100644 or 100755;
 }
 
 public interface IGitRemoteClient {

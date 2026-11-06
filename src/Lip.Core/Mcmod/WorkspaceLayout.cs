@@ -68,17 +68,16 @@ public class WorkspaceLayout(
       string Mods,
       string Plugins,
       bool CreateMods,
-      bool RenamePluginsToMods,
       IReadOnlyList<string> MovedEntries,
       bool DeletePlugins,
       bool LinkPlugins) {
     /// Whether plugins is a directory now, whose entries end up in mods.
-    public bool PluginsIsDirectory => RenamePluginsToMods || DeletePlugins;
+    public bool PluginsIsDirectory => DeletePlugins;
   }
 
   /// Checks the layout before a mutating operation and returns what makes it right, without
   /// changing anything:
-  /// - mods is created when missing;
+  /// - mods is created when missing; a mods that is a link is an error;
   /// - a missing plugins becomes a link to mods;
   /// - a plugins that links elsewhere is an error;
   /// - the entries of a plugins directory move into mods, then plugins becomes a link. An entry
@@ -88,10 +87,12 @@ public class WorkspaceLayout(
     string mods = _fs.Path.Join(root, ModsDirectory);
     string plugins = _fs.Path.Join(root, PluginsDirectory);
 
-    if (_fs.File.Exists(mods) || _linker.GetLinkTarget(mods) is not null) {
-      throw new WorkspaceLayoutException(
-          $"'{mods}' must be a directory, but it is a file or a link.");
+    // A mods link would let writes under mods/ land outside the workspace.
+    if (_linker.GetLinkTarget(mods) is not null) {
+      throw new WorkspaceLayoutException($"'{mods}' must be a directory, but it is a link.");
     }
+
+    bool createMods = !_fs.Directory.Exists(mods);
 
     if (_linker.GetLinkTarget(plugins) is string target) {
       string resolved = _fs.Path.GetFullPath(_fs.Path.Combine(root, StripNtPrefix(target)));
@@ -102,7 +103,7 @@ public class WorkspaceLayout(
             + " link, then try again.");
       }
 
-      return new LayoutPlan(mods, plugins, !_fs.Directory.Exists(mods), false, [], false, false);
+      return new LayoutPlan(mods, plugins, createMods, [], false, false);
     }
 
     if (_fs.File.Exists(plugins)) {
@@ -111,12 +112,7 @@ public class WorkspaceLayout(
     }
 
     if (!_fs.Directory.Exists(plugins)) {
-      return new LayoutPlan(mods, plugins, !_fs.Directory.Exists(mods), false, [], false, true);
-    }
-
-    if (!_fs.Directory.Exists(mods)) {
-      // Nothing to merge with: one rename moves everything.
-      return new LayoutPlan(mods, plugins, false, true, [], false, true);
+      return new LayoutPlan(mods, plugins, createMods, [], false, true);
     }
 
     List<string> entries = [.. _fs.Directory.EnumerateFileSystemEntries(plugins)];
@@ -134,7 +130,7 @@ public class WorkspaceLayout(
           + " try again.");
     }
 
-    return new LayoutPlan(mods, plugins, false, false, entries, true, true);
+    return new LayoutPlan(mods, plugins, createMods, entries, true, true);
   }
 
   /// Reports what applying the plan would do.
@@ -143,9 +139,7 @@ public class WorkspaceLayout(
       await DryRun($"create the directory {ModsDirectory}/");
     }
 
-    foreach (string entry in plan.RenamePluginsToMods
-        ? _fs.Directory.EnumerateFileSystemEntries(plan.Plugins)
-        : plan.MovedEntries) {
+    foreach (string entry in plan.MovedEntries) {
       string name = _fs.Path.GetFileName(entry);
       await DryRun($"move {PluginsDirectory}/{name} to {ModsDirectory}/{name}");
     }
@@ -161,10 +155,6 @@ public class WorkspaceLayout(
     try {
       if (plan.CreateMods) {
         transaction.CreateDirectory(plan.Mods);
-      }
-
-      if (plan.RenamePluginsToMods) {
-        transaction.Move(plan.Plugins, plan.Mods);
       }
 
       foreach (string entry in plan.MovedEntries) {
@@ -184,40 +174,13 @@ public class WorkspaceLayout(
           $"Cannot make '{plan.Plugins}' a link to '{plan.Mods}': {ex.Message}", ex);
     }
 
-    if (plan.RenamePluginsToMods || plan.MovedEntries.Count > 0) {
+    if (plan.MovedEntries.Count > 0) {
       await _ui.PrintInfo($"Moved the contents of {PluginsDirectory}/ into {ModsDirectory}/");
     }
 
     if (plan.LinkPlugins) {
       await _ui.PrintInfo($"Linked {PluginsDirectory}/ to {ModsDirectory}/");
     }
-  }
-
-  /// Makes the layout right on its own (see Plan), or reports what it would do in a dry run.
-  /// When a step fails, the earlier steps are undone.
-  public async Task Prepare(string workspaceRoot, bool dryRun) {
-    LayoutPlan plan = Plan(workspaceRoot);
-    if (dryRun) {
-      await ReportDryRun(plan);
-      return;
-    }
-
-    using WorkspaceTransaction transaction = new(_fs);
-    try {
-      await Apply(plan, transaction);
-    }
-    catch (WorkspaceLayoutException ex) {
-      IReadOnlyList<string> errors = transaction.Rollback();
-      if (errors.Count == 0) {
-        throw;
-      }
-
-      throw new WorkspaceLayoutException(
-          ex.Message + " Undoing failed: " + string.Join("; ", errors), ex.InnerException);
-    }
-
-    transaction.Commit();
-    transaction.Complete();
   }
 
   private Task DryRun(string action) => _ui.PrintInfo($"Dry run: would {action}");

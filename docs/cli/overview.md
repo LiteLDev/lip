@@ -24,7 +24,6 @@ Some commands accept `--json` to print their result as JSON: [`config get`](comm
 -   [`lip list`](commands/list.md): List installed packages.
 -   [`lip migrate`](commands/migrate.md): Migrate the `tooth.json` in the current directory to format version 4.
 -   [`lip pack`](commands/pack.md): Pack a directory into a ZIP archive.
--   [`lip rpc`](commands/rpc.md): Serve the JSON-RPC interface over stdio.
 -   [`lip uninstall`](commands/uninstall.md): Uninstall packages.
 -   [`lip update`](commands/update.md): Update packages.
 -   [`lip versions`](commands/versions.md): Show available versions for a package.

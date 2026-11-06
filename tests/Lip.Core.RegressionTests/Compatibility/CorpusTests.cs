@@ -21,7 +21,7 @@ namespace Lip.Core.RegressionTests.Compatibility;
 ///   tooth.json at the tag declares the variant only for other platforms (not installable on
 ///   win-x64, with or without lip v4);
 /// - only the root document is downloaded while resolving;
-/// - GraphSolver.Solve of that single request succeeds (entries whose dependencies cannot be
+/// - GraphSolver.SolveGraph of that single request succeeds (entries whose dependencies cannot be
 ///   satisfied upstream, which lip v3 could not install either, are listed below).
 /// RISK entries (upstream breakage, see README.md) are skipped.
 ///
@@ -157,25 +157,29 @@ public class CorpusTests {
 
   /// Returns null on success, otherwise a description of the failure.
   private static async Task<string?> Check(CorpusEntry entry) {
-    Ref reference = Ref.Parse(entry.Package);
+    Ref reference = Ref.Parse(entry.Package, allowFile: false);
     ExactVersionConstraint version = new(SemVersion.Parse(entry.Version, SemVersionStyles.Strict));
 
     // 1. Resolve the entry, recording what is downloaded.
     RecordingGitRemoteClient recorder = new(_cachedClient);
     ArchiveProvider provider = CreateProvider(recorder);
-    ResolveResult result = await CreateResolver(provider).Resolve(
-        reference, version, _environment);
+    List<Candidate> candidates = [];
+    List<string> diagnostics = [];
+    await foreach (Candidate resolved in CreateResolver(provider).ResolveLazy(
+        reference, version, _environment, onDiagnostic: diagnostics.Add)) {
+      candidates.Add(resolved);
+    }
 
-    if (result.Candidates.Count == 0) {
+    if (candidates.Count == 0) {
       // Declared, but not for this platform: not installable here, with or without git.
       if (await DeclaresVariant(provider, reference, version)) {
         return null;
       }
 
-      return "no candidate:\n  " + string.Join("\n  ", result.Diagnostics);
+      return "no candidate:\n  " + string.Join("\n  ", diagnostics);
     }
 
-    Candidate candidate = result.Candidates[0];
+    Candidate candidate = candidates[0];
 
     // 2. Only the root document is downloaded; the other assets (URL assets) are not opened.
     List<string> unexpected = recorder.UnexpectedBlobs();
@@ -186,7 +190,7 @@ public class CorpusTests {
 
     // 3. The request solves.
     try {
-      await new GraphSolver(_sharedResolver).Solve(
+      await new GraphSolver(_sharedResolver).SolveGraph(
           [new PackageRequest(reference, version)], [], _environment);
     }
     catch (DependencyResolutionException) when (
@@ -194,8 +198,7 @@ public class CorpusTests {
       return null;
     }
     catch (DependencyResolutionException ex) {
-      return $"solving failed: {ex.Message}\n"
-          + string.Join("\n", ex.Diagnostics.Take(30));
+      return $"solving failed: {ex.Message}";
     }
 
     return null;

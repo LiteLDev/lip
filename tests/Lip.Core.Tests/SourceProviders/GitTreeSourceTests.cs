@@ -19,15 +19,13 @@ public class GitTreeSourceTests {
       new[] { "{}", "readme", "a", "b", "c", "exe", "a.dll" }.ToDictionary(Oid);
 
   private static readonly List<GitTreeEntry> _tree = [
-    new("README.md", 100644, Oid("readme")),
     new("tooth.json", 100644, Oid("{}")),
-    new("plugin/tooth.json", 100644, Oid("{}")),
-    new("plugin/a.dll", 100644, Oid("a")),
-    new("plugin/sub/b.txt", 100644, Oid("b")),
-    new("plugin/sub/c.txt", 100644, Oid("c")),
-    new("plugin/run.sh", 100755, Oid("exe")),
-    new("plugin/link.dll", 120000, Oid("a.dll")),
-    new("pluginx/other.txt", 100644, Oid("c")),
+    new("a.dll", 100644, Oid("a")),
+    new("sub/b.txt", 100644, Oid("b")),
+    new("sub/c.txt", 100644, Oid("c")),
+    new("run.sh", 100755, Oid("exe")),
+    new("link.dll", 120000, Oid("a.dll")),
+    new("group.txt", 100664, Oid("readme")),
   ];
 
   private static string Oid(string content) {
@@ -61,7 +59,7 @@ public class GitTreeSourceTests {
   }
 
   [Fact]
-  public void Keys_NoSubdirectory_ReturnsRegularFilesOnly() {
+  public void Keys_ReturnsModes100644And100755Only() {
     // Arrange
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
     GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
@@ -69,45 +67,16 @@ public class GitTreeSourceTests {
     // Act
     List<string> keys = [.. source.Keys];
 
-    // Assert
-    Assert.Equal(8, keys.Count);
-    Assert.Contains("plugin/sub/b.txt", keys);
-    Assert.Contains("plugin/run.sh", keys);
-    Assert.DoesNotContain("plugin/link.dll", keys);
-  }
-
-  [Theory]
-  [InlineData("plugin")]
-  [InlineData("plugin/")]
-  [InlineData("/plugin")]
-  [InlineData("./plugin")]
-  [InlineData("plugin\\")]
-  public void Keys_Subdirectory_ReturnsRelativeKeysUnderSubdirectory(string subdirectory) {
-    // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, subdirectory);
-
-    // Act
-    List<string> keys = [.. source.Keys];
-
-    // Assert
+    // Assert: the symlink (120000) and the group-writable file (100664) are not part of a git
+    // archive (protocol/package.md §1).
     Assert.Equal(["tooth.json", "a.dll", "sub/b.txt", "sub/c.txt", "run.sh"], keys);
-  }
-
-  [Fact]
-  public void Constructor_ParentSubdirectory_Throws() {
-    // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-
-    // Act & Assert
-    Assert.Throws<ArgumentException>(() => new GitTreeSource(client.Object, cacheService, _repoUrl, _commit, "../x"));
   }
 
   [Fact]
   public async Task Keys_MultipleAccesses_ListTreeCalledOnce() {
     // Arrange
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = await GitTreeSource.Create(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = await GitTreeSource.Create(client.Object, cacheService, _repoUrl, _commit);
 
     // Act
     _ = source.Keys.ToList();
@@ -126,7 +95,7 @@ public class GitTreeSourceTests {
     client.SetupSequence(c => c.ListTree(_repoUrl, _commit))
         .ThrowsAsync(new HttpRequestException())
         .ReturnsAsync(_tree);
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
 
     // Act & Assert
     await Assert.ThrowsAsync<HttpRequestException>(() => source.OpenRead("a.dll"));
@@ -139,7 +108,7 @@ public class GitTreeSourceTests {
   public async Task OpenRead_SameKeyTwice_FetchesOnceThenHitsCache() {
     // Arrange
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
 
     // Act
     string first;
@@ -169,7 +138,7 @@ public class GitTreeSourceTests {
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks(fileSystem);
     GitTreeSource first = new(client.Object, cacheService, _repoUrl, _commit);
     using (Stream stream = await first.OpenRead("tooth.json")) { }
-    GitTreeSource second = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource second = new(client.Object, cacheService, _repoUrl, _commit);
 
     // Act
     using Stream result = await second.OpenRead("tooth.json");
@@ -191,7 +160,7 @@ public class GitTreeSourceTests {
             await onBlob(oid, stream);
           }
         });
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
 
     // Act & Assert
     await Assert.ThrowsAsync<InvalidDataException>(() => source.OpenRead("a.dll"));
@@ -203,7 +172,7 @@ public class GitTreeSourceTests {
   public async Task Prefetch_MultipleKeys_FetchesInSingleCallAndOpenReadHitsCache() {
     // Arrange
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
     string[] keys = ["a.dll", "sub/b.txt", "sub/c.txt", "run.sh"];
 
     // Act
@@ -229,7 +198,7 @@ public class GitTreeSourceTests {
   public async Task Prefetch_PartiallyCached_FetchesOnlyMissingBlobs() {
     // Arrange
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
     using (Stream stream = await source.OpenRead("a.dll")) { }
 
     // Act
@@ -249,7 +218,7 @@ public class GitTreeSourceTests {
   public async Task OpenRead_UnknownKey_Throws(string key) {
     // Arrange
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
 
     // Act & Assert
     ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(() => source.OpenRead(key));
@@ -264,7 +233,7 @@ public class GitTreeSourceTests {
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
     client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
         .Returns(Task.CompletedTask);
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit, "plugin");
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
 
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(() => source.OpenRead("a.dll"));

@@ -25,13 +25,6 @@ public static class McmodPlatformExtensions {
         return false;
     }
   }
-
-  /// The mod directory under the workspace root (protocol/workspace.md §2). On servers, plugins links to it
-  /// (WorkspaceLayout).
-  public static string ModsDirectory(this McmodPlatform platform) => platform switch {
-    McmodPlatform.Server or McmodPlatform.Client => WorkspaceLayout.ModsDirectory,
-    _ => throw new ArgumentOutOfRangeException(nameof(platform)),
-  };
 }
 
 /// The environment (platform, runtime) of a workspace (protocol/package.md §1). Runtime is a .NET RID.

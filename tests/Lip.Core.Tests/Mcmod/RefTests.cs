@@ -11,7 +11,7 @@ public class RefTests {
   [InlineData("github.com/LiteLDev/LeviLamina#client", RefKind.Spec, "github.com/LiteLDev/LeviLamina", "client")]
   public void Parse_ValidRef_ReturnsParts(string s, RefKind kind, string target, string variant) {
     // Act
-    Ref r = Ref.Parse(s);
+    Ref r = Ref.Parse(s, allowFile: false);
 
     // Assert
     Assert.Equal(kind, r.Kind);
@@ -46,7 +46,7 @@ public class RefTests {
   [InlineData("")]
   public void Parse_InvalidRef_ThrowsFormatException(string s) {
     // Act & Assert
-    Assert.Throws<FormatException>(() => Ref.Parse(s));
+    Assert.Throws<FormatException>(() => Ref.Parse(s, allowFile: false));
   }
 
   [Theory]
@@ -55,7 +55,7 @@ public class RefTests {
   [InlineData("https://[::1]/a.zip")]
   public void Parse_AtInUrl_IsPartOfTheLocation(string s) {
     // Act
-    Ref r = Ref.Parse(s);
+    Ref r = Ref.Parse(s, allowFile: false);
 
     // Assert
     Assert.Equal(RefKind.Url, r.Kind);
@@ -76,7 +76,7 @@ public class RefTests {
   public void Parse_SpecWithGitRef_SplitsTargetVariantAndGitRef(
       string s, string target, string variant, GitRefKind kind, string name) {
     // Act
-    Ref r = Ref.Parse(s);
+    Ref r = Ref.Parse(s, allowFile: false);
 
     // Assert
     Assert.Equal(RefKind.Spec, r.Kind);
@@ -84,7 +84,7 @@ public class RefTests {
     Assert.Equal(variant, r.Variant);
     Assert.Equal(kind, r.GitRef?.Kind);
     Assert.Equal(name, r.GitRef?.Name);
-    Assert.Equal(r, Ref.Parse(r.ToString()));
+    Assert.Equal(r, Ref.Parse(r.ToString(), allowFile: false));
   }
 
   [Fact]
@@ -100,7 +100,7 @@ public class RefTests {
     Assert.Equal(RefKind.File, r.Kind);
     Assert.Equal(path, r.LocalPath);
     Assert.Equal("lua", r.Variant);
-    Assert.Throws<FormatException>(() => Ref.Parse(text));
+    Assert.Throws<FormatException>(() => Ref.Parse(text, allowFile: false));
   }
 
   [Fact]
@@ -120,16 +120,9 @@ public class RefTests {
   [Fact]
   public void WithVariant_ReplacesVariant() {
     // Act
-    Ref r = Ref.Parse("github.com/a/b#client").WithVariant("");
+    Ref r = Ref.Parse("github.com/a/b#client", allowFile: false).WithVariant("");
 
     // Assert
     Assert.Equal("github.com/a/b", r.ToString());
-  }
-
-  [Fact]
-  public void WithGitRef_NotARemoteRepository_Throws() {
-    // Act & Assert
-    Assert.Throws<InvalidOperationException>(
-        () => Ref.Parse("https://example.com/x.zip").WithGitRef(GitRef.Parse("1.0.0")));
   }
 }

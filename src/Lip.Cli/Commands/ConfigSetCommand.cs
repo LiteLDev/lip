@@ -5,8 +5,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class ConfigSetCommand(ILipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<ConfigSetCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class ConfigSetCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<ConfigSetCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public class Settings : CommandSettings {

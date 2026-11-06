@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Lip.Core.Entities;
 using Lip.Core.Json;
 
@@ -16,7 +15,7 @@ namespace Lip.Core.Mcmod.Compat;
 /// lip's own runtime in lip v0.37.0, and become the single entry of the variant L, for the
 /// platform and the runtime of the environment (ConvertEntry). On the client platform, a tooth
 /// file with the label "client" has the variant "" derived from that label.
-public static partial class ToothCompat {
+public static class ToothCompat {
   public const string ClientLabel = "client";
 
   /// The tooth file of format 4 that a tooth file of format 3 is read as for an environment
@@ -64,9 +63,12 @@ public static partial class ToothCompat {
       ["format_uuid"] = ToothFormat.FormatUuid,
       ["tooth"] = manifest.Path,
       ["version"] = version.ToString(),
-      ["info"] = Info(manifest.Info),
-      ["variants"] = variants,
     };
+    if (manifest.Info is PackageManifestInfo info) {
+      document["info"] = Info(info);
+    }
+
+    document["variants"] = variants;
 
     JsonElement json = JsonSerializer.SerializeToElement(document);
     Dictionary<string, IReadOnlyList<ToothEntry>> entries = new(StringComparer.Ordinal);
@@ -209,24 +211,23 @@ public static partial class ToothCompat {
     }
   }
 
-  /// The info of format 4 for the info of format 3 (protocol/package.md §5): its members other than
-  /// empty strings and empty tags, with "avatar_url" as "logo" when it starts with "https://" and
-  /// dropped otherwise.
+  /// The info of format 4 for the info of format 3 (protocol/package.md §5): its members as they
+  /// are, with "avatar_url" as "logo" when it starts with "https://" and dropped otherwise.
   public static JsonObject Info(PackageManifestInfo info) {
     JsonObject result = [];
-    if (info.Name != "") {
+    if (info.Name is not null) {
       result["name"] = info.Name;
     }
 
-    if (info.Description != "") {
+    if (info.Description is not null) {
       result["description"] = info.Description;
     }
 
-    if (info.Tags.Count > 0) {
+    if (info.Tags is not null) {
       result["tags"] = new JsonArray([.. info.Tags.Select(t => (JsonNode)t)]);
     }
 
-    if (IsLogo(info.AvatarUrl)) {
+    if (info.AvatarUrl is not null && IsLogo(info.AvatarUrl)) {
       result["logo"] = info.AvatarUrl;
     }
 
@@ -242,18 +243,6 @@ public static partial class ToothCompat {
       hooks[key] = new JsonArray([.. commands.Select(c => (JsonNode)c)]);
     }
   }
-
-  /// The tooth name of a tooth path (protocol/package.md §1): its last '/'-separated element, or
-  /// the one before it when the last is "v" followed by one or more ASCII digits.
-  public static string GetToothName(string tooth) {
-    string[] elements = tooth.Split('/');
-    return elements.Length > 1 && MajorVersionSuffix().IsMatch(elements[^1])
-        ? elements[^2]
-        : elements[^1];
-  }
-
-  [GeneratedRegex(@"^v[0-9]+\z")]
-  private static partial Regex MajorVersionSuffix();
 
   /// The preserve of format 4 for the patterns of preserve_files of format 3 (protocol/package.md
   /// §5): '\' becomes '/', and a pattern without '/' is prefixed by "**/".

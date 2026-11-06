@@ -18,6 +18,6 @@ Asks on the terminal for the tooth path of the package, a [Go module path](https
 - `version`: `"0.1.0"`
 - `variants`: `{ "": [ { "platform": "server", "runtime": "win-x64" } ] }`
 
-If a `tooth.json` already exists in the current directory, the command fails and writes nothing. When standard input or standard error is not a terminal, it cannot ask, so it fails instead. The `Init` method of [`lip rpc`](rpc.md) never asks, so it fails in the same way.
+If a `tooth.json` already exists in the current directory, the command fails and writes nothing. When standard input or standard error is not a terminal, it cannot ask, so it fails instead.
 
 See [Creating Packages](../../guides/creating_packages.md) for what to do next.

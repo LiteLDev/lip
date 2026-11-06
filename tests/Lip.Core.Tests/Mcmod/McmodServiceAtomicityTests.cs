@@ -434,7 +434,7 @@ public class McmodServiceAtomicityTests {
 
     // Act: an operation that fails after the recovery.
     await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Uninstall(["Missing"], _options));
+        () => _ws.Service.Uninstall(["example.com/missing"], _options));
 
     // Assert
     Assert.Equal(before, _ws.Snapshot());

@@ -23,21 +23,15 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
   private const int MaxWantsPerRequest = 256;
   private const int MaxRetainedPacks = 8;
   private const int MaxCachedTrees = 64;
-  private const int MaxTransientRetries = 2;
   private const string GitProtocolHeader = "version=2";
 
   private readonly Url? _githubProxy = githubProxy;
   private readonly ConcurrentDictionary<string, RemoteInfo> _remotes = new();
-  private readonly ConcurrentDictionary<string, byte> _proxyFailedRepos = new();
   private readonly Lock _treesLock = new();
   private readonly Dictionary<string, Lazy<Task<IReadOnlyList<GitTreeEntry>>>> _trees = [];
   private readonly Queue<string> _treeOrder = new();
   private readonly Lock _retainedPackLock = new();
   private readonly List<(string Key, GitPackFile Pack)> _retainedPacks = [];
-  private long _bytesReceived;
-
-  /// Total bytes of protocol responses received by this client.
-  public long BytesReceived => Interlocked.Read(ref _bytesReceived);
 
   public async Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
     List<string> prefixes = [.. refPrefixes];
@@ -164,17 +158,15 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
       Func<string, Stream, Task> onBlob) {
     List<Exception> errors = [];
 
-    foreach ((Url url, bool isProxy) in GetCandidateUrls(repoUrl)) {
+    foreach (Url url in GetCandidateUrls(repoUrl)) {
       string[] wanted = [.. batch.Where(remaining.Contains)];
 
       GitPackFile pack;
       try {
-        pack = await WithRetry(async () =>
-            await FetchPack(await Discover(url), wanted, deepen: false, filterBlobs: false));
+        pack = await FetchPack(await Discover(url), wanted, deepen: false, filterBlobs: false);
       }
       catch (Exception ex) {
         errors.Add(ex);
-        MarkProxyFailed(repoUrl, isProxy);
         continue;
       }
 
@@ -197,7 +189,6 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
       }
       errors.Add(new GitProtocolException(
           $"Remote {url} did not send {missing.Length} requested blob(s), e.g. {missing[0]}."));
-      MarkProxyFailed(repoUrl, isProxy);
     }
 
     return errors.Count == 1
@@ -235,19 +226,16 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
   }
 
   /// Runs an operation against the GitHub proxy (if configured and applicable) and falls back to
-  /// the original URL when the proxied attempt fails. Each attempt is retried on transient
-  /// network errors. A repository whose proxied attempt failed goes directly to the original URL
-  /// for the rest of the client's lifetime.
+  /// the original URL when the proxied attempt fails.
   private async Task<T> WithProxyFallback<T>(Url repoUrl, Func<Url, Task<T>> operation) {
     List<Exception> errors = [];
 
-    foreach ((Url url, bool isProxy) in GetCandidateUrls(repoUrl)) {
+    foreach (Url url in GetCandidateUrls(repoUrl)) {
       try {
-        return await WithRetry(() => operation(url));
+        return await operation(url);
       }
       catch (Exception ex) {
         errors.Add(ex);
-        MarkProxyFailed(repoUrl, isProxy);
       }
     }
 
@@ -257,56 +245,13 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
             $"Git request for {repoUrl} failed both via the GitHub proxy and directly.", errors);
   }
 
-  /// The URLs to try for a repository: the GitHub proxy (unless not applicable or failed before),
-  /// then the original URL.
-  private IEnumerable<(Url Url, bool IsProxy)> GetCandidateUrls(Url repoUrl) {
-    Url? proxied = RewriteUrl(repoUrl);
-    if (proxied is not null && !_proxyFailedRepos.ContainsKey(GetRepoKey(repoUrl))) {
-      yield return (proxied, true);
+  /// The URLs to try for a repository: the GitHub proxy (if applicable), then the original URL.
+  private IEnumerable<Url> GetCandidateUrls(Url repoUrl) {
+    Url? proxied = GithubProxy.Rewrite(_githubProxy, repoUrl);
+    if (proxied is not null) {
+      yield return proxied;
     }
-    yield return (repoUrl, false);
-  }
-
-  private void MarkProxyFailed(Url repoUrl, bool isProxy) {
-    if (isProxy) {
-      _proxyFailedRepos.TryAdd(GetRepoKey(repoUrl), 0);
-    }
-  }
-
-  private static async Task<T> WithRetry<T>(Func<Task<T>> operation) {
-    for (int attempt = 0; ; attempt++) {
-      try {
-        return await operation();
-      }
-      catch (Exception ex) when (attempt < MaxTransientRetries && IsTransient(ex)) {
-        await Task.Delay(TimeSpan.FromMilliseconds(500 * (attempt + 1)));
-      }
-    }
-  }
-
-  /// Network failures without a response, server errors and rate limiting are worth retrying.
-  private static bool IsTransient(Exception ex) {
-    return ex switch {
-      FlurlHttpTimeoutException => true,
-      FlurlHttpException flurl => flurl.StatusCode is null or >= 500 or 429,
-      HttpRequestException http => http.StatusCode is null or >= System.Net.HttpStatusCode.InternalServerError
-          or System.Net.HttpStatusCode.TooManyRequests,
-      IOException => true,
-      _ => false,
-    };
-  }
-
-  /// Returns the proxied URL of a github.com repository, or null if no proxy applies.
-  private Url? RewriteUrl(Url repoUrl) {
-    if (_githubProxy is null
-        || !string.Equals(repoUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase)) {
-      return null;
-    }
-
-    Url proxied = _githubProxy
-        .Clone()
-        .AppendPathSegments(repoUrl.PathSegments);
-    return proxied.ToString() == repoUrl.ToString() ? null : proxied;
+    yield return repoUrl;
   }
 
   /// Identifies a repository for caches. GitHub resolves owner and repository names
@@ -351,14 +296,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     }
 
     await using Stream body = await response.GetStreamAsync();
-    PktLineReader reader = new(body);
-    Dictionary<string, string?> capabilities;
-    try {
-      capabilities = await ReadCapabilities(reader, repoUrl);
-    }
-    finally {
-      Interlocked.Add(ref _bytesReceived, reader.BytesRead);
-    }
+    Dictionary<string, string?> capabilities = await ReadCapabilities(new PktLineReader(body), repoUrl);
 
     if (!capabilities.ContainsKey("ls-refs") || !capabilities.TryGetValue("fetch", out string? fetch)) {
       throw new GitProtocolException($"Remote {repoUrl} does not support ls-refs and fetch.");
@@ -410,7 +348,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     return capabilities;
   }
 
-  private async Task<GitPackFile> FetchPack(
+  private static async Task<GitPackFile> FetchPack(
       RemoteInfo remote,
       IEnumerable<string> wants,
       bool deepen,
@@ -497,7 +435,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     }
   }
 
-  private async Task PostCommand(RemoteInfo remote, byte[] body, Func<PktLineReader, Task> handle) {
+  private static async Task PostCommand(RemoteInfo remote, byte[] body, Func<PktLineReader, Task> handle) {
     Url url = remote.Endpoint.Clone().AppendPathSegment("git-upload-pack");
     ByteArrayContent content = new(body);
     content.Headers.ContentType = new MediaTypeHeaderValue("application/x-git-upload-pack-request");
@@ -512,13 +450,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     EnsureSuccess(response, url);
 
     await using Stream stream = await response.GetStreamAsync();
-    PktLineReader reader = new(stream);
-    try {
-      await handle(reader);
-    }
-    finally {
-      Interlocked.Add(ref _bytesReceived, reader.BytesRead);
-    }
+    await handle(new PktLineReader(stream));
   }
 
   private async Task FetchBlobsFromRetainedPack(
@@ -590,11 +522,9 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     return entries;
   }
 
-  /// Rejects names git itself refuses to check out, so paths cannot escape the install root.
+  /// Rejects names no well-formed tree holds, so paths cannot escape the archive root.
   private static bool IsSafeEntryName(string name) {
-    return name is not ("" or "." or "..")
-        && !name.Equals(".git", StringComparison.OrdinalIgnoreCase)
-        && name.IndexOfAny(['/', '\\', '\0']) < 0;
+    return name is not ("" or "." or "..") && name.IndexOfAny(['/', '\0']) < 0;
   }
 
   private static GitRemoteRef ParseRef(string line) {

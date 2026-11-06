@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
+using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
 using Moq;
 
@@ -114,16 +115,19 @@ public class WorkspaceLayoutTests {
   }
 
   [Fact]
-  public async Task Install_PluginsDirectoryWithoutMods_RenamesItToMods() {
+  public async Task Install_PluginsDirectoryWithoutMods_CreatesModsAndMovesEntriesIntoIt() {
     // Arrange
     AddMod();
     _ws.AddFile("plugins/Old/Old.dll", "old");
+    _ws.AddFile("plugins/loose.txt", "loose");
 
     // Act
     await _ws.Service.Install([Demo], s_options);
 
     // Assert
     Assert.Equal("old", _ws.Fs.File.ReadAllText(_ws.Path("mods/Old/Old.dll")));
+    Assert.Equal("loose", _ws.Fs.File.ReadAllText(_ws.Path("mods/loose.txt")));
+    Assert.Null(LinkTarget("mods"));
     Assert.Equal(_ws.Path("mods"), LinkTarget("plugins"));
   }
 
@@ -333,9 +337,10 @@ public class WorkspaceLayoutRealFileSystemTests : IDisposable {
     if (Directory.Exists(_root)) {
       // A recursive delete cannot remove a junction without administrator rights (it unmounts
       // it first), so the link goes first.
-      string plugins = Path.Combine(_root, "plugins");
-      if (new DirectoryInfo(plugins).LinkTarget is not null) {
-        Directory.Delete(plugins);
+      foreach (string link in new[] { "plugins", "mods" }.Select(n => Path.Combine(_root, n))) {
+        if (new DirectoryInfo(link).LinkTarget is not null) {
+          Directory.Delete(link);
+        }
       }
 
       Directory.Delete(_root, recursive: true);
@@ -343,16 +348,25 @@ public class WorkspaceLayoutRealFileSystemTests : IDisposable {
     GC.SuppressFinalize(this);
   }
 
+  /// Establishes the layout as an operation does, through a journaled transaction.
+  private async Task Establish() {
+    FileSystem fs = new();
+    using WorkspaceTransaction transaction = new(fs, new LockStore(fs).GetJournalPath(_root));
+    await _layout.Apply(_layout.Plan(_root), transaction);
+    transaction.Commit();
+    transaction.Complete();
+  }
+
   [Fact]
-  public async Task Prepare_PluginsDirectory_MovesEntriesAndLinksPluginsToMods() {
+  public async Task Apply_PluginsDirectory_MovesEntriesAndLinksPluginsToMods() {
     // Arrange
     Directory.CreateDirectory(Path.Combine(_root, "plugins", "Old"));
     File.WriteAllText(Path.Combine(_root, "plugins", "Old", "Old.dll"), "old");
     Directory.CreateDirectory(Path.Combine(_root, "mods", "Kept"));
 
-    // Act: the second call finds the layout right.
-    await _layout.Prepare(_root, dryRun: false);
-    await _layout.Prepare(_root, dryRun: false);
+    // Act: the second time finds the layout right.
+    await Establish();
+    await Establish();
 
     // Assert
     Assert.Equal("old", File.ReadAllText(Path.Combine(_root, "mods", "Old", "Old.dll")));
@@ -367,5 +381,30 @@ public class WorkspaceLayoutRealFileSystemTests : IDisposable {
     Assert.Equal("old", File.ReadAllText(Path.Combine(_root, "plugins", "Old", "Old.dll")));
     File.WriteAllText(Path.Combine(_root, "plugins", "new.txt"), "new");
     Assert.True(File.Exists(Path.Combine(_root, "mods", "new.txt")));
+  }
+
+  [Fact]
+  public void Plan_ModsIsALink_ThrowsWithoutChanges() {
+    // Arrange: a mods link would let writes under mods/ land outside the workspace.
+    FileSystem fs = new();
+    Directory.CreateDirectory(Path.Combine(_root, "shared"));
+    new DirectoryLinker(fs).CreateLink(Path.Combine(_root, "mods"), Path.Combine(_root, "shared"));
+
+    // Act & Assert
+    Assert.Throws<WorkspaceLayoutException>(() => _layout.Plan(_root));
+    Assert.False(Path.Exists(Path.Combine(_root, "plugins")));
+  }
+
+  [Fact]
+  public void Plan_ModsIsAFile_PlansToCreateIt() {
+    // Arrange: protocol/workspace.md §2 has no rule for a mods file; it fails when created.
+    File.WriteAllText(Path.Combine(_root, "mods"), "file");
+
+    // Act
+    WorkspaceLayout.LayoutPlan plan = _layout.Plan(_root);
+
+    // Assert
+    Assert.True(plan.CreateMods);
+    Assert.False(Path.Exists(Path.Combine(_root, "plugins")));
   }
 }

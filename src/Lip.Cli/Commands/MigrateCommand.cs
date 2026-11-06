@@ -4,8 +4,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class MigrateCommand(ILipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<MigrateCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class MigrateCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<MigrateCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public class Settings : CommandSettings {

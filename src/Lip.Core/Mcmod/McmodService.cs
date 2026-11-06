@@ -49,23 +49,20 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 public class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
-    ILockStore lockStore,
+    LockStore lockStore,
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
-    IMcmodInstaller installer,
-    Func<IResolver, IGraphSolver>? createSolver = null,
+    McmodInstaller installer,
     Func<string>? workspaceRoot = null,
     IDirectoryLinker? directoryLinker = null) {
   private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
 
   private readonly IFileSystem _fs = fileSystem;
   private readonly IUserInteraction _ui = userInteraction;
-  private readonly ILockStore _lockStore = lockStore;
+  private readonly LockStore _lockStore = lockStore;
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
-  private readonly IMcmodInstaller _installer = installer;
-  private readonly Func<IResolver, IGraphSolver> _createSolver =
-      createSolver ?? (resolver => new GraphSolver(resolver));
+  private readonly McmodInstaller _installer = installer;
   private readonly Func<string> _workspaceRoot =
       workspaceRoot ?? fileSystem.Directory.GetCurrentDirectory;
   private readonly WorkspaceLayout _layout = new(
@@ -117,38 +114,17 @@ public class McmodService(
       targets.AddRange(matched.Where(p => !targets.Contains(p)));
     }
 
-    // Removing some of several entries of one identity (e.g. tooth paths differing in case)
-    // leaves the identity installed, so the package set does not change: such entries are
-    // uninstalled directly, like every target with --no-dependencies.
-    List<LockedPackage> direct = options.NoDependencies
-        ? targets
-        : [.. targets.GroupBy(p => Fold(p.Identity))
-            .Where(g => workspace.Lock.Packages.Count(p => Fold(p.Identity) == g.Key) > g.Count())
-            .SelectMany(g => g)];
     if (options.NoDependencies) {
       await _ui.PrintWarning(
           "--no-dependencies is enabled. This operation may result in a broken workspace.");
-    }
-
-    // The direct uninstalls come first, then what the plan of the rest changes; one
-    // transaction applies both.
-    Workspace original = workspace;
-    List<Change> changes = [];
-    if (direct.Count > 0) {
-      List<LockedPackage> remaining = [.. workspace.Lock.Packages];
-      foreach (LockedPackage target in Enumerable.Reverse(workspace.Lock.Packages)
-          .Where(direct.Contains)) {
-        changes.Add(new UninstallChange(target));
-        remaining.Remove(target);
-      }
-
-      targets = [.. targets.Except(direct)];
-      if (targets.Count == 0) {
-        await Execute(original, options, new ChangeSet(changes, Task.FromResult));
-        return;
-      }
-
-      workspace = workspace with { Lock = LockWith(workspace, remaining) };
+      await Execute(workspace, options, new ChangeSet(
+          [
+            .. Enumerable.Reverse(workspace.Lock.Packages)
+                .Where(targets.Contains)
+                .Select(p => new UninstallChange(p)),
+          ],
+          Task.FromResult));
+      return;
     }
 
     HashSet<string> removed = [.. targets.Select(p => Fold(p.Identity))];
@@ -166,8 +142,7 @@ public class McmodService(
           + "as a dependency.");
     }
 
-    ChangeSet planned = await Changes(workspace, options, plan);
-    await Execute(original, options, planned with { Changes = [.. changes, .. planned.Changes] });
+    await Execute(workspace, options, await Changes(workspace, options, plan));
   }
 
   public async Task Update(IReadOnlyList<string> packages, OperationOptions options) {
@@ -180,10 +155,7 @@ public class McmodService(
       // at its newest version, a branch at its head, a tag where it points now, a rev as it is,
       // a URL downloaded again and a local path with its current content.
       requests = [];
-      foreach (IGrouping<string, LockedPackage> group in workspace.Lock.Packages
-          .Where(p => p.Explicit)
-          .GroupBy(p => Fold(p.Identity))) {
-        LockedPackage package = group.First();
+      foreach (LockedPackage package in workspace.Lock.Packages.Where(p => p.Explicit)) {
         Ref source = Ref.Parse(package.Source, allowFile: true);
         if (source.Kind == RefKind.File && !_fs.File.Exists(source.LocalPath)
             && !_fs.Directory.Exists(source.LocalPath)) {
@@ -207,7 +179,7 @@ public class McmodService(
     }
 
     List<Candidate> candidates = await RequestedCandidates(
-        workspace, requests, allowSameIdentity: packages.Count == 0);
+        workspace, requests, allowSameIdentity: true);
     List<string> identities = [];
     List<PackageRequest> requested = [];
     for (int i = 0; i < candidates.Count; i++) {
@@ -241,11 +213,14 @@ public class McmodService(
     ];
   }
 
-  /// The versions of the version tags of a remote repository, lowest first.
+  /// The versions of the version tags of a remote repository, lowest first (protocol/cli.md
+  /// §5.5): the package argument must be a remote repository without a ref.
   public async Task<IReadOnlyList<string>> Versions(string package) {
-    if (!Ref.TryParse(package, out Ref? reference, out _) || reference.Kind != RefKind.Spec
-        || reference.GitRef is not null) {
-      throw new ArgumentException($"'{package}' is not a remote repository.", nameof(package));
+    Ref reference = PackageArguments.Parse(
+        package, _fs.Path.GetFullPath(_workspaceRoot()), _fs).Ref;
+    if (reference.Kind != RefKind.Spec || reference.GitRef is not null) {
+      throw new ArgumentException(
+          $"'{package}' is not a remote repository without a ref.", nameof(package));
     }
 
     IReadOnlyList<SpecVersion> versions = await _archiveProvider.ListVersions(reference.Target);
@@ -320,7 +295,7 @@ public class McmodService(
       }
     }
 
-    return new Workspace(root, lockFile, environment, resolver, _createSolver(resolver));
+    return new Workspace(root, lockFile, environment, resolver, new GraphSolver(resolver));
   }
 
   /// Takes the workspace lock, then finishes or undoes what an interrupted operation left in the
@@ -419,7 +394,8 @@ public class McmodService(
   }
 
   /// The first candidate of every request: the package the request names. Fails when a request
-  /// has no candidate, or, unless allowSameIdentity, when two requests name the same package.
+  /// has no candidate, or, unless allowSameIdentity, when two requests name the same package
+  /// (protocol/cli.md §5.1).
   private async Task<List<Candidate>> RequestedCandidates(
       Workspace workspace,
       List<(string Argument, PackageRequest Request)> requests,
@@ -462,18 +438,11 @@ public class McmodService(
     HashSet<string> unpinnedSet = [.. unpinned.Select(Fold)];
     HashSet<string> explicitSet = [.. explicitIdentities.Select(Fold)];
 
-    List<Group> groups = [];
-    foreach (IGrouping<string, LockedPackage> grouping in workspace.Lock.Packages
-        .GroupBy(p => Fold(p.Identity))) {
-      LockedPackage representative = grouping.FirstOrDefault(p => p.Explicit) ?? grouping.First();
-      Candidate? pinned = unpinnedSet.Contains(grouping.Key)
-          ? null
-          : await PinnedCandidate(workspace, representative);
-      groups.Add(new Group(grouping.Key, [.. grouping], representative, pinned));
-    }
-
-    List<Group> frozen = [.. groups.Where(g => g.Pinned is null && !unpinnedSet.Contains(g.Key))];
-    List<Candidate> pinnedAll = [.. groups.Where(g => g.Pinned is not null).Select(g => g.Pinned!)];
+    List<Candidate> pinnedAll = [
+      .. workspace.Lock.Packages
+          .Where(p => !unpinnedSet.Contains(Fold(p.Identity)))
+          .Select(p => PinnedCandidate(workspace, p)),
+    ];
 
     SolvedGraph graph;
     try {
@@ -481,10 +450,7 @@ public class McmodService(
     }
     catch (DependencyResolutionException withInstalled) {
       List<Candidate> pinnedExplicit = [
-        .. groups
-            .Where(g => g.Pinned is not null && explicitSet.Contains(g.Key)
-                && g.Entries.Any(p => p.Explicit))
-            .Select(g => g.Pinned!),
+        .. pinnedAll.Where(c => explicitSet.Contains(Fold(c.Package.Identity))),
       ];
       if (pinnedExplicit.Count == pinnedAll.Count) {
         throw;
@@ -501,21 +467,8 @@ public class McmodService(
     HashSet<int> needed = [];
     Stack<int> pending = new(graph.RequestSatisfiers.Where(i => i >= 0));
     for (int i = 0; i < graph.Order.Count; i++) {
-      string identity = Fold(graph.Order[i].Package.Identity);
-      // Packages whose entry cannot be read may depend on any installed dependency, so then no
-      // installed dependency is removed (explicit ones the user removes still are).
-      if (explicitSet.Contains(identity)
-          || (frozen.Count > 0 && groups.Any(g => g.Key == identity && g.Pinned is not null
-              && !g.Entries.Any(p => p.Explicit)))) {
+      if (explicitSet.Contains(Fold(graph.Order[i].Package.Identity))) {
         pending.Push(i);
-      }
-    }
-
-    foreach (Group group in frozen) {
-      if (graph.Order.Any(c => Fold(c.Package.Identity) == group.Key)) {
-        throw new InvalidOperationException(
-            $"The request needs '{group.Representative.Identity}', which is installed, but lip "
-            + "cannot read its entry in the workspace file in this environment.");
       }
     }
 
@@ -532,19 +485,7 @@ public class McmodService(
       .. graph.RequestSatisfiers.Where(i => i >= 0)
           .Select(i => Fold(graph.Order[i].Package.Identity)),
     ];
-    if (frozen.Count > 0) {
-      await _ui.PrintWarning(
-          "Cannot read the entries of "
-          + string.Join(", ", frozen.Select(g => g.Representative.Identity))
-          + " in the workspace file; they are left as they are.");
-      finalExplicit.UnionWith(frozen.Where(g => g.Entries.Any(p => p.Explicit)).Select(g => g.Key));
-    }
-
-    return new Plan(
-        [.. graph.Order.Where((_, i) => needed.Contains(i))],
-        groups,
-        frozen,
-        finalExplicit);
+    return new Plan([.. graph.Order.Where((_, i) => needed.Contains(i))], finalExplicit);
   }
 
   #endregion
@@ -571,15 +512,13 @@ public class McmodService(
     Dictionary<string, Candidate> members = plan.Members.ToDictionary(
         c => Fold(c.Package.Identity), StringComparer.Ordinal);
 
-    // Groups whose package stays exactly as installed.
-    HashSet<string> kept = [];
-    foreach (Group group in plan.Groups) {
-      if (plan.Frozen.Contains(group)
-          || (members.TryGetValue(group.Key, out Candidate? member)
-              && IsSamePackage(group.Representative, member))) {
-        kept.Add(group.Key);
-      }
-    }
+    // The identities of the packages that stay exactly as installed.
+    HashSet<string> kept = [
+      .. workspace.Lock.Packages
+          .Where(p => members.TryGetValue(Fold(p.Identity), out Candidate? member)
+              && IsSamePackage(p, member))
+          .Select(p => Fold(p.Identity)),
+    ];
 
     List<Change> changes = [];
     foreach (LockedPackage package in Enumerable.Reverse(workspace.Lock.Packages)) {
@@ -596,17 +535,10 @@ public class McmodService(
     }
 
     async Task<List<LockedPackage>> Finish(List<LockedPackage> remaining) {
-      // The workspace file lists packages in installation order: frozen entries first (their
-      // dependencies are unknown), then the members of the new set.
-      List<LockedPackage> ordered = [
-        .. plan.Frozen.SelectMany(g => g.Entries),
-        .. plan.Members.SelectMany(c => remaining.Where(
-            p => Fold(p.Identity) == Fold(c.Package.Identity))),
-      ];
-      ordered.AddRange(remaining.Where(p => !ordered.Contains(p)));
-
+      // The workspace file lists the members of the new set in installation order.
       List<LockedPackage> final = [];
-      foreach (LockedPackage package in ordered) {
+      foreach (LockedPackage package in plan.Members.Select(c => remaining.First(
+          p => SameIdentity(p.Identity, c.Package.Identity)))) {
         string key = Fold(package.Identity);
         bool isExplicit = plan.Explicit.Contains(key);
         if (isExplicit != package.Explicit && kept.Contains(key)) {
@@ -643,21 +575,17 @@ public class McmodService(
     List<Candidate> candidates = await RequestedCandidates(workspace, requests);
     List<Change> changes = [];
     foreach (Candidate candidate in candidates) {
-      List<LockedPackage> existing = [
-        .. workspace.Lock.Packages.Where(
-            p => SameIdentity(p.Identity, candidate.Package.Identity)),
-      ];
-      bool same = existing.Count > 0;
-      foreach (LockedPackage package in existing) {
-        same = same && IsSamePackage(package, candidate);
-      }
-
-      if (same) {
-        changes.Add(new MarkExplicitChange(existing[0]));
+      LockedPackage? existing = workspace.Lock.Packages.FirstOrDefault(
+          p => SameIdentity(p.Identity, candidate.Package.Identity));
+      if (existing is not null && IsSamePackage(existing, candidate)) {
+        changes.Add(new MarkExplicitChange(existing));
         continue;
       }
 
-      changes.AddRange(Enumerable.Reverse(existing).Select(p => new UninstallChange(p)));
+      if (existing is not null) {
+        changes.Add(new UninstallChange(existing));
+      }
+
       changes.Add(new InstallChange(candidate, Explicit: true));
     }
 
@@ -756,14 +684,14 @@ public class McmodService(
       await _ui.PrintWarning(
           (ex is OperationCanceledException ? "Cancelled" : "Failed")
           + "; undoing the changes of this operation.");
-      try {
-        _lockStore.DiscardStaged(workspace.Root);
-      }
-      catch (Exception discard) when (discard is IOException or UnauthorizedAccessException) {
-        // A staged workspace file is never read, and the next save replaces it.
-      }
-
-      IReadOnlyList<string> errors = transaction.Rollback();
+      IReadOnlyList<string> errors = transaction.Rollback(() => {
+        try {
+          _lockStore.DiscardStaged(workspace.Root);
+        }
+        catch (Exception discard) when (discard is IOException or UnauthorizedAccessException) {
+          // A staged workspace file is never read, and the next save replaces it.
+        }
+      });
       foreach (string error in errors) {
         await _ui.PrintWarning($"Rollback: {error}");
       }
@@ -817,32 +745,20 @@ public class McmodService(
 
   #region Installed packages
 
-  /// The package an entry of the workspace file records, with the entry of its variant for the
-  /// environment, or null when there is none or it cannot be read.
-  private static Package? ToPackage(LockedPackage package, LipEnvironment environment) {
-    try {
-      return new Package(
-          package.Tooth,
-          package.Variant,
-          SemVersion.Parse(package.Version, SemVersionStyles.Strict),
-          McmodInstaller.LockedEntry(package, environment)) { Manifest = package.Manifest };
-    }
-    catch (Exception ex) when (ex is McmodInstallException or FormatException) {
-      return null;
-    }
-  }
-
   /// Rebuilds an installed package from the workspace file (protocol/workspace.md §5,
   /// "Reinstalling"): with the tooth file the workspace file records, and the archive of the
   /// commit it records for a remote repository, otherwise the archive its source names now,
-  /// opened when first needed. Returns null when its tooth file has no entry for the environment
-  /// (e.g. another --rid).
-  private async Task<Candidate?> PinnedCandidate(Workspace workspace, LockedPackage package) {
+  /// opened when first needed. Fails when it is no candidate in the environment, e.g. when its
+  /// tooth file has no entry for another --rid (protocol/workspace.md §3).
+  private Candidate PinnedCandidate(Workspace workspace, LockedPackage package) {
     try {
-      if (ToPackage(package, workspace.Environment) is not Package rebuilt) {
-        return null;
-      }
-
+      Package rebuilt = new(
+          package.Tooth,
+          package.Variant,
+          SemVersion.Parse(package.Version, SemVersionStyles.Strict),
+          McmodInstaller.LockedEntry(package, workspace.Environment)) {
+        Manifest = package.Manifest,
+      };
       Ref source = Ref.Parse(package.Source, allowFile: true);
       if (source.Kind == RefKind.Spec && package.Commit is null) {
         throw new FormatException("it records no commit for a package of a remote repository.");
@@ -857,11 +773,11 @@ public class McmodService(
           source.Kind == RefKind.Spec ? package.Commit : null);
       return Candidate.Create(rebuilt, archive, source, _archiveProvider);
     }
-    catch (Exception ex) when (ex is FormatException or ArgumentException
-        or InvalidOperationException) {
-      await _ui.PrintWarning(
-          $"Cannot read the entry of '{package.Identity}' in the workspace file: {ex.Message}");
-      return null;
+    catch (Exception ex) when (ex is McmodInstallException or FormatException
+        or ArgumentException or InvalidOperationException) {
+      throw new InvalidOperationException(
+          $"Cannot read the entry of '{package.Identity}' in the workspace file: {ex.Message}",
+          ex);
     }
   }
 
@@ -877,17 +793,13 @@ public class McmodService(
       return byIdentity;
     }
 
-    Ref? wanted = PackageArguments.LocalFileRef(argument, workspace.Root, _fs);
-    if (wanted is null && !Ref.TryParse(argument, allowFile: true, out wanted, out _)) {
-      return byIdentity;
-    }
-
+    Ref wanted = PackageArguments.Parse(argument, workspace.Root, _fs).Ref;
     bool hasVariant = wanted.Variant != "";
     return [
       .. lockFile.Packages.Where(p =>
           Ref.TryParse(p.Source, allowFile: true, out Ref? source, out _)
           && source.Kind == wanted.Kind
-          && string.Equals(source.Target, wanted.Target, StringComparison.OrdinalIgnoreCase)
+          && PackageNames.AreEqual(source.Target, wanted.Target)
           && (!hasVariant || source.Variant == wanted.Variant)
           && (wanted.GitRef is null || source.GitRef == wanted.GitRef)),
     ];
@@ -918,19 +830,9 @@ public class McmodService(
       LockFile Lock,
       LipEnvironment Environment,
       IResolver Resolver,
-      IGraphSolver Solver);
+      GraphSolver Solver);
 
-  /// The workspace file entries of one identity, and the candidate pinning them (null when
-  /// unpinned or unreadable).
-  private sealed record Group(
-      string Key,
-      List<LockedPackage> Entries,
-      LockedPackage Representative,
-      Candidate? Pinned);
-
-  private sealed record Plan(
-      IReadOnlyList<Candidate> Members,
-      List<Group> Groups,
-      List<Group> Frozen,
-      HashSet<string> Explicit);
+  /// The new package set in installation order, and the folded identities of its explicitly
+  /// installed members.
+  private sealed record Plan(IReadOnlyList<Candidate> Members, HashSet<string> Explicit);
 }

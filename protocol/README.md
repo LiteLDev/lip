@@ -30,8 +30,6 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 - [GIT-OBJECTS] Chacon, S. and B. Straub, "Pro Git, Section 10.2: Git Objects", <https://git-scm.com/book/en/v2/Git-Internals-Git-Objects>.
 - [GIT-REF] "git-check-ref-format", <https://git-scm.com/docs/git-check-ref-format>.
 - [GO-MODULE] "golang.org/x/mod/module: CheckPath", <https://pkg.go.dev/golang.org/x/mod/module#CheckPath>.
-- [JSON-RPC] JSON-RPC Working Group, "JSON-RPC 2.0 Specification", <https://www.jsonrpc.org/specification>.
-- [LSP] Microsoft, "Language Server Protocol Specification 3.17, Base Protocol", <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol>.
 - [PACKAGE] [`package.md`](package.md).
 - [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <https://www.rfc-editor.org/info/rfc2119>.
 - [RFC3339] Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, DOI 10.17487/RFC3339, July 2002, <https://www.rfc-editor.org/info/rfc3339>.

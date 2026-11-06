@@ -73,7 +73,7 @@ public class ToothParserTests {
     Assert.Empty(entry.Hooks.PreUninstall);
     Assert.Empty(entry.Hooks.PostUninstall);
     Assert.False(entry.Derived);
-    Assert.False(entry.IsMod);
+    Assert.Null(entry.McmodAsset);
     Assert.Null(entry.McmodAsset);
     Assert.Equal("server", entry.Json.GetProperty("platform").GetString());
     Assert.Equal(4, tooth.Json.GetProperty("format_version").GetInt32());
@@ -123,7 +123,7 @@ public class ToothParserTests {
         entry.Assets[1].Placements);
     Assert.Equal(["https://a.example/x.mcmod"], entry.Assets[2].Urls);
     Assert.Empty(entry.Assets[2].Placements);
-    Assert.True(entry.IsMod);
+    Assert.NotNull(entry.McmodAsset);
     Assert.Equal(2, entry.McmodAsset);
 
     Assert.Equal(["config/**", "data/"], entry.PreserveFiles.Select(g => g.Pattern));
@@ -714,7 +714,7 @@ public class ToothParserTests {
   [InlineData("bin/", "tools/x", "dest")]
   [InlineData("", "tools", "dest")]
   [InlineData("*.dll", "plugins/a.dll", "dest")]
-  [InlineData("bin/[a", "plugins/", "src")]
+  [InlineData("bin/[^a]", "plugins/", "src")]
   [InlineData("/a.dll", "a.dll", "src")]
   [InlineData("C:/a.dll", "a.dll", "src")]
   [InlineData("c:a.dll", "a.dll", "src")]
@@ -891,7 +891,7 @@ public class ToothParserTests {
     Assert.Equal(
         [new EntryPlacement("a.dll", "b.dll")], entry.Assets[0].Placements);
     Assert.Equal(PlacementForm.File, entry.Assets[0].Placements[0].Form);
-    Assert.True(entry.IsMod);
+    Assert.NotNull(entry.McmodAsset);
     Assert.Empty(entry.Hooks.PreInstall);
     Assert.Empty(entry.Hooks.PostInstall);
     Assert.True(entry.Json.TryGetProperty("x-entry", out _));
@@ -1045,8 +1045,8 @@ public class ToothParserTests {
   [InlineData("a b", false)]
   [InlineData("a/b", false)]
   [InlineData("a\n", false)]
-  public void IsId_ChecksId(string value, bool expected) {
+  public void PackageNamesIsValid_ChecksId(string value, bool expected) {
     // Act & Assert
-    Assert.Equal(expected, ToothParser.IsId(value));
+    Assert.Equal(expected, PackageNames.IsValid(value));
   }
 }

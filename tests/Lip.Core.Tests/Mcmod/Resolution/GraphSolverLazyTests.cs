@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Resolution;
 
@@ -18,8 +17,8 @@ public class GraphSolverLazyTests {
     resolver.Add(Base, 300);
 
     // Act
-    IReadOnlyList<Candidate> result = await new GraphSolver(resolver).Solve(
-        [new PackageRequest(Ref.Parse(Base), null)], [], s_environment);
+    IReadOnlyList<Candidate> result = (await new GraphSolver(resolver).SolveGraph(
+        [new PackageRequest(Ref.Parse(Base, allowFile: false), null)], [], s_environment)).Order;
 
     // Assert
     Assert.Equal("299.0.0", Assert.Single(result).Package.Version.ToString());
@@ -32,14 +31,16 @@ public class GraphSolverLazyTests {
     CountingResolver resolver = new();
     resolver.Add(Base, 300);
     resolver.Add("github.com/mod/mod", 1,
-        dependencies: [new ToothDependency(Ref.Parse(Base), VersionRange.Parse("*"))]);
+        dependencies: [
+          new ToothDependency(Ref.Parse(Base, allowFile: false), VersionRange.Parse("*")),
+        ]);
     Candidate installed = TestCandidates.Make(Base, "5.0.0");
 
     // Act
-    IReadOnlyList<Candidate> result = await new GraphSolver(resolver).Solve(
-        [new PackageRequest(Ref.Parse("github.com/mod/mod"), null)],
+    IReadOnlyList<Candidate> result = (await new GraphSolver(resolver).SolveGraph(
+        [new PackageRequest(Ref.Parse("github.com/mod/mod", allowFile: false), null)],
         [installed],
-        s_environment);
+        s_environment)).Order;
 
     // Assert: the dependency is satisfied by the installed Base 5.0.0 without walking 300
     // versions.
@@ -57,8 +58,10 @@ public class GraphSolverLazyTests {
         "github.com/other/other", "1.0.0", mcmod: WorkspaceHarness.Mcmod("taken"));
 
     // Act
-    IReadOnlyList<Candidate> result = await new GraphSolver(resolver).Solve(
-        [new PackageRequest(Ref.Parse(Base), null)], [installed], s_environment);
+    IReadOnlyList<Candidate> result = (await new GraphSolver(resolver).SolveGraph(
+        [new PackageRequest(Ref.Parse(Base, allowFile: false), null)],
+        [installed],
+        s_environment)).Order;
 
     // Assert
     Assert.Equal("294.0.0", result[0].Package.Version.ToString());
@@ -87,19 +90,12 @@ public class GraphSolverLazyTests {
       ];
     }
 
-    public Task<ResolveResult> Resolve(
-        Ref source,
-        IVersionConstraint? range,
-        LipEnvironment environment,
-        bool clientCompat = false) => throw new NotSupportedException();
-
     public async IAsyncEnumerable<Candidate> ResolveLazy(
         Ref source,
         IVersionConstraint? range,
         LipEnvironment environment,
         bool clientCompat = false,
-        Action<string>? onDiagnostic = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default) {
+        Action<string>? onDiagnostic = null) {
       foreach (Candidate candidate in _candidates.GetValueOrDefault(source.ToString(), [])) {
         if (range is null || range.IsSatisfiedBy(candidate.Package.Version)) {
           Produced++;

@@ -34,7 +34,7 @@ public sealed class WorkspaceView {
     _mods = Trim(layout.Mods);
     _plugins = Trim(layout.Plugins);
     _pluginsMergesIntoMods = layout.PluginsIsDirectory;
-    if (layout.CreateMods || layout.RenamePluginsToMods) {
+    if (layout.CreateMods) {
       SetDirectory(_mods, true);
     }
   }

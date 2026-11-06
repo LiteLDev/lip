@@ -4,7 +4,7 @@ namespace Lip.Core.Sources;
 
 /// A directory archive (protocol/package.md §1): the regular files below a directory of the local
 /// file system, keyed by their '/'-separated path relative to it, in ordinal order. Links are not
-/// followed and inaccessible entries are skipped.
+/// followed; an inaccessible entry fails the listing rather than being left out.
 public class DirectorySource : ISource {
   private readonly IFileSystem _fs;
   private readonly string _root;
@@ -29,7 +29,7 @@ public class DirectorySource : ISource {
 
   private List<string> ListKeys() {
     EnumerationOptions options = new() {
-      IgnoreInaccessible = true,
+      IgnoreInaccessible = false,
       AttributesToSkip = FileAttributes.ReparsePoint,
     };
     List<string> keys = [];

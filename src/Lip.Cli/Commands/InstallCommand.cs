@@ -5,8 +5,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class InstallCommand(ILipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<InstallCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class InstallCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<InstallCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public class Settings : EnvironmentSettings {

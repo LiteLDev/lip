@@ -22,7 +22,7 @@ git commit -m "Migrate tooth.json to format 4"
 - `win-*` 这样的平台模式所代表的 RID，以逗号分隔（每个都必须匹配该模式）；
 - 没有 `platform` 的变体所适用的 RID（存在这类变体时）。
 
-若标准输入或标准错误不是终端（例如在 CI 中），`lip migrate` 会失败，指明本应询问的值，且不做任何修改。[`lip rpc`](../cli/commands/rpc.md) 的 `Migrate` 方法从不询问：它会以同样的方式失败。
+若标准输入或标准错误不是终端（例如在 CI 中），`lip migrate` 会失败，指明本应询问的值，且不做任何修改。
 
 ### 警告
 
@@ -35,12 +35,12 @@ git commit -m "Migrate tooth.json to format 4"
 - 每个标签变为同名变体；空标签变为变体 `""`。
 - 对标签适用的每个运行时（其各平台，模式展开为你给出的 RID），该标签下适用于该运行时的变体按 lip v0.37.0 的方式合并，结果变为该运行时的一个服务端条目和一个客户端条目。
 - 存在 `client` 标签时（常见的服务端/客户端拆分），变体 `""` 只得到服务端条目，`client` 变体的条目同时也作为变体 `""` 的客户端条目写入。
-- `dependencies` 连同其范围原样复制。不是格式 4 范围的范围会被保留并给出警告，在你修正之前结果无效。
+- `dependencies` 连同其范围原样复制。不是格式 4 范围的范围会在终端上询问，直到回答是格式 4 的范围；没有终端时命令失败且不做任何更改。
 - 每个资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`，转换方式与 lip 读取[早期格式](../concepts/tooth_json.md#早期格式)的 `tooth.json` 完全相同：`\` 替换为 `/`、空段和 `.` 段被移除后，`dir` 放置规则采用目录形式（`src` 和 `dest` 以 `/` 结尾，或为 `""`），`src` 含 `*`、`?` 或 `[` 的 `file` 放置规则采用 glob 形式（`dest` 以 `/` 结尾，或为 `""`），其他 `file` 放置规则采用文件形式。在格式 4 中无效的放置规则会被省略，并给出警告。
 - 格式 4 没有 `tar`、`tgz` 和 `uncompressed` 资源类型。合并后的变体含有这类资源的运行时不会得到条目，并给出警告，这与 lip 在该运行时下不安装其任何条目一致。
 - `preserve_files` 变为 `preserve`，`remove_files` 变为 `purge`，其中的 `\` 替换为 `/`；不含 `/` 的 `preserve_files` 模式加上前缀 `**/`，不以 `/` 结尾的 `remove_files` 模式还会以带结尾 `/` 的形式再写一遍（参见[局限](#局限)）。
 - scripts 变为 `hooks`：`pre_install`、`post_install`（先 `install`，再 `post_install`）、`pre_uninstall`（先 `pre_uninstall`，再 `uninstall`）和 `post_uninstall`。
-- 空值会被省略。
+- `info` 之外的其他空值会被省略。
 
 ## 局限
 

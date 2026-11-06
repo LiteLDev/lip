@@ -11,7 +11,6 @@ public class PackageManifestMigrationTests {
     Converters =
       {
             new Core.Json.SemVersionJsonConverter(),
-            new Core.Json.UrlJsonConverter(),
             new Core.Json.GlobListJsonConverter()
         }
   };
@@ -354,6 +353,58 @@ public class PackageManifestMigrationTests {
 
     // Assert
     AssertJsonEqual(expectedJsonTextV3, resultJson);
+  }
+
+  [Fact]
+  public void Migrate_V2PlatformWithoutGoarch_AddsEmptyVariantWithoutPlatform() {
+    // Arrange: lip v0.37.0 added an empty variant for its own runtime; here it is one without a
+    // platform, so the result does not depend on the machine lip runs on.
+    string textV2 = """
+            {
+                "format_version": 2,
+                "tooth": "github.com/test/tool",
+                "version": "1.0.0",
+                "info": { "name": "", "description": "", "author": "", "tags": [] },
+                "platforms": [ { "goos": "windows", "commands": { "post_install": ["echo"] } } ]
+            }
+            """;
+    using JsonDocument docV2 = JsonDocument.Parse(textV2);
+
+    // Act
+    PackageManifest result = PackageManifestMigration.Migrate(docV2);
+
+    // Assert
+    Assert.Equal(["", "win-*"], result.Variants.Select(v => v.Platform));
+    Assert.Empty(result.Variants[0].Scripts.PostInstall);
+    Assert.Empty(result.Variants[0].Assets);
+    Assert.Equal(["echo"], result.Variants[1].Scripts.PostInstall);
+  }
+
+  [Fact]
+  public void Migrate_V2WithoutPlatforms_PlacesWithoutAssetUrlAreOfASelfAsset() {
+    // Arrange
+    string textV2 = """
+            {
+                "format_version": 2,
+                "tooth": "github.com/test/tool",
+                "version": "1.0.0",
+                "info": { "name": "", "description": "", "author": "", "tags": [] },
+                "files": { "place": [ { "src": "a/*", "dest": "b" } ] }
+            }
+            """;
+    using JsonDocument docV2 = JsonDocument.Parse(textV2);
+
+    // Act
+    PackageManifest result = PackageManifestMigration.Migrate(docV2);
+
+    // Assert
+    PackageManifestVariant variant = Assert.Single(result.Variants);
+    Assert.Equal("", variant.Platform);
+    PackageManifestAsset asset = Assert.Single(variant.Assets);
+    Assert.Equal(PackageManifestAsset.AssetType.Self, asset.Type);
+    PackageManifestAssetPlacement placement = Assert.Single(asset.Placements);
+    Assert.Equal(("a/", "b", PackageManifestAssetPlacement.PlacementType.Directory),
+        (placement.Src, placement.Dst, placement.Type));
   }
 
   [Theory]

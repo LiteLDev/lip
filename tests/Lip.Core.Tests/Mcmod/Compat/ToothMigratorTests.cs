@@ -248,7 +248,7 @@ public class ToothMigratorTests {
               { "type": "zip", "urls": ["https://example.com/a.zip"], "placements": [
                 { "type": "dir", "src": "a*", "dest": "x" },
                 { "type": "file", "src": "bin/**/*.dll", "dest": "y" },
-                { "type": "file", "src": "bin/[a", "dest": "z" },
+                { "type": "file", "src": "bin/[^a]", "dest": "z" },
                 { "type": "file", "src": "ok.dll", "dest": "ok.dll" }
               ] }
             ] }
@@ -262,7 +262,7 @@ public class ToothMigratorTests {
     // Assert
     string note = Assert.Single(result.Notes);
     Assert.StartsWith("variants (label '', win-x64).assets[0]:", note);
-    Assert.Contains("'bin/[a' -> 'z' becomes 'bin/[a' -> 'z/'", note);
+    Assert.Contains("'bin/[^a]' -> 'z' becomes 'bin/[^a]' -> 'z/'", note);
     Assert.Equal(
         [
           new EntryPlacement("a*/", "x/"),
@@ -480,7 +480,7 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_OnlyAvatarUrlNotHttps_WritesNoInfo() {
+  public async Task Migrate_OnlyAvatarUrlNotHttps_WritesEmptyInfo() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -495,8 +495,9 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
+    // The info of T without its avatar_url (protocol/package.md §5).
     Assert.StartsWith("info.avatar_url:", Assert.Single(result.Notes));
-    Assert.False(result.Document.ContainsKey("info"));
+    Assert.Equal("{}", result.Document["info"]!.ToJsonString());
   }
 
   [Fact]
@@ -517,6 +518,27 @@ public class ToothMigratorTests {
     // Assert
     Assert.Empty(result.Notes);
     Assert.Equal("""{"name":"Tool"}""", result.Document["info"]!.ToJsonString());
+  }
+
+  [Fact]
+  public async Task Migrate_EmptyInfoMembers_AreKept() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/tool", "version": "1.0.0",
+          "info": { "name": "", "description": "", "tags": [] },
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    Assert.Equal(
+        """{"name":"","description":"","tags":[]}""", result.Document["info"]!.ToJsonString());
+    Reparse(result);
   }
 
   [Fact]
@@ -542,7 +564,7 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_EmptyInfo_IsLeftOut() {
+  public async Task Migrate_NoInfo_IsLeftOut() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -641,25 +663,6 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public void ValidationNote_ValidAndInvalidDocuments() {
-    // Arrange
-    byte[] valid = Encoding.UTF8.GetBytes($$"""
-        { "format_version": 4, "format_uuid": "{{ToothFormat.FormatUuid}}",
-          "tooth": "example.com/a", "version": "1.0.0", "variants": {} }
-        """);
-    byte[] invalid = Encoding.UTF8.GetBytes($$"""
-        { "format_version": 4, "format_uuid": "{{ToothFormat.FormatUuid}}",
-          "tooth": "example.com/a", "version": "1.0.0", "variants": { "": [] } }
-        """);
-
-    // Act & Assert
-    Assert.Null(ToothMigrator.ValidationNote(valid));
-    Assert.StartsWith(
-        "The result is not a valid tooth.json of format 4 yet:",
-        ToothMigrator.ValidationNote(invalid));
-  }
-
-  [Fact]
   public void Serialize_IndentsByTwoSpacesWithFinalLineBreak() {
     // Arrange
     JsonObject document = new() {
@@ -694,9 +697,7 @@ public class ToothMigratorTests {
 
   /// The migrated document read back as a tooth file of format 4; it must be valid.
   private static ToothFile Reparse(ToothMigrator.Result result) {
-    byte[] bytes = ToothMigrator.Serialize(result.Document);
-    Assert.Null(ToothMigrator.ValidationNote(bytes));
-    return ToothParser.Parse(bytes);
+    return ToothParser.Parse(ToothMigrator.Serialize(result.Document));
   }
 
   private static IEnumerable<(string Variant, ToothEntry Entry)> Entries(ToothFile file) =>

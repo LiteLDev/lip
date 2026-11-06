@@ -3,13 +3,14 @@ using System.Text.RegularExpressions;
 
 namespace Lip.Core.Mcmod;
 
-/// A path pattern (tooth.schema.json "globs"), matched segment by segment with the POSIX pattern matching
-/// notation as fnmatch applies it with FNM_PATHNAME and without FNM_PERIOD: '*' matches any run of
-/// characters other than '/' (a leading '.' included), '?' one character other than '/', and a
-/// bracket expression one character of its set ('[!...]' of the complement), with ranges,
-/// character classes, collating symbols and equivalence classes of the POSIX locale. There is no
-/// escape character. A segment that is exactly "**" matches zero or more segments, and a pattern
-/// ending in '/' matches directories together with every path below a matched directory.
+/// A path pattern (tooth.schema.json "globs"), matched segment by segment with the POSIX pattern
+/// matching notation as fnmatch applies it with FNM_PATHNAME and without FNM_PERIOD: '*' matches
+/// any run of characters other than '/' (a leading '.' included), '?' one character other than
+/// '/', and a bracket expression one character of its set ('[!...]' of the complement), with
+/// ranges, character classes, collating symbols and equivalence classes of the POSIX locale; a
+/// '[' that starts no complete bracket expression matches itself. There is no escape character.
+/// A segment that is exactly "**" matches zero or more segments, and a pattern ending in '/'
+/// matches directories together with every path below a matched directory.
 ///
 /// Paths are '/'-separated and relative; a directory path is written with a trailing '/'.
 public class PathGlob {
@@ -130,7 +131,13 @@ public class PathGlob {
           regex.Append("[^/]");
           break;
         case '[':
-          i = TranslateBracket(segment, i, regex, pattern);
+          int close = TranslateBracket(segment, i, regex, pattern);
+          if (close < 0) {
+            regex.Append(@"\[");
+          } else {
+            i = close;
+          }
+
           break;
         default:
           regex.Append(Regex.Escape(c.ToString()));
@@ -142,16 +149,18 @@ public class PathGlob {
   }
 
   /// Appends the character class of the bracket expression starting at segment[start] and
-  /// returns the index of its closing ']'. Throws when it is incomplete or starts with '^'.
+  /// returns the index of its closing ']', or returns -1 when there is none. Throws when a
+  /// complete bracket expression is invalid, e.g. starts with '^'.
   private static int TranslateBracket(
       string segment, int start, StringBuilder regex, string pattern) {
     int i = start + 1;
     bool negated = false;
+    string? error = null;
     if (i < segment.Length && segment[i] == '!') {
       negated = true;
       i++;
     } else if (i < segment.Length && segment[i] == '^') {
-      throw new FormatException($"Invalid glob: '{pattern}' (a bracket expression starts with '^')");
+      error = "a bracket expression starts with '^'";
     }
 
     StringBuilder set = new();
@@ -159,6 +168,10 @@ public class PathGlob {
     for (; i < segment.Length; i++) {
       char c = segment[i];
       if (c == ']' && !first) {
+        if (error is not null) {
+          throw new FormatException($"Invalid glob: '{pattern}' ({error})");
+        }
+
         regex.Append(negated ? "[^/" : "[").Append(set).Append(']');
         return i;
       }
@@ -168,21 +181,21 @@ public class PathGlob {
         char kind = segment[i + 1];
         int close = segment.IndexOf($"{kind}]", i + 2, StringComparison.Ordinal);
         if (close < 0) {
-          break;
+          return -1;
         }
 
         string name = segment[(i + 2)..close];
         if (kind == ':') {
-          set.Append(_classes.TryGetValue(name, out string? members)
-              ? members
-              : throw new FormatException(
-                  $"Invalid glob: '{pattern}' (unknown character class '{name}')"));
+          if (_classes.TryGetValue(name, out string? members)) {
+            set.Append(members);
+          } else {
+            error ??= $"unknown character class '{name}'";
+          }
         } else if (name.Length == 1) {
           // In the POSIX locale a collating symbol or an equivalence class is the character.
           set.Append(EscapeInClass(name[0]));
         } else {
-          throw new FormatException(
-              $"Invalid glob: '{pattern}' (unknown collating element '{name}')");
+          error ??= $"unknown collating element '{name}'";
         }
 
         i = close + 1;
@@ -192,7 +205,7 @@ public class PathGlob {
       if (i + 2 < segment.Length && segment[i + 1] == '-' && segment[i + 2] != ']') {
         char end = segment[i + 2];
         if (end < c) {
-          throw new FormatException($"Invalid glob: '{pattern}' (invalid range '{c}-{end}')");
+          error ??= $"invalid range '{c}-{end}'";
         }
 
         set.Append(EscapeInClass(c)).Append('-').Append(EscapeInClass(end));
@@ -203,7 +216,7 @@ public class PathGlob {
       set.Append(EscapeInClass(c));
     }
 
-    throw new FormatException($"Invalid glob: '{pattern}' (incomplete bracket expression)");
+    return -1;
   }
 
   private static string EscapeInClass(char c) =>

@@ -13,20 +13,17 @@ namespace Lip.Core.Sources;
 /// content-addressed cache under the key "git-{oid}" (CacheKeys.GitBlob). Blob content is verified against its
 /// object id before it is cached, so the repository-independent cache key is safe to share.
 ///
-/// Keys are '/'-separated paths relative to <c>subdirectory</c>, matching ArchiveSource,
-/// ZipSource and the old goproxy module zips on every platform. Only regular files
-/// (modes 100644/100755) are exposed; symlinks (120000) are excluded like they were in goproxy zips.
+/// Keys are '/'-separated paths relative to the root tree. Only regular files (modes
+/// 100644/100755) are exposed, as in a git archive (protocol/package.md §1).
 public class GitTreeSource(
     IGitRemoteClient gitRemoteClient,
     ICacheService cacheService,
     Url repoUrl,
-    string commitish,
-    string subdirectory = "") : ISource {
+    string commitish) : ISource {
   private readonly IGitRemoteClient _gitRemoteClient = gitRemoteClient;
   private readonly ICacheService _cacheService = cacheService;
   private readonly Url _repoUrl = repoUrl;
   private readonly string _commitish = commitish;
-  private readonly string _subdirectory = NormalizeSubdirectory(subdirectory);
 
   private readonly Lock _entriesLock = new();
   private Task<IReadOnlyDictionary<string, string>>? _entries;
@@ -42,9 +39,8 @@ public class GitTreeSource(
       IGitRemoteClient gitRemoteClient,
       ICacheService cacheService,
       Url repoUrl,
-      string commitish,
-      string subdirectory = "") {
-    GitTreeSource source = new(gitRemoteClient, cacheService, repoUrl, commitish, subdirectory);
+      string commitish) {
+    GitTreeSource source = new(gitRemoteClient, cacheService, repoUrl, commitish);
 
     await source.GetEntries();
 
@@ -145,11 +141,7 @@ public class GitTreeSource(
   private async Task<IReadOnlyDictionary<string, string>> ListEntries() {
     IReadOnlyList<GitTreeEntry> tree = await _gitRemoteClient.ListTree(_repoUrl, _commitish);
 
-    string prefix = _subdirectory == "" ? "" : _subdirectory + "/";
-
-    return tree
-        .Where(e => e.IsRegularFile && e.Path.StartsWith(prefix, StringComparison.Ordinal))
-        .ToDictionary(e => e.Path[prefix.Length..], e => e.ObjectId);
+    return tree.Where(e => e.IsRegularFile).ToDictionary(e => e.Path, e => e.ObjectId);
   }
 
   private async Task<bool> IsCached(string objectId) {
@@ -158,18 +150,8 @@ public class GitTreeSource(
 
   private static string GetCacheKey(string objectId) => CacheKeys.GitBlob(objectId);
 
-  private static string NormalizeSubdirectory(string subdirectory) {
-    string[] segments = [.. subdirectory.Replace('\\', '/').Split('/').Where(s => s is not ("" or "."))];
-
-    if (segments.Contains("..")) {
-      throw new ArgumentException($"Invalid subdirectory: {subdirectory}", nameof(subdirectory));
-    }
-
-    return string.Join('/', segments);
-  }
-
   // Writes the blob to the file, then checks that its git object hash ("blob <size>\0" + content)
-  // matches the object id. SHA-1 and SHA-256 repositories are told apart by the id length.
+  // matches the SHA-1 object id.
   private static async Task WriteVerifiedBlob(IFileInfo file, string objectId, Stream content) {
     using (Stream fileStream = file.Create()) {
       await content.CopyToAsync(fileStream);
@@ -177,8 +159,7 @@ public class GitTreeSource(
 
     file.Refresh();
 
-    using IncrementalHash hash = IncrementalHash.CreateHash(
-        objectId.Length == 64 ? HashAlgorithmName.SHA256 : HashAlgorithmName.SHA1);
+    using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
     hash.AppendData(Encoding.ASCII.GetBytes($"blob {file.Length}\0"));
 
     using (Stream fileStream = file.OpenRead()) {

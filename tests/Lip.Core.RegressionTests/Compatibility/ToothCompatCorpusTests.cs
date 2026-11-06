@@ -8,6 +8,7 @@ using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
+using Lip.Core.Mcmod.Lock;
 using Lip.Core.Services;
 using Moq;
 using Semver;
@@ -59,7 +60,7 @@ public class ToothCompatCorpusTests {
   [MemberData(nameof(Entries))]
   public async Task Derive_CorpusEntry_MapsGetVariant(string package, string version) {
     // Arrange
-    Ref reference = Ref.Parse(package);
+    Ref reference = Ref.Parse(package, allowFile: false);
     ArchiveHandle archive = await OpenArchive(
         reference.Target, SemVersion.Parse(version, SemVersionStyles.Strict));
     ToothDocument document = await new ArchiveReader().Read(archive);
@@ -120,23 +121,35 @@ public class ToothCompatCorpusTests {
     ArchiveHandle archive = await _archiveProvider.OpenVersion(package, version);
     ToothDocument document = await new ArchiveReader().Read(archive);
     ToothEntry entry = document.ReadFor(_environment).SelectEntry("", _environment)!;
-    McmodInstaller installer = new(new FileSystem(), new CommandRunner(), _userInteraction);
+    FileSystem fs = new();
+    McmodInstaller installer = new(fs, new CommandRunner(), _userInteraction);
 
     string root = Directory.CreateTempSubdirectory("lip-tooth-v4-").FullName;
     try {
       // Act
-      IReadOnlyList<string> files = await installer.Install(
+      PackagePlan plan = await installer.PlanInstall(
           Candidate.Create(
-              new Package(document.Tooth, "", version.Version, entry),
+              new Package(document.Tooth, "", version.Version, entry) {
+                Manifest = document.ReadFor(_environment).Json,
+              },
               archive,
-              Ref.Parse(package),
+              Ref.Parse(package, allowFile: false),
               _archiveProvider),
           new InstallContext(
               root,
               _environment,
               new LockFile { Platform = "server", Runtime = _environment.Runtime, Packages = [] },
               DryRun: false,
-              IgnoreScripts: true));
+              IgnoreScripts: true),
+          new WorkspaceView(fs));
+      using (WorkspaceTransaction transaction = new(
+          fs, new LockStore(fs).GetJournalPath(root), plan.WrittenPaths)) {
+        await installer.Apply(plan, transaction, CancellationToken.None);
+        transaction.Commit();
+        transaction.Complete();
+      }
+
+      IReadOnlyList<string> files = plan.OwnedFiles;
 
       // Assert
       Assert.NotEmpty(files);

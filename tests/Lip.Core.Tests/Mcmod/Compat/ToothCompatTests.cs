@@ -319,8 +319,8 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void Info_EmptyMembers_AreDropped() {
-    // Arrange
+  public void Info_EmptyMembers_AreKept() {
+    // Arrange: the info of T, as it is (protocol/package.md §5).
     PackageManifestInfo info = new() {
       Name = "",
       Description = "",
@@ -332,7 +332,53 @@ public class ToothCompatTests {
     JsonObject result = ToothCompat.Info(info);
 
     // Assert
+    Assert.Equal("""{"name":"","description":"","tags":[]}""", result.ToJsonString());
+  }
+
+  [Fact]
+  public void Info_AbsentMembers_AreAbsent() {
+    // Act
+    JsonObject result = ToothCompat.Info(new PackageManifestInfo { AvatarUrl = "a.png" });
+
+    // Assert
     Assert.Empty(result);
+  }
+
+  [Fact]
+  public void Derive_NoInfo_HasNoInfo() {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    JsonElement json = ToothCompat.Derive(manifest, _serverWin).Json;
+
+    // Assert
+    Assert.False(json.TryGetProperty("info", out _));
+  }
+
+  [Fact]
+  public void Derive_EmptyInfoMembers_AreKept() {
+    // Arrange
+    PackageManifest manifest = Manifest($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/user/repo", "version": "1.0.0",
+          "info": { "name": "", "tags": [], "avatar_url": "" },
+          "variants": [ { "platform": "win-x64" } ]
+        }
+        """);
+
+    // Act
+    JsonElement info = ToothCompat.Derive(manifest, _serverWin).Json.GetProperty("info");
+
+    // Assert
+    Assert.Equal("""{"name":"","tags":[]}""", info.GetRawText());
   }
 
   [Fact]
@@ -473,7 +519,7 @@ public class ToothCompatTests {
     Assert.Empty(entry.Assets[0].Placements);
     Assert.Empty(entry.Assets[1].Urls);
     Assert.Equal([new EntryPlacement("d/", "plugins/d/")], entry.Assets[1].Placements);
-    Assert.False(entry.IsMod);
+    Assert.Null(entry.McmodAsset);
     Assert.Equal(
         ["**/config.json", "plugins/x/*.json"], entry.PreserveFiles.Select(g => g.Pattern));
     Assert.Equal(["logs", "logs/", "tmp/"], entry.RemoveFiles.Select(g => g.Pattern));
@@ -702,15 +748,29 @@ public class ToothCompatTests {
   }
 
   [Theory]
-  [InlineData("github.com/user/repo", "repo")]
-  [InlineData("github.com/user/repo/v2", "repo")]
-  [InlineData("github.com/user/repo/v", "v")]
-  [InlineData("github.com/user/repo/v2x", "v2x")]
-  [InlineData("example.com/v3", "example.com")]
-  [InlineData("example.com", "example.com")]
-  public void GetToothName_StripsMajorVersionSuffix(string tooth, string name) {
-    // Act & Assert
-    Assert.Equal(name, ToothCompat.GetToothName(tooth));
+  [InlineData("win-x64", true)]
+  [InlineData("linux-x64", false)]
+  [InlineData("osx-arm64", false)]
+  public void Derive_V2PlatformPattern_HasVariantForEveryRuntime(string runtime, bool windows) {
+    // Arrange: lip v0.37.0, running on the runtime, added an empty variant for it when a
+    // platform is a pattern; the result does not depend on the machine lip runs on.
+    PackageManifest manifest = Manifest("""
+        {
+          "format_version": 2,
+          "tooth": "github.com/test/tool",
+          "version": "1.0.0",
+          "info": { "name": "", "description": "", "author": "", "tags": [] },
+          "platforms": [ { "goos": "windows", "commands": { "post_install": ["echo"] } } ]
+        }
+        """);
+
+    // Act
+    ToothFile tooth = ToothCompat.Derive(manifest, new LipEnvironment(McmodPlatform.Server, runtime));
+
+    // Assert
+    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(runtime, entry.Runtime);
+    Assert.Equal(windows ? new[] { "echo" } : [], entry.Hooks.PostInstall);
   }
 
   [Fact]

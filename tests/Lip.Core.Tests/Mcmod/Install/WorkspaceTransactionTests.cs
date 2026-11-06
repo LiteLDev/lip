@@ -62,12 +62,31 @@ public class WorkspaceTransactionTests {
     await Change(transaction);
 
     // Act
-    IReadOnlyList<string> errors = transaction.Rollback();
+    IReadOnlyList<string> errors = transaction.Rollback(() => { });
 
     // Assert
     Assert.Empty(errors);
     Assert.Equal(before, Snapshot());
     Assert.False(_fs.File.Exists(_journal));
+  }
+
+  [Fact]
+  public async Task Rollback_BackupDeletedByOthers_KeepsTheFileCreatedInItsPlace() {
+    // Arrange: e.g. a hook command deleted the backup of replace.txt (protocol/workspace.md
+    // §7.5, "CreateFile").
+    using WorkspaceTransaction transaction = new(_fs, _journal);
+    using MemoryStream content = new("new"u8.ToArray());
+    await transaction.WriteFile(
+        Full("replace.txt"), content, TestContext.Current.CancellationToken);
+    _fs.File.SetAttributes(Full(".replace.txt.bak"), FileAttributes.Normal);
+    _fs.File.Delete(Full(".replace.txt.bak"));
+
+    // Act
+    IReadOnlyList<string> errors = transaction.Rollback(() => { });
+
+    // Assert
+    Assert.Empty(errors);
+    Assert.Equal("new", _fs.File.ReadAllText(Full("replace.txt")));
   }
 
   [Fact]
@@ -150,8 +169,55 @@ public class WorkspaceTransactionTests {
 
     // Assert
     Assert.DoesNotContain(_root, journal, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("""{"op":"CreateFile","path":"new/deep/created.txt",""", journal);
-    Assert.Contains("""{"op":"Backup","path":"replace.txt","to":".replace.txt.bak",""", journal);
+    Assert.Contains("""{"op":"CreateFile","path":"new/deep/created.txt"}""" + "\n", journal);
+    Assert.Contains(
+        """{"op":"Backup","path":"replace.txt","to":".replace.txt.bak","hidden":false}""" + "\n",
+        journal);
+  }
+
+  [Fact]
+  public async Task Journal_Commit_IsARecordWithoutMembers() {
+    // Arrange
+    using WorkspaceTransaction transaction = new(_fs, _journal);
+    await Change(transaction);
+
+    // Act
+    transaction.Commit();
+    string journal = _fs.File.ReadAllText(_journal);
+
+    // Assert: protocol/workspace.md §7.3 gives "Commit" no members, "hidden" only to "Backup".
+    Assert.EndsWith("""{"op":"Commit"}""" + "\n", journal);
+    Assert.All(
+        journal.Split('\n').Where(l => l.Contains("\"hidden\"", StringComparison.Ordinal)),
+        l => Assert.StartsWith("""{"op":"Backup",""", l, StringComparison.Ordinal));
+  }
+
+  [Theory]
+  // A last line not ended by LF, as a killed process may leave.
+  [InlineData("""{"op":"CreateFile","path":"keep.txt"}""")]
+  // No path.
+  [InlineData("""{"op":"CreateFile"}""" + "\n")]
+  // An op that is not a name of the table.
+  [InlineData("""{"op":2,"path":"keep.txt"}""" + "\n")]
+  [InlineData("""{"op":"createfile","path":"keep.txt"}""" + "\n")]
+  // A Backup without a string to.
+  [InlineData("""{"op":"Backup","path":"keep.txt","to":1}""" + "\n")]
+  // Not an object.
+  [InlineData("""["CreateFile","keep.txt"]""" + "\n")]
+  public void Recover_LineThatIsNoRecord_IsIgnored(string line) {
+    // Arrange
+    SortedDictionary<string, string> before = Snapshot();
+    _fs.AddFile(_journal, new MockFileData("""{"op":"Begin","path":""}""" + "\n" + line));
+
+    // Act
+    WorkspaceTransaction.RecoveryResult? result =
+        WorkspaceTransaction.Recover(_fs, _journal, () => { }, () => { });
+
+    // Assert
+    Assert.Equal(0, result!.Changes);
+    Assert.Empty(result.Errors);
+    Assert.Equal(before, Snapshot());
+    Assert.False(_fs.File.Exists(_journal));
   }
 
   [Fact]
@@ -206,7 +272,7 @@ public class WorkspaceTransactionTests {
     using (WorkspaceTransaction transaction = new(_fs, _journal)) {
       await Change(transaction);
       _fs.File.Copy(_journal, copy);
-      transaction.Rollback();
+      transaction.Rollback(() => { });
     }
 
     _fs.File.Move(copy, _journal);
@@ -252,14 +318,40 @@ public class WorkspaceTransactionTests {
     using WorkspaceTransaction transaction = new(_fs, _journal);
     await Change(transaction);
     transaction.Commit();
+    string? journalWhenDiscarding = null;
 
     // Act
-    IReadOnlyList<string> errors = transaction.Rollback();
+    IReadOnlyList<string> errors = transaction.Rollback(
+        () => journalWhenDiscarding = _fs.File.ReadAllText(_journal));
 
-    // Assert
+    // Assert: the journal lost its "Commit" record before the staged workspace file was
+    // discarded (protocol/workspace.md §7.4).
     Assert.Empty(errors);
+    Assert.NotNull(journalWhenDiscarding);
+    Assert.DoesNotContain("\"op\":\"Commit\"", journalWhenDiscarding, StringComparison.Ordinal);
     Assert.Equal(before, Snapshot());
     Assert.False(_fs.File.Exists(_journal));
+  }
+
+  [Fact]
+  public async Task Rollback_AfterCommitJournalCannotBeReplaced_LeavesItForCompletion() {
+    // Arrange: committed, then neither the lock nor the journal can be replaced.
+    using WorkspaceTransaction transaction = new(_fs, _journal);
+    await Change(transaction);
+    transaction.Commit();
+    SortedDictionary<string, string> committed = Snapshot();
+    _fs.AddFile(_journal + ".tmp", new MockFileData("") { AllowedFileShare = FileShare.None });
+    bool discarded = false;
+
+    // Act
+    IReadOnlyList<string> errors = transaction.Rollback(() => discarded = true);
+
+    // Assert: nothing is undone and the journal still commits, so that recovery completes the
+    // operation (protocol/workspace.md §7.4).
+    Assert.Contains(errors, e => e.Contains("journal"));
+    Assert.False(discarded);
+    Assert.Equal(committed, Snapshot());
+    Assert.Contains("\"op\":\"Commit\"", _fs.File.ReadAllText(_journal), StringComparison.Ordinal);
   }
 
   [Fact]
@@ -273,7 +365,7 @@ public class WorkspaceTransactionTests {
     // Act
     await Assert.ThrowsAsync<IOException>(() => transaction.WriteFile(
         Full("created.txt"), content, TestContext.Current.CancellationToken));
-    transaction.Rollback();
+    transaction.Rollback(() => { });
 
     // Assert
     Assert.Equal(before, Snapshot());
@@ -283,7 +375,7 @@ public class WorkspaceTransactionTests {
   [Fact]
   public void AnyOpen_WhileATransactionIsOpen_IsTrue() {
     // Act & Assert
-    using (new WorkspaceTransaction(_fs)) {
+    using (new WorkspaceTransaction(_fs, _journal)) {
       Assert.True(WorkspaceTransaction.AnyOpen);
     }
   }

@@ -5,8 +5,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class UninstallCommand(ILipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<UninstallCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class UninstallCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<UninstallCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public class Settings : EnvironmentSettings {

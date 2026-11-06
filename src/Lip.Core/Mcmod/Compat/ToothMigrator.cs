@@ -13,8 +13,8 @@ namespace Lip.Core.Mcmod.Compat;
 /// Converts a tooth.json of format 1–3 (already read as format 3) into one of format 4 (lip
 /// migrate, protocol/cli.md §5.8), agreeing with how protocol/package.md §5 reads it for every
 /// environment as far as format 4 can express it. The notes list what is dropped or converted
-/// with another meaning, each naming the field of format 3 it comes from. Missing values are
-/// asked for through IUserInteraction.Ask.
+/// with another meaning, each naming the field of format 3 it comes from. Missing values, and
+/// dependency ranges that are not ranges of format 4, are asked for through IUserInteraction.Ask.
 ///
 /// - Format 4 has no platform patterns and no "any runtime": the runtimes a platform pattern
 ///   stands for, and those the variants without a platform apply to, are asked for.
@@ -42,7 +42,7 @@ public static class ToothMigrator {
       PackageManifest tooth,
       IUserInteraction ui) {
     List<string> notes = [];
-    Context context = new(tooth, notes);
+    Context context = new(tooth, notes, ui, []);
 
     JsonObject document = new() {
       [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
@@ -50,25 +50,30 @@ public static class ToothMigrator {
       ["tooth"] = tooth.Path,
       ["version"] = tooth.Version.ToString(),
     };
-    JsonObject info = ToothCompat.Info(tooth.Info);
-    if (tooth.Info.AvatarUrl != "" && !ToothCompat.IsLogo(tooth.Info.AvatarUrl)) {
-      notes.Add($"info.avatar_url: '{tooth.Info.AvatarUrl}' does not start with \"https://\", "
-          + "which info.logo of format 4 must; it was dropped. Set info.logo to the https URL of "
-          + "the logo image.");
+    if (tooth.Info is PackageManifestInfo info) {
+      document["info"] = ToothCompat.Info(info);
+      if (info.AvatarUrl is { Length: > 0 } avatarUrl && !ToothCompat.IsLogo(avatarUrl)) {
+        notes.Add($"info.avatar_url: '{avatarUrl}' does not start with \"https://\", which "
+            + "info.logo of format 4 must; it was dropped. Set info.logo to the https URL of the "
+            + "logo image.");
+      }
     }
 
-    if (info.Count > 0) {
-      document["info"] = info;
-    }
-
-    document["variants"] = await Variants(context, ui);
+    document["variants"] = await Variants(context);
     return new Result(document, notes);
   }
 
-  private sealed record Context(PackageManifest Tooth, List<string> Notes);
+  /// Ranges holds the answers for dependency ranges that are not ranges of format 4, by
+  /// dependency and range, so each is asked once.
+  private sealed record Context(
+      PackageManifest Tooth,
+      List<string> Notes,
+      IUserInteraction Ui,
+      Dictionary<(PackageId, string), string> Ranges);
 
-  private static async Task<JsonObject> Variants(Context context, IUserInteraction ui) {
+  private static async Task<JsonObject> Variants(Context context) {
     PackageManifest tooth = context.Tooth;
+    IUserInteraction ui = context.Ui;
 
     // The runtimes every platform pattern stands for, asked once per pattern, and the runtimes
     // the variants without a platform apply to, asked once.
@@ -113,7 +118,7 @@ public static class ToothMigrator {
       ];
 
       foreach (string runtime in runtimes) {
-        if (Content(context, Merge(tooth, label, runtime), runtime,
+        if (await Content(context, Merge(tooth, label, runtime), runtime,
             $"variants (label '{label}', {runtime})") is not JsonObject content) {
           continue;
         }
@@ -160,9 +165,9 @@ public static class ToothMigrator {
   }
 
   /// The content of an entry for a merged variant, converted as protocol/package.md §5 converts
-  /// it (ToothCompat.ConvertEntry), without platform and runtime; null when the variant has no
-  /// entry for the runtime.
-  private static JsonObject? Content(
+  /// it (ToothCompat.ConvertEntry), without platform and runtime, with each dependency range that
+  /// is not a range of format 4 asked for; null when the variant has no entry for the runtime.
+  private static async Task<JsonObject?> Content(
       Context context, PackageManifestVariant variant, string runtime, string field) {
     List<string> notes = context.Notes;
     if (ToothCompat.ConvertEntry(variant, McmodPlatform.Server, runtime, notes, field)
@@ -175,8 +180,17 @@ public static class ToothMigrator {
 
     foreach ((PackageId dependency, SemVersionRange range) in variant.Dependencies) {
       string dependencyField = $"{field}.dependencies[\"{dependency}\"]";
-      if (!VersionRange.TryParse(range.ToString(), out _)) {
-        notes.Add($"{dependencyField}: the range '{range}' is not a range of format 4; fix it.");
+      string text = range.ToString();
+      if (!VersionRange.TryParse(text, out _)) {
+        if (!context.Ranges.TryGetValue((dependency, text), out string? answer)) {
+          answer = await AskValid(
+              context.Ui,
+              $"a version range of format 4 for {dependencyField}, whose range '{text}' is not one",
+              a => VersionRange.TryParse(a, out _) ? null : $"'{a}' is not a version range.");
+          context.Ranges[(dependency, text)] = answer;
+        }
+
+        content["dependencies"]![dependency.ToString()] = answer;
       }
 
       if (dependency.Variant == ToothCompat.ClientLabel) {
@@ -311,17 +325,6 @@ public static class ToothMigrator {
     }
 
     return notes;
-  }
-
-  /// A note when utf8Json is not a valid tooth.json of format 4, else null.
-  public static string? ValidationNote(byte[] utf8Json) {
-    try {
-      ToothParser.Parse(utf8Json);
-      return null;
-    }
-    catch (ToothFormatException ex) {
-      return $"The result is not a valid tooth.json of format 4 yet: {ex.Message}";
-    }
   }
 
   /// The UTF-8 bytes of a tooth.json as lip writes it: indented by two spaces, with a final

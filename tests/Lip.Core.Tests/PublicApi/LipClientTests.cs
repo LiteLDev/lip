@@ -11,52 +11,22 @@ namespace Lip.Core.Tests.PublicApi;
 public class LipClientTests {
   private readonly WorkspaceHarness _ws = new();
   private readonly Mock<ICacheService> _cacheService = new();
-  private readonly Mock<IConfigService> _configService = new();
   private readonly LipClient _client;
 
   public LipClientTests() {
     _ws.Fs.Directory.SetCurrentDirectory(_ws.Root);
     _client = new LipClient(
-        _ws.Fs, _ws.Ui.Object, _cacheService.Object, _configService.Object, _ws.Service);
+        _ws.Fs,
+        _ws.Ui.Object,
+        _cacheService.Object,
+        new ConfigService(_ws.Fs, _ws.Ui.Object),
+        _ws.Service);
   }
 
   [Fact]
   public async Task CacheClean_CallsService() {
     await _client.CacheClean();
     _cacheService.Verify(s => s.Clean(), Times.Once);
-  }
-
-  [Fact]
-  public async Task ConfigGet_ReturnsValue() {
-    _configService.Setup(s => s.Get("github_proxy")).ReturnsAsync("https://proxy.com");
-
-    string result = await _client.ConfigGet("github_proxy");
-
-    Assert.Equal("https://proxy.com", result);
-  }
-
-  [Fact]
-  public async Task ConfigSet_SavesConfig() {
-    await _client.ConfigSet("github_proxy", "https://new_proxy.com");
-
-    _configService.Verify(s => s.Set("github_proxy", "https://new_proxy.com"), Times.Once);
-  }
-
-  [Fact]
-  public async Task ConfigDelete_RemovesKey() {
-    await _client.ConfigDelete("github_proxy");
-
-    _configService.Verify(s => s.Delete("github_proxy"), Times.Once);
-  }
-
-  [Fact]
-  public async Task ConfigList_ReturnsAllKeys() {
-    _configService.Setup(s => s.List()).ReturnsAsync(
-        new Dictionary<string, string> { { "github_proxy", "https://proxy.com" } });
-
-    IDictionary<string, string> result = await _client.ConfigList();
-
-    Assert.Equal("https://proxy.com", result["github_proxy"]);
   }
 
   #region Init

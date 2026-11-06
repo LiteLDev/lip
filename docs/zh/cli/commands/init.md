@@ -18,6 +18,6 @@ lip init
 - `version`：`"0.1.0"`
 - `variants`：`{ "": [ { "platform": "server", "runtime": "win-x64" } ] }`
 
-若当前目录已存在 `tooth.json`，命令会失败且不写入任何内容。若标准输入或标准错误不是终端，则无法询问，命令同样会失败。[`lip rpc`](rpc.md) 的 `Init` 方法从不询问，因此会以同样的方式失败。
+若当前目录已存在 `tooth.json`，命令会失败且不写入任何内容。若标准输入或标准错误不是终端，则无法询问，命令同样会失败。
 
 接下来的步骤请参阅[创建包](../../guides/creating_packages.md)。

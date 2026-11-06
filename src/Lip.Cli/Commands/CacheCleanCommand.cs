@@ -4,8 +4,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class CacheCleanCommand(ILipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<CacheCleanCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class CacheCleanCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<CacheCleanCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public class Settings : CommandSettings {

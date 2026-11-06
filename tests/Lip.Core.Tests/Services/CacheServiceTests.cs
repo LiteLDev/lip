@@ -10,52 +10,6 @@ public class CacheServiceTests {
   private static string GetCachePath() => LipDirectories.Cache;
 
   [Fact]
-  public async Task GetOrCreateDirectory_NonExistent_CreatesAndCallsFactory() {
-    // Arrange
-    string cachePath = GetCachePath();
-    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>(), cachePath);
-    var mockUserInteraction = new Mock<IUserInteraction>();
-    CacheService service = new(mockFileSystem, mockUserInteraction.Object);
-    bool factoryCalled = false;
-
-    // Act
-    IDirectoryInfo result = await service.GetOrCreateDirectory("test-key", async dir => {
-      mockFileSystem.Directory.CreateDirectory(dir.FullName);
-      factoryCalled = true;
-      await Task.CompletedTask;
-    });
-
-    // Assert
-    Assert.True(factoryCalled);
-    Assert.NotNull(result);
-  }
-
-  [Fact]
-  public async Task GetOrCreateDirectory_Exists_DoesNotCallFactory() {
-    // Arrange
-    string cachePath = GetCachePath();
-    string safeKey = Uri.EscapeDataString("test-key");
-    string targetPath = Path.Combine(cachePath, safeKey);
-
-    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>
-    {
-            { Path.Combine(targetPath, "placeholder.txt"), new MockFileData("") }
-        });
-    var mockUserInteraction = new Mock<IUserInteraction>();
-    CacheService service = new(mockFileSystem, mockUserInteraction.Object);
-    bool factoryCalled = false;
-
-    // Act
-    IDirectoryInfo result = await service.GetOrCreateDirectory("test-key", async dir => {
-      factoryCalled = true;
-      await Task.CompletedTask;
-    });
-
-    // Assert
-    Assert.False(factoryCalled);
-  }
-
-  [Fact]
   public async Task GetOrCreateFile_NonExistent_CreatesAndCallsFactory() {
     // Arrange
     string cachePath = GetCachePath();
@@ -136,29 +90,6 @@ public class CacheServiceTests {
 
     // Assert
     Assert.Equal("first", mockFileSystem.File.ReadAllText(result.FullName));
-  }
-
-  [Fact]
-  public async Task GetOrCreateDirectory_CreatedConcurrently_ReturnsExistingDirectory() {
-    // Arrange
-    string cachePath = GetCachePath();
-    MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>(), cachePath);
-    var mockUserInteraction = new Mock<IUserInteraction>();
-    CacheService service = new(mockFileSystem, mockUserInteraction.Object);
-
-    // Act
-    IDirectoryInfo result = await service.GetOrCreateDirectory("test-key", async dir => {
-      mockFileSystem.Directory.CreateDirectory(dir.FullName);
-      // Another writer stores the same key before this one moves its directory into place.
-      await service.GetOrCreateDirectory("test-key", other => {
-        mockFileSystem.Directory.CreateDirectory(other.FullName);
-        mockFileSystem.File.WriteAllText(Path.Combine(other.FullName, "first.txt"), "");
-        return Task.CompletedTask;
-      });
-    });
-
-    // Assert
-    Assert.True(mockFileSystem.File.Exists(Path.Combine(result.FullName, "first.txt")));
   }
 
   [Fact]

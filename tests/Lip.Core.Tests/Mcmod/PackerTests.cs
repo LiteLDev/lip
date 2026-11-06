@@ -65,7 +65,23 @@ public class PackerTests {
     Assert.Equal(
         [".gitignore", "a.txt", "sub/.git/HEAD", "sub/.lip/x"],
         entries.Keys.Order(StringComparer.Ordinal));
-    Assert.False(fs.File.Exists(output + ".tmp"));
+  }
+
+  [Fact]
+  public async Task WriteArchive_FileNamedLikeATemporaryOutput_IsPackedAndKept() {
+    // Arrange: only <FILE> itself is left out (protocol/cli.md §5.11).
+    MockFileSystem fs = new();
+    string output = fs.Path.Join(_root, "out.mcmod");
+    fs.AddFile(output + ".tmp", new MockFileData("mine"));
+
+    // Act
+    await Packer.WriteArchive(fs, _root, output);
+
+    // Assert
+    KeyValuePair<string, string> entry = Assert.Single(await Entries(fs, output));
+    Assert.Equal("out.mcmod.tmp", entry.Key);
+    Assert.Equal("mine", entry.Value);
+    Assert.Equal("mine", fs.File.ReadAllText(output + ".tmp"));
   }
 
   [Fact]

@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
@@ -43,28 +42,12 @@ public class Resolver(
     }
   }
 
-  public async Task<ResolveResult> Resolve(
-      Ref source,
-      IVersionConstraint? range,
-      LipEnvironment environment,
-      bool clientCompat = false) {
-    List<Candidate> candidates = [];
-    List<string> diagnostics = [];
-    await foreach (Candidate candidate in ResolveLazy(
-        source, range, environment, clientCompat, diagnostics.Add)) {
-      candidates.Add(candidate);
-    }
-
-    return new ResolveResult(candidates, diagnostics);
-  }
-
   public async IAsyncEnumerable<Candidate> ResolveLazy(
       Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool clientCompat = false,
-      Action<string>? onDiagnostic = null,
-      [EnumeratorCancellation] CancellationToken cancellationToken = default) {
+      Action<string>? onDiagnostic = null) {
     Walk walk = new(source, range, environment, clientCompat, onDiagnostic ?? (_ => { }));
 
     // Step 1: the archives the source names.
@@ -113,7 +96,6 @@ public class Resolver(
     }
 
     foreach (SpecVersion version in matching) {
-      cancellationToken.ThrowIfCancellationRequested();
       ArchiveHandle archive;
       try {
         archive = await Cached(

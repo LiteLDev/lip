@@ -6,12 +6,12 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class ListCommand(ILipClient lipClient) : AsyncCommand<ListCommand.Settings> {
+public class ListCommand(LipClient lipClient) : AsyncCommand<ListCommand.Settings> {
   private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
     WriteIndented = true
   };
 
-  private readonly ILipClient _lipClient = lipClient;
+  private readonly LipClient _lipClient = lipClient;
 
   public class Settings : CommandSettings {
     [CommandOption("--json")]

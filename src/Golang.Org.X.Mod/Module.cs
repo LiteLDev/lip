@@ -1,7 +1,6 @@
-using System.Text;
-
 namespace Golang.Org.X.Mod;
 
+/// golang.org/x/mod/module: CheckPath and what it needs.
 public static class Module {
   public class InvalidPathError(string kind, string path, Exception innerException)
       : Exception($"malformed {kind} path {path}", innerException) {
@@ -9,38 +8,12 @@ public static class Module {
     public string Path { get; private init; } = path;
   }
 
-  public class InvalidVersionError(string version, bool pseudo, Exception innerException)
-      : Exception($"{version} (pseudo={pseudo}) invalid", innerException) {
-    public string Version { get; private init; } = version;
-    public bool Pseudo { get; private init; } = pseudo;
-  }
-
-  public static string CanonicalVersion(string v) {
-    string cv = Semver.Canonical(v);
-    if (Semver.Build(v) == "+incompatible") {
-      cv += "+incompatible";
-    }
-    return cv;
-  }
-
-  public static Exception Check(string path, string version) {
-    throw new NotImplementedException();
-  }
-
-  public static Exception CheckFilePath(string path) {
-    throw new NotImplementedException();
-  }
-
-  public static Exception CheckImportPath(string path) {
-    throw new NotImplementedException();
-  }
-
   public static Exception? CheckPath(string path) {
     InvalidPathError MakeError(Exception exception) {
       return new InvalidPathError("module", path, exception);
     }
 
-    Exception? err = ModuleInternal.CheckPath(path, ModuleInternal.PathKind.ModulePath);
+    Exception? err = ModuleInternal.CheckPath(path);
     if (err is not null) {
       return MakeError(err);
     }
@@ -69,70 +42,6 @@ public static class Module {
     return null;
   }
 
-  public static Exception CheckPathMajor(string v, string pathMajor) {
-    throw new NotImplementedException();
-  }
-
-  public static (string, Exception?) EscapePath(string path) {
-    Exception? err = CheckPath(path);
-    if (err is not null) {
-      return (string.Empty, err);
-    }
-
-    return ModuleInternal.EscapeString(path);
-  }
-
-  public static (string, Exception?) EscapeVersion(string v) {
-    Exception? err = ModuleInternal.CheckElem(v, ModuleInternal.PathKind.FilePath);
-    if (err is not null || v.Contains('!')) {
-      return (
-          string.Empty,
-          new InvalidVersionError(v, false, new Exception("disallowed version string"))
-      );
-    }
-    return ModuleInternal.EscapeString(v);
-  }
-
-  public static bool IsPseudoVersion(string v) {
-    throw new NotImplementedException();
-  }
-
-  public static bool IsZeroPseudoVersion(string v) {
-    throw new NotImplementedException();
-  }
-
-  public static bool MatchPathMajor(string v, string pathMajor) {
-    throw new NotImplementedException();
-  }
-
-  public static bool MatchPrefixPatterns(string globs, string target) {
-    throw new NotImplementedException();
-  }
-
-  public static string PathMajorPrefix(string pathMajor) {
-    throw new NotImplementedException();
-  }
-
-  public static string PseudoVersion(string major, string older, DateTime t, string rev) {
-    throw new NotImplementedException();
-  }
-
-  public static (string, Exception) PseudoVersionBase(string v) {
-    throw new NotImplementedException();
-  }
-
-  public static (string, Exception) PseudoVersionRev(string v) {
-    throw new NotImplementedException();
-  }
-
-  public static (DateTime, Exception) PseudoVersionTime(string v) {
-    throw new NotImplementedException();
-  }
-
-  public static void Sort(Version[] list) {
-    throw new NotImplementedException();
-  }
-
   public static (string, string, bool) SplitPathVersion(string path) {
     if (path.StartsWith("gopkg.in/")) {
       return ModuleInternal.SplitGopkgIn(path);
@@ -156,31 +65,9 @@ public static class Module {
     }
     return (prefix, pathMajor, true);
   }
-
-  public static (string, Exception) UnescapePath(string escaped) {
-    throw new NotImplementedException();
-  }
-
-  public static (string, Exception) UnescapeVersion(string escaped) {
-    throw new NotImplementedException();
-  }
-
-  public static Exception VersionError(Version v, Exception err) {
-    throw new NotImplementedException();
-  }
-
-  public static string ZeroPseudoVersion(string major) {
-    throw new NotImplementedException();
-  }
 }
 
 file static class ModuleInternal {
-  public enum PathKind {
-    ModulePath,
-    ImportPath,
-    FilePath,
-  }
-
   private static readonly string[] _badWindowsNames = [
       "CON",
         "PRN",
@@ -206,7 +93,8 @@ file static class ModuleInternal {
         "LPT9",
     ];
 
-  public static Exception? CheckElem(string elem, PathKind kind) {
+  /// checkElem of a module path element.
+  public static Exception? CheckElem(string elem) {
     if (string.IsNullOrEmpty(elem)) {
       return new Exception("empty path element");
     }
@@ -215,7 +103,7 @@ file static class ModuleInternal {
       return new Exception($"invalid path element \"{elem}\"");
     }
 
-    if (elem[0] == '.' && kind == PathKind.ModulePath) {
+    if (elem[0] == '.') {
       return new Exception("leading dot in path element");
     }
 
@@ -224,14 +112,7 @@ file static class ModuleInternal {
     }
 
     foreach (char r in elem) {
-      bool ok = false;
-      ok = kind switch {
-        PathKind.ModulePath => (bool)ModPathOK(r),
-        PathKind.ImportPath => (bool)ImportPathOK(r),
-        PathKind.FilePath => (bool)FileNameOK(r),
-        _ => throw new Exception($"internal error: invalid kind {kind}"),
-      };
-      if (!ok) {
+      if (!ModPathOK(r)) {
         return new Exception($"invalid char \"{r}\"");
       }
     }
@@ -246,10 +127,6 @@ file static class ModuleInternal {
       if (string.Equals(bad, shortElem, StringComparison.OrdinalIgnoreCase)) {
         return new Exception($"\"{shortElem}\" disallowed as path element component on Windows");
       }
-    }
-
-    if (kind == PathKind.FilePath) {
-      return null;
     }
 
     int tilde = shortElem.LastIndexOf('~');
@@ -269,14 +146,13 @@ file static class ModuleInternal {
     return null;
   }
 
-  public static Exception? CheckPath(string path, PathKind kind) {
-    if (!IsValidUtf8(path)) {
-      return new Exception("invalid UTF-8");
-    }
+  /// checkPath of a module path. A string that is not valid UTF-8 in Go (a lone surrogate here)
+  /// has a non-ASCII char, which ModPathOK rejects.
+  public static Exception? CheckPath(string path) {
     if (path == "") {
       return new Exception("empty string");
     }
-    if (path[0] == '-' && kind != PathKind.FilePath) {
+    if (path[0] == '-') {
       return new Exception("leading dash");
     }
     if (path.Contains("//")) {
@@ -288,70 +164,14 @@ file static class ModuleInternal {
     int elemStart = 0;
     for (int i = 0; i < path.Length; i++) {
       if (path[i] == '/') {
-        Exception? err = CheckElem(path[elemStart..i], kind);
+        Exception? err = CheckElem(path[elemStart..i]);
         if (err is not null) {
           return err;
         }
         elemStart = i + 1;
       }
     }
-    Exception? lastErr = CheckElem(path[elemStart..], kind);
-    if (lastErr is not null) {
-      return lastErr;
-    }
-    return null;
-
-    static bool IsValidUtf8(string s) {
-      // In .NET, strings are valid Unicode.
-      // This stub simulates a UTF-8 validity check.
-      try {
-        Encoding.UTF8.GetBytes(s);
-        return true;
-      }
-      catch {
-        return false;
-      }
-    }
-  }
-
-  public static (string, Exception?) EscapeString(string s) {
-    {
-      bool haveUpper = false;
-      foreach (char r in s) {
-        if (r == '!' || r >= 0x80) {
-          return (string.Empty, new Exception("internal error: inconsistency in EscapePath"));
-        }
-        if (r >= 'A' && r <= 'Z') {
-          haveUpper = true;
-        }
-      }
-
-      if (!haveUpper) {
-        return (s, null);
-      }
-
-      StringBuilder sb = new();
-      foreach (char r in s) {
-        if (r >= 'A' && r <= 'Z') {
-          sb.Append('!');
-          sb.Append(char.ToLowerInvariant(r));
-        } else {
-          sb.Append(r);
-        }
-      }
-      return (sb.ToString(), null);
-    }
-  }
-
-  public static bool FileNameOK(char r) {
-    if (r < 0x80) {
-      const string allowed = "!#$%&()+,-.=@[]^_{}~ ";
-      if ('0' <= r && r <= '9' || 'A' <= r && r <= 'Z' || 'a' <= r && r <= 'z') {
-        return true;
-      }
-      return allowed.Contains(r);
-    }
-    return char.IsLetter(r);
+    return CheckElem(path[elemStart..]);
   }
 
   public static bool FirstPathOK(char r) {
@@ -361,10 +181,6 @@ file static class ModuleInternal {
            && r <= '9'
            || 'a' <= r
            && r <= 'z';
-  }
-
-  public static bool ImportPathOK(char r) {
-    return ModPathOK(r) || r == '+';
   }
 
   public static bool ModPathOK(char r) {
@@ -392,7 +208,7 @@ file static class ModuleInternal {
     if (path.EndsWith(unstable)) {
       i -= unstable.Length;
     }
-    while (i > 0 && char.IsDigit(path[i - 1])) {
+    while (i > 0 && path[i - 1] >= '0' && path[i - 1] <= '9') {
       i--;
     }
     if (i <= 1 || path[i - 1] != 'v' || path[i - 2] != '.') {

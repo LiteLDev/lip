@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Text;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
@@ -78,7 +79,7 @@ public class RepositoryMigratorTests {
         () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
 
     // Assert
-    Assert.Contains("has no format_version 1, 2 or 3", ex.Message);
+    Assert.Contains("Cannot read tooth.json", ex.Message);
     Assert.Equal(tooth, Read("tooth.json"));
   }
 
@@ -112,7 +113,7 @@ public class RepositoryMigratorTests {
         () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
 
     // Assert
-    Assert.Contains("is not a valid tooth.json of format 3", ex.Message);
+    Assert.Contains("Invalid tooth.json of format 3", ex.Message);
     Assert.Equal(tooth, Read("tooth.json"));
     Assert.Equal(["tooth.json"], Files());
   }
@@ -144,7 +145,6 @@ public class RepositoryMigratorTests {
         tooth.Variants[""],
         e => Assert.Equal(
             [new EntryPlacement("tool.exe", "tool.exe")], Assert.Single(e.Assets).Placements));
-    Assert.False(_fs.File.GetAttributes(Path("tooth.json")).HasFlag(FileAttributes.Hidden));
   }
 
   [Fact]
@@ -217,17 +217,82 @@ public class RepositoryMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_LeftoverTempFile_IsReplacedAndRemoved() {
-    // Arrange
+  public async Task Migrate_OtherFiles_AreNotTouched() {
+    // Arrange: only tooth.json is rewritten (protocol/cli.md §5.8).
     AddFile("tooth.json", _packageTooth);
-    AddFile(RepositoryMigrator.TempFileName, "garbage");
+    AddFile(".tooth.json.tmp", "mine");
 
     // Act
     await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    Assert.Equal(["tooth.json"], Files());
+    Assert.Equal([".tooth.json.tmp", "tooth.json"], Files());
+    Assert.Equal("mine", Read(".tooth.json.tmp"));
     Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
+  }
+
+  [Fact]
+  public async Task Migrate_RenameFails_ThrowsAndChangesNothing() {
+    // Arrange
+    AddFile("tooth.json", _packageTooth);
+    FaultyFileSystem fs = new(_fs) { Fail = (operation, _) => operation == "move" };
+
+    // Act
+    await Assert.ThrowsAsync<IOException>(() => RepositoryMigrator.Migrate(fs, _root, new FakeUi()));
+
+    // Assert
+    Assert.Equal(["tooth.json"], Files());
+    Assert.Equal(_packageTooth, Read("tooth.json"));
+  }
+
+  [Fact]
+  public async Task Migrate_HiddenToothJson_StaysHidden() {
+    // Arrange: on the real file system, since MockFileSystem drops attributes on truncation.
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows has a hidden attribute.");
+    string root = Directory.CreateTempSubdirectory("lip-migrate-").FullName;
+    string tooth = System.IO.Path.Join(root, "tooth.json");
+    try {
+      File.WriteAllText(tooth, _packageTooth);
+      File.SetAttributes(tooth, FileAttributes.Hidden);
+
+      // Act
+      await RepositoryMigrator.Migrate(new System.IO.Abstractions.FileSystem(), root, new FakeUi());
+
+      // Assert
+      Assert.True(File.GetAttributes(tooth).HasFlag(FileAttributes.Hidden));
+      Assert.StartsWith("{\n  \"format_version\": 4,", File.ReadAllText(tooth));
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task Migrate_ToothJsonWithByteOrderMark_IsReadAsLipReadsIt() {
+    // Arrange: a byte order mark is ignored, as when lip reads a tooth file (ToothParser).
+    byte[] bytes = [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes(_packageTooth)];
+    _fs.AddFile(Path("tooth.json"), new MockFileData(bytes));
+
+    // Act
+    await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
+
+    // Assert
+    Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
+  }
+
+  [Fact]
+  public async Task Migrate_ToothJsonNotUtf8_ThrowsAndChangesNothing() {
+    // Arrange
+    byte[] bytes = [.. Encoding.UTF8.GetBytes(_packageTooth), 0xFF];
+    _fs.AddFile(Path("tooth.json"), new MockFileData(bytes));
+
+    // Act
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
+
+    // Assert
+    Assert.Contains("Cannot read tooth.json", ex.Message);
+    Assert.Equal(bytes, _fs.File.ReadAllBytes(Path("tooth.json")));
   }
 
   [Fact]
@@ -285,7 +350,6 @@ public class RepositoryMigratorTests {
 
     // Assert
     Assert.Contains(notes, n => n.StartsWith("variants[0].scripts.build:"));
-    Assert.DoesNotContain(notes, n => n.StartsWith("The result is not a valid tooth.json"));
     Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
     ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
     Assert.Equal(

@@ -3,7 +3,7 @@ using Spectre.Console.Cli;
 namespace Lip.Cli.Commands;
 
 /// The default command of a branch such as "lip config": a branch without a subcommand is a usage
-/// error, reported on standard error (specs/cli.md §1, §1.3).
+/// error, reported on standard error (protocol/cli.md §2).
 public class MissingSubcommandCommand : Command<MissingSubcommandCommand.Settings> {
   public class Settings : CommandSettings {
   }

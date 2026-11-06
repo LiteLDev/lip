@@ -2,17 +2,6 @@
 
 本指南说明 lip 的底层工作方式。
 
-## 架构
-
-`lip` 可执行文件提供两种接口：
-
-1. **CLI**：`lip install` 等命令，供终端中的用户和脚本使用。它们独立运行，**不会**经过 `lip rpc`。
-2. **JSON-RPC（`lip rpc`）**：[`lip rpc`](../cli/commands/rpc.md) 命令，供外部应用（IDE、GUI、脚本）以编程方式调用 lip。
-
-两种接口共享同一套核心逻辑，保证无论通过哪种接口，行为都一致。
-
-`lip rpc` 通过 **stdio 上的 JSON-RPC** 通信，使工具无需为每个命令反复拉起进程，也无需解析文本输出。
-
 ## 流程
 
 `lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：

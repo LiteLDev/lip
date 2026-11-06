@@ -47,13 +47,13 @@ public class PackageManifestAssetPlacementTests {
 
 public class PackageManifestInfoTests {
   [Fact]
-  public void Constructor_DefaultValues_SetsDefaults() {
+  public void Constructor_DefaultValues_AreAbsent() {
     PackageManifestInfo info = new();
 
-    Assert.Equal("", info.Name);
-    Assert.Equal("", info.Description);
-    Assert.Empty(info.Tags);
-    Assert.Equal("", info.AvatarUrl);
+    Assert.Null(info.Name);
+    Assert.Null(info.Description);
+    Assert.Null(info.Tags);
+    Assert.Null(info.AvatarUrl);
   }
 
   [Fact]
@@ -66,7 +66,7 @@ public class PackageManifestInfoTests {
 
     Assert.Equal("Test Package", info.Name);
     Assert.Equal("A test package", info.Description);
-    Assert.Equal(2, info.Tags.Count);
+    Assert.Equal(["test", "example"], info.Tags);
   }
 }
 

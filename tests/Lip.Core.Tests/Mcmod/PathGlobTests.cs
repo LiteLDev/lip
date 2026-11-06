@@ -54,13 +54,29 @@ public class PathGlobTests {
   [InlineData("/a")]
   [InlineData("a//b")]
   [InlineData("a\\b")]
-  [InlineData("[ab")]
   [InlineData("[^a]")]
   [InlineData("[[:word:]]")]
   [InlineData("[z-a]")]
-  [InlineData("[a/b]")]
   public void Constructor_InvalidPattern_ThrowsFormatException(string pattern) {
     // Act & Assert
     Assert.Throws<FormatException>(() => new PathGlob(pattern));
+  }
+
+  /// A '[' that starts no complete bracket expression matches itself (POSIX fnmatch).
+  [Theory]
+  [InlineData("foo[", "foo[", true)]
+  [InlineData("foo[", "foo", false)]
+  [InlineData("a[]", "a[]", true)]
+  [InlineData("[ab", "[ab", true)]
+  [InlineData("[ab", "a", false)]
+  [InlineData("[!a", "[!a", true)]
+  [InlineData("[^a", "[^a", true)]
+  [InlineData("*[", "x[", true)]
+  [InlineData("[[:alpha]", "[a", true)]
+  [InlineData("[a/b]", "[a/b]", true)]
+  public void IsMatch_UnclosedBracket_MatchesLiteralBracket(
+      string pattern, string path, bool expected) {
+    // Act & Assert
+    Assert.Equal(expected, new PathGlob(pattern).IsMatch(path));
   }
 }

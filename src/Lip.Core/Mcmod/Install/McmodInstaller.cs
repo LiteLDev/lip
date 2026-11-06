@@ -24,9 +24,7 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// writes that manifest.json as it is, like any other file.
 ///
 /// Ownership: a file is owned by a package when the package wrote it. A file that already exists
-/// and matches preserve is kept and not written, so it is not owned by the package, unless
-/// the lock already records it as owned by a package of the same identity (reinstall or update
-/// while the old entry is still in the lock), in which case ownership carries over.
+/// and matches preserve is kept and not written, so it is not owned by the package.
 ///
 /// Paths are recorded and compared in their canonical form (WorkspaceLayout.CanonicalPath): a
 /// file placed under plugins/ is written and owned under mods/. Globs match both forms. The mods
@@ -36,7 +34,7 @@ public class McmodInstallException(string message, Exception? inner = null)
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
-    IUserInteraction userInteraction) : IMcmodInstaller {
+    IUserInteraction userInteraction) {
   private readonly IFileSystem _fs = fileSystem;
   private readonly ICommandRunner _commandRunner = commandRunner;
   private readonly IUserInteraction _ui = userInteraction;
@@ -47,44 +45,10 @@ public partial class McmodInstaller(
   private static readonly StringComparison PathComparison =
       OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-  /// Installs the package on its own: plans it, then applies the plan in a transaction of its
-  /// own. Returns the files the package owns.
-  public async Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context) {
-    PackagePlan plan = await PlanInstall(candidate, context, new WorkspaceView(_fs));
-    if (!context.DryRun) {
-      await ApplyAlone(plan);
-    }
-
-    return plan.OwnedFiles;
-  }
-
-  /// Uninstalls the package on its own, like Install.
-  public async Task Uninstall(LockedPackage package, InstallContext context) {
-    PackagePlan plan = await PlanUninstall(package, context, new WorkspaceView(_fs));
-    if (!context.DryRun) {
-      await ApplyAlone(plan);
-    }
-  }
-
-  private async Task ApplyAlone(PackagePlan plan) {
-    using WorkspaceTransaction transaction = new(_fs, reserved: plan.WrittenPaths);
-    try {
-      await Apply(plan, transaction, CancellationToken.None);
-    }
-    catch {
-      foreach (string error in transaction.Rollback()) {
-        await _ui.PrintWarning($"Rollback: {error}");
-      }
-
-      throw;
-    }
-
-    transaction.Commit();
-    foreach (string error in transaction.Complete()) {
-      await _ui.PrintWarning(error);
-    }
-  }
-
+  /// Plans installing the package into the workspace as the view shows it, and adds the planned
+  /// writes to the view. Fetches the archive and the assets (a dry run reports the plan too).
+  /// Throws McmodInstallException when the package cannot be installed, e.g. when a file is
+  /// owned by another installed package.
   public async Task<PackagePlan> PlanInstall(
       Candidate candidate, InstallContext context, WorkspaceView view) {
     Package package = candidate.Package;
@@ -143,6 +107,8 @@ public partial class McmodInstaller(
     return new PackagePlan(name, root, OwnedFiles(plan), steps);
   }
 
+  /// Plans uninstalling the package from the workspace as the view shows it, and adds the
+  /// planned deletions to the view. A dry run reports the plan.
   public async Task<PackagePlan> PlanUninstall(
       LockedPackage package, InstallContext context, WorkspaceView view) {
     ToothEntry entry = LockedEntry(package, context.Environment);
@@ -241,6 +207,8 @@ public partial class McmodInstaller(
     return new PackagePlan(package.Identity, root, [], steps);
   }
 
+  /// Runs the steps of a plan, making every file change through the transaction. Throws
+  /// McmodInstallException when a step fails; the caller rolls the transaction back.
   public async Task Apply(
       PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken) {
     foreach (PlannedStep step in plan.Steps) {
@@ -324,13 +292,19 @@ public partial class McmodInstaller(
     List<string> order = [];
     Dictionary<string, (string Target, ISource Source, string Key)> targets = new(PathComparer);
     void Add(string target, ISource from, string key) {
-      // Windows drops trailing dots and spaces, which would alias another path.
-      if (!IsSafeRelativePath(target)
-          || target.Split('/').Any(s => s.EndsWith('.') || s.EndsWith(' '))) {
+      // "a/./b" is "a/b". Windows drops trailing dots and spaces, which would alias another
+      // path, e.g. one in .lip or owned by another package, and takes ':' for an alternate data
+      // stream.
+      string[] segments = IsSafeRelativePath(target)
+          ? [.. target.Split('/').Where(s => s != ".")]
+          : [];
+      if (segments.Length == 0
+          || (OperatingSystem.IsWindows()
+              && segments.Any(s => s.EndsWith('.') || s.EndsWith(' ') || s.Contains(':')))) {
         throw new McmodInstallException(
             $"{name}: '{target}' is not a valid path inside the workspace.");
       }
-      target = WorkspaceLayout.CanonicalPath(target);
+      target = WorkspaceLayout.CanonicalPath(string.Join('/', segments));
       if (WorkspaceLayout.IsLipPath(target)) {
         throw new McmodInstallException(
             $"{name}: '{target}' is inside {LockStore.LipDirectory}, which is reserved for lip.");
@@ -368,15 +342,10 @@ public partial class McmodInstaller(
     }
 
     Dictionary<string, string> owners = new(PathComparer);
-    HashSet<string> ownedBySelf = new(PathComparer);
-    foreach (LockedPackage locked in context.Lock.Packages) {
-      bool self = PackageNames.AreEqual(locked.Identity, name);
+    foreach (LockedPackage locked in context.Lock.Packages
+        .Where(p => !PackageNames.AreEqual(p.Identity, name))) {
       foreach (string file in locked.Files.Select(NormalizeRelative)) {
-        if (self) {
-          ownedBySelf.Add(file);
-        } else {
-          owners.TryAdd(file, locked.Identity);
-        }
+        owners.TryAdd(file, locked.Identity);
       }
     }
 
@@ -409,8 +378,7 @@ public partial class McmodInstaller(
       }
 
       bool keep = view.FileExists(full) && MatchesAny(entry.PreserveFiles, target);
-      plan.Add(new PlannedWrite(
-          target, from, key, full, keep, keep && ownedBySelf.Contains(target)));
+      plan.Add(new PlannedWrite(target, from, key, full, keep));
     }
     return plan;
   }
@@ -466,7 +434,7 @@ public partial class McmodInstaller(
   }
 
   private static List<string> OwnedFiles(List<PlannedWrite> plan) =>
-      [.. plan.Where(w => !w.Keep || w.StaysOwned).Select(w => w.Target)];
+      [.. plan.Where(w => !w.Keep).Select(w => w.Target)];
 
   private async Task RunScripts(
       string name,
@@ -492,8 +460,8 @@ public partial class McmodInstaller(
       PathGlob glob,
       WorkspaceView view) {
     string[] segments = glob.Pattern.TrimEnd('/').Split('/');
-    if (segments.Any(s => s is "." or ".." || s.Contains(':'))) {
-      // Never look outside the workspace.
+    if (segments.Any(s => s is "." or "..") || StartsWithDrive(glob.Pattern)) {
+      // No workspace-relative path has such a segment; never look outside the workspace.
       yield break;
     }
 
@@ -579,22 +547,27 @@ public partial class McmodInstaller(
     return path.StartsWith(prefix, PathComparison);
   }
 
+  /// A recorded path in canonical form, "a/./b" being "a/b" as when it was recorded.
   private static string NormalizeRelative(string path) =>
-      WorkspaceLayout.CanonicalPath(path.Replace('\\', '/'));
+      WorkspaceLayout.CanonicalPath(
+          string.Join('/', path.Replace('\\', '/').Split('/').Where(s => s != ".")));
 
-  /// A non-empty '/'-separated relative path without empty, "." or ".." segments, backslashes
-  /// or drive letters.
+  /// A non-empty '/'-separated relative path as tooth.schema.json #/definitions/path allows it:
+  /// without empty or ".." segments, backslashes, or a leading ASCII letter and ':'.
   private static bool IsSafeRelativePath(string path) =>
       path != ""
       && !path.Contains('\\')
-      && !path.Contains(':')
-      && path.Split('/').All(s => s != "" && s != "." && s != "..");
+      && !StartsWithDrive(path)
+      && path.Split('/').All(s => s is not ("" or ".."));
+
+  /// Whether a path starts with an ASCII letter and ':', a drive on Windows.
+  private static bool StartsWithDrive(string path) =>
+      path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':';
 
   private record PlannedWrite(
       string Target,
       ISource Source,
       string SourceKey,
       string FullPath,
-      bool Keep,
-      bool StaysOwned);
+      bool Keep);
 }

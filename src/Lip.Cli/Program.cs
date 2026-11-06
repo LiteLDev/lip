@@ -4,7 +4,6 @@ using Lip.Cli.Commands;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.PublicApi;
-using Microsoft.Extensions.DependencyInjection;
 using Semver;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -13,16 +12,12 @@ ConsoleUserInteraction userInteraction = new();
 
 using LipClient lipClient = await LipClient.Create(userInteraction);
 
-ServiceCollection services = new();
-
-services.AddSingleton<ILipClient>(lipClient);
-services.AddSingleton<IUserInteraction>(userInteraction);
-
-TypeRegistrar registrar = new(services);
-
-CommandApp app = new(registrar);
+CommandApp app = new();
 
 app.Configure(config => {
+  config.Settings.Registrar.RegisterInstance(lipClient);
+  config.Settings.Registrar.RegisterInstance<IUserInteraction>(userInteraction);
+
   config.SetApplicationName("lip");
 
   config.SetApplicationVersion(SemVersion.Parse(Assembly
@@ -87,9 +82,6 @@ app.Configure(config => {
 
   config.AddCommand<PackCommand>("pack")
       .WithDescription("Packs a directory into a ZIP archive");
-
-  config.AddCommand<RpcCommand>("rpc")
-      .WithDescription("Serves the commands over JSON-RPC on standard input and output");
 
   config.AddCommand<UninstallCommand>("uninstall")
       .WithDescription("Uninstalls packages");

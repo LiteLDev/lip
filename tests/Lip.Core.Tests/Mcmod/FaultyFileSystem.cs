@@ -59,6 +59,11 @@ internal sealed class FaultyFileSystem(MockFileSystem inner) : IFileSystem {
       base.Move(sourceFileName, destFileName);
     }
 
+    public override void Move(string sourceFileName, string destFileName, bool overwrite) {
+      Check("move", sourceFileName);
+      base.Move(sourceFileName, destFileName, overwrite);
+    }
+
     private void Check(string operation, string path) {
       Calls++;
       if (Fail(operation, path)) {

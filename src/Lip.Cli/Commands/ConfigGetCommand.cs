@@ -6,8 +6,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class ConfigGetCommand(ILipClient lipClient) : AsyncCommand<ConfigGetCommand.Settings> {
-  private readonly ILipClient _lipClient = lipClient;
+public class ConfigGetCommand(LipClient lipClient) : AsyncCommand<ConfigGetCommand.Settings> {
+  private readonly LipClient _lipClient = lipClient;
 
   public class Settings : CommandSettings {
     [CommandArgument(0, "<KEY>")]
@@ -29,7 +29,7 @@ public class ConfigGetCommand(ILipClient lipClient) : AsyncCommand<ConfigGetComm
       table.AddColumn("Key");
       table.AddColumn("Value");
 
-      table.AddRow(settings.Key, value);
+      table.AddRow(Markup.Escape(settings.Key), Markup.Escape(value));
 
       AnsiConsole.Write(table);
     }

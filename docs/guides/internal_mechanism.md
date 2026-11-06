@@ -2,17 +2,6 @@
 
 This guide explains how lip works under the hood.
 
-## Architecture
-
-The `lip` executable provides two interfaces:
-
-1.  **CLI**: Commands such as `lip install`, for people and scripts at a terminal. They run on their own and **do not** go through `lip rpc`.
-2.  **JSON-RPC (`lip rpc`)**: The [`lip rpc`](../cli/commands/rpc.md) command, designed for external applications (IDEs, GUIs, scripts) to interact with lip programmatically.
-
-Both interfaces share the same core logic, ensuring consistent behavior regardless of which interface is used.
-
-`lip rpc` communicates via **JSON-RPC over stdio**, allowing tools to integrate with lip without spawning a new process for every command or parsing text output.
-
 ## Pipeline
 
 `lip install`, `lip uninstall` and `lip update` run the same steps:

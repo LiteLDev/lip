@@ -55,7 +55,7 @@ public class PackageManifestTests {
     };
 
     // Act
-    PackageManifestVariant result = manifest.GetVariant("default");
+    PackageManifestVariant result = manifest.GetVariant("default", "win-x64");
 
     // Assert
     Assert.Equal("default", result.Label);
@@ -71,6 +71,6 @@ public class PackageManifestTests {
     };
 
     // Act & Assert
-    Assert.Throws<KeyNotFoundException>(() => manifest.GetVariant("nonexistent"));
+    Assert.Throws<KeyNotFoundException>(() => manifest.GetVariant("nonexistent", "win-x64"));
   }
 }

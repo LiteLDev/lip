@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Resolution;
 using Moq;
@@ -23,8 +24,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/a/a@2.0.0"], Names(result));
@@ -57,7 +58,7 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(requests, [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(requests, [], s_environment)).Order;
 
     // Assert
     Assert.Equal($"{LeviLamina}@2.49.0", Names(result)[0]);
@@ -78,8 +79,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/legacy/tooth")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/legacy/tooth")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/new/lib@4.0.0", "github.com/legacy/tooth@1.0.0"], Names(result));
@@ -100,8 +101,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/t/t")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/t/t")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/t/t#a@1.0.0", "github.com/t/t#b@1.0.0", "github.com/t/t@1.0.0"],
@@ -144,7 +145,7 @@ public class GraphSolverTests {
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
+        DependencyResolutionException>(() => solver.SolveGraph(
             [Request("github.com/x/x"), Request("https://example.com/x.zip")], [], s_environment));
 
     // Assert
@@ -165,8 +166,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/a/a@1.0.0", "github.com/b/b@2.0.0"], Names(result));
@@ -184,8 +185,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/a/a@1.0.0", "github.com/b/b@1.0.0"], Names(result));
@@ -202,8 +203,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/x/x"), Request("github.com/z/z")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/x/x"), Request("github.com/z/z")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/x/x@1.0.0", "github.com/z/z@1.0.0"], Names(result));
@@ -219,7 +220,7 @@ public class GraphSolverTests {
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
+        DependencyResolutionException>(() => solver.SolveGraph(
             [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment));
 
     // Assert
@@ -239,10 +240,10 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
         [Request("github.com/a/a"), Request("github.com/b/b"), Request("github.com/c/c")],
         [],
-        s_environment);
+        s_environment)).Order;
 
     // Assert
     Assert.Equal(3, result.Count);
@@ -266,8 +267,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/a/a@1.0.0"], Names(result));
@@ -283,7 +284,7 @@ public class GraphSolverTests {
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
+        DependencyResolutionException>(() => solver.SolveGraph(
             [Request("github.com/a/a")], [], s_environment));
 
     // Assert
@@ -300,8 +301,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/a/a@1.0.0"], Names(result));
@@ -317,8 +318,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a")], [installed], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a")], [installed], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/a/a@1.0.0", "github.com/other/other@1.0.0"], Names(result));
@@ -333,7 +334,7 @@ public class GraphSolverTests {
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve([], [a, b], s_environment));
+        DependencyResolutionException>(() => solver.SolveGraph([], [a, b], s_environment));
 
     // Assert
     Assert.Contains("are mods of the same mod name", exception.Message);
@@ -348,7 +349,7 @@ public class GraphSolverTests {
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve([], [a, b], s_environment));
+        DependencyResolutionException>(() => solver.SolveGraph([], [a, b], s_environment));
 
     // Assert
     Assert.Contains("have the same identity", exception.Message);
@@ -366,7 +367,7 @@ public class GraphSolverTests {
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
+        DependencyResolutionException>(() => solver.SolveGraph(
             [Request("github.com/x/x")], [installed], s_environment));
 
     // Assert
@@ -386,8 +387,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/x/x")], [installedX, installedP], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/x/x")], [installedX, installedP], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/dep/dep@1.0.0", "github.com/p/p@1.0.0", "github.com/x/x@1.0.0"],
@@ -406,8 +407,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/a/a"), Request(LeviLamina)], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a"), Request(LeviLamina)], [], s_environment)).Order;
 
     // Assert
     Assert.Equal([$"{LeviLamina}@1.0.0", "github.com/a/a@1.0.0"], Names(result));
@@ -473,7 +474,7 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act & Assert
-    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.Solve(
+    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.SolveGraph(
         [Request("github.com/a/a")], [], s_environment));
   }
 
@@ -486,7 +487,7 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act & Assert
-    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.Solve(
+    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.SolveGraph(
         [Request("github.com/s/s@branch:main"), Request("github.com/s/s@1.0.0")],
         [],
         s_environment));
@@ -501,8 +502,10 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/s/s@branch:main"), Request("github.com/s/s#lua")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/s/s@branch:main"), Request("github.com/s/s#lua")],
+        [],
+        s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/s/s@2.5.0", "github.com/s/s#lua@2.0.0"], Names(result));
@@ -520,8 +523,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/r/r")], [installed], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/r/r")], [installed], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/t/t@2.5.0", "github.com/r/r@1.0.0"], Names(result));
@@ -538,8 +541,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/r/r")], [installed], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/r/r")], [installed], s_environment)).Order;
 
     // Assert
     Assert.Equal(["github.com/t/t@2.5.0", "github.com/t/t#client@1.0.0", "github.com/r/r@1.0.0"],
@@ -549,7 +552,7 @@ public class GraphSolverTests {
   // Failures
 
   [Fact]
-  public async Task Solve_Unsatisfiable_ThrowsWithFailingDependencyAndResolverDiagnostics() {
+  public async Task Solve_Unsatisfiable_ThrowsWithFailingDependency() {
     // Arrange
     FakeResolver resolver = new();
     resolver.AddVersions(LeviLamina, ["1.2.0", "1.1.0"]);
@@ -559,13 +562,12 @@ public class GraphSolverTests {
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
+        DependencyResolutionException>(() => solver.SolveGraph(
             [Request("github.com/mods/mod")], [], s_environment));
 
     // Assert
     Assert.Contains($"github.com/mods/mod@1.0.0 requires {LeviLamina} >=99.0.0: no candidates",
         exception.Message);
-    Assert.Contains(exception.Diagnostics, d => d.Contains($"{LeviLamina}: no version matches"));
   }
 
   [Fact]
@@ -585,13 +587,12 @@ public class GraphSolverTests {
       }
     }
 
-    // The step bound keeps the test meaningful on slow machines.
-    GraphSolver solver = new(resolver, maxSteps: 10_000);
+    GraphSolver solver = new(resolver);
     Stopwatch stopwatch = Stopwatch.StartNew();
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/p/p0")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/p/p0")], [], s_environment)).Order;
 
     // Assert
     stopwatch.Stop();
@@ -615,13 +616,12 @@ public class GraphSolverTests {
       }
     }
 
-    // The step bound keeps the test meaningful on slow machines.
-    GraphSolver solver = new(resolver, maxSteps: 10_000);
+    GraphSolver solver = new(resolver);
     Stopwatch stopwatch = Stopwatch.StartNew();
 
     // Act
     DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
+        DependencyResolutionException>(() => solver.SolveGraph(
             [Request("github.com/p/p0")], [], s_environment));
 
     // Assert
@@ -644,34 +644,13 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("github.com/c/c0")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/c/c0")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(length, result.Count);
     Assert.Equal($"github.com/c/c{length - 1}@1.0.0", Names(result)[0]);
     Assert.Equal("github.com/c/c0@1.0.0", Names(result)[^1]);
-  }
-
-  [Fact]
-  public async Task Solve_StepLimitExceeded_ThrowsWithClearMessage() {
-    // Arrange: every version of A is a mod named like B.
-    FakeResolver resolver = new();
-    foreach (string version in new[] { "3.0.0", "2.0.0", "1.0.0" }) {
-      resolver.Add(Package("github.com/a/a", version, mod: "B"));
-    }
-
-    resolver.Add(Package("github.com/b/b", "1.0.0", mod: "B"));
-    GraphSolver solver = new(resolver, maxSteps: 2);
-
-    // Act
-    DependencyResolutionException exception = await Assert.ThrowsAsync<
-        DependencyResolutionException>(() => solver.Solve(
-            [Request("github.com/b/b"), Request("github.com/a/a")], [], s_environment));
-
-    // Assert
-    Assert.StartsWith("Gave up resolving dependencies after examining 2 candidates",
-        exception.Message);
   }
 
   // Installation order (protocol/workspace.md §5)
@@ -689,8 +668,8 @@ public class GraphSolverTests {
     GraphSolver solver = new(resolver);
 
     // Act
-    IReadOnlyList<Candidate> result = await solver.Solve(
-        [Request("example.com/Zed")], [], s_environment);
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("example.com/Zed")], [], s_environment)).Order;
 
     // Assert
     Assert.Equal(["example.com/Base@1.0.0", "example.com/Alpha@1.0.0", "example.com/beta@1.0.0",
@@ -746,11 +725,12 @@ public class GraphSolverTests {
   private static string[] Names(IEnumerable<Candidate> candidates) =>
       [.. candidates.Select(c => $"{c.Package.Identity}@{c.Package.Version}")];
 
-  private static PackageRequest Request(string source) => new(Ref.Parse(source), null);
+  private static PackageRequest Request(string source) =>
+      new(Ref.Parse(source, allowFile: false), null);
 
   private static ToothDependency Dependency(
       string source, string range = "*", bool compat = false) =>
-      new(Ref.Parse(source), VersionRange.Parse(range)) { ClientCompat = compat };
+      new(Ref.Parse(source, allowFile: false), VersionRange.Parse(range)) { ClientCompat = compat };
 
   private static Candidate Package(
       string tooth,
@@ -792,20 +772,19 @@ public class GraphSolverTests {
       }
     }
 
-    public Task<ResolveResult> Resolve(
+    public async IAsyncEnumerable<Candidate> ResolveLazy(
         Ref source,
         IVersionConstraint? range,
         LipEnvironment environment,
-        bool clientCompat = false) {
+        bool clientCompat = false,
+        Action<string>? onDiagnostic = null) {
       Calls.Add(new ResolveCall(source.ToString(), range?.ToString(), clientCompat));
-      List<Candidate> candidates = [
-        .. _candidates.GetValueOrDefault(source.ToString(), [])
-            .Where(c => range is null || range.IsSatisfiedBy(c.Package.Version)),
-      ];
-      List<string> diagnostics = candidates.Count == 0
-          ? [$"{source}: no version matches {range?.ToString() ?? "*"}"]
-          : [];
-      return Task.FromResult(new ResolveResult(candidates, diagnostics));
+      await Task.CompletedTask;
+      foreach (Candidate candidate in _candidates.GetValueOrDefault(source.ToString(), [])) {
+        if (range is null || range.IsSatisfiedBy(candidate.Package.Version)) {
+          yield return candidate;
+        }
+      }
     }
   }
 }
@@ -814,6 +793,7 @@ public class GraphSolverTests {
 internal static class TestCandidates {
   public static readonly LipEnvironment Environment = new(McmodPlatform.Server, "win-x64");
 
+  /// The JSON of every entry, which the solver never reads.
   private static readonly JsonElement s_emptyEntry = JsonDocument.Parse("{}").RootElement.Clone();
 
   /// The provider of packages without assets, which is never asked for one.
@@ -838,7 +818,8 @@ internal static class TestCandidates {
       bool legacy = false,
       bool unavailable = false,
       List<string>? downloads = null) {
-    Ref reference = Ref.Parse(source ?? (variant == "" ? tooth : $"{tooth}#{variant}"));
+    Ref reference = Ref.Parse(
+        source ?? (variant == "" ? tooth : $"{tooth}#{variant}"), allowFile: false);
     string key = $"{reference}@{version}";
     string url = $"https://example.com/{tooth}/{version}.mcmod";
     List<EntryAsset> assets = mcmod is null ? [] : [new EntryAsset(AssetType.Mcmod, [url], [])];
@@ -851,9 +832,12 @@ internal static class TestCandidates {
       Json = s_emptyEntry,
     };
 
+    Package package = new(tooth, variant, SemVersion.Parse(version), entry) {
+      Manifest = Manifest(tooth, version, variant, entry),
+    };
     if (mcmod is null) {
       return Candidate.Create(
-          new Package(tooth, variant, SemVersion.Parse(version), entry),
+          package,
           Archive(key, reference),
           reference,
           s_noAssets);
@@ -870,11 +854,24 @@ internal static class TestCandidates {
         });
 
     return Candidate.Create(
-        new Package(tooth, variant, SemVersion.Parse(version), entry),
+        package,
         Archive(key, reference),
         reference,
         provider.Object);
   }
+
+  /// The tooth file of format 4 of a package with just one entry.
+  public static JsonElement Manifest(
+      string tooth, string version, string variant, ToothEntry entry) =>
+      JsonSerializer.SerializeToElement(new JsonObject {
+        [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
+        ["format_uuid"] = ToothFormat.FormatUuid,
+        ["tooth"] = tooth,
+        ["version"] = version,
+        ["variants"] = new JsonObject {
+          [variant] = new JsonArray(JsonNode.Parse(entry.Json.GetRawText())),
+        },
+      });
 
   /// The git archive of a candidate, of a commit named after its key (ignoring ASCII case).
   private static ArchiveHandle Archive(string key, Ref reference) => new(

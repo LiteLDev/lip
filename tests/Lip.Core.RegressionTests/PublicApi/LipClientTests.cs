@@ -61,14 +61,14 @@ public class LipClientTests {
     (
       [
         new WorkflowInstallStep(["github.com/LiteLDev/LeviLamina@1.9.7", "github.com/LiteLDev/LegacyScriptEngine@0.17.5"]),
-        new WorkflowUninstallStep(["LegacyScriptEngine"]),
+        new WorkflowUninstallStep(["github.com/LiteLDev/LegacyScriptEngine"]),
         new WorkflowInstallStep(["github.com/LiteLDev/MoreDimensions@0.13.0"]),
         new WorkflowInstallStep(["github.com/LiteLDev/LegacyScriptEngine@0.17.5"]),
       ],
       [
-        "LeviLamina@1.9.7",
-        "MoreDimensions@0.13.0",
-        "LegacyScriptEngine@0.17.5"
+        "github.com/LiteLDev/LeviLamina@1.9.7",
+        "github.com/LiteLDev/MoreDimensions@0.13.0",
+        "github.com/LiteLDev/LegacyScriptEngine@0.17.5"
       ]
     ),
     (
@@ -79,8 +79,8 @@ public class LipClientTests {
         new WorkflowUninstallStep(["github.com/LiteLDev/LegacyMoney"]),
       ],
       [
-        "LeviLamina@1.9.7",
-        "LegacyScriptEngine@0.17.5"
+        "github.com/LiteLDev/LeviLamina@1.9.7",
+        "github.com/LiteLDev/LegacyScriptEngine@0.17.5"
       ]
     ),
     (
@@ -91,8 +91,8 @@ public class LipClientTests {
         new WorkflowUninstallStep(["github.com/LiteLDev/LegacyMoney"]),
       ],
       [
-        "LeviLamina@1.9.7",
-        "LegacyScriptEngine@0.17.5"
+        "github.com/LiteLDev/LeviLamina@1.9.7",
+        "github.com/LiteLDev/LegacyScriptEngine@0.17.5"
       ]
     )
   ];
