@@ -116,7 +116,7 @@ It records the environment (`platform` and `runtime`), and for each installed pa
 - whether a request named it (`explicit`): such a package is **explicitly installed**; any other is a **dependency package**;
 - its source (`ref`), a local path recorded as the `file:` URI [RFC8089] of its absolute path;
 - for a remote repository, the commit its archive was at (`commit`), in lowercase hexadecimal;
-- the paths of the files it owns (`files`), in the `mods/` form.
+- the paths of the files it owns (`files`).
 
 ### 7.2. Workspace Lock
 

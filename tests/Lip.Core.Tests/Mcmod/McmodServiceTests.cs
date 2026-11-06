@@ -76,7 +76,7 @@ public class McmodServiceTests {
     _ws.AddDownload("https://example.com/extra.zip", extra);
     string tooth = WorkspaceHarness.Tooth4("example.com/pkg", "1.0.0", """
         "assets": [
-          { "type": "self", "place": [ { "src": "x.txt", "dest": "plugins/pkg/x.txt" } ] },
+          { "type": "self", "place": [ { "src": "x.txt", "dest": "mods/pkg/x.txt" } ] },
           {
             "type": "zip",
             "urls": [ "https://example.com/extra.zip" ],
@@ -1092,14 +1092,12 @@ public class McmodServiceTests {
 
   #endregion
 
-  #region Earlier workspace files
+  #region Invalid workspace files
 
   [Theory]
   [InlineData(".lip/workspace.json", """{ "format": "bf45b1", "platform": "server", "packages": [] }""")]
   [InlineData(".lip/workspace.json", """{ "format_version": 3, "packages": [] }""")]
-  [InlineData(".lip/lock.json", """{ "packages": [] }""")]
-  [InlineData("tooth_lock.json", """{ "format_version": 3, "packages": [] }""")]
-  public async Task Operations_EarlierWorkspaceFile_FailWithoutChanges(string file, string content) {
+  public async Task Operations_InvalidWorkspaceFile_FailWithoutChanges(string file, string content) {
     // Arrange
     AddLibAndApp();
     _ws.AddFile(file, content);

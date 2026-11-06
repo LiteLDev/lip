@@ -158,14 +158,14 @@ public class ToothInstallTests {
     // Assert
     Assert.Equal(
         [
-          "mods/repo/a.dll",
-          "mods/repo/data/config.json",
-          "mods/repo/data/sub/b.txt",
+          "plugins/repo/a.dll",
+          "plugins/repo/data/config.json",
+          "plugins/repo/data/sub/b.txt",
           "tool.exe",
         ],
         files);
-    Assert.Equal("dll", _fileSystem.File.ReadAllText(Workspace("mods/repo/a.dll")));
-    Assert.Equal("b", _fileSystem.File.ReadAllText(Workspace("mods/repo/data/sub/b.txt")));
+    Assert.Equal("dll", _fileSystem.File.ReadAllText(Workspace("plugins/repo/a.dll")));
+    Assert.Equal("b", _fileSystem.File.ReadAllText(Workspace("plugins/repo/data/sub/b.txt")));
     Assert.Equal("exe", _fileSystem.File.ReadAllText(Workspace("tool.exe")));
     Assert.False(_fileSystem.File.Exists(Workspace("README.md")));
     Assert.False(_fileSystem.File.Exists(Workspace("other.txt")));
@@ -199,15 +199,15 @@ public class ToothInstallTests {
     // become; the tooth file is never written.
     Assert.Equal(
         [
-          "mods/g/a.dll",
-          "mods/g/b.dll",
+          "plugins/g/a.dll",
+          "plugins/g/b.dll",
           "all/bin/a.dll",
           "all/bin/b.dll",
           "all/bin/c.txt",
         ],
         files);
     // The file placement of bin/a.dll at plugins/g/b.dll comes after the glob, so it wins.
-    Assert.Equal("a", _fileSystem.File.ReadAllText(Workspace("mods/g/b.dll")));
+    Assert.Equal("a", _fileSystem.File.ReadAllText(Workspace("plugins/g/b.dll")));
     Assert.False(_fileSystem.Directory.Exists(Workspace("plugins/never")));
     Assert.False(_fileSystem.File.Exists(Workspace("all/tooth.json")));
   }
@@ -241,29 +241,29 @@ public class ToothInstallTests {
   public async Task Install_ExistingFile_Overwrites() {
     // Arrange
     Candidate candidate = CreateCandidate();
-    _fileSystem.AddFile(Workspace("mods/repo/a.dll"), new MockFileData("old"));
+    _fileSystem.AddFile(Workspace("plugins/repo/a.dll"), new MockFileData("old"));
 
     // Act
     IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext());
 
     // Assert
-    Assert.Contains("mods/repo/a.dll", files);
-    Assert.Equal("dll", _fileSystem.File.ReadAllText(Workspace("mods/repo/a.dll")));
+    Assert.Contains("plugins/repo/a.dll", files);
+    Assert.Equal("dll", _fileSystem.File.ReadAllText(Workspace("plugins/repo/a.dll")));
   }
 
   [Fact]
   public async Task Install_PreservedExistingFile_IsKept() {
     // Arrange
     Candidate candidate = CreateCandidate();
-    _fileSystem.AddFile(Workspace("mods/repo/data/config.json"), new MockFileData("user"));
+    _fileSystem.AddFile(Workspace("plugins/repo/data/config.json"), new MockFileData("user"));
 
     // Act
     IReadOnlyList<string> files = await _installer.Install(
         candidate, CreateContext(ignoreScripts: true));
 
     // Assert
-    Assert.DoesNotContain("mods/repo/data/config.json", files);
-    Assert.Equal("user", _fileSystem.File.ReadAllText(Workspace("mods/repo/data/config.json")));
+    Assert.DoesNotContain("plugins/repo/data/config.json", files);
+    Assert.Equal("user", _fileSystem.File.ReadAllText(Workspace("plugins/repo/data/config.json")));
   }
 
   [Fact]
@@ -275,7 +275,7 @@ public class ToothInstallTests {
         .Callback((string command, string workingDirectory) => {
           Assert.Equal(_root, workingDirectory);
           // Pre-install runs before files are placed, the others after.
-          calls.Add($"{command}:{_fileSystem.File.Exists(Workspace("mods/repo/a.dll"))}");
+          calls.Add($"{command}:{_fileSystem.File.Exists(Workspace("plugins/repo/a.dll"))}");
         })
         .Returns(Task.CompletedTask);
 
@@ -334,7 +334,7 @@ public class ToothInstallTests {
     Candidate candidate = CreateCandidate();
     IReadOnlyList<string> files = await _installer.Install(
         candidate, CreateContext(ignoreScripts: true));
-    _fileSystem.AddFile(Workspace("mods/repo/logs/today.log"), new MockFileData("log"));
+    _fileSystem.AddFile(Workspace("plugins/repo/logs/today.log"), new MockFileData("log"));
     _fileSystem.AddFile(Workspace("unrelated.txt"), new MockFileData("keep"));
     List<string> calls = [];
     _commandRunner.Setup(c => c.Run(It.IsAny<string>(), _root))
@@ -345,11 +345,11 @@ public class ToothInstallTests {
     await _installer.Uninstall(Lock(candidate, files), CreateContext());
 
     // Assert
-    Assert.False(_fileSystem.File.Exists(Workspace("mods/repo/a.dll")));
-    Assert.False(_fileSystem.File.Exists(Workspace("mods/repo/data/sub/b.txt")));
+    Assert.False(_fileSystem.File.Exists(Workspace("plugins/repo/a.dll")));
+    Assert.False(_fileSystem.File.Exists(Workspace("plugins/repo/data/sub/b.txt")));
     Assert.False(_fileSystem.File.Exists(Workspace("tool.exe")));
-    Assert.True(_fileSystem.File.Exists(Workspace("mods/repo/data/config.json")));
-    Assert.False(_fileSystem.Directory.Exists(Workspace("mods/repo/logs")));
+    Assert.True(_fileSystem.File.Exists(Workspace("plugins/repo/data/config.json")));
+    Assert.False(_fileSystem.Directory.Exists(Workspace("plugins/repo/logs")));
     Assert.True(_fileSystem.File.Exists(Workspace("unrelated.txt")));
     Assert.Equal(["echo preun", "echo un", "echo postun"], calls);
   }
@@ -378,8 +378,8 @@ public class ToothInstallTests {
     await _installer.Uninstall(Lock(candidate, files), CreateContext());
 
     // Assert
-    Assert.True(_fileSystem.File.Exists(Workspace("mods/p/config.json")));
-    Assert.False(_fileSystem.File.Exists(Workspace("mods/p/p.js")));
+    Assert.True(_fileSystem.File.Exists(Workspace("plugins/p/config.json")));
+    Assert.False(_fileSystem.File.Exists(Workspace("plugins/p/p.js")));
   }
 
   [Fact]
@@ -394,7 +394,7 @@ public class ToothInstallTests {
         }
         """,
         []);
-    _fileSystem.AddFile(Workspace("mods/Remover/data/db.json"), new MockFileData("{}"));
+    _fileSystem.AddFile(Workspace("plugins/Remover/data/db.json"), new MockFileData("{}"));
     _fileSystem.AddFile(Workspace("stray.log"), new MockFileData("log"));
     _fileSystem.AddFile(Workspace("sub/stray.log"), new MockFileData("log"));
 
@@ -402,20 +402,20 @@ public class ToothInstallTests {
     await _installer.Uninstall(Lock(candidate, []), CreateContext());
 
     // Assert
-    Assert.False(_fileSystem.Directory.Exists(Workspace("mods/Remover")));
+    Assert.False(_fileSystem.Directory.Exists(Workspace("plugins/Remover")));
     Assert.False(_fileSystem.File.Exists(Workspace("stray.log")));
     Assert.True(_fileSystem.File.Exists(Workspace("sub/stray.log")));
   }
 
   [Fact]
-  public async Task Uninstall_RemoveFilesNamingLayoutDirectories_RemovesNothingBelowThem() {
+  public async Task Uninstall_RemoveFilesNamingMods_RemovesNothingBelowIt() {
     // Arrange
     Candidate candidate = CreateCandidateFrom(
         $$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid}}",
           "tooth": "github.com/user/remover", "version": "1.0.0",
-          "variants": [{ "remove_files": ["plugins", "mods/"] }]
+          "variants": [{ "remove_files": ["mods", "mods/"] }]
         }
         """,
         []);
@@ -483,7 +483,7 @@ public class ToothInstallTests {
     await _installer.Uninstall(Lock(candidate, files), CreateContext(dryRun: true));
 
     // Assert
-    Assert.True(_fileSystem.File.Exists(Workspace("mods/repo/a.dll")));
+    Assert.True(_fileSystem.File.Exists(Workspace("plugins/repo/a.dll")));
     _commandRunner.VerifyNoOtherCalls();
   }
 

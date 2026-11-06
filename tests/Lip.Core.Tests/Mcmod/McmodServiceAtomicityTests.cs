@@ -174,23 +174,6 @@ public class McmodServiceAtomicityTests {
   }
 
   [Fact]
-  public async Task Install_FileThroughPluginsOwnedByInstalledPackage_ChangesNothing() {
-    // Arrange: plugins/ is compared in its mods/ form (protocol/workspace.md §2).
-    SortedDictionary<string, string> before = await ArrangeEarlyFailure(() => AddPackage(
-        "patch.zip",
-        "Patch",
-        "1.0.0",
-        WorkspaceHarness.SelfAsset("x.dll", "plugins/Base/Base.dll"),
-        new() { ["x.dll"] = "x" }));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<McmodInstallException>(
-        () => _ws.Service.Install(["a.zip", "patch.zip"], _options));
-    VerifyNoCommandRan();
-    Assert.Equal(before, WorkspaceSnapshot());
-  }
-
-  [Fact]
   public async Task Install_IntoLipDirectory_ChangesNothing() {
     // Arrange
     SortedDictionary<string, string> before = await ArrangeEarlyFailure(() => AddPackage(
@@ -199,20 +182,6 @@ public class McmodServiceAtomicityTests {
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(
         () => _ws.Service.Install(["a.zip", "b.zip"], _options));
-    VerifyNoCommandRan();
-    Assert.Equal(before, WorkspaceSnapshot());
-  }
-
-  [Fact]
-  public async Task Install_PluginsDirectoryEntryClashesWithMods_ChangesNothing() {
-    // Arrange
-    _ws.AddFile("plugins/X/a.txt", "plugins");
-    _ws.AddFile("mods/X/b.txt", "mods");
-    AddMod("a.zip", "A", extra: Hooks("pre_install", "a-pre"));
-    SortedDictionary<string, string> before = WorkspaceSnapshot();
-
-    // Act & Assert
-    await Assert.ThrowsAnyAsync<Exception>(() => _ws.Service.Install(["a.zip"], _options));
     VerifyNoCommandRan();
     Assert.Equal(before, WorkspaceSnapshot());
   }
@@ -305,34 +274,6 @@ public class McmodServiceAtomicityTests {
     Assert.False(_ws.Exists("mods/Demo/data/b.txt"));
     Assert.Equal("2.0.0", Assert.Single((await _ws.Lock()).Packages).Version);
     Assert.DoesNotContain(_ws.Fs.AllFiles, f => f.EndsWith(".bak", StringComparison.Ordinal));
-  }
-
-  [Fact]
-  public async Task Install_EveryFileOperationFailingWhileMigratingPlugins_RestoresPlugins() {
-    for (int n = 1; ; n++) {
-      // Arrange
-      _ws = new WorkspaceHarness();
-      _ws.AddFile("plugins/Old/Old.dll", "old");
-      _ws.AddFile("plugins/loose.txt", "loose");
-      _ws.AddFile("mods/Kept/Kept.dll", "kept");
-      AddMod("demo.zip", "Demo");
-      SortedDictionary<string, string> before = WorkspaceSnapshot();
-      _ws.Faults.FailNthCall(n);
-
-      // Act
-      Exception? ex = await Record.ExceptionAsync(
-          () => _ws.Service.Install(["demo.zip"], _options));
-
-      // Assert
-      if (ex is null) {
-        Assert.True(n > 2);
-        Assert.Equal("loose", _ws.Fs.File.ReadAllText(_ws.Path("mods/loose.txt")));
-        return;
-      }
-
-      Assert.Equal(before, WorkspaceSnapshot());
-      Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods/Old")));
-    }
   }
 
   [Fact]

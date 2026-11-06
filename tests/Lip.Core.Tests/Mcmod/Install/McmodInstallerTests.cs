@@ -695,10 +695,9 @@ public class McmodInstallerTests {
 
   [Fact]
   public async Task Install_OwnershipComparedOnNormalizedPaths() {
-    // Arrange: the lock spells the path through plugins, with backslashes and, on Windows, in
-    // another case.
-    string lockedPath = OperatingSystem.IsWindows() ? @"Plugins\LegacyMoney\LegacyMoney.DLL"
-        : @"plugins\LegacyMoney\LegacyMoney.dll";
+    // Arrange: the lock spells the path with backslashes and, on Windows, in another case.
+    string lockedPath = OperatingSystem.IsWindows() ? @"Mods\LegacyMoney\LegacyMoney.DLL"
+        : @"mods\LegacyMoney\LegacyMoney.dll";
     Candidate other = Candidate("", tooth: "example.com/other");
     LockFile lockFile = Lock() with { Packages = [Locked(other, [lockedPath])] };
 
@@ -726,7 +725,7 @@ public class McmodInstallerTests {
 
   [Fact]
   public async Task Install_PreservedExistingFile_KeepsItAndDoesNotOwnIt() {
-    // Arrange: preserve is relative to the workspace, here through plugins.
+    // Arrange: preserve is relative to the workspace.
     AddFile("mods/LegacyMoney/config/config.json", "user");
     InMemorySource source = new(new() {
       ["manifest.json"] = """{"name":"LegacyMoney","dependencies":[]}""",
@@ -735,7 +734,7 @@ public class McmodInstallerTests {
       ["config/other.json"] = "default",
     });
     Candidate candidate = LegacyMoney(
-        """ "preserve": [ "plugins/LegacyMoney/config/" ] """, source);
+        """ "preserve": [ "mods/LegacyMoney/config/" ] """, source);
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
@@ -807,22 +806,6 @@ public class McmodInstallerTests {
     Assert.Equal("user", Read("cfg/a.ini"));
     Assert.Equal("b", Read("cfg/b.ini"));
     Assert.Equal(["cfg/b.ini"], owned);
-  }
-
-  [Fact]
-  public async Task Install_PlacingUnderPlugins_WritesAndOwnsUnderMods() {
-    // Arrange
-    Candidate candidate = Candidate(
-        SelfPlacements(Placement("a.dll", "plugins/X/a.dll"), Placement("b.dll", "mods/X/a.dll")),
-        new() { ["a.dll"] = "a", ["b.dll"] = "b" });
-
-    // Act
-    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
-
-    // Assert: both placements are one file; the later one wins.
-    Assert.Equal(["mods/X/a.dll"], owned);
-    Assert.Equal("b", Read("mods/X/a.dll"));
-    Assert.False(_fs.Directory.Exists(Full("plugins")));
   }
 
   [Fact]
@@ -1021,25 +1004,6 @@ public class McmodInstallerTests {
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(
         () => _installer.Uninstall(locked, Context()));
-  }
-
-  [Fact]
-  public async Task Uninstall_GlobsThroughPlugins_MatchFilesUnderMods() {
-    // Arrange
-    Candidate candidate = Candidate(
-        SelfPlacements(Placement("a.dll", "plugins/X/a.dll"), Placement("c.json", "plugins/X/c.json"))
-            + """, "preserve": [ "plugins/X/*.json" ], "purge": [ "plugins/X/logs/" ]""",
-        new() { ["a.dll"] = "a", ["c.json"] = "c" });
-    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
-    AddFile("mods/X/logs/today.log", "log");
-
-    // Act
-    await _installer.Uninstall(Locked(candidate, owned), Context());
-
-    // Assert
-    Assert.False(Exists("mods/X/a.dll"));
-    Assert.Equal("c", Read("mods/X/c.json"));
-    Assert.False(_fs.Directory.Exists(Full("mods/X/logs")));
   }
 
   [Fact]

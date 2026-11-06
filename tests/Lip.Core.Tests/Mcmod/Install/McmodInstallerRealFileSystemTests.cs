@@ -23,13 +23,6 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
 
   public void Dispose() {
     if (Directory.Exists(_root)) {
-      // A recursive delete cannot remove a junction without administrator rights (it unmounts
-      // it first), so the link goes first.
-      string plugins = Path.Combine(_root, "plugins");
-      if (new DirectoryInfo(plugins).LinkTarget is not null) {
-        Directory.Delete(plugins);
-      }
-
       Directory.Delete(_root, recursive: true);
     }
     GC.SuppressFinalize(this);
@@ -52,7 +45,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
           "platform": "server",
           "runtime": "win-x64",
           "assets": [ { "type": "mcmod", "urls": [ "{{ModUrl}}" ] } ],
-          "purge": [ "plugins/LegacyMoney/data/" ],
+          "purge": [ "mods/LegacyMoney/data/" ],
           "hooks": {
             "pre_install": [ "echo pre> pre_install.txt" ],
             "post_install": [ "echo post> post_install.txt" ],
@@ -80,24 +73,13 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         new LockFile { Platform = "server", Runtime = "win-x64", Packages = [] },
         false,
         false);
-    // The server layout: plugins links to mods.
-    WorkspaceLayout layout =
-        new(fs, new DirectoryLinker(fs), new Mock<IUserInteraction>().Object);
-    using (WorkspaceTransaction transaction = new(
-        fs, new LockStore(fs).GetJournalPath(_root))) {
-      await layout.Apply(layout.Plan(_root), transaction);
-      transaction.Commit();
-      transaction.Complete();
-    }
-
     // Act: install
     IReadOnlyList<string> owned = await installer.Install(candidate, context);
 
     // Assert
     Assert.Equal(3, owned.Count);
     Assert.All(owned, f => Assert.StartsWith("mods/LegacyMoney/", f));
-    // Written under mods, visible through plugins.
-    Assert.Equal("dll", File.ReadAllText(Path.Combine(_root, "plugins", "LegacyMoney",
+    Assert.Equal("dll", File.ReadAllText(Path.Combine(_root, "mods", "LegacyMoney",
         "LegacyMoney.dll")));
     using (JsonDocument manifest = JsonDocument.Parse(
         File.ReadAllText(Path.Combine(_root, "mods", "LegacyMoney", "manifest.json")))) {
@@ -107,8 +89,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     Assert.True(File.Exists(Path.Combine(_root, "post_install.txt")));
 
     // Act: uninstall
-    Directory.CreateDirectory(Path.Combine(_root, "plugins", "LegacyMoney", "data", "x"));
-    File.WriteAllText(Path.Combine(_root, "plugins", "LegacyMoney", "data", "x", "a.db"), "a");
+    Directory.CreateDirectory(Path.Combine(_root, "mods", "LegacyMoney", "data", "x"));
+    File.WriteAllText(Path.Combine(_root, "mods", "LegacyMoney", "data", "x", "a.db"), "a");
     await installer.Uninstall(new LockedPackage {
       Manifest = package.Manifest,
       Variant = package.Variant,
@@ -121,7 +103,6 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     // Assert
     Assert.False(Directory.Exists(Path.Combine(_root, "mods", "LegacyMoney")));
     Assert.True(Directory.Exists(Path.Combine(_root, "mods")));
-    Assert.NotNull(new DirectoryInfo(Path.Combine(_root, "plugins")).LinkTarget);
     Assert.True(File.Exists(Path.Combine(_root, "post_uninstall.txt")));
   }
 }

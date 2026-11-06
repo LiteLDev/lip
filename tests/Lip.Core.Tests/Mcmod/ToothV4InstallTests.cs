@@ -127,7 +127,7 @@ public class ToothV4InstallTests {
 
     await h.Service.Install(["example.com/old"], _options);
 
-    Assert.Equal("old", h.Fs.File.ReadAllText(h.Path("mods/old/old.dll")));
+    Assert.Equal("old", h.Fs.File.ReadAllText(h.Path("plugins/old/old.dll")));
     LockedPackage package = Assert.Single((await h.Lock()).Packages);
     Assert.Equal(4, package.Manifest.GetProperty("format_version").GetInt32());
     JsonElement entry = package.Manifest.GetProperty("variants").GetProperty("")[0];
@@ -135,7 +135,7 @@ public class ToothV4InstallTests {
     Assert.Equal(WorkspaceHarness.Runtime, entry.GetProperty("runtime").GetString());
 
     await h.Service.Uninstall(["example.com/old"], _options);
-    Assert.False(h.Exists("mods/old/old.dll"));
+    Assert.False(h.Exists("plugins/old/old.dll"));
     Assert.Empty((await h.Lock()).Packages);
   }
 
