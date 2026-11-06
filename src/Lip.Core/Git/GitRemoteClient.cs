@@ -522,9 +522,9 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
     return entries;
   }
 
-  /// Rejects names no well-formed tree holds, so paths cannot escape the archive root.
+  /// Rejects names a git archive cannot hold (protocol/package.md §1).
   private static bool IsSafeEntryName(string name) {
-    return name is not ("" or "." or "..") && name.IndexOfAny(['/', '\0']) < 0;
+    return name is not ("" or "." or "..") && !name.Contains('/');
   }
 
   private static GitRemoteRef ParseRef(string line) {

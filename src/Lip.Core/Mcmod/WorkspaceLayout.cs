@@ -87,7 +87,7 @@ public class WorkspaceLayout(
     string mods = _fs.Path.Join(root, ModsDirectory);
     string plugins = _fs.Path.Join(root, PluginsDirectory);
 
-    // A mods link would let writes under mods/ land outside the workspace.
+    // A mods link would let writes under mods/ land outside the workspace (protocol/workspace.md §2).
     if (_linker.GetLinkTarget(mods) is not null) {
       throw new WorkspaceLayoutException($"'{mods}' must be a directory, but it is a link.");
     }

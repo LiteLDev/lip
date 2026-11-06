@@ -222,6 +222,8 @@ public class GitRemoteClientTests {
   [Theory]
   [InlineData("..")]
   [InlineData(".")]
+  [InlineData("")]
+  [InlineData("a/b")]
   public async Task ListTree_UnsafeEntryName_Throws(string name) {
     byte[] tree = PackBuilder.Tree(("100644", name, new string('a', 40)));
     byte[] commit = PackBuilder.Commit(PackBuilder.ObjectId(GitObjectType.Tree, tree));

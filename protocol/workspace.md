@@ -22,6 +22,7 @@ A workspace has one environment, recorded in its workspace file; every operation
 
 **Layout.** On both platforms, mod directories are below `mods` at the workspace root, the game directory LeviLamina loads mods from. In a workspace whose platform is `"server"`, `plugins` at the root MUST also be a link to `mods`: a directory junction on Windows, a relative symbolic link elsewhere. A path through `plugins/` is compared, and recorded in the workspace file, in its `mods/` form. Before an operation changes the workspace, it establishes the layout:
 
+- `mods` a link: failure.
 - `mods` missing: it is created as a directory.
 - `plugins` missing: it is created as a link to `mods`.
 - `plugins` a link to `mods`: nothing changes.
@@ -61,6 +62,7 @@ A package **owns** every file it writes to the workspace by the steps below.
 **Write rules.** When a file is written to the workspace:
 
 - When it is `.lip` or below it, or is owned by another installed package, it is a failure.
+- On Windows, when a segment of its path other than `.` contains `:` or ends in `.` or a space, it is a failure.
 - When it exists and matches a glob of the `preserve` of P, the existing file is kept.
 - Otherwise it is written, replacing an existing one.
 
