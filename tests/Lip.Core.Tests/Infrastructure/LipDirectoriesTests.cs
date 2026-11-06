@@ -31,19 +31,13 @@ public class LipDirectoriesTests {
   }
 
   [Fact]
-  public void Staging_IsHiddenDirectoryInCache() {
-    // Act & Assert
-    Assert.Equal(Path.Join(LipDirectories.Cache, ".staging"), LipDirectories.Staging);
-  }
-
-  [Fact]
   public void Directories_NoneUnderSystemTemp() {
     // Arrange
     string temp = Path.GetTempPath();
 
     // Act & Assert
     Assert.All(
-        [LipDirectories.Config, LipDirectories.Cache, LipDirectories.Staging],
+        [LipDirectories.Config, LipDirectories.Cache],
         d => Assert.False(d.StartsWith(temp, StringComparison.OrdinalIgnoreCase), d));
   }
 }

@@ -36,7 +36,6 @@ internal sealed class WorkspaceHarness {
 
     Cache = new CacheService(Fs, Ui.Object);
     LockStore = new LockStore(Fs);
-    Linker = new MockDirectoryLinker(Fs);
     SetUpDownloader();
     Restart();
   }
@@ -53,8 +52,7 @@ internal sealed class WorkspaceHarness {
         ArchiveProvider,
         new ArchiveReader(),
         new McmodInstaller(Faults, CommandRunner.Object, Ui.Object),
-        workspaceRoot: () => Root,
-        directoryLinker: Linker);
+        workspaceRoot: () => Root);
   }
 
   /// Downloads: every URL added by AddDownload serves its bytes; any other fails.
@@ -104,8 +102,6 @@ internal sealed class WorkspaceHarness {
   public ArchiveProvider ArchiveProvider { get; private set; }
 
   public LockStore LockStore { get; }
-
-  public MockDirectoryLinker Linker { get; }
 
   public McmodService Service { get; private set; }
 

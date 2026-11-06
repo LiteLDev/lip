@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using System.Text.Json;
 using Lip.Core.Infrastructure;
 using YamlDotNet.Serialization;
 
@@ -7,15 +6,12 @@ namespace Lip.Core.Services;
 
 /// Reads and writes the user configuration, &lt;Config&gt;/config.yaml: a mapping of the
 /// configuration keys to their values (protocol/userspace.md §2). The only configuration key is
-/// github_proxy; an absent key has its default value, none.
-///
-/// Earlier versions kept the configuration in &lt;Config&gt;/liprc.json. When config.yaml is
-/// absent and liprc.json exists, it is converted to config.yaml and deleted.
+/// github_proxy; an absent key has its default value, none. A missing config.yaml means every key
+/// has its default.
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
   private const string _githubProxyKey = "github_proxy";
 
   private static readonly string _configPath = Path.Join(LipDirectories.Config, "config.yaml");
-  private static readonly string _legacyConfigPath = Path.Join(LipDirectories.Config, "liprc.json");
 
   private static readonly IDeserializer _yamlDeserializer = new DeserializerBuilder().Build();
   private static readonly ISerializer _yamlSerializer = new SerializerBuilder()
@@ -27,7 +23,6 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   public async Task Delete(string key) {
     CheckKey(key);
-    await LoadGithubProxy();
     await SaveConfig(null);
   }
 
@@ -47,7 +42,6 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   public async Task Set(string key, string value) {
     CheckKey(key);
-    await LoadGithubProxy();
     await SaveConfig(value);
   }
 
@@ -59,7 +53,7 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   private async Task<string?> LoadGithubProxy() {
     if (!_fileSystem.File.Exists(_configPath)) {
-      return await ConvertLegacyConfig();
+      return null;
     }
 
     try {
@@ -83,37 +77,8 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     }
   }
 
-  /// Converts liprc.json to config.yaml and deletes it. Returns the github_proxy it holds; null
-  /// when it holds none, there is no liprc.json or it cannot be read. An unreadable liprc.json is
-  /// kept.
-  private async Task<string?> ConvertLegacyConfig() {
-    if (!_fileSystem.File.Exists(_legacyConfigPath)) {
-      return null;
-    }
-
-    string? githubProxy;
-    try {
-      using Stream readStream = _fileSystem.File.OpenRead(_legacyConfigPath);
-      using JsonDocument document = await JsonDocument.ParseAsync(readStream);
-
-      githubProxy = document.RootElement.TryGetProperty(_githubProxyKey, out JsonElement value)
-          ? value.GetString()
-          : null;
-    }
-    catch (Exception ex) {
-      await _userInteraction.PrintError($"Failed to load runtime configuration from '{_legacyConfigPath}': {ex.Message}");
-      await _userInteraction.PrintInfo("Using default runtime configuration.");
-
-      return null;
-    }
-
-    await SaveConfig(githubProxy);
-    _fileSystem.File.Delete(_legacyConfigPath);
-    await _userInteraction.PrintInfo($"Converted '{_legacyConfigPath}' to '{_configPath}'.");
-
-    return githubProxy;
-  }
-
+  /// Writes config.yaml atomically (protocol/userspace.md §2): the whole content goes to a
+  /// uniquely named file in the config directory, which is then renamed over config.yaml.
   private async Task SaveConfig(string? githubProxy) {
     // Keys at their default (none) are left out.
     Dictionary<string, string> values = [];
@@ -121,9 +86,19 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
       values[_githubProxyKey] = githubProxy;
     }
 
-    using Stream writeStream = _fileSystem.CreateFileWithDirectory(_configPath);
-    using StreamWriter writer = new(writeStream);
+    string tempPath = Path.Join(LipDirectories.Config, $"{Guid.NewGuid():N}.tmp");
+    try {
+      using (Stream writeStream = _fileSystem.CreateFileWithDirectory(tempPath))
+      using (StreamWriter writer = new(writeStream)) {
+        await writer.WriteAsync(_yamlSerializer.Serialize(values));
+      }
 
-    await writer.WriteAsync(_yamlSerializer.Serialize(values));
+      _fileSystem.File.Move(tempPath, _configPath, overwrite: true);
+    }
+    finally {
+      if (_fileSystem.File.Exists(tempPath)) {
+        _fileSystem.File.Delete(tempPath);
+      }
+    }
   }
 }

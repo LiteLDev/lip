@@ -15,8 +15,6 @@ namespace Lip.Core.Mcmod.Install;
 ///   rename on the same volume. Rollback renames it back; commit deletes it. On Windows backups
 ///   also get the hidden attribute.
 /// - A directory that empties is deleted only at commit, since backups are still in it.
-/// - Moves, directory removals and directory links (the workspace layout) are recorded and undone
-///   too.
 ///
 /// Every change is appended to the journal (&lt;root&gt;/.lip/journal, protocol/workspace.md §7.3;
 /// one JSON object per line, its paths relative to &lt;root&gt; and '/'-separated)
@@ -83,24 +81,6 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// Deletes the directory at commit, if it is empty then.
   public void DeleteDirectoryOnCommit(string path) =>
       Record(new JournalEntry(JournalOp.DeleteDirectoryOnCommit, path));
-
-  /// Deletes an empty directory now.
-  public void DeleteEmptyDirectory(string path) {
-    Record(new JournalEntry(JournalOp.DeleteDirectory, path));
-    _fs.Directory.Delete(path);
-  }
-
-  /// Moves a file, a directory or a directory link (the link, not its target).
-  public void Move(string from, string to) {
-    Record(new JournalEntry(JournalOp.Move, from, to));
-    MoveAny(_fs, from, to);
-  }
-
-  /// Creates a directory link with the linker.
-  public void CreateLink(string linkPath, string targetPath, IDirectoryLinker linker) {
-    Record(new JournalEntry(JournalOp.CreateLink, linkPath));
-    linker.CreateLink(linkPath, targetPath);
-  }
 
   private void Backup(string path) {
     string backup = BackupPath(path);
@@ -272,10 +252,10 @@ public sealed class WorkspaceTransaction : IDisposable {
   private static string JournalRoot(IFileSystem fs, string journalPath) =>
       fs.Path.GetDirectoryName(fs.Path.GetDirectoryName(fs.Path.GetFullPath(journalPath))!)!;
 
-  /// Whether the path of an entry, and the destination of a Backup or Move, are workspace paths.
+  /// Whether the path of an entry, and the backup of a Backup, are workspace paths.
   private static bool HasPaths(JournalOp op) => op is not (JournalOp.Begin or JournalOp.Commit);
 
-  private static bool HasDestination(JournalOp op) => op is JournalOp.Backup or JournalOp.Move;
+  private static bool HasDestination(JournalOp op) => op is JournalOp.Backup;
 
   /// An entry as the journal records it: its paths relative to the root, '/'-separated.
   private static JournalEntry ToJournal(IFileSystem fs, string root, JournalEntry entry) {
@@ -505,25 +485,6 @@ public sealed class WorkspaceTransaction : IDisposable {
         }
 
         break;
-      case JournalOp.DeleteDirectory:
-        if (!fs.Directory.Exists(entry.Path)) {
-          fs.Directory.CreateDirectory(entry.Path);
-        }
-
-        break;
-      case JournalOp.Move:
-        if (Exists(fs, entry.To!) && !Exists(fs, entry.Path)) {
-          MoveAny(fs, entry.To!, entry.Path);
-        }
-
-        break;
-      case JournalOp.CreateLink:
-        if (fs.DirectoryInfo.New(entry.Path).LinkTarget is not null) {
-          // Deletes the link, not its target.
-          fs.Directory.Delete(entry.Path);
-        }
-
-        break;
       default:
         break;
     }
@@ -562,18 +523,6 @@ public sealed class WorkspaceTransaction : IDisposable {
     }
   }
 
-  private static bool Exists(IFileSystem fs, string path) =>
-      fs.File.Exists(path) || fs.Directory.Exists(path)
-      || fs.DirectoryInfo.New(path).LinkTarget is not null;
-
-  private static void MoveAny(IFileSystem fs, string from, string to) {
-    if (fs.File.Exists(from)) {
-      fs.File.Move(from, to);
-    } else {
-      fs.Directory.Move(from, to);
-    }
-  }
-
   /// A read-only file cannot be deleted on Windows.
   private static void ClearReadOnly(IFileSystem fs, string path) {
     FileAttributes attributes = fs.File.GetAttributes(path);
@@ -589,24 +538,17 @@ public sealed class WorkspaceTransaction : IDisposable {
     CreateDirectory,
     CreateFile,
     Backup,
-    Move,
-    DeleteDirectory,
     DeleteDirectoryOnCommit,
-    CreateLink,
     Commit,
   }
 
-  /// One record of the journal. To: the backup of a Backup, the destination of a Move, the start
-  /// time of a Begin. Hidden: whether the file of a Backup was hidden.
+  /// One record of the journal. To: the backup of a Backup, the start time of a Begin. Hidden: whether the file of a Backup was hidden.
   private sealed record JournalEntry(
       JournalOp Op, string Path, string? To = null, bool Hidden = false) {
     public string Describe() => Op switch {
       JournalOp.CreateFile => $"the creation of {Path}",
       JournalOp.Backup => $"the change of {Path} (the original is {To})",
       JournalOp.CreateDirectory => $"the creation of {Path}",
-      JournalOp.DeleteDirectory => $"the deletion of {Path}",
-      JournalOp.Move => $"the move of {Path} to {To}",
-      JournalOp.CreateLink => $"the link {Path}",
       _ => $"{Op} {Path}",
     };
   }

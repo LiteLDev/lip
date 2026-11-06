@@ -6,15 +6,15 @@
 
 `lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：
 
-1. **工作区文件**：从 `.lip/workspace.json` 加载该工作区的状态。早期 lip 版本的工作区会被拒绝（参见[工作区文件](../concepts/lockfiles.md#早期格式)）。
+1. **工作区文件**：从 `.lip/workspace.json` 加载该工作区的状态。没有该文件的工作区没有已安装的包。
 2. **环境**：确定平台和 RID（参见[环境](../concepts/tooth_json.md#环境)）。
 3. **解析器**：把每个来源转换为一个候选序列：它所指向的归档，最新版本在前，每个都带有所请求变体在该环境下的条目。
 4. **依赖图求解器**：为每个请求和每个依赖各选出一个候选，使每个身份只出现一次，且没有两个 mod 的 mod 名称相同。
-5. **规划**：规划按安装顺序的逆序卸载离开集合的包、再按依赖优先的顺序安装进入集合的包，每一步都基于之前各步完成后的工作区。规划会下载所有要写入的归档和资源，并检查一切可能失败的情形：文件所有权、`preserve`、路径、放置规则的 `src`、mod 的 LeviLamina `manifest.json` 中的 mod 名称，以及 `plugins`/`mods` 目录布局。早期格式的 `tooth.json` 在解析时已被完整地转换为格式 4（参见[早期格式](../concepts/tooth_json.md#早期格式)），因此所有包都由同一个安装器处理，且只按格式 4 的规则处理。
-6. **执行**：必要时让 `plugins` 成为指向 `mods` 的链接（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的钩子与文件修改。放到 `plugins/` 下的文件会写入 `mods/` 并按 `mods/` 记录。
+5. **规划**：规划按安装顺序的逆序卸载离开集合的包、再按依赖优先的顺序安装进入集合的包，每一步都基于之前各步完成后的工作区。规划会下载所有要写入的归档和资源，并检查一切可能失败的情形：文件所有权、`preserve`、路径、放置规则的 `src`、mod 的 LeviLamina `manifest.json` 中的 mod 名称，以及 `mods` 是否为链接。早期格式的 `tooth.json` 在解析时已被完整地转换为格式 4（参见[早期格式](../concepts/tooth_json.md#早期格式)），因此所有包都由同一个安装器处理，且只按格式 4 的规则处理。
+6. **执行**：`mods` 不存在时创建它（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的钩子与文件修改。
 7. **工作区文件**：所有步骤成功之后，保存一次工作区文件。
 
-操作要么全部完成，要么全部不做（[工作区协议](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#6-atomicity) §6"原子性"）。第 6 步之前的任何失败都不会修改工作区。执行时某一步失败（文件无法写入、钩子命令以非零码退出，或按下 Ctrl+C），lip 会撤销该操作的全部修改（包括目录布局），工作区文件保持原样。钩子命令所做的事无法撤销：`post_install` 或 `pre_uninstall` 命令失败时，操作同样失败并撤销 lip 的文件修改，但已运行命令的效果不会被撤销。
+操作要么全部完成，要么全部不做（[工作区协议](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#6-atomicity) §6"原子性"）。第 6 步之前的任何失败都不会修改工作区。执行时某一步失败（文件无法写入、钩子命令以非零码退出，或按下 Ctrl+C），lip 会撤销该操作的全部修改，工作区文件保持原样。钩子命令所做的事无法撤销：`post_install` 或 `pre_uninstall` 命令失败时，操作同样失败并撤销 lip 的文件修改，但已运行命令的效果不会被撤销。
 
 ## 包解析
 
@@ -27,7 +27,7 @@ lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo
 - **候选**：只有当某个版本的 `tooth.json` 合法、其 `tooth` 是该仓库的路径、其 `version` 等于标签版本，且所请求的变体有对应工作区平台和 RID 的条目时，该版本才是候选。否则 lip 继续查看下一个版本。
 - **安装**：只有安装器需要时才下载文件：`self` 资源从包自身归档中放置的文件，以及 `zip` 和 `mcmod` 资源；后者在包安装时下载，与其他 HTTP 下载相同。
 - **完整性**：每个下载的 git 对象都会按其 git 对象 ID（SHA-1）校验。ZIP 归档和资源会被检查是否为有效的 ZIP 归档；其内容的校验和既不记录也不检查。
-- **缓存**：全局缓存按数据的传输方式命名每个条目。下载的 git 文件存为 `git-<对象 ID>`，相同的文件只下载一次，可在不同版本和不同包之间复用。通过 HTTP(S) 下载的内容一律存为 `http-<URL 的 SHA-256>`；不是有效 ZIP 归档的缓存文件会被重新下载。下载内容先写入缓存中隐藏的 `.staging` 目录，完成后再移动到位；lip 不向系统临时目录写入任何内容。标签列表和树对象仅在单次命令执行期间缓存在内存中；每次运行都会重新查询标签，因此被移动的标签会立即生效。
+- **缓存**：全局缓存按数据的传输方式命名每个条目。下载的 git 文件存为 `git-<对象 ID>`，相同的文件只下载一次，可在不同版本和不同包之间复用。通过 HTTP(S) 下载的内容一律存为 `http-<URL 的 SHA-256>`；不是有效 ZIP 归档的缓存文件会被重新下载。下载内容先写入缓存目录中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。标签列表和树对象仅在单次命令执行期间缓存在内存中；每次运行都会重新查询标签，因此被移动的标签会立即生效。
 - **代理**：若配置了 `github_proxy`，对 `github.com` 仓库的请求会先经由该代理发送；若代理请求失败，lip 会直接向 `github.com` 重试。从 `github.com` URL 下载发布资源时遵循同样的规则。
 
 只有当某个版本的标签仍存在于仓库中时，该版本才能被安装。目前只支持可通过 HTTPS 访问的公开仓库。比较 tooth 路径时不区分 ASCII 大小写。
@@ -48,7 +48,7 @@ git 引用所给的分支、提交或名称不是 `v<SemVer>` 的标签没有标
 `tooth.json` 由 JSON Schema [`protocol/tooth.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/tooth.schema.json) 描述，工作区文件由 [`protocol/workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json) 描述。早期格式曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。
 
 - **校验**：除 schema 之外，lip 还检查[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md#3-tooth-files)的要求：合法的 tooth 路径、版本、依赖键和范围、平台和 RID，同一变体中没有两个条目对应相同的平台和 RID，每个条目至多一个 `mcmod` 资源，以及合法的 glob。`tooth.json` 无效的归档不是包，不产出候选，lip 会报告原因。
-- **版本**：`format_version` 为 4 的 `tooth.json` 是当前格式。格式 1 和 2 会在读取时于内存中转换为格式 3，格式 3 再针对环境完整地转换为格式 4（[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md#5-earlier-formats) §5）；如需把包仓库的 `tooth.json` 改写为格式 4，请在仓库中运行 `lip migrate`。
+- **版本**：`format_version` 为 4 的 `tooth.json` 是当前格式。格式 1 和 2 会在读取时于内存中转换为格式 3，格式 3 再针对环境完整地转换为格式 4（[兼容性协议](https://github.com/LiteLDev/lip/blob/main/protocol/compatibility.md#2-tooth-files-of-formats-1-to-3) §2）；如需把包仓库的 `tooth.json` 改写为格式 4，请在仓库中运行 `lip migrate`。
 
 ## 工作区状态
 
@@ -69,4 +69,4 @@ lip 在保存于工作区中 `.lip/workspace.json` 的工作区文件里维护�
 
 lip 只管理服务端工作区：它从不从工作区判断平台，而是总是使用 `server`（[CLI 协议](https://github.com/LiteLDev/lip/blob/main/protocol/cli.md#4-environment-and-workspace-operations) §4）。客户端工作区交由实现同一协议的启动器（如 LeviLauncher）处理。
 
-lip 实现 [lip 协议](https://github.com/LiteLDev/lip/blob/main/protocol/README.md)。协议没有规定如何接管早期 lip 版本的工作区（[工作区协议](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#76-earlier-formats) §7.6）；lip 不接管它们，并在这样的工作区上失败（参见[工作区文件](../concepts/lockfiles.md#早期格式)）。
+lip 实现 [lip 协议](https://github.com/LiteLDev/lip/blob/main/protocol/README.md)。

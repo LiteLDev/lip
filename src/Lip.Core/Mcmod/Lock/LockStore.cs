@@ -14,11 +14,8 @@ public class LockFormatException(string message, Exception? inner = null)
 ///
 /// The workspace file lives inside the workspace, in &lt;root&gt;/.lip/workspace.json, so that it
 /// follows the workspace when the workspace is moved, renamed or copied. Next to it in .lip are
-/// the workspace lock (WorkspaceMutex) and the journal (WorkspaceTransaction).
-///
-/// Workspaces of earlier lip versions (protocol/workspace.md §7.6) are not taken over: a
-/// .lip/workspace.json without format_version 4, a .lip/lock.json or a tooth_lock.json at the root
-/// cannot be read, so that lip never writes over the files the packages they record own.
+/// the workspace lock (WorkspaceMutex) and the journal (WorkspaceTransaction). A workspace without
+/// the workspace file has no installed packages.
 public partial class LockStore(IFileSystem fs) {
   /// The directory of lip's own files in the workspace root, and the files in it.
   public const string LipDirectory = ".lip";
@@ -26,12 +23,6 @@ public partial class LockStore(IFileSystem fs) {
   public const string StagedFileName = "workspace.json.new";
   public const string MutexFileName = "lock";
   public const string JournalFileName = "journal";
-
-  /// The workspace file of lip v0.36, in .lip.
-  public const string V036FileName = "lock.json";
-
-  /// The workspace file lip v0.x kept in the workspace root.
-  public const string LegacyFileName = "tooth_lock.json";
 
   private static readonly JsonSerializerOptions _readOptions = new() {
     RespectNullableAnnotations = true,
@@ -54,23 +45,13 @@ public partial class LockStore(IFileSystem fs) {
       _fs.Path.Join(NormalizeRoot(workspaceRoot), LipDirectory, name);
 
   /// Returns null when none exists. Throws LockFormatException when the lock exists but cannot
-  /// be read, or when the workspace has files of earlier formats (§7.6).
+  /// be read.
   public async Task<LockFile?> Load(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
 
     string path = LipPath(root, FileName);
     if (_fs.File.Exists(path)) {
       return Parse(await _fs.File.ReadAllBytesAsync(path), path);
-    }
-
-    foreach (string earlier in (string[])[
-        LipPath(root, V036FileName), _fs.Path.Join(root, LegacyFileName)]) {
-      if (_fs.File.Exists(earlier)) {
-        throw new LockFormatException(
-            $"'{earlier}' is the workspace file of an earlier lip version, which this lip cannot "
-            + "take over. Uninstall its packages with that lip version, or delete it to start "
-            + "over (lip then knows nothing about the files they installed).");
-      }
     }
 
     return null;
@@ -156,10 +137,7 @@ public partial class LockStore(IFileSystem fs) {
 
       if (ToothParser.FormatVersion(root) != ToothFormat.FormatVersion) {
         throw new LockFormatException(
-            $"it is not of {ToothFormat.FormatVersionKey} {ToothFormat.FormatVersion}, but of an "
-            + "earlier lip version, which this lip cannot take over. Uninstall its packages with "
-            + "that lip version, or delete it to start over (lip then knows nothing about the "
-            + "files they installed).");
+            $"{ToothFormat.FormatVersionKey} is not {ToothFormat.FormatVersion}.");
       }
 
       // "commit" is omitted, not null, for a package that is not from a remote repository.

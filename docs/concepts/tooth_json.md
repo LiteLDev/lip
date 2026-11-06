@@ -206,9 +206,8 @@ segments; a pattern ending with `/` matches a directory and everything below it.
 escape character. A glob must not be empty, start with `/`, or contain `//` or `\`.
 
 `preserve` and `purge` are matched against paths relative to the workspace, also for
-a mod: write `mods/MyMod/config/`, not `config/`. `purge` never matches `mods`, `plugins`
-or `.lip` at the workspace root, nor anything below `.lip`, and never deletes anything below
-`mods` or `plugins` through them.
+a mod: write `mods/MyMod/config/`, not `config/`. `purge` never matches `mods`
+or `.lip` at the workspace root, nor anything below `.lip`.
 
 ### Hooks
 
@@ -230,8 +229,7 @@ which only places files.
 
 The archive of the `mcmod` asset must have at its root the LeviLamina `manifest.json` of the mod,
 a JSON object whose `name` matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. That `name` is the **mod
-name**. lip writes the whole archive into `mods/<mod name>/`, keeping its paths. On a server,
-`plugins` is a link to `mods`, so the mod is also found under `plugins/<mod name>/`.
+name**. lip writes the whole archive into `mods/<mod name>/`, keeping its paths.
 
 lip reads only the `name` of `manifest.json`, to name the mod directory. It neither checks nor
 changes anything else in it: `manifest.json` is written into the mod directory exactly as it is in

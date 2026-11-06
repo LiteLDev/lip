@@ -5,8 +5,7 @@ using Lip.Core.Mcmod.Lock;
 
 namespace Lip.Core.Tests.Mcmod.Lock;
 
-/// The workspace file (protocol/workspace.md §7.1, workspace.schema.json) and earlier formats
-/// (protocol/workspace.md §7.6).
+/// The workspace file (protocol/workspace.md §7.1, workspace.schema.json).
 public class LockStoreTests {
   private static readonly string _root = OperatingSystem.IsWindows()
       ? @"C:\lip-workspace"
@@ -23,8 +22,6 @@ public class LockStoreTests {
   }
 
   private string LipLockPath => _fs.Path.Join(_root, ".lip", "workspace.json");
-  private string V036LockPath => _fs.Path.Join(_root, ".lip", "lock.json");
-  private string ToothLockPath => _fs.Path.Join(_root, "tooth_lock.json");
 
   private static string ManifestJson(
       string tooth,
@@ -264,22 +261,29 @@ public class LockStoreTests {
     Assert.False(package.Explicit);
   }
 
-  [Fact]
-  public async Task Load_WorkspaceFileAndToothLockAtTheRoot_ReadsTheWorkspaceFile() {
-    // Arrange: once a workspace file exists, a tooth_lock.json at the root is a package's file.
-    await _store.Save(_root, Lock());
-    _fs.AddFile(ToothLockPath, new MockFileData("a package's file"));
+  /// protocol/workspace.md §7.1: a workspace without a workspace file has no installed packages,
+  /// whatever other files it has.
+  [Theory]
+  [InlineData(".lip/lock.json")]
+  [InlineData("tooth_lock.json")]
+  public async Task Load_NoWorkspaceFile_ReturnsNullWhateverOtherFiles(string relative) {
+    // Arrange
+    string path = _fs.Path.Join(_root, relative);
+    const string json = """
+        { "format_version": 3, "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+          "packages": [] }
+        """;
+    _fs.AddFile(path, new MockFileData(json));
 
     // Act
-    LockFile lockFile = (await _store.Load(_root))!;
-    await _store.Save(_root, lockFile with { Platform = "server" });
+    LockFile? lockFile = await _store.Load(_root);
 
     // Assert
-    Assert.Equal("win-x64", lockFile.Runtime);
-    Assert.Equal("a package's file", _fs.File.ReadAllText(ToothLockPath));
+    Assert.Null(lockFile);
+    Assert.Equal(json, _fs.File.ReadAllText(path));
   }
 
-  public static TheoryData<string> EarlierWorkspaceFiles() => [
+  public static TheoryData<string> WorkspaceFilesWithoutFormatVersion4() => [
     """{ "format_version": 3, "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d", "packages": [] }""",
     """{ "format": "bf45b1", "packages": [] }""",
     """{ "packages": [] }""",
@@ -287,8 +291,9 @@ public class LockStoreTests {
     """{ "format_version": "4", "platform": "server", "runtime": "win-x64", "packages": [] }""",
   ];
 
+  /// A workspace file not of format_version 4 is not valid against workspace.schema.json.
   [Theory]
-  [MemberData(nameof(EarlierWorkspaceFiles))]
+  [MemberData(nameof(WorkspaceFilesWithoutFormatVersion4))]
   public async Task Load_WorkspaceJsonWithoutFormatVersion4_ThrowsAndKeepsIt(string json) {
     // Arrange
     _fs.AddFile(LipLockPath, new MockFileData(json));
@@ -299,39 +304,7 @@ public class LockStoreTests {
 
     // Assert
     Assert.Contains(LipLockPath, ex.Message);
-    Assert.Contains("format_version 4", ex.Message);
     Assert.Equal(json, _fs.File.ReadAllText(LipLockPath));
-  }
-
-  [Theory]
-  [InlineData(".lip/lock.json")]
-  [InlineData("tooth_lock.json")]
-  public async Task Load_EarlierWorkspaceFile_ThrowsAndKeepsIt(string relative) {
-    // Arrange
-    string path = _fs.Path.Join(_root, relative);
-    const string json = """
-        { "format_version": 3, "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
-          "packages": [] }
-        """;
-    _fs.AddFile(path, new MockFileData(json));
-
-    // Act
-    LockFormatException ex =
-        await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
-
-    // Assert
-    Assert.Contains(_fs.Path.GetFullPath(path), ex.Message);
-    Assert.Equal(json, _fs.File.ReadAllText(path));
-    Assert.False(_fs.File.Exists(LipLockPath));
-  }
-
-  [Fact]
-  public async Task Load_V036LockJsonOfAnyContent_Throws() {
-    // Arrange
-    _fs.AddFile(V036LockPath, new MockFileData("not json"));
-
-    // Act & Assert
-    await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
   }
 
   public static TheoryData<LockFile> InvalidLocks() => [

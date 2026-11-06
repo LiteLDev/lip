@@ -57,7 +57,7 @@
     *   `false`：该包作为另一个包的依赖安装。
 *   **`ref`**：包的安装来源：传给 `lip install` 或 `lip update` 的参数（例如 `github.com/user/repo`、`github.com/user/repo#lua@branch:main` 或 `https://` URL；本地路径记录为其绝对路径的 `file:` URI），对于依赖则是该依赖的键。[`lip update`](../cli/commands/update.md) 会再次请求它。
 *   **`commit`**：仅用于来自 git 仓库的包：其归档所在的提交，以小写十六进制表示。来自 URL 或本地路径的包没有 `commit`。
-*   **`files`**：包拥有的文件，相对于工作区根目录，以 `/` 分隔。由于在服务端 `plugins` 是指向 `mods` 的链接，`plugins/` 下的文件会记录在 `mods/` 下。
+*   **`files`**：包拥有的文件，相对于工作区根目录，以 `/` 分隔。
 
 已安装的条目是 `manifest.variants[variant]` 中 `platform` 和 `runtime` 与工作区相同的那个条目。
 
@@ -107,6 +107,3 @@ lip 只按身份、版本和提交比较已安装的包与它解析出的包：�
   ]
 }
 ```
-## 早期格式
-
-lip 不接管早期 lip 版本的工作区：`format_version` 不为 4 的 `.lip/workspace.json`、lip v0.36 的 `.lip/lock.json`，以及 lip v0.x 保存在工作区根目录下的 `tooth_lock.json`。在含有其中之一的工作区中，lip 会给出提示并失败，而不会安装、卸载、更新或列出包，以免覆盖这些包拥有的文件。请用安装这些包的 lip 版本卸载它们，或删除该文件重新开始；此后 lip 对它们安装的文件一无所知。

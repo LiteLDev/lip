@@ -8,7 +8,7 @@
   - **directory archive**: a directory, taken as the archive of its contents.
   - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees. The name of each entry of each of its trees MUST NOT be empty, `.` or `..`, or contain `/`.
 - **tooth file**: The file `tooth.json` at the root of an archive.
-- **package**: An archive whose tooth file is valid against `tooth.schema.json` and satisfies Section 3, or is of an earlier format (Section 5).
+- **package**: An archive whose tooth file is valid against `tooth.schema.json` and satisfies Section 3, or is of a format that Section 2 of [COMPATIBILITY] reads.
 - **tooth path**: The `tooth` of a package, a Go module path [GO-MODULE], compared ASCII case-insensitively.
 - **tooth name**: The last `/`-separated element of a tooth path, or the element before it when the last is `v` followed by one or more ASCII digits.
 - **id**: A string matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`, compared ASCII case-insensitively.
@@ -110,30 +110,3 @@ The **identity** of a candidate is its tooth path, followed by `#` and the varia
 A member (key k, range R) of the `dependencies` of the selected entry is a **dependency**; it names the candidates of Resolve(k, R, environment).
 
 A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`. The archive of that asset MUST have at its root a `manifest.json` that is a JSON object [RFC8259] whose `name` is an id: the **mod name**.
-
-## 5. Earlier Formats
-
-A tooth file with `format_version` 1, 2 or 3 is read as the tooth file of `format_version` 4 that this section derives from it. Formats 1 and 2 are first read as format 3, as lip v0.37.0 [TOOTH-V3] reads them.
-
-A format 3 tooth file T is read, for an environment (p, r), as a tooth file with the `tooth` of T, the version of the package as `version`, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
-
-- Let V be the variants of T labeled L whose `platform` is `""` or matches r as [TOOTH-V3] matches it. When V is empty, the result has no variant L.
-- Otherwise the result maps L to one entry with `"platform": p`, `"runtime": r`, and, from the variants of V merged as [TOOTH-V3] merges them:
-  - `dependencies`, as they are;
-  - `assets`: each asset with its `type` and `urls`, and with `place` converted from its `placements` as below. When an asset has the type `tar`, `tgz` or `uncompressed`, the result has no variant L;
-  - `preserve`: each pattern P of `preserve_files`, `\` replaced by `/`, as P when it contains `/`, and as `**/` followed by P otherwise;
-  - `purge`: each pattern P of `remove_files`, `\` replaced by `/`, as P, and also as P followed by `/` when it does not end with `/`;
-  - `hooks`, whose `pre_install` is `pre_install`, `post_install` is `install` followed by `post_install`, `pre_uninstall` is `pre_uninstall` followed by `uninstall`, and `post_uninstall` is `post_uninstall`.
-- When p is `"client"` and T has a variant labeled `"client"`, the variant `""` of the result is the one derived from the label `"client"`.
-
-A placement (`type`, `src`, `dest`) becomes a member of `place` with, after `\` is replaced by `/` and empty and `.` segments are removed from both paths:
-
-- `type` `dir`: `src` and `dest` each followed by `/`, unless empty.
-- `type` `file`, `src` containing `*`, `?` or `[`: `src`, and `dest` followed by `/`, unless empty.
-- `type` `file` otherwise: `src` and `dest`.
-
-A converted glob or placement that is not valid in format 4 is left out.
-
-The version of a package whose tooth file is of format 1, 2 or 3 is the tag version of its git archive, when it has one, and otherwise its `version`.
-
-A dependency of a format 3 tooth file on the variant `client` of a package whose tooth file is of format 4 names the variant `""` of that package.

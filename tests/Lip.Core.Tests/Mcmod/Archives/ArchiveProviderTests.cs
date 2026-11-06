@@ -476,7 +476,7 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
-    Assert.Empty(_fileSystem.Directory.GetFiles(LipDirectories.Staging));
+    Assert.Empty(_fileSystem.Directory.GetDirectories(LipDirectories.Cache));
   }
 
   [Fact]

@@ -15,8 +15,6 @@ lip 将配置存储在 `config.yaml` 中。
 github_proxy: https://proxy.example.com
 ```
 
-早期版本把配置保存在同一目录下的 `liprc.json` 中。若没有 `config.yaml` 但有 `liprc.json`，lip 会在下次读取配置时把它转换为 `config.yaml`，并删除 `liprc.json`。
-
 ## 配置键
 
 | 键 | 类型 | 默认值 | 说明 |

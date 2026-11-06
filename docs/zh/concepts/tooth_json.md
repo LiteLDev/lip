@@ -192,8 +192,8 @@ lip 不使用 `info`。
 glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 
 `preserve` 和 `purge` 匹配的是相对于工作区的路径，对 mod 也是如此：应写
-`mods/MyMod/config/`，而不是 `config/`。`purge` 永远不会匹配工作区根目录下的 `mods`、`plugins`
-或 `.lip`，也不会匹配 `.lip` 之下的任何内容，且永远不会通过 `mods` 或 `plugins` 删除其下的任何内容。
+`mods/MyMod/config/`，而不是 `config/`。`purge` 永远不会匹配工作区根目录下的 `mods`
+或 `.lip`，也不会匹配 `.lip` 之下的任何内容。
 
 ### 钩子
 
@@ -214,8 +214,7 @@ glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 
 `mcmod` 资源的归档根部必须有该 mod 的 LeviLamina `manifest.json`，它是一个 JSON 对象，其 `name` 须匹配
 `^[A-Za-z0-9][A-Za-z0-9._-]*$`。这个 `name` 就是 **mod 名称**。lip 把整个归档按原路径写入
-`mods/<mod 名称>/`。在服务端，`plugins` 是指向 `mods` 的链接，因此也能在 `plugins/<mod 名称>/` 下找到该
-mod。
+`mods/<mod 名称>/`。
 
 lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检查也不修改其中的任何其他内容：
 `manifest.json` 与其他文件一样，按归档中的原样写入 mod 目录。让其 `dependencies` 与条目的

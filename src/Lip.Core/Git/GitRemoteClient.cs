@@ -501,11 +501,12 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     }
   }
 
-  // In the cache's staging directory, since lip keeps nothing in the system temp directory.
+  // A <N>.tmp file in the cache directory (protocol/userspace.md §3), since lip keeps nothing in
+  // the system temp directory.
   private static FileStream CreateTempFile() {
-    Directory.CreateDirectory(LipDirectories.Staging);
+    Directory.CreateDirectory(LipDirectories.Cache);
     return new FileStream(
-        Path.Join(LipDirectories.Staging, $"{Guid.NewGuid():N}.pack"),
+        Path.Join(LipDirectories.Cache, $"{Guid.NewGuid():N}.tmp"),
         FileMode.CreateNew,
         FileAccess.ReadWrite,
         FileShare.None,

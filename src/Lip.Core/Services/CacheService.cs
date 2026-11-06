@@ -16,8 +16,6 @@ public interface ICacheService {
 public class CacheService(IFileSystem fileSystem, IUserInteraction userInteraction) : ICacheService {
   private readonly IDirectoryInfo _cacheDirectory =
       fileSystem.DirectoryInfo.New(LipDirectories.Cache);
-  private readonly IDirectoryInfo _tempDirectory =
-      fileSystem.DirectoryInfo.New(LipDirectories.Staging);
 
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;
@@ -49,6 +47,8 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
     _cacheDirectory.Delete(recursive: true);
   }
 
+  /// Writes a missing entry atomically (protocol/userspace.md §3): the factory writes a uniquely
+  /// named &lt;N&gt;.tmp file in the cache directory, which is then renamed to the entry.
   public async Task<IFileInfo> GetOrCreateFile(string key, Func<IFileInfo, Task> factory) {
     IFileInfo cacheFile = GetCacheFile(key);
 
@@ -61,8 +61,8 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
 
     await _userInteraction.PrintInfo($"Caching file for key '{key}'...");
 
-    IFileInfo tempFile = _fileSystem.FileInfo.New(Path.Join(_tempDirectory.FullName, Guid.NewGuid().ToString()));
-    tempFile.Directory?.Create();
+    IFileInfo tempFile =
+        _fileSystem.FileInfo.New(Path.Join(_cacheDirectory.FullName, $"{Guid.NewGuid():N}.tmp"));
 
     try {
       await factory(tempFile);

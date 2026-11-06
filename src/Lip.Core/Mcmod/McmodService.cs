@@ -53,8 +53,7 @@ public class McmodService(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
     McmodInstaller installer,
-    Func<string>? workspaceRoot = null,
-    IDirectoryLinker? directoryLinker = null) {
+    Func<string>? workspaceRoot = null) {
   private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
 
   private readonly IFileSystem _fs = fileSystem;
@@ -65,8 +64,7 @@ public class McmodService(
   private readonly McmodInstaller _installer = installer;
   private readonly Func<string> _workspaceRoot =
       workspaceRoot ?? fileSystem.Directory.GetCurrentDirectory;
-  private readonly WorkspaceLayout _layout = new(
-      fileSystem, directoryLinker ?? new DirectoryLinker(fileSystem), userInteraction);
+  private readonly WorkspaceLayout _layout = new(fileSystem, userInteraction);
 
   public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
     using WorkspaceMutex? mutex = await BeginOperation(options);
@@ -665,7 +663,7 @@ public class McmodService(
         _fs, JournalPath(workspace.Root), plans.SelectMany(p => p.Plan.WrittenPaths));
     try {
       if (layout is not null) {
-        await _layout.Apply(layout, transaction);
+        _layout.Apply(layout, transaction);
       }
 
       foreach ((string message, PackagePlan plan) in plans) {

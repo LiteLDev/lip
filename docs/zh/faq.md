@@ -9,9 +9,6 @@
 ### `lip install` 会更新 `tooth.json` 吗？
 **不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[工作区文件](concepts/lockfiles.md)来记录状态，但**不会**修改任何 `tooth.json`。如果你希望依赖长期保留在包的要求中，需要手动把它加入你的 `tooth.json`。
 
-### `tooth_lock.json` 去哪了？
-工作区的状态现在是工作区中的 `.lip/workspace.json`，因此会随工作区一起移动：移动、重命名或复制工作区后，已安装的包仍然保留。lip 不接管 `tooth_lock.json`，也不接管其他早期 lip 版本的工作区文件：在这样的工作区中，它会给出提示并失败。请用安装这些包的 lip 版本卸载它们，或删除该文件重新开始。参见[工作区文件](concepts/lockfiles.md#早期格式)。
-
 ### lip 能安装客户端 mod 吗？
 不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的 `tooth.json` 包。
 
@@ -31,7 +28,7 @@
 目前不支持。lip 通过 HTTPS 匿名获取包，不使用 `git` 命令行工具或其凭据管理器，因此只能从公开仓库安装。
 
 ### lip 会把安装的包放在哪里？
-lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<name>/`，`<name>` 为其 LeviLamina `manifest.json` 中的 `name`，而 `plugins` 是指向 `mods` 的链接（参见[安装依赖](guides/installing_dependencies.md#仅限服务端工作区)）；文件包按其 `tooth.json` 的规定放置文件。
+lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<name>/`，`<name>` 为其 LeviLamina `manifest.json` 中的 `name`；文件包按其 `tooth.json` 的规定放置文件。
 
 工作区的[工作区文件](concepts/lockfiles.md)是其中的 `.lip/workspace.json`；操作锁（`.lip/lock`）和日志（`.lip/journal`）位于它旁边。lip 自己的其他文件保存在遵循平台惯例的用户目录中：
 
@@ -40,7 +37,7 @@ lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<nam
 | 配置（`config.yaml`） | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip`（默认 `~/.config/lip`） |
 | 缓存 | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip`（默认 `~/.cache/lip`） |
 
-缓存可以随时删除，例如使用 `lip cache clean`。正在进行的下载会写入缓存中隐藏的 `.staging` 目录；lip 不向系统临时目录写入任何内容。
+缓存可以随时删除，例如使用 `lip cache clean`。正在进行的下载会写入缓存中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。
 
 ### 安装到一半失败会怎样？
 什么都不会改变。`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、钩子命令失败或按下 Ctrl+C，它会撤销已做的全部修改，工作区文件保持原样。只有包的钩子命令所做的事无法撤销。若 lip 在中途被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先处理被中断的操作：若它已保存工作区文件，则将其完成，否则将其撤销，并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。

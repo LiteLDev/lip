@@ -26,11 +26,9 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// Ownership: a file is owned by a package when the package wrote it. A file that already exists
 /// and matches preserve is kept and not written, so it is not owned by the package.
 ///
-/// Paths are recorded and compared in their canonical form (WorkspaceLayout.CanonicalPath): a
-/// file placed under plugins/ is written and owned under mods/. Globs match both forms. The mods
-/// and plugins directories are never deleted, and remove_files never matches them (so a
-/// directory pattern naming them removes nothing). .lip, where lip keeps the lock, is never
-/// written, deleted or matched.
+/// The mods directory is never deleted, and remove_files never matches it (so a directory
+/// pattern naming it removes nothing). .lip, where lip keeps the lock, is never written, deleted
+/// or matched.
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
@@ -144,7 +142,7 @@ public partial class McmodInstaller(
     foreach (PathGlob glob in entry.RemoveFiles) {
       foreach ((string path, bool isDirectory) in EnumerateMatches(root, glob, view)) {
         if (isDirectory) {
-          if (!WorkspaceLayout.IsLayoutDirectory(path) && directorySet.Add(path)) {
+          if (!WorkspaceLayout.IsModsDirectory(path) && directorySet.Add(path)) {
             directories.Add(path);
           }
         } else if (!ownedByOthers.Contains(path) && fileSet.Add(path)) {
@@ -191,7 +189,7 @@ public partial class McmodInstaller(
         string relative = _fs.Path.GetRelativePath(root, dir)
             .Replace(_fs.Path.DirectorySeparatorChar, '/');
         if (!view.DirectoryExists(dir) || !view.IsEmpty(dir)
-            || WorkspaceLayout.IsLayoutDirectory(relative)) {
+            || WorkspaceLayout.IsModsDirectory(relative)) {
           break;
         }
 
@@ -304,7 +302,7 @@ public partial class McmodInstaller(
         throw new McmodInstallException(
             $"{name}: '{target}' is not a valid path inside the workspace.");
       }
-      target = WorkspaceLayout.CanonicalPath(string.Join('/', segments));
+      target = string.Join('/', segments);
       if (WorkspaceLayout.IsLipPath(target)) {
         throw new McmodInstallException(
             $"{name}: '{target}' is inside {LockStore.LipDirectory}, which is reserved for lip.");
@@ -472,15 +470,14 @@ public partial class McmodInstaller(
 
     if (literal == segments.Length && !glob.MatchesDirectories) {
       // A literal file path.
-      string file = WorkspaceLayout.CanonicalPath(glob.Pattern);
+      string file = glob.Pattern;
       if (!WorkspaceLayout.IsLipPath(file) && view.FileExists(ToFullPath(root, file))) {
         yield return (file, false);
       }
       yield break;
     }
 
-    string start = WorkspaceLayout.CanonicalPath(
-        string.Concat(segments[..literal].Select(s => s + "/")));
+    string start = string.Concat(segments[..literal].Select(s => s + "/"));
     string startFull = ToFullPath(root, start);
     if ((start != "" && !IsInside(root, startFull)) || !view.DirectoryExists(startFull)
         || WorkspaceLayout.IsLipPath(start)) {
@@ -489,9 +486,9 @@ public partial class McmodInstaller(
 
     int? maxDepth = segments[literal..].Contains("**") ? null : segments.Length - literal;
     if (literal == segments.Length) {
-      // A literal directory path. mods and plugins are never matched, so a pattern naming them
-      // removes nothing below them either.
-      if (WorkspaceLayout.IsLayoutDirectory(start.TrimEnd('/'))) {
+      // A literal directory path. mods is never matched, so a pattern naming it removes nothing
+      // below it either.
+      if (WorkspaceLayout.IsModsDirectory(start)) {
         yield break;
       }
       yield return (start.TrimEnd('/'), true);
@@ -514,10 +511,10 @@ public partial class McmodInstaller(
         }
         string suffix = info.IsDirectory ? "/" : "";
         bool matched = all
-            || (!(info.IsDirectory && WorkspaceLayout.IsLayoutDirectory(path))
-                && WorkspaceLayout.GlobForms(path).Any(f => glob.IsMatch(f + suffix)));
+            || (!(info.IsDirectory && WorkspaceLayout.IsModsDirectory(path))
+                && glob.IsMatch(path + suffix));
         if (matched) {
-          yield return (WorkspaceLayout.CanonicalPath(path), info.IsDirectory);
+          yield return (path, info.IsDirectory);
         }
         if (info.IsDirectory && !info.IsLink
             && (matched || maxDepth is null || depth < maxDepth)) {
@@ -529,9 +526,9 @@ public partial class McmodInstaller(
     }
   }
 
-  /// Whether a glob matches a canonical workspace-relative path, in any of its forms.
+  /// Whether a glob matches a workspace-relative path.
   private static bool MatchesAny(IReadOnlyList<PathGlob> globs, string path) =>
-      WorkspaceLayout.GlobForms(path).Any(f => globs.Any(g => g.IsMatch(f)));
+      globs.Any(g => g.IsMatch(path));
 
   private string ToFullPath(string root, string relative) =>
       relative.TrimEnd('/') == ""
@@ -547,10 +544,9 @@ public partial class McmodInstaller(
     return path.StartsWith(prefix, PathComparison);
   }
 
-  /// A recorded path in canonical form, "a/./b" being "a/b" as when it was recorded.
+  /// A recorded path, "a/./b" being "a/b" as when it was recorded.
   private static string NormalizeRelative(string path) =>
-      WorkspaceLayout.CanonicalPath(
-          string.Join('/', path.Replace('\\', '/').Split('/').Where(s => s != ".")));
+      string.Join('/', path.Replace('\\', '/').Split('/').Where(s => s != "."));
 
   /// A non-empty '/'-separated relative path as tooth.schema.json #/definitions/path allows it:
   /// without empty or ".." segments, backslashes, or a leading ASCII letter and ':'.

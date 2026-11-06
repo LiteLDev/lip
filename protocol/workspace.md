@@ -11,7 +11,7 @@
 - **operation**: Installing, uninstalling or updating packages in a workspace as one unit, including every package it installs, replaces or uninstalls as a dependency.
 - **request**: A pair (source, range) given to an operation.
 - **failure**: A condition that aborts the operation in progress.
-- **change**: Creating, replacing, moving or deleting a file, a directory or a link in the workspace, other than below `.lip`.
+- **change**: Creating, replacing or deleting a file or a directory in the workspace, other than below `.lip`.
 - **hook command**: A string of `hooks`, run by the operating system shell (`cmd /c` on Windows, `sh -c` elsewhere) with the workspace as working directory; a non-zero exit code is a failure. Running a member of `hooks` runs its hook commands in order.
 
 ## 2. Environment and Layout
@@ -20,14 +20,7 @@ A workspace has one environment, recorded in its workspace file; every operation
 
 `.lip` at the workspace root is the directory of Section 7.
 
-**Layout.** On both platforms, mod directories are below `mods` at the workspace root, the game directory LeviLamina loads mods from. In a workspace whose platform is `"server"`, `plugins` at the root MUST also be a link to `mods`: a directory junction on Windows, a relative symbolic link elsewhere. A path through `plugins/` is compared, and recorded in the workspace file, in its `mods/` form. Before an operation changes the workspace, it establishes the layout:
-
-- `mods` a link: failure.
-- `mods` missing: it is created as a directory.
-- `plugins` missing: it is created as a link to `mods`.
-- `plugins` a link to `mods`: nothing changes.
-- `plugins` a file or a link to anything else: failure.
-- `plugins` a directory: its entries are moved into `mods`, then `plugins` is replaced by a link to `mods`. When an entry has the name of an entry of `mods`, it is a failure, before any entry is moved.
+**Layout.** Mod directories are below `mods` at the workspace root, the game directory LeviLamina loads mods from. Before an operation changes the workspace, it creates `mods` as a directory when it is missing; when `mods` is a link, it is a failure.
 
 ## 3. Valid States
 
@@ -72,8 +65,8 @@ The globs of `preserve` and `purge` are matched against paths relative to the wo
 
 1. Run `hooks.pre_uninstall`.
 2. Delete each file owned by P that matches no glob of its `preserve`.
-3. Delete each path that matches a glob of its `purge` and is not owned by another package; a directory is deleted with everything below it. `mods`, `plugins` and `.lip` at the workspace root never match, and nothing below `mods` or `plugins` is deleted through them; nothing below `.lip` matches.
-4. Delete each directory that steps 2 and 3 left empty, except `mods` and `plugins`.
+3. Delete each path that matches a glob of its `purge` and is not owned by another package; a directory is deleted with everything below it. `mods` and `.lip` at the workspace root, and everything below `.lip`, never match.
+4. Delete each directory that steps 2 and 3 left empty, except `mods`.
 5. Run `hooks.post_uninstall`.
 
 **Updating** a package uninstalls the old package, then installs the new one.
@@ -98,8 +91,8 @@ The package is replaced only when the package obtained differs in identity, vers
 
 An operation succeeds or fails as a whole.
 
-1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a server layout that cannot be established), no hook command of it runs, no change is made, and the workspace file does not change. Each step is checked against the workspace as the steps before it leave it.
-2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made, including to directories and the server layout, is undone (Section 7.5). The workspace file does not change.
+1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a `mods` that is a link), no hook command of it runs, no change is made, and the workspace file does not change. Each step is checked against the workspace as the steps before it leave it.
+2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made is undone (Section 7.5). The workspace file does not change.
 3. **Hook commands are not undone.** Hook commands that already ran are neither run again nor reversed. They SHOULD be safe to run again, and SHOULD NOT assume that the files of the operation stay in place.
 4. The paths that uninstallation steps 2–4 delete are those that match before any hook command of the operation runs.
 5. **Interruption.** When an operation is interrupted while changing the workspace, the next operation on the workspace first recovers it (Section 7.5).
@@ -112,13 +105,13 @@ Creating `.lip` and `.lip/lock` is not a change, and an operation that fails ear
 
 ### 7.1. Workspace File
 
-The **workspace file** is `.lip/workspace.json`, valid against `workspace.schema.json`. A workspace without a workspace file and without the files of Section 7.6 has no installed packages and no recorded environment.
+The **workspace file** is `.lip/workspace.json`, valid against `workspace.schema.json`. A workspace without a workspace file has no installed packages and no recorded environment.
 
-The workspace file is replaced only as a whole, by renaming `.lip/workspace.json.new` over it (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
+The workspace file is only written atomically, through `.lip/workspace.json.new` (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
 
 It records the environment (`platform` and `runtime`), and for each installed package, in installation order:
 
-- its tooth file (`manifest`), of `format_version` 4 (Section 5 of [PACKAGE]);
+- its tooth file (`manifest`), of `format_version` 4 (Section 2 of [COMPATIBILITY]);
 - the variant of its source (`variant`);
 - whether a request named it (`explicit`): such a package is **explicitly installed**; any other is a **dependency package**;
 - its source (`ref`), a local path recorded as the `file:` URI [RFC8089] of its absolute path;
@@ -145,15 +138,12 @@ Every record has the member `op`. The members `path` and `to` are paths relative
 | `"CreateDirectory"` | `path` | The directory `path` was created. |
 | `"CreateFile"` | `path` | The file `path` was created. A file that existed at `path` was renamed by an earlier `"Backup"` record. |
 | `"Backup"` | `path`, `to`, `hidden` | The file `path` was renamed to `to`, a path in the same directory that named nothing before. `hidden` records whether the file had the Windows hidden attribute. |
-| `"Move"` | `path`, `to` | The file, directory or link `path` was moved to `to`. |
-| `"DeleteDirectory"` | `path` | The empty directory `path` was deleted. |
 | `"DeleteDirectoryOnCommit"` | `path` | The directory `path` is to be deleted when the operation is completed, if it is empty then. |
-| `"CreateLink"` | `path` | The link `path` was created (Section 2). |
 | `"Commit"` | none | The operation committed (Section 7.4). |
 
 Every change an operation makes is one of these records: replacing a file is a `"Backup"` record followed by a `"CreateFile"` record, and deleting a file is a `"Backup"` record. Each record MUST be appended to the journal, and the journal flushed to the operating system, before the change it records is made.
 
-The journal is replaced as a whole only by writing its new content to another file in `.lip` and renaming that file over `.lip/journal`.
+The journal is replaced only by writing it atomically.
 
 ### 7.4. Carrying Out an Operation
 
@@ -162,12 +152,12 @@ An operation does, in order:
 1. Take the workspace lock. When another process holds it, it is a failure.
 2. When `.lip/journal` exists, recover (Section 7.5).
 3. Read the workspace file, and decide what the operation does (Sections 3 to 5). A failure here is an early failure (Section 6 rule 1).
-4. When the operation makes no change, write the new workspace file to `.lip/workspace.json.new`, rename it over `.lip/workspace.json`, and go to step 10.
+4. When the operation makes no change, write the new workspace file to `.lip/workspace.json.new`, rename it to `.lip/workspace.json`, and go to step 10.
 5. Create `.lip/journal` with a `"Begin"` record. A journal that already exists is never overwritten.
 6. Make the changes and run the hook commands (Sections 2 and 4), each change after its record. When a step fails or the operation is cancelled, undo the operation (Section 7.5) and fail.
 7. Write the new workspace file to `.lip/workspace.json.new`.
 8. Append a `"Commit"` record to the journal, and flush it to the operating system.
-9. Rename `.lip/workspace.json.new` over `.lip/workspace.json`, then complete the operation (Section 7.5).
+9. Rename `.lip/workspace.json.new` to `.lip/workspace.json`, then complete the operation (Section 7.5).
 10. Release the workspace lock.
 
 When step 9 fails to rename the file, the implementation MUST replace the journal by one without the `"Commit"` record before it undoes the operation.
@@ -176,7 +166,7 @@ When step 9 fails to rename the file, the implementation MUST replace the journa
 
 **Completing** an operation whose journal has a `"Commit"` record:
 
-1. When `.lip/workspace.json.new` exists, rename it over `.lip/workspace.json`.
+1. When `.lip/workspace.json.new` exists, rename it to `.lip/workspace.json`.
 2. For each `"Backup"` record, delete the file `to` when it exists.
 3. For each `"DeleteDirectoryOnCommit"` record, longest `path` first, delete the directory `path` when it exists, is not a link and is empty.
 4. Delete the journal.
@@ -190,16 +180,9 @@ A file or directory that step 2 or 3 cannot delete is left in place.
    - `"CreateFile"`: delete the file `path` when it exists, unless an earlier `"Backup"` record of the same `path` exists whose `to` no longer exists.
    - `"Backup"`: when `to` exists, delete `path` when it exists, rename `to` to `path`, and, on Windows, set the hidden attribute of `path` to `hidden`.
    - `"CreateDirectory"`: delete the directory `path` when it exists and is empty.
-   - `"DeleteDirectory"`: create the directory `path` when it does not exist.
-   - `"Move"`: when `to` exists and `path` does not, move `to` back to `path`.
-   - `"CreateLink"`: when `path` is a link, delete the link.
    - `"Begin"`, `"DeleteDirectoryOnCommit"`: nothing.
 3. When every record was undone, delete the journal. Otherwise replace the journal by one with a `"Begin"` record followed by the records that could not be undone, in their order, and fail. A `"CreateDirectory"` record whose `path` is a directory above the `path` of such a record is not undone, and is kept too.
 
 Undoing a record is checked against the workspace as it is.
 
 **Recovering** is completing the operation when the journal has a `"Commit"` record, and undoing it otherwise. The process that recovers MUST hold the workspace lock.
-
-### 7.6. Earlier Formats
-
-How a `.lip/workspace.json` or `.lip/lock.json` without `format_version` 4, or a `tooth_lock.json` at the root of the workspace, is taken over is not defined here.

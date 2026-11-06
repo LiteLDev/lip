@@ -74,7 +74,7 @@ lip 会询问包的 tooth 路径，即 [Go 模块路径](https://go.dev/ref/mod#
 
 ## mod
 
-mod 是带有 `mcmod` 资源的条目：一个根部带有该 mod 的 LeviLamina `manifest.json` 的 ZIP 归档。lip 把整个归档写入 `mods/<name>/`，其中 `<name>` 是该 `manifest.json` 中的 `name`；lip 不读取 `manifest.json` 的其他内容，并原样安装它。在服务端，`plugins` 是指向 `mods` 的链接，因此 LeviLamina 也能在 `plugins/<name>/` 下找到该 mod。
+mod 是带有 `mcmod` 资源的条目：一个根部带有该 mod 的 LeviLamina `manifest.json` 的 ZIP 归档。lip 把整个归档写入 `mods/<name>/`，其中 `<name>` 是该 `manifest.json` 中的 `name`；lip 不读取 `manifest.json` 的其他内容，并原样安装它。
 
 用 [`lip pack`](../cli/commands/pack.md) 从构建输出目录（其中有 `manifest.json` 和 mod 的文件）构建该归档，并把它附加到 Release：
 

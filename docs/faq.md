@@ -9,9 +9,6 @@
 ### Does `lip install` update `tooth.json`?
 **No.** Running `lip install <package>` installs the package into your workspace and updates the [workspace file](concepts/lockfiles.md) to track the state, but it **does not** modify any `tooth.json`. You must manually add dependencies to your `tooth.json` if you want them to be permanent parts of your package's requirements.
 
-### What happened to `tooth_lock.json`?
-The state of a workspace is now `.lip/workspace.json` in the workspace, so it moves with the workspace: a workspace that is moved, renamed or copied keeps its installed packages. lip does not take over a `tooth_lock.json`, or the workspace file of another earlier lip version: in such a workspace it fails with a message. Uninstall the packages with the lip version that installed them, or delete the file to start over. See [Workspace File](concepts/lockfiles.md#earlier-formats).
-
 ### Can lip install client mods?
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same `tooth.json` packages.
 
@@ -31,7 +28,7 @@ No. lip talks to git repositories over HTTPS with its own built-in client, so th
 Not currently. lip fetches packages anonymously over HTTPS and does not use the `git` command-line tool or its credential helpers, so only public repositories can be installed from.
 
 ### Where does lip store installed packages?
-lip installs package files **directly into your workspace**. A mod is installed to `mods/<name>/`, `<name>` being the `name` in its LeviLamina `manifest.json`, and `plugins` is a link to `mods` (see [Installing Dependencies](guides/installing_dependencies.md#server-workspaces-only)); a file package places its files where its `tooth.json` says.
+lip installs package files **directly into your workspace**. A mod is installed to `mods/<name>/`, `<name>` being the `name` in its LeviLamina `manifest.json`; a file package places its files where its `tooth.json` says.
 
 The [workspace file](concepts/lockfiles.md) of a workspace is `.lip/workspace.json` inside it; the operation lock (`.lip/lock`) and journal (`.lip/journal`) are next to it. lip keeps its other files in per-user directories that follow the platform conventions:
 
@@ -40,7 +37,7 @@ The [workspace file](concepts/lockfiles.md) of a workspace is `.lip/workspace.js
 | Configuration (`config.yaml`) | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`) |
 | Cache | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) |
 
-The cache is safe to delete at any time, e.g. with `lip cache clean`. Downloads in progress are written to the hidden `.staging` directory inside the cache; lip writes nothing to the system temporary directory.
+The cache is safe to delete at any time, e.g. with `lip cache clean`. Downloads in progress are written to `.tmp` files inside the cache and renamed into place when complete; lip writes nothing to the system temporary directory.
 
 ### What happens if an install fails halfway?
 Nothing changes. `lip install`, `lip uninstall` and `lip update` are all or nothing, including the dependencies they install or remove: lip checks and downloads everything before it touches the workspace, and if a file cannot be written, a hook command fails, or you press Ctrl+C, it undoes every change it made and keeps the workspace file as it was. Only what the hook commands of packages did cannot be undone. If lip is killed in the middle, the next `lip install`, `uninstall` or `update` of the workspace first completes the interrupted operation, if it had already saved the workspace file, or undoes it otherwise, and tells you so. See [Internal Mechanism](guides/internal_mechanism.md#workspace-state).

@@ -155,7 +155,7 @@ With `--json`, the result is a JSON array of strings.
 lip view <PACKAGE>
 ```
 
-`<PACKAGE>` is a package argument. Writes as its result, as JSON, the tooth file of the first archive that its source names (Section 4 step 1 of [PACKAGE]), as Section 5 of [PACKAGE] reads it for the environment of Section 4 when it is of an earlier format. It changes nothing.
+`<PACKAGE>` is a package argument. Writes as its result, as JSON, the tooth file of the first archive that its source names (Section 4 step 1 of [PACKAGE]), of `format_version` 4 as Section 2 of [COMPATIBILITY] reads it for the environment of Section 4. It changes nothing.
 
 ### 5.7. `lip init`
 
@@ -173,9 +173,9 @@ When `tooth.json` exists, the command fails and writes nothing.
 lip migrate
 ```
 
-Rewrites the `tooth.json` in the current directory, of `format_version` 1, 2 or 3, as a tooth file of `format_version` 4, written as JSON indented by two spaces. When `tooth.json` is missing, is already of `format_version` 4, or cannot be read, the command fails and changes nothing.
+Rewrites the `tooth.json` in the current directory, of a format that Section 2 of [COMPATIBILITY] reads, as a tooth file of `format_version` 4, written atomically as JSON indented by two spaces. When `tooth.json` is missing, is already of `format_version` 4, or cannot be read, the command fails and changes nothing.
 
-The mapping is not defined here; it SHOULD agree with Section 5 of [PACKAGE] for every environment. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
+The mapping is not defined here; it SHOULD agree with Section 2 of [COMPATIBILITY] for every environment. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
 
 ### 5.9. `lip cache clean`
 

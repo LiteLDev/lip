@@ -57,7 +57,7 @@ Each package is recorded with exactly these members:
     *   `false`: The package was installed as a dependency of another package.
 *   **`ref`**: What the package was installed from: the argument given to `lip install` or `lip update` (e.g. `github.com/user/repo`, `github.com/user/repo#lua@branch:main` or an `https://` URL; a local path is recorded as the `file:` URI of its absolute path), or, for a dependency, the key of the dependency. [`lip update`](../cli/commands/update.md) requests it again.
 *   **`commit`**: Only for a package from a git repository: the commit its archive was at, in lowercase hexadecimal. A package from a URL or a local path has no `commit`.
-*   **`files`**: The files the package owns, relative to the workspace root and `/`-separated. Since `plugins` is a link to `mods` on a server, a file under `plugins/` is recorded under `mods/`.
+*   **`files`**: The files the package owns, relative to the workspace root and `/`-separated.
 
 The installed entry is the entry of `manifest.variants[variant]` whose `platform` and `runtime` are those of the workspace.
 
@@ -107,6 +107,3 @@ When lip needs the files of an installed package again, it installs it with the 
   ]
 }
 ```
-## Earlier Formats
-
-lip does not take over workspaces of earlier lip versions: a `.lip/workspace.json` that is not of `format_version` 4, the `.lip/lock.json` of lip v0.36, and the `tooth_lock.json` that lip v0.x kept in the workspace root. In a workspace with one of them, lip fails with a message instead of installing, uninstalling, updating or listing packages, so that it never writes over files those packages own. Uninstall the packages with the lip version that installed them, or delete the file to start over; lip then knows nothing about the files they installed.

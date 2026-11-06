@@ -15,8 +15,6 @@ The file is a YAML mapping of the keys below to their values; a key that is not 
 github_proxy: https://proxy.example.com
 ```
 
-Earlier versions stored the configuration in `liprc.json` in the same directory. If there is no `config.yaml` but there is a `liprc.json`, lip converts it to `config.yaml` and deletes `liprc.json` the next time it reads the configuration.
-
 ## Keys
 
 | Key | Type | Default | Description |

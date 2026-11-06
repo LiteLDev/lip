@@ -40,7 +40,12 @@ jobs:
         with:
           dotnet-version: 10
 
-      - run: dotnet publish src/Lip.Cli -r ${{ matrix.runtime }} --no-self-contained
+      - run: dotnet publish src/Lip.Cli -o bin -r ${{ matrix.runtime }} --no-self-contained -p:DebugType=embedded
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lip-${{ github.sha }}-${{ matrix.runtime }}
+          path: bin/
 
   lint:
     runs-on: ubuntu-latest

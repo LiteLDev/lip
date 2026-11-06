@@ -33,8 +33,10 @@ public class CacheServiceTests {
     Assert.NotNull(result);
   }
 
+  /// protocol/userspace.md §3: an entry is written atomically, through a &lt;N&gt;.tmp file in the
+  /// cache directory.
   [Fact]
-  public async Task GetOrCreateFile_NonExistent_FactoryWritesIntoStaging() {
+  public async Task GetOrCreateFile_NonExistent_FactoryWritesTmpFileInCache() {
     // Arrange
     MockFileSystem mockFileSystem = new();
     CacheService service = new(mockFileSystem, new Mock<IUserInteraction>().Object);
@@ -48,9 +50,9 @@ public class CacheServiceTests {
     });
 
     // Assert
-    Assert.Equal(LipDirectories.Staging, Path.GetDirectoryName(written));
-    Assert.Equal(GetCachePath(), Path.GetDirectoryName(result.FullName));
-    Assert.Empty(mockFileSystem.Directory.GetFiles(LipDirectories.Staging));
+    Assert.Equal(GetCachePath(), Path.GetDirectoryName(written));
+    Assert.EndsWith(".tmp", written);
+    Assert.Equal([result.FullName], mockFileSystem.Directory.GetFileSystemEntries(GetCachePath()));
   }
 
   [Fact]

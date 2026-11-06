@@ -239,8 +239,8 @@ public class ArchiveProvider(
   }
 
   /// Downloads a URL into the cache under CacheKeys.Http(url), via the GitHub proxy first if one
-  /// is configured, unless it is cached already. The download goes to the cache's staging
-  /// directory and is moved into place once complete. A candidate whose response is not a valid
+  /// is configured, unless it is cached already. The download goes to a .tmp file in the
+  /// cache directory and is renamed into place once complete. A candidate whose response is not a valid
   /// ZIP archive (e.g. a proxy error page) is skipped.
   private async Task<IFileInfo> Download(string url) {
     try {

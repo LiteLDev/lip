@@ -8,13 +8,15 @@ The lip protocol is normative and consists of:
 | [WORKSPACE] | Workspaces and operations on them; the workspace file by [`workspace.schema.json`](workspace.schema.json). |
 | [USERSPACE] | Per-user configuration and cache; the configuration file by [`config.schema.json`](config.schema.json). |
 | [CLI] | The command line interface of `lip`. |
-| [COMPATIBILITY] | The `tooth.json` packages that `lip` MUST install. |
+| [COMPATIBILITY] | The `tooth.json` formats 1 to 3, and the packages that `lip` MUST install. |
 
 ## Conventions
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all capitals, as shown here.
 
 A term is defined where it appears in bold, and has that meaning in every document that does not say otherwise.
+
+A file is **written atomically** by writing its whole content to another file in the same directory, then renaming that file to its name.
 
 "Section N" refers to the same document; "Section N of [X]" to document X. "Not defined here" means not defined by the document that says it.
 

@@ -16,10 +16,6 @@ public static class LipDirectories {
       ? Path.Join(GetFolder(Environment.SpecialFolder.LocalApplicationData), AppName, "Cache")
       : Path.Join(GetXdgCacheHome(), AppName);
 
-  /// Files being written, inside the cache directory so that moving a finished file into the
-  /// cache is a rename on the same volume. No cache key escapes to a name starting with ".".
-  public static string Staging => Path.Join(Cache, ".staging");
-
   private static string GetFolder(Environment.SpecialFolder folder) =>
       Environment.GetFolderPath(folder, Environment.SpecialFolderOption.DoNotVerify);
 
