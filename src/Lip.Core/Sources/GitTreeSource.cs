@@ -12,6 +12,7 @@ namespace Lip.Core.Sources;
 /// instance) without downloading any blob, and blobs are downloaded on demand into the
 /// content-addressed cache under the key "git-{oid}" (CacheKeys.GitBlob). Blob content is verified against its
 /// object id before it is cached, so the repository-independent cache key is safe to share.
+/// ReadUncached fetches a blob into memory on every call, bypassing that cache.
 ///
 /// Keys are '/'-separated paths relative to the root tree. Only regular files (modes
 /// 100644/100755) are exposed, as in a git archive (protocol/package.md §1).
@@ -48,11 +49,7 @@ public class GitTreeSource(
   }
 
   public async Task<Stream> OpenRead(string key) {
-    IReadOnlyDictionary<string, string> entries = await GetEntries();
-
-    if (!entries.TryGetValue(key, out string? objectId)) {
-      throw new ArgumentException($"Key not found: {key}", nameof(key));
-    }
+    string objectId = await GetObjectId(key);
 
     IFileInfo file = await _cacheService.GetOrCreateFile(GetCacheKey(objectId), async file => {
       bool received = false;
@@ -75,6 +72,27 @@ public class GitTreeSource(
     _cachedObjectIds.TryAdd(objectId, 0);
 
     return file.OpenRead();
+  }
+
+  public async Task<byte[]> ReadUncached(string key) {
+    string objectId = await GetObjectId(key);
+
+    byte[]? content = null;
+    await _gitRemoteClient.FetchBlobs(_repoUrl, [objectId], async (oid, stream) => {
+      if (oid != objectId || content is not null) {
+        await stream.CopyToAsync(Stream.Null);
+        return;
+      }
+
+      using MemoryStream memory = new();
+      await stream.CopyToAsync(memory);
+      byte[] bytes = memory.ToArray();
+      VerifyBlob(oid, bytes);
+      content = bytes;
+    });
+
+    return content ?? throw new InvalidOperationException(
+        $"Blob {objectId} was not returned by {_repoUrl}.");
   }
 
   /// Downloads all blobs of the given keys that are not cached yet with a single request.
@@ -127,6 +145,14 @@ public class GitTreeSource(
     }
   }
 
+  private async Task<string> GetObjectId(string key) {
+    IReadOnlyDictionary<string, string> entries = await GetEntries();
+
+    return entries.TryGetValue(key, out string? objectId)
+        ? objectId
+        : throw new ArgumentException($"Key not found: {key}", nameof(key));
+  }
+
   // ListTree is called at most once per instance unless it fails, in which case the next access retries.
   private Task<IReadOnlyDictionary<string, string>> GetEntries() {
     lock (_entriesLock) {
@@ -170,7 +196,18 @@ public class GitTreeSource(
       }
     }
 
-    string actual = Convert.ToHexStringLower(hash.GetHashAndReset());
+    VerifyHash(objectId, hash.GetHashAndReset());
+  }
+
+  private static void VerifyBlob(string objectId, byte[] content) {
+    using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+    hash.AppendData(Encoding.ASCII.GetBytes($"blob {content.Length}\0"));
+    hash.AppendData(content);
+    VerifyHash(objectId, hash.GetHashAndReset());
+  }
+
+  private static void VerifyHash(string objectId, byte[] hash) {
+    string actual = Convert.ToHexStringLower(hash);
     if (!string.Equals(actual, objectId, StringComparison.OrdinalIgnoreCase)) {
       throw new InvalidDataException($"Blob content hash {actual} does not match object id {objectId}.");
     }

@@ -66,10 +66,8 @@ public class ArchiveReader : IArchiveReader {
     }
 
     try {
-      using Stream stream = await archive.Source.OpenRead(ToothFormat.ToothFileName);
-      using MemoryStream memory = new();
-      await stream.CopyToAsync(memory);
-      return ToothDocument.Parse(memory.ToArray());
+      // Read uncached, so the tooth file is always the one the source has now.
+      return ToothDocument.Parse(await archive.Source.ReadUncached(ToothFormat.ToothFileName));
     }
     catch (Exception ex) when (ex is not ArchiveUnavailableException
         and not OperationCanceledException) {

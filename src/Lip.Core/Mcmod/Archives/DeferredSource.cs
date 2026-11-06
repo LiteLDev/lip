@@ -14,5 +14,7 @@ public class DeferredSource(Func<Task<ISource>> open) : ISource {
 
   public async Task Prefetch(IEnumerable<string> keys) => await (await GetSource()).Prefetch(keys);
 
+  public async Task<byte[]> ReadUncached(string key) => await (await GetSource()).ReadUncached(key);
+
   private Task<ISource> GetSource() => _source.Value;
 }

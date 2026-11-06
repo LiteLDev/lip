@@ -169,6 +169,57 @@ public class GitTreeSourceTests {
   }
 
   [Fact]
+  public async Task ReadUncached_Cached_FetchesEveryTimeAndWritesNoCache() {
+    // Arrange
+    MockFileSystem fileSystem = new();
+    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks(fileSystem);
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+
+    // Act
+    byte[] first = await source.ReadUncached("sub/b.txt");
+    byte[] second = await source.ReadUncached("sub/b.txt");
+    using (Stream stream = await source.OpenRead("tooth.json")) { }
+    byte[] third = await source.ReadUncached("tooth.json");
+
+    // Assert
+    Assert.Equal("b", Encoding.UTF8.GetString(first));
+    Assert.Equal("b", Encoding.UTF8.GetString(second));
+    Assert.Equal("{}", Encoding.UTF8.GetString(third));
+    Assert.Null(await cacheService.TryGetFile(CacheKeys.GitBlob(Oid("b"))));
+    VerifyFetchBlobsCalls(client, Times.Exactly(4));
+  }
+
+  [Fact]
+  public async Task ReadUncached_HashMismatch_Throws() {
+    // Arrange
+    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
+    client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
+        .Returns(async (Url _, IReadOnlyCollection<string> oids, Func<string, Stream, Task> onBlob) => {
+          foreach (string oid in oids) {
+            using MemoryStream stream = new(Encoding.UTF8.GetBytes("tampered"));
+            await onBlob(oid, stream);
+          }
+        });
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+
+    // Act & Assert
+    await Assert.ThrowsAsync<InvalidDataException>(() => source.ReadUncached("tooth.json"));
+  }
+
+  [Fact]
+  public async Task ReadUncached_BlobNotReturned_Throws() {
+    // Arrange
+    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
+    client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
+        .Returns(Task.CompletedTask);
+    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+
+    // Act & Assert
+    await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadUncached("tooth.json"));
+    await Assert.ThrowsAsync<ArgumentException>(() => source.ReadUncached("missing.txt"));
+  }
+
+  [Fact]
   public async Task Prefetch_MultipleKeys_FetchesInSingleCallAndOpenReadHitsCache() {
     // Arrange
     (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
