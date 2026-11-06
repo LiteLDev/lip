@@ -1,22 +1,24 @@
 # Compatibility
 
+`lip` MUST read and migrate the files of formats 1 to 3, written by lip v0.x, as this document defines.
+
 ## 1. Packages
 
-`lip` MUST install the git archive at the highest version tag (Section 2.1 of [PACKAGE]) of each remote repository below, with every variant in every environment that variant applies to, and with its dependencies, as Section 2 reads its `tooth.json`:
+`lip` MUST install the git archive at the highest version tag (Section 2.1 of [PACKAGE]) of each remote repository below, with every variant in every environment that variant applies to, and with its dependencies:
 
 - `github.com/LiteLDev/LeviLamina`
 - `github.com/LiteLDev/LegacyScriptEngine`
 - `github.com/LiteLDev/LeviAntiCheat`
 
-## 2. Tooth Files of Formats 1 to 3
+## 2. `tooth.json`
 
-A tooth file with `format_version` 1, 2 or 3 is read as the tooth file of `format_version` 4 that this section derives from it. Formats 1 and 2 are first read as format 3, as lip v0.37.0 [TOOTH-V3] reads them.
+An archive without a package file whose `tooth.json` at its root is a JSON [RFC8259] object with `format_version` 1, 2 or 3 is a package, read for an environment as the package file that this section derives from that `tooth.json`. Formats 1 and 2 are first read as format 3, as lip v0.37.0 [TOOTH-V3] reads them.
 
-A format 3 tooth file T is read, for an environment (p, r), as a tooth file with the `tooth` of T, the version of the package as `version`, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
+A format 3 `tooth.json` T is read, for an environment (p, r), as a package file with `"format": 4`, the `tooth` of T as `id`, the version of the package as `version`, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
 
 - Let V be the variants of T labeled L whose `platform` is `""` or matches r as [TOOTH-V3] matches it. When V is empty, the result has no variant L.
 - Otherwise the result maps L to one entry with `"platform": p`, `"runtime": r`, and, from the variants of V merged as [TOOTH-V3] merges them:
-  - `dependencies`, as they are;
+  - `deps`: the `dependencies`, as they are;
   - `assets`: each asset with its `type` and `urls`, and with `place` converted from its `placements` as below. When an asset has the type `tar`, `tgz` or `uncompressed`, the result has no variant L;
   - `preserve`: each pattern P of `preserve_files`, `\` replaced by `/`, as P when it contains `/`, and as `**/` followed by P otherwise;
   - `purge`: each pattern P of `remove_files`, `\` replaced by `/`, as P, and also as P followed by `/` when it does not end with `/`;
@@ -29,8 +31,33 @@ A placement (`type`, `src`, `dest`) becomes a member of `place` with, after `\` 
 - `type` `file`, `src` containing `*`, `?` or `[`: `src`, and `dest` followed by `/`, unless empty.
 - `type` `file` otherwise: `src` and `dest`.
 
-A converted glob or placement that is not valid in format 4 is left out.
+A converted glob or placement that is not valid in a package file is left out.
 
-The version of a package whose tooth file is of format 1, 2 or 3 is the tag version of its git archive, when it has one, and otherwise its `version`.
+The version of such a package is the tag version of its git archive, when it has one, and otherwise the `version` of T. Installing such a package never writes its `tooth.json`.
 
-A dependency of a format 3 tooth file on the variant `client` of a package whose tooth file is of format 4 names the variant `""` of that package.
+A dependency of T on the variant `client` of a package that has a package file names the variant `""` of that package.
+
+## 3. `tooth_lock.json`
+
+A workspace without a workspace file whose root holds a `tooth_lock.json` that is a JSON object with `format_version` 3 and an array `packages`, each member an object with `manifest` (a `tooth.json` of format 1 to 3), `variant` (a string), `locked` (a boolean) and `files` (an array of strings), has the workspace file that this section derives from it, for the environment (p, r) the workspace gets (Section 2 of [WORKSPACE]).
+
+That workspace file has `"format": 4`, `platform` p, `runtime` r and, for each member M of `packages` whose `manifest` Section 2 reads, for (p, r), with a variant `variant`, in installation order (Section 5 of [WORKSPACE]), a package with:
+
+- `manifest`: the `manifest` of M as Section 2 reads it, its version being its `version`;
+- `variant`: the `variant` of M;
+- `explicit`: the `locked` of M;
+- `ref`: the `tooth` of the `manifest` of M, followed by `#` and the `variant` of M when that is not `""`;
+- `commit`: the commit that the tag `v<version>` of that remote repository points to; when a workspace operation cannot obtain it, it is a failure;
+- `files`: each member of `files` of M that names a path below the workspace, relative to the workspace when not absolute, as that path relative to the workspace, `/`-separated.
+
+A workspace operation writes it as its workspace file (Section 7.4 of [WORKSPACE]), then deletes `tooth_lock.json`.
+
+## 4. `liprc.json`
+
+When the config directory has no `config.yaml` and has a `liprc.json` that is a JSON object with `format_version` 3, the configuration is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.yaml`, then deletes `liprc.json`.
+
+## 5. `lip migrate`
+
+`lip migrate` (Section 5.8 of [CLI]) writes atomically, as `lip.yaml` in the current directory, a package file migrated from the `tooth.json` there, then deletes `tooth.json`. When `lip.yaml` exists, or `tooth.json` is missing or is not one that Section 2 reads, the command fails and changes nothing.
+
+The mapping is not defined here; it SHOULD agree with Section 2 for every environment. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.

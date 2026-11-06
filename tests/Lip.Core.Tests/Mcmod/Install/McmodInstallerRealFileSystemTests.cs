@@ -53,13 +53,13 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
           }
         }
         """);
-    ToothEntry entry = ToothParser.ParseEntry(entryJson.RootElement);
+    PackageEntry entry = PackageFileParser.ParseEntry(entryJson.RootElement);
     Package package = new("example.com/legacymoney", "", SemVersion.Parse("0.22.0"), entry) {
       Manifest = Resolution.TestCandidates.Manifest("example.com/legacymoney", "0.22.0", "", entry),
     };
     ArchiveHandle archive = new(
         "example.com/legacymoney@0.22.0",
-        new ZipSource(WorkspaceHarness.Zip(new() { ["tooth.json"] = "{}" })),
+        new ZipSource(WorkspaceHarness.Zip(new() { ["lip.yaml"] = "{}" })),
         new string('0', 40));
     Candidate candidate = Candidate.Create(
         package, archive, Ref.Parse("example.com/legacymoney", allowFile: false), provider.Object);
@@ -95,7 +95,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
       Manifest = package.Manifest,
       Variant = package.Variant,
       Explicit = true,
-      Source = package.Tooth,
+      Source = package.Id,
       Commit = archive.Commit,
       Files = [.. owned],
     }, context);

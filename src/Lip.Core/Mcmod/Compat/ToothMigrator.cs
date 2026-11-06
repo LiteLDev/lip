@@ -1,5 +1,5 @@
 using System.Text;
-using System.Text.Encodings.Web;
+
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DotNet.Globbing;
@@ -10,29 +10,25 @@ using Semver;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Converts a tooth.json of format 1–3 (already read as format 3) into one of format 4 (lip
-/// migrate, protocol/cli.md §5.8), agreeing with how protocol/package.md §5 reads it for every
-/// environment as far as format 4 can express it. The notes list what is dropped or converted
-/// with another meaning, each naming the field of format 3 it comes from. Missing values, and
-/// dependency ranges that are not ranges of format 4, are asked for through IUserInteraction.Ask.
+/// Converts a tooth.json of format 1–3 (already read as format 3) into a package file (lip
+/// migrate, protocol/compatibility.md §5), agreeing with how protocol/compatibility.md §2 reads
+/// it for every environment as far as a package file can express it. The notes list what is
+/// dropped or converted with another meaning, each naming the field of format 3 it comes from.
+/// Missing values, and
+/// dependency ranges that are not ranges of a package file, are asked for through
+/// IUserInteraction.Ask.
 ///
-/// - Format 4 has no platform patterns and no "any runtime": the runtimes a platform pattern
+/// - A package file has no platform patterns and no "any runtime": the runtimes a platform pattern
 ///   stands for, and those the variants without a platform apply to, are asked for.
 /// - Each label becomes a variant. It has an entry for each platform and runtime, holding the
-///   variants of the label merged for the runtime and converted exactly as Section 5 converts
+///   variants of the label merged for the runtime and converted exactly as Section 2 converts
 ///   them (ToothCompat.ConvertEntry); a runtime whose merged variants have an asset of type tar,
 ///   tgz or uncompressed has no entry.
 /// - With a variant labeled "client", the label "" has entries for the server only, and the
-///   entries of "client" for the client are also those of the variant "" (Section 5, last
-///   rule).
+///   entries of "client" for the client are also those of the variant "" (Section 2).
 public static class ToothMigrator {
   public record Result(JsonObject Document, IReadOnlyList<string> Notes);
 
-  private static readonly JsonSerializerOptions _writeOptions = new() {
-    WriteIndented = true,
-    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    NewLine = "\n",
-  };
 
   private static readonly string[] _knownScripts = [
     "pre_install", "install", "post_install", "pre_uninstall", "uninstall", "post_uninstall",
@@ -45,16 +41,15 @@ public static class ToothMigrator {
     Context context = new(tooth, notes, ui, []);
 
     JsonObject document = new() {
-      [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
-      ["format_uuid"] = ToothFormat.FormatUuid,
-      ["tooth"] = tooth.Path,
+      [PackageFormat.FormatKey] = PackageFormat.Format,
+      ["id"] = tooth.Path,
       ["version"] = tooth.Version.ToString(),
     };
     if (tooth.Info is PackageManifestInfo info) {
       document["info"] = ToothCompat.Info(info);
       if (info.AvatarUrl is { Length: > 0 } avatarUrl && !ToothCompat.IsLogo(avatarUrl)) {
         notes.Add($"info.avatar_url: '{avatarUrl}' does not start with \"https://\", which "
-            + "info.logo of format 4 must; it was dropped. Set info.logo to the https URL of the "
+            + "info.logo of lip.yaml must; it was dropped. Set info.logo to the https URL of the "
             + "logo image.");
       }
     }
@@ -63,7 +58,7 @@ public static class ToothMigrator {
     return new Result(document, notes);
   }
 
-  /// Ranges holds the answers for dependency ranges that are not ranges of format 4, by
+  /// Ranges holds the answers for dependency ranges that are not ranges of a package file, by
   /// dependency and range, so each is asked once.
   private sealed record Context(
       PackageManifest Tooth,
@@ -128,8 +123,8 @@ public static class ToothMigrator {
           AddEntry(label, Entry(McmodPlatform.Client, runtime, content));
         }
 
-        // On the client, the variant "" is the one of the label "client" (protocol/package.md
-        // §5).
+        // On the client, the variant "" is the one of the label "client"
+        // (protocol/compatibility.md §2).
         if (label == ToothCompat.ClientLabel) {
           AddEntry("", Entry(McmodPlatform.Client, runtime, content));
         }
@@ -151,7 +146,7 @@ public static class ToothMigrator {
     }
   }
 
-  /// The variants of a label merged for a runtime, as protocol/package.md §5 merges them.
+  /// The variants of a label merged for a runtime, as protocol/compatibility.md §2 merges them.
   private static PackageManifestVariant Merge(PackageManifest tooth, string label, string runtime) {
     try {
       return tooth.GetVariant(label, runtime);
@@ -164,9 +159,10 @@ public static class ToothMigrator {
     }
   }
 
-  /// The content of an entry for a merged variant, converted as protocol/package.md §5 converts
-  /// it (ToothCompat.ConvertEntry), without platform and runtime, with each dependency range that
-  /// is not a range of format 4 asked for; null when the variant has no entry for the runtime.
+  /// The content of an entry for a merged variant, converted as protocol/compatibility.md §2
+  /// converts it (ToothCompat.ConvertEntry), without platform and runtime, with each dependency
+  /// range that is not a range of a package file asked for; null when the variant has no entry
+  /// for the runtime.
   private static async Task<JsonObject?> Content(
       Context context, PackageManifestVariant variant, string runtime, string field) {
     List<string> notes = context.Notes;
@@ -183,20 +179,19 @@ public static class ToothMigrator {
       string text = range.ToString();
       if (!VersionRange.TryParse(text, out _)) {
         if (!context.Ranges.TryGetValue((dependency, text), out string? answer)) {
-          answer = await AskValid(
-              context.Ui,
-              $"a version range of format 4 for {dependencyField}, whose range '{text}' is not one",
+          answer = await context.Ui.AskValid(
+              $"a version range of lip.yaml for {dependencyField}, whose range '{text}' is not one",
               a => VersionRange.TryParse(a, out _) ? null : $"'{a}' is not a version range.");
           context.Ranges[(dependency, text)] = answer;
         }
 
-        content["dependencies"]![dependency.ToString()] = answer;
+        content["deps"]![dependency.ToString()] = answer;
       }
 
       if (dependency.Variant == ToothCompat.ClientLabel) {
-        notes.Add($"{dependencyField}: keeps its \"client\" variant. A tooth.json of format 3 "
-            + "named the variant \"\" of a package of format 4 by it (protocol/package.md §5); "
-            + "format 4 does not, so drop \"#client\" once that package has moved to format 4.");
+        notes.Add($"{dependencyField}: keeps its \"client\" variant. A tooth.json named the "
+            + "variant \"\" of a package that has a lip.yaml by it (protocol/compatibility.md §2); "
+            + "lip.yaml does not, so drop \"#client\" once that package has moved to lip.yaml.");
       }
     }
 
@@ -213,13 +208,13 @@ public static class ToothMigrator {
   private static async Task<List<string>> AskRuntimes(
       IUserInteraction ui, string question, string? pattern) {
     Glob? glob = pattern is null ? null : Glob.Parse(pattern);
-    string answer = await AskValid(ui, question, a => {
+    string answer = await ui.AskValid(question, a => {
       List<string> runtimes = SplitList(a);
       if (runtimes.Count == 0) {
         return "enter at least one RID, e.g. win-x64.";
       }
 
-      if (runtimes.FirstOrDefault(r => !ToothParser.IsRuntime(r)) is string invalid) {
+      if (runtimes.FirstOrDefault(r => !PackageFileParser.IsRuntime(r)) is string invalid) {
         return $"'{invalid}' is not a runtime identifier.";
       }
 
@@ -235,33 +230,18 @@ public static class ToothMigrator {
         .Distinct(StringComparer.Ordinal),
   ];
 
-  /// Asks until the answer is valid (validate returns null) and returns the trimmed answer.
-  /// Throws CannotAskException when the user cannot be asked.
-  public static async Task<string> AskValid(
-      IUserInteraction ui, string question, Func<string, string?> validate) {
-    while (true) {
-      // A user interaction that returns no answer cannot ask.
-      string answer = (await ui.Ask(question))?.Trim()
-          ?? throw new CannotAskException($"lip needs {question}, but cannot ask for it here.");
-      if (validate(answer) is not string error) {
-        return answer;
-      }
-
-      await ui.PrintWarning($"Invalid answer: {error}");
-    }
-  }
 
   /// Whether a tooth.json platform or path is a pattern.
   private static bool IsPattern(string s) => s.IndexOfAny(['*', '?', '[']) >= 0;
 
   /// Notes for the fields of a raw tooth.json that its format 3 form (tooth, read from root)
-  /// does not keep and that therefore cannot reach the migrated tooth.json: dependencies of
+  /// does not keep and that therefore cannot reach the migrated lip.yaml: dependencies of
   /// format 1 and 2 whose range the migration to format 3 could not read, prerequisites of
   /// format 2, and scripts of format 3 other than the six install and uninstall hooks (e.g.
   /// pre_pack, or custom scripts).
   public static IReadOnlyList<string> DroppedFields(JsonElement root, PackageManifest tooth) {
     List<string> notes = [];
-    switch (ToothParser.FormatVersion(root)) {
+    switch (ToothCompat.FormatVersion(root)) {
       case 1 or 2:
         HashSet<string> kept = [
           .. tooth.Variants.SelectMany(v => v.Dependencies.Keys).Select(id => id.ToString()),
@@ -291,7 +271,7 @@ public static class ToothMigrator {
         if (root.TryGetProperty("prerequisites", out JsonElement prerequisites)
             && prerequisites.ValueKind == JsonValueKind.Object
             && prerequisites.EnumerateObject().Any()) {
-          notes.Add("prerequisites: has no equivalent in format 4 and was dropped; declare the "
+          notes.Add("prerequisites: has no equivalent in lip.yaml and was dropped; declare the "
               + "packages that must already be installed as dependencies instead.");
         }
 
@@ -312,7 +292,7 @@ public static class ToothMigrator {
               bool empty = script.Value.ValueKind == JsonValueKind.Array
                   && script.Value.GetArrayLength() == 0;
               if (!_knownScripts.Contains(script.Name) && !empty) {
-                notes.Add($"variants[{i}].scripts.{script.Name}: format 4 only has install and "
+                notes.Add($"variants[{i}].scripts.{script.Name}: lip.yaml only has install and "
                     + "uninstall hooks; it was dropped.");
               }
             }
@@ -327,8 +307,8 @@ public static class ToothMigrator {
     return notes;
   }
 
-  /// The UTF-8 bytes of a tooth.json as lip writes it: indented by two spaces, with a final
+  /// The UTF-8 bytes of a package file as lip writes it: a YAML file (YamlJson), ending with a
   /// line break.
   public static byte[] Serialize(JsonObject document) =>
-      Encoding.UTF8.GetBytes(document.ToJsonString(_writeOptions) + "\n");
+      Encoding.UTF8.GetBytes(YamlJson.Serialize(document));
 }

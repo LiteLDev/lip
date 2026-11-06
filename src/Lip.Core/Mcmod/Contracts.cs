@@ -52,23 +52,24 @@ public record Candidate(
     string name = Package.Identity;
     try {
       ISource source = await Assets[index].Open();
-      if (!source.Keys.Contains(ToothFormat.ModManifestFileName)) {
+      if (!source.Keys.Contains(PackageFormat.ModManifestFileName)) {
         throw new McmodInstallException(
-            $"{name}: the asset of type \"mcmod\" has no {ToothFormat.ModManifestFileName}.");
+            $"{name}: the asset of type \"mcmod\" has no {PackageFormat.ModManifestFileName}.");
       }
 
-      await using Stream stream = await source.OpenRead(ToothFormat.ModManifestFileName);
+      await using Stream stream = await source.OpenRead(PackageFormat.ModManifestFileName);
       using MemoryStream memory = new();
       await stream.CopyToAsync(memory);
-      using JsonDocument json = ToothParser.ParseJson(memory.ToArray());
+      using JsonDocument json = PackageFileParser.ParseJson(
+          memory.ToArray(), PackageFormat.ModManifestFileName);
       JsonElement root = json.RootElement;
       if (root.ValueKind != JsonValueKind.Object
           || !root.TryGetProperty("name", out JsonElement modName)
           || modName.ValueKind != JsonValueKind.String
           || !PackageNames.IsValid(modName.GetString()!)) {
         throw new McmodInstallException(
-            $"{name}: the {ToothFormat.ModManifestFileName} of its asset of type \"mcmod\" is not"
-            + " a JSON object whose \"name\" is an id.");
+            $"{name}: the {PackageFormat.ModManifestFileName} of its asset of type \"mcmod\" is not"
+            + " a JSON object whose \"name\" matches ^[A-Za-z0-9][A-Za-z0-9._-]*$.");
       }
 
       return new ModManifest(modName.GetString()!);
@@ -103,9 +104,9 @@ public interface IResolver {
   /// The candidate sequence, produced lazily: archives (e.g. older tags of a remote repository)
   /// are opened only when the caller asks for more candidates. Diagnostics, which explain every
   /// path that produced no candidate, are reported through onDiagnostic as they arise.
-  /// clientCompat: the source is the key of a dependency of an entry derived from format 3,
-  /// whose variant "client" names the variant "" of a package of format 4 (protocol/package.md
-  /// §5).
+  /// clientCompat: the source is the key of a dependency of an entry derived from a tooth.json,
+  /// whose variant "client" names the variant "" of a package that has a package file
+  /// (protocol/compatibility.md §2).
   public IAsyncEnumerable<Candidate> ResolveLazy(
       Ref source,
       IVersionConstraint? range,
@@ -134,10 +135,10 @@ public record InstallContext(
     bool DryRun,
     bool IgnoreScripts);
 
-/// The workspace file (protocol/workspace.md §7.1, workspace.schema.json).
+/// The workspace file (protocol/workspace.md §7.1, workspace.schema.yaml).
 public record LockFile {
-  [JsonPropertyName("format_version")]
-  public int FormatVersion { get; init; } = ToothFormat.FormatVersion;
+  [JsonPropertyName(PackageFormat.FormatKey)]
+  public int Format { get; init; } = PackageFormat.Format;
 
   /// "server" or "client". lip writes "server".
   [JsonPropertyName("platform")]
@@ -153,9 +154,9 @@ public record LockFile {
 
 /// An installed package in the workspace file (protocol/workspace.md §7.1).
 public record LockedPackage {
-  /// Its tooth file, of format 4 (for a tooth file of an earlier format, the one
-  /// protocol/package.md §5 derives from it for the environment of the workspace). Its "tooth" is
-  /// the tooth path and its "version" the version of the package.
+  /// Its package file, as protocol/package.md §4 read it (for a package read from a tooth.json,
+  /// the one protocol/compatibility.md §2 derives from it for the environment of the workspace).
+  /// Its "id" is the package id and its "version" the version of the package.
   [JsonPropertyName("manifest")]
   public required JsonElement Manifest { get; init; }
 
@@ -182,9 +183,9 @@ public record LockedPackage {
   [JsonPropertyName("files")]
   public required List<string> Files { get; init; }
 
-  /// The tooth path, the "tooth" of the manifest.
+  /// The package id, the "id" of the manifest.
   [JsonIgnore]
-  public string Tooth => StringMember("tooth");
+  public string Id => StringMember("id");
 
   /// The version, the "version" of the manifest.
   [JsonIgnore]
@@ -192,7 +193,7 @@ public record LockedPackage {
 
   /// The identity (protocol/package.md §4).
   [JsonIgnore]
-  public string Identity => Package.GetIdentity(Tooth, Variant);
+  public string Identity => Package.GetIdentity(Id, Variant);
 
   private string StringMember(string name) =>
       Manifest.ValueKind == JsonValueKind.Object

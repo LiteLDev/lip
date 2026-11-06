@@ -84,7 +84,7 @@ public class ZlibInflaterTests {
     Random random = new(size);
     byte[] data = new byte[size];
     if (compressible) {
-      byte[] words = Encoding.ASCII.GetBytes("lorem ipsum dolor sit amet tooth json levilamina ");
+      byte[] words = Encoding.ASCII.GetBytes("lorem ipsum dolor sit amet lip yaml levilamina ");
       for (int i = 0; i < size; i++) {
         data[i] = random.Next(10) == 0 ? (byte)random.Next(256) : words[(i * 7 / 3) % words.Length];
       }

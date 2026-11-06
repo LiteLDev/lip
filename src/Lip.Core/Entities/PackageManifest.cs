@@ -45,7 +45,7 @@ public record PackageManifest {
   [JsonPropertyName("version")]
   public required SemVersion Version { get; init; }
 
-  /// Null when the tooth file has no info.
+  /// Null when the tooth.json has no info.
   [JsonPropertyName("info")]
   public PackageManifestInfo? Info { get; init; }
 

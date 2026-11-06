@@ -155,7 +155,7 @@ With `--json`, the result is a JSON array of strings.
 lip view <PACKAGE>
 ```
 
-`<PACKAGE>` is a package argument. Writes as its result, as JSON, the tooth file of the first archive that its source names (Section 4 step 1 of [PACKAGE]), of `format_version` 4 as Section 2 of [COMPATIBILITY] reads it for the environment of Section 4. It changes nothing.
+`<PACKAGE>` is a package argument. Writes as its result, as JSON, the package file of the first archive that its source names (Section 4 step 1 of [PACKAGE]), as it is read for the environment of Section 4. It changes nothing.
 
 ### 5.7. `lip init`
 
@@ -163,9 +163,9 @@ lip view <PACKAGE>
 lip init
 ```
 
-Writes `tooth.json` in the current directory: a tooth file with the members of `{ "format_version": 4, "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102", "tooth": "<tooth>", "version": "0.1.0", "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] } }`. `lip` asks the user on the terminal for `<tooth>` until the answer is a Go module path [GO-MODULE]. When standard input or standard error is not a terminal, the command fails instead.
+Writes `lip.yaml` in the current directory: a package file with the members of `{ "format": 4, "id": "<id>", "version": "0.1.0", "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] } }`. `lip` asks the user on the terminal for `<id>` until the answer is a Go module path [GO-MODULE]. When standard input or standard error is not a terminal, the command fails instead.
 
-When `tooth.json` exists, the command fails and writes nothing.
+When `lip.yaml` exists, the command fails and writes nothing.
 
 ### 5.8. `lip migrate`
 
@@ -173,9 +173,7 @@ When `tooth.json` exists, the command fails and writes nothing.
 lip migrate
 ```
 
-Rewrites the `tooth.json` in the current directory, of a format that Section 2 of [COMPATIBILITY] reads, as a tooth file of `format_version` 4, written atomically as JSON indented by two spaces. When `tooth.json` is missing, is already of `format_version` 4, or cannot be read, the command fails and changes nothing.
-
-The mapping is not defined here; it SHOULD agree with Section 2 of [COMPATIBILITY] for every environment. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
+Migrates the current directory as Section 5 of [COMPATIBILITY] defines.
 
 ### 5.9. `lip cache clean`
 

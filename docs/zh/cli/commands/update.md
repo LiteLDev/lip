@@ -31,7 +31,7 @@ lip update [PACKAGES] [options]
 | 本地 ZIP 文件 | 同一个文件，重新读取；只有其版本变化时才会替换该包。若文件已不存在，则保持该包不变。 |
 | 本地目录 | 同一个目录，重新读取；只有其版本变化时才会替换该包。若目录已不存在，则保持该包不变。 |
 
-如需把从 git 引用安装的包改回正式发布的版本，请用其不带 git 引用的 tooth 路径更新，例如 `lip update github.com/LiteLDev/LeviLamina`。
+如需把从 git 引用安装的包改回正式发布的版本，请用其不带 git 引用的仓库路径更新，例如 `lip update github.com/LiteLDev/LeviLamina`。
 
 ## 选项
 

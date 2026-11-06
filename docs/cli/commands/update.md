@@ -31,7 +31,7 @@ Without arguments, every explicitly installed package is requested again by the 
 | A local ZIP file | The same file, read again; the package is replaced only when its version changed. If the file no longer exists, the package is kept as it is. |
 | A local directory | The same directory, read again; the package is replaced only when its version changed. If the directory no longer exists, the package is kept as it is. |
 
-To move a package installed from a git ref back to released versions, update it by its plain tooth path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
+To move a package installed from a git ref back to released versions, update it by its plain repository path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
 
 ## Options
 

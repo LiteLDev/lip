@@ -6,16 +6,14 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Parsing;
 
-/// Validation of tooth files of format 4 (tooth.schema.json and protocol/package.md §3).
-public class ToothParserTests {
-  private const string _uuid = "f74a5fda-cb2a-4de8-959f-a1a76bad3102";
-
-  /// A minimal valid tooth file of format 4.
-  private static JsonObject Valid() => JsonNode.Parse($$"""
+/// Validation of package files (lip.schema.yaml and protocol/package.md §3), which are YAML files
+/// (protocol/README.md); the tests write them as JSON, which is YAML too.
+public class PackageFileParserTests {
+  /// A minimal valid package file.
+  private static JsonObject Valid() => JsonNode.Parse("""
       {
-        "format_version": 4,
-        "format_uuid": "{{_uuid}}",
-        "tooth": "example.com/owner/tool",
+        "format": 4,
+        "id": "example.com/owner/tool",
         "version": "1.2.3",
         "variants": {
           "": [ { "platform": "server", "runtime": "win-x64" } ]
@@ -23,31 +21,31 @@ public class ToothParserTests {
       }
       """)!.AsObject();
 
-  /// A valid tooth file whose variant "" has this single entry.
+  /// A valid package file whose variant "" has this single entry.
   private static JsonObject WithEntry(string entry) {
     JsonObject document = Valid();
     document["variants"] = new JsonObject { [""] = new JsonArray(JsonNode.Parse(entry)) };
     return document;
   }
 
-  /// A valid tooth file whose single entry has these members besides platform and runtime.
+  /// A valid package file whose single entry has these members besides platform and runtime.
   private static JsonObject WithMembers(string members) =>
       WithEntry($$"""{ "platform": "server", "runtime": "win-x64", {{members}} }""");
 
-  private static ToothFile Parse(JsonNode document) =>
-      ToothParser.Parse(Encoding.UTF8.GetBytes(document.ToJsonString()));
+  private static PackageFile Parse(JsonNode document) =>
+      PackageFileParser.Parse(Encoding.UTF8.GetBytes(document.ToJsonString()));
 
-  private static ToothEntry ParseEntry(JsonNode document) =>
+  private static PackageEntry ParseEntry(JsonNode document) =>
       Assert.Single(Parse(document).Variants[""]);
 
-  private static ToothFormatException AssertInvalid(JsonNode document, string path) {
-    ToothFormatException ex = Assert.Throws<ToothFormatException>(() => Parse(document));
+  private static PackageFormatException AssertInvalid(JsonNode document, string path) {
+    PackageFormatException ex = Assert.Throws<PackageFormatException>(() => Parse(document));
     Assert.Contains($"at {path}", ex.Message);
     return ex;
   }
 
-  private static ToothFormatException AssertInvalid(string json) =>
-      Assert.Throws<ToothFormatException>(() => ToothParser.Parse(Encoding.UTF8.GetBytes(json)));
+  private static PackageFormatException AssertInvalid(string json) =>
+      Assert.Throws<PackageFormatException>(() => PackageFileParser.Parse(Encoding.UTF8.GetBytes(json)));
 
   [Fact]
   public void Parse_MinimalDocument_ReadsMembers() {
@@ -55,13 +53,13 @@ public class ToothParserTests {
     JsonObject document = Valid();
 
     // Act
-    ToothFile tooth = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
-    Assert.Equal("example.com/owner/tool", tooth.Tooth);
-    Assert.Equal(SemVersion.Parse("1.2.3"), tooth.Version);
-    Assert.Equal([""], tooth.Variants.Keys);
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal("example.com/owner/tool", file.Id);
+    Assert.Equal(SemVersion.Parse("1.2.3"), file.Version);
+    Assert.Equal([""], file.Variants.Keys);
+    PackageEntry entry = Assert.Single(file.Variants[""]);
     Assert.Equal(McmodPlatform.Server, entry.Platform);
     Assert.Equal("win-x64", entry.Runtime);
     Assert.Empty(entry.Dependencies);
@@ -76,14 +74,72 @@ public class ToothParserTests {
     Assert.Null(entry.McmodAsset);
     Assert.Null(entry.McmodAsset);
     Assert.Equal("server", entry.Json.GetProperty("platform").GetString());
-    Assert.Equal(4, tooth.Json.GetProperty("format_version").GetInt32());
+    Assert.Equal(4, file.Json.GetProperty("format").GetInt32());
+  }
+
+  [Fact]
+  public void Parse_BlockYaml_ReadsMembers() {
+    // Arrange: plain scalars that look like other values are not strings.
+    byte[] yaml = Encoding.UTF8.GetBytes("""
+        # lip.yaml
+        format: 4
+        id: example.com/owner/tool
+        version: 1.0.0
+        info:
+          name: 'true'
+          tags: ['null', "~"]
+        variants:
+          "":
+            - platform: server
+              runtime: win-x64
+              deps:
+                example.com/a: ^1.0.0
+              hooks:
+                post_install:
+                  - echo yes
+        """);
+
+    // Act
+    PackageFile file = PackageFileParser.Parse(yaml);
+
+    // Assert
+    Assert.Equal(SemVersion.Parse("1.0.0"), file.Version);
+    Assert.Equal("true", file.Json.GetProperty("info").GetProperty("name").GetString());
+    Assert.Equal(
+        ["null", "~"],
+        file.Json.GetProperty("info").GetProperty("tags").EnumerateArray().Select(t => t.GetString()));
+    PackageEntry entry = Assert.Single(file.Variants[""]);
+    Assert.Equal("example.com/a", Assert.Single(entry.Dependencies).Source.Target);
+    Assert.Equal(["echo yes"], entry.Hooks.PostInstall);
+  }
+
+  [Theory]
+  [InlineData("version: 1.0", "$.version")]
+  [InlineData("version: true", "$.version")]
+  [InlineData("version: null", "$.version")]
+  [InlineData("version:", "$.version")]
+  [InlineData("format: \"4\"", "$.format")]
+  [InlineData("format: 4.5", "$.format")]
+  public void Parse_PlainScalarOfOtherType_Throws(string line, string path) {
+    // Arrange
+    string key = line[..line.IndexOf(':')];
+    string yaml = $$"""
+        format: 4
+        id: example.com/owner/tool
+        version: 1.2.3
+        variants: { "": [ { platform: server, runtime: win-x64 } ] }
+        """;
+    yaml = string.Join('\n', yaml.Split('\n').Select(l => l.StartsWith($"{key}:") ? line : l));
+
+    // Act & Assert
+    Assert.Contains(path, AssertInvalid(yaml).Message);
   }
 
   [Fact]
   public void Parse_FullDocument_ReadsEveryMember() {
     // Arrange
     JsonObject document = WithMembers("""
-        "dependencies": { "example.com/a": "^1.0.0", "example.com/b#lua": ">=2.0.0 <3.0.0" },
+        "deps": { "example.com/a": "^1.0.0", "example.com/b#lua": ">=2.0.0 <3.0.0" },
         "assets": [
           { "type": "self", "place": [ { "src": "bin/", "dest": "tools/x/" } ] },
           { "type": "zip", "urls": [ "https://a.example/x.zip", "https://b.example/x.zip" ],
@@ -103,7 +159,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothEntry entry = ParseEntry(document);
+    PackageEntry entry = ParseEntry(document);
 
     // Assert
     Assert.Equal(
@@ -135,9 +191,8 @@ public class ToothParserTests {
   }
 
   [Theory]
-  [InlineData("format_version")]
-  [InlineData("format_uuid")]
-  [InlineData("tooth")]
+  [InlineData("format")]
+  [InlineData("id")]
   [InlineData("version")]
   [InlineData("variants")]
   public void Parse_MissingRequiredMember_Throws(string key) {
@@ -155,43 +210,46 @@ public class ToothParserTests {
   [InlineData("4.5")]
   [InlineData("\"4\"")]
   [InlineData("null")]
-  public void Parse_OtherFormatVersion_Throws(string value) {
+  public void Parse_OtherFormat_Throws(string value) {
     // Arrange
     JsonObject document = Valid();
-    document["format_version"] = JsonNode.Parse(value);
+    document["format"] = JsonNode.Parse(value);
 
     // Act & Assert
-    AssertInvalid(document, "$.format_version");
+    AssertInvalid(document, "$.format");
   }
 
-  [Theory]
-  [InlineData("\"289f771f-2c9a-4d73-9f3f-8492495a924d\"")]
-  [InlineData("\"F74A5FDA-CB2A-4DE8-959F-A1A76BAD3102\"")]
-  [InlineData("\"\"")]
-  [InlineData("4")]
-  public void Parse_OtherFormatUuid_Throws(string value) {
-    // Arrange
-    JsonObject document = Valid();
-    document["format_uuid"] = JsonNode.Parse(value);
+  [Fact]
+  public void Parse_ToothJsonOfFormatVersion4_Throws() {
+    // Arrange: the keys of the unreleased tooth.json of format_version 4 are not read.
+    JsonObject document = JsonNode.Parse("""
+        {
+          "format_version": 4,
+          "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
+          "tooth": "example.com/owner/tool",
+          "version": "1.2.3",
+          "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] }
+        }
+        """)!.AsObject();
 
     // Act & Assert
-    AssertInvalid(document, "$.format_uuid");
+    AssertInvalid(document, "$.format");
   }
 
   [Theory]
   [InlineData("github.com/LiteLDev/LeviLamina")]
   [InlineData("example.com/a/v2")]
   [InlineData("example.com/a.b-c_d~e")]
-  public void Parse_GoModulePath_IsAccepted(string tooth) {
+  public void Parse_GoModulePath_IsAccepted(string id) {
     // Arrange
     JsonObject document = Valid();
-    document["tooth"] = tooth;
+    document["id"] = id;
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
-    Assert.Equal(tooth, file.Tooth);
+    Assert.Equal(id, file.Id);
   }
 
   [Theory]
@@ -203,23 +261,23 @@ public class ToothParserTests {
   [InlineData("example.com/a b")]
   [InlineData("example.com/../a")]
   [InlineData("https://example.com/a")]
-  public void Parse_NotAGoModulePath_Throws(string tooth) {
+  public void Parse_NotAGoModulePath_Throws(string id) {
     // Arrange
     JsonObject document = Valid();
-    document["tooth"] = tooth;
+    document["id"] = id;
 
     // Act & Assert
-    AssertInvalid(document, "$.tooth");
+    AssertInvalid(document, "$.id");
   }
 
   [Fact]
-  public void Parse_ToothNotAString_Throws() {
+  public void Parse_IdNotAString_Throws() {
     // Arrange
     JsonObject document = Valid();
-    document["tooth"] = 1;
+    document["id"] = 1;
 
     // Act & Assert
-    AssertInvalid(document, "$.tooth");
+    AssertInvalid(document, "$.id");
   }
 
   [Theory]
@@ -232,7 +290,7 @@ public class ToothParserTests {
     document["version"] = version;
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
     Assert.Equal(SemVersion.Parse(version), file.Version);
@@ -266,7 +324,7 @@ public class ToothParserTests {
         """[ { "platform": "client", "runtime": "win-x64" } ]""");
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
     Assert.Equal(["", variant], file.Variants.Keys.Order(StringComparer.Ordinal));
@@ -298,7 +356,7 @@ public class ToothParserTests {
     document["variants"] = new JsonObject();
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
     Assert.Empty(file.Variants);
@@ -365,7 +423,7 @@ public class ToothParserTests {
     JsonObject document = WithEntry($$"""{ "platform": "server", "runtime": "{{runtime}}" }""");
 
     // Act
-    ToothEntry entry = ParseEntry(document);
+    PackageEntry entry = ParseEntry(document);
 
     // Assert
     Assert.Equal(runtime, entry.Runtime);
@@ -399,7 +457,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothFormatException ex = AssertInvalid(document, "$.variants[\"\"][2]");
+    PackageFormatException ex = AssertInvalid(document, "$.variants[\"\"][2]");
 
     // Assert
     Assert.Contains("$.variants[\"\"][0]", ex.Message);
@@ -421,7 +479,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
     Assert.Equal(
@@ -439,16 +497,16 @@ public class ToothParserTests {
   [InlineData("example.com/a", "example.com/a", "")]
   [InlineData("example.com/a/v2#lua", "example.com/a/v2", "lua")]
   [InlineData("example.com/a#engine/lua", "example.com/a", "engine/lua")]
-  public void Parse_DependencyKey_IsAccepted(string key, string tooth, string variant) {
+  public void Parse_DependencyKey_IsAccepted(string key, string id, string variant) {
     // Arrange
-    JsonObject document = WithMembers($$""" "dependencies": { "{{key}}": "*" } """);
+    JsonObject document = WithMembers($$""" "deps": { "{{key}}": "*" } """);
 
     // Act
-    ToothDependency dependency = Assert.Single(ParseEntry(document).Dependencies);
+    PackageDependency dependency = Assert.Single(ParseEntry(document).Dependencies);
 
     // Assert
     Assert.Equal(RefKind.Spec, dependency.Source.Kind);
-    Assert.Equal(tooth, dependency.Source.Target);
+    Assert.Equal(id, dependency.Source.Target);
     Assert.Equal(variant, dependency.Source.Variant);
     Assert.Null(dependency.Source.GitRef);
   }
@@ -462,12 +520,12 @@ public class ToothParserTests {
   [InlineData("example.com/a#lua@1.0.0")]
   [InlineData("https://example.com/a.zip")]
   [InlineData("")]
-  public void Parse_DependencyKeyNotAToothPath_Throws(string key) {
+  public void Parse_DependencyKeyNotAPackageId_Throws(string key) {
     // Arrange
-    JsonObject document = WithMembers($$""" "dependencies": { "{{key}}": "*" } """);
+    JsonObject document = WithMembers($$""" "deps": { "{{key}}": "*" } """);
 
     // Act & Assert
-    AssertInvalid(document, $"$.variants[\"\"][0].dependencies[\"{key}\"]");
+    AssertInvalid(document, $"$.variants[\"\"][0].deps[\"{key}\"]");
   }
 
   [Theory]
@@ -486,10 +544,10 @@ public class ToothParserTests {
   public void Parse_DependencyRange_MatchesAsSemVersionRange(
       string range, string version, bool satisfied) {
     // Arrange
-    JsonObject document = WithMembers($$""" "dependencies": { "example.com/a": "{{range}}" } """);
+    JsonObject document = WithMembers($$""" "deps": { "example.com/a": "{{range}}" } """);
 
     // Act
-    ToothDependency dependency = Assert.Single(ParseEntry(document).Dependencies);
+    PackageDependency dependency = Assert.Single(ParseEntry(document).Dependencies);
 
     // Assert
     Assert.Equal(range, dependency.Range.Text);
@@ -508,19 +566,19 @@ public class ToothParserTests {
   [InlineData("null")]
   public void Parse_DependencyValueNotARange_Throws(string range) {
     // Arrange
-    JsonObject document = WithMembers($$""" "dependencies": { "example.com/a": {{range}} } """);
+    JsonObject document = WithMembers($$""" "deps": { "example.com/a": {{range}} } """);
 
     // Act & Assert
-    AssertInvalid(document, "$.variants[\"\"][0].dependencies[\"example.com/a\"]");
+    AssertInvalid(document, "$.variants[\"\"][0].deps[\"example.com/a\"]");
   }
 
   [Fact]
   public void Parse_DependenciesNotAnObject_Throws() {
     // Arrange
-    JsonObject document = WithMembers(""" "dependencies": [ "example.com/a" ] """);
+    JsonObject document = WithMembers(""" "deps": [ "example.com/a" ] """);
 
     // Act & Assert
-    AssertInvalid(document, "$.variants[\"\"][0].dependencies");
+    AssertInvalid(document, "$.variants[\"\"][0].deps");
   }
 
   [Theory]
@@ -573,7 +631,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothFormatException ex = AssertInvalid(document, "$.variants[\"\"][0].assets[0].place");
+    PackageFormatException ex = AssertInvalid(document, "$.variants[\"\"][0].assets[0].place");
 
     // Assert
     Assert.Contains("mcmod", ex.Message);
@@ -635,7 +693,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothEntry entry = ParseEntry(document);
+    PackageEntry entry = ParseEntry(document);
 
     // Assert
     Assert.Empty(entry.PreserveFiles);
@@ -654,7 +712,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothFormatException ex = AssertInvalid(document, "$.variants[\"\"][0].assets");
+    PackageFormatException ex = AssertInvalid(document, "$.variants[\"\"][0].assets");
 
     // Assert
     Assert.Contains("mcmod", ex.Message);
@@ -674,7 +732,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
     Assert.All(file.Variants[""], e => Assert.Equal(0, e.McmodAsset));
@@ -765,7 +823,7 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothEntry entry = ParseEntry(document);
+    PackageEntry entry = ParseEntry(document);
 
     // Assert
     IReadOnlyList<PathGlob> globs = key == "preserve" ? entry.PreserveFiles : entry.RemoveFiles;
@@ -833,7 +891,7 @@ public class ToothParserTests {
     document["info"] = new JsonObject { ["logo"] = logo };
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
     Assert.Equal(logo, file.Json.GetProperty("info").GetProperty("logo").GetString());
@@ -862,10 +920,10 @@ public class ToothParserTests {
     document["info"] = JsonNode.Parse("""{ "avatar_url": "logo.png" }""");
 
     // Act
-    ToothFile file = Parse(document);
+    PackageFile file = Parse(document);
 
     // Assert
-    Assert.Equal("example.com/owner/tool", file.Tooth);
+    Assert.Equal("example.com/owner/tool", file.Id);
   }
 
   [Fact]
@@ -882,10 +940,12 @@ public class ToothParserTests {
         """);
     document["info"] = JsonNode.Parse("""{ "name": "n", "author": 5, "tags": [] }""");
     document["x-root"] = JsonNode.Parse("[ 1, 2 ]");
-    document["dependencies"] = JsonNode.Parse("""{ "not a key": 5 }""");
+    document["deps"] = JsonNode.Parse("""{ "not a key": 5 }""");
+    document["format_uuid"] = 5;
+    document["tooth"] = 5;
 
     // Act
-    ToothEntry entry = ParseEntry(document);
+    PackageEntry entry = ParseEntry(document);
 
     // Assert
     Assert.Equal(
@@ -899,7 +959,7 @@ public class ToothParserTests {
 
   [Theory]
   [InlineData("[]")]
-  [InlineData("\"tooth\"")]
+  [InlineData("\"lip\"")]
   [InlineData("null")]
   public void Parse_RootNotAnObject_Throws(string json) {
     // Act & Assert
@@ -907,21 +967,33 @@ public class ToothParserTests {
   }
 
   [Fact]
-  public void Parse_Comment_Throws() {
+  public void Parse_Comment_IsIgnored() {
     // Arrange
-    string json = Valid().ToJsonString().Insert(1, "// comment\n");
+    string yaml = "# comment\n" + Valid().ToJsonString();
 
-    // Act & Assert
-    Assert.Contains("not strict JSON", AssertInvalid(json).Message);
+    // Act
+    PackageFile file = PackageFileParser.Parse(Encoding.UTF8.GetBytes(yaml));
+
+    // Assert
+    Assert.Equal("example.com/owner/tool", file.Id);
   }
 
   [Fact]
-  public void Parse_TrailingComma_Throws() {
+  public void Parse_NotYaml_Throws() {
     // Arrange
-    string json = Valid().ToJsonString()[..^1] + ",}";
+    string yaml = Valid().ToJsonString()[..^1];
 
     // Act & Assert
-    Assert.Contains("not strict JSON", AssertInvalid(json).Message);
+    Assert.Contains("not valid YAML", AssertInvalid(yaml).Message);
+  }
+
+  [Fact]
+  public void Parse_TwoDocuments_Throws() {
+    // Arrange
+    string yaml = Valid().ToJsonString() + "\n---\n" + Valid().ToJsonString();
+
+    // Act & Assert
+    Assert.Contains("more than one YAML document", AssertInvalid(yaml).Message);
   }
 
   [Fact]
@@ -930,7 +1002,7 @@ public class ToothParserTests {
     string json = Valid().ToJsonString()[..^1] + ",\"version\":\"1.2.3\"}";
 
     // Act & Assert
-    Assert.Contains("not strict JSON", AssertInvalid(json).Message);
+    Assert.Contains("appears twice", AssertInvalid(json).Message);
   }
 
   [Fact]
@@ -940,7 +1012,7 @@ public class ToothParserTests {
         .Replace("\"hooks\":{}", "\"hooks\":{},\"hooks\":{}");
 
     // Act & Assert
-    Assert.Contains("not strict JSON", AssertInvalid(json).Message);
+    Assert.Contains("appears twice", AssertInvalid(json).Message);
   }
 
   [Fact]
@@ -950,7 +1022,7 @@ public class ToothParserTests {
                     0xC3, 0x28, .. "\"}"u8];
 
     // Act
-    ToothFormatException ex = Assert.Throws<ToothFormatException>(() => ToothParser.Parse(bytes));
+    PackageFormatException ex = Assert.Throws<PackageFormatException>(() => PackageFileParser.Parse(bytes));
 
     // Assert
     Assert.Contains("UTF-8", ex.Message);
@@ -962,7 +1034,7 @@ public class ToothParserTests {
     string json = Valid().ToJsonString().Replace("\"1.2.3\"", "\"\\uD800\"");
 
     // Act & Assert
-    Assert.Contains("$.version", AssertInvalid(json).Message);
+    AssertInvalid(json);
   }
 
   [Fact]
@@ -971,33 +1043,34 @@ public class ToothParserTests {
     byte[] bytes = [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes(Valid().ToJsonString())];
 
     // Act
-    ToothFile file = ToothParser.Parse(bytes);
+    PackageFile file = PackageFileParser.Parse(bytes);
 
     // Assert
-    Assert.Equal("example.com/owner/tool", file.Tooth);
+    Assert.Equal("example.com/owner/tool", file.Id);
   }
 
   [Theory]
-  [InlineData("""{ "format_version": 4 }""", 4)]
-  [InlineData("""{ "format_version": 3.0 }""", 3)]
-  [InlineData("""{ "format_version": 1 }""", 1)]
-  [InlineData("""{ "format_version": 2.5 }""", null)]
-  [InlineData("""{ "format_version": "3" }""", null)]
+  [InlineData("""{ "format": 4 }""", 4)]
+  [InlineData("""{ "format": 3.0 }""", 3)]
+  [InlineData("""{ "format": 1 }""", 1)]
+  [InlineData("""{ "format": 2.5 }""", null)]
+  [InlineData("""{ "format": "3" }""", null)]
+  [InlineData("""{ "format_version": 4 }""", null)]
   [InlineData("""{ }""", null)]
   [InlineData("""[ 4 ]""", null)]
-  public void FormatVersion_ReadsIntegerFormatVersion(string json, int? expected) {
+  public void Format_ReadsIntegerFormat(string json, int? expected) {
     // Arrange
     using JsonDocument document = JsonDocument.Parse(json);
 
     // Act
-    int? version = ToothParser.FormatVersion(document.RootElement);
+    int? format = PackageFileParser.Format(document.RootElement);
 
     // Assert
-    Assert.Equal(expected, version);
+    Assert.Equal(expected, format);
   }
 
   [Fact]
-  public void ParseEntry_Format4Entry_IsValidated() {
+  public void ParseEntry_Entry_IsValidated() {
     // Arrange
     using JsonDocument valid = JsonDocument.Parse("""
         { "platform": "client", "runtime": "linux-x64",
@@ -1009,15 +1082,15 @@ public class ToothParserTests {
         """);
 
     // Act
-    ToothEntry entry = ToothParser.ParseEntry(valid.RootElement);
+    PackageEntry entry = PackageFileParser.ParseEntry(valid.RootElement);
 
     // Assert
     Assert.Equal(McmodPlatform.Client, entry.Platform);
     Assert.Equal("linux-x64", entry.Runtime);
     Assert.False(entry.Derived);
     Assert.Equal(AssetType.Zip, Assert.Single(entry.Assets).Type);
-    Assert.Throws<ToothFormatException>(
-        () => ToothParser.ParseEntry(invalid.RootElement));
+    Assert.Throws<PackageFormatException>(
+        () => PackageFileParser.ParseEntry(invalid.RootElement));
   }
 
   [Theory]
@@ -1032,7 +1105,7 @@ public class ToothParserTests {
   [InlineData("win-x64\n", false)]
   public void IsRuntime_ChecksRuntimeIdentifier(string value, bool expected) {
     // Act & Assert
-    Assert.Equal(expected, ToothParser.IsRuntime(value));
+    Assert.Equal(expected, PackageFileParser.IsRuntime(value));
   }
 
   [Theory]
@@ -1045,7 +1118,7 @@ public class ToothParserTests {
   [InlineData("a b", false)]
   [InlineData("a/b", false)]
   [InlineData("a\n", false)]
-  public void PackageNamesIsValid_ChecksId(string value, bool expected) {
+  public void PackageNamesIsValid_ChecksModName(string value, bool expected) {
     // Act & Assert
     Assert.Equal(expected, PackageNames.IsValid(value));
   }

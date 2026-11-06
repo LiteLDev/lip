@@ -4,8 +4,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Resolution;
 
-/// Resolve(source, range, environment) (protocol/package.md §4), with tooth files of format 4 and
-/// of earlier formats (§5), over in-memory archives.
+/// Resolve(source, range, environment) (protocol/package.md §4), with package files and with
+/// tooth.json files (protocol/compatibility.md §2), over in-memory archives.
 public class ResolverTests {
   private const string Spec = "github.com/user/pkg";
   private const string Url = "https://example.com/pkg.zip";
@@ -20,31 +20,31 @@ public class ResolverTests {
 
   private Resolver CreateResolver() => new(_archives, _reader, _warnings.Add);
 
-  /// A tooth file of format 4; variants is the JSON object of "variants" without braces.
-  private static string Tooth4(string tooth, string version, string variants) => $$"""
+  /// A lip.yaml, as a YAML flow mapping; variants is the JSON object of "variants" without
+  /// braces.
+  private static string LipYaml(string id, string version, string variants) => $$"""
       {
-        "format_version": 4,
-        "format_uuid": "{{ToothFormat.FormatUuid}}",
-        "tooth": "{{tooth}}",
+        "format": 4,
+        "id": "{{id}}",
         "version": "{{version}}",
         "variants": { {{variants}} }
       }
       """;
 
-  /// A tooth file of format 4 whose variant "" has one entry for (server, win-x64).
-  private static string Simple4(string tooth, string version, string members = "") =>
-      Tooth4(tooth, version, $"\"\": [ {Entry("server", "win-x64", members)} ]");
+  /// A lip.yaml whose variant "" has one entry for (server, win-x64).
+  private static string Simple4(string id, string version, string members = "") =>
+      LipYaml(id, version, $"\"\": [ {Entry("server", "win-x64", members)} ]");
 
-  /// An entry of format 4 with the given extra members, comma-separated without braces.
+  /// An entry of a package file with the given extra members, comma-separated without braces.
   private static string Entry(string platform, string runtime, string members = "") =>
       $$"""{ "platform": "{{platform}}", "runtime": "{{runtime}}"{{(members == "" ? "" : ", " + members)}} }""";
 
-  /// The member "dependencies" with one dependency on a marker repository, which tells entries
+  /// The member "deps" with one dependency on a marker repository, which tells entries
   /// apart.
   private static string Marker(string name) =>
-      $"\"dependencies\": {{ \"example.com/marker/{name}\": \"*\" }}";
+      $"\"deps\": {{ \"example.com/marker/{name}\": \"*\" }}";
 
-  /// A tooth file of format 3 with the given variants (Variant3).
+  /// A tooth.json of format 3 with the given variants (Variant3).
   private static string Tooth3(string tooth, string version, params string[] variants) => $$"""
       {
         "format_version": 3,
@@ -76,7 +76,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_Url_SelectsEntryOfExactPlatformAndRuntime() {
     // Arrange
-    _archives.AddUrl(Url, Tooth4(Spec, "1.0.0", $"""
+    _archives.AddUrl(Url, LipYaml(Spec, "1.0.0", $"""
         "": [
           {Entry("server", "linux-x64", Marker("server-linux"))},
           {Entry("client", "win-x64", Marker("client-win"))},
@@ -139,7 +139,7 @@ public class ResolverTests {
   [InlineData("node/v20", "node")]
   public async Task Resolve_Variant_SelectsEntryOfVariantOfSource(string variant, string marker) {
     // Arrange
-    _archives.AddTag(Spec, "v1.0.0", Tooth4(Spec, "1.0.0", $"""
+    _archives.AddTag(Spec, "v1.0.0", LipYaml(Spec, "1.0.0", $"""
         "": [ {Entry("server", "win-x64", Marker("default"))} ],
         "lua": [ {Entry("server", "win-x64", Marker("lua"))} ],
         "node/v20": [ {Entry("server", "win-x64", Marker("node"))} ]
@@ -160,7 +160,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_UnknownVariant_NoCandidate() {
     // Arrange
-    _archives.AddUrl(Url, Tooth4(Spec, "1.0.0", $"\"lua\": [ {Entry("server", "win-x64")} ]"));
+    _archives.AddUrl(Url, LipYaml(Spec, "1.0.0", $"\"lua\": [ {Entry("server", "win-x64")} ]"));
 
     // Act
     ResolveResult withoutVariant = await CreateResolver().Resolve(Source(Url), null, s_server);
@@ -175,8 +175,8 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_UrlOrLocalPath_TakesToothPathOfToothFile() {
-    // Arrange: only a remote repository requires the tooth path to be its own.
+  public async Task Resolve_UrlOrLocalPath_TakesPackageIdOfPackageFile() {
+    // Arrange: only a remote repository requires the package id to be its own.
     string local = Ref.FromFile(OperatingSystem.IsWindows() ? @"C:\pkgs\a.zip" : "/pkgs/a.zip")
         .Target;
     _archives.AddUrl(Url, Simple4("example.com/other", "1.0.0"));
@@ -210,9 +210,9 @@ public class ResolverTests {
   [InlineData("not json")]
   [InlineData("""{ "format_version": 5 }""")]
   [InlineData(null)]
-  public async Task Resolve_ArchiveNotAPackage_NoCandidate(string? toothJson) {
-    // Arrange: null stands for an archive without tooth.json.
-    _archives.AddUrl(Url, toothJson);
+  public async Task Resolve_ArchiveNotAPackage_NoCandidate(string? content) {
+    // Arrange: null stands for an archive without a package file.
+    _archives.AddUrl(Url, content);
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(Source(Url), null, s_server);
@@ -283,7 +283,7 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_ToothPathOfOtherRepository_NoCandidate() {
+  public async Task Resolve_PackageIdOfOtherRepository_NoCandidate() {
     // Arrange
     _archives.AddTag(Spec, "v1.0.0", Simple4("github.com/user/other", "1.0.0"));
 
@@ -292,12 +292,12 @@ public class ResolverTests {
 
     // Assert
     Assert.Empty(result.Candidates);
-    Assert.Contains("declares the tooth path github.com/user/other",
+    Assert.Contains("declares the package id github.com/user/other",
         Assert.Single(result.Diagnostics));
   }
 
   [Fact]
-  public async Task Resolve_ToothPathDiffersInCase_IsCandidateWithToothPathOfToothFile() {
+  public async Task Resolve_PackageIdDiffersInCase_IsCandidateWithPackageIdOfPackageFile() {
     // Arrange
     _archives.AddTag(Spec, "v1.0.0", Simple4("github.com/User/Pkg", "1.0.0"));
 
@@ -307,7 +307,7 @@ public class ResolverTests {
 
     // Assert
     Candidate candidate = Assert.Single(result.Candidates);
-    Assert.Equal("github.com/User/Pkg", candidate.Package.Tooth);
+    Assert.Equal("github.com/User/Pkg", candidate.Package.Id);
     Assert.Equal("github.com/User/Pkg", candidate.Package.Identity);
   }
 
@@ -561,7 +561,7 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_RefOfOtherToothPath_NoCandidate() {
+  public async Task Resolve_RefOfOtherPackageId_NoCandidate() {
     // Arrange
     _archives.AddBranch(Spec, "main", Simple4("github.com/user/fork", "1.0.0"));
 
@@ -571,7 +571,7 @@ public class ResolverTests {
 
     // Assert
     Assert.Empty(result.Candidates);
-    Assert.Contains("declares the tooth path", Assert.Single(result.Diagnostics));
+    Assert.Contains("declares the package id", Assert.Single(result.Diagnostics));
   }
 
   [Theory]
@@ -627,7 +627,7 @@ public class ResolverTests {
     Assert.Equal(now, Assert.Single(result.Candidates).Archive.Commit);
   }
 
-  // Earlier formats (protocol/package.md §5)
+  // tooth.json (protocol/compatibility.md §2)
 
   [Fact]
   public async Task Resolve_Format3_DerivesEntryForEnvironment() {
@@ -736,7 +736,7 @@ public class ResolverTests {
     ResolveResult format4 = await CreateResolver().Resolve(Source(Url), null, s_server);
 
     // Assert
-    ToothDependency dependency = Assert.Single(legacy.Candidates[0].Package.Entry.Dependencies);
+    PackageDependency dependency = Assert.Single(legacy.Candidates[0].Package.Entry.Dependencies);
     Assert.True(dependency.ClientCompat);
     Assert.Equal(">=1.0.0", dependency.Range.Text);
     Assert.False(Assert.Single(format4.Candidates[0].Package.Entry.Dependencies).ClientCompat);
@@ -745,7 +745,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_ClientCompatOnFormat4_NamesDefaultVariant() {
     // Arrange: a format 3 dependency on "<repo>#client" of a format 4 package.
-    _archives.AddTag(Spec, "v1.0.0", Tooth4(Spec, "1.0.0", $"""
+    _archives.AddTag(Spec, "v1.0.0", LipYaml(Spec, "1.0.0", $"""
         "": [ {Entry("client", "win-x64", Marker("default"))} ],
         "client": [ {Entry("client", "win-x64", Marker("client"))} ]
         """));
@@ -785,7 +785,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_ClientCompatOnOtherVariant_KeepsVariant() {
     // Arrange
-    _archives.AddTag(Spec, "v1.0.0", Tooth4(Spec, "1.0.0", $"""
+    _archives.AddTag(Spec, "v1.0.0", LipYaml(Spec, "1.0.0", $"""
         "": [ {Entry("server", "win-x64", Marker("default"))} ]
         """));
 
@@ -803,14 +803,14 @@ public class ResolverTests {
 
     public Dictionary<string, int> Counts { get; } = [];
 
-    public Task<ToothDocument> Read(ArchiveHandle archive) {
+    public Task<PackageDocument> Read(ArchiveHandle archive) {
       Counts[archive.Key] = Counts.GetValueOrDefault(archive.Key) + 1;
       return _inner.Read(archive);
     }
   }
 
   /// In-memory archives: URLs and local paths, and remote repositories with tags, branches and
-  /// commits. Each archive holds its tooth.json only.
+  /// commits. Each archive holds its lip.yaml or tooth.json only (FileName).
   private sealed class FakeArchives : IArchiveProvider {
     private readonly Dictionary<string, string?> _urls = [];
     private readonly Dictionary<string, Repository> _repositories = [];
@@ -826,20 +826,20 @@ public class ResolverTests {
 
     public HashSet<string> FailOnce { get; } = [];
 
-    /// Adds the archive of a URL or a file: URI; a null tooth file stands for an archive
-    /// without one.
-    public void AddUrl(string url, string? toothJson) => _urls[url] = toothJson;
+    /// Adds the archive of a URL or a file: URI; null stands for an archive without
+    /// a package file.
+    public void AddUrl(string url, string? content) => _urls[url] = content;
 
     /// Adds (or moves) a tag to a new commit; returns the commit.
-    public string AddTag(string spec, string tag, string toothJson) {
-      string commit = AddCommit(spec, toothJson);
+    public string AddTag(string spec, string tag, string content) {
+      string commit = AddCommit(spec, content);
       Get(spec).Tags[tag] = commit;
       return commit;
     }
 
     /// Adds (or moves) a branch to a new commit; returns the commit.
-    public string AddBranch(string spec, string branch, string toothJson) {
-      string commit = AddCommit(spec, toothJson);
+    public string AddBranch(string spec, string branch, string content) {
+      string commit = AddCommit(spec, content);
       Get(spec).Branches[branch] = commit;
       return commit;
     }
@@ -851,8 +851,8 @@ public class ResolverTests {
         throw new ArchiveUnavailableException($"timeout {target.Target}");
       }
 
-      return _urls.TryGetValue(target.Target, out string? tooth)
-          ? Task.FromResult(Handle(target.Target, tooth, commit: null))
+      return _urls.TryGetValue(target.Target, out string? content)
+          ? Task.FromResult(Handle(target.Target, content, commit: null))
           : throw new ArchiveUnavailableException($"404 {target.Target}");
     }
 
@@ -897,9 +897,9 @@ public class ResolverTests {
     public Task<Lip.Core.Sources.ISource> OpenAsset(IReadOnlyList<string> urls) =>
         throw new NotSupportedException();
 
-    private string AddCommit(string spec, string toothJson) {
+    private string AddCommit(string spec, string content) {
       string commit = (++_commits).ToString("x40");
-      Get(spec).Commits[commit] = toothJson;
+      Get(spec).Commits[commit] = content;
       return commit;
     }
 
@@ -916,11 +916,16 @@ public class ResolverTests {
     private ArchiveHandle GitHandle(string key, string spec, string commit) =>
         Handle(key, Get(spec).Commits[commit], commit);
 
-    private static ArchiveHandle Handle(string key, string? toothJson, string? commit) =>
+    /// The name of the file holding content: tooth.json for a tooth.json (with "format_version"),
+    /// lip.yaml otherwise.
+    private static string FileName(string content) =>
+        content.Contains("\"format_version\"", StringComparison.Ordinal) ? "tooth.json" : "lip.yaml";
+
+    private static ArchiveHandle Handle(string key, string? content, string? commit) =>
         new(key,
-            new ZipSource(WorkspaceHarness.Zip(toothJson is null
+            new ZipSource(WorkspaceHarness.Zip(content is null
                 ? new() { ["readme.txt"] = "" }
-                : new() { [ToothFormat.ToothFileName] = toothJson })),
+                : new() { [FileName(content)] = content })),
             commit);
 
     private sealed class Repository {

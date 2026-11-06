@@ -1,18 +1,19 @@
 using System.Text.Json;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Install;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// End-to-end tests of installing tooth.json packages of format 4 (protocol/workspace.md §4).
-public class ToothV4InstallTests {
+/// End-to-end tests of installing packages with a package file (protocol/workspace.md §4).
+public class PackageInstallTests {
   private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
 
   [Fact]
   public async Task Install_SelfAsset_PlacesFilesAndRecordsWorkspaceFile() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("bin/", "tools/a/")),
       ["bin/a.exe"] = "a",
       ["bin/lib/b.dll"] = "b",
@@ -23,23 +24,22 @@ public class ToothV4InstallTests {
     Assert.Equal("a", h.Fs.File.ReadAllText(h.Path("tools/a/a.exe")));
     Assert.Equal("b", h.Fs.File.ReadAllText(h.Path("tools/a/lib/b.dll")));
     LockFile lockFile = await h.Lock();
-    Assert.Equal(4, lockFile.FormatVersion);
+    Assert.Equal(4, lockFile.Format);
     Assert.Equal("server", lockFile.Platform);
     Assert.Equal(WorkspaceHarness.Runtime, lockFile.Runtime);
     LockedPackage package = Assert.Single(lockFile.Packages);
-    Assert.Equal("example.com/a", package.Tooth);
+    Assert.Equal("example.com/a", package.Id);
     Assert.Equal("", package.Variant);
     Assert.Equal("1.0.0", package.Version);
     Assert.True(package.Explicit);
     Assert.Equal("example.com/a", package.Source);
     Assert.Matches("^[0-9a-f]{40}$", package.Commit);
     Assert.Equal(["tools/a/a.exe", "tools/a/lib/b.dll"], package.Files);
-    Assert.Equal(4, package.Manifest.GetProperty("format_version").GetInt32());
+    Assert.Equal(4, package.Manifest.GetProperty("format").GetInt32());
 
-    string json = h.Fs.File.ReadAllText(h.LockPath);
-    using JsonDocument document = JsonDocument.Parse(json);
+    using JsonDocument document = YamlJson.Parse(h.Fs.File.ReadAllBytes(h.LockPath));
     Assert.Equal(
-        ["format_version", "platform", "runtime", "packages"],
+        ["format", "platform", "runtime", "packages"],
         document.RootElement.EnumerateObject().Select(p => p.Name));
     Assert.Equal(
         ["manifest", "variant", "explicit", "ref", "commit", "files"],
@@ -54,13 +54,13 @@ public class ToothV4InstallTests {
         "https://example.com/top.mcmod",
         WorkspaceHarness.Mcmod("Top", """ "dependencies": [ { "name": "Other" } ] """));
     h.AddTag("example.com/base", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/base", "1.0.0",
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/base", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/base.mcmod" ] } ] """),
     });
     h.AddTag("example.com/top", "2.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/top", "2.0.0",
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/top", "2.0.0",
           """
-          "dependencies": { "example.com/base": "^1.0.0" },
+          "deps": { "example.com/base": "^1.0.0" },
           "assets": [ { "type": "mcmod", "urls": [ "https://example.com/top.mcmod" ] } ]
           """),
     });
@@ -76,7 +76,7 @@ public class ToothV4InstallTests {
     Assert.True(h.Exists("mods/Base/Base.dll"));
 
     LockFile lockFile = await h.Lock();
-    Assert.Equal(["example.com/base", "example.com/top"], lockFile.Packages.Select(p => p.Tooth));
+    Assert.Equal(["example.com/base", "example.com/top"], lockFile.Packages.Select(p => p.Id));
   }
 
   [Fact]
@@ -86,7 +86,7 @@ public class ToothV4InstallTests {
         "https://example.com/top.mcmod",
         WorkspaceHarness.Zip(new() { ["manifest.json"] = """{ "entry": "x.dll" }""" }));
     h.AddTag("example.com/top", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/top", "1.0.0",
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/top", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/top.mcmod" ] } ] """),
     });
 
@@ -102,12 +102,12 @@ public class ToothV4InstallTests {
     WorkspaceHarness h = new();
     h.AddDownload("https://example.com/x.mcmod", WorkspaceHarness.Mcmod("Same"));
     h.AddDownload("https://example.com/y.mcmod", WorkspaceHarness.Mcmod("same"));
-    foreach ((string tooth, string url) in new[] {
+    foreach ((string id, string url) in new[] {
       ("example.com/x", "https://example.com/x.mcmod"),
       ("example.com/y", "https://example.com/y.mcmod"),
     }) {
-      h.AddTag(tooth, "1.0.0", new() {
-        ["tooth.json"] = WorkspaceHarness.Tooth4(tooth, "1.0.0",
+      h.AddTag(id, "1.0.0", new() {
+        ["lip.yaml"] = WorkspaceHarness.LipYaml(id, "1.0.0",
             $$""" "assets": [ { "type": "mcmod", "urls": [ "{{url}}" ] } ] """),
       });
     }
@@ -118,7 +118,7 @@ public class ToothV4InstallTests {
   }
 
   [Fact]
-  public async Task Install_LegacyTooth_IsReadAsFormat4AndRecordsTheDerivedToothFile() {
+  public async Task Install_ToothJson_IsReadAsPackageFileAndRecordsTheDerivedOne() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/old", "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth("example.com/old", "1.0.0", "plugins/old/old.dll"),
@@ -129,7 +129,7 @@ public class ToothV4InstallTests {
 
     Assert.Equal("old", h.Fs.File.ReadAllText(h.Path("plugins/old/old.dll")));
     LockedPackage package = Assert.Single((await h.Lock()).Packages);
-    Assert.Equal(4, package.Manifest.GetProperty("format_version").GetInt32());
+    Assert.Equal(4, package.Manifest.GetProperty("format").GetInt32());
     JsonElement entry = package.Manifest.GetProperty("variants").GetProperty("")[0];
     Assert.Equal("server", entry.GetProperty("platform").GetString());
     Assert.Equal(WorkspaceHarness.Runtime, entry.GetProperty("runtime").GetString());
@@ -143,7 +143,7 @@ public class ToothV4InstallTests {
   public async Task Install_VersionDiffersFromTag_NoCandidate() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/a", "1.0.1"),
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.1"),
     });
 
     await Assert.ThrowsAsync<InvalidOperationException>(
@@ -151,10 +151,10 @@ public class ToothV4InstallTests {
   }
 
   [Fact]
-  public async Task Install_ToothPathDiffersFromRepository_NoCandidate() {
+  public async Task Install_PackageIdDiffersFromRepository_NoCandidate() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/b", "1.0.0"),
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/b", "1.0.0"),
     });
 
     await Assert.ThrowsAsync<InvalidOperationException>(
@@ -165,13 +165,13 @@ public class ToothV4InstallTests {
   public async Task Update_NewTag_ReplacesPackage() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
       ["a.txt"] = "1",
     });
     await h.Service.Install(["example.com/a"], _options);
     h.AddTag("example.com/a", "1.1.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/a", "1.1.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
       ["a.txt"] = "2",
     });
@@ -187,7 +187,7 @@ public class ToothV4InstallTests {
   public async Task Install_LocalDirectory_RecordsFileUriAndNoCommit() {
     WorkspaceHarness h = new();
     string directory = h.Fs.Path.Combine(h.Root, "src");
-    h.Fs.AddFile(h.Fs.Path.Combine(directory, "tooth.json"), new(WorkspaceHarness.Tooth4(
+    h.Fs.AddFile(h.Fs.Path.Combine(directory, "lip.yaml"), new(WorkspaceHarness.LipYaml(
         "example.com/local", "0.1.0", WorkspaceHarness.SelfAsset("x.txt", "out/x.txt"))));
     h.Fs.AddFile(h.Fs.Path.Combine(directory, "x.txt"), new("x"));
 

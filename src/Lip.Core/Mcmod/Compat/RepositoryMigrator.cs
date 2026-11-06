@@ -1,41 +1,42 @@
 using System.IO.Abstractions;
+using System.Text.Json;
 using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Rewrites the tooth.json of a package repository, of format 1, 2 or 3, as a tooth.json of format
-/// 4 (lip migrate, protocol/cli.md §5.8), by ToothMigrator.
+/// Migrates the tooth.json of a package repository, of format 1, 2 or 3, to a lip.yaml (lip
+/// migrate, protocol/compatibility.md §5), by ToothMigrator.
 ///
-/// - A repository without tooth.json, or whose tooth.json is already of format 4 or cannot be
-///   read (ToothDocument.Parse), is a failure, and nothing is changed.
+/// - When lip.yaml exists, or tooth.json is missing or is not one that protocol/compatibility.md
+///   §2 reads (PackageDocument.ParseToothJson), it is a failure, and nothing is changed.
 /// - Questions are asked through IUserInteraction.Ask before anything is written, and a result
-///   that is not a valid tooth.json of format 4 is a failure.
-/// - tooth.json is written, indented by two spaces, through a temporary file and a rename.
+///   that is not a valid package file is a failure.
+/// - lip.yaml is written atomically, through lip.yaml.tmp, then tooth.json is deleted.
 ///
 /// The notes are ToothMigrator's and those of ToothMigrator.DroppedFields.
 public static class RepositoryMigrator {
   public static async Task<IReadOnlyList<string>> Migrate(
       IFileSystem fs, string directory, IUserInteraction ui) {
-    string toothPath = fs.Path.Join(directory, ToothFormat.ToothFileName);
+    string packageFilePath = fs.Path.Join(directory, PackageFormat.FileName);
+    string toothPath = fs.Path.Join(directory, ToothCompat.ToothFileName);
+    if (fs.File.Exists(packageFilePath) || fs.Directory.Exists(packageFilePath)) {
+      throw new InvalidOperationException(
+          $"{PackageFormat.FileName} already exists in {directory}: there is nothing to migrate.");
+    }
+
     if (!fs.File.Exists(toothPath)) {
       throw new InvalidOperationException(
-          $"There is no {ToothFormat.ToothFileName} in {directory}. Run lip migrate in the root "
+          $"There is no {ToothCompat.ToothFileName} in {directory}. Run lip migrate in the root "
           + "directory of the package repository.");
     }
 
-    ToothDocument document;
+    PackageDocument document;
     try {
-      document = ToothDocument.Parse(await fs.File.ReadAllBytesAsync(toothPath));
+      document = PackageDocument.ParseToothJson(await fs.File.ReadAllBytesAsync(toothPath));
     }
-    catch (ToothFormatException ex) {
+    catch (PackageFormatException ex) {
       throw new InvalidOperationException(
-          $"Cannot read {ToothFormat.ToothFileName}: {ex.Message}", ex);
-    }
-
-    if (!document.IsLegacy) {
-      throw new InvalidOperationException(
-          $"{ToothFormat.ToothFileName} is already of {ToothFormat.FormatVersionKey} "
-          + $"{ToothFormat.FormatVersion}: there is nothing to migrate.");
+          $"Cannot read {ToothCompat.ToothFileName}: {ex.Message}", ex);
     }
 
     ToothMigrator.Result result = await ToothMigrator.Migrate(document.Legacy!, ui);
@@ -45,25 +46,24 @@ public static class RepositoryMigrator {
 
     byte[] bytes = ToothMigrator.Serialize(result.Document);
     try {
-      _ = ToothParser.Parse(bytes);
+      using JsonDocument written = PackageFileParser.ParseYaml(bytes);
+      _ = PackageFileParser.Parse(written.RootElement);
     }
-    catch (ToothFormatException ex) {
+    catch (PackageFormatException ex) {
       throw new InvalidOperationException(
-          $"Cannot migrate {ToothFormat.ToothFileName}: the result is not a valid tooth.json of "
-          + $"format {ToothFormat.FormatVersion}: {ex.Message}", ex);
+          $"Cannot migrate {ToothCompat.ToothFileName}: the result is not a valid "
+          + $"{PackageFormat.FileName}: {ex.Message}", ex);
     }
 
-    // A temporary file of a new name, renamed over tooth.json, leaves it unchanged when writing
-    // fails. It takes the attributes of tooth.json, so a hidden one stays hidden.
-    string tempPath = fs.Path.Join(directory, $".tooth.json.{Guid.NewGuid():N}.tmp");
+    // Written atomically (protocol/README.md): a lip.yaml created meanwhile is not replaced, and
+    // tooth.json is deleted only once lip.yaml is in place.
+    string tempPath = packageFilePath + ".tmp";
     try {
-      using (Stream stream = fs.File.Open(tempPath, FileMode.CreateNew, FileAccess.Write)) {
+      using (Stream stream = fs.File.Open(tempPath, FileMode.Create, FileAccess.Write)) {
         await stream.WriteAsync(bytes);
       }
 
-      fs.File.SetAttributes(
-          tempPath, fs.File.GetAttributes(toothPath) & ~FileAttributes.ReadOnly);
-      fs.File.Move(tempPath, toothPath, overwrite: true);
+      fs.File.Move(tempPath, packageFilePath, overwrite: false);
     }
     finally {
       if (fs.File.Exists(tempPath)) {
@@ -71,6 +71,12 @@ public static class RepositoryMigrator {
       }
     }
 
+    FileAttributes attributes = fs.File.GetAttributes(toothPath);
+    if (attributes.HasFlag(FileAttributes.ReadOnly)) {
+      fs.File.SetAttributes(toothPath, attributes & ~FileAttributes.ReadOnly);
+    }
+
+    fs.File.Delete(toothPath);
     return notes;
   }
 }

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Lip.Core.Entities;
 
-/// The info of a tooth file of format 3; a member is null when the tooth file does not have it.
+/// The info of a tooth.json of format 3; a member is null when the tooth.json does not have it.
 public partial record PackageManifestInfo {
   [JsonPropertyName("name")]
   public string? Name { get; init; }

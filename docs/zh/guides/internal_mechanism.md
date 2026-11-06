@@ -6,11 +6,11 @@
 
 `lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：
 
-1. **工作区文件**：从 `.lip/workspace.json` 加载该工作区的状态。没有该文件的工作区没有已安装的包。
-2. **环境**：确定平台和 RID（参见[环境](../concepts/tooth_json.md#环境)）。
+1. **工作区文件**：从 `.lip/workspace.yaml` 加载该工作区的状态。没有该文件的工作区没有已安装的包，除非它有 lip v0.x 的 `tooth_lock.json`，此时改为读取后者（参见 [lip v0.x 的工作区](../concepts/lockfiles.md#lip-v0-x-的工作区)）。
+2. **环境**：确定平台和 RID（参见[环境](../concepts/lip_yaml.md#环境)）。
 3. **解析器**：把每个来源转换为一个候选序列：它所指向的归档，最新版本在前，每个都带有所请求变体在该环境下的条目。
 4. **依赖图求解器**：为每个请求和每个依赖各选出一个候选，使每个身份只出现一次，且没有两个 mod 的 mod 名称相同。
-5. **规划**：规划按安装顺序的逆序卸载离开集合的包、再按依赖优先的顺序安装进入集合的包，每一步都基于之前各步完成后的工作区。规划会下载所有要写入的归档和资源，并检查一切可能失败的情形：文件所有权、`preserve`、路径、放置规则的 `src`、mod 的 LeviLamina `manifest.json` 中的 mod 名称，以及 `mods` 是否为链接。早期格式的 `tooth.json` 在解析时已被完整地转换为格式 4（参见[早期格式](../concepts/tooth_json.md#早期格式)），因此所有包都由同一个安装器处理，且只按格式 4 的规则处理。
+5. **规划**：规划按安装顺序的逆序卸载离开集合的包、再按依赖优先的顺序安装进入集合的包，每一步都基于之前各步完成后的工作区。规划会下载所有要写入的归档和资源，并检查一切可能失败的情形：文件所有权、`preserve`、路径、放置规则的 `src`、mod 的 LeviLamina `manifest.json` 中的 mod 名称，以及 `mods` 是否为链接。早期格式的 `tooth.json` 在解析时已被完整地转换为包文件（参见[早期格式](../concepts/lip_yaml.md#早期格式)），因此所有包都由同一个安装器处理，且只按 `lip.yaml` 的规则处理。
 6. **执行**：`mods` 不存在时创建它（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的钩子与文件修改。
 7. **工作区文件**：所有步骤成功之后，保存一次工作区文件。
 
@@ -18,47 +18,47 @@
 
 ## 包解析
 
-lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo` 这样的 tooth 路径直接对应 git 仓库 `https://github.com/user/repo.git`，lip 通过内置的 git smart-HTTP 协议（第 2 版）客户端与其通信。**无需安装 `git` 命令行工具**，lip 也从不调用它。
+lip 不使用中心化的包注册表或模块代理。像 `github.com/user/repo` 这样的包 ID 直接对应 git 仓库 `https://github.com/user/repo.git`，lip 通过内置的 git smart-HTTP 协议（第 2 版）客户端与其通信。**无需安装 `git` 命令行工具**，lip 也从不调用它。
 
 - **版本**：lip 通过 `ls-refs` 列出仓库标签（只请求 `refs/tags/v*`）。可用版本即名称恰为 `v<SemVer 2.0.0>` 的标签（例如 `v1.2.3`）；其他标签，包括 `v1.2` 或 `v01.2.3` 这类宽松写法，都会被忽略。附注标签会被解析到其指向的提交。
-- **git 引用**：带 git 引用的 tooth 路径只有一个候选。`@branch:<name>` 和 `@tag:<name>` 通过 `ls-refs` 恰好请求 `refs/heads/<name>` 或 `refs/tags/<name>` 来解析（附注标签会被解析到其提交），每条命令只解析一次；`@rev:<commit>` 无需请求，提交按其 ID 获取。不接受缩写的提交 ID：解析缩写需要仓库的全部历史，而 lip 从不下载全部历史。
-- **惰性候选**：tooth 路径的候选从最新标签开始按需产出，因此 lip 只会打开求解器实际需要的标签。
-- **tooth.json**：读取某个版本的 `tooth.json` 时，lip 只获取该标签提交的树对象（使用 `filter blob:none` 的浅层部分获取，不传输任何文件内容），然后只下载这一个文件。因此无论仓库多大，解析依赖时每个版本只需几 KB 流量。
-- **候选**：只有当某个版本的 `tooth.json` 合法、其 `tooth` 是该仓库的路径、其 `version` 等于标签版本，且所请求的变体有对应工作区平台和 RID 的条目时，该版本才是候选。否则 lip 继续查看下一个版本。
+- **git 引用**：带 git 引用的来源只有一个候选。`@branch:<name>` 和 `@tag:<name>` 通过 `ls-refs` 恰好请求 `refs/heads/<name>` 或 `refs/tags/<name>` 来解析（附注标签会被解析到其提交），每条命令只解析一次；`@rev:<commit>` 无需请求，提交按其 ID 获取。不接受缩写的提交 ID：解析缩写需要仓库的全部历史，而 lip 从不下载全部历史。
+- **惰性候选**：仓库的候选从最新标签开始按需产出，因此 lip 只会打开求解器实际需要的标签。
+- **lip.yaml**：读取某个版本的 `lip.yaml` 时，lip 只获取该标签提交的树对象（使用 `filter blob:none` 的浅层部分获取，不传输任何文件内容），然后只下载这一个文件（没有 `lip.yaml` 时则为 `tooth.json`）。因此无论仓库多大，解析依赖时每个版本只需几 KB 流量。
+- **候选**：只有当某个版本的 `lip.yaml` 合法、其 `id` 是该仓库的路径、其 `version` 等于标签版本，且所请求的变体有对应工作区平台和 RID 的条目时，该版本才是候选。否则 lip 继续查看下一个版本。
 - **安装**：只有安装器需要时才下载文件：`self` 资源从包自身归档中放置的文件，以及 `zip` 和 `mcmod` 资源；后者在包安装时下载，与其他 HTTP 下载相同。
 - **完整性**：每个下载的 git 对象都会按其 git 对象 ID（SHA-1）校验。ZIP 归档和资源会被检查是否为有效的 ZIP 归档；其内容的校验和既不记录也不检查。
-- **缓存**：全局缓存按数据的传输方式命名每个条目。下载的 git 文件存为 `git-<对象 ID>`，相同的文件只下载一次，可在不同版本和不同包之间复用。通过 HTTP(S) 下载的内容一律存为 `http-<URL 的 SHA-256>`；不是有效 ZIP 归档的缓存文件会被重新下载。下载内容先写入缓存目录中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。标签列表和树对象仅在单次命令执行期间缓存在内存中；每次运行都会重新查询标签，因此被移动的标签会立即生效。
+- **缓存**：git 归档不会被缓存：每次只获取操作需要读取的文件。通过 HTTP(S) 下载的内容一律在缓存中存为 `http-<URL 的 SHA-256>`；不是有效 ZIP 归档的缓存文件会被重新下载。下载内容先写入缓存目录中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。标签列表和树对象仅在单次命令执行期间缓存在内存中；每次运行都会重新查询标签，因此被移动的标签会立即生效。
 - **代理**：若配置了 `github_proxy`，对 `github.com` 仓库的请求会先经由该代理发送；若代理请求失败，lip 会直接向 `github.com` 重试。从 `github.com` URL 下载发布资源时遵循同样的规则。
 
-只有当某个版本的标签仍存在于仓库中时，该版本才能被安装。目前只支持可通过 HTTPS 访问的公开仓库。比较 tooth 路径时不区分 ASCII 大小写。
+只有当某个版本的标签仍存在于仓库中时，该版本才能被安装。目前只支持可通过 HTTPS 访问的公开仓库。比较包 ID 时不区分 ASCII 大小写。
 
-git 引用所给的分支、提交或名称不是 `v<SemVer>` 的标签没有标签版本：使用该处 `tooth.json` 的 `version`。版本标签处早期格式的 `tooth.json` 按标签版本安装，而不论其 `version` 写的是什么。
+git 引用所给的分支、提交或名称不是 `v<SemVer>` 的标签没有标签版本：使用该处 `lip.yaml` 的 `version`。版本标签处早期格式的 `tooth.json` 按标签版本安装，而不论其 `version` 写的是什么。
 
 ## 求解
 
 - **固定**：已安装的包按原样进入求解器，从工作区文件重建，无需访问网络。若这样无法满足请求，lip 会只固定显式安装的包重新求解，此时依赖可以改变版本。
-- **优先级**：靠前的候选优先：tooth 路径的最新版本。
+- **优先级**：靠前的候选优先：仓库的最新版本。
 - **顺序**：先安装依赖；依赖成环的包按身份排序。
 - **清理**：不再被任何显式安装的包需要的依赖会被卸载。
 - **同一个包**：只有 lip 解析出的包在身份、版本或提交上不同时，才会替换已安装的包；来自 URL 或本地路径的包没有提交。
-- **按工作区文件重装**：当 lip 再次需要已安装包的文件时，会用工作区文件中记录的 `tooth.json` 安装该包，而不是重新解析该包：对于来自 git 仓库的包，从记录的提交安装；否则从其来源现在指向的归档安装。
+- **按工作区文件重装**：当 lip 再次需要已安装包的文件时，会用工作区文件中记录的包文件安装该包，而不是重新解析该包：对于来自 git 仓库的包，从记录的提交安装；否则从其来源现在指向的归档安装。
 
-## tooth.json 校验
+## 包文件校验
 
-`tooth.json` 由 JSON Schema [`protocol/tooth.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/tooth.schema.json) 描述，工作区文件由 [`protocol/workspace.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.json) 描述。早期格式曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。
+`lip.yaml` 由 JSON Schema [`protocol/lip.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.yaml) 描述，工作区文件由 [`protocol/workspace.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.schema.yaml) 描述，`config.yaml` 由 [`protocol/config.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/protocol/config.schema.yaml) 描述。lip v0.x 的文件曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中以 YAML 编写的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。
 
-- **校验**：除 schema 之外，lip 还检查[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md#3-tooth-files)的要求：合法的 tooth 路径、版本、依赖键和范围、平台和 RID，同一变体中没有两个条目对应相同的平台和 RID，每个条目至多一个 `mcmod` 资源，以及合法的 glob。`tooth.json` 无效的归档不是包，不产出候选，lip 会报告原因。
-- **版本**：`format_version` 为 4 的 `tooth.json` 是当前格式。格式 1 和 2 会在读取时于内存中转换为格式 3，格式 3 再针对环境完整地转换为格式 4（[兼容性协议](https://github.com/LiteLDev/lip/blob/main/protocol/compatibility.md#2-tooth-files-of-formats-1-to-3) §2）；如需把包仓库的 `tooth.json` 改写为格式 4，请在仓库中运行 `lip migrate`。
+- **校验**：除 schema 之外，lip 还检查[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md#3-package-files)的要求：合法的包 ID、版本、依赖键和范围、平台和 RID，同一变体中没有两个条目对应相同的平台和 RID，每个条目至多一个 `mcmod` 资源，以及合法的 glob。`lip.yaml` 无效的归档不是包，不产出候选，lip 会报告原因。
+- **lip v0.x 的文件**：没有 `lip.yaml` 的归档从其格式 1、2 或 3 的 `tooth.json` 读取：格式 1 和 2 会在内存中转换为格式 3，格式 3 再针对环境完整地转换为包文件（[兼容性协议](https://github.com/LiteLDev/lip/blob/main/protocol/compatibility.md#2-toothjson) §2）；如需在包仓库中用 `lip.yaml` 取代 `tooth.json`，请在仓库中运行 `lip migrate`（§5）。`tooth_lock.json` 会被自动迁移为 `.lip/workspace.yaml`（§3），`liprc.json` 会被自动迁移为 `config.yaml`（§4）。
 
 ## 工作区状态
 
-lip 在保存于工作区中 `.lip/workspace.json` 的工作区文件里维护已安装包状态（参见[工作区文件](../concepts/lockfiles.md#位置)），记录：
+lip 在保存于工作区中 `.lip/workspace.yaml` 的工作区文件里维护已安装包状态（参见[工作区文件](../concepts/lockfiles.md#位置)），记录：
 - 用户显式请求的包与隐式依赖；
-- 安装每个包时所用的 `tooth.json`（因而包括其精确版本）、其来源，以及来自 git 仓库的包所在的提交；
+- 安装每个包时所用的包文件（因而包括其精确版本）、其来源，以及来自 git 仓库的包所在的提交；
 - 每个包拥有的文件；
 - 工作区的平台和 RID。
 
-为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：工作区文件先写入 `.lip/workspace.json.new`，再重命名覆盖 `.lip/workspace.json`；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。工作区文件保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
+为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：工作区文件先写入 `.lip/workspace.yaml.tmp`，再重命名覆盖 `.lip/workspace.yaml`；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。工作区文件保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
 
 下面的日志和工作区锁与工作区文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#7-the-lip-directory) 中，其他程序也可以参与。
 

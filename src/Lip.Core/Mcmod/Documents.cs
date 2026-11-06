@@ -8,41 +8,42 @@ public interface IVersionConstraint {
   public bool IsSatisfiedBy(SemVersion version);
 }
 
-/// A tooth file of format 4 (protocol/package.md §3), or the one Section 5 derives from a tooth
-/// file of an earlier format for an environment. Json is the document itself (for format 4) or
-/// the derived document.
-public record ToothFile {
-  public required string Tooth { get; init; }
+/// A package file (protocol/package.md §3), or the one protocol/compatibility.md §2 derives from
+/// a tooth.json for an environment. Json is the package file as read (for lip.yaml) or the
+/// derived one.
+public record PackageFile {
+  /// The package id.
+  public required string Id { get; init; }
 
   public required SemVersion Version { get; init; }
 
   /// The entries of each variant ("" for the default variant), in document order.
-  public required IReadOnlyDictionary<string, IReadOnlyList<ToothEntry>> Variants { get; init; }
+  public required IReadOnlyDictionary<string, IReadOnlyList<PackageEntry>> Variants { get; init; }
 
   public required JsonElement Json { get; init; }
 
   /// The entry of a variant whose platform and runtime are those of the environment
   /// (protocol/package.md §4 step 2), or null. No two entries of one variant have the same
   /// platform and runtime, so there is at most one.
-  public ToothEntry? SelectEntry(string variant, LipEnvironment environment) =>
-      Variants.TryGetValue(variant, out IReadOnlyList<ToothEntry>? entries)
+  public PackageEntry? SelectEntry(string variant, LipEnvironment environment) =>
+      Variants.TryGetValue(variant, out IReadOnlyList<PackageEntry>? entries)
           ? entries.FirstOrDefault(e => e.Contains(environment))
           : null;
 }
 
-/// An entry of a tooth file (tooth.schema.json "entry"). Json is the entry as written, which the
-/// workspace file records (protocol/workspace.md §7.1).
+/// An entry of a package file (lip.schema.yaml, the items of "variants"). Json is the entry as
+/// written, which the workspace file records (protocol/workspace.md §7.1).
 ///
-/// PreserveFiles and RemoveFiles are its "preserve" and "purge". Derived marks an entry that
-/// protocol/package.md §5 derived from a tooth file of format 3 while resolving; it only decides
-/// which dependencies name the variant "" for "client" (ToothDependency.ClientCompat), and is not
-/// recorded.
-public record ToothEntry {
+/// Dependencies, PreserveFiles and RemoveFiles are its "deps", "preserve" and "purge". Derived
+/// marks an entry that protocol/compatibility.md §2 derived from a tooth.json while resolving; it
+/// only decides which dependencies name the variant "" for "client"
+/// (PackageDependency.ClientCompat), and is not recorded.
+public record PackageEntry {
   public required McmodPlatform Platform { get; init; }
 
   public required string Runtime { get; init; }
 
-  public IReadOnlyList<ToothDependency> Dependencies { get; init; } = [];
+  public IReadOnlyList<PackageDependency> Dependencies { get; init; } = [];
 
   public IReadOnlyList<EntryAsset> Assets { get; init; } = [];
 
@@ -74,9 +75,9 @@ public record ToothEntry {
 }
 
 /// A dependency (protocol/package.md §4): the source of the key, and the range of the value.
-public record ToothDependency(Ref Source, VersionRange Range) {
-  /// A dependency of an entry derived from format 3: its variant "client" names the variant ""
-  /// of a package of format 4 (protocol/package.md §5).
+public record PackageDependency(Ref Source, VersionRange Range) {
+  /// A dependency of an entry derived from a tooth.json: its variant "client" names the variant
+  /// "" of a package that has a package file (protocol/compatibility.md §2).
   public bool ClientCompat { get; init; }
 }
 
@@ -86,7 +87,7 @@ public enum AssetType {
   Mcmod,
 }
 
-/// An asset of an entry (tooth.schema.json "asset").
+/// An asset of an entry (lip.schema.yaml, the items of "assets").
 public record EntryAsset(
     AssetType Type,
     IReadOnlyList<string> Urls,
@@ -98,7 +99,7 @@ public enum PlacementForm {
   Glob,
 }
 
-/// A member of the "place" of an asset, whose form Src decides (tooth.schema.json "place").
+/// A member of the "place" of an asset, whose form Src decides (lip.schema.yaml "place").
 public record EntryPlacement(string Src, string Dest) {
   public PlacementForm Form =>
       PathGlob.HasMetacharacters(Src) ? PlacementForm.Glob

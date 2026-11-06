@@ -46,7 +46,7 @@ A package **owns** every file it writes to the workspace by the steps below.
      - File form: the file `src` is written to `dest`; without that file, it is a failure.
      - Directory form: every file below the directory `src` is written into `dest`, at its path relative to `src`; without a file below `src`, it is a failure.
      - Glob form: every file whose path matches the glob `src` is written into `dest`, at its path relative to the leading segments of `src` containing none of `*`, `?` and `[`. A glob matching no file writes nothing.
-     - The tooth file of P is never written.
+     - The package file of P is never written.
    - `"mcmod"`: every file of the archive of the asset is written into the mod directory, at its path in the archive.
 
    When two members of `place` or two assets write the same path, the later one wins.
@@ -85,7 +85,7 @@ Updating an explicitly installed package makes a request of its source again:
 
 The package is replaced only when the package obtained differs in identity, version or commit.
 
-**Reinstalling.** Installing a package again from the workspace file installs it with the tooth file the workspace file records: for a remote repository, from the commit it records; otherwise from the archive its source names now.
+**Reinstalling.** Installing a package again from the workspace file installs it with the package file the workspace file records: for a remote repository, from the commit it records; otherwise from the archive its source names now.
 
 ## 6. Atomicity
 
@@ -99,19 +99,19 @@ An operation succeeds or fails as a whole.
 
 ## 7. The `.lip` Directory
 
-`.lip` holds `workspace.json` (Section 7.1), `workspace.json.new` (Section 7.4), `lock` (Section 7.2) and `journal` (Section 7.3). On Windows it SHOULD have the hidden attribute. Its other entries are not defined here, and an implementation MUST NOT read meaning into them.
+`.lip` holds `workspace.yaml` (Section 7.1), `workspace.yaml.tmp` (Section 7.4), `lock` (Section 7.2) and `journal` (Section 7.3). On Windows it SHOULD have the hidden attribute. Its other entries are not defined here, and an implementation MUST NOT read meaning into them.
 
 Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early (Section 6 rule 1) MAY leave them.
 
 ### 7.1. Workspace File
 
-The **workspace file** is `.lip/workspace.json`, valid against `workspace.schema.json`. A workspace without a workspace file has no installed packages and no recorded environment.
+The **workspace file** is the YAML file `.lip/workspace.yaml`, valid against `workspace.schema.yaml`. A workspace without a workspace file has no installed packages and no recorded environment, unless Section 3 of [COMPATIBILITY] reads one for it.
 
-The workspace file is only written atomically, through `.lip/workspace.json.new` (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
+The workspace file is only written atomically, through `.lip/workspace.yaml.tmp` (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
 
 It records the environment (`platform` and `runtime`), and for each installed package, in installation order:
 
-- its tooth file (`manifest`), of `format_version` 4 (Section 2 of [COMPATIBILITY]);
+- its package file (`manifest`), as Section 4 of [PACKAGE] read it;
 - the variant of its source (`variant`);
 - whether a request named it (`explicit`): such a package is **explicitly installed**; any other is a **dependency package**;
 - its source (`ref`), a local path recorded as the `file:` URI [RFC8089] of its absolute path;
@@ -152,12 +152,12 @@ An operation does, in order:
 1. Take the workspace lock. When another process holds it, it is a failure.
 2. When `.lip/journal` exists, recover (Section 7.5).
 3. Read the workspace file, and decide what the operation does (Sections 3 to 5). A failure here is an early failure (Section 6 rule 1).
-4. When the operation makes no change, write the new workspace file to `.lip/workspace.json.new`, rename it to `.lip/workspace.json`, and go to step 10.
+4. When the operation makes no change, write the new workspace file to `.lip/workspace.yaml.tmp`, rename it to `.lip/workspace.yaml`, and go to step 10.
 5. Create `.lip/journal` with a `"Begin"` record. A journal that already exists is never overwritten.
 6. Make the changes and run the hook commands (Sections 2 and 4), each change after its record. When a step fails or the operation is cancelled, undo the operation (Section 7.5) and fail.
-7. Write the new workspace file to `.lip/workspace.json.new`.
+7. Write the new workspace file to `.lip/workspace.yaml.tmp`.
 8. Append a `"Commit"` record to the journal, and flush it to the operating system.
-9. Rename `.lip/workspace.json.new` to `.lip/workspace.json`, then complete the operation (Section 7.5).
+9. Rename `.lip/workspace.yaml.tmp` to `.lip/workspace.yaml`, then complete the operation (Section 7.5).
 10. Release the workspace lock.
 
 When step 9 fails to rename the file, the implementation MUST replace the journal by one without the `"Commit"` record before it undoes the operation.
@@ -166,7 +166,7 @@ When step 9 fails to rename the file, the implementation MUST replace the journa
 
 **Completing** an operation whose journal has a `"Commit"` record:
 
-1. When `.lip/workspace.json.new` exists, rename it to `.lip/workspace.json`.
+1. When `.lip/workspace.yaml.tmp` exists, rename it to `.lip/workspace.yaml`.
 2. For each `"Backup"` record, delete the file `to` when it exists.
 3. For each `"DeleteDirectoryOnCommit"` record, longest `path` first, delete the directory `path` when it exists, is not a link and is empty.
 4. Delete the journal.
@@ -175,7 +175,7 @@ A file or directory that step 2 or 3 cannot delete is left in place.
 
 **Undoing** an operation whose journal has no `"Commit"` record:
 
-1. Delete `.lip/workspace.json.new` when it exists.
+1. Delete `.lip/workspace.yaml.tmp` when it exists.
 2. Undo each record from the last to the first:
    - `"CreateFile"`: delete the file `path` when it exists, unless an earlier `"Backup"` record of the same `path` exists whose `to` no longer exists.
    - `"Backup"`: when `to` exists, delete `path` when it exists, rename `to` to `path`, and, on Windows, set the hidden attribute of `path` to `hidden`.

@@ -32,22 +32,22 @@ public class ArchiveProviderTests {
   [WinX64Theory]
   [InlineData("github.com/LiteLDev/LeviLamina")]
   [InlineData("github.com/LiteLDev/LegacyMoney")]
-  public async Task ListVersionsOpenVersion_NewestVersion_ReadsToothFile(string spec) {
+  public async Task ListVersionsOpenVersion_NewestVersion_ReadsPackage(string spec) {
     // Arrange
     ArchiveProvider provider = CreateProvider();
 
     // Act
     IReadOnlyList<SpecVersion> versions = await provider.ListVersions(spec);
     ArchiveHandle archive = await provider.OpenVersion(spec, versions[0]);
-    ToothDocument document = await new ArchiveReader().Read(archive);
+    PackageDocument document = await new ArchiveReader().Read(archive);
 
     // Assert
     TestContext.Current.TestOutputHelper?.WriteLine(
-        $"{spec}: {versions.Count} versions, newest {versions[0].Tag}, format {document.FormatVersion}");
+        $"{spec}: {versions.Count} versions, newest {versions[0].Tag}, read from {(document.IsLegacy ? "tooth.json" : "lip.yaml")}");
     Assert.True(versions.Count > 10);
     Assert.Equal($"{spec}@{versions[0].Version}", archive.Key);
     Assert.Matches("^[0-9a-f]{40}$", archive.Commit);
-    Assert.Equal(spec, document.Tooth, ignoreCase: true);
+    Assert.Equal(spec, document.Id, ignoreCase: true);
   }
 
   [WinX64Theory]

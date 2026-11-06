@@ -3,17 +3,17 @@ using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
 
-/// Resolve(source, range, environment) (protocol/package.md §4), reading tooth files of earlier
-/// formats as Section 5 does.
+/// Resolve(source, range, environment) (protocol/package.md §4), reading an archive without a
+/// package file as protocol/compatibility.md §2 does.
 ///
-/// One instance caches archives, version lists and tooth files by archive key, so a source reached
-/// on several paths (or resolved again by the graph solver) is fetched and read once.
+/// One instance caches archives, version lists and package files by archive key, so a source
+/// reached on several paths (or resolved again by the graph solver) is fetched and read once.
 ///
 /// A remote repository with a ref (@branch:, @tag:, @rev:, @version) has the single archive of the
 /// commit it resolves to; only a tag "v" + version gives it a tag version. The git archive must be
-/// a package whose tooth path equals the repository, and, for format 4, whose version equals its
-/// tag version; the version of a tooth file of format 3 is its tag version, whatever it declares
-/// (onWarning is told once per archive).
+/// a package whose package id equals the repository, and, with a package file, whose version
+/// equals its tag version; the version of a package read from a tooth.json is its tag version,
+/// whatever it declares (onWarning is told once per archive).
 public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
@@ -26,7 +26,7 @@ public class Resolver(
   private readonly ConcurrentDictionary<string, Lazy<Task<ArchiveHandle>>> _archives = new();
   private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<SpecVersion>>>>
       _versions = new();
-  private readonly ConcurrentDictionary<string, Lazy<Task<ToothDocument>>> _documents = new();
+  private readonly ConcurrentDictionary<string, Lazy<Task<PackageDocument>>> _documents = new();
 
   /// Commits of refs ("spec@branch:name"), so that a branch resolves to one commit for the whole
   /// operation.
@@ -150,7 +150,7 @@ public class Resolver(
   private async Task<Candidate?> ResolveArchive(
       Walk walk, ArchiveHandle archive, SemVersion? tagVersion) {
     Ref source = walk.Source;
-    ToothDocument document;
+    PackageDocument document;
     try {
       document = await Cached(_documents, archive.Key, () => _archiveReader.Read(archive));
     }
@@ -160,10 +160,11 @@ public class Resolver(
     }
 
     // protocol/package.md §2.1: the git archive of a remote repository is a package of its own
-    // tooth path, whose version is the tag version, if any.
-    if (source.Kind == RefKind.Spec && !PackageNames.AreEqual(document.Tooth, source.Target)) {
+    // package id, whose version is the tag version, if any.
+    string fileName = document.IsLegacy ? Compat.ToothCompat.ToothFileName : PackageFormat.FileName;
+    if (source.Kind == RefKind.Spec && !PackageNames.AreEqual(document.Id, source.Target)) {
       walk.Report(archive.Key,
-          $"its tooth.json declares the tooth path {document.Tooth}, not {source.Target}");
+          $"its {fileName} declares the package id {document.Id}, not {source.Target}");
       return null;
     }
 
@@ -171,11 +172,12 @@ public class Resolver(
     if (tagVersion is not null && !version.Equals(tagVersion)) {
       if (!document.IsLegacy) {
         walk.Report(archive.Key,
-            $"its tooth.json declares the version {version}, not the tag version {tagVersion}");
+            $"its {fileName} declares the version {version}, not the tag version {tagVersion}");
         return null;
       }
 
-      // protocol/package.md §5: the version of a format 3 package is its tag version.
+      // protocol/compatibility.md §2: the version of a package read from a tooth.json is its tag
+      // version.
       if (SemVersion.PrecedenceComparer.Compare(version, tagVersion) != 0
           && _warned.TryAdd(archive.Key, 0)) {
         _onWarning($"{archive.Key}: tooth.json declares version {version}; "
@@ -185,25 +187,25 @@ public class Resolver(
       version = tagVersion;
     }
 
-    ToothFile tooth;
+    PackageFile packageFile;
     try {
-      tooth = document.ReadFor(walk.Environment, version);
+      packageFile = document.ReadFor(walk.Environment, version);
     }
-    catch (ToothFormatException ex) {
+    catch (PackageFormatException ex) {
       walk.Report(archive.Key, ex.Message);
       return null;
     }
 
-    // protocol/package.md §5: a dependency of format 3 on the variant "client" of a package of
-    // format 4 names its variant "".
+    // protocol/compatibility.md §2: a dependency of a tooth.json on the variant "client" of a
+    // package that has a package file names its variant "".
     string variant = source.Variant;
     if (walk.ClientCompat && variant == Compat.ToothCompat.ClientLabel && !document.IsLegacy) {
       variant = "";
     }
 
-    ToothEntry? entry = tooth.SelectEntry(variant, walk.Environment);
+    PackageEntry? entry = packageFile.SelectEntry(variant, walk.Environment);
     if (entry is null) {
-      walk.Report(archive.Key, $"tooth.json has no entry of the variant \"{variant}\" for "
+      walk.Report(archive.Key, $"{fileName} has no entry of the variant \"{variant}\" for "
           + $"({walk.Environment.Platform.ToSpecString()}, {walk.Environment.Runtime})");
       return null;
     }
@@ -214,7 +216,7 @@ public class Resolver(
     }
 
     return Candidate.Create(
-        new Package(tooth.Tooth, variant, version, entry) { Manifest = tooth.Json },
+        new Package(packageFile.Id, variant, version, entry) { Manifest = packageFile.Json },
         archive,
         source,
         _archiveProvider);

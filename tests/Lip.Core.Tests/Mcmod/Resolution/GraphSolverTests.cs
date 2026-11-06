@@ -73,26 +73,26 @@ public class GraphSolverTests {
   public async Task Solve_DependencyOfLegacyEntry_IsResolvedWithClientCompat() {
     // Arrange
     FakeResolver resolver = new();
-    resolver.Add(Package("github.com/legacy/tooth", "1.0.0", legacy: true,
+    resolver.Add(Package("github.com/legacy/pkg", "1.0.0", legacy: true,
         dependencies: [Dependency("github.com/new/lib#client", compat: true)]));
     resolver.Add(Package("github.com/new/lib", "4.0.0", source: "github.com/new/lib#client"));
     GraphSolver solver = new(resolver);
 
     // Act
     IReadOnlyList<Candidate> result = (await solver.SolveGraph(
-        [Request("github.com/legacy/tooth")], [], s_environment)).Order;
+        [Request("github.com/legacy/pkg")], [], s_environment)).Order;
 
     // Assert
-    Assert.Equal(["github.com/new/lib@4.0.0", "github.com/legacy/tooth@1.0.0"], Names(result));
+    Assert.Equal(["github.com/new/lib@4.0.0", "github.com/legacy/pkg@1.0.0"], Names(result));
     Assert.Contains(resolver.Calls, c => c.Ref == "github.com/new/lib#client" && c.Compat);
-    Assert.Contains(resolver.Calls, c => c.Ref == "github.com/legacy/tooth" && !c.Compat);
+    Assert.Contains(resolver.Calls, c => c.Ref == "github.com/legacy/pkg" && !c.Compat);
   }
 
   // Identities (protocol/package.md §4, protocol/workspace.md §3 rule 3)
 
   [Fact]
   public async Task Solve_DefaultVariantDependsOnItsVariants_SolvesThreeIdentities() {
-    // Arrange: the variants of one tooth file have the identities tooth and tooth#variant.
+    // Arrange: the variants of one package file have the identities id and id#variant.
     FakeResolver resolver = new();
     resolver.Add(Package("github.com/t/t", "1.0.0",
         dependencies: [Dependency("github.com/t/t#b"), Dependency("github.com/t/t#a")]));
@@ -136,11 +136,11 @@ public class GraphSolverTests {
   [Theory]
   [InlineData("github.com/x/x")]
   [InlineData("github.com/X/x")]
-  public async Task Solve_TwoSourcesOfSameIdentity_Fails(string otherTooth) {
-    // Arrange: a URL whose tooth file names the tooth path of a remote repository.
+  public async Task Solve_TwoSourcesOfSameIdentity_Fails(string otherId) {
+    // Arrange: a URL whose package file names the package id of a remote repository.
     FakeResolver resolver = new();
     resolver.AddVersions("github.com/x/x", ["1.0.0"]);
-    resolver.Add(Package(otherTooth, "1.0.0", source: "https://example.com/x.zip"));
+    resolver.Add(Package(otherId, "1.0.0", source: "https://example.com/x.zip"));
     GraphSolver solver = new(resolver);
 
     // Act
@@ -149,7 +149,7 @@ public class GraphSolverTests {
             [Request("github.com/x/x"), Request("https://example.com/x.zip")], [], s_environment));
 
     // Assert
-    Assert.Contains($"{otherTooth}@1.0.0 (from https://example.com/x.zip@1.0.0) has the same "
+    Assert.Contains($"{otherId}@1.0.0 (from https://example.com/x.zip@1.0.0) has the same "
         + "identity as github.com/x/x@1.0.0 (from github.com/x/x@1.0.0)", exception.Message);
   }
 
@@ -513,8 +513,9 @@ public class GraphSolverTests {
 
   [Fact]
   public async Task Solve_InstalledPackageOfRef_StandsInForClientCompatDependency() {
-    // Arrange: a format 3 dependency on t#client names the variant "" of the format 4 package
-    // t (protocol/package.md §5), so the installed t from a branch stands in for it.
+    // Arrange: a tooth.json dependency on t#client names the variant "" of the package t, which
+    // has a package file (protocol/compatibility.md §2), so the installed t from a branch
+    // stands in for it.
     FakeResolver resolver = new();
     resolver.Add(Package("github.com/t/t", "1.0.0", source: "github.com/t/t#client"));
     resolver.Add(Package("github.com/r/r", "1.0.0", legacy: true,
@@ -578,7 +579,7 @@ public class GraphSolverTests {
     for (int i = 0; i < 50; i++) {
       string spec = $"github.com/p/p{i}";
       for (int v = 99; v >= 0; v--) {
-        List<ToothDependency> dependencies = [];
+        List<PackageDependency> dependencies = [];
         for (int j = i + 1; j <= Math.Min(i + 2, 49); j++) {
           dependencies.Add(Dependency($"github.com/p/p{j}", "<90.0.0"));
         }
@@ -610,7 +611,7 @@ public class GraphSolverTests {
     for (int i = 0; i < 50; i++) {
       string spec = $"github.com/p/p{i}";
       for (int v = 99; v >= 0; v--) {
-        ToothDependency dependency = Dependency(
+        PackageDependency dependency = Dependency(
             i == 49 ? "github.com/missing/missing" : $"github.com/p/p{i + 1}");
         resolver.Add(Package(spec, $"{v}.0.0", dependencies: [dependency]));
       }
@@ -728,22 +729,22 @@ public class GraphSolverTests {
   private static PackageRequest Request(string source) =>
       new(Ref.Parse(source, allowFile: false), null);
 
-  private static ToothDependency Dependency(
+  private static PackageDependency Dependency(
       string source, string range = "*", bool compat = false) =>
       new(Ref.Parse(source, allowFile: false), VersionRange.Parse(range)) { ClientCompat = compat };
 
   private static Candidate Package(
-      string tooth,
+      string id,
       string version,
       string? source = null,
       string variant = "",
-      IReadOnlyList<ToothDependency>? dependencies = null,
+      IReadOnlyList<PackageDependency>? dependencies = null,
       string? mod = null,
       byte[]? mcmod = null,
       bool legacy = false,
       bool unavailable = false,
       List<string>? downloads = null) =>
-      TestCandidates.Make(tooth, version, source, variant, dependencies,
+      TestCandidates.Make(id, version, source, variant, dependencies,
           mod is null ? mcmod : WorkspaceHarness.Mcmod(mod), legacy, unavailable, downloads);
 
   private sealed record ResolveCall(string Ref, string? Range, bool Compat);
@@ -804,26 +805,26 @@ internal static class TestCandidates {
   private static readonly Lip.Core.Sources.ISource s_archiveSource =
       Mock.Of<Lip.Core.Sources.ISource>(MockBehavior.Strict);
 
-  /// A candidate of the package tooth[#variant]@version resolved for source (by default the
-  /// tooth path with the variant), in the git archive of a commit named after its source and
+  /// A candidate of the package id[#variant]@version resolved for source (by default the
+  /// package id with the variant), in the git archive of a commit named after its source and
   /// version. With mcmod, the package is a mod whose asset of type "mcmod" has those bytes; it
   /// is downloaded (recorded in downloads) when first opened, or fails to be when unavailable.
   public static Candidate Make(
-      string tooth,
+      string id,
       string version,
       string? source = null,
       string variant = "",
-      IReadOnlyList<ToothDependency>? dependencies = null,
+      IReadOnlyList<PackageDependency>? dependencies = null,
       byte[]? mcmod = null,
       bool legacy = false,
       bool unavailable = false,
       List<string>? downloads = null) {
     Ref reference = Ref.Parse(
-        source ?? (variant == "" ? tooth : $"{tooth}#{variant}"), allowFile: false);
+        source ?? (variant == "" ? id : $"{id}#{variant}"), allowFile: false);
     string key = $"{reference}@{version}";
-    string url = $"https://example.com/{tooth}/{version}.mcmod";
+    string url = $"https://example.com/{id}/{version}.mcmod";
     List<EntryAsset> assets = mcmod is null ? [] : [new EntryAsset(AssetType.Mcmod, [url], [])];
-    ToothEntry entry = new() {
+    PackageEntry entry = new() {
       Platform = Environment.Platform,
       Runtime = Environment.Runtime,
       Dependencies = dependencies ?? [],
@@ -832,8 +833,8 @@ internal static class TestCandidates {
       Json = s_emptyEntry,
     };
 
-    Package package = new(tooth, variant, SemVersion.Parse(version), entry) {
-      Manifest = Manifest(tooth, version, variant, entry),
+    Package package = new(id, variant, SemVersion.Parse(version), entry) {
+      Manifest = Manifest(id, version, variant, entry),
     };
     if (mcmod is null) {
       return Candidate.Create(
@@ -860,13 +861,12 @@ internal static class TestCandidates {
         provider.Object);
   }
 
-  /// The tooth file of format 4 of a package with just one entry.
+  /// The package file of a package with just one entry.
   public static JsonElement Manifest(
-      string tooth, string version, string variant, ToothEntry entry) =>
+      string id, string version, string variant, PackageEntry entry) =>
       JsonSerializer.SerializeToElement(new JsonObject {
-        [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
-        ["format_uuid"] = ToothFormat.FormatUuid,
-        ["tooth"] = tooth,
+        [PackageFormat.FormatKey] = PackageFormat.Format,
+        ["id"] = id,
         ["version"] = version,
         ["variants"] = new JsonObject {
           [variant] = new JsonArray(JsonNode.Parse(entry.Json.GetRawText())),

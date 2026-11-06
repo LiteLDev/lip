@@ -4,11 +4,11 @@ The lip protocol is normative and consists of:
 
 | Document | Defines |
 |---|---|
-| [PACKAGE] | Packages, sources and resolution; `tooth.json` by [`tooth.schema.json`](tooth.schema.json). |
-| [WORKSPACE] | Workspaces and operations on them; the workspace file by [`workspace.schema.json`](workspace.schema.json). |
-| [USERSPACE] | Per-user configuration and cache; the configuration file by [`config.schema.json`](config.schema.json). |
+| [PACKAGE] | Packages, sources and resolution; the package file by [`lip.schema.yaml`](lip.schema.yaml). |
+| [WORKSPACE] | Workspaces and operations on them; the workspace file by [`workspace.schema.yaml`](workspace.schema.yaml). |
+| [USERSPACE] | Per-user configuration and cache; the configuration file by [`config.schema.yaml`](config.schema.yaml). |
 | [CLI] | The command line interface of `lip`. |
-| [COMPATIBILITY] | The `tooth.json` formats 1 to 3, and the packages that `lip` MUST install. |
+| [COMPATIBILITY] | Reading and migrating the files of formats 1 to 3, and the packages that `lip` MUST install. |
 
 ## Conventions
 
@@ -16,7 +16,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 A term is defined where it appears in bold, and has that meaning in every document that does not say otherwise.
 
-A file is **written atomically** by writing its whole content to another file in the same directory, then renaming that file to its name.
+A **YAML file** is a [YAML] stream of one document, read with the YAML core schema as the JSON [RFC8259] value it represents. The schemas (`*.schema.yaml`) are JSON Schemas (draft-07) written as YAML files, and constrain that value.
+
+A file is **written atomically** by writing its whole content to another file in the same directory, whose name ends in `.tmp`, then renaming that file to its name.
 
 "Section N" refers to the same document; "Section N of [X]" to document X. "Not defined here" means not defined by the document that says it.
 

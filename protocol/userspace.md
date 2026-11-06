@@ -13,11 +13,11 @@ Besides these directories, `lip` writes only to the workspace it operates on and
 
 ## 2. Configuration
 
-The **configuration** is `config.yaml` in the config directory: a [YAML] mapping of configuration keys to values, valid against `config.schema.json`. Absent keys take their default; keys that are not configuration keys are ignored. If the file is missing or unreadable, every key takes its default.
+The **configuration** is the YAML file `config.yaml` in the config directory, valid against `config.schema.yaml`: `format` and a mapping of configuration keys to values. Absent keys take their default; keys that are not configuration keys are ignored. If the file is missing, unreadable or invalid, every key takes its default, unless Section 4 of [COMPATIBILITY] reads a configuration instead.
 
 The only **configuration key** is `github_proxy`: a URI prefix, default none, through which `lip` sends network requests to GitHub (git repositories and downloads); a request that fails through it is sent to GitHub directly.
 
-`lip config set` and `lip config delete` write the file atomically, leaving out keys at their default.
+`lip config set` and `lip config delete` write the file atomically, with `format` and without the keys at their default.
 
 ## 3. Cache
 
@@ -27,7 +27,7 @@ Entries.
 
 | Entry | Content |
 |---|---|
-| `http-<H>` | A regular file: the body of a successful response to an HTTPS GET of URL U, following redirects. `<H>` is the lowercase hexadecimal SHA-256 of U in UTF-8; U is the URL as a source or tooth file writes it, without its fragment, whatever proxy was used. |
+| `http-<H>` | A regular file: the body of a successful response to an HTTPS GET of URL U, following redirects. `<H>` is the lowercase hexadecimal SHA-256 of U in UTF-8; U is the URL as a source or package file writes it, without its fragment, whatever proxy was used. |
 | `<N>.tmp` | A file being written; `<N>` is any name. |
 
 Any other entry is not defined here; a process MUST NOT read meaning into it.

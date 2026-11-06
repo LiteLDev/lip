@@ -14,3 +14,21 @@ public interface IUserInteraction {
   /// cannot be asked (e.g. standard input is not a terminal).
   Task<string> Ask(string question);
 }
+
+public static class UserInteractionExtensions {
+  /// Asks until the answer is valid (validate returns null) and returns the trimmed answer.
+  /// Throws CannotAskException when the user cannot be asked.
+  public static async Task<string> AskValid(
+      this IUserInteraction ui, string question, Func<string, string?> validate) {
+    while (true) {
+      // A user interaction that returns no answer cannot ask.
+      string answer = (await ui.Ask(question))?.Trim()
+          ?? throw new CannotAskException($"lip needs {question}, but cannot ask for it here.");
+      if (validate(answer) is not string error) {
+        return answer;
+      }
+
+      await ui.PrintWarning($"Invalid answer: {error}");
+    }
+  }
+}

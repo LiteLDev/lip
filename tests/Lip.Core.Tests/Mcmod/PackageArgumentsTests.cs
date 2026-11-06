@@ -130,7 +130,7 @@ public class PackageArgumentsTests {
   public void Parse_Directory_ReturnsFileRefOfTheDirectory(
       string argument, string directory, string variant) {
     // Arrange
-    _ws.AddFile("pkg/tooth.json", "{}");
+    _ws.AddFile("pkg/lip.yaml", "{}");
 
     // Act
     PackageRequest request = Parse(argument);

@@ -69,7 +69,7 @@ app.Configure(config => {
   });
 
   config.AddCommand<InitCommand>("init")
-      .WithDescription("Creates a tooth.json for a new package");
+      .WithDescription("Creates a lip.yaml for a new package");
 
   config.AddCommand<InstallCommand>("install")
       .WithDescription("Installs packages");
@@ -78,7 +78,7 @@ app.Configure(config => {
       .WithDescription("Lists installed packages");
 
   config.AddCommand<MigrateCommand>("migrate")
-      .WithDescription("Migrates the tooth.json in the current directory to format 4");
+      .WithDescription("Migrates the tooth.json in the current directory to lip.yaml");
 
   config.AddCommand<PackCommand>("pack")
       .WithDescription("Packs a directory into a ZIP archive");

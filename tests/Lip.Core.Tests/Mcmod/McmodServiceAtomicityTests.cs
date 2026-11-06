@@ -47,12 +47,12 @@ public class McmodServiceAtomicityTests {
       string entry,
       Dictionary<string, string>? files = null) {
     Dictionary<string, string> content = new(files ?? []) {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(Tooth(name), version, entry),
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(Id(name), version, entry),
     };
     _ws.AddZip(file, content);
   }
 
-  private static string Tooth(string name) => $"example.com/{name.ToLowerInvariant()}";
+  private static string Id(string name) => $"example.com/{name.ToLowerInvariant()}";
 
   private void FailCommand(string command) =>
       _ws.CommandRunner.Setup(r => r.Run(command, It.IsAny<string>()))
@@ -288,7 +288,7 @@ public class McmodServiceAtomicityTests {
 
     // Act
     McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
-        () => _ws.Service.Uninstall([Tooth("A"), Tooth("B")], _options));
+        () => _ws.Service.Uninstall([Id("A"), Id("B")], _options));
 
     // Assert
     Assert.Contains("cannot delete", ex.Message);
@@ -323,7 +323,7 @@ public class McmodServiceAtomicityTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(() => _ws.Service.Uninstall(
-        [Tooth("A"), Tooth("B")], _options with { NoDependencies = true }));
+        [Id("A"), Id("B")], _options with { NoDependencies = true }));
     Assert.Equal(before, WorkspaceSnapshot());
   }
 
@@ -379,7 +379,7 @@ public class McmodServiceAtomicityTests {
 
     // Assert
     Assert.Equal(before, _ws.Snapshot());
-    Assert.Equal(Tooth("Base"), Assert.Single((await _ws.Lock()).Packages).Identity);
+    Assert.Equal(Id("Base"), Assert.Single((await _ws.Lock()).Packages).Identity);
     _ws.Ui.Verify(u => u.PrintWarning(It.Is<string>(
         s => s.Contains("was interrupted") && s.Contains("undid its 7 changes"))));
   }
@@ -402,7 +402,7 @@ public class McmodServiceAtomicityTests {
 
     // Act
     await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Uninstall([Tooth("Base")], _options));
+        () => _ws.Service.Uninstall([Id("Base")], _options));
 
     // Assert: the uninstall is complete, so Base is no longer installed.
     Assert.Empty((await _ws.Lock()).Packages);
@@ -424,7 +424,7 @@ public class McmodServiceAtomicityTests {
     SortedDictionary<string, string> before = _ws.Snapshot();
 
     // Act
-    await _ws.Service.Uninstall([Tooth("Base")], _options with { DryRun = true });
+    await _ws.Service.Uninstall([Id("Base")], _options with { DryRun = true });
 
     // Assert
     Assert.Equal(before, _ws.Snapshot());

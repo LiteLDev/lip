@@ -1,80 +1,74 @@
 using System.Text.Json;
 using Lip.Core.Entities;
 using Lip.Core.Mcmod.Compat;
-using Lip.Core.Migration.PackageManifests;
 using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// The tooth file of a package (protocol/package.md §1): of format 4 (File), or of format 1, 2 or
-/// 3 read as format 3 (Legacy). Json is the file as written.
-public record ToothDocument(int FormatVersion, ToothFile? File, PackageManifest? Legacy, JsonElement Json) {
-  /// The tooth path.
-  public string Tooth => File?.Tooth ?? Legacy!.Path;
+/// What makes an archive a package (protocol/package.md §1): its package file (File), or, for an
+/// archive without one, its tooth.json of format 1, 2 or 3 read as format 3 (Legacy,
+/// protocol/compatibility.md §2). Json is the file as written.
+public record PackageDocument(PackageFile? File, PackageManifest? Legacy, JsonElement Json) {
+  /// The package id.
+  public string Id => File?.Id ?? Legacy!.Path;
 
-  /// The version the tooth file declares.
+  /// The version the file declares.
   public SemVersion Version => File?.Version ?? Legacy!.Version;
 
+  /// Whether the package is read from a tooth.json.
   public bool IsLegacy => File is null;
 
-  /// The tooth file of format 4 the tooth file is read as for an environment (protocol/package.md
-  /// §5), with version, when given, as the version of a tooth file of an earlier format (its tag
-  /// version). Throws ToothFormatException when a tooth file of format 3 cannot be read so.
-  public ToothFile ReadFor(LipEnvironment environment, SemVersion? version = null) =>
+  /// The package file the package is read as for an environment: its own, or the one
+  /// protocol/compatibility.md §2 derives from its tooth.json, with version, when given, as the
+  /// version of the package (its tag version). Throws PackageFormatException when a tooth.json
+  /// cannot be read so.
+  public PackageFile ReadFor(LipEnvironment environment, SemVersion? version = null) =>
       File ?? ToothCompat.Derive(Legacy!, environment, version);
 
-  /// Reads a tooth file. Throws ToothFormatException when it is not the tooth file of a package.
-  public static ToothDocument Parse(byte[] utf8Json) {
-    using JsonDocument json = ToothParser.ParseJson(utf8Json);
-    JsonElement root = json.RootElement;
-    int? formatVersion = ToothParser.FormatVersion(root);
-    switch (formatVersion) {
-      case ToothFormat.FormatVersion:
-        return new ToothDocument(formatVersion.Value, ToothParser.Parse(root), null, root.Clone());
-      case 1 or 2 or 3:
-        PackageManifest legacy;
-        try {
-          legacy = PackageManifestMigration.Migrate(json);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException) {
-          // The migration and the format 3 model throw many kinds of exceptions on bad input.
-          throw new ToothFormatException(
-              $"Invalid tooth.json of format {formatVersion}: {ex.Message}", ex);
-        }
+  /// Reads lip.yaml. Throws PackageFormatException when it is not a valid package file.
+  public static PackageDocument ParsePackageFile(byte[] yaml) {
+    using JsonDocument json = PackageFileParser.ParseYaml(yaml);
+    return new PackageDocument(
+        PackageFileParser.Parse(json.RootElement), null, json.RootElement.Clone());
+  }
 
-        return new ToothDocument(formatVersion.Value, null, legacy, root.Clone());
-      default:
-        throw new ToothFormatException(
-            $"Invalid tooth.json: {ToothFormat.FormatVersionKey} must be 1, 2, 3 or "
-            + $"{ToothFormat.FormatVersion}.");
-    }
+  /// Reads a tooth.json (protocol/compatibility.md §2). Throws PackageFormatException when it is
+  /// not a JSON object with format_version 1, 2 or 3 that reads as format 3.
+  public static PackageDocument ParseToothJson(byte[] utf8Json) {
+    using JsonDocument json = PackageFileParser.ParseJson(utf8Json, ToothCompat.ToothFileName);
+    return new PackageDocument(
+        null, ToothCompat.ReadToothJson(json.RootElement), json.RootElement.Clone());
   }
 }
 
-/// Reads the tooth file at the root of an archive (protocol/package.md §1).
+/// Reads the file that makes an archive a package (protocol/package.md §1): lip.yaml at its root,
+/// or, when there is none, tooth.json (protocol/compatibility.md §2).
 public interface IArchiveReader {
-  /// Throws ArchiveUnavailableException when the archive has no tooth file or it is not valid,
-  /// i.e. when the archive is not a package.
-  public Task<ToothDocument> Read(ArchiveHandle archive);
+  /// Throws ArchiveUnavailableException when the archive is not a package: it has neither file,
+  /// or the file it is read from is not valid.
+  public Task<PackageDocument> Read(ArchiveHandle archive);
 }
 
 public class ArchiveReader : IArchiveReader {
-  public async Task<ToothDocument> Read(ArchiveHandle archive) {
-    if (!archive.Source.Keys.Contains(ToothFormat.ToothFileName)) {
-      throw new ArchiveUnavailableException(
-          $"{archive.Key} has no {ToothFormat.ToothFileName}.");
+  public async Task<PackageDocument> Read(ArchiveHandle archive) {
+    bool hasPackageFile = archive.Source.Keys.Contains(PackageFormat.FileName);
+    string fileName = hasPackageFile ? PackageFormat.FileName : ToothCompat.ToothFileName;
+    if (!hasPackageFile && !archive.Source.Keys.Contains(ToothCompat.ToothFileName)) {
+      throw new ArchiveUnavailableException($"{archive.Key} has no {PackageFormat.FileName}.");
     }
 
     try {
-      using Stream stream = await archive.Source.OpenRead(ToothFormat.ToothFileName);
+      using Stream stream = await archive.Source.OpenRead(fileName);
       using MemoryStream memory = new();
       await stream.CopyToAsync(memory);
-      return ToothDocument.Parse(memory.ToArray());
+      return hasPackageFile
+          ? PackageDocument.ParsePackageFile(memory.ToArray())
+          : PackageDocument.ParseToothJson(memory.ToArray());
     }
     catch (Exception ex) when (ex is not ArchiveUnavailableException
         and not OperationCanceledException) {
       throw new ArchiveUnavailableException(
-          $"Invalid {ToothFormat.ToothFileName} in {archive.Key}: {ex.Message}", ex);
+          $"Invalid {fileName} in {archive.Key}: {ex.Message}", ex);
     }
   }
 }

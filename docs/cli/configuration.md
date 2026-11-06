@@ -9,11 +9,14 @@ lip stores its configuration in `config.yaml`.
 | Windows | `%APPDATA%\lip\config.yaml` |
 | Linux / macOS | `$XDG_CONFIG_HOME/lip/config.yaml` (typically `~/.config/lip/config.yaml`) |
 
-The file is a YAML mapping of the keys below to their values; a key that is not in the file has its default value. lip creates the file when you first set a value with [`lip config set`](commands/config.md):
+The file is a YAML mapping of `format: 4` and the keys below to their values, described by the JSON Schema [`config.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/protocol/config.schema.yaml); a key that is not in the file has its default value. lip creates the file when you first set a value with [`lip config set`](commands/config.md):
 
 ```yaml
+format: 4
 github_proxy: https://proxy.example.com
 ```
+
+A `liprc.json` of lip v0.x in the same directory, when there is no `config.yaml`, is converted to `config.yaml` automatically, and then deleted.
 
 ## Keys
 

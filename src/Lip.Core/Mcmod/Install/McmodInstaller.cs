@@ -5,6 +5,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Lock;
 using Lip.Core.Sources;
 
@@ -50,7 +51,7 @@ public partial class McmodInstaller(
   public async Task<PackagePlan> PlanInstall(
       Candidate candidate, InstallContext context, WorkspaceView view) {
     Package package = candidate.Package;
-    ToothEntry entry = package.Entry;
+    PackageEntry entry = package.Entry;
     string name = package.Identity;
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
 
@@ -109,7 +110,7 @@ public partial class McmodInstaller(
   /// planned deletions to the view. A dry run reports the plan.
   public async Task<PackagePlan> PlanUninstall(
       LockedPackage package, InstallContext context, WorkspaceView view) {
-    ToothEntry entry = LockedEntry(package, context.Environment);
+    PackageEntry entry = LockedEntry(package, context.Environment);
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
 
     // The paths to delete are those of the workspace before pre_uninstall runs.
@@ -249,21 +250,21 @@ public partial class McmodInstaller(
   }
 
   /// The entry of an installed package (protocol/workspace.md §7.1): the entry of its variant in
-  /// its recorded tooth file for the environment.
-  public static ToothEntry LockedEntry(LockedPackage package, LipEnvironment environment) {
-    ToothFile manifest;
+  /// its recorded package file for the environment.
+  public static PackageEntry LockedEntry(LockedPackage package, LipEnvironment environment) {
+    PackageFile manifest;
     try {
-      manifest = ToothParser.Parse(package.Manifest);
+      manifest = PackageFileParser.Parse(package.Manifest);
     }
     catch (FormatException ex) {
       throw new McmodInstallException(
-          $"{package.Identity}: the tooth file recorded in the workspace file is invalid: "
+          $"{package.Identity}: the package file recorded in the workspace file is invalid: "
           + ex.Message, ex);
     }
 
     return manifest.SelectEntry(package.Variant, environment)
         ?? throw new McmodInstallException(
-            $"{package.Identity}: the tooth file recorded in the workspace file has no entry of the"
+            $"{package.Identity}: the package file recorded in the workspace file has no entry of the"
             + $" variant \"{package.Variant}\" for ({environment.Platform.ToSpecString()}, "
             + $"{environment.Runtime}).");
   }
@@ -280,7 +281,7 @@ public partial class McmodInstaller(
       WorkspaceView view) {
     Package package = candidate.Package;
     string name = package.Identity;
-    ToothEntry entry = package.Entry;
+    PackageEntry entry = package.Entry;
     ModManifest? modManifest = await candidate.GetModManifest();
     string? modDirectory = modManifest is null
         ? null
@@ -321,10 +322,17 @@ public partial class McmodInstaller(
       List<(string Path, string Key)> files = [
         .. keys
             .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(k => (k[prefix.Length..], k))
-            // The tooth file of the package is never written.
-            .Where(f => asset.Type != AssetType.Self || f.Item1 != ToothFormat.ToothFileName),
+            .Select(k => (k[prefix.Length..], k)),
       ];
+
+      // The package file of the package is never written (protocol/workspace.md §4 step 2): its
+      // lip.yaml, or, for an archive without one, the tooth.json it is read from.
+      if (asset.Type == AssetType.Self) {
+        string packageFile = files.Any(f => f.Path == PackageFormat.FileName)
+            ? PackageFormat.FileName
+            : ToothCompat.ToothFileName;
+        files.RemoveAll(f => f.Path == packageFile);
+      }
 
       if (asset.Type == AssetType.Mcmod) {
         foreach ((string path, string key) in files) {
@@ -548,7 +556,7 @@ public partial class McmodInstaller(
   private static string NormalizeRelative(string path) =>
       string.Join('/', path.Replace('\\', '/').Split('/').Where(s => s != "."));
 
-  /// A non-empty '/'-separated relative path as tooth.schema.json #/definitions/path allows it:
+  /// A non-empty '/'-separated relative path as lip.schema.yaml #/definitions/path allows it:
   /// without empty or ".." segments, backslashes, or a leading ASCII letter and ':'.
   private static bool IsSafeRelativePath(string path) =>
       path != ""

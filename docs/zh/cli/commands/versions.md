@@ -2,7 +2,7 @@
 
 显示某个包的可用版本。
 
-版本来自包仓库（`https://<tooth 路径>.git`）的 git 标签。只有名称恰为 `v<SemVer 2.0.0>`（例如 `v1.2.3`）的标签才是版本；`v1.2` 这样的标签会被忽略。版本从低到高列出，不带前导 `v`。
+版本来自包仓库（`https://<包 ID>.git`）的 git 标签。只有名称恰为 `v<SemVer 2.0.0>`（例如 `v1.2.3`）的标签才是版本；`v1.2` 这样的标签会被忽略。版本从低到高列出，不带前导 `v`。
 
 ## 概要
 
@@ -14,7 +14,7 @@ lip versions <PACKAGE> [options]
 
 | 参数 | 说明 |
 | --- | --- |
-| `<PACKAGE>` | 要查看版本的包，格式为其 tooth 路径 `<path>`（例如 `github.com/user/repo`），不带版本或 git 引用。`#<variant>` 不影响结果。 |
+| `<PACKAGE>` | 要查看版本的包，格式为其仓库 `<path>`（例如 `github.com/user/repo`），不带版本或 git 引用。`#<variant>` 不影响结果。 |
 
 ## 选项
 

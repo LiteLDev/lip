@@ -1,17 +1,18 @@
-# tooth.json
+# lip.yaml
 
-A lip package is an archive with a `tooth.json` at its root. `tooth.json` names the package, gives
-its version, and describes, for each variant, platform and runtime, what lip installs: the
-dependencies, the files to place, the mod to install and the commands to run.
+A lip package is an archive with a **package file**, `lip.yaml`, at its root. `lip.yaml` names the
+package, gives its version, and describes, for each variant, platform and runtime, what lip
+installs: the dependencies, the files to place, the mod to install and the commands to run.
 The normative definition is the [package protocol](https://github.com/LiteLDev/lip/blob/main/protocol/package.md).
 
-The current format is format version 4, described by the JSON Schema
-[`tooth.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/tooth.schema.json).
-lip also reads `tooth.json` of format versions 1 to 3, see [Earlier Formats](#earlier-formats).
+`lip.yaml` is a YAML file of format 4, described by the JSON Schema
+[`lip.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.yaml).
+lip also reads the `tooth.json` of lip v0.x packages (formats 1 to 3), see
+[Earlier Formats](#earlier-formats).
 
 ## Archives
 
-A package lives in an **archive**, a tree of files and directories with `tooth.json` at its root:
+A package lives in an **archive**, a tree of files and directories with `lip.yaml` at its root:
 
 - a **git archive**: a commit of a git repository, usually the commit of a version tag. Only its
   regular files and directories belong to it (no symbolic links or submodules);
@@ -25,71 +26,57 @@ A package lives in an **archive**, a tree of files and directories with `tooth.j
 A mod that is published as a ZIP file attached to each GitHub release, for the server and the
 client on Windows x64:
 
-```json
-{
-  "format_version": 4,
-  "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-  "tooth": "github.com/example/MyMod",
-  "version": "1.0.0",
-  "info": {
-    "name": "My Mod",
-    "description": "A short description",
-    "tags": ["levilamina", "mod"]
-  },
-  "variants": {
-    "": [
-      {
-        "platform": "server",
-        "runtime": "win-x64",
-        "dependencies": {
-          "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0",
-          "github.com/example/MyLib": "^0.3.0"
-        },
-        "assets": [
-          {
-            "type": "mcmod",
-            "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
-          }
-        ],
-        "preserve": ["mods/MyMod/config/"]
-      },
-      {
-        "platform": "client",
-        "runtime": "win-x64",
-        "dependencies": {
-          "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0",
-          "github.com/example/MyLib": "^0.3.0"
-        },
-        "assets": [
-          {
-            "type": "mcmod",
-            "urls": ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"]
-          }
-        ],
-        "preserve": ["mods/MyMod/config/"]
-      }
-    ]
-  }
-}
+```yaml
+format: 4
+id: github.com/example/MyMod
+version: 1.0.0
+info:
+  name: My Mod
+  description: A short description
+  tags: [levilamina, mod]
+variants:
+  "":
+    - platform: server
+      runtime: win-x64
+      deps:
+        github.com/LiteLDev/LeviLamina: ">=1.0.0 <2.0.0"
+        github.com/example/MyLib: ^0.3.0
+      assets:
+        - type: mcmod
+          urls:
+            - https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip
+      preserve: [mods/MyMod/config/]
+    - platform: client
+      runtime: win-x64
+      deps:
+        github.com/LiteLDev/LeviLamina: ">=1.0.0 <2.0.0"
+        github.com/example/MyLib: ^0.3.0
+      assets:
+        - type: mcmod
+          urls:
+            - https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip
+      preserve: [mods/MyMod/config/]
 ```
+
+Quote a value that YAML would otherwise not read as a string, such as a range starting with `>`
+or `*`, or a version like `1.0` that YAML reads as a number.
 
 ## Fields
 
-`tooth.json` must be a JSON object. Keys that are not described here are ignored.
+`lip.yaml` must be a YAML mapping. Keys that are not described here are ignored.
 
 ### Top-Level
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `format_version` | `int` | Yes | Must be `4`. |
-| `format_uuid` | `string` | Yes | Must be `"f74a5fda-cb2a-4de8-959f-a1a76bad3102"`. |
-| `tooth` | `string` | Yes | The **tooth path** of the package, a valid [Go module path](https://go.dev/ref/mod#module-path), e.g. `github.com/user/repo`. Compared ignoring ASCII case. |
+| `format` | `int` | Yes | Must be `4`. |
+| `id` | `string` | Yes | The **package id**, a valid [Go module path](https://go.dev/ref/mod#module-path), e.g. `github.com/user/repo`. Compared ignoring ASCII case. |
 | `version` | `string` | Yes | The version of the package, a [SemVer 2.0.0](https://semver.org/) version without a leading `v`. |
 | `info` | `object` | No | Information for people. See [Info](#info). |
 | `variants` | `object` | Yes | Maps each variant name to its entries. See [Variants](#variants). |
 
-For a package in a git repository, `tooth` must be the path of that repository: the
-`tooth.json` of `https://github.com/user/repo.git` must have `"tooth": "github.com/user/repo"`.
+For a package in a git repository, `id` must be the path of that repository: the
+`lip.yaml` of `https://github.com/user/repo.git` must have `id: github.com/user/repo`.
 At a version tag `v<version>`, `version` must equal the tag version. Otherwise the commit is not a
 package, and lip does not install it.
 
@@ -124,7 +111,7 @@ and `runtime`.
 | --- | --- | --- | --- |
 | `platform` | `string` | Yes | `"server"` or `"client"`. |
 | `runtime` | `string` | Yes | A [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog), e.g. `win-x64`. |
-| `dependencies` | `object` | No | See [Dependencies](#dependencies). |
+| `deps` | `object` | No | See [Dependencies](#dependencies). |
 | `assets` | `array` | No | See [Assets](#assets). |
 | `preserve` | `string[]` | No | [Globs](#globs) of files that are kept: an existing file is not overwritten on install, and is not deleted on uninstall. |
 | `purge` | `string[]` | No | [Globs](#globs) of extra paths to delete on uninstall. A matching directory is deleted with everything below it. |
@@ -132,21 +119,18 @@ and `runtime`.
 
 ### Dependencies
 
-`dependencies` maps `<tooth path>` or `<tooth path>#<variant>` to a version range:
+`deps` maps `<package id>` or `<package id>#<variant>` to a version range:
 
-```json
-{
-  "dependencies": {
-    "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0",
-    "github.com/LiteLDev/LegacyScriptEngine#lua": "^0.9.0"
-  }
-}
+```yaml
+deps:
+  github.com/LiteLDev/LeviLamina: ">=1.0.0 <2.0.0"
+  github.com/LiteLDev/LegacyScriptEngine#lua: ^0.9.0
 ```
 
 lip installs, for each dependency, a version of that repository (and variant) whose version is
 in the range, from the repository's version tags, with an entry for the same environment. A
 package installed from a git ref, such as `@branch:main`, also satisfies a dependency on the same
-path and variant when its version is in the range.
+package id and variant when its version is in the range.
 
 Version ranges use the syntax and semantics of `SemVersionRange.Parse` of
 [Semver for .NET 3.0.0](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0) with its default
@@ -159,7 +143,7 @@ version such as `1.2.3` matches exactly that version.
 
 | Type | Fields | Description |
 | --- | --- | --- |
-| `self` | `place` (optional) | The archive of the `tooth.json` itself, e.g. the repository at the tag. |
+| `self` | `place` (optional) | The archive of the `lip.yaml` itself, e.g. the repository at the tag. |
 | `zip` | `urls`, `place` (optional) | A ZIP archive downloaded over HTTPS. |
 | `mcmod` | `urls` | A ZIP archive downloaded over HTTPS that holds a LeviLamina mod; it has no `place`. See [Mods](#mods). |
 
@@ -169,7 +153,7 @@ path, the later one wins.
 
 ### Placements
 
-Each member of `place` is a placement `{ "src": ..., "dest": ... }` that writes files of the asset's archive into the workspace.
+Each member of `place` is a placement, with `src` and `dest`, that writes files of the asset's archive into the workspace.
 `src` is a path in the archive, `dest` a path relative to the workspace. Both are `/`-separated
 and must not start with `/` or a drive letter, or contain `//`, a `..` segment or `\`. The form
 of a placement is decided by `src`:
@@ -183,19 +167,16 @@ of a placement is decided by `src`:
 - **File form**: otherwise. The file `src` is written to `dest`, which must not end with `/`.
   The file must exist.
 
-```json
-{
-  "type": "zip",
-  "urls": ["https://example.com/tool-1.0.0-win-x64.zip"],
-  "place": [
-    { "src": "bin/", "dest": "tools/" },
-    { "src": "README.md", "dest": "tools/README.md" },
-    { "src": "plugins/*.dll", "dest": "tools/plugins/" }
-  ]
-}
+```yaml
+type: zip
+urls: [https://example.com/tool-1.0.0-win-x64.zip]
+place:
+  - { src: bin/, dest: tools/ }
+  - { src: README.md, dest: tools/README.md }
+  - { src: "plugins/*.dll", dest: tools/plugins/ }
 ```
 
-The root `tooth.json` of the package is never written.
+The root `lip.yaml` of the package is never written.
 
 ### Globs
 
@@ -233,7 +214,7 @@ name**. lip writes the whole archive into `mods/<mod name>/`, keeping its paths.
 
 lip reads only the `name` of `manifest.json`, to name the mod directory. It neither checks nor
 changes anything else in it: `manifest.json` is written into the mod directory exactly as it is in
-the archive, like every other file. Keeping its `dependencies` in line with the `dependencies` of
+the archive, like every other file. Keeping its `dependencies` in line with the `deps` of
 the entry is up to you. A missing `manifest.json`, or one without a valid `name`, fails the
 installation before anything changes.
 
@@ -244,13 +225,13 @@ files outside `mods/`.
 
 ## Identity
 
-The **identity** of an installed package is its tooth path, followed by `#<variant>` when the
+The **identity** of an installed package is its package id, followed by `#<variant>` when the
 variant is not `""`, e.g. `github.com/LiteLDev/LegacyScriptEngine#lua`. A workspace holds at
 most one package of each identity; [`lip list`](../cli/commands/list.md) shows identities, and
 [`lip uninstall`](../cli/commands/uninstall.md) accepts them.
 
-The identity comes from the `tooth` of the package, not from where it was installed from: a ZIP
-file whose `tooth.json` has `"tooth": "github.com/user/repo"` has the same identity as the
+The identity comes from the `id` of the package, not from where it was installed from: a ZIP
+file whose `lip.yaml` has `id: github.com/user/repo` has the same identity as the
 package from that repository, so the two cannot be installed together.
 
 ## Environment
@@ -265,23 +246,26 @@ The environment of a workspace is a pair `(platform, runtime)`:
 
 ## Earlier Formats
 
-lip reads `tooth.json` of format versions 1, 2 and 3, as written for lip v0.37.0 and earlier,
-but never writes them; convert yours with [`lip migrate`](../cli/commands/migrate.md). Formats 1
-and 2 are first read as format 3, as lip v0.37.0 did. A format 3 `tooth.json` is then converted
-completely, for the environment of the workspace, into a format 4 `tooth.json`, and lip uses only
-that one: it is what lip resolves, installs, and records in the [workspace file](lockfiles.md).
+Packages of lip v0.37.0 and earlier have, instead of `lip.yaml`, a `tooth.json` of format
+version 1, 2 or 3. lip still installs them, but never writes them; convert yours to `lip.yaml`
+with [`lip migrate`](../cli/commands/migrate.md). An archive with a `lip.yaml` is read from it,
+whatever `tooth.json` it also has, and a `tooth.json` of any other format is not read.
+
+Formats 1 and 2 are first read as format 3, as lip v0.37.0 did. A format 3 `tooth.json` is then
+converted completely, for the environment of the workspace, into a package file, and lip uses
+only that one: it is what lip resolves, installs, and records in the [workspace file](lockfiles.md).
 Nothing of format 3 remains at install time.
 
-- `tooth` is kept. `version` is the version of the package: the tag version at a version tag,
+- `tooth` becomes `id`. `version` is the version of the package: the tag version at a version tag,
   whatever the `version` of the `tooth.json` says, and that `version` otherwise.
 - `info` is kept, except that `avatar_url` becomes `logo` when it starts with `https://` and is
   dropped otherwise.
 - For each label, the variants with that label whose `platform` is empty or matches the runtime
   (as a RID pattern, e.g. `win-*`) are merged as lip v0.37.0 merged them, into one entry for the
   platform and runtime of the environment. A label without such variants is no variant.
-- `dependencies` are kept as they are.
+- `dependencies` become `deps`, as they are.
 - Each asset keeps its `type` and `urls`, and its `placements` become `place` (see below). An
-  asset of type `tar`, `tgz` or `uncompressed`, which format 4 does not have, leaves the label
+  asset of type `tar`, `tgz` or `uncompressed`, which `lip.yaml` does not have, leaves the label
   without a variant for the environment.
 - `preserve_files` becomes `preserve`: `\` is replaced by `/`, and a pattern without `/` is
   prefixed by `**/`, so `config.json` becomes `**/config.json`.
@@ -291,8 +275,7 @@ Nothing of format 3 remains at install time.
   `post_install` become `post_install`, `pre_uninstall` and then `uninstall` become
   `pre_uninstall`, and `post_uninstall` stays `post_uninstall`.
 - On a client, a variant labeled `client` is used as the variant `""`.
-- A dependency on the variant `client` of a package whose `tooth.json` is of format 4 names its
-  variant `""`.
+- A dependency on the variant `client` of a package that has a `lip.yaml` names its variant `""`.
 
 A placement `{ "type": ..., "src": ..., "dest": ... }` becomes a member of `place` after `\` is
 replaced by `/` and empty and `.` segments are removed from `src` and `dest`:
@@ -303,8 +286,8 @@ replaced by `/` and empty and `.` segments are removed from `src` and `dest`:
 | `type` `file`, `src` containing `*`, `?` or `[` | `src`, and `dest` followed by `/` unless empty: the glob form. |
 | `type` `file`, any other `src` | `src` and `dest`: the file form. |
 
-A converted glob or placement that is not valid in format 4 is left out. The placements are then
-carried out as in format 4: for example, a missing file now fails the installation, and the
+A converted glob or placement that is not valid in a package file is left out. The placements
+are then carried out as for `lip.yaml`: for example, a missing file now fails the installation, and the
 `tooth.json` of the package is never written.
 
 A package of an earlier format is always a file package. Its identity follows the same rule, e.g.

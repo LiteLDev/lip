@@ -58,13 +58,24 @@ public class GraphSolver(IResolver resolver) {
       }
     }
 
+    return [
+      .. InstallOrder(nodes.Count, i => dependenciesOf(nodes[i])
+          .Select(d => indexOf.TryGetValue(PackageKey.Of(d), out int j) ? j : -1))
+          .Select(i => nodes[i]),
+    ];
+  }
+
+  /// InstallOrder for count packages given in ascending order of their lowercase identities:
+  /// the indices of the packages in installation order, given the indices of the packages each
+  /// depends on. Indices out of range are ignored.
+  public static IReadOnlyList<int> InstallOrder(
+      int count, Func<int, IEnumerable<int>> dependenciesOf) {
     // Edges point from a depender to its dependees.
-    List<int>[] edges = new List<int>[nodes.Count];
-    for (int i = 0; i < nodes.Count; i++) {
+    List<int>[] edges = new List<int>[count];
+    for (int i = 0; i < count; i++) {
       edges[i] = [
-        .. dependenciesOf(nodes[i])
-            .Select(d => indexOf.TryGetValue(PackageKey.Of(d), out int j) ? j : -1)
-            .Where(j => j >= 0 && j != i)
+        .. dependenciesOf(i)
+            .Where(j => j >= 0 && j < count && j != i)
             .Distinct()
             .Order(),
       ];
@@ -80,7 +91,7 @@ public class GraphSolver(IResolver resolver) {
       members[c] = [];
     }
 
-    for (int i = 0; i < nodes.Count; i++) {
+    for (int i = 0; i < count; i++) {
       if (members[componentOf[i]].Count == 0) {
         rank[componentOf[i]] = i;
       }
@@ -97,7 +108,7 @@ public class GraphSolver(IResolver resolver) {
     }
 
     HashSet<(int, int)> componentEdges = [];
-    for (int i = 0; i < nodes.Count; i++) {
+    for (int i = 0; i < count; i++) {
       foreach (int j in edges[i]) {
         (int from, int to) = (componentOf[i], componentOf[j]);
         if (from != to && componentEdges.Add((from, to))) {
@@ -114,9 +125,9 @@ public class GraphSolver(IResolver resolver) {
       }
     }
 
-    List<Candidate> order = new(nodes.Count);
+    List<int> order = new(count);
     while (ready.TryDequeue(out int component, out _)) {
-      order.AddRange(members[component].Select(i => nodes[i]));
+      order.AddRange(members[component]);
       foreach (int depender in dependers[component]) {
         if (--pendingDependencies[depender] == 0) {
           ready.Enqueue(depender, rank[depender]);
@@ -202,7 +213,7 @@ public class GraphSolver(IResolver resolver) {
   }
 
   /// Identifies a candidate sequence by what determines it: the source, the range and whether
-  /// the source is resolved as a dependency of format 3 (clientCompat).
+  /// the source is resolved as a dependency of a tooth.json (clientCompat).
   private readonly record struct ResolveKey(string Ref, object Range, bool Compat) {
     public static ResolveKey Of(Ref source, IVersionConstraint? range, bool compat) {
       return new(source.ToString(), RangeKey(range), compat);
@@ -678,8 +689,8 @@ public class GraphSolver(IResolver resolver) {
         return false;
       }
 
-      // protocol/package.md §5: a dependency of format 3 on "client" names the variant "" of a
-      // package of format 4.
+      // protocol/compatibility.md §2: a dependency of a tooth.json on "client" names the variant
+      // "" of a package that has a package file.
       return PackageNames.AreEqual(wanted.Target, pinned.Target)
           && (wanted.Variant == candidate.Package.Variant
               || (requirement.Compat && !candidate.Package.Entry.Derived
@@ -711,7 +722,7 @@ public class GraphSolver(IResolver resolver) {
     }
 
     private void AddEdges(Candidate owner, int level, string suffix) {
-      foreach (ToothDependency dependency in owner.Package.Entry.Dependencies) {
+      foreach (PackageDependency dependency in owner.Package.Entry.Dependencies) {
         _agenda.Add(new Requirement(
             ResolveKey.Of(dependency.Source, dependency.Range, dependency.ClientCompat),
             owner,

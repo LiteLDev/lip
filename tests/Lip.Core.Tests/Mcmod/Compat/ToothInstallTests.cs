@@ -9,8 +9,8 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Installing and uninstalling packages whose tooth file is of format 3 with McmodInstaller: they
-/// are installed with the tooth file of format 4 derived from it (protocol/package.md §5), which
+/// Installing and uninstalling packages read from a tooth.json of format 3 with McmodInstaller:
+/// they are installed with the package file derived from it (protocol/compatibility.md §2), which
 /// the workspace file records (protocol/workspace.md §7.1), with nothing of format 3 left.
 public class ToothInstallTests {
   private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
@@ -83,27 +83,27 @@ public class ToothInstallTests {
     return source.Object;
   }
 
-  /// The candidate of the variant of a tooth file of format 3 for the environment, as the
-  /// resolver makes it: the entry derived from it (protocol/package.md §5).
+  /// The candidate of the variant of a tooth.json of format 3 for the environment, as the
+  /// resolver makes it: the entry derived from it (protocol/compatibility.md §2).
   private Candidate CreateCandidateFrom(
       string json,
       Dictionary<string, string> selfFiles,
       string variant = "",
       LipEnvironment? environment = null) {
     LipEnvironment env = environment ?? _serverWin;
-    ToothDocument document = ToothDocument.Parse(Encoding.UTF8.GetBytes(json));
+    PackageDocument document = PackageDocument.ParseToothJson(Encoding.UTF8.GetBytes(json));
     Assert.True(document.IsLegacy);
-    ToothFile tooth = document.ReadFor(env);
-    ToothEntry entry = tooth.SelectEntry(variant, env)!;
+    PackageFile packageFile = document.ReadFor(env);
+    PackageEntry entry = packageFile.SelectEntry(variant, env)!;
     Assert.True(entry.Derived);
     ArchiveHandle self = new(
-        $"{tooth.Tooth}@{tooth.Version}",
+        $"{packageFile.Id}@{packageFile.Version}",
         CreateSource(new(selfFiles) { ["tooth.json"] = json }),
         new string('a', 40));
     return Candidate.Create(
-        new Package(tooth.Tooth, variant, tooth.Version, entry) { Manifest = tooth.Json },
+        new Package(packageFile.Id, variant, packageFile.Version, entry) { Manifest = packageFile.Json },
         self,
-        Ref.Parse(tooth.Tooth, allowFile: false).WithVariant(variant),
+        Ref.Parse(packageFile.Id, allowFile: false).WithVariant(variant),
         _archiveProvider.Object);
   }
 
@@ -196,7 +196,7 @@ public class ToothInstallTests {
         candidate, CreateContext(ignoreScripts: true));
 
     // Assert: the placements are carried out as format 4 carries out the members of place they
-    // become; the tooth file is never written.
+    // become; the tooth.json the package is read from is never written.
     Assert.Equal(
         [
           "plugins/g/a.dll",
@@ -443,8 +443,8 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public async Task Uninstall_RecordedToothFileWithoutEntryForTheEnvironment_Throws() {
-    // Arrange: the recorded tooth file was derived for (server, win-x64).
+  public async Task Uninstall_RecordedPackageFileWithoutEntryForTheEnvironment_Throws() {
+    // Arrange: the recorded package file was derived for (server, win-x64).
     Candidate candidate = CreateCandidate();
     _fileSystem.AddFile(Workspace("tool.exe"), new MockFileData("exe"));
 
@@ -488,12 +488,12 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public void LockedEntry_DerivedToothFile_IsReadAsFormat4() {
+  public void LockedEntry_DerivedPackageFile_IsReadAsPackageFile() {
     // Arrange
     Candidate candidate = CreateCandidate();
 
     // Act
-    ToothEntry entry = McmodInstaller.LockedEntry(
+    PackageEntry entry = McmodInstaller.LockedEntry(
         JsonSerializer.Deserialize<LockedPackage>(JsonSerializer.Serialize(Lock(candidate, [])))!,
         _serverWin);
 

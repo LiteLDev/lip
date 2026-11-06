@@ -21,7 +21,7 @@ Reads the workspace's [workspace file](../../concepts/lockfiles.md) and displays
 - **User-Requested** — Packages explicitly installed by the user.
 - **Dependencies** — Packages installed as dependencies.
 
-Packages are listed in installation order, dependencies first. The identity of a package is its tooth path, followed by `#<variant>` for a variant other than `""` (e.g. `github.com/LiteLDev/LegacyScriptEngine#lua`).
+Packages are listed in installation order, dependencies first. The identity of a package is its package id, followed by `#<variant>` for a variant other than `""` (e.g. `github.com/LiteLDev/LegacyScriptEngine#lua`).
 
 With `--json`, the result is:
 

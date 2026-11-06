@@ -16,7 +16,7 @@ using Semver;
 namespace Lip.Core.RegressionTests.Compatibility;
 
 /// Checks that every corpus entry lip v3 could install (<c>baseline_installable && git_tag</c> in
-/// corpus.json) still resolves and solves, read through protocol/package.md §5:
+/// corpus.json) still resolves and solves, read through protocol/compatibility.md §2:
 /// - Resolve(package, workspace, =version, (server, win-x64)) yields a candidate, unless the
 ///   tooth.json at the tag declares the variant only for other platforms (not installable on
 ///   win-x64, with or without lip v4);
@@ -214,7 +214,7 @@ public class CorpusTests {
       return false;
     }
 
-    ToothDocument document = await new ArchiveReader().Read(
+    PackageDocument document = await new ArchiveReader().Read(
         await provider.OpenVersion(reference.Target, tag));
     return document.Legacy?.Variants.Any(v => v.Label == reference.Variant)
         ?? document.File!.Variants.ContainsKey(reference.Variant);

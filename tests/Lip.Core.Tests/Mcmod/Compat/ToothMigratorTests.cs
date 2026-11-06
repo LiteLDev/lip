@@ -10,8 +10,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Converting tooth.json of format 1–3 to format 4 (lip migrate, protocol/cli.md §5.8), agreeing
-/// with protocol/package.md §5.
+/// Converting tooth.json of format 1–3 to a package file (lip migrate, protocol/compatibility.md
+/// §5), agreeing with protocol/compatibility.md §2.
 public class ToothMigratorTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -39,8 +39,8 @@ public class ToothMigratorTests {
     // Assert
     Assert.Empty(ui.Questions);
     Assert.Empty(result.Notes);
-    ToothFile file = Reparse(result);
-    Assert.Equal("github.com/LiteLDev/LegacyMoney", file.Tooth);
+    PackageFile file = Reparse(result);
+    Assert.Equal("github.com/LiteLDev/LegacyMoney", file.Id);
     Assert.Equal(SemVersion.Parse("0.22.0"), file.Version);
     Assert.Equal(
         [
@@ -57,14 +57,14 @@ public class ToothMigratorTests {
         """{"name":"Legacy Money","description":"d","tags":["economy"],"logo":"https://example.com/a.png"}""",
         info.ToJsonString());
     Assert.Equal(
-        ["format_version", "format_uuid", "tooth", "version", "info", "variants"],
+        ["format", "id", "version", "info", "variants"],
         result.Document.Select(p => p.Key));
   }
 
   [Fact]
   public async Task Migrate_EverySelectedEntry_AgreesWithDerive() {
     // Arrange: for every environment the migrated file has an entry for, it holds what
-    // protocol/package.md §5 derives.
+    // protocol/compatibility.md §2 derives.
     PackageManifest tooth = Parse($$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid3}}",
@@ -80,12 +80,12 @@ public class ToothMigratorTests {
     FakeUi ui = new("win-x64, win-arm64", "win-x64, linux-x64");
 
     // Act
-    ToothFile file = Reparse(await ToothMigrator.Migrate(tooth, ui));
+    PackageFile file = Reparse(await ToothMigrator.Migrate(tooth, ui));
 
     // Assert
-    foreach ((string variant, ToothEntry entry) in Entries(file)) {
+    foreach ((string variant, PackageEntry entry) in Entries(file)) {
       LipEnvironment environment = new(entry.Platform, entry.Runtime);
-      ToothEntry derived = ToothCompat.Derive(tooth, environment).Variants[variant].Single();
+      PackageEntry derived = ToothCompat.Derive(tooth, environment).Variants[variant].Single();
       Assert.Equal(
           derived.Dependencies.Select(d => (d.Source.ToString(), d.Range.Text)),
           entry.Dependencies.Select(d => (d.Source.ToString(), d.Range.Text)));
@@ -127,7 +127,7 @@ public class ToothMigratorTests {
     Assert.Equal(4, ui.Questions.Count);
     Assert.Contains("without a platform", ui.Questions[0]);
     Assert.Equal(3, ui.Warnings.Count);
-    ToothFile file = Reparse(result);
+    PackageFile file = Reparse(result);
     Assert.Equal(["js", "lua"], file.Variants.Keys.Order(StringComparer.Ordinal));
     Assert.Equal(
         [
@@ -160,7 +160,7 @@ public class ToothMigratorTests {
     Assert.Equal(2, ui.Questions.Count);
     Assert.All(ui.Questions, q => Assert.Contains("'win-*'", q));
     Assert.Contains("'linux-x64' does not match 'win-*'", Assert.Single(ui.Warnings));
-    ToothFile file = Reparse(result);
+    PackageFile file = Reparse(result);
     Assert.Equal(
         [
           (McmodPlatform.Server, "win-x64", "github.com/o/a"),
@@ -219,7 +219,7 @@ public class ToothMigratorTests {
 
     // Assert
     Assert.Empty(result.Notes);
-    ToothEntry entry = Reparse(result).Variants[""][0];
+    PackageEntry entry = Reparse(result).Variants[""][0];
     Assert.Equal(
         [
           new EntryPlacement("", "common/"),
@@ -295,9 +295,9 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    // Assert: as protocol/package.md §5 reads it, the variant has no entry for win-x64.
+    // Assert: as protocol/compatibility.md §2 reads it, the variant has no entry for win-x64.
     Assert.StartsWith(
-        "variants (label '', win-x64).assets[0]: format 4 has no asset type \"tar\"",
+        "variants (label '', win-x64).assets[0]: lip.yaml has no asset type \"tar\"",
         Assert.Single(result.Notes));
     Assert.Empty(result.Document["variants"]!.AsObject());
   }
@@ -349,11 +349,11 @@ public class ToothMigratorTests {
 
     // Assert
     Assert.Empty(result.Notes);
-    ToothEntry entry = Reparse(result).Variants[""][0];
+    PackageEntry entry = Reparse(result).Variants[""][0];
     Assert.Equal(
         ["example.com/a", "example.com/b/v2#lua", "example.com/c", "example.com/d"],
         entry.Dependencies.Select(d => d.Source.ToString()));
-    foreach ((ToothDependency dependency, SemVersionRange original) in entry.Dependencies.Zip(
+    foreach ((PackageDependency dependency, SemVersionRange original) in entry.Dependencies.Zip(
         tooth.Variants[0].Dependencies.Values)) {
       Assert.Equal(original.ToString(), dependency.Range.Text);
       Assert.Equal(SemVersionRange.Parse(dependency.Range.Text), dependency.Range.Range);
@@ -376,7 +376,7 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    ToothEntry entry = Reparse(result).Variants[""][0];
+    PackageEntry entry = Reparse(result).Variants[""][0];
     Assert.Equal("example.com/a#client", Assert.Single(entry.Dependencies).Source.ToString());
     Assert.False(entry.Dependencies[0].ClientCompat);
     Assert.StartsWith(
@@ -406,7 +406,7 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    ToothEntry entry = Reparse(result).Variants[""][0];
+    PackageEntry entry = Reparse(result).Variants[""][0];
     Assert.Equal(
         ["**/config.json", "data/", "plugins/x/*.json"], entry.PreserveFiles.Select(g => g.Pattern));
     Assert.Equal(["logs", "logs/", "tmp/", "{a,b}", "{a,b}/"], entry.RemoveFiles.Select(g => g.Pattern));
@@ -449,7 +449,7 @@ public class ToothMigratorTests {
     Assert.Equal(["type", "place"], asset.Select(p => p.Key));
     Assert.Equal(
         """[{"src":"a.dll","dest":"plugins/a.dll"}]""", asset["place"]!.ToJsonString());
-    ToothEntry reparsed = Reparse(result).Variants[""][0];
+    PackageEntry reparsed = Reparse(result).Variants[""][0];
     Assert.Equal(["config/"], reparsed.PreserveFiles.Select(g => g.Pattern));
     Assert.Equal(["logs/"], reparsed.RemoveFiles.Select(g => g.Pattern));
   }
@@ -495,7 +495,7 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    // The info of T without its avatar_url (protocol/package.md §5).
+    // The info of T without its avatar_url (protocol/compatibility.md §2).
     Assert.StartsWith("info.avatar_url:", Assert.Single(result.Notes));
     Assert.Equal("{}", result.Document["info"]!.ToJsonString());
   }
@@ -604,8 +604,8 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    ToothFile file = Reparse(result);
-    ToothEntry entry = file.Variants[""][0];
+    PackageFile file = Reparse(result);
+    PackageEntry entry = file.Variants[""][0];
     Assert.Equal("win-x64", entry.Runtime);
     Assert.Equal(["echo install"], entry.Hooks.PostInstall);
     Assert.Equal(["github.com/user/dep"], entry.Dependencies.Select(d => d.Source.ToString()));
@@ -663,17 +663,17 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public void Serialize_IndentsByTwoSpacesWithFinalLineBreak() {
+  public void Serialize_WritesYamlIndentedByTwoSpacesWithFinalLineBreak() {
     // Arrange
     JsonObject document = new() {
-      ["a"] = new JsonObject { ["b"] = "<é>" },
+      ["a"] = new JsonObject { ["b"] = "<é>", ["c"] = "1.0" },
     };
 
     // Act
     string text = Encoding.UTF8.GetString(ToothMigrator.Serialize(document));
 
     // Assert
-    Assert.Equal("{\n  \"a\": {\n    \"b\": \"<é>\"\n  }\n}\n", text);
+    Assert.Equal("a:\n  b: <é>\n  c: \"1.0\"\n", text);
   }
 
   [Fact]
@@ -682,7 +682,7 @@ public class ToothMigratorTests {
     FakeUi ui = new("  ", " ok ");
 
     // Act
-    string answer = await ToothMigrator.AskValid(ui, "q", a => a == "" ? "empty" : null);
+    string answer = await ui.AskValid("q", a => a == "" ? "empty" : null);
 
     // Assert
     Assert.Equal("ok", answer);
@@ -695,12 +695,12 @@ public class ToothMigratorTests {
     return PackageManifestMigration.Migrate(document);
   }
 
-  /// The migrated document read back as a tooth file of format 4; it must be valid.
-  private static ToothFile Reparse(ToothMigrator.Result result) {
-    return ToothParser.Parse(ToothMigrator.Serialize(result.Document));
+  /// The migrated document read back as a package file; it must be valid.
+  private static PackageFile Reparse(ToothMigrator.Result result) {
+    return PackageFileParser.Parse(ToothMigrator.Serialize(result.Document));
   }
 
-  private static IEnumerable<(string Variant, ToothEntry Entry)> Entries(ToothFile file) =>
+  private static IEnumerable<(string Variant, PackageEntry Entry)> Entries(PackageFile file) =>
       file.Variants.SelectMany(v => v.Value.Select(e => (v.Key, e)));
 }
 

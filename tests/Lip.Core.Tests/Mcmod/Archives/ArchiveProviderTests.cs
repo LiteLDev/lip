@@ -116,7 +116,7 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task Open_LocalFile_ReturnsZipArchiveKeyedByFileUri() {
     // Arrange
-    byte[] zip = Zip(("tooth.json", "local"), ("sub/a.txt", "sub"));
+    byte[] zip = Zip(("lip.yaml", "local"), ("sub/a.txt", "sub"));
     string path = Path.Combine(_workspace, "pkg.zip");
     _fileSystem.AddFile(path, new MockFileData(zip));
     Ref file = Ref.FromFile(path, "lua");
@@ -128,7 +128,7 @@ public class ArchiveProviderTests {
     Assert.Equal(file.Target, archive.Key);
     Assert.Null(archive.Commit);
     Assert.IsType<ZipSource>(archive.Source);
-    Assert.Equal("local", await Read(archive, "tooth.json"));
+    Assert.Equal("local", await Read(archive, "lip.yaml"));
     Assert.Equal("sub", await Read(archive, "sub/a.txt"));
     _downloader.VerifyNoOtherCalls();
     Assert.False(_fileSystem.Directory.Exists(LipDirectories.Cache));
@@ -137,7 +137,7 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task Open_LocalFileOfAnyName_IsAZipArchiveByContent() {
     // Arrange
-    byte[] zip = Zip(("tooth.json", "{}"));
+    byte[] zip = Zip(("lip.yaml", "{}"));
     string path = Path.Combine(_workspace, "pkg.bin");
     _fileSystem.AddFile(path, new MockFileData(zip));
 
@@ -145,7 +145,7 @@ public class ArchiveProviderTests {
     ArchiveHandle archive = await CreateProvider().Open(Ref.FromFile(path));
 
     // Assert
-    Assert.Equal(["tooth.json"], archive.Source.Keys);
+    Assert.Equal(["lip.yaml"], archive.Source.Keys);
   }
 
   [Fact]
@@ -171,7 +171,7 @@ public class ArchiveProviderTests {
   public async Task Open_LocalDirectory_ReturnsDirectoryArchiveOfItsAbsolutePath() {
     // Arrange
     string directory = Path.Combine(_workspace, "pkg");
-    _fileSystem.AddFile(Path.Combine(directory, "tooth.json"), new MockFileData("{}"));
+    _fileSystem.AddFile(Path.Combine(directory, "lip.yaml"), new MockFileData("{}"));
     _fileSystem.AddFile(Path.Combine(directory, "lib", "a.dll"), new MockFileData("a"));
     Ref source = Ref.FromFile(directory + Path.DirectorySeparatorChar);
 
@@ -182,7 +182,7 @@ public class ArchiveProviderTests {
     Assert.Equal(source.Target, archive.Key);
     Assert.Null(archive.Commit);
     Assert.IsType<DirectorySource>(archive.Source);
-    Assert.Equal(["lib/a.dll", "tooth.json"], archive.Source.Keys);
+    Assert.Equal(["lib/a.dll", "lip.yaml"], archive.Source.Keys);
     Assert.Equal("a", await Read(archive, "lib/a.dll"));
     _downloader.VerifyNoOtherCalls();
   }
@@ -191,7 +191,7 @@ public class ArchiveProviderTests {
   public async Task Open_LocalDirectory_ReadsItWhereItIs() {
     // Arrange
     string directory = Path.Combine(_workspace, "pkg");
-    string file = Path.Combine(directory, "tooth.json");
+    string file = Path.Combine(directory, "lip.yaml");
     _fileSystem.AddFile(file, new MockFileData("v1"));
     ArchiveHandle archive = await CreateProvider().Open(Ref.FromFile(directory));
 
@@ -199,7 +199,7 @@ public class ArchiveProviderTests {
     _fileSystem.File.WriteAllText(file, "v2");
 
     // Assert
-    Assert.Equal("v2", await Read(archive, "tooth.json"));
+    Assert.Equal("v2", await Read(archive, "lip.yaml"));
   }
 
   [Fact]
@@ -269,7 +269,7 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task OpenCommit_Commit_ReturnsGitArchiveKeyedByRev() {
     // Arrange
-    SetupTree(_commit, new GitTreeEntry("tooth.json", 100644, AddBlob("{}")));
+    SetupTree(_commit, new GitTreeEntry("lip.yaml", 100644, AddBlob("{}")));
 
     // Act
     ArchiveHandle archive = await CreateProvider().OpenCommit(_spec, _commit.ToUpperInvariant());
@@ -277,7 +277,7 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal($"{_spec}@rev:{_commit}", archive.Key);
     Assert.Equal(_commit, archive.Commit);
-    Assert.Equal("{}", await Read(archive, "tooth.json"));
+    Assert.Equal("{}", await Read(archive, "lip.yaml"));
   }
 
   [Fact]
@@ -337,7 +337,7 @@ public class ArchiveProviderTests {
   public async Task OpenVersion_AnnotatedTag_OpensPeeledCommit() {
     // Arrange
     SetupTags(new GitRemoteRef("refs/tags/v1.0.0", "tagobject", _commit));
-    SetupTree(_commit, new GitTreeEntry("tooth.json", 100644, AddBlob("{}")));
+    SetupTree(_commit, new GitTreeEntry("lip.yaml", 100644, AddBlob("{}")));
     ArchiveProvider provider = CreateProvider();
     SpecVersion version = (await provider.ListVersions(_spec)).Single();
 
@@ -347,7 +347,7 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal($"{_spec}@1.0.0", archive.Key);
     Assert.Equal(_commit, archive.Commit);
-    Assert.Equal("{}", await Read(archive, "tooth.json"));
+    Assert.Equal("{}", await Read(archive, "lip.yaml"));
   }
 
   [Fact]
@@ -364,15 +364,15 @@ public class ArchiveProviderTests {
   public async Task OpenCommit_Git_OnlyRegularFilesArePartOfTheArchive() {
     // Arrange
     SetupTree(_commit,
-        new GitTreeEntry("tooth.json", 100644, AddBlob("{}")),
+        new GitTreeEntry("lip.yaml", 100644, AddBlob("{}")),
         new GitTreeEntry("run.sh", 100755, AddBlob("echo")),
-        new GitTreeEntry("link", 120000, AddBlob("tooth.json")));
+        new GitTreeEntry("link", 120000, AddBlob("lip.yaml")));
 
     // Act
     ArchiveHandle archive = await CreateProvider().OpenCommit(_spec, _commit);
 
     // Assert
-    Assert.Equal(["run.sh", "tooth.json"], archive.Source.Keys.Order(StringComparer.Ordinal));
+    Assert.Equal(["lip.yaml", "run.sh"], archive.Source.Keys.Order(StringComparer.Ordinal));
   }
 
   [Fact]
@@ -396,7 +396,7 @@ public class ArchiveProviderTests {
   [InlineData("link", unchecked((int)0xA1FF0000))]
   public async Task Open_ZipWithInvalidEntry_ThrowsArchiveUnavailable(string name, int attributes) {
     // Arrange
-    _downloads[_url] = Zip(("tooth.json", "{}", 0), (name, "x", attributes));
+    _downloads[_url] = Zip(("lip.yaml", "{}", 0), (name, "x", attributes));
 
     // Act
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
@@ -414,7 +414,7 @@ public class ArchiveProviderTests {
       string name, int attributes) {
     // Arrange
     string path = Path.Combine(_workspace, "pkg.zip");
-    _fileSystem.AddFile(path, new MockFileData(Zip(("tooth.json", "{}", 0), (name, "x", attributes))));
+    _fileSystem.AddFile(path, new MockFileData(Zip(("lip.yaml", "{}", 0), (name, "x", attributes))));
 
     // Act
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
@@ -427,30 +427,30 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task Open_ZipWithDriveLetterEntry_Succeeds() {
     // protocol/package.md §1 forbids only a leading '/', '..' segments and '\' in entry paths.
-    _downloads[_url] = Zip(("tooth.json", "{}", 0), ("C:x", "x", 0));
+    _downloads[_url] = Zip(("lip.yaml", "{}", 0), ("C:x", "x", 0));
 
     ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
-    Assert.Equal(["tooth.json", "C:x"], archive.Source.Keys);
+    Assert.Equal(["lip.yaml", "C:x"], archive.Source.Keys);
   }
 
   [Fact]
   public async Task Open_ZipWithUnixRegularFiles_Succeeds() {
     // Arrange
     _downloads[_url] = Zip(
-        ("tooth.json", "{}", unchecked((int)0x81A40000)), ("dir/", null, 0x41ED0000));
+        ("lip.yaml", "{}", unchecked((int)0x81A40000)), ("dir/", null, 0x41ED0000));
 
     // Act
     ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
     // Assert
-    Assert.Equal(["tooth.json"], archive.Source.Keys);
+    Assert.Equal(["lip.yaml"], archive.Source.Keys);
   }
 
   [Fact]
   public async Task Open_Url_DownloadsOnce() {
     // Arrange
-    byte[] zip = Zip(("tooth.json", "{}"));
+    byte[] zip = Zip(("lip.yaml", "{}"));
     _downloads[_url] = zip;
 
     // Act
@@ -462,14 +462,14 @@ public class ArchiveProviderTests {
     Assert.Equal(_url, first.Key);
     Assert.Null(first.Commit);
     Assert.Equal(_url, second.Key);
-    Assert.Equal("{}", await Read(second, "tooth.json"));
+    Assert.Equal("{}", await Read(second, "lip.yaml"));
     _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
   }
 
   [Fact]
   public async Task Open_Url_CachesOnlyUnderHttpKeyOfUrl() {
     // Arrange
-    _downloads[_url] = Zip(("tooth.json", "{}"));
+    _downloads[_url] = Zip(("lip.yaml", "{}"));
 
     // Act
     await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
@@ -493,7 +493,7 @@ public class ArchiveProviderTests {
   [Fact]
   public async Task Open_CachedUrlCorrupted_Redownloads() {
     // Arrange
-    byte[] zip = Zip(("tooth.json", "{}"));
+    byte[] zip = Zip(("lip.yaml", "{}"));
     _downloads[_url] = zip;
     _fileSystem.AddFile(
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
@@ -502,7 +502,7 @@ public class ArchiveProviderTests {
     ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
     // Assert
-    Assert.Equal("{}", await Read(archive, "tooth.json"));
+    Assert.Equal("{}", await Read(archive, "lip.yaml"));
     Assert.Equal(zip, _fileSystem.File.ReadAllBytes(
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
   }
@@ -511,7 +511,7 @@ public class ArchiveProviderTests {
   public async Task Open_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
     // Arrange
     const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.zip";
-    _downloads[githubUrl] = Zip(("tooth.json", "{}"));
+    _downloads[githubUrl] = Zip(("lip.yaml", "{}"));
 
     // Act
     ArchiveHandle archive = await CreateProvider(new Url("https://proxy.example.com"))
@@ -529,7 +529,7 @@ public class ArchiveProviderTests {
   public async Task Open_GitHubUrlProxyReturnsNonZip_FallsBackToOriginal() {
     // Arrange
     const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.zip";
-    byte[] zip = Zip(("tooth.json", "{}"));
+    byte[] zip = Zip(("lip.yaml", "{}"));
     _downloads["https://proxy.example.com/owner/repo/releases/download/v1.0.0/pkg.zip"] =
         Encoding.UTF8.GetBytes("<html>rate limited</html>");
     _downloads[githubUrl] = zip;
@@ -539,14 +539,14 @@ public class ArchiveProviderTests {
         .Open(Ref.Parse(githubUrl, allowFile: false));
 
     // Assert
-    Assert.Equal("{}", await Read(archive, "tooth.json"));
+    Assert.Equal("{}", await Read(archive, "lip.yaml"));
   }
 
   [Fact]
   public async Task Open_UrlLongerThanFileNames_DownloadsOnce() {
     // Arrange
     string url = _url + "?token=" + new string('x', 400);
-    _downloads[url] = Zip(("tooth.json", "{}"));
+    _downloads[url] = Zip(("lip.yaml", "{}"));
 
     // Act
     ArchiveHandle first = await CreateProvider().Open(Ref.Parse(url, allowFile: false));

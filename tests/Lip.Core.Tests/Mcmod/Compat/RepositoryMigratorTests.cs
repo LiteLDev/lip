@@ -6,7 +6,7 @@ using Lip.Core.Mcmod.Compat;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// lip migrate on a package repository (protocol/cli.md §5.8).
+/// lip migrate on a package repository (protocol/compatibility.md §5).
 public class RepositoryMigratorTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -48,10 +48,27 @@ public class RepositoryMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_Format4_ThrowsAndChangesNothing() {
+  public async Task Migrate_PackageFileExists_ThrowsAndChangesNothing() {
     // Arrange
-    string tooth = $$"""
-        { "format_version": 4, "format_uuid": "{{ToothFormat.FormatUuid}}",
+    AddFile("tooth.json", _packageTooth);
+    AddFile("lip.yaml", "mine");
+
+    // Act
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
+
+    // Assert
+    Assert.Contains("lip.yaml already exists", ex.Message);
+    Assert.Equal(["lip.yaml", "tooth.json"], Files());
+    Assert.Equal("mine", Read("lip.yaml"));
+    Assert.Equal(_packageTooth, Read("tooth.json"));
+  }
+
+  [Fact]
+  public async Task Migrate_ToothJsonOfFormat4_ThrowsAndChangesNothing() {
+    // Arrange: format_version 4 was never released, and is not read.
+    string tooth = """
+        { "format_version": 4, "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
           "tooth": "github.com/test/tool", "version": "1.0.0", "variants": {} }
         """;
     AddFile("tooth.json", tooth);
@@ -61,7 +78,7 @@ public class RepositoryMigratorTests {
         () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
 
     // Assert
-    Assert.Contains("nothing to migrate", ex.Message);
+    Assert.Contains("Cannot read tooth.json", ex.Message);
     Assert.Equal(tooth, Read("tooth.json"));
     Assert.Equal(["tooth.json"], Files());
   }
@@ -81,6 +98,7 @@ public class RepositoryMigratorTests {
     // Assert
     Assert.Contains("Cannot read tooth.json", ex.Message);
     Assert.Equal(tooth, Read("tooth.json"));
+    Assert.Equal(["tooth.json"], Files());
   }
 
   [Theory]
@@ -119,7 +137,7 @@ public class RepositoryMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_Format3_RewritesToothJsonInPlace() {
+  public async Task Migrate_Format3_WritesPackageFileAndDeletesToothJson() {
     // Arrange
     AddFile("tooth.json", _packageTooth);
     AddFile("tool.exe", "exe");
@@ -129,27 +147,27 @@ public class RepositoryMigratorTests {
 
     // Assert
     Assert.Empty(notes);
-    Assert.Equal(["tool.exe", "tooth.json"], Files());
+    Assert.Equal(["lip.yaml", "tool.exe"], Files());
     Assert.Equal("exe", Read("tool.exe"));
-    string text = Read("tooth.json");
-    Assert.StartsWith("{\n  \"format_version\": 4,\n  \"format_uuid\": ", text);
-    Assert.EndsWith("\n}\n", text);
+    string text = Read("lip.yaml");
+    Assert.StartsWith("format: 4\nid: github.com/test/tool\nversion: 1.0.0\n", text);
+    Assert.EndsWith("\n", text);
     Assert.DoesNotContain("\r", text);
     Assert.DoesNotContain("\t", text);
-    ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
-    Assert.Equal("github.com/test/tool", tooth.Tooth);
+    PackageFile packageFile = ReadPackageFile();
+    Assert.Equal("github.com/test/tool", packageFile.Id);
     Assert.Equal(
         [(McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64")],
-        tooth.Variants[""].Select(e => (e.Platform, e.Runtime)));
+        packageFile.Variants[""].Select(e => (e.Platform, e.Runtime)));
     Assert.All(
-        tooth.Variants[""],
+        packageFile.Variants[""],
         e => Assert.Equal(
             [new EntryPlacement("tool.exe", "tool.exe")], Assert.Single(e.Assets).Placements));
   }
 
   [Fact]
   public async Task Migrate_Placements_AreConvertedWhateverTheFilesOfTheRepository() {
-    // Arrange: as protocol/package.md §5 converts them, whether they match files or not.
+    // Arrange: as protocol/compatibility.md §2 converts them, whether they match files or not.
     AddFile("tooth.json", $$"""
         {
           "format_version": 3,
@@ -170,14 +188,13 @@ public class RepositoryMigratorTests {
     IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
     Assert.Equal(
         [
           new EntryPlacement("tool", "plugins/tool"),
           new EntryPlacement("missing/", "plugins/missing/"),
           new EntryPlacement("tool/", "plugins/tool/"),
         ],
-        tooth.Variants[""][0].Assets[0].Placements);
+        ReadPackageFile().Variants[""][0].Assets[0].Placements);
     Assert.DoesNotContain(notes, n => n.Contains("placement"));
   }
 
@@ -206,19 +223,18 @@ public class RepositoryMigratorTests {
     IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
     Assert.Equal(
         [
           new EntryPlacement("bin/**/*.dll", "plugins/tool/"),
           new EntryPlacement("lib/*.dll", "plugins/lib/"),
         ],
-        tooth.Variants[""][0].Assets[0].Placements);
+        ReadPackageFile().Variants[""][0].Assets[0].Placements);
     Assert.DoesNotContain(notes, n => n.Contains("placement"));
   }
 
   [Fact]
   public async Task Migrate_OtherFiles_AreNotTouched() {
-    // Arrange: only tooth.json is rewritten (protocol/cli.md §5.8).
+    // Arrange: only lip.yaml is written and tooth.json deleted (protocol/compatibility.md §5).
     AddFile("tooth.json", _packageTooth);
     AddFile(".tooth.json.tmp", "mine");
 
@@ -226,9 +242,9 @@ public class RepositoryMigratorTests {
     await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    Assert.Equal([".tooth.json.tmp", "tooth.json"], Files());
+    Assert.Equal([".tooth.json.tmp", "lip.yaml"], Files());
     Assert.Equal("mine", Read(".tooth.json.tmp"));
-    Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
+    Assert.StartsWith("format: 4\n", Read("lip.yaml"));
   }
 
   [Fact]
@@ -246,30 +262,21 @@ public class RepositoryMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_HiddenToothJson_StaysHidden() {
-    // Arrange: on the real file system, since MockFileSystem drops attributes on truncation.
-    Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows has a hidden attribute.");
-    string root = Directory.CreateTempSubdirectory("lip-migrate-").FullName;
-    string tooth = System.IO.Path.Join(root, "tooth.json");
-    try {
-      File.WriteAllText(tooth, _packageTooth);
-      File.SetAttributes(tooth, FileAttributes.Hidden);
+  public async Task Migrate_ReadOnlyToothJson_IsDeleted() {
+    // Arrange
+    AddFile("tooth.json", _packageTooth);
+    _fs.File.SetAttributes(Path("tooth.json"), FileAttributes.ReadOnly);
 
-      // Act
-      await RepositoryMigrator.Migrate(new System.IO.Abstractions.FileSystem(), root, new FakeUi());
+    // Act
+    await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
-      // Assert
-      Assert.True(File.GetAttributes(tooth).HasFlag(FileAttributes.Hidden));
-      Assert.StartsWith("{\n  \"format_version\": 4,", File.ReadAllText(tooth));
-    }
-    finally {
-      Directory.Delete(root, recursive: true);
-    }
+    // Assert
+    Assert.Equal(["lip.yaml"], Files());
   }
 
   [Fact]
   public async Task Migrate_ToothJsonWithByteOrderMark_IsReadAsLipReadsIt() {
-    // Arrange: a byte order mark is ignored, as when lip reads a tooth file (ToothParser).
+    // Arrange: a byte order mark is ignored, as when lip reads a tooth.json (ToothCompat).
     byte[] bytes = [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes(_packageTooth)];
     _fs.AddFile(Path("tooth.json"), new MockFileData(bytes));
 
@@ -277,7 +284,7 @@ public class RepositoryMigratorTests {
     await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
+    Assert.StartsWith("format: 4\n", Read("lip.yaml"));
   }
 
   [Fact]
@@ -293,6 +300,7 @@ public class RepositoryMigratorTests {
     // Assert
     Assert.Contains("Cannot read tooth.json", ex.Message);
     Assert.Equal(bytes, _fs.File.ReadAllBytes(Path("tooth.json")));
+    Assert.Equal(["tooth.json"], Files());
   }
 
   [Fact]
@@ -320,13 +328,12 @@ public class RepositoryMigratorTests {
 
     // Assert
     Assert.Single(ui.Questions);
-    ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
     Assert.Equal(
         [
           (McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64"),
           (McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64"),
         ],
-        tooth.Variants[""].Select(e => (e.Platform, e.Runtime)));
+        ReadPackageFile().Variants[""].Select(e => (e.Platform, e.Runtime)));
   }
 
   [Fact]
@@ -350,11 +357,14 @@ public class RepositoryMigratorTests {
 
     // Assert
     Assert.Contains(notes, n => n.StartsWith("variants[0].scripts.build:"));
-    Assert.StartsWith("{\n  \"format_version\": 4,", Read("tooth.json"));
-    ToothFile tooth = ToothParser.Parse(_fs.File.ReadAllBytes(Path("tooth.json")));
+    Assert.StartsWith("format: 4\n", Read("lip.yaml"));
     Assert.Equal(
-        [new EntryPlacement("a/b.dll", "b.dll")], tooth.Variants[""][0].Assets[0].Placements);
+        [new EntryPlacement("a/b.dll", "b.dll")],
+        ReadPackageFile().Variants[""][0].Assets[0].Placements);
   }
+
+  private PackageFile ReadPackageFile() =>
+      PackageFileParser.Parse(_fs.File.ReadAllBytes(Path("lip.yaml")));
 
   private string Path(string name) => _fs.Path.Join(_root, name);
 

@@ -21,7 +21,7 @@ lip list [options]
 - **User-Requested** — 用户显式安装的包。
 - **Dependencies** — 作为依赖安装的包。
 
-包按安装顺序列出，依赖在前。包的身份是其 tooth 路径，变体不为 `""` 时再加上 `#<variant>`（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`）。
+包按安装顺序列出，依赖在前。包的身份是其包 ID，变体不为 `""` 时再加上 `#<variant>`（例如 `github.com/LiteLDev/LegacyScriptEngine#lua`）。
 
 使用 `--json` 时，结果为：
 

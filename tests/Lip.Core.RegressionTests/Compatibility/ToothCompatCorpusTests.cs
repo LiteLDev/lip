@@ -15,9 +15,9 @@ using Semver;
 
 namespace Lip.Core.RegressionTests.Compatibility;
 
-/// Checks that tooth.json files of format 3 are read through protocol/package.md §5 and installed
-/// like lip v3 did: ToothCompat.Derive must map the same merged variant PackageManifest.GetVariant
-/// picks, converted as Section 5 converts it, and McmodInstaller must write exactly the files it
+/// Checks that tooth.json files of format 3 are read through protocol/compatibility.md §2 and
+/// installed like lip v3 did: ToothCompat.Derive must map the same merged variant
+/// PackageManifest.GetVariant picks, converted as Section 2 converts it, and McmodInstaller must write exactly the files it
 /// reports for the derived entry.
 public class ToothCompatCorpusTests {
   private static readonly LipEnvironment _environment = new(McmodPlatform.Server, "win-x64");
@@ -63,7 +63,7 @@ public class ToothCompatCorpusTests {
     Ref reference = Ref.Parse(package, allowFile: false);
     ArchiveHandle archive = await OpenArchive(
         reference.Target, SemVersion.Parse(version, SemVersionStyles.Strict));
-    ToothDocument document = await new ArchiveReader().Read(archive);
+    PackageDocument document = await new ArchiveReader().Read(archive);
     PackageManifest manifest = Assert.IsType<PackageManifest>(document.Legacy);
     PackageManifestVariant? expected;
     try {
@@ -74,7 +74,7 @@ public class ToothCompatCorpusTests {
     }
 
     // Act
-    ToothEntry? actual = document.ReadFor(_environment).SelectEntry(reference.Variant, _environment);
+    PackageEntry? actual = document.ReadFor(_environment).SelectEntry(reference.Variant, _environment);
 
     // Assert
     if (expected is null || expected.Assets.Any(a => a.Type is not (
@@ -91,7 +91,7 @@ public class ToothCompatCorpusTests {
     Assert.Equal(
         expected.Assets.Select(a => a.Placements
             .Select(ToothCompat.ConvertPlacement)
-            .Where(p => ToothParser.IsValidPlacement(p.Src, p.Dest))
+            .Where(p => PackageFileParser.IsValidPlacement(p.Src, p.Dest))
             .ToList()),
         actual.Assets.Select(a => a.Placements.Select(p => (p.Src, p.Dest)).ToList()));
     Assert.Equal(
@@ -119,17 +119,17 @@ public class ToothCompatCorpusTests {
     SpecVersion version = (await _archiveProvider.ListVersions(package))
         .First(v => !v.Version.IsPrerelease);
     ArchiveHandle archive = await _archiveProvider.OpenVersion(package, version);
-    ToothDocument document = await new ArchiveReader().Read(archive);
-    ToothEntry entry = document.ReadFor(_environment).SelectEntry("", _environment)!;
+    PackageDocument document = await new ArchiveReader().Read(archive);
+    PackageEntry entry = document.ReadFor(_environment).SelectEntry("", _environment)!;
     FileSystem fs = new();
     McmodInstaller installer = new(fs, new CommandRunner(), _userInteraction);
 
-    string root = Directory.CreateTempSubdirectory("lip-tooth-v4-").FullName;
+    string root = Directory.CreateTempSubdirectory("lip-compat-").FullName;
     try {
       // Act
       PackagePlan plan = await installer.PlanInstall(
           Candidate.Create(
-              new Package(document.Tooth, "", version.Version, entry) {
+              new Package(document.Id, "", version.Version, entry) {
                 Manifest = document.ReadFor(_environment).Json,
               },
               archive,

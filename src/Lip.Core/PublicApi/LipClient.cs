@@ -1,9 +1,11 @@
 ﻿using System.IO.Abstractions;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Flurl;
 using Lip.Core.Git;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
@@ -72,26 +74,23 @@ public sealed class LipClient(
     await _configService.Set(key, value);
   }
 
-  /// Writes a tooth.json of format 4 with one entry for the server on win-x64 (protocol/cli.md
-  /// §5.7), asking the user for its tooth path. Fails when tooth.json exists, or when the user
-  /// cannot be asked.
+  /// Writes a lip.yaml with one entry for the server on win-x64 (protocol/cli.md §5.7), asking
+  /// the user for its package id. Fails when lip.yaml exists, or when the user cannot be asked.
   public async Task Init() {
-    string path = ToothFormat.ToothFileName;
-    if (_fileSystem.File.Exists(path)) {
+    string path = PackageFormat.FileName;
+    if (_fileSystem.File.Exists(path) || _fileSystem.Directory.Exists(path)) {
       throw new InvalidOperationException($"{path} already exists.");
     }
 
-    string tooth = await ToothMigrator.AskValid(
-        _userInteraction,
-        "the tooth path of the package (a Go module path, e.g. github.com/owner/repo)",
+    string id = await _userInteraction.AskValid(
+        "the package id of the package (a Go module path, e.g. github.com/owner/repo)",
         answer => Golang.Org.X.Mod.Module.CheckPath(answer) is Exception ex
             ? $"'{answer}' is not a Go module path ({ex.Message})."
             : null);
 
     JsonObject document = new() {
-      [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
-      ["format_uuid"] = ToothFormat.FormatUuid,
-      ["tooth"] = tooth,
+      [PackageFormat.FormatKey] = PackageFormat.Format,
+      ["id"] = id,
       ["version"] = "0.1.0",
       ["variants"] = new JsonObject {
         [""] = new JsonArray(new JsonObject {
@@ -101,9 +100,9 @@ public sealed class LipClient(
       },
     };
 
-    // Asking may take a while; a tooth.json written meanwhile is not replaced.
+    // Asking may take a while; a lip.yaml written meanwhile is not replaced.
     using Stream stream = _fileSystem.File.Open(path, FileMode.CreateNew);
-    await stream.WriteAsync(ToothMigrator.Serialize(document));
+    await stream.WriteAsync(Encoding.UTF8.GetBytes(YamlJson.Serialize(document)));
   }
 
   public async Task Install(
@@ -127,8 +126,8 @@ public sealed class LipClient(
         packages.Where(p => !p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct());
   }
 
-  /// Rewrites the tooth.json of format 1, 2 or 3 in the current directory as a tooth.json of
-  /// format 4 (RepositoryMigrator, protocol/cli.md §5.8), asking the user for missing values.
+  /// Migrates the tooth.json of format 1, 2 or 3 in the current directory to a lip.yaml
+  /// (RepositoryMigrator, protocol/compatibility.md §5), asking the user for missing values.
   /// Everything dropped or converted with another meaning is reported as a warning.
   public async Task Migrate() {
     IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(

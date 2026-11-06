@@ -2,6 +2,8 @@ using System.IO.Abstractions;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
+using Lip.Core.Mcmod.Compat;
 
 namespace Lip.Core.Mcmod.Lock;
 
@@ -9,18 +11,20 @@ namespace Lip.Core.Mcmod.Lock;
 public class LockFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Reads and writes the workspace file (protocol/workspace.md §7.1, workspace.schema.json), called
-/// the lock in the code.
+/// Reads and writes the workspace file (protocol/workspace.md §7.1, workspace.schema.yaml), called
+/// the lock in the code. It is a YAML file (protocol/README.md), read and written through
+/// YamlJson.
 ///
-/// The workspace file lives inside the workspace, in &lt;root&gt;/.lip/workspace.json, so that it
+/// The workspace file lives inside the workspace, in &lt;root&gt;/.lip/workspace.yaml, so that it
 /// follows the workspace when the workspace is moved, renamed or copied. Next to it in .lip are
 /// the workspace lock (WorkspaceMutex) and the journal (WorkspaceTransaction). A workspace without
-/// the workspace file has no installed packages.
+/// the workspace file has no installed packages, unless it has a tooth_lock.json
+/// (ToothLockMigration), which the first workspace file written replaces (CommitStaged).
 public partial class LockStore(IFileSystem fs) {
   /// The directory of lip's own files in the workspace root, and the files in it.
   public const string LipDirectory = ".lip";
-  public const string FileName = "workspace.json";
-  public const string StagedFileName = "workspace.json.new";
+  public const string FileName = "workspace.yaml";
+  public const string StagedFileName = "workspace.yaml.tmp";
   public const string MutexFileName = "lock";
   public const string JournalFileName = "journal";
 
@@ -29,9 +33,6 @@ public partial class LockStore(IFileSystem fs) {
     RespectRequiredConstructorParameters = true,
   };
 
-  private static readonly JsonSerializerOptions _writeOptions = new() {
-    WriteIndented = true,
-  };
 
   private readonly IFileSystem _fs = fs;
 
@@ -63,7 +64,7 @@ public partial class LockStore(IFileSystem fs) {
     CommitStaged(workspaceRoot);
   }
 
-  /// Writes the lock to &lt;root&gt;/.lip/workspace.json.new, replacing an earlier staged lock.
+  /// Writes the lock to &lt;root&gt;/.lip/workspace.yaml.tmp, replacing an earlier staged lock.
   public async Task Stage(string workspaceRoot, LockFile lockFile) {
     try {
       Validate(lockFile);
@@ -76,7 +77,7 @@ public partial class LockStore(IFileSystem fs) {
     CreateLipDirectory(root);
     string tempPath = LipPath(root, StagedFileName);
 
-    byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(lockFile, _writeOptions);
+    byte[] bytes = YamlJson.SerializeToUtf8Bytes(JsonSerializer.SerializeToElement(lockFile));
     try {
       await _fs.File.WriteAllBytesAsync(tempPath, bytes);
     }
@@ -91,11 +92,30 @@ public partial class LockStore(IFileSystem fs) {
 
   /// Moves the staged lock into place in one rename, the point at which an operation commits.
   /// Does nothing when no lock is staged. Throws only when the lock was not moved.
+  ///
+  /// The first workspace file of a workspace whose workspace file was derived from its
+  /// tooth_lock.json replaces it: tooth_lock.json is deleted once the workspace file is in place
+  /// (protocol/compatibility.md §3).
   public void CommitStaged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
+    string path = LipPath(root, FileName);
     string tempPath = LipPath(root, StagedFileName);
-    if (_fs.File.Exists(tempPath)) {
-      _fs.File.Move(tempPath, LipPath(root, FileName), overwrite: true);
+    if (!_fs.File.Exists(tempPath)) {
+      return;
+    }
+
+    bool migrated = !_fs.File.Exists(path) && ToothLockMigration.Read(_fs, root) is not null;
+    _fs.File.Move(tempPath, path, overwrite: true);
+    if (!migrated) {
+      return;
+    }
+
+    // The workspace file is in place; what follows must not fail the operation.
+    try {
+      _fs.File.Delete(_fs.Path.Join(root, ToothLockMigration.FileName));
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      // A tooth_lock.json is not read once the workspace file exists.
     }
   }
 
@@ -129,15 +149,15 @@ public partial class LockStore(IFileSystem fs) {
 
   private static LockFile Parse(byte[] bytes, string path) {
     try {
-      using JsonDocument document = JsonDocument.Parse(bytes);
+      using JsonDocument document = YamlJson.Parse(bytes);
       JsonElement root = document.RootElement;
       if (root.ValueKind != JsonValueKind.Object) {
         throw new LockFormatException("the top level is not an object.");
       }
 
-      if (ToothParser.FormatVersion(root) != ToothFormat.FormatVersion) {
+      if (PackageFileParser.Format(root) != PackageFormat.Format) {
         throw new LockFormatException(
-            $"{ToothFormat.FormatVersionKey} is not {ToothFormat.FormatVersion}.");
+            $"{PackageFormat.FormatKey} is not {PackageFormat.Format}.");
       }
 
       // "commit" is omitted, not null, for a package that is not from a remote repository.
@@ -155,20 +175,19 @@ public partial class LockStore(IFileSystem fs) {
       return lockFile;
     }
     catch (Exception ex) when (ex is JsonException or LockFormatException or ArgumentException
-        or NotSupportedException or InvalidOperationException) {
+        or NotSupportedException or InvalidOperationException or YamlFormatException) {
       throw new LockFormatException($"Cannot read the workspace file '{path}': {ex.Message}", ex);
     }
   }
 
-  /// Checks what workspace.schema.json requires beyond what deserializing checks.
+  /// Checks what workspace.schema.yaml requires beyond what deserializing checks.
   private static void Validate(LockFile lockFile) {
     if (lockFile.Packages is null) {
       throw new LockFormatException("packages is null.");
     }
 
-    if (lockFile.FormatVersion != ToothFormat.FormatVersion) {
-      throw new LockFormatException(
-          $"{ToothFormat.FormatVersionKey} is not {ToothFormat.FormatVersion}.");
+    if (lockFile.Format != PackageFormat.Format) {
+      throw new LockFormatException($"{PackageFormat.FormatKey} is not {PackageFormat.Format}.");
     }
 
     if (lockFile.Platform is null
@@ -198,9 +217,9 @@ public partial class LockStore(IFileSystem fs) {
       }
 
       try {
-        _ = ToothParser.Parse(package.Manifest);
+        _ = PackageFileParser.Parse(package.Manifest);
       }
-      catch (ToothFormatException ex) {
+      catch (PackageFormatException ex) {
         throw new LockFormatException($"{at} has an invalid manifest: {ex.Message}", ex);
       }
 

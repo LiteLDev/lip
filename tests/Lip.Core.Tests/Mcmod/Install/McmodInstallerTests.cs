@@ -61,29 +61,29 @@ public class McmodInstallerTests {
       _fs.AddFile(Full(relative), new MockFileData(content));
 
   /// An entry of format 4 for (server, win-x64) with the given members.
-  private static ToothEntry Entry(string members) {
+  private static PackageEntry Entry(string members) {
     using JsonDocument json = JsonDocument.Parse(
         $$"""{ "platform": "server", "runtime": "win-x64"{{(members == "" ? "" : ", " + members)}} }""");
-    return ToothParser.ParseEntry(json.RootElement);
+    return PackageFileParser.ParseEntry(json.RootElement);
   }
 
-  /// A candidate of the package tooth with the given entry members, whose archive holds the
+  /// A candidate of the package id with the given entry members, whose archive holds the
   /// files self.
   private Candidate Candidate(
       string entry,
       Dictionary<string, string>? self = null,
-      string tooth = Pack,
+      string id = Pack,
       string version = "1.0.0") =>
-      Candidate(Entry(entry), new InMemorySource(self ?? []), tooth, version);
+      Candidate(Entry(entry), new InMemorySource(self ?? []), id, version);
 
   private Candidate Candidate(
-      ToothEntry entry, ISource self, string tooth = Pack, string version = "1.0.0") {
-    Package package = new(tooth, "", SemVersion.Parse(version), entry) {
-      Manifest = Resolution.TestCandidates.Manifest(tooth, version, "", entry),
+      PackageEntry entry, ISource self, string id = Pack, string version = "1.0.0") {
+    Package package = new(id, "", SemVersion.Parse(version), entry) {
+      Manifest = Resolution.TestCandidates.Manifest(id, version, "", entry),
     };
-    ArchiveHandle archive = new($"{tooth}@{version}", self, new string('0', 40));
+    ArchiveHandle archive = new($"{id}@{version}", self, new string('0', 40));
     return Lip.Core.Mcmod.Candidate.Create(
-        package, archive, Ref.Parse(tooth, allowFile: false), _provider.Object);
+        package, archive, Ref.Parse(id, allowFile: false), _provider.Object);
   }
 
   /// The mod LegacyMoney (an asset of type "mcmod") with the given extra entry members.
@@ -95,7 +95,7 @@ public class McmodInstallerTests {
     return Candidate(
         $$""" "assets": [ { "type": "mcmod", "urls": [ "{{LegacyMoneyUrl}}" ] } ]"""
             + (extra == "" ? "" : ", " + extra),
-        tooth: "example.com/legacymoney",
+        id: "example.com/legacymoney",
         version: version);
   }
 
@@ -148,7 +148,7 @@ public class McmodInstallerTests {
     // Arrange
     Candidate candidate = Candidate(
         SelfPlacements(Placement("PeEditor.exe", "PeEditor.exe")),
-        new() { ["tooth.json"] = "{}", ["PeEditor.exe"] = "exe", ["README.md"] = "readme" });
+        new() { ["lip.yaml"] = "{}", ["PeEditor.exe"] = "exe", ["README.md"] = "readme" });
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
@@ -156,7 +156,7 @@ public class McmodInstallerTests {
     // Assert
     Assert.Equal(["PeEditor.exe"], owned);
     Assert.Equal("exe", Read("PeEditor.exe"));
-    Assert.False(Exists("tooth.json"));
+    Assert.False(Exists("lip.yaml"));
     Assert.False(Exists("README.md"));
   }
 
@@ -183,10 +183,10 @@ public class McmodInstallerTests {
             Placement("assets/", "resource_packs/pack/"),
             Placement("", "copy/")),
         new() {
-          ["tooth.json"] = "{}",
+          ["lip.yaml"] = "{}",
           ["assets/a.txt"] = "a",
           ["assets/sub/b.txt"] = "b",
-          ["assets/tooth.json"] = "nested",
+          ["assets/lip.yaml"] = "nested",
         });
 
     // Act
@@ -195,11 +195,11 @@ public class McmodInstallerTests {
     // Assert
     Assert.Equal("a", Read("resource_packs/pack/a.txt"));
     Assert.Equal("b", Read("resource_packs/pack/sub/b.txt"));
-    Assert.Equal("nested", Read("resource_packs/pack/tooth.json"));
+    Assert.Equal("nested", Read("resource_packs/pack/lip.yaml"));
     Assert.Equal("a", Read("copy/assets/a.txt"));
-    Assert.Equal("nested", Read("copy/assets/tooth.json"));
-    // The tooth file of the package is never written.
-    Assert.False(Exists("copy/tooth.json"));
+    Assert.Equal("nested", Read("copy/assets/lip.yaml"));
+    // The package file of the package is never written (protocol/workspace.md §4 step 2).
+    Assert.False(Exists("copy/lip.yaml"));
     Assert.Equal(6, owned.Count);
   }
 
@@ -268,8 +268,39 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Install_GlobFormMatchingToothFile_NeverWritesIt() {
+  public async Task Install_GlobFormMatchingPackageFile_NeverWritesIt() {
     // Arrange
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("*.yaml", "cfg/")),
+        new() { ["lip.yaml"] = "{}", ["a.yaml"] = "a" });
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
+
+    // Assert
+    Assert.Equal(["cfg/a.yaml"], owned);
+    Assert.False(Exists("cfg/lip.yaml"));
+  }
+
+  [Fact]
+  public async Task Install_ToothJsonBesidePackageFile_IsWritten() {
+    // Arrange: only the package file is never written; with one, a tooth.json is a file like any
+    // other.
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("*.json", "cfg/")),
+        new() { ["lip.yaml"] = "{}", ["tooth.json"] = "{}", ["a.json"] = "a" });
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
+
+    // Assert
+    Assert.Equal(["cfg/a.json", "cfg/tooth.json"], owned.Order(StringComparer.Ordinal));
+  }
+
+  [Fact]
+  public async Task Install_ToothJsonOfArchiveWithoutPackageFile_IsNeverWritten() {
+    // Arrange: a package read from a tooth.json (protocol/compatibility.md §2) has it as its
+    // package file.
     Candidate candidate = Candidate(
         SelfPlacements(Placement("*.json", "cfg/")),
         new() { ["tooth.json"] = "{}", ["a.json"] = "a" });
@@ -342,7 +373,7 @@ public class McmodInstallerTests {
     _assets["https://example.com/bds.zip"] = new InMemorySource(new() {
       ["bedrock_server.exe"] = "bds",
       ["worlds/a.mcworld"] = "w",
-      ["tooth.json"] = "zip's",
+      ["lip.yaml"] = "zip's",
     });
     Candidate candidate = Candidate(
         """
@@ -352,19 +383,19 @@ public class McmodInstallerTests {
           { "type": "self", "place": [ { "src": "defaults/", "dest": "" } ] }
         ]
         """,
-        new() { ["tooth.json"] = "{}", ["defaults/server.properties"] = "props" });
+        new() { ["lip.yaml"] = "{}", ["defaults/server.properties"] = "props" });
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
 
     // Assert
     Assert.Equal(
-        ["bedrock_server.exe", "server.properties", "tooth.json", "worlds/a.mcworld"],
+        ["bedrock_server.exe", "lip.yaml", "server.properties", "worlds/a.mcworld"],
         owned.Order(StringComparer.Ordinal));
     Assert.Equal("bds", Read("bedrock_server.exe"));
     Assert.Equal("props", Read("server.properties"));
-    // Only the tooth file of the package itself is never written.
-    Assert.Equal("zip's", Read("tooth.json"));
+    // Only the package file of the package itself is never written.
+    Assert.Equal("zip's", Read("lip.yaml"));
     _provider.Verify(p => p.OpenAsset(
         It.Is<IReadOnlyList<string>>(u => u.SequenceEqual(
             new[] { "https://mirror.invalid/bds.zip", "https://example.com/bds.zip" }))));
@@ -431,7 +462,7 @@ public class McmodInstallerTests {
   public async Task Install_McmodManifest_IsWrittenAsItIs(string manifest) {
     // Arrange: lip reads only "name"; it neither checks nor fills in "dependencies".
     Candidate candidate = LegacyMoney(
-        """ "dependencies": { "example.com/a": "^1.0.0" } """,
+        """ "deps": { "example.com/a": "^1.0.0" } """,
         new InMemorySource(new() { ["manifest.json"] = manifest, ["LegacyMoney.dll"] = "dll" }));
 
     // Act
@@ -542,6 +573,7 @@ public class McmodInstallerTests {
   [InlineData("lip_lock.json")]
   [InlineData("tooth_lock.json")]
   [InlineData("tooth.json")]
+  [InlineData("lip.yaml")]
   [InlineData(".git/hooks/pre-commit")]
   public async Task Install_DestNamedLikeLipOrGitFile_Writes(string dest) {
     // Arrange
@@ -558,7 +590,7 @@ public class McmodInstallerTests {
 
   [Fact]
   public async Task Install_DestWithDotSegment_WritesAndOwnsThePathWithoutIt() {
-    // Arrange: tooth.schema.json #/definitions/path allows "." segments.
+    // Arrange: lip.schema.yaml #/definitions/path allows "." segments.
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", "x/./a.txt")), new() { ["a.txt"] = "a" });
 
@@ -575,7 +607,7 @@ public class McmodInstallerTests {
   [InlineData("trailing./a.txt")]
   [InlineData("a.txt ")]
   public async Task Install_SchemaValidDestOutsideWindows_Writes(string dest) {
-    // Arrange: tooth.schema.json #/definitions/path allows ':' after the first segment and
+    // Arrange: lip.schema.yaml #/definitions/path allows ':' after the first segment and
     // segments ending in '.' or ' '.
     Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows cannot write such names as they are.");
     Candidate candidate = Candidate(
@@ -659,7 +691,7 @@ public class McmodInstallerTests {
     // Arrange
     AddFile("PeEditor.exe", "other's");
     AddFile("unrelated.txt", "keep");
-    Candidate other = Candidate("", tooth: "example.com/other");
+    Candidate other = Candidate("", id: "example.com/other");
     LockFile lockFile = Lock() with { Packages = [Locked(other, ["PeEditor.exe"])] };
     Candidate candidate = Candidate(
         SelfPlacements(Placement("new.txt", "new.txt"), Placement("PeEditor.exe", "PeEditor.exe"))
@@ -681,7 +713,7 @@ public class McmodInstallerTests {
   public async Task Install_PreservedFileOwnedByAnotherPackage_Throws() {
     // Arrange
     AddFile("cfg.ini", "other's");
-    Candidate other = Candidate("", tooth: "example.com/other");
+    Candidate other = Candidate("", id: "example.com/other");
     LockFile lockFile = Lock() with { Packages = [Locked(other, ["cfg.ini"])] };
     Candidate candidate = Candidate(
         SelfPlacements(Placement("cfg.ini", "cfg.ini")) + """, "preserve": [ "cfg.ini" ]""",
@@ -698,7 +730,7 @@ public class McmodInstallerTests {
     // Arrange: the lock spells the path with backslashes and, on Windows, in another case.
     string lockedPath = OperatingSystem.IsWindows() ? @"Mods\LegacyMoney\LegacyMoney.DLL"
         : @"mods\LegacyMoney\LegacyMoney.dll";
-    Candidate other = Candidate("", tooth: "example.com/other");
+    Candidate other = Candidate("", id: "example.com/other");
     LockFile lockFile = Lock() with { Packages = [Locked(other, [lockedPath])] };
 
     // Act & Assert
@@ -957,9 +989,8 @@ public class McmodInstallerTests {
     AddFile("logs/x.log", "x");
     using JsonDocument manifest = JsonDocument.Parse($$"""
         {
-          "format_version": 4,
-          "format_uuid": "{{ToothFormat.FormatUuid}}",
-          "tooth": "{{Pack}}",
+          "format": 4,
+          "id": "{{Pack}}",
           "version": "1.0.0",
           "variants": {
             "": [
@@ -998,7 +1029,7 @@ public class McmodInstallerTests {
   public async Task Uninstall_InvalidRecordedEntry_Throws() {
     // Arrange
     LockedPackage locked = Locked(Candidate(""), []) with {
-      Manifest = JsonDocument.Parse("""{ "format_version": 4, "variants": {} }""").RootElement,
+      Manifest = JsonDocument.Parse("""{ "format": 4, "variants": {} }""").RootElement,
     };
 
     // Act & Assert
@@ -1049,7 +1080,7 @@ public class McmodInstallerTests {
     // Arrange
     AddFile("shared.txt", "s");
     Candidate candidate = Candidate("");
-    Candidate other = Candidate("", tooth: "example.com/other");
+    Candidate other = Candidate("", id: "example.com/other");
     LockFile lockFile = Lock() with {
       Packages = [Locked(candidate, ["shared.txt"]), Locked(other, ["shared.txt"])],
     };
@@ -1068,7 +1099,7 @@ public class McmodInstallerTests {
     AddFile("shared.txt", "s");
     AddFile("own.txt", "o");
     Candidate candidate = Candidate("");
-    Candidate other = Candidate("", tooth: "example.com/other");
+    Candidate other = Candidate("", id: "example.com/other");
     string[] recorded = ["./.lip/lock", "./shared.txt", "./own.txt"];
     LockFile lockFile = Lock() with {
       Packages = [Locked(candidate, recorded), Locked(other, ["shared.txt"])],
@@ -1095,7 +1126,7 @@ public class McmodInstallerTests {
     AddFile("mods/LegacyMoney/data/foreign.txt", "f");
     AddFile("mods/LegacyMoney/run.log", "log");
     AddFile("mods/LegacyMoney/keep.txt", "k");
-    Candidate other = Candidate("", tooth: "example.com/other");
+    Candidate other = Candidate("", id: "example.com/other");
     LockFile lockFile = Lock() with {
       Packages = [
         Locked(candidate, owned),
@@ -1369,7 +1400,7 @@ public class McmodInstallerAssetDownloadTests {
     h.AddDownload("https://two.example.com/a.zip", WorkspaceHarness.Zip(new() { ["a.txt"] = "two" }));
     h.AddDownload("https://three.example.com/a.zip", WorkspaceHarness.Zip(new() { ["a.txt"] = "three" }));
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/a", "1.0.0", ZipEntry(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.0", ZipEntry(
           "https://one.example.com/a.zip",
           "https://two.example.com/a.zip",
           "https://three.example.com/a.zip")),
@@ -1388,7 +1419,7 @@ public class McmodInstallerAssetDownloadTests {
     // Arrange
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/a", "1.0.0", ZipEntry(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.0", ZipEntry(
           "https://one.example.com/a.zip", "https://two.example.com/a.zip")),
     });
     SortedDictionary<string, string> before = Workspace(h);
@@ -1405,7 +1436,7 @@ public class McmodInstallerAssetDownloadTests {
     WorkspaceHarness h = new();
     h.AddDownload("https://one.example.com/a.zip", Encoding.UTF8.GetBytes("not a zip"));
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/a", "1.0.0", ZipEntry("https://one.example.com/a.zip")),
     });
     SortedDictionary<string, string> before = Workspace(h);

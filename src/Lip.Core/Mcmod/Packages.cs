@@ -5,26 +5,26 @@ using Semver;
 namespace Lip.Core.Mcmod;
 
 /// A package with its selected entry (protocol/package.md §4): what a candidate installs. Variant
-/// is the variant of the source it was resolved for (the variant it names, for a dependency of
-/// format 3 whose "client" names "" of a package of format 4).
-public record Package(string Tooth, string Variant, SemVersion Version, ToothEntry Entry) {
-  /// The tooth file of the package, of format 4 (for a tooth file of an earlier format, the one
-  /// protocol/package.md §5 derives from it for the environment), which the workspace file
+/// is the variant of the source it was resolved for (the variant it names, for a dependency of a
+/// tooth.json whose "client" names "" of a package that has a package file).
+public record Package(string Id, string Variant, SemVersion Version, PackageEntry Entry) {
+  /// The package file of the package (for a package read from a tooth.json, the one
+  /// protocol/compatibility.md §2 derives from it for the environment), which the workspace file
   /// records.
   public required JsonElement Manifest { get; init; }
 
-  /// The identity (protocol/package.md §4): the tooth path, followed by '#' and the variant when
+  /// The identity (protocol/package.md §4): the package id, followed by '#' and the variant when
   /// that is not "". Compared ignoring ASCII case.
-  public string Identity => GetIdentity(Tooth, Variant);
+  public string Identity => GetIdentity(Id, Variant);
 
-  public static string GetIdentity(string tooth, string variant) =>
-      variant == "" ? tooth : $"{tooth}#{variant}";
+  public static string GetIdentity(string id, string variant) =>
+      variant == "" ? id : $"{id}#{variant}";
 }
 
 public static partial class PackageNames {
   public static bool AreEqual(string a, string b) => Fold(a) == Fold(b);
 
-  /// Lowercases ASCII letters only: tooth paths, identities and mod names are compared ASCII
+  /// Lowercases ASCII letters only: package ids, identities and mod names are compared ASCII
   /// case-insensitively (protocol/package.md §1).
   public static string Fold(string name) => string.Create(name.Length, name, (span, s) => {
     for (int i = 0; i < s.Length; i++) {
@@ -32,7 +32,7 @@ public static partial class PackageNames {
     }
   });
 
-  /// Whether a name is an id: ^[A-Za-z0-9][A-Za-z0-9._-]*$ (protocol/package.md §1).
+  /// Whether a name is a mod name: ^[A-Za-z0-9][A-Za-z0-9._-]*$ (protocol/package.md §4).
   public static bool IsValid(string name) => ValidName().IsMatch(name);
 
   [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]*\z")]

@@ -2,28 +2,61 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Entities;
 using Lip.Core.Json;
+using Lip.Core.Migration.PackageManifests;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Tooth files of earlier formats (protocol/package.md §5): a tooth file of format 1, 2 or 3
+/// The tooth.json of lip v0.x (protocol/compatibility.md §2): a tooth.json of format 1, 2 or 3
 /// (1 and 2 are first read as 3 by PackageManifestMigration) is read, for an environment, as the
-/// tooth file of format 4 that Section 5 derives from it (Derive). Nothing of format 3 is carried
-/// beyond that: the result is an ordinary tooth file of format 4.
+/// package file that Section 2 derives from it (Derive). Nothing of format 3 is carried beyond
+/// that: the result is an ordinary package file.
 ///
-/// For each label L of the variants of the tooth file, the variants labeled L whose platform is
+/// For each label L of the variants of the tooth.json, the variants labeled L whose platform is
 /// "" or matches the runtime are merged exactly like PackageManifest.GetVariant merges them for
 /// lip's own runtime in lip v0.37.0, and become the single entry of the variant L, for the
-/// platform and the runtime of the environment (ConvertEntry). On the client platform, a tooth
-/// file with the label "client" has the variant "" derived from that label.
+/// platform and the runtime of the environment (ConvertEntry). On the client platform, a
+/// tooth.json with the label "client" has the variant "" derived from that label.
 public static class ToothCompat {
   public const string ClientLabel = "client";
 
-  /// The tooth file of format 4 that a tooth file of format 3 is read as for an environment
-  /// (protocol/package.md §5), with the version of the package as its version: version, or else
-  /// the version of the tooth file. Its entries are Derived, and their dependencies ClientCompat.
-  /// Throws ToothFormatException when the variants of a label cannot be merged (lip v0.37.0 failed
-  /// on them too), or when a derived entry is not valid in format 4.
-  public static ToothFile Derive(
+  /// The file at the root of an archive of lip v0.x that makes it a package.
+  public const string ToothFileName = "tooth.json";
+
+  /// The member of tooth.json, tooth_lock.json and liprc.json that holds their format.
+  public const string FormatVersionKey = "format_version";
+
+  /// The format_version of a tooth.json, tooth_lock.json or liprc.json; null when it has none
+  /// that is an integer.
+  public static int? FormatVersion(JsonElement root) =>
+      PackageFileParser.IntegerMember(root, FormatVersionKey);
+
+  /// Reads a tooth.json as format 3 (protocol/compatibility.md §2). Throws
+  /// PackageFormatException when it is not a JSON object with format_version 1, 2 or 3 that reads
+  /// as format 3.
+  public static PackageManifest ReadToothJson(JsonElement root) {
+    int? formatVersion = FormatVersion(root);
+    if (formatVersion is not (1 or 2 or 3)) {
+      throw new PackageFormatException(
+          $"Invalid {ToothFileName}: {FormatVersionKey} must be 1, 2 or 3.");
+    }
+
+    try {
+      using JsonDocument json = JsonDocument.Parse(root.GetRawText());
+      return PackageManifestMigration.Migrate(json);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException) {
+      // The migration and the format 3 model throw many kinds of exceptions on bad input.
+      throw new PackageFormatException(
+          $"Invalid {ToothFileName} of format {formatVersion}: {ex.Message}", ex);
+    }
+  }
+
+  /// The package file that a tooth.json of format 3 is read as for an environment
+  /// (protocol/compatibility.md §2), with the version of the package as its version: version, or
+  /// else the version of the tooth.json. Its entries are Derived, and their dependencies
+  /// ClientCompat. Throws PackageFormatException when the variants of a label cannot be merged
+  /// (lip v0.37.0 failed on them too), or when a derived entry is not valid in a package file.
+  public static PackageFile Derive(
       PackageManifest manifest, LipEnvironment environment, Semver.SemVersion? version = null) {
     version ??= manifest.Version;
     Dictionary<string, JsonObject?> derived = new(StringComparer.Ordinal);
@@ -36,8 +69,9 @@ public static class ToothCompat {
         continue;
       }
       catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) {
-        throw new ToothFormatException(
-            $"Invalid tooth.json: the variants labeled '{label}' cannot be merged: {ex.Message}",
+        throw new PackageFormatException(
+            $"Invalid {ToothFileName}: the variants labeled '{label}' cannot be merged: "
+                + ex.Message,
             ex);
       }
 
@@ -59,9 +93,8 @@ public static class ToothCompat {
     }
 
     JsonObject document = new() {
-      [ToothFormat.FormatVersionKey] = ToothFormat.FormatVersion,
-      ["format_uuid"] = ToothFormat.FormatUuid,
-      ["tooth"] = manifest.Path,
+      [PackageFormat.FormatKey] = PackageFormat.Format,
+      ["id"] = manifest.Path,
       ["version"] = version.ToString(),
     };
     if (manifest.Info is PackageManifestInfo info) {
@@ -71,28 +104,28 @@ public static class ToothCompat {
     document["variants"] = variants;
 
     JsonElement json = JsonSerializer.SerializeToElement(document);
-    Dictionary<string, IReadOnlyList<ToothEntry>> entries = new(StringComparer.Ordinal);
+    Dictionary<string, IReadOnlyList<PackageEntry>> entries = new(StringComparer.Ordinal);
     foreach (JsonProperty variant in json.GetProperty("variants").EnumerateObject()) {
-      ToothEntry entry = ToothParser.ParseEntry(variant.Value[0]);
+      PackageEntry entry = PackageFileParser.ParseEntry(variant.Value[0]);
       entries[variant.Name] = [entry with {
         Derived = true,
         Dependencies = [.. entry.Dependencies.Select(d => d with { ClientCompat = true })],
       }];
     }
 
-    return new ToothFile {
-      Tooth = manifest.Path,
+    return new PackageFile {
+      Id = manifest.Path,
       Version = version,
       Variants = entries,
       Json = json,
     };
   }
 
-  /// The entry of format 4 for the variants of a label merged for a runtime (protocol/package.md
-  /// §5), for a platform and the runtime; null when an asset has the type tar, tgz or
-  /// uncompressed, which makes the variant absent. Placements and globs that are not valid in
-  /// format 4 are left out; notes, when given, tell about them and about dropped variants, each
-  /// prefixed by field.
+  /// The entry of a package file for the variants of a label merged for a runtime
+  /// (protocol/compatibility.md §2), for a platform and the runtime; null when an asset has the
+  /// type tar, tgz or uncompressed, which makes the variant absent. Placements and globs that are
+  /// not valid in a package file are left out; notes, when given, tell about them and about
+  /// dropped variants, each prefixed by field.
   public static JsonObject? ConvertEntry(
       PackageManifestVariant merged,
       McmodPlatform platform,
@@ -110,7 +143,7 @@ public static class ToothCompat {
         dependencies[id.ToString()] = range.ToString();
       }
 
-      entry["dependencies"] = dependencies;
+      entry["deps"] = dependencies;
     }
 
     JsonArray assets = [];
@@ -118,7 +151,7 @@ public static class ToothCompat {
       PackageManifestAsset asset = merged.Assets[i];
       if (asset.Type is not (PackageManifestAsset.AssetType.Self
           or PackageManifestAsset.AssetType.Zip)) {
-        notes?.Add($"{field}.assets[{i}]: format 4 has no asset type "
+        notes?.Add($"{field}.assets[{i}]: {PackageFormat.FileName} has no asset type "
             + $"\"{JsonSerializer.Serialize(asset.Type).Trim('"')}\", so the variant has no entry "
             + "here. Publish its files as a ZIP archive and use an asset of type \"zip\".");
         return null;
@@ -134,11 +167,12 @@ public static class ToothCompat {
       JsonArray place = [];
       foreach (PackageManifestAssetPlacement placement in asset.Placements) {
         (string src, string dest) = ConvertPlacement(placement);
-        if (ToothParser.IsValidPlacement(src, dest)) {
+        if (PackageFileParser.IsValidPlacement(src, dest)) {
           place.Add(new JsonObject { ["src"] = src, ["dest"] = dest });
         } else {
           notes?.Add($"{field}.assets[{i}]: the placement '{placement.Src}' -> '{placement.Dst}' "
-              + $"becomes '{src}' -> '{dest}', which is not valid in format 4; it was left out.");
+              + $"becomes '{src}' -> '{dest}', which is not valid in {PackageFormat.FileName}; it "
+              + "was left out.");
         }
       }
 
@@ -173,7 +207,7 @@ public static class ToothCompat {
     return entry;
   }
 
-  /// The member of place for a placement of format 3 (protocol/package.md §5): '\' becomes '/',
+  /// The member of place for a placement of format 3 (protocol/compatibility.md §2): '\' becomes '/',
   /// empty and "." segments are removed; a "dir" placement has src and dest each followed by '/'
   /// unless empty, a "file" placement whose src has '*', '?' or '[' has dest followed by '/'
   /// unless empty, any other "file" placement is the file form.
@@ -198,8 +232,8 @@ public static class ToothCompat {
     JsonArray array = [];
     foreach (string glob in globs) {
       if (TryParseGlob(glob) is null) {
-        notes?.Add($"{field}: the pattern '{glob}' is not a valid glob of format 4; it was left "
-            + "out.");
+        notes?.Add($"{field}: the pattern '{glob}' is not a valid glob of "
+            + $"{PackageFormat.FileName}; it was left out.");
         continue;
       }
 
@@ -211,8 +245,9 @@ public static class ToothCompat {
     }
   }
 
-  /// The info of format 4 for the info of format 3 (protocol/package.md §5): its members as they
-  /// are, with "avatar_url" as "logo" when it starts with "https://" and dropped otherwise.
+  /// The info of a package file for the info of format 3 (protocol/compatibility.md §2): its
+  /// members as they are, with "avatar_url" as "logo" when it starts with "https://" and dropped
+  /// otherwise.
   public static JsonObject Info(PackageManifestInfo info) {
     JsonObject result = [];
     if (info.Name is not null) {
@@ -234,7 +269,8 @@ public static class ToothCompat {
     return result;
   }
 
-  /// Whether an "avatar_url" of format 3 is a "logo" of format 4: it starts with "https://".
+  /// Whether an "avatar_url" of format 3 is a "logo" of a package file: it starts with
+  /// "https://".
   public static bool IsLogo(string avatarUrl) =>
       avatarUrl.StartsWith("https://", StringComparison.Ordinal);
 
@@ -244,21 +280,23 @@ public static class ToothCompat {
     }
   }
 
-  /// The preserve of format 4 for the patterns of preserve_files of format 3 (protocol/package.md
-  /// §5): '\' becomes '/', and a pattern without '/' is prefixed by "**/".
+  /// The preserve of a package file for the patterns of preserve_files of format 3
+  /// (protocol/compatibility.md §2): '\' becomes '/', and a pattern without '/' is prefixed by
+  /// "**/".
   public static IEnumerable<string> PreserveFiles(IEnumerable<string> patterns) =>
       patterns
           .Select(p => p.Replace('\\', '/'))
           .Select(p => p.Contains('/') ? p : $"**/{p}");
 
-  /// The purge of format 4 for the patterns of remove_files of format 3 (protocol/package.md §5):
-  /// '\' becomes '/', and a pattern not ending with '/' is also given with a trailing '/'.
+  /// The purge of a package file for the patterns of remove_files of format 3
+  /// (protocol/compatibility.md §2): '\' becomes '/', and a pattern not ending with '/' is also
+  /// given with a trailing '/'.
   public static IEnumerable<string> RemoveFiles(IEnumerable<string> patterns) =>
       patterns
           .Select(p => p.Replace('\\', '/'))
           .SelectMany(p => p.EndsWith('/') ? [p] : new[] { p, p + "/" });
 
-  /// The hooks of the scripts of format 3 (protocol/package.md §5): "install" runs after the files
+  /// The hooks of the scripts of format 3 (protocol/compatibility.md §2): "install" runs after the files
   /// were placed, together with "post_install", and "uninstall" before the files are removed,
   /// together with "pre_uninstall".
   public static Hooks ConvertScripts(PackageManifestScripts scripts) => new() {
@@ -268,7 +306,8 @@ public static class ToothCompat {
     PostUninstall = scripts.PostUninstall,
   };
 
-  /// The glob of a converted pattern, or null for a pattern that is not a valid glob of format 4.
+  /// The glob of a converted pattern, or null for a pattern that is not a valid glob of a package
+  /// file.
   public static PathGlob? TryParseGlob(string pattern) {
     try {
       return new PathGlob(pattern);

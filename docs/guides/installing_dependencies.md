@@ -4,7 +4,7 @@ lip provides flexible ways to install dependencies.
 
 ## Basic Installation
 
-To install a package by its tooth path:
+To install a package by its package id:
 
 ```sh
 lip install <PACKAGES>
@@ -15,7 +15,7 @@ Example:
 lip install github.com/user/repo
 ```
 
-This installs the newest version of the package that has an entry for your workspace's platform and RID, and the dependencies it declares, into your workspace, and records them in the [workspace file](../concepts/lockfiles.md). It does not modify any `tooth.json`.
+This installs the newest version of the package that has an entry for your workspace's platform and RID, and the dependencies it declares, into your workspace, and records them in the [workspace file](../concepts/lockfiles.md). It does not modify any `lip.yaml`.
 
 ## Specifying Versions
 
@@ -41,7 +41,7 @@ The workspace file records the commit, so the workspace stays on it until `lip u
 
 ## Installing from Local Files and Directories
 
-You can install a package directly from a local ZIP file or directory with a `tooth.json` at its root, by a path relative to the current directory or an absolute path:
+You can install a package directly from a local ZIP file or directory with a `lip.yaml` at its root, by a path relative to the current directory or an absolute path:
 
 ```sh
 lip install ./path/to/package.zip
@@ -53,7 +53,7 @@ This is useful for testing packages before publishing.
 
 ## Installing from Remote URLs
 
-You can also install a ZIP archive with a `tooth.json` at its root directly from an HTTPS URL:
+You can also install a ZIP archive with a `lip.yaml` at its root directly from an HTTPS URL:
 
 ```sh
 lip install https://example.com/package.zip
@@ -61,7 +61,7 @@ lip install https://example.com/package.zip
 
 ## Server Workspaces Only
 
-lip manages server workspaces: mods are installed to `mods/<name>/` (see [Environment](../concepts/tooth_json.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
+lip manages server workspaces: mods are installed to `mods/<name>/` (see [Environment](../concepts/lip_yaml.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
 Before `lip install`, `lip uninstall` or `lip update` changes any package, lip creates `mods` if it is missing. If `mods` is a link, lip stops and changes nothing.
 

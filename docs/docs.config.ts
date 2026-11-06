@@ -61,7 +61,7 @@ export default defineDocsConfig({
           text: 'Concepts',
           items: [
             { text: 'Architecture', link: '/concepts/architecture' },
-            { text: 'tooth.json', link: '/concepts/tooth_json' },
+            { text: 'lip.yaml', link: '/concepts/lip_yaml' },
             { text: 'Workspace File', link: '/concepts/lockfiles' },
           ],
         },
@@ -121,7 +121,7 @@ export default defineDocsConfig({
           text: '概念',
           items: [
             { text: '架构', link: '/zh/concepts/architecture' },
-            { text: 'tooth.json', link: '/zh/concepts/tooth_json' },
+            { text: 'lip.yaml', link: '/zh/concepts/lip_yaml' },
             { text: '工作区文件', link: '/zh/concepts/lockfiles' },
           ],
         },

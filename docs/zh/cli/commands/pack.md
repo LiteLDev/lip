@@ -22,12 +22,12 @@ lip pack [DIR] -o <FILE>
 
 ## 说明
 
-向 `<FILE>` 写入一个 ZIP 归档（若已存在则替换），其中包含 `DIR` 之下的每个普通文件，路径为其相对于 `DIR` 的路径。`<FILE>` 本身，以及 `DIR` 根部 `.git/` 和 `.lip/` 中的所有内容，都不会放入。文件按原样打包：`lip pack` 不读取也不检查 `tooth.json` 或 `manifest.json`。
+向 `<FILE>` 写入一个 ZIP 归档（若已存在则替换），其中包含 `DIR` 之下的每个普通文件，路径为其相对于 `DIR` 的路径。`<FILE>` 本身，以及 `DIR` 根部 `.git/` 和 `.lip/` 中的所有内容，都不会放入。文件按原样打包：`lip pack` 不读取也不检查 `lip.yaml` 或 `manifest.json`。
 
 可用它构建：
 
 - `mcmod` 资源的归档：从根部带有该 mod 的 LeviLamina `manifest.json` 的目录（例如构建输出目录）打包。把它附加到 Release，并把其 URL 列入该资源的 `urls`。参见 [mod](../../guides/creating_packages.md#mod)。
-- 单个 ZIP 文件形式的包：从根部带有 `tooth.json` 的目录打包，以便用 [`lip install`](install.md) 安装，或在某个 URL 上发布。
+- 单个 ZIP 文件形式的包：从根部带有 `lip.yaml` 的目录打包，以便用 [`lip install`](install.md) 安装，或在某个 URL 上发布。
 
 ## 示例
 

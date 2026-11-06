@@ -31,7 +31,7 @@ public class GlobListJsonConverter : JsonConverter<List<Glob>> {
   }
 
   // Glob.ToString() formats with a shared, unsynchronized formatter, so concurrent calls (e.g.
-  // tooth.json packages serialized while resolving in parallel) corrupt each other.
+  // tooth.json files read while resolving in parallel) corrupt each other.
   private static readonly Lock _formatLock = new();
 
   public override void Write(Utf8JsonWriter writer, List<Glob> value, JsonSerializerOptions options) {

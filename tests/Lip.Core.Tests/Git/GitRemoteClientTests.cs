@@ -10,7 +10,7 @@ public class GitRemoteClientTests {
 
   private static readonly byte[] s_readme = Encoding.UTF8.GetBytes("# readme\n");
   private static readonly byte[] s_script = Encoding.UTF8.GetBytes("#!/bin/sh\necho hi\n");
-  private static readonly byte[] s_tooth = Encoding.UTF8.GetBytes("{\"format_version\":3}\n");
+  private static readonly byte[] s_packageFile = Encoding.UTF8.GetBytes("format: 4\n");
 
   [Fact]
   public async Task ListRefs_ParsesRefsAndPeeledTags() {
@@ -132,13 +132,13 @@ public class GitRemoteClientTests {
     List<string> received = [];
     await client.FetchBlobs(
         new Url("https://github.com/owner/repo.git"),
-        [blobIds["tooth.json"], blobIds["README.md"]],
+        [blobIds["lip.yaml"], blobIds["README.md"]],
         (objectId, _) => {
           received.Add(objectId);
           return Task.CompletedTask;
         });
 
-    Assert.Equal(new[] { blobIds["README.md"], blobIds["tooth.json"] }.Order(), received.Order());
+    Assert.Equal(new[] { blobIds["README.md"], blobIds["lip.yaml"] }.Order(), received.Order());
     httpTest.ShouldHaveCalled("https://github.com/owner/repo.git/git-upload-pack").Times(1);
   }
 
@@ -207,9 +207,9 @@ public class GitRemoteClientTests {
       new GitTreeEntry("README.md", 100644, blobIds["README.md"]),
       new GitTreeEntry("bin/link", 120000, blobIds["README.md"]),
       new GitTreeEntry("bin/run.sh", 100755, blobIds["bin/run.sh"]),
-      new GitTreeEntry("tooth.json", 100644, blobIds["tooth.json"]),
+      new GitTreeEntry("lip.yaml", 100644, blobIds["lip.yaml"]),
     ], entries);
-    Assert.Equal(100644, entries.Single(e => e.Path == "tooth.json").Mode);
+    Assert.Equal(100644, entries.Single(e => e.Path == "lip.yaml").Mode);
 
     string body = await RequestBody(httpTest, 1);
     Assert.Contains($"want {tagId}\n", body);
@@ -384,14 +384,14 @@ public class GitRemoteClientTests {
       bool includeBlobs) {
     string readmeId = PackBuilder.ObjectId(GitObjectType.Blob, s_readme);
     string scriptId = PackBuilder.ObjectId(GitObjectType.Blob, s_script);
-    string toothId = PackBuilder.ObjectId(GitObjectType.Blob, s_tooth);
+    string packageFileId = PackBuilder.ObjectId(GitObjectType.Blob, s_packageFile);
     byte[] binTree = PackBuilder.Tree(("120000", "link", readmeId), ("100755", "run.sh", scriptId));
     string binTreeId = PackBuilder.ObjectId(GitObjectType.Tree, binTree);
     byte[] rootTree = PackBuilder.Tree(
         ("100644", "README.md", readmeId),
         ("40000", "bin", binTreeId),
         ("160000", "submodule", new string('d', 40)),
-        ("100644", "tooth.json", toothId));
+        ("100644", "lip.yaml", packageFileId));
     string rootTreeId = PackBuilder.ObjectId(GitObjectType.Tree, rootTree);
     byte[] commit = PackBuilder.Commit(rootTreeId);
     byte[] tag = PackBuilder.Tag(PackBuilder.ObjectId(GitObjectType.Commit, commit));
@@ -404,13 +404,13 @@ public class GitRemoteClientTests {
     if (includeBlobs) {
       builder.AddObject(GitObjectType.Blob, s_readme);
       builder.AddObject(GitObjectType.Blob, s_script);
-      builder.AddObject(GitObjectType.Blob, s_tooth);
+      builder.AddObject(GitObjectType.Blob, s_packageFile);
     }
 
     return (builder.Build(), PackBuilder.ObjectId(GitObjectType.Tag, tag), new() {
       ["README.md"] = readmeId,
       ["bin/run.sh"] = scriptId,
-      ["tooth.json"] = toothId,
+      ["lip.yaml"] = packageFileId,
     });
   }
 

@@ -185,18 +185,16 @@ internal sealed class WorkspaceHarness {
   /// The runtime of the environment the tests install for.
   public const string Runtime = "win-x64";
 
-  /// A tooth.json of format 4 whose variant "" has one entry for (server, Runtime) with the
-  /// given members (e.g. "\"assets\": [...]"), comma-separated JSON members without braces.
-  public static string Tooth4(string tooth, string version, string entry = "") => $$"""
-      {
-        "format_version": 4,
-        "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-        "tooth": "{{tooth}}",
-        "version": "{{version}}",
-        "variants": {
-          "": [ { "platform": "server", "runtime": "{{Runtime}}"{{(entry == "" ? "" : ", " + entry)}} } ]
-        }
-      }
+  /// A lip.yaml whose variant "" has one entry for (server, Runtime) with the given members
+  /// (e.g. "\"assets\": [...]"), comma-separated JSON members without braces, written as a YAML
+  /// flow mapping in a block document.
+  public static string LipYaml(string id, string version, string entry = "") => $$"""
+      format: 4
+      id: {{id}}
+      version: "{{version}}"
+      variants:
+        "":
+          - { "platform": "server", "runtime": "{{Runtime}}"{{(entry == "" ? "" : ", " + entry.ReplaceLineEndings("\n      "))}} }
       """;
 
   /// The member "assets" of an entry with one asset of type "self" placing the file "src" at

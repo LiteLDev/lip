@@ -1,19 +1,20 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Lip.Core.Mcmod.Compat;
+using Lip.Core.Json;
 using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Thrown when a tooth file, or an entry of one, is not valid (protocol/package.md §3).
-public class ToothFormatException(string message, Exception? inner = null)
+/// Thrown when a package file, or an entry of one, is not valid (protocol/package.md §3), or when
+/// a tooth.json cannot be read (protocol/compatibility.md §2).
+public class PackageFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Parses and validates tooth files of format 4 (tooth.schema.json and protocol/package.md §3),
-/// and entries, also those derived from format 3 (protocol/package.md §5) that the workspace file
+/// Parses and validates package files (lip.schema.yaml and protocol/package.md §3), and entries,
+/// also those derived from a tooth.json (protocol/compatibility.md §2) that the workspace file
 /// records. Keys the schema does not describe are ignored.
-public static partial class ToothParser {
+public static partial class PackageFileParser {
   private static readonly UTF8Encoding _strictUtf8 = new(
       encoderShouldEmitUTF8Identifier: false,
       throwOnInvalidBytes: true);
@@ -25,8 +26,9 @@ public static partial class ToothParser {
   };
 
   /// Parses strict JSON [RFC8259]: UTF-8 (a byte order mark is ignored), no comments, no
-  /// trailing commas and no duplicate member names. The caller disposes the result.
-  public static JsonDocument ParseJson(byte[] utf8Json) {
+  /// trailing commas and no duplicate member names. fileName names the file in errors. The caller
+  /// disposes the result.
+  public static JsonDocument ParseJson(byte[] utf8Json, string fileName) {
     ReadOnlyMemory<byte> bytes = utf8Json;
 
     if (bytes.Span.StartsWith(Encoding.UTF8.Preamble)) {
@@ -37,47 +39,59 @@ public static partial class ToothParser {
       _ = _strictUtf8.GetCharCount(bytes.Span);
     }
     catch (DecoderFallbackException ex) {
-      throw new ToothFormatException("Invalid tooth.json: not valid UTF-8.", ex);
+      throw new PackageFormatException($"Invalid {fileName}: not valid UTF-8.", ex);
     }
 
     try {
       return JsonDocument.Parse(bytes, _jsonOptions);
     }
     catch (JsonException ex) {
-      throw new ToothFormatException($"Invalid tooth.json: not strict JSON ({ex.Message})", ex);
+      throw new PackageFormatException($"Invalid {fileName}: not strict JSON ({ex.Message})", ex);
     }
   }
 
-  /// The format_version of a tooth file, or null when it has none that is an integer.
-  public static int? FormatVersion(JsonElement root) =>
+  /// The "format" of a package file or of the workspace file, or null when it has none that is an
+  /// integer.
+  public static int? Format(JsonElement root) => IntegerMember(root, PackageFormat.FormatKey);
+
+  /// The member key of an object that is an integer, or null.
+  public static int? IntegerMember(JsonElement root, string key) =>
       root.ValueKind == JsonValueKind.Object
-      && root.TryGetProperty(ToothFormat.FormatVersionKey, out JsonElement version)
+      && root.TryGetProperty(key, out JsonElement version)
       && version.ValueKind == JsonValueKind.Number
       && version.TryGetDouble(out double value)
       && value == Math.Floor(value) && value is >= int.MinValue and <= int.MaxValue
           ? (int)value
           : null;
 
-  /// Parses a tooth file of format 4. Throws ToothFormatException when it is not valid.
-  public static ToothFile Parse(byte[] utf8Json) {
-    using JsonDocument json = ParseJson(utf8Json);
+  /// Reads lip.yaml, a YAML file (protocol/README.md). The caller disposes the result. Throws
+  /// PackageFormatException when it is not one.
+  public static JsonDocument ParseYaml(byte[] yaml) {
+    try {
+      return YamlJson.Parse(yaml);
+    }
+    catch (YamlFormatException ex) {
+      throw new PackageFormatException($"Invalid {PackageFormat.FileName}: {ex.Message}", ex);
+    }
+  }
+
+  /// Parses a package file, the bytes of lip.yaml. Throws PackageFormatException when it is not
+  /// valid.
+  public static PackageFile Parse(byte[] yaml) {
+    using JsonDocument json = ParseYaml(yaml);
     return Parse(json.RootElement);
   }
 
-  /// Parses a tooth file of format 4. Throws ToothFormatException when it is not valid.
-  public static ToothFile Parse(JsonElement root) {
+  /// Parses a package file. Throws PackageFormatException when it is not valid.
+  public static PackageFile Parse(JsonElement root) {
     RequireObject(root, "$");
-    if (FormatVersion(root) != ToothFormat.FormatVersion) {
-      throw Invalid($"$.{ToothFormat.FormatVersionKey}", $"must be {ToothFormat.FormatVersion}");
+    if (Format(root) != PackageFormat.Format) {
+      throw Invalid($"$.{PackageFormat.FormatKey}", $"must be {PackageFormat.Format}");
     }
 
-    if (ReadRequired(root, "format_uuid", "$", ReadString) != ToothFormat.FormatUuid) {
-      throw Invalid("$.format_uuid", $"must be \"{ToothFormat.FormatUuid}\"");
-    }
-
-    string tooth = ReadRequired(root, "tooth", "$", ReadString);
-    if (Golang.Org.X.Mod.Module.CheckPath(tooth) is Exception ex) {
-      throw Invalid("$.tooth", $"'{tooth}' is not a Go module path ({ex.Message})");
+    string id = ReadRequired(root, "id", "$", ReadString);
+    if (Golang.Org.X.Mod.Module.CheckPath(id) is Exception ex) {
+      throw Invalid("$.id", $"'{id}' is not a Go module path ({ex.Message})");
     }
 
     SemVersion version = ReadRequired(root, "version", "$", ReadSemVersion);
@@ -90,14 +104,14 @@ public static partial class ToothParser {
       return e;
     });
 
-    Dictionary<string, IReadOnlyList<ToothEntry>> entries = new(StringComparer.Ordinal);
+    Dictionary<string, IReadOnlyList<PackageEntry>> entries = new(StringComparer.Ordinal);
     foreach (JsonProperty variant in variants.EnumerateObject()) {
       string path = $"$.variants[\"{variant.Name}\"]";
       if (variant.Name != "" && !Ref.IsValidVariant(variant.Name)) {
         throw Invalid(path, $"'{variant.Name}' is not a variant");
       }
 
-      List<ToothEntry> list = ReadArray(
+      List<PackageEntry> list = ReadArray(
           variant.Value, path, nonEmpty: true, ParseEntryAt);
       for (int i = 0; i < list.Count; i++) {
         for (int j = 0; j < i; j++) {
@@ -111,25 +125,25 @@ public static partial class ToothParser {
       entries[variant.Name] = list;
     }
 
-    return new ToothFile {
-      Tooth = tooth,
+    return new PackageFile {
+      Id = id,
       Version = version,
       Variants = entries,
       Json = root.Clone(),
     };
   }
 
-  /// Parses an entry of a tooth file of format 4. Throws ToothFormatException.
-  public static ToothEntry ParseEntry(JsonElement element) => ParseEntryAt(element, "$");
+  /// Parses an entry of a package file. Throws PackageFormatException.
+  public static PackageEntry ParseEntry(JsonElement element) => ParseEntryAt(element, "$");
 
-  /// Whether a member of place is valid (tooth.schema.json "place").
+  /// Whether a member of place is valid (lip.schema.yaml "place").
   public static bool IsValidPlacement(string src, string dest) {
     using JsonDocument json = JsonDocument.Parse(JsonSerializer.Serialize(new { src, dest }));
     try {
       _ = ReadPlacement(json.RootElement, "$");
       return true;
     }
-    catch (ToothFormatException) {
+    catch (PackageFormatException) {
       return false;
     }
   }
@@ -137,7 +151,7 @@ public static partial class ToothParser {
   /// Whether a string is a runtime: a .NET runtime identifier, without wildcards.
   public static bool IsRuntime(string value) => RuntimeRegex().IsMatch(value);
 
-  private static ToothEntry ParseEntryAt(JsonElement element, string path) {
+  private static PackageEntry ParseEntryAt(JsonElement element, string path) {
     RequireObject(element, path);
 
     List<EntryAsset> assets = ReadOptional(element, "assets", path, ArrayOf(ReadAsset)) ?? [];
@@ -145,7 +159,7 @@ public static partial class ToothParser {
       throw Invalid($"{path}.assets", "has more than one asset of type \"mcmod\"");
     }
 
-    return new ToothEntry {
+    return new PackageEntry {
       Platform = ReadRequired(element, "platform", path, ReadPlatform),
       Runtime = ReadRequired(element, "runtime", path, (e, p) => {
         string runtime = ReadString(e, p);
@@ -153,7 +167,7 @@ public static partial class ToothParser {
             ? runtime
             : throw Invalid(p, $"'{runtime}' is not a runtime identifier");
       }),
-      Dependencies = ReadOptional(element, "dependencies", path, ReadDependencies) ?? [],
+      Dependencies = ReadOptional(element, "deps", path, ReadDependencies) ?? [],
       Assets = assets,
       PreserveFiles = ReadOptional(element, "preserve", path, ArrayOf(ReadGlob)) ?? [],
       RemoveFiles = ReadOptional(element, "purge", path, ArrayOf(ReadGlob)) ?? [],
@@ -180,16 +194,16 @@ public static partial class ToothParser {
           ? platform
           : throw Invalid(path, "must be \"server\" or \"client\"");
 
-  private static List<ToothDependency> ReadDependencies(JsonElement element, string path) {
+  private static List<PackageDependency> ReadDependencies(JsonElement element, string path) {
     RequireObject(element, path);
 
-    List<ToothDependency> dependencies = [];
+    List<PackageDependency> dependencies = [];
     foreach (JsonProperty property in element.EnumerateObject()) {
       string memberPath = $"{path}[\"{property.Name}\"]";
       if (!Ref.TryParse(property.Name, out Ref? source, out string? error)
           || source.Kind != RefKind.Spec || source.GitRef is not null) {
-        throw Invalid(memberPath, $"'{property.Name}' is not <tooth path> or "
-            + $"<tooth path>#<variant>{(error is null ? "" : $" ({error})")}");
+        throw Invalid(memberPath, $"'{property.Name}' is not <package id> or "
+            + $"<package id>#<variant>{(error is null ? "" : $" ({error})")}");
       }
 
       string text = ReadString(property.Value, memberPath);
@@ -201,7 +215,7 @@ public static partial class ToothParser {
         throw Invalid(memberPath, $"'{text}' is not a range: {ex.Message}", ex);
       }
 
-      dependencies.Add(new ToothDependency(source, range));
+      dependencies.Add(new PackageDependency(source, range));
     }
 
     return dependencies;
@@ -270,7 +284,7 @@ public static partial class ToothParser {
     return placement;
   }
 
-  /// A path (tooth.schema.json "path").
+  /// A path (lip.schema.yaml "path").
   private static string ReadPath(JsonElement element, string path) {
     string value = ReadString(element, path);
 
@@ -382,11 +396,11 @@ public static partial class ToothParser {
     _ => element.ValueKind.ToString(),
   };
 
-  private static ToothFormatException Invalid(
+  private static PackageFormatException Invalid(
       string path,
       string reason,
       Exception? inner = null) =>
-      new($"Invalid tooth.json at {path}: {reason}.", inner);
+      new($"Invalid package file at {path}: {reason}.", inner);
 
   /// A RID: dot- or dash-separated parts of letters, digits and '_' (e.g. "win-x64",
   /// "linux-musl-arm64", "osx.13-arm64").

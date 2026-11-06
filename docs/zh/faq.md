@@ -1,22 +1,22 @@
 # 常见问题
 
-### 什么是 `tooth.json`？
-`tooth.json` 描述一个 lip 包：它的 tooth 路径、版本，以及针对每个变体、平台和 RID 的依赖、要放置的文件、要安装的 mod 和要运行的命令。当前格式为格式版本 4。参见 [tooth.json](concepts/tooth_json.md)。
+### 什么是 `lip.yaml`？
+`lip.yaml` 是 lip 包的包文件：它给出包 ID、版本，以及针对每个变体、平台和 RID 的依赖、要放置的文件、要安装的 mod 和要运行的命令。参见 [lip.yaml](concepts/lip_yaml.md)。
 
-### 还能安装使用旧版 `tooth.json` 的包吗？
-**可以。** lip 仍会读取格式版本 1 到 3 的 `tooth.json`：它针对工作区的平台和 RID 把每个文件读取为格式 4，并像其他包一样安装，放置的文件与以前相同，因此已有的包仍可使用。lip 不再写入这些格式；请使用 [`lip migrate`](cli/commands/migrate.md) 把你的包转换为格式 4。
+### 还能安装带有 `tooth.json` 的 lip v0.x 包吗？
+**可以。** lip 仍会读取格式版本 1 到 3 的 `tooth.json`：它针对工作区的平台和 RID 把每个文件读取为包文件，并像其他包一样安装，放置的文件与以前相同，因此已有的包仍可使用。lip 不再写入 `tooth.json`；请使用 [`lip migrate`](cli/commands/migrate.md) 把你的包转换为 `lip.yaml`。lip v0.x 的工作区（带有 `tooth_lock.json`）和 `liprc.json` 会被自动迁移。
 
-### `lip install` 会更新 `tooth.json` 吗？
-**不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[工作区文件](concepts/lockfiles.md)来记录状态，但**不会**修改任何 `tooth.json`。如果你希望依赖长期保留在包的要求中，需要手动把它加入你的 `tooth.json`。
+### `lip install` 会更新 `lip.yaml` 吗？
+**不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[工作区文件](concepts/lockfiles.md)来记录状态，但**不会**修改任何 `lip.yaml`。如果你希望依赖长期保留在包的要求中，需要手动把它加入你的 `lip.yaml` 的 `deps`。
 
 ### lip 能安装客户端 mod 吗？
-不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的 `tooth.json` 包。
+不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
 
 ### 为什么我仓库的某个标签不是版本？
-只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。不过，仍可用 git 引用安装任意标签、分支或提交，例如 `lip install github.com/user/repo@tag:1.2.3` 或 `@branch:main`；此时包的版本是其 `tooth.json` 声明的 `version`。参见 [git 引用](cli/commands/install.md#git-引用)。
+只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。不过，仍可用 git 引用安装任意标签、分支或提交，例如 `lip install github.com/user/repo@tag:1.2.3` 或 `@branch:main`；此时包的版本是其 `lip.yaml` 声明的 `version`。参见 [git 引用](cli/commands/install.md#git-引用)。
 
 ### 如何安装磁盘上的包？
-用根部带有 `tooth.json` 的目录或 ZIP 文件的路径运行 `lip install`，例如 `lip install ../MyTool` 或 `lip install ./package.zip`。工作区文件会记录该路径：卸载不需要它，`lip update` 会重新读取它。
+用根部带有 `lip.yaml` 的目录或 ZIP 文件的路径运行 `lip install`，例如 `lip install ../MyTool` 或 `lip install ./package.zip`。工作区文件会记录该路径：卸载不需要它，`lip update` 会重新读取它。
 
 ### 如何升级 lip 自身？
 使用你最初的安装方式重新安装 `lip`，例如 `winget upgrade levimc.lip`，或从 GitHub Releases 页面下载最新的 Windows 安装包（`setup.exe` 或 `.msi`）或便携压缩包。目前还没有内置的 `lip self-update` 命令。如果你是通过旧的 `futrime.lip` winget 包或 npm 安装的 `lip`，请先卸载，再按[安装](intro/installation.md)中的方式重新安装。
@@ -28,9 +28,9 @@
 目前不支持。lip 通过 HTTPS 匿名获取包，不使用 `git` 命令行工具或其凭据管理器，因此只能从公开仓库安装。
 
 ### lip 会把安装的包放在哪里？
-lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<name>/`，`<name>` 为其 LeviLamina `manifest.json` 中的 `name`；文件包按其 `tooth.json` 的规定放置文件。
+lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<name>/`，`<name>` 为其 LeviLamina `manifest.json` 中的 `name`；文件包按其 `lip.yaml` 的规定放置文件。
 
-工作区的[工作区文件](concepts/lockfiles.md)是其中的 `.lip/workspace.json`；操作锁（`.lip/lock`）和日志（`.lip/journal`）位于它旁边。lip 自己的其他文件保存在遵循平台惯例的用户目录中：
+工作区的[工作区文件](concepts/lockfiles.md)是其中的 `.lip/workspace.yaml`；操作锁（`.lip/lock`）和日志（`.lip/journal`）位于它旁边。lip 自己的其他文件保存在遵循平台惯例的用户目录中：
 
 | 内容 | Windows | Linux / macOS |
 | --- | --- | --- |

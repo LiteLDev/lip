@@ -20,7 +20,7 @@ public class WorkspaceLayoutTests {
       ["Demo.dll"] = "dll",
     }));
     _ws.AddTag(Demo, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(Demo, "1.0.0",
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(Demo, "1.0.0",
           $$""" "assets": [ { "type": "mcmod", "urls": [ "{{DemoUrl}}" ] } ] """),
     });
   }
@@ -98,10 +98,11 @@ public class WorkspaceLayoutTests {
   }
 
   [Fact]
-  public async Task Install_ToothPlacingUnderPlugins_WritesAndLocksUnderPlugins() {
-    // Arrange
+  public async Task Install_PackagePlacingUnderPlugins_WritesAndLocksUnderPlugins() {
+    // Arrange: plugins is a directory like any other.
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "plugins/lib/lib.dll"),
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0", WorkspaceHarness.SelfAsset("file.dll", "plugins/lib/lib.dll")),
       ["file.dll"] = "lib",
     });
 

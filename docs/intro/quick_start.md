@@ -8,17 +8,17 @@ Before proceeding, ensure that you have [installed lip](installation.md). lip do
 
 ## Initializing a Project
 
-If you are creating a mod or another package, initialize its `tooth.json`. Run the following command in your project's root directory:
+If you are creating a mod or another package, initialize its `lip.yaml`. Run the following command in your project's root directory:
 
 ```shell
 lip init
 ```
 
-This command asks for the tooth path of your package, such as `github.com/user/MyMod`, and creates a `tooth.json` file in the current directory (it fails if one already exists). This file describes your package to lip. You do not need it just to install packages.
+This command asks for the package id of your package, such as `github.com/user/MyMod`, and creates a `lip.yaml` file in the current directory (it fails if one already exists). This file describes your package to lip. You do not need it just to install packages.
 
 ## Installing Packages
 
-Run lip in the root directory of your server (the workspace). To install a package, use the `install` command followed by the tooth path. You can specify a version using the `@` symbol.
+Run lip in the root directory of your server (the workspace). To install a package, use the `install` command followed by the package id. You can specify a version using the `@` symbol.
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina@1.0.0
@@ -27,7 +27,7 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 `lip` supports installing from various sources, including Git repositories, URLs, and ZIP files and directories on your disk. When you install a package:
 - It is downloaded to the local cache.
 - Its dependencies are resolved and installed.
-- It is recorded in the [workspace file](../concepts/lockfiles.md), `.lip/workspace.json` in the workspace. Your `tooth.json` is not modified.
+- It is recorded in the [workspace file](../concepts/lockfiles.md), `.lip/workspace.yaml` in the workspace. Your `lip.yaml` is not modified.
 
 lip manages server workspaces only. Client mods are managed by launchers such as LeviLauncher.
 
@@ -94,4 +94,4 @@ lip config set github_proxy https://mirror.ghproxy.com/
 ## Next Steps
 
 - Explore the [CLI Overview](../cli/overview.md) for more advanced command usage.
-- Learn more about the [tooth.json](../concepts/tooth_json.md) structure.
+- Learn more about the [lip.yaml](../concepts/lip_yaml.md) structure.

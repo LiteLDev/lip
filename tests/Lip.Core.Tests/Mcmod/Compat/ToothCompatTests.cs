@@ -9,7 +9,7 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Reading tooth files of earlier formats (protocol/package.md §5).
+/// Reading a tooth.json as a package file (protocol/compatibility.md §2).
 public class ToothCompatTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -60,7 +60,7 @@ public class ToothCompatTests {
     return PackageManifestMigration.Migrate(document);
   }
 
-  private static List<string> Dependencies(ToothEntry entry) =>
+  private static List<string> Dependencies(PackageEntry entry) =>
       [.. entry.Dependencies.Select(d => d.Source.ToString())];
 
   [Fact]
@@ -69,13 +69,13 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    Assert.Equal("github.com/user/repo", tooth.Tooth);
-    Assert.Equal(SemVersion.Parse("1.2.3"), tooth.Version);
-    Assert.Equal(["", "client"], tooth.Variants.Keys.Order(StringComparer.Ordinal));
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal("github.com/user/repo", packageFile.Id);
+    Assert.Equal(SemVersion.Parse("1.2.3"), packageFile.Version);
+    Assert.Equal(["", "client"], packageFile.Variants.Keys.Order(StringComparer.Ordinal));
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.True(entry.Derived);
     Assert.Equal(McmodPlatform.Server, entry.Platform);
     Assert.Equal("win-x64", entry.Runtime);
@@ -89,9 +89,9 @@ public class ToothCompatTests {
     EntryAsset asset = Assert.Single(entry.Assets);
     Assert.Equal(AssetType.Self, asset.Type);
     Assert.Equal([new EntryPlacement("a.dll", "plugins/a/a.dll")], asset.Placements);
-    Assert.Same(entry, tooth.SelectEntry("", _serverWin));
+    Assert.Same(entry, packageFile.SelectEntry("", _serverWin));
     Assert.Equal(
-        ["github.com/user/clientdep"], Dependencies(Assert.Single(tooth.Variants["client"])));
+        ["github.com/user/clientdep"], Dependencies(Assert.Single(packageFile.Variants["client"])));
   }
 
   [Theory]
@@ -103,16 +103,16 @@ public class ToothCompatTests {
     LipEnvironment environment = new(McmodPlatform.Server, runtime);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, environment);
+    PackageFile packageFile = ToothCompat.Derive(manifest, environment);
 
     // Assert
-    Assert.Equal([""], tooth.Variants.Keys);
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal([""], packageFile.Variants.Keys);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(runtime, entry.Runtime);
     Assert.Equal(
         ["github.com/user/common", "github.com/user/windows#client"], Dependencies(entry));
-    Assert.Same(entry, tooth.SelectEntry("", environment));
-    Assert.Null(tooth.SelectEntry("", _serverWin));
+    Assert.Same(entry, packageFile.SelectEntry("", environment));
+    Assert.Null(packageFile.SelectEntry("", _serverWin));
   }
 
   [Fact]
@@ -121,11 +121,11 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
 
     // Assert
-    Assert.Equal([""], tooth.Variants.Keys);
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal([""], packageFile.Variants.Keys);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(["github.com/user/common", "github.com/user/linux"], Dependencies(entry));
     Assert.Empty(entry.Assets);
     Assert.Empty(entry.Hooks.PostInstall);
@@ -138,13 +138,13 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "osx-arm64"));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "osx-arm64"));
 
     // Assert
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(["github.com/user/common"], Dependencies(entry));
-    Assert.False(tooth.Variants.ContainsKey("extra"));
-    Assert.False(tooth.Variants.ContainsKey("client"));
+    Assert.False(packageFile.Variants.ContainsKey("extra"));
+    Assert.False(packageFile.Variants.ContainsKey("client"));
   }
 
   [Fact]
@@ -159,11 +159,11 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
 
     // Assert
-    Assert.Empty(tooth.Variants);
-    Assert.Empty(tooth.Json.GetProperty("variants").EnumerateObject());
+    Assert.Empty(packageFile.Variants);
+    Assert.Empty(packageFile.Json.GetProperty("variants").EnumerateObject());
   }
 
   [Fact]
@@ -172,19 +172,19 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _clientWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _clientWin);
 
     // Assert
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(McmodPlatform.Client, entry.Platform);
     Assert.Equal("win-x64", entry.Runtime);
     Assert.Equal(["github.com/user/clientdep"], Dependencies(entry));
     Assert.Equal(["github.com/user/clientdep"],
-        Dependencies(Assert.Single(tooth.Variants["client"])));
+        Dependencies(Assert.Single(packageFile.Variants["client"])));
     Assert.Equal(
-        tooth.Json.GetProperty("variants").GetProperty("client").GetRawText(),
-        tooth.Json.GetProperty("variants").GetProperty("").GetRawText());
-    Assert.Same(entry, tooth.SelectEntry("", _clientWin));
+        packageFile.Json.GetProperty("variants").GetProperty("client").GetRawText(),
+        packageFile.Json.GetProperty("variants").GetProperty("").GetRawText());
+    Assert.Same(entry, packageFile.SelectEntry("", _clientWin));
   }
 
   [Fact]
@@ -193,10 +193,10 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
 
     // Assert
-    Assert.Empty(tooth.Variants);
+    Assert.Empty(packageFile.Variants);
   }
 
   [Fact]
@@ -212,10 +212,10 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _clientWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _clientWin);
 
     // Assert
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(McmodPlatform.Client, entry.Platform);
     Assert.Equal(["github.com/user/a"], Dependencies(entry));
   }
@@ -226,13 +226,13 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
     Assert.NotEqual(
-        Dependencies(Assert.Single(tooth.Variants[""])),
-        Dependencies(Assert.Single(tooth.Variants["client"])));
-    Assert.Equal(McmodPlatform.Server, tooth.Variants["client"][0].Platform);
+        Dependencies(Assert.Single(packageFile.Variants[""])),
+        Dependencies(Assert.Single(packageFile.Variants["client"])));
+    Assert.Equal(McmodPlatform.Server, packageFile.Variants["client"][0].Platform);
   }
 
   [Fact]
@@ -241,24 +241,24 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    JsonElement json = tooth.Json;
-    Assert.Equal(4, json.GetProperty("format_version").GetInt32());
-    Assert.Equal(ToothFormat.FormatUuid, json.GetProperty("format_uuid").GetString());
-    Assert.Equal("github.com/user/repo", json.GetProperty("tooth").GetString());
+    JsonElement json = packageFile.Json;
+    Assert.Equal(4, json.GetProperty("format").GetInt32());
+    Assert.False(json.TryGetProperty("format_uuid", out _));
+    Assert.Equal("github.com/user/repo", json.GetProperty("id").GetString());
     Assert.Equal("1.2.3", json.GetProperty("version").GetString());
     Assert.Equal("Repo", json.GetProperty("info").GetProperty("name").GetString());
     JsonElement entry = Assert.Single(json.GetProperty("variants").GetProperty("").EnumerateArray());
     Assert.Equal(
-        ["platform", "runtime", "dependencies", "assets", "preserve", "hooks"],
+        ["platform", "runtime", "deps", "assets", "preserve", "hooks"],
         entry.EnumerateObject().Select(p => p.Name));
     Assert.Equal("server", entry.GetProperty("platform").GetString());
     Assert.Equal("win-x64", entry.GetProperty("runtime").GetString());
     Assert.Equal(
         """{"post_install":["echo win"]}""", entry.GetProperty("hooks").GetRawText());
-    Assert.Equal(entry.GetRawText(), tooth.Variants[""][0].Json.GetRawText());
+    Assert.Equal(entry.GetRawText(), packageFile.Variants[""][0].Json.GetRawText());
   }
 
   [Theory]
@@ -320,7 +320,7 @@ public class ToothCompatTests {
 
   [Fact]
   public void Info_EmptyMembers_AreKept() {
-    // Arrange: the info of T, as it is (protocol/package.md §5).
+    // Arrange: the info of T, as it is (protocol/compatibility.md §2).
     PackageManifestInfo info = new() {
       Name = "",
       Description = "",
@@ -417,7 +417,7 @@ public class ToothCompatTests {
     // Act
     JsonElement entry = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]).Json;
 
-    // Assert: everything is converted to format 4.
+    // Assert: everything is converted to a package file.
     Assert.Equal(
         ["platform", "runtime", "assets", "preserve", "purge"],
         entry.EnumerateObject().Select(p => p.Name));
@@ -437,7 +437,7 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothEntry entry = ToothParser.ParseEntry(json.RootElement);
+    PackageEntry entry = PackageFileParser.ParseEntry(json.RootElement);
 
     // Assert
     Assert.Empty(entry.PreserveFiles);
@@ -447,11 +447,11 @@ public class ToothCompatTests {
   [Fact]
   public void Derive_DerivedEntry_ReparsesAsTheSameEntryOfFormat4() {
     // Arrange
-    ToothFile tooth = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
-    ToothEntry entry = tooth.Variants[""][0];
+    PackageFile packageFile = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
+    PackageEntry entry = packageFile.Variants[""][0];
 
     // Act
-    ToothEntry reparsed = ToothParser.ParseEntry(entry.Json);
+    PackageEntry reparsed = PackageFileParser.ParseEntry(entry.Json);
 
     // Assert
     Assert.False(reparsed.Derived);
@@ -511,7 +511,7 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothEntry entry = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]);
+    PackageEntry entry = Assert.Single(ToothCompat.Derive(manifest, _serverWin).Variants[""]);
 
     // Assert
     Assert.Equal([AssetType.Zip, AssetType.Self], entry.Assets.Select(a => a.Type));
@@ -547,9 +547,9 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFile serverWin = ToothCompat.Derive(manifest, _serverWin);
-    ToothFile clientWin = ToothCompat.Derive(manifest, _clientWin);
-    ToothFile clientLinux = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
+    PackageFile serverWin = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile clientWin = ToothCompat.Derive(manifest, _clientWin);
+    PackageFile clientLinux = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
 
     // Assert: on windows, the variant "client" is absent, and so is the variant "" derived from
     // it on the client; elsewhere, it is there.
@@ -586,13 +586,13 @@ public class ToothCompatTests {
 
     // Assert
     Assert.Equal((expectedSrc, expectedDest), (actualSrc, actualDest));
-    Assert.True(ToothParser.IsValidPlacement(actualSrc, actualDest));
+    Assert.True(PackageFileParser.IsValidPlacement(actualSrc, actualDest));
   }
 
   [Fact]
   public void Derive_PlacementsAndGlobsInvalidInFormat4_AreLeftOut() {
-    // Arrange: a file placement of the whole archive ("" is the directory form in format 4), a
-    // file placed at "" and globs that are no globs of format 4.
+    // Arrange: a file placement of the whole archive ("" is the directory form in a package file), a
+    // file placed at "" and globs that are no globs of a package file.
     PackageManifest manifest = Manifest($$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid3}}",
@@ -608,15 +608,15 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(
         [new EntryPlacement("c.dll", "plugins/c.dll")], Assert.Single(entry.Assets).Placements);
     Assert.Equal(["**/ok.json"], entry.PreserveFiles.Select(g => g.Pattern));
     Assert.Equal(["logs/"], entry.RemoveFiles.Select(g => g.Pattern));
-    _ = ToothParser.Parse(Encoding.UTF8.GetBytes(tooth.Json.GetRawText()));
+    _ = PackageFileParser.Parse(Encoding.UTF8.GetBytes(packageFile.Json.GetRawText()));
   }
 
   [Fact]
@@ -625,8 +625,8 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    ToothFile tagged = ToothCompat.Derive(manifest, _serverWin, SemVersion.Parse("2.0.0"));
-    ToothFile untagged = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile tagged = ToothCompat.Derive(manifest, _serverWin, SemVersion.Parse("2.0.0"));
+    PackageFile untagged = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
     Assert.Equal(SemVersion.Parse("2.0.0"), tagged.Version);
@@ -650,12 +650,12 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFormatException ex = Assert.Throws<ToothFormatException>(
+    PackageFormatException ex = Assert.Throws<PackageFormatException>(
         () => ToothCompat.Derive(manifest, _serverWin));
 
     // Assert
     Assert.Contains("labeled ''", ex.Message);
-    ToothFile linux = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
+    PackageFile linux = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
     Assert.Equal(["a"], linux.Variants[""][0].Hooks.PostInstall);
   }
 
@@ -677,7 +677,7 @@ public class ToothCompatTests {
     // Act & Assert
     Assert.Contains(
         "labeled 'lua'",
-        Assert.Throws<ToothFormatException>(() => ToothCompat.Derive(manifest, _serverWin))
+        Assert.Throws<PackageFormatException>(() => ToothCompat.Derive(manifest, _serverWin))
             .Message);
   }
 
@@ -699,11 +699,11 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    Assert.Equal("github.com/LiteLScript-Dev/HelperLib", tooth.Tooth);
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal("github.com/LiteLScript-Dev/HelperLib", packageFile.Id);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(["echo install"], entry.Hooks.PostInstall);
     Assert.Equal(["github.com/user/dep"], Dependencies(entry));
   }
@@ -731,11 +731,11 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, _serverWin);
+    PackageFile packageFile = ToothCompat.Derive(manifest, _serverWin);
 
     // Assert
-    Assert.Equal(SemVersion.Parse("1.1.0"), tooth.Version);
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    Assert.Equal(SemVersion.Parse("1.1.0"), packageFile.Version);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(["github.com/LiteLDev/bds"], Dependencies(entry));
     Assert.True(entry.Dependencies[0].Range.IsSatisfiedBy(SemVersion.Parse("1.21.60")));
     EntryAsset asset = Assert.Single(entry.Assets);
@@ -765,10 +765,10 @@ public class ToothCompatTests {
         """);
 
     // Act
-    ToothFile tooth = ToothCompat.Derive(manifest, new LipEnvironment(McmodPlatform.Server, runtime));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new LipEnvironment(McmodPlatform.Server, runtime));
 
     // Assert
-    ToothEntry entry = Assert.Single(tooth.Variants[""]);
+    PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(runtime, entry.Runtime);
     Assert.Equal(windows ? new[] { "echo" } : [], entry.Hooks.PostInstall);
   }
@@ -835,14 +835,14 @@ public class ToothCompatTests {
   [Fact]
   public void Derive_DerivedDocument_IsAValidToothFileOfFormat4() {
     // Arrange
-    ToothFile tooth = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
+    PackageFile packageFile = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
 
     // Act
-    byte[] bytes = Encoding.UTF8.GetBytes(tooth.Json.GetRawText());
+    byte[] bytes = Encoding.UTF8.GetBytes(packageFile.Json.GetRawText());
 
-    // Assert: the derived document is a valid tooth file of format 4.
-    ToothFile reparsed = ToothParser.Parse(bytes);
-    Assert.Equal(tooth.Tooth, reparsed.Tooth);
-    Assert.Equal(tooth.Variants.Keys, reparsed.Variants.Keys);
+    // Assert: the derived document is a valid package file.
+    PackageFile reparsed = PackageFileParser.Parse(bytes);
+    Assert.Equal(packageFile.Id, reparsed.Id);
+    Assert.Equal(packageFile.Variants.Keys, reparsed.Variants.Keys);
   }
 }

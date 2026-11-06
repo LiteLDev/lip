@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
 using Lip.Core.Mcmod.Resolution;
@@ -25,7 +26,8 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// The workspace operations: install, uninstall, update and list (protocol/workspace.md §3–§7,
 /// protocol/cli.md §5).
 ///
-/// Every operation loads the workspace file, determines the environment, computes the new
+/// Every operation loads the workspace file (or the one protocol/compatibility.md §3 derives from
+/// a tooth_lock.json), determines the environment, computes the new
 /// package set with the graph solver, then uninstalls what leaves the set (in reverse
 /// installation order) and installs what enters it (in installation order). Updating a package
 /// uninstalls the old package and installs the new one.
@@ -40,7 +42,7 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// the journal (protocol/workspace.md §7.4).
 ///
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the workspace
-/// file (with the tooth file it records) without network access, and their archives (the commit
+/// file (with the package file it records) without network access, and their archives (the commit
 /// it records for a remote repository, otherwise what their source names now) and assets are
 /// opened only when needed. If the request cannot be satisfied with every installed package
 /// pinned, it is solved again with only the explicitly installed packages pinned, so that
@@ -203,8 +205,13 @@ public class McmodService(
         explicitIdentities: ExplicitIdentities(workspace.Lock))));
   }
 
+  /// The packages of the workspace file (protocol/cli.md §5.4). The workspace file derived from a
+  /// tooth_lock.json is only read, for the environment a workspace operation would give it,
+  /// without the commits it would record, which are not listed.
   public async Task<IReadOnlyList<InstalledPackage>> List() {
-    LockFile? lockFile = await _lockStore.Load(_workspaceRoot());
+    string root = _fs.Path.GetFullPath(_workspaceRoot());
+    LockFile? lockFile = await _lockStore.Load(root)
+        ?? await ReadToothLock(root, DetermineEnvironment(null, null), resolveCommits: false);
     return [
       .. (lockFile?.Packages ?? [])
           .Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit)),
@@ -225,16 +232,17 @@ public class McmodService(
     return [.. versions.Reverse().Select(v => v.Version.ToString()).Distinct()];
   }
 
-  /// The tooth file of the first archive a package argument names (protocol/cli.md §5.6): for a
-  /// remote repository, its newest version tag, or the commit its ref selects; otherwise the
-  /// archive of the URL or local path. A tooth file of an earlier format is written as
-  /// protocol/package.md §5 reads it for the environment of protocol/cli.md §4.
+  /// The package file of the first archive a package argument names (protocol/cli.md §5.6), as
+  /// JSON: for a remote repository, its newest version tag, or the commit its ref selects;
+  /// otherwise the archive of the URL or local path. For an archive without a package file, the
+  /// package file protocol/compatibility.md §2 derives from its tooth.json for the environment of
+  /// protocol/cli.md §4.
   public async Task<string> View(string package) {
     PackageRequest request = PackageArguments.Parse(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
 
     ArchiveHandle archive;
-    // The tag version of the archive, the version of a package of an earlier format.
+    // The tag version of the archive, the version of a package read from a tooth.json.
     SemVersion? tagVersion = null;
     if (request.Ref is { Kind: RefKind.Spec, GitRef: GitRef gitRef }) {
       archive = await _archiveProvider.OpenCommit(
@@ -255,7 +263,7 @@ public class McmodService(
       archive = await _archiveProvider.Open(request.Ref);
     }
 
-    ToothDocument document = await _archiveReader.Read(archive);
+    PackageDocument document = await _archiveReader.Read(archive);
     if (!document.IsLegacy) {
       return JsonSerializer.Serialize(document.Json, _indented);
     }
@@ -279,6 +287,7 @@ public class McmodService(
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LockFile? recorded = await _lockStore.Load(root);
     LipEnvironment environment = DetermineEnvironment(recorded, options.Rid);
+    recorded ??= await ReadToothLock(root, environment, resolveCommits: true);
     // A workspace without a workspace file gets the environment of its first operation.
     LockFile lockFile = recorded ?? new LockFile {
       Platform = environment.Platform.ToSpecString(),
@@ -294,6 +303,40 @@ public class McmodService(
     }
 
     return new Workspace(root, lockFile, environment, resolver, new GraphSolver(resolver));
+  }
+
+  /// The workspace file protocol/compatibility.md §3 derives from the tooth_lock.json of a
+  /// workspace without a workspace file, for its environment; null when it has none that
+  /// Section 3 reads. With resolveCommits, the commit of each package is that of the tag
+  /// "v&lt;version&gt;" of its remote repository, and it fails when that cannot be obtained.
+  private async Task<LockFile?> ReadToothLock(
+      string root, LipEnvironment environment, bool resolveCommits) {
+    if (ToothLockMigration.Read(_fs, root) is not { } members) {
+      return null;
+    }
+
+    if (resolveCommits) {
+      await _ui.PrintInfo(
+          $"Migrating {ToothLockMigration.FileName} of lip v0.x to the workspace file.");
+    }
+
+    return await ToothLockMigration.Derive(
+        members, _fs, root, environment, resolveCommits ? TagCommit : null);
+  }
+
+  /// The commit the tag "v&lt;version&gt;" of a remote repository points to, or null when it
+  /// cannot be obtained.
+  private async Task<string?> TagCommit(string repo, SemVersion version) {
+    if (!GitRef.TryParse(version.ToString(), out GitRef? gitRef, out _)) {
+      return null;
+    }
+
+    try {
+      return await _archiveProvider.ResolveGitRef(repo, gitRef);
+    }
+    catch (ArchiveUnavailableException) {
+      return null;
+    }
   }
 
   /// Takes the workspace lock, then finishes or undoes what an interrupted operation left in the
@@ -744,14 +787,14 @@ public class McmodService(
   #region Installed packages
 
   /// Rebuilds an installed package from the workspace file (protocol/workspace.md §5,
-  /// "Reinstalling"): with the tooth file the workspace file records, and the archive of the
+  /// "Reinstalling"): with the package file the workspace file records, and the archive of the
   /// commit it records for a remote repository, otherwise the archive its source names now,
   /// opened when first needed. Fails when it is no candidate in the environment, e.g. when its
-  /// tooth file has no entry for another --rid (protocol/workspace.md §3).
+  /// package file has no entry for another --rid (protocol/workspace.md §3).
   private Candidate PinnedCandidate(Workspace workspace, LockedPackage package) {
     try {
       Package rebuilt = new(
-          package.Tooth,
+          package.Id,
           package.Variant,
           SemVersion.Parse(package.Version, SemVersionStyles.Strict),
           McmodInstaller.LockedEntry(package, workspace.Environment)) {

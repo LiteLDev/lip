@@ -32,7 +32,7 @@ public class GraphSolverLazyTests {
     resolver.Add(Base, 300);
     resolver.Add("github.com/mod/mod", 1,
         dependencies: [
-          new ToothDependency(Ref.Parse(Base, allowFile: false), VersionRange.Parse("*")),
+          new PackageDependency(Ref.Parse(Base, allowFile: false), VersionRange.Parse("*")),
         ]);
     Candidate installed = TestCandidates.Make(Base, "5.0.0");
 
@@ -79,7 +79,7 @@ public class GraphSolverLazyTests {
     public void Add(
         string spec,
         int count,
-        IReadOnlyList<ToothDependency>? dependencies = null,
+        IReadOnlyList<PackageDependency>? dependencies = null,
         Func<int, string?>? mod = null) {
       _candidates[spec] = [
         .. Enumerable.Range(0, count).Reverse().Select(i => TestCandidates.Make(

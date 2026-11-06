@@ -1,5 +1,7 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
 using Lip.Core.Services;
@@ -34,7 +36,7 @@ public class LipClientTests {
   /// protocol/cli.md §5.7: asks until the answer is a Go module path, then writes exactly the
   /// members of the document it gives.
   [Fact]
-  public async Task Init_AsksToothPathUntilValid_WritesToothFile() {
+  public async Task Init_AsksPackageIdUntilValid_WritesPackageFile() {
     // Arrange
     _ws.Ui.SetupSequence(u => u.Ask(It.IsAny<string>()))
         .ReturnsAsync("not a module path")
@@ -46,29 +48,43 @@ public class LipClientTests {
     // Assert
     JsonNode expected = JsonNode.Parse("""
         {
-          "format_version": 4,
-          "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-          "tooth": "github.com/owner/repo",
+          "format": 4,
+          "id": "github.com/owner/repo",
           "version": "0.1.0",
           "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] }
         }
         """)!;
-    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("tooth.json"));
-    Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(bytes)));
-    Assert.Equal("github.com/owner/repo", ToothParser.Parse(bytes).Tooth);
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml"));
+    Assert.True(JsonNode.DeepEquals(expected, Yaml(bytes)));
+    Assert.Equal("github.com/owner/repo", PackageFileParser.Parse(bytes).Id);
+    Assert.False(_ws.Exists("tooth.json"));
     _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Exactly(2));
     Assert.Contains(_ws.Warnings, w => w.Contains("not a module path"));
   }
 
   [Fact]
-  public async Task Init_ToothFileExists_ThrowsWithoutAskingOrWriting() {
+  public async Task Init_PackageFileExists_ThrowsWithoutAskingOrWriting() {
     // Arrange
-    _ws.AddFile("tooth.json", "{}");
+    _ws.AddFile("lip.yaml", "{}");
 
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(_client.Init);
-    Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
+    Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("lip.yaml")));
     _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task Init_OnlyToothJsonExists_WritesPackageFile() {
+    // Arrange: only lip.yaml makes lip init fail (protocol/cli.md §5.7).
+    _ws.AddFile("tooth.json", "{}");
+    _ws.Ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync("github.com/owner/repo");
+
+    // Act
+    await _client.Init();
+
+    // Assert
+    Assert.True(_ws.Exists("lip.yaml"));
+    Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
   }
 
   [Fact]
@@ -79,7 +95,7 @@ public class LipClientTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<CannotAskException>(_client.Init);
-    Assert.False(_ws.Exists("tooth.json"));
+    Assert.False(_ws.Exists("lip.yaml"));
   }
 
   [Fact]
@@ -89,7 +105,7 @@ public class LipClientTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<CannotAskException>(_client.Init);
-    Assert.False(_ws.Exists("tooth.json"));
+    Assert.False(_ws.Exists("lip.yaml"));
   }
 
   #endregion
@@ -97,7 +113,7 @@ public class LipClientTests {
   #region Migrate
 
   [Fact]
-  public async Task Migrate_FormatThree_RewritesToothFileInPlace() {
+  public async Task Migrate_FormatThree_WritesPackageFileAndDeletesToothJson() {
     // Arrange
     _ws.AddFile("tooth.json", """
         {
@@ -121,25 +137,26 @@ public class LipClientTests {
     // Act
     await _client.Migrate();
 
-    // Assert: protocol/cli.md §5.8, indented by two spaces, valid format 4.
-    string text = _ws.Fs.File.ReadAllText(_ws.Path("tooth.json"));
-    Assert.Contains("\n  \"format_version\": 4,", text.Replace("\r\n", "\n"));
-    ToothFile tooth = ToothParser.Parse(_ws.Fs.File.ReadAllBytes(_ws.Path("tooth.json")));
-    Assert.Equal(("github.com/test/repo", "1.2.3"), (tooth.Tooth, tooth.Version.ToString()));
-    JsonNode document = JsonNode.Parse(text)!;
+    // Assert: protocol/compatibility.md §5, a valid package file.
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml"));
+    Assert.StartsWith("format: 4\n", System.Text.Encoding.UTF8.GetString(bytes));
+    PackageFile packageFile = PackageFileParser.Parse(bytes);
+    Assert.Equal(
+        ("github.com/test/repo", "1.2.3"), (packageFile.Id, packageFile.Version.ToString()));
+    JsonNode document = Yaml(bytes)!;
     JsonArray entries = document["variants"]![""]!.AsArray();
     Assert.Equal(
         [("server", "win-x64"), ("client", "win-x64")],
         entries.Select(e => ((string)e!["platform"]!, (string)e["runtime"]!)));
     JsonNode server = entries[0]!;
     Assert.Equal(
-        ">=1.9.0 <1.10.0", (string)server["dependencies"]!["github.com/LiteLDev/LeviLamina"]!);
+        ">=1.9.0 <1.10.0", (string)server["deps"]!["github.com/LiteLDev/LeviLamina"]!);
     Assert.True(JsonNode.DeepEquals(
         JsonNode.Parse("""["echo install", "echo post"]"""), server["hooks"]!["post_install"]));
     Assert.True(JsonNode.DeepEquals(
         JsonNode.Parse("""[ { "type": "self", "place": [ { "src": "a.txt", "dest": "a.txt" } ] } ]"""),
         server["assets"]));
-    Assert.Equal(["a.txt", "tooth.json"], _ws.Fs.Directory.GetFiles(_ws.Root).Select(
+    Assert.Equal(["a.txt", "lip.yaml"], _ws.Fs.Directory.GetFiles(_ws.Root).Select(
         f => _ws.Fs.Path.GetFileName(f)).Order());
   }
 
@@ -163,8 +180,8 @@ public class LipClientTests {
     await _client.Migrate();
 
     // Assert
-    JsonNode document = JsonNode.Parse(_ws.Fs.File.ReadAllText(_ws.Path("tooth.json")))!;
-    Assert.Equal(4, (int)document["format_version"]!);
+    JsonNode document = Yaml(_ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml")))!;
+    Assert.Equal(4, (int)document["format"]!);
     Assert.Equal(
         [("client", "linux-x64"), ("client", "win-x64"), ("server", "linux-x64"), ("server", "win-x64")],
         document["variants"]![""]!.AsArray()
@@ -182,7 +199,7 @@ public class LipClientTests {
     await _client.Migrate();
 
     // Assert
-    JsonNode document = JsonNode.Parse(_ws.Fs.File.ReadAllText(_ws.Path("tooth.json")))!;
+    JsonNode document = Yaml(_ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml")))!;
     Assert.Equal(
         ["linux-arm64", "win-x64"],
         document["variants"]![""]!.AsArray()
@@ -201,12 +218,27 @@ public class LipClientTests {
     // Act & Assert
     await Assert.ThrowsAsync<CannotAskException>(_client.Migrate);
     Assert.Equal(original, _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
+    Assert.False(_ws.Exists("lip.yaml"));
   }
 
   [Fact]
-  public async Task Migrate_NoToothFile_ThrowsAndWritesNothing() {
+  public async Task Migrate_NoToothJson_ThrowsAndWritesNothing() {
     await Assert.ThrowsAsync<InvalidOperationException>(_client.Migrate);
-    Assert.False(_ws.Exists("tooth.json"));
+    Assert.False(_ws.Exists("lip.yaml"));
+  }
+
+  [Fact]
+  public async Task Migrate_PackageFileExists_ThrowsAndChangesNothing() {
+    // Arrange
+    string original = WorkspaceHarness.Tooth("github.com/test/repo", "1.0.0", "x.dll");
+    _ws.AddFile("tooth.json", original);
+    _ws.AddFile("lip.yaml", "mine");
+
+    // Act & Assert
+    await Assert.ThrowsAsync<InvalidOperationException>(_client.Migrate);
+    Assert.Equal(original, _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
+    Assert.Equal("mine", _ws.Fs.File.ReadAllText(_ws.Path("lip.yaml")));
+    _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
   }
 
   [Theory]
@@ -220,6 +252,7 @@ public class LipClientTests {
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(_client.Migrate);
     Assert.Equal(content, _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
+    Assert.False(_ws.Exists("lip.yaml"));
   }
 
   #endregion
@@ -227,20 +260,19 @@ public class LipClientTests {
   [Fact]
   public async Task List_ReturnsIdentityAtVersionByGroupInInstallationOrder() {
     // Arrange: b, then a needing c, then c#x.
-    foreach ((string tooth, string entry) in new[] {
+    foreach ((string id, string entry) in new[] {
       ("example.com/b", ""),
       ("example.com/c", ""),
-      ("example.com/a", """ "dependencies": { "example.com/c": "^2.0.0" } """),
+      ("example.com/a", """ "deps": { "example.com/c": "^2.0.0" } """),
     }) {
-      _ws.AddTag(tooth, "2.0.0", new() { ["tooth.json"] = WorkspaceHarness.Tooth4(tooth, "2.0.0", entry) });
+      _ws.AddTag(id, "2.0.0", new() { ["lip.yaml"] = WorkspaceHarness.LipYaml(id, "2.0.0", entry) });
     }
 
     _ws.AddTag("example.com/v", "1.0.0", new() {
-      ["tooth.json"] = """
+      ["lip.yaml"] = """
           {
-            "format_version": 4,
-            "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-            "tooth": "example.com/v",
+            "format": 4,
+            "id": "example.com/v",
             "version": "1.0.0",
             "variants": { "x": [ { "platform": "server", "runtime": "win-x64" } ] }
           }
@@ -268,5 +300,11 @@ public class LipClientTests {
 
     Assert.Empty(explicitPackages);
     Assert.Empty(implicitPackages);
+  }
+
+  /// A YAML file as the JSON value it represents.
+  private static JsonNode? Yaml(byte[] yaml) {
+    using JsonDocument document = YamlJson.Parse(yaml);
+    return JsonNode.Parse(document.RootElement.GetRawText());
   }
 }

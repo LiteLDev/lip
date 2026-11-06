@@ -16,7 +16,7 @@ public class GitTreeSourceTests {
       new[] { "{}", "readme", "a", "b", "c", "exe", "a.dll" }.ToDictionary(Oid);
 
   private static readonly List<GitTreeEntry> _tree = [
-    new("tooth.json", 100644, Oid("{}")),
+    new("lip.yaml", 100644, Oid("{}")),
     new("a.dll", 100644, Oid("a")),
     new("sub/b.txt", 100644, Oid("b")),
     new("sub/c.txt", 100644, Oid("c")),
@@ -64,7 +64,7 @@ public class GitTreeSourceTests {
 
     // Assert: the symlink (120000) and the group-writable file (100664) are not part of a git
     // archive (protocol/package.md §1).
-    Assert.Equal(["tooth.json", "a.dll", "sub/b.txt", "sub/c.txt", "run.sh"], keys);
+    Assert.Equal(["lip.yaml", "a.dll", "sub/b.txt", "sub/c.txt", "run.sh"], keys);
   }
 
   [Fact]
@@ -131,11 +131,11 @@ public class GitTreeSourceTests {
     // Arrange
     Mock<IGitRemoteClient> client = CreateClient();
     GitTreeSource first = new(client.Object, _repoUrl, _commit);
-    await first.Prefetch(["tooth.json"]);
+    await first.Prefetch(["lip.yaml"]);
     GitTreeSource second = new(client.Object, _repoUrl, _commit);
 
     // Act
-    using Stream result = await second.OpenRead("tooth.json");
+    using Stream result = await second.OpenRead("lip.yaml");
 
     // Assert
     Assert.Equal("{}", await ReadAll(result));

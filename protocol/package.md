@@ -7,13 +7,11 @@
   - **ZIP archive**: a file in the ZIP format [APPNOTE], by content, whatever its name. Each entry MUST be a regular file or directory; entry paths are decoded as UTF-8, MUST be `/`-separated, and MUST NOT be empty, start with `/`, or contain a `..` segment or `\`.
   - **directory archive**: a directory, taken as the archive of its contents.
   - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees. The name of each entry of each of its trees MUST NOT be empty, `.` or `..`, or contain `/`.
-- **tooth file**: The file `tooth.json` at the root of an archive.
-- **package**: An archive whose tooth file is valid against `tooth.schema.json` and satisfies Section 3, or is of a format that Section 2 of [COMPATIBILITY] reads.
-- **tooth path**: The `tooth` of a package, a Go module path [GO-MODULE], compared ASCII case-insensitively.
-- **tooth name**: The last `/`-separated element of a tooth path, or the element before it when the last is `v` followed by one or more ASCII digits.
-- **id**: A string matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`, compared ASCII case-insensitively.
+- **package file**: The YAML file `lip.yaml` at the root of an archive.
+- **package**: An archive whose package file is valid against `lip.schema.yaml` and satisfies Section 3, or one that Section 2 of [COMPATIBILITY] reads as such.
+- **package id**: The `id` of a package, a Go module path [GO-MODULE], compared ASCII case-insensitively.
 - **version**: A [SEMVER] version, without a leading `v`.
-- **version of a package**: The `version` of its tooth file.
+- **version of a package**: The `version` of its package file.
 - **range**: A string that `SemVersionRange.Parse` of [SEMVER-NET] accepts with its default options, with the matching semantics of that range. A version satisfies a range that matches it.
 - **variant**: `""`, or a string matching `^[a-z0-9_]+(/[a-z0-9_]+)?$`.
 - **platform**: `"server"` or `"client"`.
@@ -72,7 +70,7 @@ An annotated tag is peeled to its commit. `<name>` MUST be a valid ref name [GIT
 
 A commit selected through the tag `vV` (with no ref, the ref `V`, or the ref `tag:vV`) has the **tag version** V; any other selected commit has none.
 
-The git archive of each selected commit MUST be a package whose tooth path equals `<repo>`. When it has a tag version, the version of the package MUST equal it.
+The git archive of each selected commit MUST be a package whose package id equals `<repo>`. When it has a tag version, the version of the package MUST equal it.
 
 ### 2.2. URLs
 
@@ -82,12 +80,12 @@ A **URL** names the ZIP archive in the response body of an HTTPS GET of the loca
 
 A **local file** is a local path naming a file, which MUST be a ZIP archive. A **local directory** is a local path naming a directory, which is a directory archive.
 
-## 3. Tooth Files
+## 3. Package Files
 
-A tooth file of `format_version` 4 MUST also satisfy:
+A package file MUST also satisfy:
 
-- `tooth` is a valid Go module path [GO-MODULE], and `version` is a version.
-- Each key of `dependencies` is `<tooth path>` or `<tooth path>#<variant>`, the variant other than `""`, and each value is a range.
+- `id` is a valid Go module path [GO-MODULE], and `version` is a version.
+- Each key of `deps` is `<package id>` or `<package id>#<variant>`, the variant other than `""`, and each value is a range.
 - In each entry, `platform` is a platform and `runtime` is a runtime.
 - No two entries of the same variant have the same `platform` and the same `runtime`.
 - Each entry has at most one asset whose `type` is `"mcmod"`.
@@ -105,8 +103,8 @@ Resolve(source, range, environment) is the ordered sequence of **candidates** th
 
 2. Entries. A package is a candidate, with the entry of `variants[v]` (v the variant of the source) whose `platform` and `runtime` equal the corresponding components of `environment`, when such an entry exists and the version of the package satisfies `range`. Otherwise it contributes no candidate.
 
-The **identity** of a candidate is its tooth path, followed by `#` and the variant of the source when that is not `""`.
+The **identity** of a candidate is its package id, followed by `#` and the variant of the source when that is not `""`.
 
-A member (key k, range R) of the `dependencies` of the selected entry is a **dependency**; it names the candidates of Resolve(k, R, environment).
+A member (key k, range R) of the `deps` of the selected entry is a **dependency**; it names the candidates of Resolve(k, R, environment).
 
-A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`. The archive of that asset MUST have at its root a `manifest.json` that is a JSON object [RFC8259] whose `name` is an id: the **mod name**.
+A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`. The archive of that asset MUST have at its root a `manifest.json` that is a JSON object [RFC8259] whose `name` matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`: the **mod name**, compared ASCII case-insensitively.

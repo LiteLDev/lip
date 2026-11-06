@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Install;
 using Moq;
@@ -23,7 +24,7 @@ public class McmodServiceTests {
   public async Task Install_RemoteRepository_RecordsWorkspaceFile() {
     // Arrange
     string commit = _ws.Git.AddTag(Lib, "v1.0.0", new() {
-      ["tooth.json"] = LibTooth("1.0.0"),
+      ["lip.yaml"] = LibPackageFile("1.0.0"),
       ["lib.dll"] = "lib 1.0.0",
     });
 
@@ -33,16 +34,16 @@ public class McmodServiceTests {
     // Assert
     Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     LockFile lockFile = await _ws.Lock();
-    Assert.Equal(4, lockFile.FormatVersion);
+    Assert.Equal(4, lockFile.Format);
     Assert.Equal("server", lockFile.Platform);
     Assert.Equal(WorkspaceHarness.Runtime, lockFile.Runtime);
     LockedPackage package = Assert.Single(lockFile.Packages);
     Assert.Equal((Lib, "", "1.0.0", true, Lib), (
-        package.Tooth, package.Variant, package.Version, package.Explicit, package.Source));
+        package.Id, package.Variant, package.Version, package.Explicit, package.Source));
     Assert.Equal(commit, package.Commit);
     Assert.Equal(["lib/lib.dll"], package.Files);
     Assert.True(JsonNode.DeepEquals(
-        JsonNode.Parse(LibTooth("1.0.0")), JsonNode.Parse(package.Manifest.GetRawText())));
+        Yaml(LibPackageFile("1.0.0")), JsonNode.Parse(package.Manifest.GetRawText())));
   }
 
   [Fact]
@@ -50,7 +51,7 @@ public class McmodServiceTests {
     // Arrange
     AddLib("1.0.0");
     _ws.AddZip("x.zip", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "x",
     });
@@ -59,7 +60,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([Lib, "x.zip"], _options);
 
     // Assert: "commit" only for a package from a remote repository.
-    using JsonDocument document = JsonDocument.Parse(_ws.Fs.File.ReadAllText(_ws.LockPath));
+    using JsonDocument document = YamlJson.Parse(_ws.Fs.File.ReadAllBytes(_ws.LockPath));
     JsonElement[] packages = [.. document.RootElement.GetProperty("packages").EnumerateArray()];
     Assert.Equal(
         ["manifest", "variant", "explicit", "ref", "commit", "files"],
@@ -74,7 +75,7 @@ public class McmodServiceTests {
     // Arrange: a self asset placing through plugins/, and a zip asset.
     byte[] extra = WorkspaceHarness.Zip(new() { ["y.txt"] = "y" });
     _ws.AddDownload("https://example.com/extra.zip", extra);
-    string tooth = WorkspaceHarness.Tooth4("example.com/pkg", "1.0.0", """
+    string packageFile = WorkspaceHarness.LipYaml("example.com/pkg", "1.0.0", """
         "assets": [
           { "type": "self", "place": [ { "src": "x.txt", "dest": "mods/pkg/x.txt" } ] },
           {
@@ -84,7 +85,7 @@ public class McmodServiceTests {
           }
         ]
         """);
-    string path = _ws.AddZip("pkg.zip", new() { ["tooth.json"] = tooth, ["x.txt"] = "x" });
+    string path = _ws.AddZip("pkg.zip", new() { ["lip.yaml"] = packageFile, ["x.txt"] = "x" });
 
     // Act
     await _ws.Service.Install(["pkg.zip"], _options);
@@ -99,7 +100,7 @@ public class McmodServiceTests {
     Assert.Null(package.Commit);
     Assert.Equal(["mods/pkg/x.txt", "extra/y.txt"], package.Files);
     Assert.True(JsonNode.DeepEquals(
-        JsonNode.Parse(tooth), JsonNode.Parse(package.Manifest.GetRawText())));
+        Yaml(packageFile), JsonNode.Parse(package.Manifest.GetRawText())));
   }
 
   [Fact]
@@ -150,16 +151,15 @@ public class McmodServiceTests {
     // Assert
     LockFile lockFile = await _ws.Lock();
     Assert.Equal(
-        [(Lib, false), (App, true)], lockFile.Packages.Select(p => (p.Tooth, p.Explicit)));
+        [(Lib, false), (App, true)], lockFile.Packages.Select(p => (p.Id, p.Explicit)));
     Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
 
-    // The tooth file of format 3 is recorded as the one of format 4 derived from it.
+    // The tooth.json is recorded as the package file derived from it.
     Assert.True(JsonNode.DeepEquals(
         JsonNode.Parse($$"""
             {
-              "format_version": 4,
-              "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-              "tooth": "{{Lib}}",
+              "format": 4,
+              "id": "{{Lib}}",
               "version": "1.0.0",
               "variants": {
                 "": [ {
@@ -228,7 +228,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([$"{Lib}@1.1.0"], _options);
 
     // Assert: kept as it is, now with the source of the request.
-    LockedPackage lib = (await _ws.Lock()).Packages.Single(p => p.Tooth == Lib);
+    LockedPackage lib = (await _ws.Lock()).Packages.Single(p => p.Id == Lib);
     Assert.Equal((true, "1.1.0", $"{Lib}@1.1.0"), (lib.Explicit, lib.Version, lib.Source));
   }
 
@@ -263,7 +263,7 @@ public class McmodServiceTests {
 
     // Assert
     LockedPackage app = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((App, "2.0.0", true), (app.Tooth, app.Version, app.Explicit));
+    Assert.Equal((App, "2.0.0", true), (app.Id, app.Version, app.Explicit));
     Assert.False(_ws.Exists("lib/lib.dll"));
     Assert.True(_ws.Exists("app/app.dll"));
   }
@@ -273,13 +273,13 @@ public class McmodServiceTests {
     // Arrange
     AddLibAndApp(hook: true);
     await _ws.Service.Install([App], _options);
-    LockedPackage before = (await _ws.Lock()).Packages.Single(p => p.Tooth == Lib);
+    LockedPackage before = (await _ws.Lock()).Packages.Single(p => p.Id == Lib);
 
     // Act
     await _ws.Service.Install([Lib], _options with { NoDependencies = true });
 
     // Assert: same identity, version and commit, so nothing is reinstalled.
-    LockedPackage after = (await _ws.Lock()).Packages.Single(p => p.Tooth == Lib);
+    LockedPackage after = (await _ws.Lock()).Packages.Single(p => p.Id == Lib);
     Assert.True(after.Explicit);
     Assert.Equal(before.Commit, after.Commit);
     Assert.Equal(before.Files, after.Files);
@@ -318,7 +318,7 @@ public class McmodServiceTests {
     // Assert: protocol/cli.md §4, a dry run reports the packages it would mark as explicitly
     // installed.
     Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{Lib}'"));
-    Assert.False((await _ws.Lock()).Packages.Single(p => p.Tooth == Lib).Explicit);
+    Assert.False((await _ws.Lock()).Packages.Single(p => p.Id == Lib).Explicit);
   }
 
   [Fact]
@@ -354,7 +354,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_VariantsTogether_RecordsVariantIdentities() {
     // Arrange
-    AddVariantsTooth();
+    AddVariantsPackage();
 
     // Act
     await _ws.Service.Install([$"{Lib}#a", $"{Lib}#b"], _options);
@@ -372,7 +372,7 @@ public class McmodServiceTests {
   public async Task Install_BranchRef_RecordsCommitAndUpdateFollowsHead() {
     // Arrange
     string first = _ws.Git.AddBranch(Lib, "main", new() {
-      ["tooth.json"] = LibTooth("1.2.0"),
+      ["lip.yaml"] = LibPackageFile("1.2.0"),
       ["lib.dll"] = "head 1",
     });
 
@@ -380,13 +380,13 @@ public class McmodServiceTests {
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
     LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
     string second = _ws.Git.AddBranch(Lib, "main", new() {
-      ["tooth.json"] = LibTooth("1.2.0"),
+      ["lip.yaml"] = LibPackageFile("1.2.0"),
       ["lib.dll"] = "head 2",
     });
     _ws.Restart();
     await _ws.Service.Update([], _options);
 
-    // Assert: the version is the tooth file's, as a branch has no tag version; the new commit
+    // Assert: the version is the package file's, as a branch has no tag version; the new commit
     // differs, so the package is replaced.
     Assert.Equal(("1.2.0", $"{Lib}@branch:main"), (installed.Version, installed.Source));
     Assert.Equal(first, installed.Commit);
@@ -397,16 +397,16 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_TagAndRevRefs_UseToothVersionAndExactCommit() {
+  public async Task Install_TagAndRevRefs_UsePackageFileVersionAndExactCommit() {
     // Arrange
     _ws.Git.AddTag(Lib, "nightly", new() {
-      ["tooth.json"] = LibTooth("3.0.0-nightly"),
+      ["lip.yaml"] = LibPackageFile("3.0.0-nightly"),
       ["lib.dll"] = "nightly",
     });
     string rev = _ws.Git.AddBranch(App, "dev", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(App, "0.1.0"),
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(App, "0.1.0"),
     });
-    _ws.Git.AddBranch(App, "dev", new() { ["tooth.json"] = WorkspaceHarness.Tooth4(App, "0.2.0") });
+    _ws.Git.AddBranch(App, "dev", new() { ["lip.yaml"] = WorkspaceHarness.LipYaml(App, "0.2.0") });
 
     // Act
     await _ws.Service.Install([$"{Lib}@tag:nightly", $"{App}@rev:{rev}"], _options);
@@ -414,7 +414,7 @@ public class McmodServiceTests {
     // Assert: the rev stays at the commit the branch has moved away from.
     Assert.Equal(
         [(App, "0.1.0", $"{App}@rev:{rev}"), (Lib, "3.0.0-nightly", $"{Lib}@tag:nightly")],
-        (await _ws.Lock()).Packages.Select(p => (p.Tooth, p.Version, p.Source)).Order());
+        (await _ws.Lock()).Packages.Select(p => (p.Id, p.Version, p.Source)).Order());
   }
 
   [Fact]
@@ -438,8 +438,8 @@ public class McmodServiceTests {
   public async Task Install_ClientPlatformRecorded_ThrowsWithoutChanges() {
     // Arrange
     AddLibAndApp();
-    _ws.AddFile(".lip/workspace.json", """
-        { "format_version": 4, "platform": "client", "runtime": "win-x64", "packages": [] }
+    _ws.AddFile(".lip/workspace.yaml", """
+        { "format": 4, "platform": "client", "runtime": "win-x64", "packages": [] }
         """);
     SortedDictionary<string, string> before = WorkspaceSnapshot();
 
@@ -453,11 +453,10 @@ public class McmodServiceTests {
   public async Task Install_RidOption_RecordsRuntime() {
     // Arrange: lib has entries for win-x64 and linux-x64.
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = $$"""
+      ["lip.yaml"] = $$"""
           {
-            "format_version": 4,
-            "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-            "tooth": "{{Lib}}",
+            "format": 4,
+            "id": "{{Lib}}",
             "version": "1.0.0",
             "variants": {
               "": [
@@ -511,7 +510,7 @@ public class McmodServiceTests {
     await _ws.Service.Uninstall([Lib], _options);
 
     // Assert
-    Assert.False((await _ws.Lock()).Packages.Single(p => p.Tooth == Lib).Explicit);
+    Assert.False((await _ws.Lock()).Packages.Single(p => p.Id == Lib).Explicit);
     Assert.True(_ws.Exists("lib/lib.dll"));
   }
 
@@ -541,7 +540,7 @@ public class McmodServiceTests {
 
     // Assert
     LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((Lib, false), (lib.Tooth, lib.Explicit));
+    Assert.Equal((Lib, false), (lib.Id, lib.Explicit));
     Assert.True(_ws.Exists("lib/lib.dll"));
     Assert.False(_ws.Exists("app/app.dll"));
   }
@@ -572,7 +571,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Uninstall_SourceWithoutVariant_MatchesEveryVariant() {
     // Arrange: the identities are lib#a and lib#b, so only rule 2 of protocol/cli.md §5.2 matches.
-    AddVariantsTooth();
+    AddVariantsPackage();
     await _ws.Service.Install([$"{Lib}#a", $"{Lib}#b"], _options);
 
     // Act
@@ -587,7 +586,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Uninstall_IdentityWithVariant_RemovesOnlyThatVariant() {
     // Arrange
-    AddVariantsTooth();
+    AddVariantsPackage();
     await _ws.Service.Install([$"{Lib}#a", $"{Lib}#b"], _options);
 
     // Act
@@ -618,7 +617,7 @@ public class McmodServiceTests {
   public async Task Uninstall_SourceWithoutRef_MatchesEveryRef() {
     // Arrange: the identity is example.com/lib; the argument is the location in other case
     // with a variant-free, ref-free source.
-    _ws.Git.AddBranch(Lib, "main", new() { ["tooth.json"] = LibTooth("1.5.0"), ["lib.dll"] = "x" });
+    _ws.Git.AddBranch(Lib, "main", new() { ["lip.yaml"] = LibPackageFile("1.5.0"), ["lib.dll"] = "x" });
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
 
     // Act
@@ -667,7 +666,7 @@ public class McmodServiceTests {
     // Arrange: a local path that does not exist is an invalid package argument
     // (protocol/cli.md §3), which names no installed package (§5.2).
     string path = _ws.AddZip("x.zip", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "x",
     });
@@ -740,7 +739,7 @@ public class McmodServiceTests {
     AddLib("1.0.0");
     await _ws.Service.Install([Lib], _options);
     string moved = _ws.Git.AddTag(Lib, "v1.0.0", new() {
-      ["tooth.json"] = LibTooth("1.0.0"),
+      ["lip.yaml"] = LibPackageFile("1.0.0"),
       ["lib.dll"] = "lib moved",
     });
     _ws.Restart();
@@ -757,7 +756,7 @@ public class McmodServiceTests {
   public async Task Update_BranchAtTheSameCommit_ReplacesNothing() {
     // Arrange
     string commit = _ws.Git.AddBranch(Lib, "main", new() {
-      ["tooth.json"] = LibTooth("1.0.0", hook: true),
+      ["lip.yaml"] = LibPackageFile("1.0.0", hook: true),
       ["lib.dll"] = "head",
     });
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
@@ -777,7 +776,7 @@ public class McmodServiceTests {
     AddLib("1.0.0", hook: true);
     await _ws.Service.Install([Lib], _options);
     string moved = _ws.Git.AddTag(Lib, "v1.0.0", new() {
-      ["tooth.json"] = LibTooth("1.0.0", hook: true),
+      ["lip.yaml"] = LibPackageFile("1.0.0", hook: true),
       ["lib.dll"] = "lib moved",
     });
     _ws.Restart();
@@ -792,19 +791,19 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_InstalledPackageWhoseTagMoved_IsKeptWithItsRecordedToothFile() {
-    // Arrange: mod a is installed; its tag then moves to a tooth file whose mod is named B.
+  public async Task Install_InstalledPackageWhoseTagMoved_IsKeptWithItsRecordedPackageFile() {
+    // Arrange: mod a is installed; its tag then moves to a package file whose mod is named B.
     AddMod("example.com/a", "A");
     await _ws.Service.Install(["example.com/a"], _options);
     _ws.AddDownload("https://example.com/moved.mcmod", WorkspaceHarness.Mcmod("B"));
     _ws.AddTag("example.com/a", "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4("example.com/a", "1.0.0",
+      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/moved.mcmod" ] } ]"""),
     });
     AddMod("example.com/b", "B");
     _ws.Restart();
 
-    // Act: the installed package is reinstalled with the tooth file the workspace file records,
+    // Act: the installed package is reinstalled with the package file the workspace file records,
     // so its mod name is still A, and b's mod name B does not clash with it.
     await _ws.Service.Install(["example.com/b"], _options);
 
@@ -824,7 +823,7 @@ public class McmodServiceTests {
     // Arrange
     AddLib("1.0.0");
     await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
-    _ws.Git.AddTag(Lib, "v1.0.0", new() { ["tooth.json"] = LibTooth("1.0.0"), ["lib.dll"] = "moved" });
+    _ws.Git.AddTag(Lib, "v1.0.0", new() { ["lip.yaml"] = LibPackageFile("1.0.0"), ["lib.dll"] = "moved" });
     AddLib("1.1.0");
     _ws.Restart();
 
@@ -841,7 +840,7 @@ public class McmodServiceTests {
   public async Task Update_SourceWithoutRef_MovesBackToVersionTags() {
     // Arrange
     AddLibAndApp();
-    _ws.Git.AddBranch(Lib, "main", new() { ["tooth.json"] = LibTooth("1.5.0"), ["lib.dll"] = "head" });
+    _ws.Git.AddBranch(Lib, "main", new() { ["lip.yaml"] = LibPackageFile("1.5.0"), ["lib.dll"] = "head" });
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
 
     // Act
@@ -858,7 +857,7 @@ public class McmodServiceTests {
     // Arrange: same tag, but the asset its URL serves changes.
     _ws.AddDownload("https://example.com/data.zip", WorkspaceHarness.Zip(new() { ["d.txt"] = "1" }));
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(Lib, "1.0.0", """
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(Lib, "1.0.0", """
           "assets": [ { "type": "zip", "urls": [ "https://example.com/data.zip" ],
             "place": [ { "src": "d.txt", "dest": "d.txt" } ] } ]
           """),
@@ -880,13 +879,13 @@ public class McmodServiceTests {
   public async Task Update_LocalZipOfSameVersion_ReplacesNothing() {
     // Arrange
     _ws.AddZip("x.zip", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "v1",
     });
     await _ws.Service.Install(["x.zip"], _options);
     _ws.AddZip("x.zip", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "v2",
     });
@@ -924,7 +923,7 @@ public class McmodServiceTests {
   public async Task Update_LocalPathGone_KeepsPackageAndWarns() {
     // Arrange
     string path = _ws.AddZip("x.zip", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "v1",
     });
@@ -950,7 +949,7 @@ public class McmodServiceTests {
     await _ws.Service.Update([Lib], _options);
 
     // Assert
-    Assert.True((await _ws.Lock()).Packages.Single(p => p.Tooth == Lib).Explicit);
+    Assert.True((await _ws.Lock()).Packages.Single(p => p.Id == Lib).Explicit);
   }
 
   [Fact]
@@ -984,7 +983,7 @@ public class McmodServiceTests {
   public async Task Install_ModWithDependency_WritesItsManifestAsItIs() {
     // Arrange
     AddMod("example.com/base", "Base");
-    AddMod("example.com/top", "Top", """ "dependencies": { "example.com/base": "^1.0.0" }, """);
+    AddMod("example.com/top", "Top", """ "deps": { "example.com/base": "^1.0.0" }, """);
 
     // Act
     await _ws.Service.Install(["example.com/top"], _options);
@@ -1001,7 +1000,7 @@ public class McmodServiceTests {
   public async Task List_ReturnsPackagesInInstallationOrder() {
     // Arrange
     AddLibAndApp();
-    AddVariantsTooth("example.com/var");
+    AddVariantsPackage("example.com/var");
     await _ws.Service.Install([App, "example.com/var#a"], _options);
 
     // Act
@@ -1031,11 +1030,10 @@ public class McmodServiceTests {
     await _ws.Service.Install([Lib], _options);
     const string any = "example.com/any";
     _ws.AddTag(any, "1.0.0", new() {
-      ["tooth.json"] = $$"""
+      ["lip.yaml"] = $$"""
           {
-            "format_version": 4,
-            "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-            "tooth": "{{any}}",
+            "format": 4,
+            "id": "{{any}}",
             "version": "1.0.0",
             "variants": { "": [ { "platform": "server", "runtime": "linux-x64" } ] }
           }
@@ -1095,8 +1093,9 @@ public class McmodServiceTests {
   #region Invalid workspace files
 
   [Theory]
-  [InlineData(".lip/workspace.json", """{ "format": "bf45b1", "platform": "server", "packages": [] }""")]
-  [InlineData(".lip/workspace.json", """{ "format_version": 3, "packages": [] }""")]
+  [InlineData(".lip/workspace.yaml", """{ "format": "bf45b1", "platform": "server", "packages": [] }""")]
+  [InlineData(".lip/workspace.yaml", """{ "format_version": 3, "packages": [] }""")]
+  [InlineData(".lip/workspace.yaml", "format: 4\nplatform: server\nruntime: win-x64\npackages: [ { } ]\n")]
   public async Task Operations_InvalidWorkspaceFile_FailWithoutChanges(string file, string content) {
     // Arrange
     AddLibAndApp();
@@ -1128,22 +1127,28 @@ public class McmodServiceTests {
   }
 
 
-  private static string LibTooth(string version, bool hook = false) => WorkspaceHarness.Tooth4(
+  /// A YAML file as the JSON value it represents.
+  private static JsonNode? Yaml(string yaml) {
+    using JsonDocument document = YamlJson.Parse(yaml);
+    return JsonNode.Parse(document.RootElement.GetRawText());
+  }
+
+  private static string LibPackageFile(string version, bool hook = false) => WorkspaceHarness.LipYaml(
       Lib,
       version,
       WorkspaceHarness.SelfAsset("lib.dll", "lib/lib.dll")
           + (hook ? """, "hooks": { "post_install": [ "lib-installed" ] }""" : ""));
 
   private void AddLib(string version, bool hook = false) => _ws.AddTag(Lib, version, new() {
-    ["tooth.json"] = LibTooth(version, hook),
+    ["lip.yaml"] = LibPackageFile(version, hook),
     ["lib.dll"] = $"lib {version}",
   });
 
   private void AddApp(string version, string libRange) => _ws.AddTag(App, version, new() {
-    ["tooth.json"] = WorkspaceHarness.Tooth4(
+    ["lip.yaml"] = WorkspaceHarness.LipYaml(
         App,
         version,
-        $$""" "dependencies": { "{{Lib}}": "{{libRange}}" }, """
+        $$""" "deps": { "{{Lib}}": "{{libRange}}" }, """
             + WorkspaceHarness.SelfAsset("app.dll", "app/app.dll")),
     ["app.dll"] = $"app {version}",
   });
@@ -1158,13 +1163,12 @@ public class McmodServiceTests {
     }
   }
 
-  /// Version 1.0.0 of a tooth of format 4 whose variants "a" and "b" place a.dll and b.dll.
-  private void AddVariantsTooth(string tooth = Lib) => _ws.AddTag(tooth, "1.0.0", new() {
-    ["tooth.json"] = $$"""
+  /// Version 1.0.0 of a package whose variants "a" and "b" place a.dll and b.dll.
+  private void AddVariantsPackage(string id = Lib) => _ws.AddTag(id, "1.0.0", new() {
+    ["lip.yaml"] = $$"""
         {
-          "format_version": 4,
-          "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
-          "tooth": "{{tooth}}",
+          "format": 4,
+          "id": "{{id}}",
           "version": "1.0.0",
           "variants": {
             "a": [ { "platform": "server", "runtime": "{{WorkspaceHarness.Runtime}}",
@@ -1180,18 +1184,18 @@ public class McmodServiceTests {
 
   /// A local directory holding a package example.com/local placing x.txt at out/x.txt.
   private void AddLocalDirectory(string relative, string version, string content) {
-    _ws.AddFile($"{relative}/tooth.json", WorkspaceHarness.Tooth4(
+    _ws.AddFile($"{relative}/lip.yaml", WorkspaceHarness.LipYaml(
         "example.com/local", version, WorkspaceHarness.SelfAsset("x.txt", "out/x.txt")));
     _ws.AddFile($"{relative}/x.txt", content);
   }
 
-  /// Version 1.0.0 of a mod: a tooth whose asset of type "mcmod" is
+  /// Version 1.0.0 of a mod: a package whose asset of type "mcmod" is
   /// https://example.com/&lt;name&gt;.mcmod; entry holds extra members, each followed by a comma.
-  private void AddMod(string tooth, string name, string entry = "") {
+  private void AddMod(string id, string name, string entry = "") {
     string url = $"https://example.com/{name}.mcmod";
     _ws.AddDownload(url, WorkspaceHarness.Mcmod(name));
-    _ws.AddTag(tooth, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth4(tooth, "1.0.0",
+    _ws.AddTag(id, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(id, "1.0.0",
           $$"""{{entry}} "assets": [ { "type": "mcmod", "urls": [ "{{url}}" ] } ]"""),
     });
   }
