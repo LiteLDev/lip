@@ -19,15 +19,12 @@ public sealed class LipClient(
     IUserInteraction userInteraction,
     ICacheService cacheService,
     ConfigService configService,
-    McmodService mcmodService) : IDisposable {
+    McmodService mcmodService) {
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;
   private readonly ICacheService _cacheService = cacheService;
   private readonly ConfigService _configService = configService;
   private readonly McmodService _mcmodService = mcmodService;
-
-  // Created by Create() and owned by this client.
-  private GitRemoteClient? _gitRemoteClient;
 
   public static async Task<LipClient> Create(IUserInteraction userInteraction) {
     FileSystem fileSystem = new();
@@ -52,14 +49,7 @@ public sealed class LipClient(
         new ArchiveReader(),
         new McmodInstaller(fileSystem, commandRunner, userInteraction));
 
-    return new(fileSystem, userInteraction, cacheService, configService, mcmodService) {
-      _gitRemoteClient = gitRemoteClient,
-    };
-  }
-
-  public void Dispose() {
-    _gitRemoteClient?.Dispose();
-    _gitRemoteClient = null;
+    return new(fileSystem, userInteraction, cacheService, configService, mcmodService);
   }
 
   public async Task CacheClean() {

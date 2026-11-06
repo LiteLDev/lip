@@ -65,12 +65,6 @@ public class CacheServiceTests {
   }
 
   [Fact]
-  public void CacheKeys_GitBlob_IsGitPrefixedObjectId() {
-    // Act & Assert
-    Assert.Equal("git-abc123", CacheKeys.GitBlob("ABC123"));
-  }
-
-  [Fact]
   public async Task GetOrCreateFile_CreatedConcurrently_ReturnsExistingFile() {
     // Arrange
     string cachePath = GetCachePath();

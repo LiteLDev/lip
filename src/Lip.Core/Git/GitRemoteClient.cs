@@ -9,19 +9,18 @@ namespace Lip.Core.Git;
 /// A managed client for the git smart-HTTP protocol version 2 (read-only, upload-pack).
 ///
 /// ListTree uses a shallow partial fetch (deepen 1, filter blob:none) so only commits and trees
-/// are transferred; FetchBlobs then fetches individual blobs by object id. Servers that do not
-/// support filtering get a full shallow fetch whose pack is kept to serve later FetchBlobs calls.
+/// are transferred; FetchBlobs then fetches individual blobs by object id. A remote that does not
+/// support both is not used, so a repository is never cloned in full.
 ///
 /// GitTreeEntry.Mode is the octal mode digits read as a decimal number, exactly as git prints
 /// them: 100644 (regular file), 100755 (executable) or 120000 (symlink).
 ///
 /// The stream passed to FetchBlobs' onBlob callback is only valid during the callback, which must
 /// read it before returning. Callbacks are invoked sequentially, never concurrently.
-public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
+public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
   public const string UserAgent = "git/2.0 (lip)";
 
   private const int MaxWantsPerRequest = 256;
-  private const int MaxRetainedPacks = 8;
   private const int MaxCachedTrees = 64;
   private const string GitProtocolHeader = "version=2";
 
@@ -30,8 +29,6 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
   private readonly Lock _treesLock = new();
   private readonly Dictionary<string, Lazy<Task<IReadOnlyList<GitTreeEntry>>>> _trees = [];
   private readonly Queue<string> _treeOrder = new();
-  private readonly Lock _retainedPackLock = new();
-  private readonly List<(string Key, GitPackFile Pack)> _retainedPacks = [];
 
   public async Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
     List<string> prefixes = [.. refPrefixes];
@@ -115,11 +112,6 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
       return;
     }
 
-    await FetchBlobsFromRetainedPack(GetRepoKey(repoUrl), remaining, onBlob);
-    if (remaining.Count == 0) {
-      return;
-    }
-
     List<Exception> errors = [];
     foreach (string[] batch in remaining.ToList().Chunk(MaxWantsPerRequest)) {
       if (await FetchBlobBatch(repoUrl, batch, remaining, onBlob) is Exception error) {
@@ -135,16 +127,6 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
           ? new GitProtocolException(string.Join(" ", errors.Select(e => e.Message)))
           : new AggregateException($"Failed to fetch blobs from {repoUrl}.", errors);
     }
-  }
-
-  public void Dispose() {
-    lock (_retainedPackLock) {
-      foreach ((_, GitPackFile pack) in _retainedPacks) {
-        pack.Dispose();
-      }
-      _retainedPacks.Clear();
-    }
-    GC.SuppressFinalize(this);
   }
 
   /// Fetches one batch of blobs, trying the GitHub proxy first (if any) and then the original
@@ -199,29 +181,21 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
   private async Task<IReadOnlyList<GitTreeEntry>> FetchTree(Url repoUrl, string objectId) {
     return await WithProxyFallback(repoUrl, async url => {
       RemoteInfo remote = await Discover(url);
-      GitPackFile? pack = await FetchPack(
-          remote, [objectId], deepen: remote.SupportsShallow, filterBlobs: remote.SupportsFilter);
-      try {
-        Dictionary<string, GitObject> objects = [];
-        foreach (GitObject obj in pack.ReadObjects()) {
-          if (obj.Type != GitObjectType.Blob) {
-            objects[obj.ObjectId] = obj;
-          }
-        }
-
-        // Inside the fallback, so an incomplete pack from the proxy is retried directly.
-        List<GitTreeEntry> entries = WalkTree(objects, objectId);
-
-        if (!remote.SupportsFilter) {
-          // The pack holds every blob of the tree; keep it for FetchBlobs.
-          RetainPack(GetRepoKey(repoUrl), pack);
-          pack = null;
-        }
-        return (IReadOnlyList<GitTreeEntry>)entries;
+      if (!remote.SupportsShallow || !remote.SupportsFilter) {
+        throw new GitProtocolException(
+            $"Remote {url} does not support shallow partial fetches (shallow and filter).");
       }
-      finally {
-        pack?.Dispose();
+
+      using GitPackFile pack = await FetchPack(remote, [objectId], deepen: true, filterBlobs: true);
+      Dictionary<string, GitObject> objects = [];
+      foreach (GitObject obj in pack.ReadObjects()) {
+        if (obj.Type != GitObjectType.Blob) {
+          objects[obj.ObjectId] = obj;
+        }
       }
+
+      // Inside the fallback, so an incomplete pack from the proxy is retried directly.
+      return (IReadOnlyList<GitTreeEntry>)WalkTree(objects, objectId);
     });
   }
 
@@ -451,38 +425,6 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient, IDisposable {
 
     await using Stream stream = await response.GetStreamAsync();
     await handle(new PktLineReader(stream));
-  }
-
-  private async Task FetchBlobsFromRetainedPack(
-      string key,
-      HashSet<string> remaining,
-      Func<string, Stream, Task> onBlob) {
-    foreach (string objectId in remaining.ToList()) {
-      GitObject? obj = null;
-      lock (_retainedPackLock) {
-        foreach ((string packKey, GitPackFile pack) in _retainedPacks) {
-          if (packKey == key && (obj = pack.FindObject(objectId)) is not null) {
-            break;
-          }
-        }
-      }
-      if (obj is null || obj.Type != GitObjectType.Blob) {
-        continue;
-      }
-      using MemoryStream stream = new(obj.Content, writable: false);
-      await onBlob(objectId, stream);
-      remaining.Remove(objectId);
-    }
-  }
-
-  private void RetainPack(string key, GitPackFile pack) {
-    lock (_retainedPackLock) {
-      if (_retainedPacks.Count >= MaxRetainedPacks) {
-        _retainedPacks[0].Pack.Dispose();
-        _retainedPacks.RemoveAt(0);
-      }
-      _retainedPacks.Add((key, pack));
-    }
   }
 
   private static List<GitTreeEntry> WalkTree(Dictionary<string, GitObject> objects, string objectId) {

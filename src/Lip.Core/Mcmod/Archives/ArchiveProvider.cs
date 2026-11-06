@@ -15,7 +15,8 @@ namespace Lip.Core.Mcmod;
 /// Downloaded ZIP archives and assets are cached under the key of their URL (CacheKeys.Http), so a
 /// URL is downloaded once until Forget. Local ZIP files are read into memory, not cached. Local
 /// directories are read where they are. git
-/// archives are lazy GitTreeSources: only the tree is listed, blobs are fetched on demand. A ref
+/// archives are lazy GitTreeSources: only the tree is listed, and only the blobs read are fetched,
+/// on every read, never through the cache. A ref
 /// (branch, tag) is resolved with ls-refs; a rev must be a full commit id, since an abbreviated
 /// one cannot be resolved without fetching the history.
 public class ArchiveProvider(
@@ -177,8 +178,7 @@ public class ArchiveProvider(
     try {
       // Lists the tree up front, so a missing commit fails here rather than on first access.
       // Only regular files are exposed: symlinks and gitlinks are not part of git archives.
-      GitTreeSource source = await GitTreeSource.Create(
-          _gitRemoteClient, _cacheService, repoUrl, commit);
+      GitTreeSource source = await GitTreeSource.Create(_gitRemoteClient, repoUrl, commit);
       return new ArchiveHandle(key, source, commit);
     }
     catch (Exception ex) when (IsUnavailable(ex)) {

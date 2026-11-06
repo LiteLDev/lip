@@ -305,33 +305,20 @@ public class GitRemoteClientTests {
     await Assert.ThrowsAsync<ArgumentException>(() => client.ListTree(new Url(RepoUrl), "main"));
   }
 
-  [Fact]
-  public async Task ListTree_WithoutFilter_FallsBackAndServesBlobsFromPack() {
+  [Theory]
+  [InlineData("shallow")]
+  [InlineData("filter")]
+  [InlineData("")]
+  public async Task ListTree_WithoutShallowPartialFetch_ThrowsWithoutFetching(string fetchFeatures) {
     // Arrange
-    (byte[] pack, string tagId, Dictionary<string, string> blobIds) = CreateRepositoryPack(includeBlobs: true);
     using HttpTest httpTest = new();
-    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement("shallow")));
-    httpTest.ForCallsTo("*/git-upload-pack").RespondWith(() => Content(PackBuilder.FetchResponse(pack)));
-    using GitRemoteClient client = new(githubProxy: null);
+    httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement(fetchFeatures)));
+    GitRemoteClient client = new(githubProxy: null);
 
-    // Act
-    IReadOnlyList<GitTreeEntry> entries = await client.ListTree(new Url(RepoUrl), tagId);
-    Dictionary<string, byte[]> blobs = [];
-    await client.FetchBlobs(new Url(RepoUrl), [blobIds["tooth.json"], blobIds["bin/run.sh"]],
-        async (id, stream) => {
-          MemoryStream copy = new();
-          await stream.CopyToAsync(copy);
-          blobs.Add(id, copy.ToArray());
-        });
-
-    // Assert
-    Assert.Equal(4, entries.Count);
-    string body = await RequestBody(httpTest, 1);
-    Assert.DoesNotContain("filter", body);
-    Assert.Contains("deepen 1\n", body);
-    Assert.Equal(2, httpTest.CallLog.Count);
-    Assert.Equal(s_tooth, blobs[blobIds["tooth.json"]]);
-    Assert.Equal(s_script, blobs[blobIds["bin/run.sh"]]);
+    // Act & Assert: the repository is never cloned in full.
+    await Assert.ThrowsAsync<GitProtocolException>(
+        () => client.ListTree(new Url(RepoUrl), new string('a', 40)));
+    httpTest.ShouldNotHaveCalled("*/git-upload-pack");
   }
 
   [Fact]

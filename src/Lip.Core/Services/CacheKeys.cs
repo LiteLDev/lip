@@ -10,7 +10,4 @@ public static class CacheKeys {
   /// file names may be.
   public static string Http(string url) =>
       $"http-{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(url)))}";
-
-  /// A git blob, by its object id.
-  public static string GitBlob(string objectId) => $"git-{objectId.ToLowerInvariant()}";
 }

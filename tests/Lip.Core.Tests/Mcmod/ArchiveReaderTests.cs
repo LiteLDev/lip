@@ -46,8 +46,6 @@ public class ArchiveReaderTests {
     source.Setup(s => s.Keys).Returns(files.Keys);
     source.Setup(s => s.OpenRead(It.IsAny<string>()))
         .ReturnsAsync((string key) => new MemoryStream(Encoding.UTF8.GetBytes(files[key])));
-    source.Setup(s => s.ReadUncached(It.IsAny<string>()))
-        .ReturnsAsync((string key) => Encoding.UTF8.GetBytes(files[key]));
     return new ArchiveHandle("test", source.Object);
 
   }

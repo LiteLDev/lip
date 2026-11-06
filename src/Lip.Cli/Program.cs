@@ -10,7 +10,7 @@ using Spectre.Console.Cli;
 
 ConsoleUserInteraction userInteraction = new();
 
-using LipClient lipClient = await LipClient.Create(userInteraction);
+LipClient lipClient = await LipClient.Create(userInteraction);
 
 CommandApp app = new();
 

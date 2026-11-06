@@ -13,7 +13,7 @@ public class GitRemoteClientTests {
   public async Task ListRefsListTreeFetchBlobs_LatestTag_ReadsToothJson(string repo, int minTagCount) {
     // Arrange
     Url repoUrl = new(repo);
-    using GitRemoteClient client = new(githubProxy: null);
+    GitRemoteClient client = new(githubProxy: null);
 
     // Act
     IReadOnlyList<GitRemoteRef> refs = await client.ListRefs(repoUrl, ["refs/tags/v"]);
@@ -44,7 +44,7 @@ public class GitRemoteClientTests {
   [Fact]
   public async Task ListTree_PeeledAndTagObjectIds_ReturnSameEntries() {
     Url repoUrl = new("https://github.com/LiteLDev/LeviLamina.git");
-    using GitRemoteClient client = new(githubProxy: null);
+    GitRemoteClient client = new(githubProxy: null);
 
     GitRemoteRef tag = (await client.ListRefs(repoUrl, ["refs/tags/v1.0.0"]))
         .Single(r => r.Name == "refs/tags/v1.0.0");
@@ -59,7 +59,7 @@ public class GitRemoteClientTests {
   [Fact]
   public async Task FetchBlobs_ManyBlobs_ReturnsVerifiedContent() {
     Url repoUrl = new("https://github.com/LiteLDev/LegacyScriptEngine.git");
-    using GitRemoteClient client = new(githubProxy: null);
+    GitRemoteClient client = new(githubProxy: null);
     GitRemoteRef head = (await client.ListRefs(repoUrl, ["refs/heads/"]))[0];
     IReadOnlyList<GitTreeEntry> tree = await client.ListTree(repoUrl, head.ObjectId);
     List<string> blobIds = [.. tree.Select(e => e.ObjectId).Distinct().Take(300)];

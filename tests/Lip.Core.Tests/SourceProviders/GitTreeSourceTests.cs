@@ -1,10 +1,7 @@
-using System.IO.Abstractions.TestingHelpers;
 using System.Security.Cryptography;
 using System.Text;
 using Flurl;
 using Lip.Core.Git;
-using Lip.Core.Infrastructure;
-using Lip.Core.Services;
 using Lip.Core.Sources;
 using Moq;
 
@@ -33,7 +30,7 @@ public class GitTreeSourceTests {
     return Convert.ToHexStringLower(SHA1.HashData([.. Encoding.ASCII.GetBytes($"blob {bytes.Length}\0"), .. bytes]));
   }
 
-  private static (Mock<IGitRemoteClient>, CacheService) CreateMocks(MockFileSystem? fileSystem = null) {
+  private static Mock<IGitRemoteClient> CreateClient() {
     Mock<IGitRemoteClient> client = new();
     client.Setup(c => c.ListTree(_repoUrl, _commit)).ReturnsAsync(_tree);
     client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
@@ -44,9 +41,7 @@ public class GitTreeSourceTests {
           }
         });
 
-    CacheService cacheService = new(fileSystem ?? new MockFileSystem(), new Mock<IUserInteraction>().Object);
-
-    return (client, cacheService);
+    return client;
   }
 
   private static void VerifyFetchBlobsCalls(Mock<IGitRemoteClient> client, Times times) =>
@@ -61,8 +56,8 @@ public class GitTreeSourceTests {
   [Fact]
   public void Keys_ReturnsModes100644And100755Only() {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+    Mock<IGitRemoteClient> client = CreateClient();
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
 
     // Act
     List<string> keys = [.. source.Keys];
@@ -75,8 +70,8 @@ public class GitTreeSourceTests {
   [Fact]
   public async Task Keys_MultipleAccesses_ListTreeCalledOnce() {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = await GitTreeSource.Create(client.Object, cacheService, _repoUrl, _commit);
+    Mock<IGitRemoteClient> client = CreateClient();
+    GitTreeSource source = await GitTreeSource.Create(client.Object, _repoUrl, _commit);
 
     // Act
     _ = source.Keys.ToList();
@@ -91,11 +86,11 @@ public class GitTreeSourceTests {
   [Fact]
   public async Task Keys_ListTreeFailedOnce_Retries() {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
+    Mock<IGitRemoteClient> client = CreateClient();
     client.SetupSequence(c => c.ListTree(_repoUrl, _commit))
         .ThrowsAsync(new HttpRequestException())
         .ReturnsAsync(_tree);
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
 
     // Act & Assert
     await Assert.ThrowsAsync<HttpRequestException>(() => source.OpenRead("a.dll"));
@@ -105,10 +100,10 @@ public class GitTreeSourceTests {
   }
 
   [Fact]
-  public async Task OpenRead_SameKeyTwice_FetchesOnceThenHitsCache() {
+  public async Task OpenRead_SameKeyTwice_FetchesOnlyThatBlobEachTime() {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+    Mock<IGitRemoteClient> client = CreateClient();
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
 
     // Act
     string first;
@@ -126,105 +121,33 @@ public class GitTreeSourceTests {
     client.Verify(c => c.FetchBlobs(
         _repoUrl,
         It.Is<IReadOnlyCollection<string>>(o => o.SequenceEqual(new[] { Oid("b") })),
-        It.IsAny<Func<string, Stream, Task>>()), Times.Once);
+        It.IsAny<Func<string, Stream, Task>>()), Times.Exactly(2));
     client.Verify(c => c.ListTree(_repoUrl, _commit), Times.Once);
     client.VerifyNoOtherCalls();
   }
 
   [Fact]
-  public async Task OpenRead_CachedByAnotherInstance_DoesNotFetch() {
+  public async Task OpenRead_AnotherInstance_FetchesAgain() {
     // Arrange
-    MockFileSystem fileSystem = new();
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks(fileSystem);
-    GitTreeSource first = new(client.Object, cacheService, _repoUrl, _commit);
-    using (Stream stream = await first.OpenRead("tooth.json")) { }
-    GitTreeSource second = new(client.Object, cacheService, _repoUrl, _commit);
+    Mock<IGitRemoteClient> client = CreateClient();
+    GitTreeSource first = new(client.Object, _repoUrl, _commit);
+    await first.Prefetch(["tooth.json"]);
+    GitTreeSource second = new(client.Object, _repoUrl, _commit);
 
     // Act
     using Stream result = await second.OpenRead("tooth.json");
-    await second.Prefetch(["tooth.json"]);
 
     // Assert
     Assert.Equal("{}", await ReadAll(result));
-    VerifyFetchBlobsCalls(client, Times.Once());
+    VerifyFetchBlobsCalls(client, Times.Exactly(2));
   }
 
   [Fact]
-  public async Task OpenRead_HashMismatch_ThrowsAndDoesNotCache() {
+  public async Task Prefetch_MultipleKeys_FetchesOnlyThoseInSingleCallAndOpenReadUsesThem() {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
-        .Returns(async (Url _, IReadOnlyCollection<string> oids, Func<string, Stream, Task> onBlob) => {
-          foreach (string oid in oids) {
-            using MemoryStream stream = new(Encoding.UTF8.GetBytes("tampered"));
-            await onBlob(oid, stream);
-          }
-        });
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
-
-    // Act & Assert
-    await Assert.ThrowsAsync<InvalidDataException>(() => source.OpenRead("a.dll"));
-    await Assert.ThrowsAsync<InvalidDataException>(() => source.Prefetch(["a.dll"]));
-    await Assert.ThrowsAsync<InvalidDataException>(() => source.OpenRead("a.dll"));
-  }
-
-  [Fact]
-  public async Task ReadUncached_Cached_FetchesEveryTimeAndWritesNoCache() {
-    // Arrange
-    MockFileSystem fileSystem = new();
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks(fileSystem);
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
-
-    // Act
-    byte[] first = await source.ReadUncached("sub/b.txt");
-    byte[] second = await source.ReadUncached("sub/b.txt");
-    using (Stream stream = await source.OpenRead("tooth.json")) { }
-    byte[] third = await source.ReadUncached("tooth.json");
-
-    // Assert
-    Assert.Equal("b", Encoding.UTF8.GetString(first));
-    Assert.Equal("b", Encoding.UTF8.GetString(second));
-    Assert.Equal("{}", Encoding.UTF8.GetString(third));
-    Assert.Null(await cacheService.TryGetFile(CacheKeys.GitBlob(Oid("b"))));
-    VerifyFetchBlobsCalls(client, Times.Exactly(4));
-  }
-
-  [Fact]
-  public async Task ReadUncached_HashMismatch_Throws() {
-    // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
-        .Returns(async (Url _, IReadOnlyCollection<string> oids, Func<string, Stream, Task> onBlob) => {
-          foreach (string oid in oids) {
-            using MemoryStream stream = new(Encoding.UTF8.GetBytes("tampered"));
-            await onBlob(oid, stream);
-          }
-        });
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
-
-    // Act & Assert
-    await Assert.ThrowsAsync<InvalidDataException>(() => source.ReadUncached("tooth.json"));
-  }
-
-  [Fact]
-  public async Task ReadUncached_BlobNotReturned_Throws() {
-    // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
-        .Returns(Task.CompletedTask);
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
-
-    // Act & Assert
-    await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadUncached("tooth.json"));
-    await Assert.ThrowsAsync<ArgumentException>(() => source.ReadUncached("missing.txt"));
-  }
-
-  [Fact]
-  public async Task Prefetch_MultipleKeys_FetchesInSingleCallAndOpenReadHitsCache() {
-    // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
-    string[] keys = ["a.dll", "sub/b.txt", "sub/c.txt", "run.sh"];
+    Mock<IGitRemoteClient> client = CreateClient();
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
+    string[] keys = ["a.dll", "sub/b.txt", "run.sh"];
 
     // Act
     await source.Prefetch(keys);
@@ -236,21 +159,21 @@ public class GitTreeSourceTests {
     await source.Prefetch(keys);
 
     // Assert
-    Assert.Equal(["a", "b", "c", "exe"], contents);
+    Assert.Equal(["a", "b", "exe"], contents);
     client.Verify(c => c.FetchBlobs(
         _repoUrl,
         It.Is<IReadOnlyCollection<string>>(o =>
-            o.Count == 4 && o.ToHashSet().SetEquals(new[] { Oid("a"), Oid("b"), Oid("c"), Oid("exe") })),
+            o.Count == 3 && o.ToHashSet().SetEquals(new[] { Oid("a"), Oid("b"), Oid("exe") })),
         It.IsAny<Func<string, Stream, Task>>()), Times.Once);
     VerifyFetchBlobsCalls(client, Times.Once());
   }
 
   [Fact]
-  public async Task Prefetch_PartiallyCached_FetchesOnlyMissingBlobs() {
+  public async Task Prefetch_PartiallyPrefetched_FetchesOnlyMissingBlobs() {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
-    using (Stream stream = await source.OpenRead("a.dll")) { }
+    Mock<IGitRemoteClient> client = CreateClient();
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
+    await source.Prefetch(["a.dll"]);
 
     // Act
     await source.Prefetch(["a.dll", "sub/b.txt"]);
@@ -262,14 +185,33 @@ public class GitTreeSourceTests {
         It.IsAny<Func<string, Stream, Task>>()), Times.Once);
   }
 
+  [Fact]
+  public async Task OpenRead_HashMismatch_Throws() {
+    // Arrange
+    Mock<IGitRemoteClient> client = CreateClient();
+    client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
+        .Returns(async (Url _, IReadOnlyCollection<string> oids, Func<string, Stream, Task> onBlob) => {
+          foreach (string oid in oids) {
+            using MemoryStream stream = new(Encoding.UTF8.GetBytes("tampered"));
+            await onBlob(oid, stream);
+          }
+        });
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
+
+    // Act & Assert
+    await Assert.ThrowsAsync<InvalidDataException>(() => source.OpenRead("a.dll"));
+    await Assert.ThrowsAsync<InvalidDataException>(() => source.Prefetch(["a.dll"]));
+    await Assert.ThrowsAsync<InvalidDataException>(() => source.OpenRead("a.dll"));
+  }
+
   [Theory]
   [InlineData("missing.txt")]
   [InlineData("link.dll")]
   [InlineData("plugin/a.dll")]
   public async Task OpenRead_UnknownKey_Throws(string key) {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+    Mock<IGitRemoteClient> client = CreateClient();
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
 
     // Act & Assert
     ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(() => source.OpenRead(key));
@@ -281,10 +223,10 @@ public class GitTreeSourceTests {
   [Fact]
   public async Task OpenRead_BlobNotReturned_Throws() {
     // Arrange
-    (Mock<IGitRemoteClient> client, CacheService cacheService) = CreateMocks();
+    Mock<IGitRemoteClient> client = CreateClient();
     client.Setup(c => c.FetchBlobs(_repoUrl, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<Func<string, Stream, Task>>()))
         .Returns(Task.CompletedTask);
-    GitTreeSource source = new(client.Object, cacheService, _repoUrl, _commit);
+    GitTreeSource source = new(client.Object, _repoUrl, _commit);
 
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(() => source.OpenRead("a.dll"));
