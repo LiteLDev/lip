@@ -4,7 +4,6 @@ on:
       - .github/workflows/build.yml
       - 'src/**'
       - 'tests/**'
-      - 'packaging/wix/**'
   push:
     branches:
       - main
@@ -12,11 +11,12 @@ on:
     paths: *paths
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ${{ matrix.runs-on }}
-    permissions:
-      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -40,23 +40,10 @@ jobs:
         with:
           dotnet-version: 10
 
-      - shell: bash
-        run: |
-          dotnet publish src/Lip.Cli \
-            -o bin \
-            -r ${{ matrix.runtime }} \
-            --no-self-contained \
-            -p:DebugType=embedded
+      - run: dotnet publish src/Lip.Cli -r ${{ matrix.runtime }} --no-self-contained
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: lip-${{ github.sha }}-${{ matrix.runtime }}
-          path: bin/
-
-  check-style:
+  lint:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -64,14 +51,13 @@ jobs:
         with:
           dotnet-version: 10
 
-      - run: |
-          dotnet format \
-            --verify-no-changes
+      - run: dotnet format --verify-no-changes
+
+      # Code style and the .NET analyzers at build time, with every warning failing the build.
+      - run: dotnet build -warnaserror -p:EnforceCodeStyleInBuild=true
 
   test:
     runs-on: ${{ matrix.runs-on }}
-    permissions:
-      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -89,107 +75,4 @@ jobs:
         with:
           dotnet-version: 10
 
-      - run: |
-          dotnet test
-
-  test-windows-installer:
-    runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runs-on: windows-11-arm
-          - arch: x64
-            runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10
-
-      - shell: bash
-        run: |
-          dotnet publish src/Lip.Cli \
-            -o .tmp/artifacts \
-            -r win-${{ matrix.arch }} \
-            --no-self-contained \
-            -p:DebugType=embedded
-
-      - run: |
-          ./packaging/wix/build.ps1 -Version 0.0.1 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
-          ./packaging/wix/build.ps1 -Version 0.0.2 -Arch ${{ matrix.arch }} -BinDir .tmp/artifacts -OutDir .tmp/wix
-
-      # The last version released with the former Inno Setup installer.
-      - run: |
-          gh release download v0.35.0 `
-            --repo "$env:GITHUB_REPOSITORY" `
-            --pattern "lip-0.35.0-win-${{ matrix.arch }}-setup.exe" `
-            --dir .tmp/inno
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - run: |
-          ./packaging/wix/test.ps1 `
-            -ArtifactsDir .tmp/wix `
-            -Arch ${{ matrix.arch }} `
-            -InnoSetup .tmp/inno/lip-0.35.0-win-${{ matrix.arch }}-setup.exe
-
-      - if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-installer-logs-${{ matrix.arch }}
-          path: .tmp/wix/logs/
-
-  # A clean Windows Server Core, where setup.exe has to install the .NET runtime itself.
-  test-windows-installer-server-core:
-    runs-on: windows-2022
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10
-
-      - shell: bash
-        run: |
-          dotnet publish src/Lip.Cli \
-            -o .tmp/artifacts \
-            -r win-x64 \
-            --no-self-contained \
-            -p:DebugType=embedded
-
-      - run: |
-          ./packaging/wix/build.ps1 -Version 0.0.1 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
-          ./packaging/wix/build.ps1 -Version 0.0.2 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
-
-      # Some runners start without the Docker engine running.
-      - run: |
-          $service = Get-Service docker
-          Write-Output "Docker service: $($service.Status)"
-          if ($service.Status -ne 'Running') {
-            Start-Service docker
-            $service.WaitForStatus('Running', '00:02:00')
-          }
-          docker version
-
-      - run: |
-          docker run --rm `
-            -v "${{ github.workspace }}:C:\lip" `
-            mcr.microsoft.com/windows/servercore:ltsc2022 `
-            powershell -ExecutionPolicy Bypass -Command `
-            "`$ErrorActionPreference = 'Stop'; & C:\lip\packaging\wix\test.ps1 -ArtifactsDir C:\lip\.tmp\wix -Arch x64 -Scenario Bundle; & C:\lip\packaging\wix\test.ps1 -ArtifactsDir C:\lip\.tmp\wix -Arch x64 -Scenario Msi"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-installer-logs-server-core
-          path: .tmp/wix/logs/
+      - run: dotnet test

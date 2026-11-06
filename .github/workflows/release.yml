@@ -1,53 +1,16 @@
-# Pushing a tag like v1.2.3 releases it: the newest stable version becomes Latest on GitHub and winget, and a
-# prerelease like v1.2.3-beta.1 is marked as a prerelease on GitHub.
+# Pushing a tag like v1.2.3 releases it once every asset is built: the newest stable version becomes Latest on
+# GitHub, every stable version goes to winget, and a prerelease like v1.2.3-beta.1 is marked as a prerelease on GitHub.
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      version: ${{ steps.plan.outputs.version }}
-      channel: ${{ steps.plan.outputs.channel }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - id: plan
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          if [[ "$version" == *-* ]]; then
-            channel=prerelease
-          elif [[ "$(git tag --list 'v*' | grep -vF -- - | sort -V | tail -1)" == "$GITHUB_REF_NAME" ]]; then
-            channel=latest
-          else
-            channel=maintenance
-          fi
-          {
-            echo "version=$version"
-            echo "channel=$channel"
-          } >> "$GITHUB_OUTPUT"
-
-      # The notes list the pull requests since the newest stable release the tag contains.
-      - run: |
-          previous=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*-*' "$GITHUB_REF_NAME^" 2>/dev/null || true)
-          gh release create "$GITHUB_REF_NAME" \
-            --draft \
-            --verify-tag \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            ${previous:+--notes-start-tag "$previous"}
-        env:
-          GH_TOKEN: ${{ github.token }}
-
   build:
     runs-on: ${{ matrix.runs-on }}
-    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -73,140 +36,77 @@ jobs:
 
       - shell: bash
         run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "NAME=lip-${GITHUB_REF_NAME#v}-${{ matrix.runtime }}" >> "$GITHUB_ENV"
+
+      - shell: bash
+        run: |
           dotnet publish src/Lip.Cli \
             -o bin \
             -r ${{ matrix.runtime }} \
             --no-self-contained \
             -p:DebugType=embedded \
-            -p:Version=${{ needs.create-release.outputs.version }}
+            -p:Version="$VERSION"
+          mkdir dist
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}
-          path: bin/
+      - if: runner.os == 'Linux'
+        run: tar -cJf "dist/$NAME.tar.xz" -C bin .
 
-  create-portable-archives:
-    runs-on: ubuntu-latest
-    needs:
-      - build
-      - create-release
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        runtime:
-          - linux-arm64
-          - linux-x64
-          - osx-arm64
-          - osx-x64
-          - win-arm64
-          - win-x64
-    steps:
-      - uses: actions/checkout@v7
+      - if: runner.os == 'macOS'
+        working-directory: bin
+        run: zip -r9 "../dist/$NAME.zip" .
 
-      - uses: actions/download-artifact@v8
-        with:
-          name: lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}
-          path: .tmp
-
-      - if: startsWith(matrix.runtime, 'linux-')
+      - if: runner.os == 'Windows'
         run: |
-          tar -cJvf "lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}.tar.xz" -C .tmp .
-
-      - if: ${{ !startsWith(matrix.runtime, 'linux-') }}
-        working-directory: .tmp
-        run: |
-          zip -r9 "../lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}.zip" *
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: release-asset-${{ matrix.runtime }}
-          path: lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}.*
-
-  create-windows-installers:
-    runs-on: ${{ matrix.runs-on }}
-    needs:
-      - build
-      - create-release
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runtime: win-arm64
-            runs-on: windows-11-arm
-            arch: arm64
-          - runtime: win-x64
-            runs-on: windows-latest
-            arch: x64
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}
-          path: .tmp/artifacts
-
-      - run: |
+          Compress-Archive bin/* "dist/$env:NAME.zip"
           ./packaging/wix/build.ps1 `
-            -Version ${{ needs.create-release.outputs.version }} `
-            -Arch ${{ matrix.arch }} `
-            -BinDir .tmp/artifacts `
-            -OutDir .tmp/wix
+            -Version $env:VERSION `
+            -Arch ('${{ matrix.runtime }}' -replace '^win-') `
+            -BinDir bin `
+            -OutDir dist
 
       - uses: actions/upload-artifact@v7
         with:
-          name: release-asset-${{ matrix.runtime }}-installers
-          path: |
-            .tmp/wix/lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}.msi
-            .tmp/wix/lip-${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}-setup.exe
+          name: ${{ env.NAME }}
+          path: dist/
 
-  publish-release:
+  release:
     runs-on: ubuntu-latest
-    needs:
-      - create-portable-archives
-      - create-windows-installers
-      - create-release
+    needs: build
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-asset-*
-          path: .tmp/assets
+          path: dist
           merge-multiple: true
 
+      # The notes list the pull requests since the newest stable release the tag contains.
       - run: |
-          gh release upload "$GITHUB_REF_NAME" .tmp/assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - run: |
-          case '${{ needs.create-release.outputs.channel }}' in
-            prerelease) flags=(--prerelease) ;;
-            latest) flags=(--latest) ;;
-            *) flags=(--latest=false) ;;
-          esac
-          gh release edit "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false \
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            flags=(--prerelease)
+          elif [[ "$(git tag --list 'v*' | grep -vF -- - | sort -V | tail -1)" == "$GITHUB_REF_NAME" ]]; then
+            flags=(--latest)
+          else
+            flags=(--latest=false)
+          fi
+          previous=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*-*' "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            ${previous:+--notes-start-tag "$previous"} \
             "${flags[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
 
   publish-winget:
-    if: needs.create-release.outputs.channel == 'latest'
-    needs:
-      - create-release
-      - publish-release
+    if: ${{ !contains(github.ref_name, '-') }}
+    needs: release
     runs-on: ubuntu-latest
     steps:
       - uses: vedantmgoyal9/winget-releaser@v2
