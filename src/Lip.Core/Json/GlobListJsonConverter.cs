@@ -7,7 +7,8 @@ namespace Lip.Core.Json;
 public class GlobListJsonConverter : JsonConverter<List<Glob>> {
   public override List<Glob>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
     if (reader.TokenType != JsonTokenType.StartArray) {
-      throw new JsonException("Expected start of array");
+      throw new JsonException("Expected a list of file patterns (a JSON array of strings), but"
+          + $" found {JsonTokenNames.Of(reader.TokenType)}.");
     }
 
     var list = new List<Glob>();
@@ -20,14 +21,20 @@ public class GlobListJsonConverter : JsonConverter<List<Glob>> {
       if (reader.TokenType == JsonTokenType.String) {
         string? s = reader.GetString();
         if (!string.IsNullOrEmpty(s)) {
-          list.Add(Glob.Parse(s));
+          try {
+            list.Add(Glob.Parse(s));
+          }
+          catch (Exception ex) when (ex is not JsonException) {
+            throw new JsonException($"'{s}' is not a valid file pattern.", ex);
+          }
         }
       } else {
-        throw new JsonException($"Expected string but got {reader.TokenType}");
+        throw new JsonException("Each member of a list of file patterns must be a string, but"
+            + $" found {JsonTokenNames.Of(reader.TokenType)}.");
       }
     }
 
-    throw new JsonException("Expected end of array");
+    throw new JsonException("A list of file patterns ends unexpectedly.");
   }
 
   // Glob.ToString() formats with a shared, unsynchronized formatter, so concurrent calls (e.g.
@@ -48,4 +55,17 @@ public class GlobListJsonConverter : JsonConverter<List<Glob>> {
       return glob.ToString();
     }
   }
+}
+
+/// What a JSON token is, in words, for messages.
+internal static class JsonTokenNames {
+  public static string Of(JsonTokenType token) => token switch {
+    JsonTokenType.StartObject or JsonTokenType.EndObject => "an object",
+    JsonTokenType.StartArray or JsonTokenType.EndArray => "an array",
+    JsonTokenType.String or JsonTokenType.PropertyName => "a string",
+    JsonTokenType.Number => "a number",
+    JsonTokenType.True or JsonTokenType.False => "a boolean",
+    JsonTokenType.Null => "null",
+    _ => "nothing",
+  };
 }

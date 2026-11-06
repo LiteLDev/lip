@@ -28,6 +28,7 @@ public static class UserInteractionExtensions {
         return answer;
       }
 
+      RunTrace.Write("ask", $"answer '{answer}' rejected: {error}");
       await ui.PrintWarning($"Invalid answer: {error}");
     }
   }

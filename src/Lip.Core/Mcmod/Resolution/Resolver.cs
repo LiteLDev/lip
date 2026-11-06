@@ -1,7 +1,12 @@
 using System.Collections.Concurrent;
+using Lip.Core.Infrastructure;
 using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
+
+/// Why one path of a Resolve call produced no candidate: the text of the diagnostic, and the
+/// exception behind it, if any (e.g. the network failure of a download).
+public record ResolveDiagnostic(string Message, Exception? Cause);
 
 /// Resolve(source, range, environment) (protocol/package.md §4), reading an archive without a
 /// package file as protocol/compatibility.md §2 does.
@@ -42,13 +47,28 @@ public class Resolver(
     }
   }
 
-  public async IAsyncEnumerable<Candidate> ResolveLazy(
+  public IAsyncEnumerable<Candidate> ResolveLazy(
       Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
       bool clientCompat = false,
       Action<string>? onDiagnostic = null) {
-    Walk walk = new(source, range, environment, clientCompat, onDiagnostic ?? (_ => { }));
+    return ResolveLazyWithCauses(
+        source, range, environment, clientCompat, d => onDiagnostic?.Invoke(d.Message));
+  }
+
+  /// ResolveLazy, reporting with each diagnostic the exception behind it, so that a failure can
+  /// keep it as its cause.
+  public async IAsyncEnumerable<Candidate> ResolveLazyWithCauses(
+      Ref source,
+      IVersionConstraint? range,
+      LipEnvironment environment,
+      bool clientCompat,
+      Action<ResolveDiagnostic> onDiagnostic) {
+    Walk walk = new(source, range, environment, clientCompat, onDiagnostic);
+    RunTrace.Write("resolve", $"Resolving {source} {range?.ToString() ?? "(any version)"}"
+        + $" for ({environment.Platform.ToSpecString()}, {environment.Runtime})"
+        + (clientCompat ? " as a dependency of format 3" : ""));
 
     // Step 1: the archives the source names.
     if (source.Kind != RefKind.Spec) {
@@ -58,7 +78,7 @@ public class Resolver(
             _archives, source.Target, () => _archiveProvider.Open(source.WithVariant("")));
       }
       catch (ArchiveUnavailableException ex) {
-        walk.Report(source.ToString(), ex.Message);
+        walk.Report(source.ToString(), ex.Message, ex);
         yield break;
       }
 
@@ -83,15 +103,20 @@ public class Resolver(
           _versions, source.Target, () => _archiveProvider.ListVersions(source.Target));
     }
     catch (ArchiveUnavailableException ex) {
-      walk.Report(source.ToString(), ex.Message);
+      walk.Report(source.ToString(), ex.Message, ex);
       yield break;
     }
 
+    RunTrace.Write("resolve", $"{source.Target} has {versions.Count} version tags"
+        + (versions.Count == 0 ? "" : $": {string.Join(", ", versions.Select(v => v.Tag))}"));
     List<SpecVersion> matching = [.. versions.Where(v => range?.IsSatisfiedBy(v.Version) ?? true)];
     if (matching.Count == 0) {
       walk.Report(source.ToString(), versions.Count == 0
-          ? "the repository has no version tags"
-          : $"no tag version satisfies {range}");
+          ? "the repository has no version tags (tags named like 'v1.2.3'), so it has no version"
+              + " to install; a branch, tag or commit can be named with '@branch:<name>',"
+              + " '@tag:<name>' or '@rev:<commit>'"
+          : $"no version tag satisfies {range}; the repository has the versions"
+              + $" {ListVersions(versions)}");
       yield break;
     }
 
@@ -103,7 +128,7 @@ public class Resolver(
             () => _archiveProvider.OpenVersion(source.Target, version));
       }
       catch (ArchiveUnavailableException ex) {
-        walk.Report($"{source.Target}@{version.Tag}", ex.Message);
+        walk.Report($"{source.Target}@{version.Tag}", ex.Message, ex);
         continue;
       }
 
@@ -122,6 +147,7 @@ public class Resolver(
       string commit = await Cached(
           _commits, $"{PackageNames.Fold(source.Target)}@{gitRef}",
           () => _archiveProvider.ResolveGitRef(source.Target, gitRef));
+      RunTrace.Write("resolve", $"{source.Target}@{gitRef} is the commit {commit}");
       // The archive of a version ref is named like that of the same version without a ref.
       archive = gitRef.Kind == GitRefKind.Version
           ? await Cached(
@@ -134,7 +160,7 @@ public class Resolver(
               () => _archiveProvider.OpenCommit(source.Target, commit));
     }
     catch (ArchiveUnavailableException ex) {
-      walk.Report(source.ToString(), ex.Message);
+      walk.Report(source.ToString(), ex.Message, ex);
       return null;
     }
 
@@ -155,7 +181,7 @@ public class Resolver(
       document = await Cached(_documents, archive.Key, () => _archiveReader.Read(archive));
     }
     catch (ArchiveUnavailableException ex) {
-      walk.Report(archive.Key, ex.Message);
+      walk.Report(archive.Key, ex.Message, ex);
       return null;
     }
 
@@ -164,7 +190,8 @@ public class Resolver(
     string fileName = document.IsLegacy ? Compat.ToothCompat.ToothFileName : PackageFormat.FileName;
     if (source.Kind == RefKind.Spec && !PackageNames.AreEqual(document.Id, source.Target)) {
       walk.Report(archive.Key,
-          $"its {fileName} declares the package id {document.Id}, not {source.Target}");
+          $"its {fileName} declares the package id {document.Id}, not {source.Target}, so it"
+          + " is not a package of this repository");
       return null;
     }
 
@@ -172,7 +199,8 @@ public class Resolver(
     if (tagVersion is not null && !version.Equals(tagVersion)) {
       if (!document.IsLegacy) {
         walk.Report(archive.Key,
-            $"its {fileName} declares the version {version}, not the tag version {tagVersion}");
+            $"its {fileName} declares the version {version}, not the tag version {tagVersion};"
+            + " the package author must make them match");
         return null;
       }
 
@@ -180,8 +208,8 @@ public class Resolver(
       // version.
       if (SemVersion.PrecedenceComparer.Compare(version, tagVersion) != 0
           && _warned.TryAdd(archive.Key, 0)) {
-        _onWarning($"{archive.Key}: tooth.json declares version {version}; "
-            + $"using the tag version {tagVersion}.");
+        _onWarning($"{archive.Key}: its tooth.json declares the version {version}, but it is"
+            + $" tagged as version {tagVersion}; using the tag version {tagVersion}.");
       }
 
       version = tagVersion;
@@ -192,7 +220,7 @@ public class Resolver(
       packageFile = document.ReadFor(walk.Environment, version);
     }
     catch (PackageFormatException ex) {
-      walk.Report(archive.Key, ex.Message);
+      walk.Report(archive.Key, ex.Message, ex);
       return null;
     }
 
@@ -205,8 +233,7 @@ public class Resolver(
 
     PackageEntry? entry = packageFile.SelectEntry(variant, walk.Environment);
     if (entry is null) {
-      walk.Report(archive.Key, $"{fileName} has no entry of the variant \"{variant}\" for "
-          + $"({walk.Environment.Platform.ToSpecString()}, {walk.Environment.Runtime})");
+      ReportNoEntry(walk, archive, packageFile, fileName, variant);
       return null;
     }
 
@@ -215,11 +242,53 @@ public class Resolver(
       return null;
     }
 
+    RunTrace.Write("resolve", $"Candidate {packageFile.Id}"
+        + (variant == "" ? "" : $"#{variant}") + $"@{version} from {archive.Key}");
     return Candidate.Create(
         new Package(packageFile.Id, variant, version, entry) { Manifest = packageFile.Json },
         archive,
         source,
         _archiveProvider);
+  }
+
+  /// Reports that a package file (named fileName) has no entry of a variant for the environment,
+  /// with the entries it has instead.
+  private static void ReportNoEntry(
+      Walk walk, ArchiveHandle archive, PackageFile packageFile, string fileName, string variant) {
+    LipEnvironment environment = walk.Environment;
+    string variantName = variant == "" ? "the default variant" : $"the variant \"{variant}\"";
+    string wanted = $"no entry of {variantName} for the platform"
+        + $" {environment.Platform.ToSpecString()} and the runtime {environment.Runtime}";
+    if (!packageFile.Variants.TryGetValue(variant, out IReadOnlyList<PackageEntry>? entries)
+        || entries.Count == 0) {
+      walk.Report(archive.Key, packageFile.Variants.Count == 0
+          ? $"its {fileName} has {wanted}; it has no entries at all"
+          : $"its {fileName} has {wanted}; its variants are "
+              + string.Join(", ", packageFile.Variants.Keys.Select(
+                  v => v == "" ? "the default variant" : $"\"{v}\"")));
+      return;
+    }
+
+    string available = string.Join(", ", entries.Select(
+        e => $"({e.Platform.ToSpecString()}, {e.Runtime})"));
+    // An entry for another runtime of the same platform: the package does not support the
+    // runtime lip installs for. Whether --rid can help depends on the workspace, which is not
+    // known here, so the advice is conditional.
+    string runtimeNote = entries.Any(e => e.Platform == environment.Platform)
+        ? $"; it does not support the runtime {environment.Runtime} (if the server runs another"
+          + " runtime and the workspace has no packages yet, pass it with --rid)"
+        : "";
+    walk.Report(
+        archive.Key, $"its {fileName} has {wanted}; it has entries for {available}{runtimeNote}");
+  }
+
+  /// The versions of a version list, newest first, cut short when long.
+  private static string ListVersions(IReadOnlyList<SpecVersion> versions) {
+    const int Shown = 10;
+    List<string> shown = [.. versions.Select(v => v.Version.ToString()).Distinct()];
+    return string.Join(", ", shown.Take(Shown))
+        + (shown.Count > Shown ? $" and {shown.Count - Shown} older ones" : "")
+        + " (newest first)";
   }
 
   /// Shares one task per key. Failed tasks are evicted so that a transient failure is retried
@@ -244,7 +313,10 @@ public class Resolver(
       IVersionConstraint? Range,
       LipEnvironment Environment,
       bool ClientCompat,
-      Action<string> Sink) {
-    public void Report(string archive, string reason) => Sink($"{archive}: {reason}");
+      Action<ResolveDiagnostic> Sink) {
+    public void Report(string archive, string reason, Exception? cause = null) {
+      RunTrace.Write("resolve", $"Rejected {archive} for {Source}: {reason}");
+      Sink(new ResolveDiagnostic($"{archive}: {reason}", cause));
+    }
   }
 }

@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using System.Text.RegularExpressions;
+using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod;
 
@@ -17,31 +18,65 @@ namespace Lip.Core.Mcmod;
 public static partial class PackageArguments {
   private const string _zipExtension = ".zip";
 
+  /// The accepted forms, for messages.
+  public const string AcceptedForms = "A package is written as a remote repository such as"
+      + " github.com/owner/repo (optionally followed by #<variant>, then by @<version>,"
+      + " @branch:<name>, @tag:<name> or @rev:<full commit id>), an https:// URL of a ZIP"
+      + " archive, or the path of a local ZIP file or directory (e.g. ./my-package.zip).";
+
+  /// Throws ArgumentException when the argument is none of the accepted forms, or names a local
+  /// path that does not exist.
   public static PackageRequest Parse(
       string argument, string currentDirectory, IFileSystem fileSystem) {
     if (argument.StartsWith("https://", StringComparison.Ordinal)) {
       Ref url = ParseRef(argument, argument);
-      return url.Kind == RefKind.Url
-          ? new PackageRequest(url, null)
-          : throw new ArgumentException(
-              $"Invalid package '{argument}': not an https URL.", nameof(argument));
+      if (url.Kind != RefKind.Url) {
+        throw Invalid(argument, "it is not an https:// URL");
+      }
+
+      RunTrace.Write("parse", $"Package argument '{argument}' is the URL {url}.");
+      return new PackageRequest(url, null);
     }
 
     if (OtherSchemeRegex().IsMatch(argument)) {
-      throw new ArgumentException(
-          $"Invalid package '{argument}': only https:// URLs are sources.", nameof(argument));
+      throw Invalid(argument, SchemeReason(argument[..argument.IndexOf(':')]));
     }
 
     if (LocalFileRef(argument, currentDirectory, fileSystem) is Ref file) {
-      return fileSystem.File.Exists(file.LocalPath) || fileSystem.Directory.Exists(file.LocalPath)
-          ? new PackageRequest(file, null)
-          : throw new ArgumentException(
-              $"Invalid package '{argument}': {file.LocalPath} does not exist.",
-              nameof(argument));
+      if (!fileSystem.File.Exists(file.LocalPath)
+          && !fileSystem.Directory.Exists(file.LocalPath)) {
+        throw new ArgumentException(
+            $"Cannot find the local package '{argument}': {file.LocalPath} does not exist. Check"
+            + " the path (a relative path is relative to the workspace root"
+            + $" {currentDirectory}). {AcceptedForms}");
+      }
+
+      RunTrace.Write("parse", $"Package argument '{argument}' is the local path"
+          + $" {file.LocalPath}{(file.Variant == "" ? "" : $" with variant '{file.Variant}'")}.");
+      return new PackageRequest(file, null);
     }
 
-    return new PackageRequest(ParseSpec(argument, argument), null);
+    if (argument.StartsWith("file:", StringComparison.OrdinalIgnoreCase)) {
+      throw Invalid(argument, SchemeReason("file"));
+    }
+
+    Ref spec = ParseSpec(argument, argument);
+    RunTrace.Write("parse", $"Package argument '{argument}' is the remote repository"
+        + $" {spec.Target}{(spec.Variant == "" ? "" : $" with variant '{spec.Variant}'")}"
+        + $"{(spec.GitRef is null ? "" : $" at ref {spec.GitRef}")}.");
+    return new PackageRequest(spec, null);
   }
+
+  /// Why an argument with a URI scheme other than https is no package.
+  private static string SchemeReason(string scheme) =>
+      scheme.Equals("file", StringComparison.OrdinalIgnoreCase)
+          ? "a local package is written as its path (e.g. ./my-package.zip), not as a file: URI"
+          : scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
+              ? "lip downloads only over https://, so use the https:// URL of the archive"
+              : $"lip cannot download from {scheme}:// URLs, only from https:// URLs";
+
+  private static ArgumentException Invalid(string argument, string reason) =>
+      new($"'{argument}' is not a valid package: {reason}. {AcceptedForms}");
 
   /// The source of an argument that names a local path (see the class remarks), whether or not
   /// it exists; null when the argument is no local path. A variant follows the last '#' unless
@@ -104,14 +139,13 @@ public static partial class PackageArguments {
     Ref reference = ParseRef(text, argument);
     return reference.Kind == RefKind.Spec
         ? reference
-        : throw new ArgumentException(
-            $"Invalid package '{argument}': not a remote repository.", nameof(argument));
+        : throw Invalid(argument, "it is not a remote repository");
   }
 
   private static Ref ParseRef(string text, string argument) {
     return Ref.TryParse(text, out Ref? reference, out string? error)
         ? reference
-        : throw new ArgumentException($"Invalid package '{argument}': {error}.", nameof(argument));
+        : throw Invalid(argument, error);
   }
 
   /// A URI scheme followed by "://".

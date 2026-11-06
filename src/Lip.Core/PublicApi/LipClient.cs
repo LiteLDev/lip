@@ -37,6 +37,9 @@ public sealed class LipClient(
     FileDownloader fileDownloader = new(userInteraction);
     string? githubProxyValue = await configService.GetGithubProxy();
     Url? githubProxy = githubProxyValue is null ? null : Url.Parse(githubProxyValue);
+    RunTrace.Write("config", githubProxy is null
+        ? "no github_proxy: GitHub is reached directly"
+        : $"GitHub is reached through github_proxy {ConfigService.DescribeProxy(githubProxyValue)}");
     GitRemoteClient gitRemoteClient = new(githubProxy);
 
     CommandRunner commandRunner = new();
@@ -78,14 +81,24 @@ public sealed class LipClient(
   /// the user for its package id. Fails when lip.yaml exists, or when the user cannot be asked.
   public async Task Init() {
     string path = PackageFormat.FileName;
-    if (_fileSystem.File.Exists(path) || _fileSystem.Directory.Exists(path)) {
-      throw new InvalidOperationException($"{path} already exists.");
+    string directory = _fileSystem.Directory.GetCurrentDirectory();
+    if (_fileSystem.Directory.Exists(path)) {
+      throw new InvalidOperationException(
+          $"A directory named {path} exists in {directory}, so lip init cannot write {path} there. "
+          + $"Move or rename that directory and run 'lip init' again.");
+    }
+
+    if (_fileSystem.File.Exists(path)) {
+      throw new InvalidOperationException(
+          $"{path} already exists in {directory}, and lip init does not replace it. To edit the "
+          + $"package, change {path} by hand; to start over, delete {path} and run 'lip init' "
+          + "again.");
     }
 
     string id = await _userInteraction.AskValid(
         "the package id of the package (a Go module path, e.g. github.com/owner/repo)",
         answer => Golang.Org.X.Mod.Module.CheckPath(answer) is Exception ex
-            ? $"'{answer}' is not a Go module path ({ex.Message})."
+            ? ex.Message
             : null);
 
     JsonObject document = new() {
@@ -101,8 +114,21 @@ public sealed class LipClient(
     };
 
     // Asking may take a while; a lip.yaml written meanwhile is not replaced.
-    using Stream stream = _fileSystem.File.Open(path, FileMode.CreateNew);
-    await stream.WriteAsync(Encoding.UTF8.GetBytes(YamlJson.Serialize(document)));
+    RunTrace.Write("init", $"writing {path} in {directory} for {id}");
+    Stream stream;
+    try {
+      stream = _fileSystem.File.Open(path, FileMode.CreateNew);
+    }
+    catch (IOException ex)
+        when (_fileSystem.File.Exists(path) || _fileSystem.Directory.Exists(path)) {
+      throw new IOException(
+          $"{path} was created in {directory} by another program while lip was asking, and lip "
+          + $"init does not replace it. Delete {path} and run 'lip init' again to start over.", ex);
+    }
+
+    using (stream) {
+      await stream.WriteAsync(Encoding.UTF8.GetBytes(YamlJson.Serialize(document)));
+    }
   }
 
   public async Task Install(

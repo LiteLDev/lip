@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Flurl;
 using Lip.Core.Git;
+using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Sources;
 
@@ -57,13 +58,14 @@ public class GitTreeSource(IGitRemoteClient gitRemoteClient, Url repoUrl, string
     HashSet<string> objectIds = [.. keys
         .Select(k => entries.TryGetValue(k, out string? oid)
             ? oid
-            : throw new ArgumentException($"Key not found: {k}", nameof(keys)))
+            : throw new ArgumentException(NotInCommit(k)))
         .Where(oid => !_prefetched.ContainsKey(oid))];
 
     if (objectIds.Count == 0) {
       return;
     }
 
+    RunTrace.Write("git", $"Prefetch {objectIds.Count} files of commit {_commitish} in {_repoUrl}");
     foreach ((string objectId, byte[] content) in await FetchBlobs(objectIds)) {
       _prefetched.TryAdd(objectId, content);
     }
@@ -71,6 +73,7 @@ public class GitTreeSource(IGitRemoteClient gitRemoteClient, Url repoUrl, string
 
   // Fetches the given blobs with a single request and verifies each against its object id.
   private async Task<Dictionary<string, byte[]>> FetchBlobs(IReadOnlyCollection<string> objectIds) {
+    IReadOnlyDictionary<string, string> entries = await GetEntries();
     Dictionary<string, byte[]> blobs = [];
 
     await _gitRemoteClient.FetchBlobs(_repoUrl, objectIds, async (oid, stream) => {
@@ -82,14 +85,16 @@ public class GitTreeSource(IGitRemoteClient gitRemoteClient, Url repoUrl, string
       using MemoryStream memory = new();
       await stream.CopyToAsync(memory);
       byte[] content = memory.ToArray();
-      VerifyBlob(oid, content);
+      VerifyBlob(oid, content, entries);
       blobs[oid] = content;
     });
 
     string[] missing = [.. objectIds.Where(oid => !blobs.ContainsKey(oid))];
     if (missing.Length > 0) {
       throw new InvalidOperationException(
-          $"Blobs {string.Join(", ", missing)} were not returned by {_repoUrl}.");
+          $"The git server did not send {missing.Length} of the files lip asked for from commit"
+          + $" {_commitish} in {_repoUrl}: {string.Join(", ", PathsOf(missing, entries))}. Try"
+          + " again later.");
     }
 
     return blobs;
@@ -100,7 +105,20 @@ public class GitTreeSource(IGitRemoteClient gitRemoteClient, Url repoUrl, string
 
     return entries.TryGetValue(key, out string? objectId)
         ? objectId
-        : throw new ArgumentException($"Key not found: {key}", nameof(key));
+        : throw new ArgumentException(NotInCommit(key));
+  }
+
+  private string NotInCommit(string key) =>
+      $"There is no file '{key}' in commit {_commitish} of {_repoUrl}.";
+
+  // The paths of the given blobs, or the object ids of blobs not in the tree.
+  private static IEnumerable<string> PathsOf(
+      IEnumerable<string> objectIds,
+      IReadOnlyDictionary<string, string> entries) {
+    return objectIds.Select(oid => entries
+        .Where(e => string.Equals(e.Value, oid, StringComparison.OrdinalIgnoreCase))
+        .Select(e => $"'{e.Key}'")
+        .FirstOrDefault() ?? oid);
   }
 
   // ListTree is called at most once per instance unless it fails, in which case the next access retries.
@@ -117,19 +135,29 @@ public class GitTreeSource(IGitRemoteClient gitRemoteClient, Url repoUrl, string
   private async Task<IReadOnlyDictionary<string, string>> ListEntries() {
     IReadOnlyList<GitTreeEntry> tree = await _gitRemoteClient.ListTree(_repoUrl, _commitish);
 
-    return tree.Where(e => e.IsRegularFile).ToDictionary(e => e.Path, e => e.ObjectId);
+    Dictionary<string, string> entries = tree.Where(e => e.IsRegularFile).ToDictionary(e => e.Path, e => e.ObjectId);
+    if (entries.Count < tree.Count) {
+      RunTrace.Write("git", $"Skip {tree.Count - entries.Count} symlinks and other non-regular files"
+          + $" of commit {_commitish} in {_repoUrl}");
+    }
+    return entries;
   }
 
   // Checks that the git object hash of the blob ("blob <size>\0" + content) matches its SHA-1
   // object id.
-  private static void VerifyBlob(string objectId, byte[] content) {
+  private void VerifyBlob(string objectId, byte[] content, IReadOnlyDictionary<string, string> entries) {
     using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
     hash.AppendData(Encoding.ASCII.GetBytes($"blob {content.Length}\0"));
     hash.AppendData(content);
 
     string actual = Convert.ToHexStringLower(hash.GetHashAndReset());
     if (!string.Equals(actual, objectId, StringComparison.OrdinalIgnoreCase)) {
-      throw new InvalidDataException($"Blob content hash {actual} does not match object id {objectId}.");
+      throw new InvalidDataException(
+          $"The content of {PathsOf([objectId], entries).First()} downloaded from commit"
+          + $" {_commitish} in {_repoUrl} is corrupt: its git object id is {actual}, but it should"
+          + $" be {objectId}. The data was damaged on the way. Try again; if you use a GitHub"
+          + " proxy, try without it ('lip config delete github_proxy'); if this keeps happening,"
+          + " report it as a lip bug.");
     }
   }
 }

@@ -39,6 +39,8 @@ public static class ToothMigrator {
       IUserInteraction ui) {
     List<string> notes = [];
     Context context = new(tooth, notes, ui, []);
+    RunTrace.Write("migrate", $"converting tooth.json of {tooth.Path} {tooth.Version} with "
+        + $"{tooth.Variants.Count} variants");
 
     JsonObject document = new() {
       [PackageFormat.FormatKey] = PackageFormat.Format,
@@ -80,6 +82,8 @@ public static class ToothMigrator {
             $"the runtimes (RIDs, comma-separated) the platform pattern '{variant.Platform}' "
                 + "stands for",
             variant.Platform);
+        RunTrace.Write("migrate", $"platform pattern '{variant.Platform}' stands for "
+            + string.Join(", ", patterns[variant.Platform]));
       }
     }
 
@@ -90,6 +94,10 @@ public static class ToothMigrator {
                 + "apply to",
             null)
         : [];
+    if (anyRuntime.Count > 0) {
+      RunTrace.Write("migrate", "variants without a platform apply to "
+          + string.Join(", ", anyRuntime));
+    }
 
     bool hasClient = tooth.Variants.Any(v => v.Label == ToothCompat.ClientLabel);
     JsonObject variants = [];
@@ -115,8 +123,11 @@ public static class ToothMigrator {
       foreach (string runtime in runtimes) {
         if (await Content(context, Merge(tooth, label, runtime), runtime,
             $"variants (label '{label}', {runtime})") is not JsonObject content) {
+          RunTrace.Write("migrate", $"variant '{label}' has no entry for {runtime}");
           continue;
         }
+
+        RunTrace.Write("migrate", $"variant '{label}': entry for {runtime}");
 
         AddEntry(label, Entry(McmodPlatform.Server, runtime, content));
         if (label != "" || !hasClient) {
@@ -154,8 +165,11 @@ public static class ToothMigrator {
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
         or KeyNotFoundException) {
       throw new InvalidOperationException(
-          $"The variants labeled '{label}' cannot be merged for {runtime}, as tooth.json could "
-          + $"not merge them either: {ex.Message}", ex);
+          $"Cannot migrate tooth.json: the variants labeled '{label}' cannot be merged for "
+          + $"{runtime}, because {ToothCompat.MergeFailureReason(ex)}; lip v0.37.0 could not "
+          + $"install them for {runtime} either. Fix these variants in tooth.json so that each "
+          + $"dependency is declared, and each kind of script is set, in only one of the variants "
+          + $"that apply to {runtime}, then run 'lip migrate' again.", ex);
     }
   }
 

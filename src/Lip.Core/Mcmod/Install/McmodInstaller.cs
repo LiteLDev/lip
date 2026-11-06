@@ -53,7 +53,10 @@ public partial class McmodInstaller(
     Package package = candidate.Package;
     PackageEntry entry = package.Entry;
     string name = package.Identity;
+    string label = Label(package);
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
+    RunTrace.Write("install", $"Planning to install {label} from {candidate.Source}"
+        + $" into {root} ({candidate.Assets.Count} assets)");
 
     // Every asset is obtained before anything is written or run.
     List<(string Mount, ISource Source)> mounts = [];
@@ -63,7 +66,9 @@ public partial class McmodInstaller(
       }
       catch (ArchiveUnavailableException ex) {
         throw new McmodInstallException(
-            $"{name}: cannot obtain asset {i}: {ex.Message}", ex);
+            $"Cannot install {label}: lip could not obtain asset {i}"
+            + $" ({DescribeAsset(entry, i)}) of the package, so nothing was changed.",
+            ex);
       }
     }
 
@@ -73,6 +78,12 @@ public partial class McmodInstaller(
     foreach (PlannedWrite write in writes) {
       view.AddFile(write.FullPath);
     }
+
+    foreach (PlannedWrite kept in plan.Where(w => w.Keep)) {
+      RunTrace.Write("install", $"{name}: keeping the existing {kept.Target} (preserve_files)");
+    }
+
+    RunTrace.Write("install", $"{name}: {writes.Count} files to write");
 
     if (context.DryRun) {
       foreach (PlannedWrite write in plan) {
@@ -86,9 +97,11 @@ public partial class McmodInstaller(
         await source.Prefetch(
             writes.Where(w => w.Source == source).Select(w => w.SourceKey).Distinct());
       }
-      catch (Exception ex) {
+      catch (Exception ex) when (ex is not OperationCanceledException) {
         throw new McmodInstallException(
-            $"{name}: cannot fetch the archive content: {ex.Message}", ex);
+            $"Cannot install {label}: lip could not get the files of the package, so"
+            + " nothing was changed.",
+            ex);
       }
     }
 
@@ -112,6 +125,8 @@ public partial class McmodInstaller(
       LockedPackage package, InstallContext context, WorkspaceView view) {
     PackageEntry entry = LockedEntry(package, context.Environment);
     string root = _fs.Path.GetFullPath(context.WorkspaceRoot);
+    RunTrace.Write("install", $"Planning to uninstall {package.Identity} {package.Version}"
+        + $" from {root} ({package.Files.Count} owned files recorded)");
 
     // The paths to delete are those of the workspace before pre_uninstall runs.
     HashSet<string> ownedByOthers = new(
@@ -127,9 +142,12 @@ public partial class McmodInstaller(
     foreach (string file in package.Files.Select(NormalizeRelative)) {
       if (!IsSafeRelativePath(file) || WorkspaceLayout.IsLipPath(file)
           || ownedByOthers.Contains(file)) {
+        RunTrace.Write("install", $"{package.Identity}: not deleting {file}: it is not a safe"
+            + " workspace path, is inside .lip, or another package owns it");
         continue;
       }
       if (MatchesAny(entry.PreserveFiles, file)) {
+        RunTrace.Write("install", $"{package.Identity}: keeping {file} (preserve_files)");
         continue;
       }
       if (view.FileExists(ToFullPath(root, file)) && fileSet.Add(file)) {
@@ -203,6 +221,8 @@ public partial class McmodInstaller(
       steps.Add(new ScriptStep("post_uninstall", entry.Hooks.PostUninstall));
     }
 
+    RunTrace.Write("install", $"{package.Identity}: {files.Count} files and"
+        + $" {steps.OfType<DeleteDirectoryStep>().Count()} directories to delete");
     return new PackagePlan(package.Identity, root, [], steps);
   }
 
@@ -210,6 +230,7 @@ public partial class McmodInstaller(
   /// McmodInstallException when a step fails; the caller rolls the transaction back.
   public async Task Apply(
       PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken) {
+    RunTrace.Write("install", $"Applying the plan of {plan.Name} ({plan.Steps.Count} steps)");
     foreach (PlannedStep step in plan.Steps) {
       cancellationToken.ThrowIfCancellationRequested();
       switch (step) {
@@ -223,7 +244,7 @@ public partial class McmodInstaller(
           }
           catch (Exception ex) when (ex is not OperationCanceledException) {
             throw new McmodInstallException(
-                $"{plan.Name}: cannot write {write.Target}: {ex.Message}", ex);
+                $"Cannot install {plan.Name}: lip cannot write '{write.Target}'.", ex);
           }
 
           break;
@@ -232,19 +253,34 @@ public partial class McmodInstaller(
             // A hook command may have deleted it.
             if (_fs.File.Exists(delete.FullPath)) {
               transaction.DeleteFile(delete.FullPath);
+            } else {
+              RunTrace.Write("install", $"{plan.Name}: {delete.FullPath} is already gone");
             }
           }
           catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
             throw new McmodInstallException(
-                $"{plan.Name}: cannot delete {delete.FullPath}: {ex.Message}", ex);
+                $"Cannot uninstall {plan.Name}: lip cannot delete"
+                + $" '{WorkspaceErrors.Show(_fs, plan.Root, delete.FullPath)}'.",
+                ex);
           }
 
           break;
         case DeleteDirectoryStep directory:
-          transaction.DeleteDirectoryOnCommit(directory.FullPath);
+          try {
+            transaction.DeleteDirectoryOnCommit(directory.FullPath);
+          }
+          catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            throw new McmodInstallException(
+                $"Cannot uninstall {plan.Name}: lip cannot record that it deletes the directory"
+                + $" '{WorkspaceErrors.Show(_fs, plan.Root, directory.FullPath)}'.",
+                ex);
+          }
+
           break;
         default:
-          throw new ArgumentException($"Unknown step {step}.", nameof(plan));
+          throw new ArgumentException(
+              $"lip planned a step it does not know ({step}). This is a bug in lip.",
+              nameof(plan));
       }
     }
   }
@@ -258,15 +294,38 @@ public partial class McmodInstaller(
     }
     catch (FormatException ex) {
       throw new McmodInstallException(
-          $"{package.Identity}: the package file recorded in the workspace file is invalid: "
-          + ex.Message, ex);
+          $"The package file that the workspace file ({LockStore.LipDirectory}/"
+          + $"{LockStore.FileName}) records for {package.Identity} {package.Version} is invalid."
+          + " If you edited the workspace file by hand, undo the change.",
+          ex);
     }
 
+    string variant = package.Variant == ""
+        ? "the default variant"
+        : $"the variant \"{package.Variant}\"";
     return manifest.SelectEntry(package.Variant, environment)
         ?? throw new McmodInstallException(
-            $"{package.Identity}: the package file recorded in the workspace file has no entry of the"
-            + $" variant \"{package.Variant}\" for ({environment.Platform.ToSpecString()}, "
-            + $"{environment.Runtime}).");
+            $"The package file that the workspace file ({LockStore.LipDirectory}/"
+            + $"{LockStore.FileName}) records for {package.Identity} {package.Version} has no"
+            + $" entry of {variant} for the platform {environment.Platform.ToSpecString()} and"
+            + $" the runtime {environment.Runtime}. If you passed --rid, pass the runtime the"
+            + " workspace was installed for instead.");
+  }
+
+  /// A package for messages: its identity and version.
+  private static string Label(Package package) => $"{package.Identity} {package.Version}";
+
+  /// An asset of an entry for messages: its type and where it comes from.
+  private static string DescribeAsset(PackageEntry entry, int i) {
+    if (i >= entry.Assets.Count) {
+      return "unknown";
+    }
+
+    EntryAsset asset = entry.Assets[i];
+    string type = asset.Type.ToString().ToLowerInvariant();
+    return asset.Type == AssetType.Self || asset.Urls.Count == 0
+        ? $"type \"{type}\", the archive of the package itself"
+        : $"type \"{type}\", from {string.Join(" or ", asset.Urls)}";
   }
 
   /// Where asset i is mounted in the source of a package.
@@ -280,12 +339,15 @@ public partial class McmodInstaller(
       InstallContext context,
       WorkspaceView view) {
     Package package = candidate.Package;
-    string name = package.Identity;
+    string label = Label(package);
     PackageEntry entry = package.Entry;
     ModManifest? modManifest = await candidate.GetModManifest();
     string? modDirectory = modManifest is null
         ? null
         : $"{WorkspaceLayout.ModsDirectory}/{modManifest.Name}/";
+    if (modDirectory is not null) {
+      RunTrace.Write("install", $"{label}: the mod directory is {modDirectory}");
+    }
 
     // Target (workspace-relative) -> source and key. Later writes of the same target win.
     List<string> order = [];
@@ -297,16 +359,25 @@ public partial class McmodInstaller(
       string[] segments = IsSafeRelativePath(target)
           ? [.. target.Split('/').Where(s => s != ".")]
           : [];
-      if (segments.Length == 0
-          || (OperatingSystem.IsWindows()
-              && segments.Any(s => s.EndsWith('.') || s.EndsWith(' ') || s.Contains(':')))) {
+      if (segments.Length == 0) {
         throw new McmodInstallException(
-            $"{name}: '{target}' is not a valid path inside the workspace.");
+            $"Cannot install {label}: its package file places a file at '{target}', which is not a"
+            + " valid path inside the workspace (a relative path with '/' separators and without"
+            + " '..'). Report this to the author of the package.");
+      }
+      if (OperatingSystem.IsWindows()
+          && segments.Any(s => s.EndsWith('.') || s.EndsWith(' ') || s.Contains(':'))) {
+        throw new McmodInstallException(
+            $"Cannot install {label}: its package file places a file at '{target}', which is not a"
+            + " valid path on Windows (a name in it ends with '.' or a space, or contains ':')."
+            + " Report this to the author of the package.");
       }
       target = string.Join('/', segments);
       if (WorkspaceLayout.IsLipPath(target)) {
         throw new McmodInstallException(
-            $"{name}: '{target}' is inside {LockStore.LipDirectory}, which is reserved for lip.");
+            $"Cannot install {label}: its package file places a file at '{target}', inside"
+            + $" {LockStore.LipDirectory}, which is reserved for lip. Report this to the author"
+            + " of the package.");
       }
       if (!targets.ContainsKey(target)) {
         order.Add(target);
@@ -343,13 +414,13 @@ public partial class McmodInstaller(
       }
 
       foreach (EntryPlacement placement in asset.Placements) {
-        PlanPlacement(name, i, placement, files, (target, key) => Add(target, source, key));
+        PlanPlacement(label, i, placement, files, (target, key) => Add(target, source, key));
       }
     }
 
     Dictionary<string, string> owners = new(PathComparer);
     foreach (LockedPackage locked in context.Lock.Packages
-        .Where(p => !PackageNames.AreEqual(p.Identity, name))) {
+        .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))) {
       foreach (string file in locked.Files.Select(NormalizeRelative)) {
         owners.TryAdd(file, locked.Identity);
       }
@@ -359,8 +430,12 @@ public partial class McmodInstaller(
         .Where(owners.ContainsKey)
         .Select(t => $"{t} (owned by {owners[t]})")];
     if (conflicts.Count > 0) {
+      RunTrace.Write("install", $"{label}: conflicts with installed packages: "
+          + string.Join(", ", conflicts));
       throw new McmodInstallException(
-          $"{name}: files already owned by other packages: " + string.Join(", ", conflicts));
+          $"Cannot install {label}: it would overwrite files that belong to other installed"
+          + $" packages: {string.Join(", ", conflicts)}. Uninstall those packages first, or ask"
+          + " the authors of the packages to resolve the conflict.");
     }
 
     List<PlannedWrite> plan = [];
@@ -369,17 +444,23 @@ public partial class McmodInstaller(
       (string target, ISource from, string key) = targets[normalized];
       string full = ToFullPath(root, target);
       if (!IsInside(root, full)) {
-        throw new McmodInstallException($"{name}: '{target}' escapes the workspace.");
+        throw new McmodInstallException(
+            $"Cannot install {label}: its package file places a file at '{target}', which is"
+            + " outside the workspace. Report this to the author of the package.");
       }
       if (view.DirectoryExists(full)) {
-        throw new McmodInstallException($"{name}: '{target}' is an existing directory.");
+        throw new McmodInstallException(
+            $"Cannot install {label}: it writes the file '{target}', but a directory of that"
+            + " name is in the way. Move or delete that directory, then try again.");
       }
       for (string? parent = _fs.Path.GetDirectoryName(full);
           parent is not null && IsInside(root, parent) && checkedDirectories.Add(parent);
           parent = _fs.Path.GetDirectoryName(parent)) {
         if (view.FileExists(parent)) {
           throw new McmodInstallException(
-              $"{name}: cannot write '{target}': a parent path is an existing file.");
+              $"Cannot install {label}: it writes the file '{target}', but"
+              + $" '{WorkspaceErrors.Show(_fs, root, parent)}' is a file, not a directory. Move"
+              + " or delete that file, then try again.");
         }
       }
 
@@ -392,7 +473,7 @@ public partial class McmodInstaller(
   /// Plans the writes of one placement of a "self" or "zip" asset (protocol/workspace.md §4 step
   /// 2). files are the (path in the asset, key) pairs of the asset.
   private static void PlanPlacement(
-      string name,
+      string label,
       int asset,
       EntryPlacement placement,
       IReadOnlyList<(string Path, string Key)> files,
@@ -404,7 +485,9 @@ public partial class McmodInstaller(
               .FirstOrDefault(f => f!.Value.Path == placement.Src);
           if (file is null) {
             throw new McmodInstallException(
-                $"{name}: the file '{placement.Src}' is not in asset {asset}.");
+                $"Cannot install {label}: its package file places the file '{placement.Src}' of"
+                + $" asset {asset}, but the asset has no such file. Report this to the author of"
+                + " the package.");
           }
 
           add(placement.Dest, file.Value.Key);
@@ -417,7 +500,9 @@ public partial class McmodInstaller(
           ];
           if (matched.Count == 0) {
             throw new McmodInstallException(
-                $"{name}: asset {asset} has no file below '{placement.Src}'.");
+                $"Cannot install {label}: its package file places the directory '{placement.Src}'"
+                + $" of asset {asset}, but the asset has no file below it. Report this to the"
+                + " author of the package.");
           }
 
           foreach ((string path, string key) in matched) {
@@ -448,12 +533,15 @@ public partial class McmodInstaller(
       IReadOnlyList<string> commands,
       string root) {
     foreach (string command in commands) {
+      RunTrace.Write("install", $"{name}: running the {stage} command '{command}'");
       try {
         await _commandRunner.Run(command, root);
       }
       catch (Exception ex) {
         throw new McmodInstallException(
-            $"{name}: {stage} command '{command}' failed: {ex.Message}", ex);
+            $"In the {stage} hook of {name}, the command '{command}' failed. lip undoes the file"
+            + " changes of this operation, but not what hook commands changed.",
+            ex);
       }
     }
   }

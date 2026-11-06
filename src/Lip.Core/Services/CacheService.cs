@@ -13,6 +13,9 @@ public interface ICacheService {
   Task<IFileInfo?> TryGetFile(string key);
 }
 
+/// The lip cache (protocol/userspace.md §3). Failures of the file system are IOExceptions or
+/// UnauthorizedAccessExceptions naming the cache path; failures of a factory are passed on as
+/// they are.
 public class CacheService(IFileSystem fileSystem, IUserInteraction userInteraction) : ICacheService {
   private readonly IDirectoryInfo _cacheDirectory =
       fileSystem.DirectoryInfo.New(LipDirectories.Cache);
@@ -23,6 +26,7 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
   public async Task Clean() {
     _cacheDirectory.Refresh();
     if (!_cacheDirectory.Exists) {
+      RunTrace.Write("cache", $"The cache {_cacheDirectory.FullName} does not exist: nothing to clean");
       return;
     }
 
@@ -43,8 +47,18 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
         RemoveReadOnlyRecursive(subDir);
       }
     }
-    RemoveReadOnlyRecursive(_cacheDirectory);
-    _cacheDirectory.Delete(recursive: true);
+
+    RunTrace.Write("cache", $"Deleting the cache {_cacheDirectory.FullName}");
+    try {
+      RemoveReadOnlyRecursive(_cacheDirectory);
+      _cacheDirectory.Delete(recursive: true);
+    }
+    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+      throw FileSystemExtensions.WrapFileError(
+          $"Could not delete the lip cache {_cacheDirectory.FullName}. Stop other lip processes"
+          + " and programs that use files in it, then try again, or delete the directory"
+          + " yourself.", ex);
+    }
   }
 
   /// Writes a missing entry atomically (protocol/userspace.md §3): the factory writes a uniquely
@@ -53,13 +67,22 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
     IFileInfo cacheFile = GetCacheFile(key);
 
     if (cacheFile.Exists) {
+      RunTrace.Write("cache", $"Hit for {key}: {cacheFile.FullName}");
       await _userInteraction.PrintInfo($"Cache hit for key '{key}'.");
 
       return cacheFile;
     }
-    cacheFile.Directory?.Create();
 
+    RunTrace.Write("cache", $"Miss for {key}: creating {cacheFile.FullName}");
     await _userInteraction.PrintInfo($"Caching file for key '{key}'...");
+    try {
+      cacheFile.Directory?.Create();
+    }
+    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+      throw FileSystemExtensions.WrapFileError(
+          $"Could not create the lip cache directory {cacheFile.DirectoryName}. Check that you"
+          + " may write there.", ex);
+    }
 
     IFileInfo tempFile =
         _fileSystem.FileInfo.New(Path.Join(_cacheDirectory.FullName, $"{Guid.NewGuid():N}.tmp"));
@@ -67,16 +90,32 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
     try {
       await factory(tempFile);
 
-      _fileSystem.File.Move(tempFile.FullName, cacheFile.FullName);
+      try {
+        _fileSystem.File.Move(tempFile.FullName, cacheFile.FullName);
+      }
+      catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)
+          && !_fileSystem.File.Exists(cacheFile.FullName)) {
+        throw FileSystemExtensions.WrapFileError(
+            $"Could not move {tempFile.FullName} into the lip cache as {cacheFile.FullName}."
+            + " Check that you may write to the cache and that the disk is not full.", ex);
+      }
     }
     catch (IOException) when (_fileSystem.File.Exists(cacheFile.FullName)) {
       // Another process has already created the cache file, so we can ignore this exception.
+      RunTrace.Write("cache", $"{cacheFile.FullName} was created meanwhile by another process");
     }
     finally {
-      tempFile.Delete();
+      try {
+        tempFile.Delete();
+      }
+      catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+        // A leftover temporary file does no harm; the failure that brought us here matters more.
+        RunTrace.Write("cache", $"Could not delete {tempFile.FullName}: {ex.Message}");
+      }
     }
 
     cacheFile.Refresh();
+    RunTrace.Write("cache", $"Stored {key}: {cacheFile.FullName}");
 
     return cacheFile;
   }

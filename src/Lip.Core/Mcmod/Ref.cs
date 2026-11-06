@@ -54,13 +54,17 @@ public sealed partial record GitRef {
       string name = s[prefix.Length..];
       if (kind == GitRefKind.Rev) {
         if (!CommitIdRegex().IsMatch(name)) {
-          error = $"'{name}' is not a full 40-digit hexadecimal commit id";
+          error = $"'{name}' is not a full commit id: write all 40 hexadecimal digits, not an"
+              + " abbreviation";
           return false;
         }
 
         name = name.ToLowerInvariant();
       } else if (!IsValidRefName(name)) {
-        error = $"'{name}' is not a valid git {kind.ToString().ToLowerInvariant()} name";
+        string what = kind.ToString().ToLowerInvariant();
+        error = name == ""
+            ? $"the {what} name after \"{prefix}\" is missing"
+            : $"'{name}' is not a valid git {what} name (see 'git check-ref-format')";
         return false;
       }
 
@@ -75,13 +79,17 @@ public sealed partial record GitRef {
       return true;
     }
 
-    error = $"'{s}' is not <version>, branch:<name>, tag:<name> or rev:<commit>";
+    error = s.Length > 1 && s[0] is 'v' or 'V'
+        && Semver.SemVersion.TryParse(s[1..], Semver.SemVersionStyles.Strict, out _)
+            ? $"write the version without the leading 'v', as '{s[1..]}'"
+            : "a ref is a SemVer version such as 1.2.3 (without a leading 'v'), branch:<name>,"
+                + " tag:<name> or rev:<full commit id>";
     return false;
   }
 
   public static GitRef Parse(string s) => TryParse(s, out GitRef? r, out string? error)
       ? r
-      : throw new FormatException($"Invalid git ref '{s}': {error}");
+      : throw new FormatException($"The ref '{s}' of a remote repository is not valid: {error}.");
 
   public static GitRef Rev(string commit) => Parse($"rev:{commit}");
 
@@ -140,11 +148,17 @@ public partial record Ref {
   /// For file refs, the absolute local path.
   public string LocalPath => Kind == RefKind.File
       ? new Uri(Target).LocalPath
-      : throw new InvalidOperationException($"Not a file ref: {this}");
+      : throw new InvalidOperationException(
+          $"The source '{this}' is not a local path, so it has no local file path.");
 
   public Ref WithVariant(string variant) => variant == "" || IsValidVariant(variant)
       ? new Ref(Kind, Target, variant, GitRef)
-      : throw new FormatException($"Invalid variant: {variant}");
+      : throw new FormatException(
+          $"The variant '{variant}' of '{Target}' is not valid: {VariantRule}.");
+
+  /// What a variant looks like, for messages.
+  public const string VariantRule = "a variant is a name, or two names separated by '/', of"
+      + " lowercase letters, digits and '_' (e.g. client or my_variant/sub)";
 
   public override string ToString() => Target
       + (Variant == "" ? "" : $"#{Variant}")
@@ -157,14 +171,14 @@ public partial record Ref {
     Uri uri = new(absolutePath, UriKind.Absolute);
     return uri.IsFile
         ? new Ref(RefKind.File, uri.AbsoluteUri, "").WithVariant(variant)
-        : throw new ArgumentException($"Not a local path: {absolutePath}", nameof(absolutePath));
+        : throw new ArgumentException($"'{absolutePath}' is not an absolute local path.");
   }
 
   /// Parses a source; allowFile also accepts local paths as file: URIs.
   public static Ref Parse(string s, bool allowFile) =>
       TryParse(s, allowFile, out Ref? r, out string? error)
           ? r
-          : throw new FormatException($"Invalid ref '{s}': {error}");
+          : throw new FormatException($"The source '{s}' is not valid: {error}.");
 
   public static bool TryParse(
       string s,
@@ -190,8 +204,7 @@ public partial record Ref {
       if (at >= 0) {
         head = s[..at];
         if (!GitRef.TryParse(s[(at + 1)..], out gitRef, out string? gitError)) {
-          error = $"{gitError}; '@' in a spec ref must be followed by <version>, branch:<name>, "
-              + "tag:<name> or rev:<commit>";
+          error = $"the ref '{s[(at + 1)..]}' after '@' is not valid: {gitError}";
           return false;
         }
       }
@@ -202,33 +215,47 @@ public partial record Ref {
     string variant = hash < 0 ? "" : head[(hash + 1)..];
 
     if (hash >= 0 && !IsValidVariant(variant)) {
-      error = $"invalid variant '{variant}'";
+      error = variant == ""
+          ? $"the variant after '#' is missing; {VariantRule}"
+          : $"the variant '{variant}' is not valid; {VariantRule}";
       return false;
     }
 
     if (isUrl) {
-      if (!IsUriText(target) || !Uri.TryCreate(target, UriKind.Absolute, out Uri? uri)
-          || uri.Scheme != "https" || uri.Host == "") {
-        error = "not an absolute https URL";
+      if (!IsUriText(target)) {
+        error = $"'{target}' is not a valid absolute https:// URL (characters other than those"
+            + " a URL allows must be percent-encoded)";
+        return false;
+      }
+      if (!Uri.TryCreate(target, UriKind.Absolute, out Uri? uri) || uri.Scheme != "https") {
+        error = $"'{target}' is not a valid absolute https:// URL";
+        return false;
+      }
+      if (uri.Host == "") {
+        error = $"'{target}' is not a valid absolute https:// URL: it has no host name";
         return false;
       }
 
       result = new Ref(RefKind.Url, target, variant);
     } else if (isFile) {
       if (!allowFile) {
-        error = "local paths are only allowed on the command line";
+        error = "local paths are only allowed in package arguments on the command line, not as"
+            + " dependencies";
         return false;
       }
 
       if (!Uri.TryCreate(target, UriKind.Absolute, out Uri? uri) || !uri.IsFile) {
-        error = "not an absolute file URI";
+        error = $"'{target}' is not an absolute file: URI";
         return false;
       }
 
       result = new Ref(RefKind.File, uri.AbsoluteUri, variant);
     } else {
       if (Golang.Org.X.Mod.Module.CheckPath(target) is Exception ex) {
-        error = $"not a valid module path ({ex.Message})";
+        // The reason alone; the outer message names the path again.
+        string reason = ex.InnerException?.Message ?? ex.Message;
+        error = $"'{target}' is not a valid repository path: {reason}; a remote repository is"
+            + " written like github.com/owner/repo";
         return false;
       }
 

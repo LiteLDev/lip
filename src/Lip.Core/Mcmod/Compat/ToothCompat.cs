@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Entities;
+using Lip.Core.Infrastructure;
 using Lip.Core.Json;
 using Lip.Core.Migration.PackageManifests;
 
@@ -37,7 +38,9 @@ public static class ToothCompat {
     int? formatVersion = FormatVersion(root);
     if (formatVersion is not (1 or 2 or 3)) {
       throw new PackageFormatException(
-          $"Invalid {ToothFileName}: {FormatVersionKey} must be 1, 2 or 3.");
+          $"The {ToothFileName} must have \"{FormatVersionKey}\": 1, 2 or 3, the formats of"
+          + $" {ToothFileName} that lip reads, but it has "
+          + (formatVersion is null ? "none." : $"{formatVersion}."));
     }
 
     try {
@@ -47,7 +50,7 @@ public static class ToothCompat {
     catch (Exception ex) when (ex is not OperationCanceledException) {
       // The migration and the format 3 model throw many kinds of exceptions on bad input.
       throw new PackageFormatException(
-          $"Invalid {ToothFileName} of format {formatVersion}: {ex.Message}", ex);
+          $"The {ToothFileName} of format {formatVersion} does not follow that format.", ex);
     }
   }
 
@@ -66,16 +69,23 @@ public static class ToothCompat {
         merged = manifest.GetVariant(label, environment.Runtime);
       }
       catch (KeyNotFoundException) {
+        RunTrace.Write("compat", $"{manifest.Path} {version}: variant '{label}' has no variants "
+            + $"for {environment.Runtime}");
         continue;
       }
       catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) {
         throw new PackageFormatException(
-            $"Invalid {ToothFileName}: the variants labeled '{label}' cannot be merged: "
-                + ex.Message,
+            $"The {ToothFileName} of {manifest.Path} {version} is not valid: its variants labeled "
+            + $"'{label}' cannot be merged for {environment.Runtime}, because "
+            + $"{MergeFailureReason(ex)}. lip v0.37.0 could not install them either; ask the "
+            + $"package author to fix {ToothFileName}.",
             ex);
       }
 
       derived[label] = ConvertEntry(merged, environment.Platform, environment.Runtime);
+      RunTrace.Write("compat", $"{manifest.Path} {version}: variant '{label}' "
+          + (derived[label] is null ? "has no entry" : "derived")
+          + $" for {environment.Platform.ToSpecString()} {environment.Runtime}");
     }
 
     if (environment.Platform == McmodPlatform.Client
@@ -106,7 +116,19 @@ public static class ToothCompat {
     JsonElement json = JsonSerializer.SerializeToElement(document);
     Dictionary<string, IReadOnlyList<PackageEntry>> entries = new(StringComparer.Ordinal);
     foreach (JsonProperty variant in json.GetProperty("variants").EnumerateObject()) {
-      PackageEntry entry = PackageFileParser.ParseEntry(variant.Value[0]);
+      PackageEntry entry;
+      try {
+        entry = PackageFileParser.ParseEntry(variant.Value[0]);
+      }
+      catch (PackageFormatException ex) {
+        throw new PackageFormatException(
+            $"The {ToothFileName} of {manifest.Path} {version} cannot be read for "
+            + $"{environment.Runtime}: its variant '{variant.Name}' does not convert to a valid "
+            + $"variant of {PackageFormat.FileName}. Ask the package author to move "
+            + $"{ToothFileName} to {PackageFormat.FileName} with 'lip migrate'.",
+            ex);
+      }
+
       entries[variant.Name] = [entry with {
         Derived = true,
         Dependencies = [.. entry.Dependencies.Select(d => d with { ClientCompat = true })],
@@ -120,6 +142,16 @@ public static class ToothCompat {
       Json = json,
     };
   }
+
+  /// Why the variants of a label could not be merged (PackageManifest.GetVariant), in words for
+  /// the user: GetVariant fails with an ArgumentException on a dependency two of them declare and
+  /// with an InvalidOperationException on a script two of them have.
+  public static string MergeFailureReason(Exception exception) => exception switch {
+    ArgumentException => "more than one of them declares the same dependency",
+    InvalidOperationException => "more than one of them sets the same kind of script"
+        + " (pre_install, install, post_install, pre_uninstall, uninstall or post_uninstall)",
+    _ => "none of them is for this runtime",
+  };
 
   /// The entry of a package file for the variants of a label merged for a runtime
   /// (protocol/compatibility.md §2), for a platform and the runtime; null when an asset has the

@@ -40,7 +40,7 @@ public sealed class PktLineReader(Stream stream) {
       return PktLineType.EndOfStream;
     }
     if (headerLength < 4) {
-      throw new GitProtocolException("Unexpected end of stream in pkt-line header.");
+      throw new GitProtocolException("The response ended in the middle of a pkt-line header.");
     }
 
     if (!int.TryParse(
@@ -49,7 +49,8 @@ public sealed class PktLineReader(Stream stream) {
         CultureInfo.InvariantCulture,
         out int length)) {
       throw new GitProtocolException(
-          $"Invalid pkt-line length '{Encoding.ASCII.GetString(_header)}'.");
+          $"Invalid pkt-line length '{Encoding.ASCII.GetString(_header)}'; the response is not in git"
+          + " pkt-line format.");
     }
 
     switch (length) {
@@ -61,14 +62,14 @@ public sealed class PktLineReader(Stream stream) {
         return PktLineType.ResponseEnd;
       case 3:
       case > MaxLineLength:
-        throw new GitProtocolException($"Invalid pkt-line length {length}.");
+        throw new GitProtocolException($"Invalid pkt-line length {length}; lengths must be 0 to 2 or 4 to {MaxLineLength}.");
     }
 
     try {
       await _stream.ReadExactlyAsync(_buffer.AsMemory(0, length - 4));
     }
     catch (EndOfStreamException ex) {
-      throw new GitProtocolException("Unexpected end of stream in pkt-line payload.", ex);
+      throw new GitProtocolException("The response ended in the middle of a pkt-line payload.", ex);
     }
     Payload = _buffer.AsMemory(0, length - 4);
     return PktLineType.Data;
@@ -88,7 +89,7 @@ public sealed class PktLineWriter {
   public PktLineWriter WriteData(ReadOnlySpan<byte> data) {
     if (data.Length > MaxPayloadLength) {
       throw new ArgumentException(
-          $"pkt-line payload exceeds {MaxPayloadLength} bytes.", nameof(data));
+          $"A git request line of {data.Length} bytes is longer than the {MaxPayloadLength} bytes git allows.", nameof(data));
     }
     _stream.Write(Encoding.ASCII.GetBytes((data.Length + 4).ToString("x4", CultureInfo.InvariantCulture)));
     _stream.Write(data);

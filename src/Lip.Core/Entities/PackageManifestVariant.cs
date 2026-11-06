@@ -11,7 +11,8 @@ public record PackageManifestVariant {
     get;
     init => field = PackageId.IsValidVariant(value)
         ? value
-        : throw new FormatException($"Invalid label: {value}");
+        : throw new FormatException("In tooth.json, a variant has a label that is not valid. "
+            + PackageId.VariantError(value));
   } = "";
 
   [JsonPropertyName("platform")]

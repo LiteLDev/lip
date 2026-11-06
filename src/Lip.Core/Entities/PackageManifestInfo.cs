@@ -18,7 +18,10 @@ public partial record PackageManifestInfo {
       string? invalidTag = value?.FirstOrDefault(tag => !TagRegex().IsMatch(tag));
       field = (invalidTag is null)
           ? value
-          : throw new FormatException($"Invalid package tag: {invalidTag}");
+          : throw new FormatException(
+              $"In tooth.json, the tag '{invalidTag}' in info.tags is not valid: a tag is "
+              + "lowercase letters, digits and '-', optionally followed by ':' and more of them, "
+              + "e.g. type:mod.");
     }
   }
 

@@ -53,7 +53,8 @@ public sealed class GitPackFile : IDisposable {
       throw Corrupt("delta base size mismatch");
     }
     if (resultSize > MaxObjectSize) {
-      throw Corrupt("delta result too large");
+      throw new UnusableRepositoryException(
+          $"it contains an object of {resultSize} bytes, more than the {MaxObjectSize} bytes lip can handle");
     }
 
     byte[] result = new byte[resultSize];
@@ -243,7 +244,8 @@ public sealed class GitPackFile : IDisposable {
       }
 
       if (size > MaxObjectSize) {
-        throw Corrupt($"object of {size} bytes exceeds the {MaxObjectSize} byte limit");
+        throw new UnusableRepositoryException(
+            $"it contains an object of {size} bytes, more than the {MaxObjectSize} bytes lip can handle");
       }
 
       long dataOffset = _reader.Position;

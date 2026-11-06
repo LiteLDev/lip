@@ -32,16 +32,25 @@ public class PathGlob {
   private readonly string[] _segments;
   private readonly Regex?[] _segmentRegexes;
 
+  /// Throws FormatException when the pattern is not a glob.
   public PathGlob(string pattern) {
-    if (pattern == "" || pattern.StartsWith('/') || pattern.Contains('\\')) {
-      throw new FormatException($"Invalid glob: '{pattern}'");
+    string? reason = pattern switch {
+      "" => "it is empty",
+      _ when pattern.StartsWith('/') => "it starts with '/', but a glob is a relative path",
+      _ when pattern.Contains('\\') =>
+          "it contains '\\', but path segments are separated by '/' and there is no escape"
+          + " character",
+      _ => null,
+    };
+    if (reason is not null) {
+      throw Invalid(pattern, reason);
     }
 
     Pattern = pattern;
     MatchesDirectories = pattern.EndsWith('/');
     _segments = (MatchesDirectories ? pattern[..^1] : pattern).Split('/');
     if (_segments.Any(seg => seg == "")) {
-      throw new FormatException($"Invalid glob: '{pattern}'");
+      throw Invalid(pattern, "it contains '//', an empty path segment");
     }
 
     _segmentRegexes = [.. _segments.Select(seg => seg == "**" || !HasMetacharacters(seg)
@@ -56,6 +65,9 @@ public class PathGlob {
   public bool MatchesDirectories { get; }
 
   public override string ToString() => Pattern;
+
+  private static FormatException Invalid(string pattern, string reason) =>
+      new($"The glob '{pattern}' is not valid: {reason}.");
 
   /// Whether a path contains '*', '?' or '[', which make it a pattern (lip.schema.yaml "place").
   public static bool HasMetacharacters(string path) => path.AsSpan().IndexOfAny("*?[") >= 0;
@@ -160,7 +172,8 @@ public class PathGlob {
       negated = true;
       i++;
     } else if (i < segment.Length && segment[i] == '^') {
-      error = "a bracket expression starts with '^'";
+      error = "a bracket expression starts with '^'; write '[!...]' to match any character not"
+          + " in a set";
     }
 
     StringBuilder set = new();
@@ -169,7 +182,7 @@ public class PathGlob {
       char c = segment[i];
       if (c == ']' && !first) {
         if (error is not null) {
-          throw new FormatException($"Invalid glob: '{pattern}' ({error})");
+          throw Invalid(pattern, error);
         }
 
         regex.Append(negated ? "[^/" : "[").Append(set).Append(']');
@@ -189,13 +202,15 @@ public class PathGlob {
           if (_classes.TryGetValue(name, out string? members)) {
             set.Append(members);
           } else {
-            error ??= $"unknown character class '{name}'";
+            error ??= $"'[:{name}:]' is not a character class (the classes are"
+                + $" {string.Join(", ", _classes.Keys.Select(k => $"[:{k}:]"))})";
           }
         } else if (name.Length == 1) {
           // In the POSIX locale a collating symbol or an equivalence class is the character.
           set.Append(EscapeInClass(name[0]));
         } else {
-          error ??= $"unknown collating element '{name}'";
+          error ??= $"'[{kind}{name}{kind}]' names no character (only single characters are"
+              + " collating elements)";
         }
 
         i = close + 1;
@@ -205,7 +220,7 @@ public class PathGlob {
       if (i + 2 < segment.Length && segment[i + 1] == '-' && segment[i + 2] != ']') {
         char end = segment[i + 2];
         if (end < c) {
-          error ??= $"invalid range '{c}-{end}'";
+          error ??= $"the range '{c}-{end}' ends before it starts";
         }
 
         set.Append(EscapeInClass(c)).Append('-').Append(EscapeInClass(end));

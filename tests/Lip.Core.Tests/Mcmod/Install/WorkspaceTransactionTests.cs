@@ -62,7 +62,7 @@ public class WorkspaceTransactionTests {
     await Change(transaction);
 
     // Act
-    IReadOnlyList<string> errors = transaction.Rollback(() => { });
+    IReadOnlyList<Exception> errors = transaction.Rollback(() => { });
 
     // Assert
     Assert.Empty(errors);
@@ -82,7 +82,7 @@ public class WorkspaceTransactionTests {
     _fs.File.Delete(Full(".replace.txt.bak"));
 
     // Act
-    IReadOnlyList<string> errors = transaction.Rollback(() => { });
+    IReadOnlyList<Exception> errors = transaction.Rollback(() => { });
 
     // Assert
     Assert.Empty(errors);
@@ -115,7 +115,7 @@ public class WorkspaceTransactionTests {
 
     // Act
     transaction.Commit();
-    IReadOnlyList<string> errors = transaction.Complete();
+    IReadOnlyList<Exception> errors = transaction.Complete();
 
     // Assert
     Assert.Empty(errors);
@@ -305,7 +305,7 @@ public class WorkspaceTransactionTests {
         WorkspaceTransaction.Recover(_fs, _journal, () => { }, () => { });
 
     // Assert
-    Assert.Contains(first!.Errors, e => e.Contains("created.txt"));
+    Assert.Contains(first!.Errors, e => e.Message.Contains("created.txt"));
     Assert.Empty(second!.Errors);
     Assert.Equal(before, Snapshot());
     Assert.False(_fs.File.Exists(_journal));
@@ -321,7 +321,7 @@ public class WorkspaceTransactionTests {
     string? journalWhenDiscarding = null;
 
     // Act
-    IReadOnlyList<string> errors = transaction.Rollback(
+    IReadOnlyList<Exception> errors = transaction.Rollback(
         () => journalWhenDiscarding = _fs.File.ReadAllText(_journal));
 
     // Assert: the journal lost its "Commit" record before the staged workspace file was
@@ -344,11 +344,11 @@ public class WorkspaceTransactionTests {
     bool discarded = false;
 
     // Act
-    IReadOnlyList<string> errors = transaction.Rollback(() => discarded = true);
+    IReadOnlyList<Exception> errors = transaction.Rollback(() => discarded = true);
 
     // Assert: nothing is undone and the journal still commits, so that recovery completes the
     // operation (protocol/workspace.md §7.4).
-    Assert.Contains(errors, e => e.Contains("journal"));
+    Assert.Contains(errors, e => e.Message.Contains("journal"));
     Assert.False(discarded);
     Assert.Equal(committed, Snapshot());
     Assert.Contains("\"op\":\"Commit\"", _fs.File.ReadAllText(_journal), StringComparison.Ordinal);

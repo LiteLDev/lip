@@ -5,12 +5,33 @@ using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.PublicApi;
 using Semver;
-using Spectre.Console;
 using Spectre.Console.Cli;
+
+RunTrace.TraceHttp();
 
 ConsoleUserInteraction userInteraction = new();
 
-LipClient lipClient = await LipClient.Create(userInteraction);
+// Ctrl+C while an operation changes a workspace cancels it, which undoes its changes. Otherwise,
+// and on a second Ctrl+C, lip ends at once: nothing is changed yet, or the next operation on the
+// workspace undoes the changes (see WorkspaceTransaction).
+using CancellationTokenSource cancellation = new();
+Console.CancelKeyPress += (_, e) => {
+  if (!WorkspaceTransaction.AnyOpen || cancellation.IsCancellationRequested) {
+    return;
+  }
+
+  e.Cancel = true;
+  Console.Error.WriteLine("Cancelling... (press Ctrl+C again to exit at once)");
+  cancellation.Cancel();
+};
+
+LipClient lipClient;
+try {
+  lipClient = await LipClient.Create(userInteraction);
+}
+catch (Exception ex) {
+  return ErrorReporter.Report(ex, args, cancelled: false);
+}
 
 CommandApp app = new();
 
@@ -25,30 +46,8 @@ app.Configure(config => {
       .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
       .InformationalVersion!).ToString());
 
-  config.SetExceptionHandler((ex, resolver) => {
-    IAnsiConsole console = AnsiConsole.Create(new() {
-      Out = new AnsiConsoleOutput(Console.Error)
-    });
-
-    if (ex is AggregateException aggregateException) {
-      AggregateException flattenedException = aggregateException.Flatten();
-
-      if (flattenedException.InnerExceptions.Count == 1) {
-        console.WriteException(flattenedException.InnerExceptions[0], ExceptionFormats.ShortenEverything);
-      } else {
-        console.MarkupLine($"[red]Unhandled aggregate exception ({flattenedException.InnerExceptions.Count} inner exceptions)[/]");
-
-        for (int index = 0; index < flattenedException.InnerExceptions.Count; index++) {
-          console.MarkupLine($"[red]--- Inner #{index + 1} ---[/]");
-          console.WriteException(flattenedException.InnerExceptions[index], ExceptionFormats.ShortenEverything);
-        }
-      }
-    } else {
-      console.WriteException(ex, ExceptionFormats.ShortenEverything);
-    }
-
-    return 1;
-  });
+  config.SetExceptionHandler((ex, resolver) =>
+      ErrorReporter.Report(ex, args, cancellation.IsCancellationRequested));
 
   config.AddBranch("cache", cache => {
     cache.SetDefaultCommand<MissingSubcommandCommand>();
@@ -96,18 +95,9 @@ app.Configure(config => {
       .WithDescription("Shows available versions for a package");
 });
 
-// Ctrl+C while an operation changes a workspace cancels it, which undoes its changes. Otherwise,
-// and on a second Ctrl+C, lip ends at once: nothing is changed yet, or the next operation on the
-// workspace undoes the changes (see WorkspaceTransaction).
-using CancellationTokenSource cancellation = new();
-Console.CancelKeyPress += (_, e) => {
-  if (!WorkspaceTransaction.AnyOpen || cancellation.IsCancellationRequested) {
-    return;
-  }
-
-  e.Cancel = true;
-  Console.Error.WriteLine("Cancelling... (press Ctrl+C again to exit at once)");
-  cancellation.Cancel();
-};
-
-return await app.RunAsync(args, cancellation.Token);
+try {
+  return await app.RunAsync(args, cancellation.Token);
+}
+catch (Exception ex) {
+  return ErrorReporter.Report(ex, args, cancellation.IsCancellationRequested);
+}

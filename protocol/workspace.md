@@ -103,6 +103,8 @@ An operation succeeds or fails as a whole.
 
 Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early (Section 6 rule 1) MAY leave them.
 
+`.lip/logs` holds failure reports (Section 2 of [CLI]). Creating it and writing or deleting below it is not a change, and any process MAY do so at any time.
+
 ### 7.1. Workspace File
 
 The **workspace file** is the YAML file `.lip/workspace.yaml`, valid against `workspace.schema.yaml`. A workspace without a workspace file has no installed packages and no recorded environment, unless Section 3 of [COMPATIBILITY] reads one for it.

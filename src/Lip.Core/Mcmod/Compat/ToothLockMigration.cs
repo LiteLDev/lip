@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using System.Text.Json;
+using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Resolution;
 using Semver;
 
@@ -27,10 +28,15 @@ public static class ToothLockMigration {
 
     try {
       using JsonDocument json = PackageFileParser.ParseJson(fs.File.ReadAllBytes(path), FileName);
-      return Members(json.RootElement);
+      IReadOnlyList<Member>? members = Members(json.RootElement);
+      RunTrace.Write("migration", members is null
+          ? $"{path} is not a tooth_lock.json of format 3; it is not migrated"
+          : $"{path} lists {members.Count} packages to migrate");
+      return members;
     }
     catch (Exception ex) when (ex is PackageFormatException or IOException
         or UnauthorizedAccessException or InvalidOperationException) {
+      RunTrace.Write("migration", $"{path} cannot be read, so it is not migrated: {ex.Message}");
       return null;
     }
   }
@@ -84,6 +90,8 @@ public static class ToothLockMigration {
     List<(LockedPackage Locked, PackageEntry Entry, SemVersion Version)> packages = [];
     foreach (Member member in members) {
       if (member.Variant != "" && !Ref.IsValidVariant(member.Variant)) {
+        RunTrace.Write(
+            "migration", $"left out a package with the invalid variant '{member.Variant}'");
         continue;
       }
 
@@ -91,11 +99,15 @@ public static class ToothLockMigration {
       try {
         packageFile = ToothCompat.Derive(ToothCompat.ReadToothJson(member.Manifest), environment);
       }
-      catch (PackageFormatException) {
+      catch (PackageFormatException ex) {
+        RunTrace.Write(
+            "migration", $"left out a package whose manifest cannot be read: {ex.Message}");
         continue;
       }
 
       if (packageFile.SelectEntry(member.Variant, environment) is not PackageEntry entry) {
+        RunTrace.Write("migration", $"left out {packageFile.Id} {packageFile.Version}: it has no"
+            + $" variant '{member.Variant}' for {environment.Platform.ToSpecString()}");
         continue;
       }
 
@@ -103,8 +115,11 @@ public static class ToothLockMigration {
       if (commitOf is not null) {
         commit = (await commitOf(packageFile.Id, packageFile.Version))?.ToLowerInvariant()
             ?? throw new InvalidOperationException(
-                $"Cannot migrate {FileName}: the commit of the tag v{packageFile.Version} of "
-                + $"{packageFile.Id} cannot be obtained.");
+                $"lip cannot convert {fs.Path.Join(root, FileName)}, written by lip v0.x, to the"
+                + $" workspace file: the commit of the tag v{packageFile.Version} of"
+                + $" {packageFile.Id} cannot be found. The tag may have been deleted, or the"
+                + " repository cannot be reached. Check your network connection and GitHub proxy,"
+                + " then try again.");
       }
 
       packages.Add((

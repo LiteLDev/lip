@@ -224,9 +224,9 @@ public class GraphSolverTests {
             [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment));
 
     // Assert
-    Assert.Contains("request github.com/b/b *: no candidate fits (github.com/b/b@1.0.0 (from "
-        + "github.com/b/b@1.0.0) is a mod of the same mod name 'FOO' as github.com/a/a@1.0.0 "
-        + "(from github.com/a/a@1.0.0))", exception.Message);
+    Assert.Contains("You requested github.com/b/b (any version), but no version of it fits: "
+        + "github.com/b/b@1.0.0 (from github.com/b/b@1.0.0) is a mod of the same mod name 'FOO' "
+        + "as github.com/a/a@1.0.0 (from github.com/a/a@1.0.0).", exception.Message);
   }
 
   [Fact]
@@ -288,8 +288,8 @@ public class GraphSolverTests {
             [Request("github.com/a/a")], [], s_environment));
 
     // Assert
-    Assert.Contains("github.com/a/a: the asset of type \"mcmod\" has no manifest.json",
-        exception.Message);
+    Assert.Contains("Cannot install github.com/a/a 1.0.0: its asset of type \"mcmod\" has no"
+        + " manifest.json", exception.Message);
   }
 
   [Fact]
@@ -567,8 +567,8 @@ public class GraphSolverTests {
             [Request("github.com/mods/mod")], [], s_environment));
 
     // Assert
-    Assert.Contains($"github.com/mods/mod@1.0.0 requires {LeviLamina} >=99.0.0: no candidates",
-        exception.Message);
+    Assert.Contains($"github.com/mods/mod@1.0.0 requires {LeviLamina} >=99.0.0, but no version of "
+        + "it is available", exception.Message);
   }
 
   [Fact]
@@ -627,8 +627,8 @@ public class GraphSolverTests {
 
     // Assert
     stopwatch.Stop();
-    Assert.Contains("github.com/p/p49@99.0.0 requires github.com/missing/missing *: "
-        + "no candidates", exception.Message);
+    Assert.Contains("github.com/p/p49@99.0.0 requires github.com/missing/missing *, "
+        + "but no version of it is available", exception.Message);
     Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed}");
   }
 

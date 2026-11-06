@@ -215,7 +215,8 @@ public class GitTreeSourceTests {
 
     // Act & Assert
     ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(() => source.OpenRead(key));
-    Assert.Equal("key", ex.ParamName);
+    Assert.Contains($"There is no file '{key}'", ex.Message);
+    Assert.DoesNotContain("(Parameter", ex.Message);
     await Assert.ThrowsAsync<ArgumentException>(() => source.Prefetch([key]));
     VerifyFetchBlobsCalls(client, Times.Never());
   }

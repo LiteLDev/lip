@@ -475,5 +475,22 @@ public class LockStoreTests {
     LockFormatException ex =
         await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
     Assert.Contains(LipLockPath, ex.Message);
+    // What is wrong is kept as the cause.
+    Assert.NotNull(ex.InnerException);
+  }
+
+  [Fact]
+  public async Task Load_InvalidPlatform_CauseNamesTheFieldAndExpectedValues() {
+    // Arrange
+    _fs.AddFile(LipLockPath, new MockFileData(
+        """{ "format": 4, "platform": "universal", "runtime": "win-x64", "packages": [] }"""));
+
+    // Act
+    LockFormatException ex =
+        await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
+
+    // Assert
+    Assert.Contains("\"platform\"", ex.InnerException!.Message);
+    Assert.Contains("\"server\"", ex.InnerException.Message);
   }
 }

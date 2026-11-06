@@ -206,7 +206,6 @@ public class PackageFileParserTests {
 
   [Theory]
   [InlineData("3")]
-  [InlineData("5")]
   [InlineData("4.5")]
   [InlineData("\"4\"")]
   [InlineData("null")]
@@ -217,6 +216,20 @@ public class PackageFileParserTests {
 
     // Act & Assert
     AssertInvalid(document, "$.format");
+  }
+
+  [Fact]
+  public void Parse_NewerFormat_ThrowsAskingToUpdateLip() {
+    // Arrange
+    JsonObject document = Valid();
+    document["format"] = 5;
+
+    // Act
+    NewerPackageFormatException ex =
+        Assert.Throws<NewerPackageFormatException>(() => Parse(document));
+
+    // Assert
+    Assert.Contains("update lip", ex.Message);
   }
 
   [Fact]
@@ -984,7 +997,7 @@ public class PackageFileParserTests {
     string yaml = Valid().ToJsonString()[..^1];
 
     // Act & Assert
-    Assert.Contains("not valid YAML", AssertInvalid(yaml).Message);
+    Assert.Contains("not valid YAML", AssertInvalid(yaml).InnerException!.Message);
   }
 
   [Fact]
@@ -993,7 +1006,7 @@ public class PackageFileParserTests {
     string yaml = Valid().ToJsonString() + "\n---\n" + Valid().ToJsonString();
 
     // Act & Assert
-    Assert.Contains("more than one YAML document", AssertInvalid(yaml).Message);
+    Assert.Contains("more than one YAML document", AssertInvalid(yaml).InnerException!.Message);
   }
 
   [Fact]
@@ -1002,7 +1015,7 @@ public class PackageFileParserTests {
     string json = Valid().ToJsonString()[..^1] + ",\"version\":\"1.2.3\"}";
 
     // Act & Assert
-    Assert.Contains("appears twice", AssertInvalid(json).Message);
+    Assert.Contains("appears twice", AssertInvalid(json).InnerException!.Message);
   }
 
   [Fact]
@@ -1012,7 +1025,7 @@ public class PackageFileParserTests {
         .Replace("\"hooks\":{}", "\"hooks\":{},\"hooks\":{}");
 
     // Act & Assert
-    Assert.Contains("appears twice", AssertInvalid(json).Message);
+    Assert.Contains("appears twice", AssertInvalid(json).InnerException!.Message);
   }
 
   [Fact]
@@ -1025,7 +1038,7 @@ public class PackageFileParserTests {
     PackageFormatException ex = Assert.Throws<PackageFormatException>(() => PackageFileParser.Parse(bytes));
 
     // Assert
-    Assert.Contains("UTF-8", ex.Message);
+    Assert.Contains("UTF-8", ex.InnerException!.Message);
   }
 
   [Fact]

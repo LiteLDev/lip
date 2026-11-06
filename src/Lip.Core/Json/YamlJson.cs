@@ -10,7 +10,8 @@ using YamlDotNet.Core.Events;
 namespace Lip.Core.Json;
 
 /// Thrown when a YAML file is not a YAML stream of one document that represents a JSON value
-/// (protocol/README.md, "YAML file").
+/// (protocol/README.md, "YAML file"). The message says what is wrong with the file, and where
+/// when that is known; the caller names the file.
 public class YamlFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
@@ -50,7 +51,8 @@ public static partial class YamlJson {
       text = reader.ReadToEnd();
     }
     catch (DecoderFallbackException ex) {
-      throw new YamlFormatException("not valid UTF-8.", ex);
+      throw new YamlFormatException(
+          "The file is not valid UTF-8 text. Save it with the UTF-8 encoding.", ex);
     }
 
     return Parse(text);
@@ -65,7 +67,11 @@ public static partial class YamlJson {
       value = reader.ReadStream();
     }
     catch (YamlException ex) {
-      throw new YamlFormatException($"not valid YAML ({ex.Message})", ex);
+      throw new YamlFormatException(
+          ex.Start.Line > 0
+              ? $"The file is not valid YAML at line {ex.Start.Line}, column {ex.Start.Column}."
+              : "The file is not valid YAML.",
+          ex);
     }
 
     // Written and read again, so the value is a JsonDocument like the one JSON gives.
@@ -84,7 +90,10 @@ public static partial class YamlJson {
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
         or JsonException) {
       // E.g. a string with a lone surrogate, which is not Unicode text.
-      throw new YamlFormatException($"not a JSON value ({ex.Message})", ex);
+      throw new YamlFormatException(
+          "The file holds a value that is not a JSON value, such as a string with an unpaired"
+          + " surrogate escape like \"\\uD800\".",
+          ex);
     }
   }
 
@@ -214,11 +223,14 @@ public static partial class YamlJson {
       double value = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
       return double.IsFinite(value)
           ? JsonValue.Create(value)
-          : throw new YamlFormatException($"the float '{text}' is out of range.");
+          : throw new YamlFormatException(
+              $"The number {text} is out of range. Quote it (\"{text}\") if it is meant as text.");
     }
 
     if (InfinityRegex().IsMatch(text) || NotANumberRegex().IsMatch(text)) {
-      throw new YamlFormatException($"the float '{text}' cannot be represented in JSON.");
+      throw new YamlFormatException(
+          $"The value {text} cannot be represented in JSON. Quote it (\"{text}\") if it is meant"
+          + " as text.");
     }
 
     return JsonValue.Create(text);
@@ -237,14 +249,20 @@ public static partial class YamlJson {
     public JsonNode? ReadStream() {
       parser.Consume<StreamStart>();
       if (!parser.TryConsume<DocumentStart>(out _)) {
-        throw new YamlFormatException("it holds no YAML document.");
+        throw new YamlFormatException(
+            "The file holds no YAML document: it is empty or holds only comments.");
       }
 
       JsonNode? value = Read(0, out _);
       parser.Consume<DocumentEnd>();
-      if (!parser.TryConsume<StreamEnd>(out _)) {
-        throw new YamlFormatException("it holds more than one YAML document.");
+      if (parser.Current is not StreamEnd) {
+        throw new YamlFormatException(
+            "The file holds more than one YAML document; the second one starts"
+            + $"{At(parser.Current)}. Keep only one document: remove the '---' or '...' line that"
+            + " separates them.");
       }
+
+      parser.Consume<StreamEnd>();
 
       return value;
     }
@@ -252,13 +270,16 @@ public static partial class YamlJson {
     /// Reads a node and returns it, with the number of nodes it holds.
     private JsonNode? Read(int depth, out int size) {
       if (depth > _maxDepth) {
-        throw new YamlFormatException($"it nests deeper than {_maxDepth} levels.");
+        throw new YamlFormatException(
+            $"The file nests collections deeper than {_maxDepth} levels{At(parser.Current)}.");
       }
 
       if (parser.Current is AnchorAlias alias) {
         parser.MoveNext();
         if (!_anchors.TryGetValue(alias.Value.Value, out (JsonNode? Node, int Size) anchored)) {
-          throw new YamlFormatException($"the alias *{alias.Value} names no earlier anchor.");
+          throw new YamlFormatException(
+              $"The alias *{alias.Value}{At(alias)} names no earlier anchor. Define the anchor"
+              + $" &{alias.Value} before the alias uses it.");
         }
 
         size = anchored.Size;
@@ -267,7 +288,8 @@ public static partial class YamlJson {
       }
 
       NodeEvent start = parser.Current as NodeEvent
-          ?? throw new YamlFormatException($"unexpected {parser.Current}.");
+          ?? throw new YamlFormatException(
+              $"The file has an unexpected YAML element{At(parser.Current)} ({parser.Current}).");
       JsonNode? node;
       switch (start) {
         case Scalar scalar:
@@ -278,7 +300,7 @@ public static partial class YamlJson {
           break;
         case SequenceStart sequenceStart:
           parser.MoveNext();
-          CheckCollectionTag(sequenceStart.Tag, "seq");
+          CheckCollectionTag(sequenceStart, "seq");
           JsonArray array = [];
           size = 1;
           Count(1);
@@ -291,21 +313,25 @@ public static partial class YamlJson {
           break;
         case MappingStart mappingStart:
           parser.MoveNext();
-          CheckCollectionTag(mappingStart.Tag, "map");
+          CheckCollectionTag(mappingStart, "map");
           JsonObject mapping = [];
           size = 1;
           Count(1);
           while (!parser.TryConsume<MappingEnd>(out _)) {
+            ParsingEvent? keyStart = parser.Current;
             JsonNode? key = Read(depth + 1, out _);
             if (key is not JsonValue keyValue
                 || keyValue.GetValueKind() != JsonValueKind.String) {
               throw new YamlFormatException(
-                  $"the mapping key {key?.ToJsonString() ?? "null"} is not a string.");
+                  $"The mapping key {key?.ToJsonString() ?? "null"}{At(keyStart)} is not a"
+                  + " string. Keys must be text; quote the key if it is meant as text.");
             }
 
             string name = keyValue.GetValue<string>();
             if (mapping.ContainsKey(name)) {
-              throw new YamlFormatException($"the mapping key '{name}' appears twice.");
+              throw new YamlFormatException(
+                  $"The mapping key '{name}'{At(keyStart)} appears twice in the same mapping."
+                  + " Remove one of them.");
             }
 
             mapping[name] = Read(depth + 1, out int valueSize);
@@ -315,7 +341,8 @@ public static partial class YamlJson {
           node = mapping;
           break;
         default:
-          throw new YamlFormatException($"unexpected {start}.");
+          throw new YamlFormatException(
+              $"The file has an unexpected YAML element{At(start)} ({start}).");
       }
 
       if (!start.Anchor.IsEmpty) {
@@ -328,7 +355,9 @@ public static partial class YamlJson {
     private void Count(int nodes) {
       _nodes += nodes;
       if (_nodes > _maxNodes) {
-        throw new YamlFormatException($"it expands to more than {_maxNodes} nodes.");
+        throw new YamlFormatException(
+            $"The file expands to more than {_maxNodes} values through aliases. Use fewer"
+            + " aliases, or copy fewer values with each.");
       }
     }
 
@@ -352,15 +381,32 @@ public static partial class YamlJson {
         _coreTagPrefix + "int" when DecimalRegex().IsMatch(value) || OctalRegex().IsMatch(value)
             || HexadecimalRegex().IsMatch(value) => resolved,
         _coreTagPrefix + "float" when kind == JsonValueKind.Number => resolved,
-        _ => throw new YamlFormatException($"the scalar '{value}' tagged {tag} is not valid."),
+        _ => throw new YamlFormatException(
+            $"The value '{value}'{At(scalar)} tagged {ShortTag(tag)} is not valid. Remove the tag,"
+            + " or write a value the tag allows."),
       };
     }
 
-    private static void CheckCollectionTag(TagName tag, string kind) {
+    private static void CheckCollectionTag(NodeEvent start, string kind) {
+      TagName tag = start.Tag;
       if (!tag.IsEmpty && !tag.IsNonSpecific && tag.Value != _coreTagPrefix + kind) {
-        throw new YamlFormatException($"the tag {tag.Value} is not valid here.");
+        throw new YamlFormatException(
+            $"The tag {ShortTag(tag.Value)}{At(start)} is not valid here, on a "
+            + (kind == "seq" ? "sequence" : "mapping") + ". Remove the tag.");
       }
     }
+
+    /// " at line L, column C" for where an event starts in the file, or "" when that is unknown.
+    private static string At(ParsingEvent? parsingEvent) =>
+        parsingEvent is { Start.Line: > 0 }
+            ? $" at line {parsingEvent.Start.Line}, column {parsingEvent.Start.Column}"
+            : "";
+
+    /// A tag of the core schema in its usual short form, like !!int.
+    private static string ShortTag(string tag) =>
+        tag.StartsWith(_coreTagPrefix, StringComparison.Ordinal)
+            ? "!!" + tag[_coreTagPrefix.Length..]
+            : tag;
   }
 
   [GeneratedRegex(@"^(?:null|Null|NULL|~)?\z")]

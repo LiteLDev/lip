@@ -160,8 +160,10 @@ public class PackageArgumentsTests {
   [InlineData("file:///c/x.zip")]
   [InlineData("ftp://example.com/x.zip")]
   public void Parse_InvalidArgument_Throws(string argument) {
-    // Act & Assert
-    Assert.Throws<ArgumentException>(() => Parse(argument));
+    // Act & Assert: the message names the argument and explains the accepted forms.
+    ArgumentException ex = Assert.Throws<ArgumentException>(() => Parse(argument));
+    Assert.Contains($"'{argument}'", ex.Message);
+    Assert.Contains(PackageArguments.AcceptedForms, ex.Message);
   }
 
   private PackageRequest Parse(string argument) =>

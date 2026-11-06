@@ -49,6 +49,17 @@ public class RefTests {
     Assert.Throws<FormatException>(() => Ref.Parse(s, allowFile: false));
   }
 
+  [Fact]
+  public void Parse_VersionWithLeadingV_SaysToDropIt() {
+    // Act
+    FormatException ex = Assert.Throws<FormatException>(
+        () => Ref.Parse("github.com/a/b@v1.0.0", allowFile: false));
+
+    // Assert
+    Assert.Contains("'github.com/a/b@v1.0.0'", ex.Message);
+    Assert.Contains("'1.0.0'", ex.Message);
+  }
+
   [Theory]
   [InlineData("https://example.com/x.zip@tag:v1")]
   [InlineData("https://example.com/a%20b.zip")]

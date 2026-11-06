@@ -22,7 +22,9 @@ public record PackageManifestAssetPlacement {
     get;
     init => field = IsValidDst(value)
         ? value
-        : throw new ArgumentException($"Invalid destination path: {value}", nameof(Dst));
+        : throw new ArgumentException(
+            $"In tooth.json, the placement destination '{value}' is not allowed: it must be a "
+            + "relative path inside the workspace, without '..'.");
   }
 
   public static bool IsValidDst(string path) => !(Path.IsPathFullyQualified(path) || Path.IsPathRooted(path) || path.Contains(".."));

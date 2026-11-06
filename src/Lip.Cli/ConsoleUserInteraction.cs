@@ -9,22 +9,27 @@ public class ConsoleUserInteraction : IUserInteraction {
   });
 
   public async Task PrintInfo(string message) {
+    RunTrace.Write("info", message);
     _console.WriteLine(message);
   }
 
   public async Task PrintSuccess(string message) {
+    RunTrace.Write("success", message);
     _console.MarkupLine($"[green]✓ {Markup.Escape(message)}[/]");
   }
 
   public async Task PrintWarning(string message) {
+    RunTrace.Write("warning", message);
     _console.MarkupLine($"[#FFA500]⚠[/] [yellow]{Markup.Escape(message)}[/]");
   }
 
   public async Task PrintError(string message) {
+    RunTrace.Write("error", message);
     _console.MarkupLine($"[bold red]✗ {Markup.Escape(message)}[/]");
   }
 
   public Task<string> Ask(string question) {
+    RunTrace.Write("ask", question);
     if (Console.IsInputRedirected || Console.IsErrorRedirected) {
       throw new CannotAskException(
           $"lip needs {question}, but cannot ask for it: standard input or standard error is not"
@@ -36,6 +41,7 @@ public class ConsoleUserInteraction : IUserInteraction {
   }
 
   public async Task RunWithProgress(string message, Func<IProgress<double>, Task> action) {
+    RunTrace.Write("progress", message);
     Progress progress = _console.Progress();
 
     await progress.StartAsync(async ctx => {

@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Sources;
 
@@ -20,11 +21,17 @@ public class DirectorySource : ISource {
 
   public Task<Stream> OpenRead(string key) {
     if (!_keys.Value.Contains(key)) {
-      throw new ArgumentException($"Key not found: '{key}'", nameof(key));
+      throw new ArgumentException($"The directory {_root} has no file '{key}'.");
     }
 
-    return Task.FromResult<Stream>(_fs.File.OpenRead(
-        _fs.Path.Join(_root, key.Replace('/', _fs.Path.DirectorySeparatorChar))));
+    string path = _fs.Path.Join(_root, key.Replace('/', _fs.Path.DirectorySeparatorChar));
+    try {
+      return Task.FromResult<Stream>(_fs.File.OpenRead(path));
+    }
+    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+      throw FileSystemExtensions.WrapFileError(
+          $"Could not read the file {path} of the package directory {_root}.", ex);
+    }
   }
 
   private List<string> ListKeys() {
@@ -43,8 +50,17 @@ public class DirectorySource : ISource {
       }
     }
 
-    Walk(_root);
+    try {
+      Walk(_root);
+    }
+    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+      throw FileSystemExtensions.WrapFileError(
+          $"Could not list the files of the package directory {_root}. Check that lip may read"
+          + " it and every directory below it.", ex);
+    }
+
     keys.Sort(StringComparer.Ordinal);
+    RunTrace.Write("archive", $"Listed {keys.Count} files in the directory {_root}");
     return keys;
   }
 }

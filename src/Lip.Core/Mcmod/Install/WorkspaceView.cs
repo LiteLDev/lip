@@ -120,12 +120,21 @@ public sealed class WorkspaceView {
 
   private List<Entry> Listing(string directory) {
     if (!_listings.TryGetValue(directory, out List<Entry>? listing)) {
-      listing = !_fs.Directory.Exists(directory) ? [] : [
-        .. _fs.DirectoryInfo.New(directory).EnumerateFileSystemInfos().Select(info => new Entry(
-            info.FullName,
-            info is IDirectoryInfo,
-            info.Attributes.HasFlag(FileAttributes.ReparsePoint))),
-      ];
+      try {
+        listing = !_fs.Directory.Exists(directory) ? [] : [
+          .. _fs.DirectoryInfo.New(directory).EnumerateFileSystemInfos().Select(info => new Entry(
+              info.FullName,
+              info is IDirectoryInfo,
+              info.Attributes.HasFlag(FileAttributes.ReparsePoint))),
+        ];
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        throw WorkspaceErrors.Wrap(
+            ex,
+            $"Cannot list the directory '{directory}' to find the files to delete. Check that you"
+            + " may read it.");
+      }
+
       _listings[directory] = listing;
     }
 

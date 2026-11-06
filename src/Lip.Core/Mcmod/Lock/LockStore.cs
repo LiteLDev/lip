@@ -51,11 +51,23 @@ public partial class LockStore(IFileSystem fs) {
     string root = NormalizeRoot(workspaceRoot);
 
     string path = LipPath(root, FileName);
-    if (_fs.File.Exists(path)) {
-      return Parse(await _fs.File.ReadAllBytesAsync(path), path);
+    if (!_fs.File.Exists(path)) {
+      RunTrace.Write("workspace", $"No workspace file at {path}: no packages are installed");
+      return null;
     }
 
-    return null;
+    byte[] bytes;
+    try {
+      bytes = await _fs.File.ReadAllBytesAsync(path);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      throw WorkspaceErrors.Wrap(ex, $"Cannot read the workspace file '{path}'.");
+    }
+
+    LockFile lockFile = Parse(bytes, path);
+    RunTrace.Write("workspace", $"Read the workspace file {path}: platform {lockFile.Platform},"
+        + $" runtime {lockFile.Runtime}, {lockFile.Packages.Count} packages");
+    return lockFile;
   }
 
   /// Writes the lock: Stage, then CommitStaged.
@@ -70,7 +82,11 @@ public partial class LockStore(IFileSystem fs) {
       Validate(lockFile);
     }
     catch (LockFormatException ex) {
-      throw new ArgumentException($"Cannot save an invalid lock: {ex.Message}", nameof(lockFile));
+      throw new ArgumentException(
+          "lip was about to write an invalid workspace file, and did not write it. This is a bug"
+          + " in lip.",
+          nameof(lockFile),
+          ex);
     }
 
     string root = NormalizeRoot(workspaceRoot);
@@ -80,10 +96,22 @@ public partial class LockStore(IFileSystem fs) {
     byte[] bytes = YamlJson.SerializeToUtf8Bytes(JsonSerializer.SerializeToElement(lockFile));
     try {
       await _fs.File.WriteAllBytesAsync(tempPath, bytes);
+      RunTrace.Write("workspace", $"Wrote the new workspace file {tempPath}"
+          + $" ({lockFile.Packages.Count} packages)");
     }
-    catch {
-      if (_fs.File.Exists(tempPath)) {
-        _fs.File.Delete(tempPath);
+    catch (Exception ex) {
+      try {
+        if (_fs.File.Exists(tempPath)) {
+          _fs.File.Delete(tempPath);
+        }
+      }
+      catch (Exception delete) when (delete is IOException or UnauthorizedAccessException) {
+        // A staged workspace file is never read, and the next save replaces it.
+        RunTrace.Write("workspace", $"Cannot delete {tempPath}: {delete.Message}");
+      }
+
+      if (ex is IOException or UnauthorizedAccessException) {
+        throw WorkspaceErrors.Wrap(ex, $"Cannot write the new workspace file '{tempPath}'.");
       }
 
       throw;
@@ -105,26 +133,46 @@ public partial class LockStore(IFileSystem fs) {
     }
 
     bool migrated = !_fs.File.Exists(path) && ToothLockMigration.Read(_fs, root) is not null;
-    _fs.File.Move(tempPath, path, overwrite: true);
+    try {
+      _fs.File.Move(tempPath, path, overwrite: true);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      throw WorkspaceErrors.Wrap(
+          ex, $"Cannot replace the workspace file '{path}' with the new one '{tempPath}'.");
+    }
+
+    RunTrace.Write("workspace", $"Moved {tempPath} to {path}");
     if (!migrated) {
       return;
     }
 
     // The workspace file is in place; what follows must not fail the operation.
+    string toothLock = _fs.Path.Join(root, ToothLockMigration.FileName);
     try {
-      _fs.File.Delete(_fs.Path.Join(root, ToothLockMigration.FileName));
+      _fs.File.Delete(toothLock);
+      RunTrace.Write("workspace", $"Deleted {toothLock}, which the workspace file replaces");
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
       // A tooth_lock.json is not read once the workspace file exists.
+      RunTrace.Write("workspace", $"Cannot delete {toothLock}: {ex.Message}");
     }
   }
 
   /// Deletes the staged lock, if any.
   public void DiscardStaged(string workspaceRoot) {
     string tempPath = LipPath(NormalizeRoot(workspaceRoot), StagedFileName);
-    if (_fs.File.Exists(tempPath)) {
+    if (!_fs.File.Exists(tempPath)) {
+      return;
+    }
+
+    try {
       _fs.File.Delete(tempPath);
     }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      throw WorkspaceErrors.Wrap(ex, $"Cannot delete the unused new workspace file '{tempPath}'.");
+    }
+
+    RunTrace.Write("workspace", $"Deleted {tempPath}");
   }
 
   /// Creates &lt;root&gt;/.lip, hidden like on other platforms, where its name hides it.
@@ -135,7 +183,17 @@ public partial class LockStore(IFileSystem fs) {
       return;
     }
 
-    _fs.Directory.CreateDirectory(directory);
+    try {
+      _fs.Directory.CreateDirectory(directory);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      throw WorkspaceErrors.Wrap(
+          ex,
+          $"Cannot create the directory '{directory}', where lip keeps the workspace file. Check"
+          + " that you may write to the workspace.");
+    }
+
+    RunTrace.Write("workspace", $"Created {directory}");
     try {
       _fs.SetHidden(directory, true);
     }
@@ -148,86 +206,130 @@ public partial class LockStore(IFileSystem fs) {
       _fs.Path.TrimEndingDirectorySeparator(_fs.Path.GetFullPath(workspaceRoot));
 
   private static LockFile Parse(byte[] bytes, string path) {
+    bool otherFormat = false;
     try {
       using JsonDocument document = YamlJson.Parse(bytes);
       JsonElement root = document.RootElement;
       if (root.ValueKind != JsonValueKind.Object) {
-        throw new LockFormatException("the top level is not an object.");
+        throw new LockFormatException("The file is not a YAML mapping of keys to values.");
       }
 
-      if (PackageFileParser.Format(root) != PackageFormat.Format) {
+      int? format = PackageFileParser.Format(root);
+      if (format != PackageFormat.Format) {
+        otherFormat = format is not null;
         throw new LockFormatException(
-            $"{PackageFormat.FormatKey} is not {PackageFormat.Format}.");
+            $"\"{PackageFormat.FormatKey}\" is "
+            + (format is null ? "missing or not a number" : $"{format}")
+            + $", but this version of lip reads only {PackageFormat.Format}. If another"
+            + " version of lip wrote the file, use that version.");
       }
 
       // "commit" is omitted, not null, for a package that is not from a remote repository.
       if (root.TryGetProperty("packages", out JsonElement packages)
-          && packages.ValueKind == JsonValueKind.Array
-          && packages.EnumerateArray().Any(p => p.ValueKind == JsonValueKind.Object
-              && p.TryGetProperty("commit", out JsonElement commit)
-              && commit.ValueKind != JsonValueKind.String)) {
-        throw new LockFormatException("a package has a commit that is not a string.");
+          && packages.ValueKind == JsonValueKind.Array) {
+        int i = 0;
+        foreach (JsonElement package in packages.EnumerateArray()) {
+          if (package.ValueKind == JsonValueKind.Object
+              && package.TryGetProperty("commit", out JsonElement commit)
+              && commit.ValueKind != JsonValueKind.String) {
+            throw new LockFormatException(
+                $"packages[{i}].commit is {commit.ValueKind.ToString().ToLowerInvariant()}, but it"
+                + " must be a string of 40 lowercase hexadecimal digits, or be left out.");
+          }
+
+          i++;
+        }
       }
 
       LockFile lockFile = root.Deserialize<LockFile>(_readOptions)
-          ?? throw new LockFormatException("the lock is null.");
+          ?? throw new LockFormatException(
+              "The file is empty instead of a YAML mapping of keys to values.");
       Validate(lockFile);
       return lockFile;
     }
     catch (Exception ex) when (ex is JsonException or LockFormatException or ArgumentException
         or NotSupportedException or InvalidOperationException or YamlFormatException) {
-      throw new LockFormatException($"Cannot read the workspace file '{path}': {ex.Message}", ex);
+      RunTrace.Write("workspace", $"Cannot read the workspace file {path}: {ex.Message}");
+      throw new LockFormatException(otherFormat
+          ? $"The workspace file '{path}' was written by a different version of lip, so this lip"
+            + " cannot tell which packages are installed."
+          : $"The workspace file '{path}' is invalid, so lip cannot tell which packages are"
+            + " installed. If you edited it by hand, undo the change; if you have a copy of the"
+            + " file, restore it.",
+          ex);
     }
   }
 
   /// Checks what workspace.schema.yaml requires beyond what deserializing checks.
   private static void Validate(LockFile lockFile) {
     if (lockFile.Packages is null) {
-      throw new LockFormatException("packages is null.");
+      throw new LockFormatException("\"packages\" is null, but it must be an array.");
     }
 
     if (lockFile.Format != PackageFormat.Format) {
-      throw new LockFormatException($"{PackageFormat.FormatKey} is not {PackageFormat.Format}.");
+      throw new LockFormatException(
+          $"\"{PackageFormat.FormatKey}\" is {lockFile.Format}, but it must be"
+          + $" {PackageFormat.Format}.");
     }
 
     if (lockFile.Platform is null
         || !McmodPlatformExtensions.TryParse(lockFile.Platform, out _)) {
       throw new LockFormatException(
-          $"invalid platform \"{lockFile.Platform}\", expected \"server\" or \"client\".");
+          $"\"platform\" is \"{lockFile.Platform}\", but it must be \"server\" or \"client\".");
     }
 
     if (lockFile.Runtime is null or "") {
-      throw new LockFormatException("runtime is missing or empty.");
+      throw new LockFormatException(
+          "\"runtime\" is missing or empty, but it must be a runtime identifier such as"
+          + " \"win-x64\".");
     }
 
     for (int i = 0; i < lockFile.Packages.Count; i++) {
       LockedPackage package = lockFile.Packages[i]
-          ?? throw new LockFormatException($"packages[{i}] is null.");
+          ?? throw new LockFormatException($"packages[{i}] is null, but it must be an object.");
       string at = $"packages[{i}]";
-      if (package.Files is null || package.Files.Any(f => f is null)) {
-        throw new LockFormatException($"{at} has a null entry.");
+      if (package.Files is null) {
+        throw new LockFormatException($"{at}.files is null, but it must be an array of paths.");
+      }
+
+      int nullFile = package.Files.FindIndex(f => f is null);
+      if (nullFile >= 0) {
+        throw new LockFormatException(
+            $"{at}.files[{nullFile}] is null, but it must be a workspace-relative path.");
       }
 
       if (package.Variant != "" && !Ref.IsValidVariant(package.Variant)) {
-        throw new LockFormatException($"{at} has the invalid variant \"{package.Variant}\".");
+        throw new LockFormatException(
+            $"{at}.variant is \"{package.Variant}\", which is not a valid variant name.");
       }
 
       if (package.Manifest.ValueKind != JsonValueKind.Object) {
-        throw new LockFormatException($"{at} has a manifest that is not an object.");
+        throw new LockFormatException(
+            $"{at}.manifest is {package.Manifest.ValueKind.ToString().ToLowerInvariant()}, but it"
+            + " must be the package file of the package, a mapping.");
       }
 
       try {
         _ = PackageFileParser.Parse(package.Manifest);
       }
       catch (PackageFormatException ex) {
-        throw new LockFormatException($"{at} has an invalid manifest: {ex.Message}", ex);
+        throw new LockFormatException(
+            $"{at}.manifest, the package file of {DescribePackage(package)}, is not a valid"
+            + " package file.",
+            ex);
       }
 
       if (package.Commit is not null && !CommitRegex().IsMatch(package.Commit)) {
-        throw new LockFormatException($"{at} has the invalid commit \"{package.Commit}\".");
+        throw new LockFormatException(
+            $"{at}.commit is \"{package.Commit}\", but it must be 40 lowercase hexadecimal"
+            + " digits.");
       }
     }
   }
+
+  /// The identity and version of a package for messages, as far as its manifest tells.
+  private static string DescribePackage(LockedPackage package) =>
+      package.Id == "" ? "a package" : $"{package.Identity} {package.Version}".TrimEnd();
 
   [GeneratedRegex(@"^[0-9a-f]{40}\z")]
   private static partial Regex CommitRegex();

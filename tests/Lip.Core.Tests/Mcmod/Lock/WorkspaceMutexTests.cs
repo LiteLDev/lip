@@ -32,7 +32,7 @@ public class WorkspaceMutexTests : IDisposable {
     // Act & Assert
     WorkspaceBusyException ex = Assert.Throws<WorkspaceBusyException>(
         () => WorkspaceMutex.Acquire(_fs, LockPath, "C:/ws"));
-    Assert.Contains("Another process is changing the workspace 'C:/ws'", ex.Message);
+    Assert.Contains("another lip command is changing the workspace 'C:/ws'", ex.Message);
   }
 
   [Fact]

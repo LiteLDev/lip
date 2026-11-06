@@ -71,6 +71,21 @@ public class GitRemoteClientTests {
   }
 
   [Fact]
+  public async Task ListRefs_GithubUnauthorized_SaysMissingOrPrivateAndKeepsStatus() {
+    using HttpTest httpTest = new();
+    httpTest.RespondWith("Repository not found.", 401);
+    GitRemoteClient client = new(githubProxy: null);
+
+    HttpRequestException ex = await Assert.ThrowsAsync<HttpRequestException>(
+        () => client.ListRefs(new Url("https://github.com/owner/missing.git"), []));
+
+    Assert.Equal(System.Net.HttpStatusCode.Unauthorized, ex.StatusCode);
+    Assert.Contains("does not exist or is private", ex.Message);
+    HttpRequestException inner = Assert.IsType<HttpRequestException>(ex.InnerException);
+    Assert.Equal("Repository not found.", inner.Data["Response body"]);
+  }
+
+  [Fact]
   public async Task ListRefs_GithubProxy_RewritesUrl() {
     using HttpTest httpTest = new();
     httpTest.ForCallsTo("*/info/refs*").RespondWith(() => Content(PackBuilder.Advertisement()));
@@ -115,6 +130,9 @@ public class GitRemoteClientTests {
         client.ListRefs(new Url("https://github.com/LiteLDev/LeviLamina.git"), []));
 
     Assert.Equal(2, ex.InnerExceptions.Count);
+    Assert.Contains("GitHub proxy proxy.example.com and then GitHub directly", ex.Message);
+    Assert.All(ex.InnerExceptions, e => Assert.Equal(
+        System.Net.HttpStatusCode.NotFound, Assert.IsType<HttpRequestException>(e).StatusCode));
   }
 
   [Fact]
@@ -282,7 +300,8 @@ public class GitRemoteClientTests {
 
     GitProtocolException ex = await Assert.ThrowsAsync<GitProtocolException>(
         () => client.ListTree(new Url(RepoUrl), new string('a', 40)));
-    Assert.Contains("not our ref", ex.Message);
+    Assert.Contains($"has no commit {new string('a', 40)}", ex.Message);
+    Assert.Contains("not our ref", ex.InnerException!.Message);
   }
 
   [Fact]
@@ -295,7 +314,8 @@ public class GitRemoteClientTests {
 
     GitProtocolException ex = await Assert.ThrowsAsync<GitProtocolException>(
         () => client.ListTree(new Url(RepoUrl), new string('a', 40)));
-    Assert.Contains("something broke", ex.Message);
+    Assert.Contains("example.com reported an error", ex.Message);
+    Assert.Contains("something broke", ex.InnerException!.Message);
   }
 
   [Fact]

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Lip.Core.Entities;
+using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
 using Semver;
 
@@ -51,24 +52,64 @@ public interface IArchiveReader {
 
 public class ArchiveReader : IArchiveReader {
   public async Task<PackageDocument> Read(ArchiveHandle archive) {
-    bool hasPackageFile = archive.Source.Keys.Contains(PackageFormat.FileName);
+    string name = Describe(archive);
+    List<string> keys = [.. archive.Source.Keys];
+    bool hasPackageFile = keys.Contains(PackageFormat.FileName);
     string fileName = hasPackageFile ? PackageFormat.FileName : ToothCompat.ToothFileName;
-    if (!hasPackageFile && !archive.Source.Keys.Contains(ToothCompat.ToothFileName)) {
-      throw new ArchiveUnavailableException($"{archive.Key} has no {PackageFormat.FileName}.");
+    if (!hasPackageFile && !keys.Contains(ToothCompat.ToothFileName)) {
+      RunTrace.Write("archive", $"{name} has neither {PackageFormat.FileName} nor"
+          + $" {ToothCompat.ToothFileName} at its root");
+      // Only a package file one folder deep, as in GitHub's "Download ZIP" archives, suggests the
+      // whole package is in a folder; deeper ones are usually examples or vendored packages.
+      string? nested = keys.FirstOrDefault(
+          k => (k.EndsWith($"/{PackageFormat.FileName}", StringComparison.Ordinal)
+                  || k.EndsWith($"/{ToothCompat.ToothFileName}", StringComparison.Ordinal))
+              && k.Count(c => c == '/') == 1);
+      throw new ArchiveUnavailableException(
+          $"{name} is not a lip package: it has no {PackageFormat.FileName} at its root."
+          + (nested is null
+              ? ""
+              : $" There is one at '{nested}': the files of a package must be at the root of"
+                + " the archive, not in a folder."));
     }
 
+    byte[] content;
     try {
       using Stream stream = await archive.Source.OpenRead(fileName);
       using MemoryStream memory = new();
       await stream.CopyToAsync(memory);
-      return hasPackageFile
-          ? PackageDocument.ParsePackageFile(memory.ToArray())
-          : PackageDocument.ParseToothJson(memory.ToArray());
+      content = memory.ToArray();
     }
     catch (Exception ex) when (ex is not ArchiveUnavailableException
         and not OperationCanceledException) {
       throw new ArchiveUnavailableException(
-          $"Invalid {fileName} in {archive.Key}: {ex.Message}", ex);
+          $"Could not read the {fileName} of {name}.", ex);
+    }
+
+    try {
+      PackageDocument document = hasPackageFile
+          ? PackageDocument.ParsePackageFile(content)
+          : PackageDocument.ParseToothJson(content);
+      RunTrace.Write("archive", $"Read the {fileName} of {name}: {document.Id} {document.Version}");
+      return document;
+    }
+    catch (Exception ex) when (ex is not ArchiveUnavailableException
+        and not OperationCanceledException) {
+      bool local = archive.Key.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
+      string advice = ex is NewerPackageFormatException
+          ? ""
+          : local
+              ? $" Fix the {fileName} in {name}."
+              : " Ask the package author to fix it.";
+      throw new ArchiveUnavailableException(
+          $"The {fileName} of {name} is not valid.{advice}", ex);
     }
   }
+
+  /// The archive as the user knows it: the path of a local file or directory, else its key.
+  private static string Describe(ArchiveHandle archive) =>
+      archive.Key.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+          && Uri.TryCreate(archive.Key, UriKind.Absolute, out Uri? uri)
+          ? uri.LocalPath
+          : archive.Key;
 }

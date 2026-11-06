@@ -402,8 +402,9 @@ public class ArchiveProviderTests {
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
         () => CreateProvider().Open(Ref.Parse(_url, allowFile: false)));
 
-    // Assert
-    Assert.Contains("not a valid archive", ex.Message);
+    // Assert: the download failed because of what was downloaded.
+    Assert.Contains("Could not download", ex.Message);
+    Assert.Contains("not a valid archive", ex.InnerException!.Message);
   }
 
   [Theory]
@@ -563,8 +564,9 @@ public class ArchiveProviderTests {
     ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
         () => CreateProvider().Open(Ref.Parse(_url, allowFile: false)));
 
-    // Assert
-    Assert.Contains("download failed", ex.Message);
+    // Assert: the failure of the download is kept as the cause.
+    Assert.Contains($"Could not download {_url}", ex.Message);
+    Assert.IsType<HttpRequestException>(ex.InnerException);
   }
 
   // Assets (protocol/workspace.md §4 step 2).
@@ -779,6 +781,22 @@ public class ArchiveProviderTests {
         () => CreateProvider().OpenAsset([_url]));
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
         () => CreateProvider().OpenAsset([]));
+  }
+
+  [Fact]
+  public async Task OpenAsset_EveryUrlFails_KeepsTheFailureOfEachUrl() {
+    // Arrange
+    const string mirror = "https://mirror.example.com/pkg.zip";
+
+    // Act
+    ArchiveUnavailableException ex = await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenAsset([_url, mirror]));
+
+    // Assert
+    Assert.Contains(mirror, ex.Message);
+    AggregateException causes = Assert.IsType<AggregateException>(ex.InnerException);
+    Assert.Equal(2, causes.InnerExceptions.Count);
+    Assert.All(causes.InnerExceptions, e => Assert.IsType<HttpRequestException>(e.InnerException));
   }
 
 }

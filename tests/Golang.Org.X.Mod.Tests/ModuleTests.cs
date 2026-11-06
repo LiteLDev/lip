@@ -145,6 +145,20 @@ public class ModuleTests {
     Assert.NotNull(err);
   }
 
+  [Fact]
+  public void CheckPath_MissingDot_NamesPathAndReason() {
+    // Act.
+    Exception? err = Module.CheckPath("LeviLamina");
+
+    // Assert: the message names the path and says why; the inner exception is the reason.
+    Module.InvalidPathError error = Assert.IsType<Module.InvalidPathError>(err);
+    Assert.Equal("LeviLamina", error.Path);
+    Assert.Contains("\"LeviLamina\"", error.Message);
+    Assert.Contains("github.com", error.Message);
+    Assert.NotNull(error.InnerException);
+    Assert.Contains(error.InnerException.Message, error.Message);
+  }
+
   [Theory]
   [InlineData("x.y/z", "")]
   [InlineData("x.y/z", "/v2")]

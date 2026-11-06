@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO.Abstractions;
+using System.Runtime.ExceptionServices;
 using Flurl;
 using Lip.Core.Git;
 using Lip.Core.Infrastructure;
@@ -45,8 +46,8 @@ public class ArchiveProvider(
           ? OpenDirectory(target.Target, target.LocalPath)
           : OpenFile(target.Target, target.LocalPath),
       _ => throw new ArgumentException(
-          $"Remote repositories are opened with OpenVersion or OpenCommit, not Open: {target}",
-          nameof(target)),
+          $"Internal error: {target} is a remote repository, which lip opens by version or"
+          + " commit, not as a URL or local path."),
     };
   }
 
@@ -62,20 +63,29 @@ public class ArchiveProvider(
       _ => _tagsRefPrefix + gitRef.Name,
     };
 
+    string what = gitRef.Kind switch {
+      GitRefKind.Version => $"version {gitRef.Name} (tag v{gitRef.Name})",
+      GitRefKind.Branch => $"branch '{gitRef.Name}'",
+      _ => $"tag '{gitRef.Name}'",
+    };
+
     IReadOnlyList<GitRemoteRef> refs;
     try {
       refs = await _gitRemoteClient.ListRefs(repoUrl, [refName]);
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException(
-          $"Failed to list the refs of {repoUrl}: {ex.Message}", ex);
+          $"Could not look up the {what} of {spec} ({repoUrl}).", ex);
     }
 
     // ref-prefix also matches longer names (e.g. "main" matches "main-old").
     GitRemoteRef found = refs.FirstOrDefault(r => r.Name == refName)
         ?? throw new ArchiveUnavailableException(
-            $"{repoUrl} has no {gitRef.Kind.ToString().ToLowerInvariant()} '{gitRef.Name}'.");
-    return found.PeeledObjectId ?? found.ObjectId;
+            $"{spec} has no {what}. Check the spelling, and that it exists in the repository"
+            + $" {repoUrl}.");
+    string commit = found.PeeledObjectId ?? found.ObjectId;
+    RunTrace.Write("git", $"{spec}: {refName} is the commit {commit}");
+    return commit;
   }
 
   public Task<ArchiveHandle> OpenCommit(string spec, string commit) {
@@ -91,41 +101,64 @@ public class ArchiveProvider(
     TaggedVersion tagged = (await GetTaggedVersions(spec))
         .FirstOrDefault(v => v.Version.Tag == version.Tag)
         ?? throw new ArchiveUnavailableException(
-            $"{GetRepoUrl(spec)} has no version tag {version.Tag}.");
+            $"{spec} has no version tag {version.Tag} (any more). Check the version.");
 
     return await OpenGit($"{spec}@{version.Version}", spec, tagged.Commit.ToLowerInvariant());
   }
 
   public async Task Forget(string url) {
     IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
-    file?.Delete();
+    if (file is null) {
+      RunTrace.Write("cache", $"{url} is not cached: nothing to forget");
+      return;
+    }
+
+    RunTrace.Write("cache", $"Forgetting the cached download of {url}: deleting {file.FullName}");
+    DeleteCached(file, url);
   }
 
   public async Task<ISource> OpenAsset(IReadOnlyList<string> urls) {
-    List<string> errors = [];
+    if (urls.Count == 0) {
+      throw new ArchiveUnavailableException(
+          "The asset lists no URLs to download it from, so the package is broken. Report this to"
+          + " the package author.");
+    }
+
+    List<Exception> failures = [];
     foreach (string url in urls) {
       try {
         if (!url.StartsWith("https://", StringComparison.Ordinal)) {
-          throw new ArchiveUnavailableException($"{url} is not an https URL.");
+          throw new ArchiveUnavailableException(
+              $"The asset URL {url} is not an https URL: lip downloads assets only over https.");
         }
 
-        return new ZipSource(await DownloadZip(url));
+        RunTrace.Write("archive", $"Opening the asset {url}");
+        IFileInfo file = await DownloadZip(url);
+        return new ZipSource(file, $"the download of {url} ({file.FullName})");
       }
       catch (ArchiveUnavailableException ex) {
-        errors.Add(ex.Message);
+        RunTrace.Write("archive", $"Cannot use the asset URL {url}: {ex.Message}");
+        failures.Add(ex);
       }
     }
 
-    throw new ArchiveUnavailableException(urls.Count == 0
-        ? "The asset has no URLs."
-        : $"Failed to download the asset: {string.Join("; ", errors)}");
+    if (failures.Count == 1) {
+      ExceptionDispatchInfo.Throw(failures[0]);
+    }
+
+    throw new ArchiveUnavailableException(
+        $"Could not download the asset from any of its {urls.Count} URLs"
+        + $" ({string.Join(", ", urls)}).",
+        new AggregateException("Every URL of the asset failed.", failures));
   }
   /// The git repository URL of a remote repository (protocol/package.md §2.1), without any
   /// GitHub proxy applied.
   public static string GetRepoUrl(string spec) => $"https://{spec}.git";
 
   private async Task<ArchiveHandle> OpenUrl(string url) {
-    return new ArchiveHandle(url, new ZipSource(await DownloadZip(url)));
+    RunTrace.Write("archive", $"Opening the ZIP archive {url}");
+    IFileInfo file = await DownloadZip(url);
+    return new ArchiveHandle(url, new ZipSource(file, $"the download of {url} ({file.FullName})"));
   }
 
   /// The cached download of the ZIP archive of a URL, keyed by the URL without its fragment
@@ -136,21 +169,49 @@ public class ArchiveProvider(
     IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
     if (file is not null) {
       try {
-        ZipValidator.Validate(file, url);
+        ZipValidator.Validate(file, $"The cached download of {url} ({file.FullName})");
+        RunTrace.Write("cache", $"Using the cached download of {url}: {file.FullName}");
         return file;
       }
-      catch (ArchiveUnavailableException) {
-        file.Delete();
+      catch (ArchiveUnavailableException ex) {
+        RunTrace.Write("cache", $"The cached download of {url} is damaged, downloading it again:"
+            + $" {ex.Message}");
+        DeleteCached(file, url);
       }
+      catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+        RunTrace.Write("cache", $"Cannot read the cached download of {url} ({file.FullName}):"
+            + $" {ex.GetType().Name}: {ex.Message}");
+        throw new ArchiveUnavailableException(
+            $"Could not read the cached download of {url} ({file.FullName}). If a program is using"
+            + " the file, close it; otherwise delete the file or run 'lip cache clean', then try"
+            + " again.", ex);
+      }
+    } else {
+      RunTrace.Write("cache", $"{url} is not cached yet");
     }
 
     // Download validates what it downloads.
     return await Download(url);
   }
 
+  /// Deletes the cached download of a URL. Throws IOException or UnauthorizedAccessException
+  /// naming the file when it cannot be deleted.
+  private static void DeleteCached(IFileInfo file, string url) {
+    try {
+      file.Delete();
+    }
+    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+      throw FileSystemExtensions.WrapFileError(
+          $"Could not delete the cached download of {url} ({file.FullName}). Stop other lip"
+          + " processes and programs that may use it, or delete the file yourself, then try"
+          + " again.", ex);
+    }
+  }
+
   /// Opens a local directory.
   private ArchiveHandle OpenDirectory(string key, string path) {
     string full = _fileSystem.Path.TrimEndingDirectorySeparator(_fileSystem.Path.GetFullPath(path));
+    RunTrace.Write("archive", $"Opening the local directory {full}");
     return new ArchiveHandle(key, new DirectorySource(_fileSystem, full));
   }
 
@@ -162,19 +223,26 @@ public class ArchiveProvider(
     try {
       content = _fileSystem.File.ReadAllBytes(path);
     }
+    catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) {
+      throw new ArchiveUnavailableException(
+          $"There is no file or directory {path}. Check the path; a relative path is relative"
+          + " to the current directory.", ex);
+    }
     catch (Exception ex) when (IsUnavailable(ex)) {
-      throw new ArchiveUnavailableException($"{key}: cannot read {path}: {ex.Message}", ex);
+      throw new ArchiveUnavailableException($"Could not read the local file {path}.", ex);
     }
 
+    RunTrace.Write("archive", $"Opening the local ZIP file {path} ({content.Length} bytes)");
     using (MemoryStream stream = new(content, writable: false)) {
-      ZipValidator.Validate(stream, key);
+      ZipValidator.Validate(stream, $"The local file {path}");
     }
 
-    return new ArchiveHandle(key, new ZipSource(content));
+    return new ArchiveHandle(key, new ZipSource(content, $"the local file {path}"));
   }
 
   private async Task<ArchiveHandle> OpenGit(string key, string spec, string commit) {
     string repoUrl = GetRepoUrl(spec);
+    RunTrace.Write("archive", $"Opening the git archive {key}: commit {commit} of {repoUrl}");
     try {
       // Lists the tree up front, so a missing commit fails here rather than on first access.
       // Only regular files are exposed: symlinks and gitlinks are not part of git archives.
@@ -183,7 +251,7 @@ public class ArchiveProvider(
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException(
-          $"{key}: failed to list commit {commit} of {repoUrl}: {ex.Message}", ex);
+          $"Could not get the files of {key} (the commit {commit} of {repoUrl}).", ex);
     }
   }
 
@@ -210,7 +278,7 @@ public class ArchiveProvider(
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException(
-          $"Failed to list tags of {repoUrl}: {ex.Message}", ex);
+          $"Could not list the versions of {spec} (the tags of {repoUrl}).", ex);
     }
 
     List<TaggedVersion> versions = [];
@@ -221,6 +289,8 @@ public class ArchiveProvider(
       }
     }
 
+    RunTrace.Write("git", $"{spec}: {refs.Count} refs below {_versionTagRefPrefix},"
+        + $" {versions.Count} of them version tags");
     return [.. versions
         .OrderByDescending(v => v.Version.Version, SemVersion.PrecedenceComparer)
         .ThenByDescending(v => v.Version.Tag, StringComparer.Ordinal)];
@@ -245,9 +315,13 @@ public class ArchiveProvider(
   private async Task<IFileInfo> Download(string url) {
     try {
       return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), async destination => {
+        List<Url> downloadUrls = [.. GetDownloadUrls(url)];
         List<Exception> exceptions = [];
 
-        foreach (Url downloadUrl in GetDownloadUrls(url)) {
+        for (int index = 0; index < downloadUrls.Count; index++) {
+          Url downloadUrl = downloadUrls[index];
+          // GetDownloadUrls puts the proxied URL, if any, first.
+          bool viaProxy = downloadUrls.Count > 1 && index == 0;
           try {
             // Leftovers of a failed candidate must not be mistaken for this one's content.
             destination.Refresh();
@@ -255,31 +329,54 @@ public class ArchiveProvider(
               destination.Delete();
             }
 
+            RunTrace.Write("archive", viaProxy
+                ? $"Downloading {url} through the GitHub proxy: {downloadUrl}"
+                : $"Downloading {url}");
             await _fileDownloader.DownloadFile(downloadUrl, destination);
             destination.Refresh();
-            ZipValidator.Validate(destination, url);
+            ZipValidator.Validate(destination, $"The file downloaded from {downloadUrl}");
             return;
           }
           catch (Exception ex) when (IsUnavailable(ex) || ex is ArchiveUnavailableException) {
-            exceptions.Add(new Exception($"Failed to download from {downloadUrl}", ex));
+            RunTrace.Write("archive", $"Downloading from {downloadUrl} failed:"
+                + $" {ex.GetType().Name}: {ex.Message}");
+            // An invalid github_proxy value is accepted by the configuration and fails only here.
+            exceptions.Add(viaProxy && HasUriFormatCause(ex)
+                ? new ArchiveUnavailableException(
+                    $"The GitHub proxy set in github_proxy does not give a valid URL"
+                    + $" ({downloadUrl}). Set a valid URL with 'lip config set github_proxy <URL>',"
+                    + " or remove it with 'lip config delete github_proxy'.",
+                    ex)
+                : ex);
           }
         }
 
-        throw new ArchiveUnavailableException(
-            $"{url}: download failed: "
-                + string.Join("; ", exceptions.Select(e => e.InnerException?.Message ?? e.Message)),
-            new AggregateException(exceptions));
+        throw exceptions.Count == 1
+            ? new ArchiveUnavailableException($"Could not download {url}.", exceptions[0])
+            : new ArchiveUnavailableException(
+                $"Could not download {url}, neither through the GitHub proxy"
+                + $" ({string.Join(", ", downloadUrls.SkipLast(1))}) nor directly.",
+                new AggregateException("Every download address failed.", exceptions));
       });
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException(
-          $"{url}: cannot store the download in the cache: {ex.Message}", ex);
+          $"Could not store the download of {url} in the lip cache ({LipDirectories.Cache}).", ex);
     }
   }
 
   private IEnumerable<Url> GetDownloadUrls(string url) {
     Url original = Url.Parse(url);
     return GithubProxy.Rewrite(_githubProxy, original) is Url proxied ? [proxied, original] : [original];
+  }
+
+  private static bool HasUriFormatCause(Exception ex) {
+    for (Exception? current = ex; current is not null; current = current.InnerException) {
+      if (current is UriFormatException) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Everything but cancellation and programming errors makes an archive unavailable.

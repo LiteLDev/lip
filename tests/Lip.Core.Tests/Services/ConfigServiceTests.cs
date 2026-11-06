@@ -166,14 +166,17 @@ public class ConfigServiceTests {
   }
 
   [Fact]
-  public async Task Get_GoModuleProxyKey_ThrowsKeyNotFoundException() {
+  public async Task Get_GoModuleProxyKey_ThrowsNamingTheValidKey() {
     // Arrange
     (_, _, ConfigService service) = Create(new() {
       [GetConfigPath()] = new("format: 4\ngo_module_proxy: https://goproxy.cn\n"),
     });
 
     // Act & Assert
-    await Assert.ThrowsAsync<KeyNotFoundException>(() => service.Get("go_module_proxy"));
+    ArgumentException ex =
+        await Assert.ThrowsAsync<ArgumentException>(() => service.Get("go_module_proxy"));
+    Assert.Contains("'go_module_proxy' is not a configuration key", ex.Message);
+    Assert.Contains("github_proxy", ex.Message);
   }
 
   [Fact]
@@ -227,7 +230,7 @@ public class ConfigServiceTests {
     (MockFileSystem fs, _, ConfigService service) = Create([]);
 
     // Act & Assert
-    await Assert.ThrowsAsync<KeyNotFoundException>(() => service.Set("go_module_proxy", "x"));
+    await Assert.ThrowsAsync<ArgumentException>(() => service.Set("go_module_proxy", "x"));
     Assert.False(fs.File.Exists(GetConfigPath()));
   }
 

@@ -35,7 +35,7 @@ public sealed class BufferedByteReader(Stream stream) {
     for (int i = 0; i < destination.Length; i++) {
       int value = ReadByte();
       if (value < 0) {
-        throw new GitProtocolException("Unexpected end of packfile.");
+        throw new GitProtocolException("The packfile ended unexpectedly.");
       }
       destination[i] = (byte)value;
     }

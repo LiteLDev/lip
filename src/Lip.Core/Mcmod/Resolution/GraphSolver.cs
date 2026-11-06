@@ -1,3 +1,4 @@
+using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Semver;
@@ -243,18 +244,25 @@ public class GraphSolver(IResolver resolver) {
       bool Deferred = false);
 
   /// The candidate sequence of one Resolve call, produced on demand and shared by every
-  /// requirement that resolves the same ref.
-  private sealed class LazySequence(Func<IAsyncEnumerable<Candidate>> start) {
+  /// requirement that resolves the same ref, with the diagnostics of the paths that produced no
+  /// candidate.
+  private sealed class LazySequence(Func<LazySequence, IAsyncEnumerable<Candidate>> start) {
     private IAsyncEnumerator<Candidate>? _enumerator;
 
     public List<Candidate> Items { get; } = [];
 
+    public List<ResolveDiagnostic> Diagnostics { get; } = [];
+
     public bool Complete { get; private set; }
+
+    public void AddDiagnostic(ResolveDiagnostic diagnostic) => Diagnostics.Add(diagnostic);
+
+    public void AddDiagnostic(string message) => Diagnostics.Add(new(message, null));
 
     /// Whether the sequence has an item at index, producing items up to it if needed.
     public async ValueTask<bool> Has(int index) {
       while (Items.Count <= index && !Complete) {
-        _enumerator ??= start().GetAsyncEnumerator();
+        _enumerator ??= start(this).GetAsyncEnumerator();
         if (await _enumerator.MoveNextAsync()) {
           Items.Add(_enumerator.Current);
         } else {
@@ -272,6 +280,8 @@ public class GraphSolver(IResolver resolver) {
   private sealed class Choices(LazySequence sequence) {
     private readonly HashSet<PackageKey> _keys = [];
     private int _position;
+
+    public LazySequence Sequence => sequence;
 
     public List<Candidate> Candidates { get; } = [];
 
@@ -311,6 +321,17 @@ public class GraphSolver(IResolver resolver) {
 
   private sealed class Search(IResolver resolver, LipEnvironment environment) {
     private const int MaxRecordedFailures = 100;
+
+    // The search can take very many steps; tracing them all would push the lines that explain
+    // the failure (network errors and the like) out of the bounded run trace.
+    private const int MaxTracedSteps = 500;
+    private int _tracedSteps;
+
+    private void TraceStep(string message) {
+      if (++_tracedSteps <= MaxTracedSteps) {
+        RunTrace.Write("resolve", message);
+      }
+    }
     private const int LevelsPerYield = 128;
     private const int MaxReportedFailures = 10;
     private const int MaxListedReasons = 5;
@@ -331,15 +352,21 @@ public class GraphSolver(IResolver resolver) {
     private readonly List<string> _unresolvable = [];
     private readonly HashSet<string> _reported = [];
 
+    /// The exceptions behind the failures (e.g. network failures), kept for the failure report.
+    private readonly List<Exception> _causes = [];
+
     public async Task<SolvedGraph> Run(
         IReadOnlyList<PackageRequest> requests,
         IReadOnlyList<Candidate> pinned) {
+      RunTrace.Write("resolve", $"Solving {requests.Count} requests with {pinned.Count}"
+          + $" installed packages kept, for ({environment.Platform.ToSpecString()},"
+          + $" {environment.Runtime})");
       for (int i = 0; i < requests.Count; i++) {
         PackageRequest request = requests[i];
         _agenda.Add(new Requirement(
             ResolveKey.Of(request.Ref, request.Range, false),
             null,
-            $"request {request.Ref} {Show(request.Range)}",
+            $"You requested {ShowRequirement(request.Ref, request.Range)}",
             -1,
             request.Ref,
             request.Range,
@@ -348,13 +375,16 @@ public class GraphSolver(IResolver resolver) {
 
       foreach (Candidate candidate in pinned) {
         PackageKey key = PackageKey.Of(candidate);
+        RunTrace.Write("resolve", $"Keeping the installed package {ShowSource(candidate)}");
         if (_members.TryGetValue(key.Identity, out Member? other)) {
           if (other.Key == key) {
             continue;
           }
 
           throw Fail($"Installed packages {ShowSource(other.Candidate)} and {ShowSource(candidate)}"
-              + " have the same identity.");
+              + " have the same identity, which the workspace file .lip/workspace.yaml must not"
+              + " record. Uninstall them with --no-dependencies and install the one you want"
+              + " again.");
         }
 
         if (await ModName(candidate) is string modName) {
@@ -362,7 +392,9 @@ public class GraphSolver(IResolver resolver) {
             if (await ModName(member.Candidate) is string otherName
                 && PackageNames.AreEqual(modName, otherName)) {
               throw Fail($"Installed packages {ShowSource(member.Candidate)} and "
-                  + $"{ShowSource(candidate)} are mods of the same mod name '{modName}'.");
+                  + $"{ShowSource(candidate)} are mods of the same mod name '{modName}', so they"
+                  + " would share one mod directory. Uninstall one of them with"
+                  + " --no-dependencies.");
             }
           }
         }
@@ -372,19 +404,33 @@ public class GraphSolver(IResolver resolver) {
       }
 
       HashSet<int>? nogood = await Solve(0, 0);
+      if (_tracedSteps > MaxTracedSteps) {
+        RunTrace.Write("resolve", $"{_tracedSteps - MaxTracedSteps} more search steps not traced");
+      }
       if (nogood is not null) {
         // Missing dependencies are usually the root cause; among the other failures, the most
         // recent ones are closest to the requests that finally failed.
         List<string> lines = [.. _unresolvable, .. Enumerable.Reverse(_failures)];
         if (lines.Count == 0) {
-          lines.Add("no combination of candidates is free of identity and mod name clashes");
+          lines.Add("Every combination of versions has two packages of the same identity, or two"
+              + " mods of the same mod name.");
         }
 
-        throw Fail("No package set satisfies the request:"
+        RunTrace.Write("resolve", $"No package set found; {lines.Count} reasons recorded");
+        // The exceptions behind the reasons (e.g. network failures) are kept as inner
+        // exceptions, so the failure report and the hints see them.
+        throw new DependencyResolutionException(
+            "Cannot find versions of the requested packages and their dependencies that can"
+            + " all be installed together:"
             + string.Concat(lines.Take(MaxReportedFailures).Select(l => $"\n  - {l}"))
             + (lines.Count > MaxReportedFailures
-                ? $"\n  ... and {lines.Count - MaxReportedFailures} more"
-                : ""));
+                ? $"\n  ... and {lines.Count - MaxReportedFailures} more reasons"
+                : ""),
+            _causes.Count switch {
+              0 => null,
+              1 => _causes[0],
+              _ => new AggregateException("The failures behind the reasons above.", _causes),
+            });
       }
 
       // On success the agenda holds exactly the requests and the dependencies of every member,
@@ -412,6 +458,8 @@ public class GraphSolver(IResolver resolver) {
         indexOf[PackageKey.Of(order[i])] = i;
       }
 
+      RunTrace.Write("resolve", "Solved; installation order: "
+          + string.Join(", ", order.Select(ShowSource)));
       return new SolvedGraph(
           order,
           [.. order.Select(c => (IReadOnlyList<int>)[
@@ -487,10 +535,12 @@ public class GraphSolver(IResolver resolver) {
             }
           }
 
+          TraceStep($"{requirement.Description}: rejected {Show(candidate)}: {reason}");
           blocked.Add(reason);
           continue;
         }
 
+        TraceStep($"{requirement.Description}: trying {ShowSource(candidate)}");
         int agendaCount = _agenda.Count;
         _members.Add(key.Identity, new Member(candidate, key, level));
         AddEdges(candidate, level, "");
@@ -500,6 +550,7 @@ public class GraphSolver(IResolver resolver) {
           return null;
         }
 
+        TraceStep($"{requirement.Description}: {Show(candidate)} did not work out; backtracking");
         _members.Remove(key.Identity);
         _agenda.RemoveRange(agendaCount, _agenda.Count - agendaCount);
 
@@ -510,7 +561,7 @@ public class GraphSolver(IResolver resolver) {
 
         result.Remove(level);
         if (result.Count == 0) {
-          _dead[key] = $"{Show(candidate)} cannot be installed";
+          _dead[key] = $"{Show(candidate)} needs packages that cannot be installed";
         }
 
         blame.UnionWith(result);
@@ -570,6 +621,7 @@ public class GraphSolver(IResolver resolver) {
       catch (McmodInstallException ex) {
         // A missing or invalid mod manifest fails whatever the other members are.
         _dead[key] = ex.Message;
+        AddCause(ex);
         return (-1, ex.Message);
       }
 
@@ -726,7 +778,8 @@ public class GraphSolver(IResolver resolver) {
         _agenda.Add(new Requirement(
             ResolveKey.Of(dependency.Source, dependency.Range, dependency.ClientCompat),
             owner,
-            $"{Show(owner)}{suffix} requires {dependency.Source} {Show(dependency.Range)}",
+            $"{Show(owner)}{suffix} requires"
+                + $" {ShowRequirement(dependency.Source, dependency.Range)}",
             level,
             dependency.Source,
             dependency.Range,
@@ -746,8 +799,11 @@ public class GraphSolver(IResolver resolver) {
     private LazySequence Resolve(Ref reference, IVersionConstraint? range, bool compat) {
       ResolveKey key = ResolveKey.Of(reference, range, compat);
       if (!_resolved.TryGetValue(key, out LazySequence? sequence)) {
-        sequence = new LazySequence(() => resolver.ResolveLazy(
-            reference, range, environment, compat));
+        // The resolver of lip also hands over the exceptions behind its diagnostics.
+        sequence = new LazySequence(s => resolver is Resolver withCauses
+            ? withCauses.ResolveLazyWithCauses(
+                reference, range, environment, compat, s.AddDiagnostic)
+            : resolver.ResolveLazy(reference, range, environment, compat, s.AddDiagnostic));
         _resolved[key] = sequence;
       }
 
@@ -759,32 +815,57 @@ public class GraphSolver(IResolver resolver) {
         Choices choices,
         List<string> blocked,
         int failedDeeper) {
-      string line;
       if (choices.Candidates.Count > 0 && blocked.Count == 0 && failedDeeper == 0) {
         // Skipped: the candidates were already found unsatisfiable for another owner.
-        AddFailure($"{requirement.Description}: no candidate can be installed");
+        AddFailure($"{requirement.Description}, but none of its versions can be installed.");
         return;
       }
 
       if (choices.Candidates.Count == 0) {
-        line = $"{requirement.Description}: no candidates";
+        List<ResolveDiagnostic> diagnostics = choices.Sequence.Diagnostics;
+        string line = $"{requirement.Description}, but no version of it is available"
+            + (diagnostics.Count == 0 ? "." : ":")
+            + string.Concat(
+                diagnostics.Take(MaxListedReasons).Select(d => $"\n      - {d.Message}"))
+            + (diagnostics.Count > MaxListedReasons
+                ? $"\n      ... and {diagnostics.Count - MaxListedReasons} more"
+                : "");
+        bool seen = _reported.Contains(line);
         if (_unresolvable.Count < MaxRecordedFailures && _reported.Add(line)) {
           _unresolvable.Add(line);
+          foreach (ResolveDiagnostic diagnostic in diagnostics) {
+            if (diagnostic.Cause is Exception cause) {
+              AddCause(cause);
+            }
+          }
         }
 
+        if (!seen) {
+          TraceStep(line);
+        }
         return;
       }
 
       List<string> reasons = [.. blocked.Take(MaxListedReasons)];
       if (blocked.Count > MaxListedReasons) {
-        reasons.Add($"{blocked.Count - MaxListedReasons} more blocked");
+        reasons.Add($"{blocked.Count - MaxListedReasons} more versions are blocked likewise");
       }
 
       if (failedDeeper > 0) {
-        reasons.Add($"{failedDeeper} failed on their own requirements");
+        reasons.Add(failedDeeper == 1
+            ? "1 version needs packages that cannot be installed with it"
+            : $"{failedDeeper} versions need packages that cannot be installed with them");
       }
 
-      AddFailure($"{requirement.Description}: no candidate fits ({string.Join("; ", reasons)})");
+      AddFailure($"{requirement.Description}, but no version of it fits: "
+          + $"{string.Join("; ", reasons)}.");
+    }
+
+    /// Keeps an exception behind a failure, once.
+    private void AddCause(Exception cause) {
+      if (_causes.Count < MaxReportedFailures && !_causes.Contains(cause)) {
+        _causes.Add(cause);
+      }
     }
 
     /// Keeps the most recent distinct failures.
@@ -813,8 +894,9 @@ public class GraphSolver(IResolver resolver) {
       return $"{Show(candidate)} (from {candidate.Archive.Key})";
     }
 
-    private static string Show(IVersionConstraint? range) {
-      return range?.ToString() ?? "*";
+    /// A source with the versions a requirement accepts.
+    private static string ShowRequirement(Ref source, IVersionConstraint? range) {
+      return range is null ? $"{source} (any version)" : $"{source} {range}";
     }
   }
 }

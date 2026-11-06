@@ -58,6 +58,9 @@ public class McmodService(
     Func<string>? workspaceRoot = null) {
   private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
 
+  /// The workspace file as the user sees it from the workspace root.
+  private const string WorkspaceFile = LockStore.LipDirectory + "/" + LockStore.FileName;
+
   private readonly IFileSystem _fs = fileSystem;
   private readonly IUserInteraction _ui = userInteraction;
   private readonly LockStore _lockStore = lockStore;
@@ -79,11 +82,14 @@ public class McmodService(
     }
 
     List<Candidate> candidates = await RequestedCandidates(workspace, requests);
-    foreach (Candidate candidate in candidates) {
-      string identity = candidate.Package.Identity;
-      if (workspace.Lock.Packages.Any(p => p.Explicit && SameIdentity(p.Identity, identity))) {
+    for (int i = 0; i < candidates.Count; i++) {
+      string identity = candidates[i].Package.Identity;
+      if (workspace.Lock.Packages.FirstOrDefault(
+          p => p.Explicit && SameIdentity(p.Identity, identity)) is { } installed) {
         throw new InvalidOperationException(
-            $"Cannot install package '{identity}' because it is already explicitly installed.");
+            $"Cannot install '{requests[i].Argument}': package '{identity}' is already explicitly"
+            + $" installed (version {installed.Version}). To change its version, run"
+            + $" 'lip update {requests[i].Argument}' instead.");
       }
     }
 
@@ -102,13 +108,19 @@ public class McmodService(
     foreach (string package in packages) {
       List<LockedPackage> matched = MatchInstalled(workspace, package);
       if (matched.Count == 0) {
-        throw new InvalidOperationException($"Package '{package}' is not installed.");
+        throw new InvalidOperationException(
+            $"Package '{package}' is not installed in this workspace, so it cannot be"
+            + " uninstalled. Run 'lip list' to see the installed packages and their identities.");
       }
 
-      if (!options.NoDependencies && matched.Any(p => !p.Explicit)) {
+      RunTrace.Write("workspace", $"'{package}' matches the installed packages "
+          + string.Join(", ", matched.Select(p => $"{p.Identity}@{p.Version}")));
+      if (!options.NoDependencies && matched.FirstOrDefault(p => !p.Explicit) is { } dependency) {
         throw new InvalidOperationException(
-            $"Package '{package}' is not explicitly installed and cannot be uninstalled without "
-            + "--no-dependencies.");
+            $"Package '{dependency.Identity}' was installed as a dependency of other packages, not"
+            + " requested by you, so lip uninstalls it by itself once no package needs it. To"
+            + " uninstall it anyway, pass --no-dependencies (the packages that need it may then"
+            + " stop working).");
       }
 
       targets.AddRange(matched.Where(p => !targets.Contains(p)));
@@ -156,7 +168,7 @@ public class McmodService(
       // a URL downloaded again and a local path with its current content.
       requests = [];
       foreach (LockedPackage package in workspace.Lock.Packages.Where(p => p.Explicit)) {
-        Ref source = Ref.Parse(package.Source, allowFile: true);
+        Ref source = ParseRecordedSource(package);
         if (source.Kind == RefKind.File && !_fs.File.Exists(source.LocalPath)
             && !_fs.Directory.Exists(source.LocalPath)) {
           await _ui.PrintWarning(
@@ -186,8 +198,8 @@ public class McmodService(
       string identity = candidates[i].Package.Identity;
       if (!workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, identity))) {
         throw new InvalidOperationException(
-            $"Cannot update package '{requests[i].Argument}' because it is not currently"
-            + " installed.");
+            $"Cannot update '{requests[i].Argument}': package '{identity}' is not installed in"
+            + $" this workspace. To install it, run 'lip install {requests[i].Argument}'.");
       }
 
       if (identities.Any(other => SameIdentity(other, identity))) {
@@ -224,10 +236,18 @@ public class McmodService(
     Ref reference = PackageArguments.Parse(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs).Ref;
     if (reference.Kind != RefKind.Spec || reference.GitRef is not null) {
+      string what = reference.Kind switch {
+        RefKind.Url => "a URL",
+        RefKind.File => "a local path",
+        _ => $"a remote repository with the ref '@{reference.GitRef}', which selects one commit",
+      };
+      // No parameter name: it would add "(Parameter 'package')" to the message the user sees.
       throw new ArgumentException(
-          $"'{package}' is not a remote repository without a ref.", nameof(package));
+          $"Cannot list the versions of '{package}': it is {what}. Only a remote repository"
+          + " without a ref, such as 'github.com/<owner>/<repo>', has versions to list.");
     }
 
+    RunTrace.Write("resolve", $"Listing the versions of {reference.Target}");
     IReadOnlyList<SpecVersion> versions = await _archiveProvider.ListVersions(reference.Target);
     return [.. versions.Reverse().Select(v => v.Version.ToString()).Distinct()];
   }
@@ -256,13 +276,16 @@ public class McmodService(
       SpecVersion version = (await _archiveProvider.ListVersions(request.Ref.Target))
           .FirstOrDefault()
           ?? throw new InvalidOperationException(
-              $"'{request.Ref.Target}' has no version tags.");
+              $"Cannot show the package file of '{package}': the repository {request.Ref.Target}"
+              + " has no version tags (tags named like 'v1.2.3'). Name a branch, tag or commit"
+              + $" instead, e.g. '{request.Ref.Target}@branch:main'.");
       archive = await _archiveProvider.OpenVersion(request.Ref.Target, version);
       tagVersion = version.Version;
     } else {
       archive = await _archiveProvider.Open(request.Ref);
     }
 
+    RunTrace.Write("resolve", $"Showing the package file of {archive.Key}");
     PackageDocument document = await _archiveReader.Read(archive);
     if (!document.IsLegacy) {
       return JsonSerializer.Serialize(document.Json, _indented);
@@ -272,8 +295,9 @@ public class McmodService(
     try {
       runtime = (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Runtime;
     }
-    catch (LockFormatException) {
+    catch (LockFormatException ex) {
       // A workspace file lip cannot read records no environment it can use.
+      RunTrace.Write("workspace", $"Ignoring the unreadable workspace file: {ex.Message}");
     }
 
     LipEnvironment environment = new(
@@ -288,6 +312,12 @@ public class McmodService(
     LockFile? recorded = await _lockStore.Load(root);
     LipEnvironment environment = DetermineEnvironment(recorded, options.Rid);
     recorded ??= await ReadToothLock(root, environment, resolveCommits: true);
+    RunTrace.Write("workspace", $"Workspace {root}: "
+        + (recorded is null
+            ? "no workspace file yet"
+            : $"{recorded.Packages.Count} installed packages, runtime {recorded.Runtime}")
+        + $"; using the environment ({environment.Platform.ToSpecString()},"
+        + $" {environment.Runtime})" + (options.Rid is null ? "" : " from --rid"));
     // A workspace without a workspace file gets the environment of its first operation.
     LockFile lockFile = recorded ?? new LockFile {
       Platform = environment.Platform.ToSpecString(),
@@ -350,6 +380,7 @@ public class McmodService(
 
     _lockStore.CreateLipDirectory(root);
     WorkspaceMutex mutex = WorkspaceMutex.Acquire(_fs, _lockStore.GetMutexPath(root), root);
+    RunTrace.Write("workspace", $"Took the workspace lock {_lockStore.GetMutexPath(root)}");
     try {
       await RecoverInterrupted(root, options);
     }
@@ -378,13 +409,21 @@ public class McmodService(
       return;
     }
 
+    RunTrace.Write("workspace", $"Recovering the interrupted operation recorded in {journal}");
     WorkspaceTransaction.RecoveryResult result = WorkspaceTransaction.Recover(
         _fs,
         journal,
         commitLock: () => _lockStore.CommitStaged(root),
         discardLock: () => _lockStore.DiscardStaged(root))!;
+    RunTrace.Write("workspace", $"Recovery: started {result.Started ?? "(unknown)"},"
+        + $" {(result.Committed ? "committed" : "not committed")}, {result.Changes} changes,"
+        + $" {result.Errors.Count} errors");
+    foreach (Exception error in result.Errors) {
+      RunTrace.Write("workspace", $"Recovery error: {error}");
+    }
+
     string started = result.Started is null ? "" : $" (it started at {result.Started})";
-    string errors = string.Concat(result.Errors.Select(e => $"\n  - {e}"));
+    string errors = string.Concat(result.Errors.Select(e => $"\n  - {e.Message}"));
     if (result.Committed) {
       await _ui.PrintInfo(
           $"Finished an interrupted lip operation that had completed{started}: deleted the"
@@ -398,9 +437,15 @@ public class McmodService(
 
     if (result.Errors.Count > 0) {
       throw new InvalidOperationException(
-          $"A lip operation on this workspace was interrupted{started}, and its changes cannot"
-          + $" all be undone:{errors}\nFix the problem (e.g. close programs using these files),"
-          + $" then run lip again. '{journal}' records what is left to undo.");
+          $"A lip operation on this workspace was interrupted{started}, and lip cannot undo all"
+          + $" of its changes yet:{errors}\nFix the problem (e.g. stop the server and other"
+          + " programs using these files), then run lip again; it retries the rest. Do not delete"
+          + $" '{journal}': it records what is left to undo.",
+          // The exceptions behind the list, so that the report and the hints (e.g. for a file
+          // in use) see them.
+          result.Errors.Count == 1
+              ? result.Errors[0]
+              : new AggregateException("The changes that could not be undone.", result.Errors));
     }
 
     await _ui.PrintWarning(
@@ -416,8 +461,9 @@ public class McmodService(
     string server = McmodPlatform.Server.ToSpecString();
     if (lockFile?.Platform is { } platform && platform != server) {
       throw new InvalidOperationException(
-          $"The workspace file records the platform \"{platform}\", but lip manages server"
-          + " workspaces only. Client workspaces are managed by launchers such as LeviLauncher.");
+          $"The workspace file {WorkspaceFile} records the platform \"{platform}\" in its"
+          + $" \"platform\" field, but lip manages server workspaces only (\"{server}\")."
+          + " Client workspaces are managed by launchers such as LeviLauncher.");
     }
 
     return new LipEnvironment(
@@ -445,9 +491,11 @@ public class McmodService(
     foreach ((string argument, PackageRequest request) in requests) {
       Candidate candidate = await FirstCandidate(workspace, argument, request);
       string identity = candidate.Package.Identity;
-      if (!allowSameIdentity && candidates.Any(c => SameIdentity(c.Package.Identity, identity))) {
+      int earlier = candidates.FindIndex(c => SameIdentity(c.Package.Identity, identity));
+      if (!allowSameIdentity && earlier >= 0) {
         throw new InvalidOperationException(
-            $"Multiple requested packages are '{identity}'. Please request each package once.");
+            $"The arguments '{requests[earlier].Argument}' and '{argument}' both name the package"
+            + $" '{identity}'. Request each package once.");
       }
 
       candidates.Add(candidate);
@@ -459,16 +507,36 @@ public class McmodService(
   private async Task<Candidate> FirstCandidate(
       Workspace workspace, string argument, PackageRequest request) {
     await _ui.PrintInfo($"Resolving {argument}...");
-    List<string> diagnostics = [];
-    await foreach (Candidate candidate in workspace.Resolver.ResolveLazy(
-        request.Ref, request.Range, workspace.Environment, onDiagnostic: diagnostics.Add)) {
+    List<ResolveDiagnostic> diagnostics = [];
+    await foreach (Candidate candidate in workspace.Resolver.ResolveLazyWithCauses(
+        request.Ref, request.Range, workspace.Environment, false, diagnostics.Add)) {
+      RunTrace.Write("resolve", $"'{argument}' is {candidate.Package.Identity}"
+          + $"@{candidate.Package.Version} from {candidate.Archive.Key}");
       return candidate;
     }
 
-    throw new InvalidOperationException(
-        $"No package found for '{argument}'"
-        + (diagnostics.Count == 0 ? "." : ":" + string.Concat(
-            diagnostics.Take(10).Select(d => $"\n  - {d}"))));
+    const int Shown = 10;
+    string summary = $"No package found for '{argument}' that can be installed in this workspace"
+        + $" ({workspace.Environment.Platform.ToSpecString()}, {workspace.Environment.Runtime}).";
+    string message = summary
+        + (diagnostics.Count == 0 ? "" : " Every place lip looked failed:" + string.Concat(
+            diagnostics.Take(Shown).Select(d => $"\n  - {d.Message}")))
+        + (diagnostics.Count > Shown ? $"\n  ... and {diagnostics.Count - Shown} more" : "");
+    // The exceptions behind the diagnostics are kept as causes, so that the failure report
+    // shows them and their hints (e.g. for network failures) apply. The summary as their
+    // message is part of the message above, so it is not shown twice.
+    List<Exception> causes = [.. diagnostics.Select(d => d.Cause).OfType<Exception>()];
+    if (causes.Count == 0) {
+      // When the package was found, the reasons above say what is wrong; spelling advice fits
+      // only when nothing (or a repository without versions, maybe the wrong one) was found.
+      bool notFound = diagnostics.All(
+          d => d.Message.Contains("has no version tags", StringComparison.Ordinal));
+      throw new InvalidOperationException(notFound
+          ? message + "\nCheck the spelling of the package and the version you asked for."
+          : message);
+    }
+
+    throw new InvalidOperationException(message, new AggregateException(summary, causes));
   }
 
   private async Task<Plan> MakePlan(
@@ -497,10 +565,14 @@ public class McmodService(
         throw;
       }
 
-      string reason = withInstalled.Message.Split('\n').Skip(1).FirstOrDefault()?.Trim(' ', '-')
-          ?? withInstalled.Message;
+      // In full, with its causes, since only the retry's failure is thrown if the retry fails.
+      RunTrace.Write("resolve", "With every installed package kept: " + withInstalled);
+      string reason = withInstalled.Message.Split('\n').Skip(1).FirstOrDefault()
+          ?.Trim(' ', '-', ':', '.')
+          ?? withInstalled.Message.TrimEnd('.');
       await _ui.PrintInfo(
-          $"The installed dependencies do not fit the request ({reason}); resolving them again.");
+          $"The installed dependency packages do not fit the request ({reason}); choosing their"
+          + " versions again.");
       graph = await workspace.Solver.SolveGraph(requests, pinnedExplicit, workspace.Environment);
     }
 
@@ -652,6 +724,13 @@ public class McmodService(
     List<(string Message, PackagePlan Plan)> plans = [];
     foreach (Change change in changeSet.Changes) {
       options.CancellationToken.ThrowIfCancellationRequested();
+      RunTrace.Write("workspace", "Planning " + change switch {
+        UninstallChange(LockedPackage p) => $"to uninstall {p.Identity}@{p.Version}",
+        InstallChange(Candidate c, bool e) => $"to install {c.Package.Identity}"
+            + $"@{c.Package.Version} from {c.Archive.Key}{(e ? " (explicit)" : "")}",
+        MarkExplicitChange(LockedPackage p) => $"to mark {p.Identity}@{p.Version} explicit",
+        _ => change.GetType().Name,
+      });
       switch (change) {
         case UninstallChange(LockedPackage package): {
             string what = $" package '{package.Identity}' version {package.Version}";
@@ -687,7 +766,9 @@ public class McmodService(
           remaining[remaining.IndexOf(package)] = package with { Explicit = true };
           break;
         default:
-          throw new ArgumentException($"Unknown change {change}.", nameof(changeSet));
+          throw new ArgumentException(
+              $"Internal error: lip planned an unknown kind of change ({change}). This is a bug"
+              + " in lip.", nameof(changeSet));
       }
     }
 
@@ -722,32 +803,37 @@ public class McmodService(
       _lockStore.CommitStaged(workspace.Root);
     }
     catch (Exception ex) {
+      RunTrace.Write("workspace", $"Undoing the changes after {ex.GetType().Name}: {ex.Message}");
       await _ui.PrintWarning(
-          (ex is OperationCanceledException ? "Cancelled" : "Failed")
-          + "; undoing the changes of this operation.");
-      IReadOnlyList<string> errors = transaction.Rollback(() => {
+          (ex is OperationCanceledException ? "Cancelled" : "The operation failed")
+          + "; undoing its changes to the workspace.");
+      IReadOnlyList<Exception> errors = transaction.Rollback(() => {
         try {
           _lockStore.DiscardStaged(workspace.Root);
         }
         catch (Exception discard) when (discard is IOException or UnauthorizedAccessException) {
           // A staged workspace file is never read, and the next save replaces it.
+          RunTrace.Write("workspace", $"Could not delete the staged workspace file: {discard}");
         }
       });
-      foreach (string error in errors) {
-        await _ui.PrintWarning($"Rollback: {error}");
+      foreach (Exception error in errors) {
+        RunTrace.Write("workspace", $"Rollback error: {error}");
+        await _ui.PrintWarning(error.Message);
       }
 
       if (errors.Count > 0) {
         await _ui.PrintWarning(
-            "Some changes could not be undone; the next install, uninstall or update of this"
-            + " workspace tries again.");
+            "Some changes could not be undone. Stop the server and other programs using the"
+            + " workspace; the next install, uninstall or update of this workspace tries again.");
       }
 
       throw;
     }
 
-    foreach (string error in transaction.Complete()) {
-      await _ui.PrintWarning(error);
+    RunTrace.Write("workspace", $"Committed {plans.Count} package changes");
+    foreach (Exception error in transaction.Complete()) {
+      RunTrace.Write("workspace", $"Cleanup warning: {error}");
+      await _ui.PrintWarning(error.Message);
     }
   }
 
@@ -800,9 +886,11 @@ public class McmodService(
           McmodInstaller.LockedEntry(package, workspace.Environment)) {
         Manifest = package.Manifest,
       };
-      Ref source = Ref.Parse(package.Source, allowFile: true);
+      Ref source = ParseRecordedSource(package);
       if (source.Kind == RefKind.Spec && package.Commit is null) {
-        throw new FormatException("it records no commit for a package of a remote repository.");
+        throw new LockFormatException(
+            $"The entry of '{package.Identity}' has no \"commit\" field, which every package"
+            + $" from a remote repository ({source}) must have.");
       }
 
       string key = $"{package.Source} (installed)";
@@ -817,7 +905,31 @@ public class McmodService(
     catch (Exception ex) when (ex is McmodInstallException or FormatException
         or ArgumentException or InvalidOperationException) {
       throw new InvalidOperationException(
-          $"Cannot read the entry of '{package.Identity}' in the workspace file: {ex.Message}",
+          $"Cannot use the installed package '{package.Identity}' as the workspace file"
+          + $" {WorkspaceFile} records it, in the environment"
+          + $" ({workspace.Environment.Platform.ToSpecString()}, {workspace.Environment.Runtime})."
+          // LockedEntry throws McmodInstallException when the package has no entry for the
+          // environment; a LockFormatException already says what to do.
+          + (ex is McmodInstallException && workspace.Environment.Runtime != workspace.Lock.Runtime
+              ? $" The workspace was installed for the runtime {workspace.Lock.Runtime}; run lip"
+                  + " without --rid, or with that runtime."
+              : ex is LockFormatException
+                  ? ""
+                  : " If the file was edited by hand, undo the edit."),
+          ex);
+    }
+  }
+
+  /// The source an entry of the workspace file records.
+  private static Ref ParseRecordedSource(LockedPackage package) {
+    try {
+      return Ref.Parse(package.Source, allowFile: true);
+    }
+    catch (FormatException ex) {
+      throw new LockFormatException(
+          $"The workspace file {WorkspaceFile} records \"{package.Source}\" in the \"ref\" field"
+          + $" of package '{package.Identity}', which is not a valid package source. If the file"
+          + " was edited by hand, undo the edit.",
           ex);
     }
   }
@@ -870,7 +982,7 @@ public class McmodService(
       string Root,
       LockFile Lock,
       LipEnvironment Environment,
-      IResolver Resolver,
+      Resolver Resolver,
       GraphSolver Solver);
 
   /// The new package set in installation order, and the folded identities of its explicitly

@@ -117,7 +117,7 @@ public class ResolverTests {
 
     // Assert
     Assert.Empty(result.Candidates);
-    Assert.Contains("no entry of the variant", Assert.Single(result.Diagnostics));
+    Assert.Contains("no entry of the default variant", Assert.Single(result.Diagnostics));
   }
 
   [Fact]
@@ -169,7 +169,7 @@ public class ResolverTests {
 
     // Assert
     Assert.Empty(withoutVariant.Candidates);
-    Assert.Contains("variant \"\"", Assert.Single(withoutVariant.Diagnostics));
+    Assert.Contains("the default variant", Assert.Single(withoutVariant.Diagnostics));
     Assert.Empty(otherVariant.Candidates);
     Assert.Contains("variant \"quickjs\"", Assert.Single(otherVariant.Diagnostics));
   }
@@ -418,7 +418,8 @@ public class ResolverTests {
 
     // Assert
     Assert.Empty(result.Candidates);
-    Assert.Contains("no tag version satisfies >=2.0.0", Assert.Single(result.Diagnostics));
+    Assert.Contains("no version tag satisfies >=2.0.0; the repository has the versions 1.0.0",
+        Assert.Single(result.Diagnostics));
   }
 
   [Fact]

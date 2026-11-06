@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Sources;
 
@@ -50,37 +51,64 @@ public record Candidate(
     }
 
     string name = Package.Identity;
+    string label = $"{name} {Package.Version}";
+    string manifestFile = PackageFormat.ModManifestFileName;
+    RunTrace.Write("install", $"Reading the mod name of {name}@{Package.Version} from the"
+        + $" {manifestFile} of its asset of type mcmod ({index}).");
     try {
       ISource source = await Assets[index].Open();
-      if (!source.Keys.Contains(PackageFormat.ModManifestFileName)) {
+      if (!source.Keys.Contains(manifestFile)) {
         throw new McmodInstallException(
-            $"{name}: the asset of type \"mcmod\" has no {PackageFormat.ModManifestFileName}.");
+            $"Cannot install {label}: its asset of type \"mcmod\" has no {manifestFile} at the"
+            + " root of its archive, so lip cannot tell the mod name. This is a problem of the"
+            + " package; report it to its author.");
       }
 
-      await using Stream stream = await source.OpenRead(PackageFormat.ModManifestFileName);
+      await using Stream stream = await source.OpenRead(manifestFile);
       using MemoryStream memory = new();
       await stream.CopyToAsync(memory);
-      using JsonDocument json = PackageFileParser.ParseJson(
-          memory.ToArray(), PackageFormat.ModManifestFileName);
+      using JsonDocument json = PackageFileParser.ParseJson(memory.ToArray(), manifestFile);
       JsonElement root = json.RootElement;
       if (root.ValueKind != JsonValueKind.Object
           || !root.TryGetProperty("name", out JsonElement modName)
           || modName.ValueKind != JsonValueKind.String
           || !PackageNames.IsValid(modName.GetString()!)) {
+        string found = root.ValueKind != JsonValueKind.Object
+            ? $"a JSON {Kind(root)}"
+            : !root.TryGetProperty("name", out JsonElement value)
+                ? "an object without \"name\""
+                : value.ValueKind != JsonValueKind.String
+                    ? $"an object whose \"name\" is a {Kind(value)}"
+                    : $"an object whose \"name\" is \"{value.GetString()}\"";
         throw new McmodInstallException(
-            $"{name}: the {PackageFormat.ModManifestFileName} of its asset of type \"mcmod\" is not"
-            + " a JSON object whose \"name\" matches ^[A-Za-z0-9][A-Za-z0-9._-]*$.");
+            $"Cannot install {label}: the {manifestFile} of its asset of type \"mcmod\" must be a"
+            + " JSON object"
+            + " whose \"name\" is the mod name (letters, digits, '.', '_' and '-', starting with"
+            + $" a letter or digit), but it is {found}. This is a problem of the package; report"
+            + " it to its author.");
       }
 
+      RunTrace.Write("install", $"The mod name of {name} is '{modName.GetString()}'.");
       return new ModManifest(modName.GetString()!);
     }
     catch (Exception ex) when (ex is ArchiveUnavailableException or FormatException
         or IOException or InvalidDataException) {
+      // The resolver keeps this exception, so the reason reaches the user as its cause.
       throw new McmodInstallException(
-          $"{name}: cannot read the mod manifest of its asset of type \"mcmod\": {ex.Message}",
+          $"Cannot install {label}: lip could not read the {manifestFile} of its asset of type"
+          + " \"mcmod\" to tell the mod name.",
           ex);
     }
   }
+
+  private static string Kind(JsonElement element) => element.ValueKind switch {
+    JsonValueKind.Array => "array",
+    JsonValueKind.String => "string",
+    JsonValueKind.Number => "number",
+    JsonValueKind.True or JsonValueKind.False => "boolean",
+    JsonValueKind.Null => "null",
+    _ => "object",
+  };
 
   /// The candidate of a package in an archive, whose assets are downloaded when first needed.
   public static Candidate Create(
@@ -119,7 +147,8 @@ public interface IResolver {
 public record PackageRequest(Ref Ref, IVersionConstraint? Range);
 
 /// Thrown when no package set satisfies the requests (protocol/workspace.md §3).
-public class DependencyResolutionException(string message) : Exception(message);
+public class DependencyResolutionException(string message, Exception? innerException = null)
+    : Exception(message, innerException);
 
 /// A solved package set: S in installation order; for every member (by index into Order) the
 /// members satisfying its dependencies; and for every request the member satisfying it.

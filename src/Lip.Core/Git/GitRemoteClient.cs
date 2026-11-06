@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
+using System.Runtime.ExceptionServices;
 using Flurl;
 using Flurl.Http;
 using Lip.Core.Infrastructure;
@@ -17,11 +20,16 @@ namespace Lip.Core.Git;
 ///
 /// The stream passed to FetchBlobs' onBlob callback is only valid during the callback, which must
 /// read it before returning. Callbacks are invoked sequentially, never concurrently.
+///
+/// Every failure names what the client was trying to do and with which server; the technical
+/// detail (status line, malformed data, the server's own message) is kept as inner exception.
 public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
   public const string UserAgent = "git/2.0 (lip)";
 
   private const int MaxWantsPerRequest = 256;
   private const int MaxCachedTrees = 64;
+  private const int MaxTracedRefs = 50;
+  private const int MaxErrorBodyChars = 2000;
   private const string GitProtocolHeader = "version=2";
 
   private readonly Url? _githubProxy = githubProxy;
@@ -32,6 +40,9 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
 
   public async Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) {
     List<string> prefixes = [.. refPrefixes];
+    RunTrace.Write("git", prefixes.Count == 0
+        ? $"List all refs of {repoUrl}"
+        : $"List the refs of {repoUrl} starting with {string.Join(", ", prefixes)}");
 
     PktLineWriter request = new PktLineWriter()
         .WriteLine("command=ls-refs")
@@ -43,31 +54,40 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     request.WriteFlush();
     byte[] body = request.ToArray();
 
-    List<GitRemoteRef> refs = await WithProxyFallback(repoUrl, async url => {
-      RemoteInfo remote = await Discover(url);
+    List<GitRemoteRef> refs = await WithProxyFallback(
+        repoUrl,
+        $"list the tags and branches of {repoUrl}",
+        notFound: null,
+        async url => {
+          RemoteInfo remote = await Discover(url);
 
-      List<GitRemoteRef> result = [];
-      await PostCommand(remote, body, async reader => {
-        while (true) {
-          PktLineType type = await reader.Read();
-          if (type is PktLineType.Flush) {
-            return;
-          }
-          if (type is not PktLineType.Data) {
-            throw new GitProtocolException($"Unexpected {type} in ls-refs response.");
-          }
-          string line = reader.PayloadText;
-          ThrowIfError(line);
-          result.Add(ParseRef(line));
-        }
-      });
-      return result;
-    });
+          List<GitRemoteRef> result = [];
+          await PostCommand(remote, body, async reader => {
+            while (true) {
+              PktLineType type = await reader.Read();
+              if (type is PktLineType.Flush) {
+                return;
+              }
+              if (type is not PktLineType.Data) {
+                throw new GitProtocolException(
+                    $"Unexpected {type} packet in the ls-refs response; expected a ref line or a flush.");
+              }
+              string line = reader.PayloadText;
+              ThrowIfError(line);
+              result.Add(ParseRef(line));
+            }
+          });
+          return result;
+        });
 
     // ref-prefix is only a hint to the server, so filter again.
-    return prefixes.Count == 0
+    IReadOnlyList<GitRemoteRef> matching = prefixes.Count == 0
         ? refs
         : [.. refs.Where(r => prefixes.Any(p => r.Name.StartsWith(p, StringComparison.Ordinal)))];
+    RunTrace.Write("git", $"{repoUrl} has {matching.Count} matching refs"
+        + (matching.Count == 0 ? "" : ": " + string.Join(", ", matching.Take(MaxTracedRefs).Select(r => r.Name)))
+        + (matching.Count > MaxTracedRefs ? ", ..." : ""));
+    return matching;
   }
 
   public async Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {
@@ -79,7 +99,9 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     string key = $"{GetRepoKey(repoUrl)}@{objectId}";
     Lazy<Task<IReadOnlyList<GitTreeEntry>>> lazy;
     lock (_treesLock) {
-      if (!_trees.TryGetValue(key, out lazy!)) {
+      if (_trees.TryGetValue(key, out lazy!)) {
+        RunTrace.Write("git", $"Reuse the file list of commit {objectId} in {repoUrl} fetched earlier");
+      } else {
         lazy = new(() => FetchTree(repoUrl, objectId));
         _trees[key] = lazy;
         _treeOrder.Enqueue(key);
@@ -111,6 +133,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     if (remaining.Count == 0) {
       return;
     }
+    int requested = remaining.Count;
+    RunTrace.Write("git", $"Download {requested} blobs from {repoUrl}");
 
     List<Exception> errors = [];
     foreach (string[] batch in remaining.ToList().Chunk(MaxWantsPerRequest)) {
@@ -120,12 +144,15 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     }
 
     if (errors.Count == 1) {
-      throw errors[0];
+      ExceptionDispatchInfo.Throw(errors[0]);
     }
     if (errors.Count > 1) {
+      string message = $"Could not download {remaining.Count} of the {requested} requested files"
+          + $" from {repoUrl}: {errors.Count} of the download requests failed.";
       throw errors.All(e => e is GitProtocolException)
-          ? new GitProtocolException(string.Join(" ", errors.Select(e => e.Message)))
-          : new AggregateException($"Failed to fetch blobs from {repoUrl}.", errors);
+          ? new GitProtocolException(message, new AggregateException(
+              $"The errors of the {errors.Count} failed download requests.", errors))
+          : new AggregateException(message, errors);
     }
   }
 
@@ -138,30 +165,43 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
       string[] batch,
       HashSet<string> remaining,
       Func<string, Stream, Task> onBlob) {
+    string purpose = $"download {batch.Length} files from {repoUrl}";
+    string notFound = $"The git repository {repoUrl} does not have some of the files lip asked"
+        + " for; the commit may have been removed from it (for example by a force push). Try"
+        + " again, and if this keeps happening, pick another version of the package.";
+    List<Url> candidates = [.. GetCandidateUrls(repoUrl)];
     List<Exception> errors = [];
 
-    foreach (Url url in GetCandidateUrls(repoUrl)) {
+    foreach (Url url in candidates) {
       string[] wanted = [.. batch.Where(remaining.Contains)];
+      RunTrace.Write("git", $"Fetch {wanted.Length} blobs of {repoUrl} via {url}");
 
       GitPackFile pack;
       try {
         pack = await FetchPack(await Discover(url), wanted, deepen: false, filterBlobs: false);
       }
       catch (Exception ex) {
-        errors.Add(ex);
+        errors.Add(Explain(ex, url, repoUrl, purpose, notFound));
         continue;
       }
 
       using (pack) {
-        foreach (GitObject obj in pack.ReadObjects()) {
-          if (!remaining.Remove(obj.ObjectId)) {
-            continue;
+        try {
+          foreach (GitObject obj in pack.ReadObjects()) {
+            if (!remaining.Remove(obj.ObjectId)) {
+              continue;
+            }
+            if (obj.Type != GitObjectType.Blob) {
+              throw new UnusableRepositoryException(
+                  $"the object {obj.ObjectId} was requested as a file (blob) but is a {GitObject.GetTypeName(obj.Type)}");
+            }
+            using MemoryStream stream = new(obj.Content, writable: false);
+            await onBlob(obj.ObjectId, stream);
           }
-          if (obj.Type != GitObjectType.Blob) {
-            throw new GitProtocolException($"Object {obj.ObjectId} is a {obj.Type}, not a blob.");
-          }
-          using MemoryStream stream = new(obj.Content, writable: false);
-          await onBlob(obj.ObjectId, stream);
+        }
+        catch (GitProtocolException ex) {
+          // Callbacks may already have run, so this pack is not retried elsewhere.
+          throw Explain(ex, url, repoUrl, purpose, notFound);
         }
       }
 
@@ -169,54 +209,207 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
       if (missing.Length == 0) {
         return null;
       }
-      errors.Add(new GitProtocolException(
-          $"Remote {url} did not send {missing.Length} requested blob(s), e.g. {missing[0]}."));
+      errors.Add(Explain(
+          new GitProtocolException($"The server did not send {missing.Length} of the"
+              + $" {wanted.Length} requested blobs, for example {missing[0]}."),
+          url, repoUrl, purpose, notFound));
     }
 
     return errors.Count == 1
         ? errors[0]
-        : new AggregateException($"Failed to fetch blobs from {repoUrl}.", errors);
+        : new AggregateException(FallbackSummary(purpose, candidates[0]), errors);
   }
 
   private async Task<IReadOnlyList<GitTreeEntry>> FetchTree(Url repoUrl, string objectId) {
-    return await WithProxyFallback(repoUrl, async url => {
-      RemoteInfo remote = await Discover(url);
-      if (!remote.SupportsShallow || !remote.SupportsFilter) {
-        throw new GitProtocolException(
-            $"Remote {url} does not support shallow partial fetches (shallow and filter).");
-      }
+    RunTrace.Write("git", $"Fetch commit {objectId} of {repoUrl} to list its files");
+    string notFound = $"The git repository {repoUrl} has no commit {objectId}. The commit may"
+        + " have been removed from the repository (for example by a force push), or the commit"
+        + " id is wrong; check it, or pick another version of the package.";
 
-      using GitPackFile pack = await FetchPack(remote, [objectId], deepen: true, filterBlobs: true);
-      Dictionary<string, GitObject> objects = [];
-      foreach (GitObject obj in pack.ReadObjects()) {
-        if (obj.Type != GitObjectType.Blob) {
-          objects[obj.ObjectId] = obj;
-        }
-      }
+    IReadOnlyList<GitTreeEntry> entries = await WithProxyFallback(
+        repoUrl,
+        $"list the files of commit {objectId} in {repoUrl}",
+        notFound,
+        async url => {
+          RemoteInfo remote = await Discover(url);
+          if (!remote.SupportsShallow || !remote.SupportsFilter) {
+            throw new UnsupportedServerException(
+                $"The server at {url} does not support shallow partial fetches (the 'shallow'"
+                + " and 'filter' features of the fetch command).");
+          }
 
-      // Inside the fallback, so an incomplete pack from the proxy is retried directly.
-      return (IReadOnlyList<GitTreeEntry>)WalkTree(objects, objectId);
-    });
+          using GitPackFile pack = await FetchPack(remote, [objectId], deepen: true, filterBlobs: true);
+          Dictionary<string, GitObject> objects = [];
+          foreach (GitObject obj in pack.ReadObjects()) {
+            if (obj.Type != GitObjectType.Blob) {
+              objects[obj.ObjectId] = obj;
+            }
+          }
+
+          // Inside the fallback, so an incomplete pack from the proxy is retried directly.
+          return (IReadOnlyList<GitTreeEntry>)WalkTree(objects, objectId);
+        });
+
+    RunTrace.Write("git", $"Commit {objectId} of {repoUrl} has {entries.Count} files");
+    return entries;
   }
 
   /// Runs an operation against the GitHub proxy (if configured and applicable) and falls back to
-  /// the original URL when the proxied attempt fails.
-  private async Task<T> WithProxyFallback<T>(Url repoUrl, Func<Url, Task<T>> operation) {
+  /// the original URL when the proxied attempt fails. purpose says what the operation does, as
+  /// in "Could not {purpose}"; notFound, if any, explains a server error about missing objects.
+  private async Task<T> WithProxyFallback<T>(
+      Url repoUrl,
+      string purpose,
+      string? notFound,
+      Func<Url, Task<T>> operation) {
+    List<Url> candidates = [.. GetCandidateUrls(repoUrl)];
     List<Exception> errors = [];
 
-    foreach (Url url in GetCandidateUrls(repoUrl)) {
+    foreach (Url url in candidates) {
+      RunTrace.Write("git", errors.Count == 0
+          ? $"Try to {purpose} via {url}"
+          : $"Fall back to {url} to {purpose}");
       try {
         return await operation(url);
       }
       catch (Exception ex) {
-        errors.Add(ex);
+        errors.Add(Explain(ex, url, repoUrl, purpose, notFound));
       }
     }
 
-    throw errors.Count == 1
-        ? errors[0]
-        : new AggregateException(
-            $"Git request for {repoUrl} failed both via the GitHub proxy and directly.", errors);
+    if (errors.Count == 1) {
+      ExceptionDispatchInfo.Throw(errors[0]);
+    }
+    throw new AggregateException(FallbackSummary(purpose, candidates[0]), errors);
+  }
+
+  private static string FallbackSummary(string purpose, Url proxied) =>
+      $"Could not {purpose}: lip tried the GitHub proxy {proxied.Host} and then GitHub directly,"
+      + " and both failed.";
+
+  /// Turns a failure of one attempt against url into an exception that says, in plain words,
+  /// what went wrong, keeping the failure as inner exception. Exceptions that are not about the
+  /// server (cancellation, local file errors) are returned as they are.
+  private static Exception Explain(Exception ex, Url url, Url repoUrl, string purpose, string? notFound) {
+    RunTrace.Write("git", $"Could not {purpose} via {url}: {ex.GetType().Name}: {ex.Message}");
+
+    bool viaProxy = url.ToString() != repoUrl.ToString();
+    string server = viaProxy
+        ? $"the GitHub proxy {url.Host}"
+        : IsGithub(url) ? "GitHub" : $"the git server {url.Host}";
+    string subject = char.ToUpperInvariant(server[0]) + server[1..];
+    string proxyAdvice = viaProxy
+        ? " If the GitHub proxy does not support git repositories, remove it with"
+            + " 'lip config delete github_proxy'."
+        : "";
+
+    // An invalid github_proxy value is accepted by the configuration and fails only here.
+    if (viaProxy && HasCause<UriFormatException>(ex)) {
+      return new UriFormatException(
+          $"The GitHub proxy set in github_proxy does not give a valid URL ({url}). Set a valid"
+          + " URL with 'lip config set github_proxy <URL>', or remove it with"
+          + " 'lip config delete github_proxy'.",
+          ex);
+    }
+
+    return ex switch {
+      UnusableRepositoryException unusable =>
+          new GitProtocolException(
+              $"The git repository {repoUrl} contains data lip cannot handle: {unusable.Message}."
+              + " Pick another version of the package, or report the problem to the package author.",
+              ex),
+      UnsupportedObjectFormatException format =>
+          new GitProtocolException(
+              $"The git repository {repoUrl} uses {format.Format} object ids, which lip does not"
+              + " support yet. Pick another version of the package, or ask the package author to"
+              + " publish it from a repository that uses SHA-1 object ids.",
+              ex),
+      GitServerErrorException error
+          when notFound is not null && error.ServerMessage.Contains("not our ref", StringComparison.Ordinal) =>
+          new GitProtocolException(notFound, ex),
+      GitServerErrorException =>
+          new GitProtocolException(
+              $"{subject} reported an error when lip tried to {purpose}. Try again later.{proxyAdvice}", ex),
+      UnsupportedServerException =>
+          new GitProtocolException(
+              $"{subject} cannot be used to {purpose}: lip needs a git server that supports version 2"
+              + $" of the git protocol with shallow and partial fetches, as GitHub does.{proxyAdvice}",
+              ex),
+      GitProtocolException =>
+          new GitProtocolException(
+              $"{subject} sent an unexpected response when lip tried to {purpose}. Try again later;"
+              + $" if this keeps happening, it may not be a git server.{proxyAdvice}",
+              ex),
+      HttpRequestException { StatusCode: HttpStatusCode status } =>
+          new HttpRequestException(
+              DescribeStatus(server, subject, purpose, status, IsGithub(repoUrl)) + proxyAdvice, ex, status),
+      FlurlHttpTimeoutException =>
+          new HttpRequestException(
+              $"{subject} did not answer in time when lip tried to {purpose}. Check your network"
+              + $" connection and try again.{proxyAdvice}",
+              ex),
+      FlurlHttpException =>
+          new HttpRequestException(
+              $"Could not connect to {server} to {purpose}. Check your network connection and"
+              + $" try again.{proxyAdvice}",
+              ex),
+      HttpIOException or IOException { InnerException: SocketException } =>
+          new HttpRequestException(
+              $"The connection to {server} broke off while lip tried to {purpose}. Check your network"
+              + $" connection and try again.{proxyAdvice}",
+              ex),
+      TaskCanceledException { InnerException: TimeoutException } =>
+          new HttpRequestException(
+              $"{subject} did not answer in time when lip tried to {purpose}. Check your network"
+              + $" connection and try again.{proxyAdvice}",
+              ex),
+      _ => ex,
+    };
+  }
+
+  private static string DescribeStatus(
+      string server,
+      string subject,
+      string purpose,
+      HttpStatusCode status,
+      bool isGithub) {
+    string code = $"HTTP {(int)status}";
+    return status switch {
+      HttpStatusCode.Unauthorized =>
+          $"{subject} refused to let lip {purpose} ({code}). "
+          + (isGithub
+              ? "GitHub answers this way when a repository does not exist or is private"
+              : "The repository may not exist or may be private")
+          + ": check the spelling of the package, and that its repository is public.",
+      HttpStatusCode.Forbidden =>
+          $"{subject} denied access when lip tried to {purpose} ({code}). The repository may be"
+          + $" private, or {server} may be limiting how many requests lip can send; wait a while"
+          + " and try again.",
+      HttpStatusCode.NotFound =>
+          $"{subject} found no such repository when lip tried to {purpose} ({code}). Check the"
+          + " spelling of the package, and that its repository is public.",
+      HttpStatusCode.TooManyRequests =>
+          $"{subject} refused to let lip {purpose} because lip sent too many requests ({code})."
+          + " Wait a while and try again.",
+      >= HttpStatusCode.InternalServerError =>
+          $"{subject} had a problem when lip tried to {purpose} ({code}). Try again later.",
+      _ => $"{subject} answered {code}"
+          + (Enum.IsDefined(status) ? $" ({status})" : "")
+          + $" when lip tried to {purpose}. Try again later; if this keeps happening, check that"
+          + " the URL points to a git repository.",
+    };
+  }
+
+  private static bool IsGithub(Url url) =>
+      string.Equals(url.Host, "github.com", StringComparison.OrdinalIgnoreCase);
+
+  private static bool HasCause<T>(Exception ex) where T : Exception {
+    for (Exception? current = ex; current is not null; current = current.InnerException) {
+      if (current is T) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// The URLs to try for a repository: the GitHub proxy (if applicable), then the original URL.
@@ -257,7 +450,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
         .WithSettings(settings => settings.Redirects.ForwardHeaders = true)
         .AllowAnyHttpStatus()
         .GetAsync(HttpCompletionOption.ResponseHeadersRead);
-    EnsureSuccess(response, url);
+    await EnsureSuccess(response, "GET", url);
 
     // Follow redirects (e.g. renamed repositories) for subsequent POSTs, like git does.
     Url endpoint = repoUrl;
@@ -268,15 +461,22 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
         endpoint = Url.Parse(path[..^"/info/refs".Length]);
       }
     }
+    if (endpoint.ToString() != repoUrl.ToString()) {
+      RunTrace.Write("git", $"{repoUrl} redirects to {endpoint}");
+    }
 
     await using Stream body = await response.GetStreamAsync();
     Dictionary<string, string?> capabilities = await ReadCapabilities(new PktLineReader(body), repoUrl);
+    RunTrace.Write("git", $"{repoUrl} offers: " + string.Join(", ", capabilities.Select(
+        c => c.Value is null ? c.Key : $"{c.Key}={c.Value}")));
 
     if (!capabilities.ContainsKey("ls-refs") || !capabilities.TryGetValue("fetch", out string? fetch)) {
-      throw new GitProtocolException($"Remote {repoUrl} does not support ls-refs and fetch.");
+      throw new UnsupportedServerException(
+          $"The server at {repoUrl} does not offer the ls-refs and fetch commands of git protocol"
+          + " version 2.");
     }
     if (capabilities.TryGetValue("object-format", out string? format) && format != "sha1") {
-      throw new GitProtocolException($"Remote {repoUrl} uses unsupported object format {format}.");
+      throw new UnsupportedObjectFormatException(format ?? "(unnamed)");
     }
 
     string[] fetchFeatures = fetch?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? [];
@@ -302,8 +502,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     }
 
     if (type != PktLineType.Data || reader.PayloadText != "version 2") {
-      throw new GitProtocolException(
-          $"Remote {repoUrl} does not support git protocol version 2.");
+      throw new UnsupportedServerException(
+          $"The server at {repoUrl} does not support version 2 of the git protocol.");
     }
 
     Dictionary<string, string?> capabilities = [];
@@ -317,7 +517,9 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
       }
     }
     if (type != PktLineType.Flush) {
-      throw new GitProtocolException($"Malformed capability advertisement from {repoUrl}.");
+      throw new GitProtocolException(
+          $"Malformed capability advertisement from {repoUrl}: expected a flush packet after the"
+          + $" capabilities, got {type}.");
     }
     return capabilities;
   }
@@ -347,7 +549,10 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     try {
       await PostCommand(remote, request.ToArray(), reader => ReadPackfile(reader, file));
       file.Position = 0;
-      return GitPackFile.Open(file);
+      GitPackFile pack = GitPackFile.Open(file);
+      RunTrace.Write("git", $"Received a pack of {file.Length} bytes with {pack.Count} objects"
+          + $" from {remote.Endpoint}");
+      return pack;
     }
     catch {
       await file.DisposeAsync();
@@ -361,7 +566,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     while (true) {
       PktLineType type = await reader.Read();
       if (type != PktLineType.Data) {
-        throw new GitProtocolException($"Unexpected {type} in fetch response.");
+        throw new GitProtocolException(
+            $"Unexpected {type} packet in the fetch response; expected a section header.");
       }
       string header = reader.PayloadText;
       ThrowIfError(header);
@@ -374,7 +580,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
         ThrowIfError(reader.PayloadText);
       }
       if (type != PktLineType.Delimiter) {
-        throw new GitProtocolException($"Fetch response ended without a packfile (section {header}).");
+        throw new GitProtocolException(
+            $"The fetch response ended after section '{header}' without a packfile section.");
       }
     }
 
@@ -387,12 +594,12 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
         case PktLineType.Data:
           break;
         default:
-          throw new GitProtocolException($"Unexpected {type} in packfile section.");
+          throw new GitProtocolException($"Unexpected {type} packet in the packfile section.");
       }
 
       ReadOnlyMemory<byte> payload = reader.Payload;
       if (payload.Length == 0) {
-        throw new GitProtocolException("Empty side-band packet.");
+        throw new GitProtocolException("Empty side-band packet in the packfile section.");
       }
       switch (payload.Span[0]) {
         case 1:
@@ -401,10 +608,11 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
         case 2:
           break;
         case 3:
-          throw new GitProtocolException(
-              $"Remote error: {System.Text.Encoding.UTF8.GetString(payload.Span[1..]).Trim()}");
+          throw new GitServerErrorException(
+              System.Text.Encoding.UTF8.GetString(payload.Span[1..]).Trim());
         default:
-          throw new GitProtocolException($"Invalid side-band channel {payload.Span[0]}.");
+          throw new GitProtocolException(
+              $"Invalid side-band channel {payload.Span[0]} in the packfile section.");
       }
     }
   }
@@ -421,7 +629,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
         .WithTimeout(TimeSpan.FromMinutes(30))
         .AllowAnyHttpStatus()
         .PostAsync(content, HttpCompletionOption.ResponseHeadersRead);
-    EnsureSuccess(response, url);
+    await EnsureSuccess(response, "POST", url);
 
     await using Stream stream = await response.GetStreamAsync();
     await handle(new PktLineReader(stream));
@@ -431,7 +639,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     GitObject Get(string id) {
       return objects.TryGetValue(id, out GitObject? obj)
           ? obj
-          : throw new GitProtocolException($"Remote did not send object {id}.");
+          : throw new GitProtocolException($"The server did not send object {id}.");
     }
 
     GitObject current = Get(objectId);
@@ -439,18 +647,21 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
       current = Get(GitObject.ParseTagTarget(current.Content));
     }
     if (current.Type != GitObjectType.Commit) {
-      throw new GitProtocolException($"Object {objectId} does not point to a commit.");
+      throw new UnusableRepositoryException(
+          $"the object {objectId} is a {GitObject.GetTypeName(current.Type)}, not a commit or a tag of one");
     }
 
     List<GitTreeEntry> entries = [];
     void Walk(string prefix, string treeId) {
       GitObject tree = Get(treeId);
       if (tree.Type != GitObjectType.Tree) {
-        throw new GitProtocolException($"Object {treeId} is not a tree.");
+        throw new GitProtocolException(
+            $"Object {treeId} at '{prefix}' is a {GitObject.GetTypeName(tree.Type)}, not a tree.");
       }
       foreach ((int mode, string name, string entryId) in GitObject.ParseTree(tree.Content)) {
         if (!IsSafeEntryName(name)) {
-          throw new GitProtocolException($"Unsafe tree entry name '{prefix}{name}'.");
+          throw new UnusableRepositoryException(
+              $"it has an entry named '{prefix}{name}' (in tree {treeId}), which is not a valid file name");
         }
         string path = prefix + name;
         if (mode == 40000) {
@@ -472,7 +683,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
   private static GitRemoteRef ParseRef(string line) {
     string[] parts = line.Split(' ');
     if (parts.Length < 2 || !GitObject.IsObjectId(parts[0])) {
-      throw new GitProtocolException($"Malformed ls-refs line '{line}'.");
+      throw new GitProtocolException(
+          $"Malformed ls-refs line '{line}'; expected an object id followed by a ref name.");
     }
     string? peeled = parts
         .Skip(2)
@@ -483,22 +695,45 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
   private static string NormalizeObjectId(string objectId) {
     return GitObject.IsObjectId(objectId)
         ? objectId.ToLowerInvariant()
-        : throw new ArgumentException($"'{objectId}' is not a SHA-1 object id.", nameof(objectId));
+        : throw new ArgumentException(
+            $"'{objectId}' is not a git object id; an object id is 40 hexadecimal digits.");
   }
 
   private static void ThrowIfError(string line) {
     if (line.StartsWith("ERR ", StringComparison.Ordinal)) {
-      throw new GitProtocolException($"Remote error: {line[4..]}");
+      throw new GitServerErrorException(line[4..]);
     }
   }
 
-  private static void EnsureSuccess(IFlurlResponse response, Url url) {
-    if (response.StatusCode is < 200 or >= 300) {
-      throw new HttpRequestException(
-          $"Git request to {url} failed: HTTP {response.StatusCode}",
-          inner: null,
-          (System.Net.HttpStatusCode)response.StatusCode);
+  /// Throws an HttpRequestException carrying the status code if the response is not a success.
+  /// The start of the response body, which often says why, is kept in the exception's Data so
+  /// that it reaches the failure report.
+  private static async Task EnsureSuccess(IFlurlResponse response, string verb, Url url) {
+    if (response.StatusCode is >= 200 and < 300) {
+      return;
     }
+
+    string? reason = response.ResponseMessage.ReasonPhrase;
+    HttpRequestException exception = new(
+        $"The server answered HTTP {response.StatusCode}"
+            + (string.IsNullOrEmpty(reason) ? "" : $" ({reason})")
+            + $" to {verb} {url}.",
+        inner: null,
+        (HttpStatusCode)response.StatusCode);
+    try {
+      // Only the start of the body is read, so a large or slow error page does not delay the error.
+      await using Stream stream = await response.GetStreamAsync();
+      using StreamReader reader = new(stream);
+      char[] buffer = new char[MaxErrorBodyChars + 1];
+      int length = await reader.ReadBlockAsync(buffer);
+      exception.Data["Response body"] = length > MaxErrorBodyChars
+          ? new string(buffer, 0, MaxErrorBodyChars) + "..."
+          : new string(buffer, 0, length);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException) {
+      exception.Data["Response body"] = $"(cannot read: {ex.Message})";
+    }
+    throw exception;
   }
 
   // A <N>.tmp file in the cache directory (protocol/userspace.md §3), since lip keeps nothing in
@@ -515,4 +750,19 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
   }
 
   private record RemoteInfo(Url Endpoint, bool SupportsFilter, bool SupportsShallow);
+
+  /// The server reported an error itself (an ERR line or side-band channel 3).
+  private sealed class GitServerErrorException(string serverMessage)
+      : GitProtocolException($"The git server reported: {serverMessage}") {
+    public string ServerMessage { get; } = serverMessage;
+  }
+
+  /// The server works but lacks a feature lip needs.
+  private sealed class UnsupportedServerException(string message) : GitProtocolException(message);
+
+  /// The repository uses object ids other than SHA-1.
+  private sealed class UnsupportedObjectFormatException(string format)
+      : GitProtocolException($"The repository uses the {format} object format; lip supports only sha1.") {
+    public string Format { get; } = format;
+  }
 }

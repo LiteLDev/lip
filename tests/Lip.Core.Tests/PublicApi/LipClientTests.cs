@@ -68,7 +68,9 @@ public class LipClientTests {
     _ws.AddFile("lip.yaml", "{}");
 
     // Act & Assert
-    await Assert.ThrowsAsync<InvalidOperationException>(_client.Init);
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(_client.Init);
+    Assert.Contains("lip.yaml already exists", ex.Message);
+    Assert.Contains("delete lip.yaml", ex.Message);
     Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("lip.yaml")));
     _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
   }

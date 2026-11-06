@@ -21,7 +21,9 @@ public class PackCommand(IUserInteraction userInteraction) : AsyncCommand<PackCo
 
     public override ValidationResult Validate() =>
         string.IsNullOrEmpty(Output)
-            ? ValidationResult.Error("-o, --output <FILE> is required.")
+            ? ValidationResult.Error(
+                "-o, --output <FILE> is required: name the ZIP archive to write, e.g. "
+                + "'lip pack -o package.zip'.")
             : ValidationResult.Success();
   }
 

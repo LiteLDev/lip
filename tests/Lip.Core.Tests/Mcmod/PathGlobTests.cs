@@ -59,7 +59,8 @@ public class PathGlobTests {
   [InlineData("[z-a]")]
   public void Constructor_InvalidPattern_ThrowsFormatException(string pattern) {
     // Act & Assert
-    Assert.Throws<FormatException>(() => new PathGlob(pattern));
+    FormatException ex = Assert.Throws<FormatException>(() => new PathGlob(pattern));
+    Assert.Contains($"'{pattern}'", ex.Message);
   }
 
   /// A '[' that starts no complete bracket expression matches itself (POSIX fnmatch).

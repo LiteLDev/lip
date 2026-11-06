@@ -16,7 +16,8 @@ public record PackageManifest {
     get => _currentFormatVersion;
     init {
       if (value != _currentFormatVersion) {
-        throw new ArgumentException($"Unsupported format version: {value}", nameof(FormatVersion));
+        throw new ArgumentException(
+            $"In tooth.json, format_version is {value}, but {_currentFormatVersion} was expected.");
       }
     }
   }
@@ -28,7 +29,9 @@ public record PackageManifest {
     get => _currentFormatUuid;
     init {
       if (value != _currentFormatUuid) {
-        throw new ArgumentException($"Unsupported format UUID: {value}", nameof(FormatUuid));
+        throw new ArgumentException(
+            $"In tooth.json, format_uuid is '{value}', but '{_currentFormatUuid}' was expected for "
+            + $"format_version {_currentFormatVersion}.");
       }
     }
   }
@@ -36,9 +39,13 @@ public record PackageManifest {
   [JsonPropertyName("tooth")]
   public required string Path {
     get;
-    init => field = (Golang.Org.X.Mod.Module.CheckPath(value) is null)
-        ? value
-        : throw new FormatException($"Invalid package path: {value}");
+    init => field = value is null
+        ? throw new FormatException("In tooth.json, the field 'tooth' is missing or null.")
+        : Golang.Org.X.Mod.Module.CheckPath(value) is Exception error
+            ? throw new FormatException(
+                $"In tooth.json, the tooth path '{value}' is not valid: it must be a Go module "
+                + "path, e.g. github.com/owner/repo.", error)
+            : value;
   }
 
   [JsonConverter(typeof(SemVersionJsonConverter))]
@@ -78,7 +85,8 @@ public record PackageManifest {
     if (matchingVariants.All(
         v => (v.Label != label) && (v.Platform != platform)
     )) {
-      throw new KeyNotFoundException($"No variant found for label '{label}' and platform '{platform}'.");
+      throw new KeyNotFoundException(
+          $"tooth.json has no variant labeled '{label}' for the runtime '{platform}'.");
     }
 
     return new() {

@@ -2,8 +2,11 @@ namespace Golang.Org.X.Mod;
 
 /// golang.org/x/mod/module: CheckPath and what it needs.
 public static class Module {
+  /// Go's Error() is "malformed module path %q: %v"; the message says the same in words, and
+  /// the inner exception is the reason alone.
   public class InvalidPathError(string kind, string path, Exception innerException)
-      : Exception($"malformed {kind} path {path}", innerException) {
+      : Exception($"The {kind} path \"{path}\" is not valid: {innerException.Message}.",
+          innerException) {
     public string Kind { get; private init; } = kind;
     public string Path { get; private init; } = path;
   }
@@ -22,22 +25,27 @@ public static class Module {
       i = path.Length;
     }
     if (i == 0) {
-      return MakeError(new Exception("leading slash"));
+      return MakeError(new Exception("it starts with '/'"));
     }
     if (!path[..i].Contains('.')) {
-      return MakeError(new Exception("missing dot in first path element"));
+      return MakeError(new Exception($"its first path element \"{path[..i]}\" has no dot, but the"
+          + " first element must be a host name such as github.com"));
     }
     if (path[0] == '-') {
-      return MakeError(new Exception("leading dash in first path element"));
+      return MakeError(new Exception("its first path element starts with '-'"));
     }
     for (int j = 0; j < i; j++) {
       if (!ModuleInternal.FirstPathOK(path[j])) {
-        return new InvalidPathError("module", path, new Exception($"invalid char '{path[j]}' in first path element"));
+        return new InvalidPathError("module", path, new Exception(
+            $"its first path element \"{path[..i]}\" contains {ModuleInternal.Show(path[j])},"
+            + " but a host name has only lowercase ASCII letters, digits, '-' and '.'"));
       }
     }
     (string, string, bool) split = SplitPathVersion(path);
     if (!split.Item3) {
-      return new InvalidPathError("module", path, new Exception("invalid version"));
+      return new InvalidPathError("module", path, new Exception(
+          "the major version suffix at its end is invalid (it must be /v2 or higher without a"
+          + " leading zero or a dot, or .v0 or higher for gopkg.in)"));
     }
     return null;
   }
@@ -96,24 +104,25 @@ file static class ModuleInternal {
   /// checkElem of a module path element.
   public static Exception? CheckElem(string elem) {
     if (string.IsNullOrEmpty(elem)) {
-      return new Exception("empty path element");
+      return new Exception("one of its path elements is empty");
     }
 
     if (elem.Count(c => c == '.') == elem.Length) {
-      return new Exception($"invalid path element \"{elem}\"");
+      return new Exception($"the path element \"{elem}\" consists only of dots");
     }
 
     if (elem[0] == '.') {
-      return new Exception("leading dot in path element");
+      return new Exception($"the path element \"{elem}\" starts with a dot");
     }
 
     if (elem[^1] == '.') {
-      return new Exception("trailing dot in path element");
+      return new Exception($"the path element \"{elem}\" ends with a dot");
     }
 
     foreach (char r in elem) {
       if (!ModPathOK(r)) {
-        return new Exception($"invalid char \"{r}\"");
+        return new Exception($"the path element \"{elem}\" contains {Show(r)}, but only ASCII"
+            + " letters, digits, '-', '.', '_' and '~' are allowed");
       }
     }
 
@@ -125,7 +134,8 @@ file static class ModuleInternal {
 
     foreach (string bad in _badWindowsNames) {
       if (string.Equals(bad, shortElem, StringComparison.OrdinalIgnoreCase)) {
-        return new Exception($"\"{shortElem}\" disallowed as path element component on Windows");
+        return new Exception($"the path element \"{elem}\" uses \"{shortElem}\", a name that"
+            + " Windows reserves");
       }
     }
 
@@ -140,7 +150,7 @@ file static class ModuleInternal {
         }
       }
       if (suffixIsDigits) {
-        return new Exception("trailing tilde and digits in path element");
+        return new Exception($"the path element \"{elem}\" ends with '~' followed by digits");
       }
     }
     return null;
@@ -150,16 +160,16 @@ file static class ModuleInternal {
   /// has a non-ASCII char, which ModPathOK rejects.
   public static Exception? CheckPath(string path) {
     if (path == "") {
-      return new Exception("empty string");
+      return new Exception("it is empty");
     }
     if (path[0] == '-') {
-      return new Exception("leading dash");
+      return new Exception("it starts with '-'");
     }
     if (path.Contains("//")) {
-      return new Exception("double slash");
+      return new Exception("it contains '//'");
     }
     if (path[^1] == '/') {
-      return new Exception("trailing slash");
+      return new Exception("it ends with '/'");
     }
     int elemStart = 0;
     for (int i = 0; i < path.Length; i++) {
@@ -173,6 +183,10 @@ file static class ModuleInternal {
     }
     return CheckElem(path[elemStart..]);
   }
+
+  /// A character for a message: quoted when it is printable ASCII, otherwise its code point.
+  public static string Show(char r) =>
+      r is >= ' ' and < '\x7f' ? $"'{r}'" : $"the character U+{(int)r:X4}";
 
   public static bool FirstPathOK(char r) {
     return r == '-'

@@ -9,7 +9,8 @@ public static class McmodPlatformExtensions {
   public static string ToSpecString(this McmodPlatform platform) => platform switch {
     McmodPlatform.Server => "server",
     McmodPlatform.Client => "client",
-    _ => throw new ArgumentOutOfRangeException(nameof(platform)),
+    _ => throw new ArgumentOutOfRangeException(
+        nameof(platform), platform, "The platform must be server or client."),
   };
 
   public static bool TryParse(string s, out McmodPlatform platform) {

@@ -32,6 +32,8 @@ Every command's workspace is the current working directory, to which relative pa
 
 A command that succeeds exits with code 0; one that fails, including on a usage error, writes a message describing the cause and exits with a non-zero code.
 
+A command that fails other than on a usage error MAY write a **failure report**, a file below `.lip/logs/` of its workspace whose content is not defined here, and then names it in a message.
+
 ## 3. Package Arguments
 
 A **package argument** is an argument of `install`, `update`, `uninstall`, `versions` or `view` that names a source. It is classified by the first of these rules that applies:

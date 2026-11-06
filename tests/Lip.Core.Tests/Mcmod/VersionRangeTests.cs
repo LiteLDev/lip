@@ -47,8 +47,12 @@ public class VersionRangeTests {
   [InlineData(">=1.0.0 <")]
   [InlineData("^^1.0.0")]
   public void Parse_InvalidRange_ThrowsFormatException(string range) {
-    Assert.Throws<FormatException>(() => VersionRange.Parse(range));
+    FormatException ex = Assert.Throws<FormatException>(() => VersionRange.Parse(range));
     Assert.False(VersionRange.TryParse(range, out _));
+
+    // The message names the range; Semver's reason is kept as the inner exception.
+    Assert.Contains($"'{range}'", ex.Message);
+    Assert.NotNull(ex.InnerException);
   }
 
   [Fact]

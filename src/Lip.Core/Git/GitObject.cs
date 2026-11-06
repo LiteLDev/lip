@@ -33,7 +33,7 @@ public record GitObject(string ObjectId, GitObjectType Type, byte[] Content) {
     string? tree = ReadHeader(content, "tree");
     return tree is not null && IsObjectId(tree)
         ? tree
-        : throw new GitProtocolException("Malformed commit object: missing tree.");
+        : throw new GitProtocolException("Malformed commit object: it has no valid tree header.");
   }
 
   /// Returns the target object id of an annotated tag.
@@ -41,7 +41,7 @@ public record GitObject(string ObjectId, GitObjectType Type, byte[] Content) {
     string? target = ReadHeader(content, "object");
     return target is not null && IsObjectId(target)
         ? target
-        : throw new GitProtocolException("Malformed tag object: missing target.");
+        : throw new GitProtocolException("Malformed tag object: it has no valid object header.");
   }
 
   /// Parses tree entries. Mode is the octal mode digits read as a decimal number, e.g. 100644.
@@ -51,7 +51,7 @@ public record GitObject(string ObjectId, GitObjectType Type, byte[] Content) {
       int space = Array.IndexOf(content, (byte)' ', position);
       int nul = space < 0 ? -1 : Array.IndexOf(content, (byte)0, space + 1);
       if (space < 0 || nul < 0 || nul + 21 > content.Length) {
-        throw new GitProtocolException("Malformed tree object.");
+        throw new GitProtocolException($"Malformed tree object: the entry at byte {position} is truncated.");
       }
 
       string modeText = Encoding.ASCII.GetString(content, position, space - position);

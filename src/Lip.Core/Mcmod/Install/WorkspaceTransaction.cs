@@ -60,6 +60,7 @@ public sealed class WorkspaceTransaction : IDisposable {
     foreach (string directory in Enumerable.Reverse(missing)) {
       Record(new JournalEntry(JournalOp.CreateDirectory, directory));
       _fs.Directory.CreateDirectory(directory);
+      RunTrace.Write("workspace", $"Created the directory {Show(directory)}");
     }
   }
 
@@ -73,22 +74,30 @@ public sealed class WorkspaceTransaction : IDisposable {
     Record(new JournalEntry(JournalOp.CreateFile, path));
     await using FileSystemStream output = _fs.File.Create(path);
     await content.CopyToAsync(output, cancellationToken);
+    RunTrace.Write("workspace", $"Wrote {Show(path)} ({output.Length} bytes)");
   }
 
   /// Deletes a file: renames it to a backup, deleted at commit.
   public void DeleteFile(string path) => Backup(path);
 
   /// Deletes the directory at commit, if it is empty then.
-  public void DeleteDirectoryOnCommit(string path) =>
-      Record(new JournalEntry(JournalOp.DeleteDirectoryOnCommit, path));
+  public void DeleteDirectoryOnCommit(string path) {
+    Record(new JournalEntry(JournalOp.DeleteDirectoryOnCommit, path));
+    RunTrace.Write(
+        "workspace", $"Will delete the directory {Show(path)} at commit if it is empty");
+  }
 
   private void Backup(string path) {
     string backup = BackupPath(path);
     bool wasHidden = _fs.File.GetAttributes(path).HasFlag(FileAttributes.Hidden);
     Record(new JournalEntry(JournalOp.Backup, path, backup, wasHidden));
     _fs.File.Move(path, backup);
+    RunTrace.Write("workspace", $"Moved {Show(path)} to the backup {Show(backup)}");
     _fs.SetHidden(backup, true);
   }
+
+  /// A path of the workspace as the user knows it.
+  private string Show(string path) => WorkspaceErrors.Show(_fs, _root, path);
 
   /// ".{name}.bak" in the directory of the file, or ".{name}.bak1", ".{name}.bak2", ... when
   /// that name is taken or reserved.
@@ -117,20 +126,24 @@ public sealed class WorkspaceTransaction : IDisposable {
     }
 
     _committed = true;
+    RunTrace.Write("journal", $"Committed the operation ({_entries.Count} changes)");
   }
 
   /// After Commit: deletes the backups and the directories to delete at commit, then the
   /// journal. Best effort; returns what could not be done. A backup that cannot be deleted is
   /// left (hidden, and named in the error) rather than kept in the journal, so that it does not
   /// hold up the next operation.
-  public IReadOnlyList<string> Complete() {
+  public IReadOnlyList<Exception> Complete() {
     if (!_committed) {
-      throw new InvalidOperationException("The transaction is not committed.");
+      throw new InvalidOperationException(
+          "lip tried to complete an operation on the workspace that is not committed. This is a"
+          + " bug in lip.");
     }
 
-    Finish(_fs, _entries, out List<string> errors);
+    Finish(_fs, _root, _entries, out List<Exception> errors);
     CloseJournal([], committed: true, errors);
     _entries.Clear();
+    RunTrace.Write("journal", $"Completed the operation ({errors.Count} problems)");
     return errors;
   }
 
@@ -140,8 +153,10 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// undoes a committed transaction whose result could not be made durable: the journal loses
   /// its "Commit" record first (§7.4), so that recovery undoes it too; when it cannot, nothing is
   /// undone and the journal is left for the next operation to complete.
-  public IReadOnlyList<string> Rollback(Action discardLock) {
-    List<string> errors = [];
+  public IReadOnlyList<Exception> Rollback(Action discardLock) {
+    RunTrace.Write("journal", $"Rolling back the operation ({_entries.Count} changes,"
+        + $" {(_committed ? "committed" : "not committed")})");
+    List<Exception> errors = [];
     if (_committed && _journal is not null) {
       try {
         _journal.Dispose();
@@ -151,17 +166,23 @@ public sealed class WorkspaceTransaction : IDisposable {
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
         // The journal still commits the operation, and the staged workspace file is kept, so
         // that the next operation completes it rather than finding it partly undone.
-        errors.Add($"cannot update the journal {_journalPath}: {ex.Message}");
+        RunTrace.Write("journal", $"Cannot uncommit the journal {_journalPath}: {ex}");
+        errors.Add(WorkspaceErrors.Wrap(
+            ex,
+            $"Could not undo the operation, because the journal '{Show(_journalPath)}' cannot be"
+            + $" updated: {WorkspaceErrors.Reason(ex)} The changes are kept, and the next install,"
+            + " uninstall or update of this workspace completes the operation."));
         return errors;
       }
     }
 
     discardLock();
-    List<JournalEntry> left = Undo(_fs, _entries, out List<string> undoErrors);
+    List<JournalEntry> left = Undo(_fs, _root, _entries, out List<Exception> undoErrors);
     errors.AddRange(undoErrors);
     CloseJournal(left, committed: false, errors);
     _entries.Clear();
     _committed = false;
+    RunTrace.Write("journal", $"Rolled back the operation ({left.Count} changes left to undo)");
     return errors;
   }
 
@@ -182,19 +203,33 @@ public sealed class WorkspaceTransaction : IDisposable {
 
   private void Record(JournalEntry entry) {
     if (_committed) {
-      throw new InvalidOperationException("The transaction is committed.");
+      throw new InvalidOperationException(
+          "lip tried to change the workspace after committing the operation. This is a bug in"
+          + " lip.");
     }
 
     if (_journal is null) {
       if (_entries.Count > 0) {
-        throw new InvalidOperationException("The journal is closed.");
+        throw new InvalidOperationException(
+            "lip tried to change the workspace after the operation ended. This is a bug in lip.");
       }
 
       // CreateNew: the journal of an interrupted operation is recovered before a new operation
       // starts, and never overwritten.
-      _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(_journalPath)!);
-      _journal = _fs.FileStream.New(
-          _journalPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+      try {
+        _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(_journalPath)!);
+        _journal = _fs.FileStream.New(
+            _journalPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        RunTrace.Write("journal", $"Cannot create the journal {_journalPath}: {ex.Message}");
+        throw WorkspaceErrors.Wrap(
+            ex,
+            $"Cannot create the journal '{Show(_journalPath)}', where lip records its changes so"
+            + " that they can be undone; lip changed no files.");
+      }
+
+      RunTrace.Write("journal", $"Began the journal {_journalPath}");
       Append(new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O")));
     }
 
@@ -203,15 +238,25 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   private void Append(JournalEntry entry) {
-    _journal!.Write(Encoding.UTF8.GetBytes(Serialize(ToJournal(_fs, _root, entry)) + "\n"));
-    // To the operating system, which keeps it when lip is killed.
-    _journal.Flush();
+    try {
+      _journal!.Write(Encoding.UTF8.GetBytes(Serialize(ToJournal(_fs, _root, entry)) + "\n"));
+      // To the operating system, which keeps it when lip is killed.
+      _journal.Flush();
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      RunTrace.Write(
+          "journal", $"Cannot append {entry.Op} to the journal {_journalPath}: {ex.Message}");
+      throw WorkspaceErrors.Wrap(
+          ex,
+          $"Cannot write to the journal '{Show(_journalPath)}', where lip records its changes so"
+          + " that they can be undone.");
+    }
   }
 
   /// Deletes the journal this transaction wrote when nothing is left, else replaces it with what
   /// is left. Adds a failure to errors rather than throwing: the journal only matters after a
   /// crash, and recovering from an outdated one changes nothing that is already right.
-  private void CloseJournal(List<JournalEntry> left, bool committed, List<string> errors) {
+  private void CloseJournal(List<JournalEntry> left, bool committed, List<Exception> errors) {
     bool written = _journal is not null || _entries.Count > 0;
     _journal?.Dispose();
     _journal = null;
@@ -223,13 +268,20 @@ public sealed class WorkspaceTransaction : IDisposable {
       if (left.Count == 0) {
         if (_fs.File.Exists(_journalPath)) {
           _fs.File.Delete(_journalPath);
+          RunTrace.Write("journal", $"Deleted the journal {_journalPath}");
         }
       } else {
         WriteJournal(_fs, _journalPath, _root, left, committed);
+        RunTrace.Write("journal", $"Kept {left.Count} changes left to undo in the journal"
+            + $" {_journalPath}");
       }
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-      errors.Add($"cannot update the journal {_journalPath}: {ex.Message}");
+      RunTrace.Write("journal", $"Cannot update the journal {_journalPath}: {ex}");
+      errors.Add(WorkspaceErrors.Wrap(
+          ex,
+          $"Could not update the journal '{Show(_journalPath)}': {WorkspaceErrors.Reason(ex)}"
+          + " The next install, uninstall or update of this workspace checks it again."));
     }
   }
 
@@ -350,7 +402,7 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// Committed: the operation had committed, and its backups were deleted; otherwise its
   /// changes were undone. Started: when the operation started, as recorded.
   public sealed record RecoveryResult(
-      bool Committed, string? Started, int Changes, IReadOnlyList<string> Errors);
+      bool Committed, string? Started, int Changes, IReadOnlyList<Exception> Errors);
 
   /// Finishes or undoes the operation a journal left behind by an interrupted process, then
   /// deletes the journal; returns null when there is no journal. commitLock makes the
@@ -365,10 +417,24 @@ public sealed class WorkspaceTransaction : IDisposable {
     }
 
     string root = JournalRoot(fs, journalPath);
+    string shown = WorkspaceErrors.Show(fs, root, journalPath);
     List<JournalEntry> entries = [];
     bool committed = false;
     string? started = null;
-    byte[] journal = fs.File.ReadAllBytes(journalPath);
+    byte[] journal;
+    try {
+      journal = fs.File.ReadAllBytes(journalPath);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      RunTrace.Write("journal", $"Cannot read the journal {journalPath}: {ex.Message}");
+      throw WorkspaceErrors.Wrap(
+          ex,
+          $"Cannot read the journal '{shown}' of an interrupted lip operation, so lip cannot"
+          + " finish or undo that operation. If a program is using the file, close it; check that"
+          + " you may read and write .lip; then try again.");
+    }
+
+    int ignored = 0;
     // A record is a line ended by LF: what follows the last LF, such as the cut-off last line of
     // a killed process, whose change was not made yet, is none.
     for (int start = 0, end; (end = Array.IndexOf(journal, (byte)'\n', start)) >= 0;
@@ -376,6 +442,7 @@ public sealed class WorkspaceTransaction : IDisposable {
       JournalEntry? entry = Parse(journal.AsMemory(start, end - start));
       switch (entry?.Op) {
         case null:
+          ignored++;
           continue;
         case JournalOp.Begin:
           started ??= entry.To;
@@ -389,21 +456,49 @@ public sealed class WorkspaceTransaction : IDisposable {
       }
     }
 
-    List<string> errors;
+    RunTrace.Write("journal", $"Found the journal {journalPath} of an interrupted operation"
+        + $" (started {started ?? "at an unknown time"}): {entries.Count} changes,"
+        + $" {(committed ? "committed, finishing it" : "not committed, undoing it")}"
+        + (ignored > 0 ? $"; ignored {ignored} unreadable lines" : ""));
+    List<Exception> errors;
     List<JournalEntry> left;
-    if (committed) {
-      commitLock();
-      Finish(fs, entries, out errors);
-      left = [];
-    } else {
-      discardLock();
-      left = Undo(fs, entries, out errors);
+    try {
+      if (committed) {
+        commitLock();
+        Finish(fs, root, entries, out errors);
+        left = [];
+      } else {
+        discardLock();
+        left = Undo(fs, root, entries, out errors);
+      }
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      RunTrace.Write("journal", $"Cannot recover the interrupted operation: {ex.Message}");
+      throw WorkspaceErrors.Wrap(
+          ex,
+          $"Cannot {(committed ? "finish" : "undo")} an interrupted lip operation on this"
+          + $" workspace. The journal '{shown}' is kept, so the next lip command that changes"
+          + " the workspace tries again.");
     }
 
-    if (left.Count == 0) {
-      fs.File.Delete(journalPath);
-    } else {
-      WriteJournal(fs, journalPath, root, left, committed);
+    try {
+      if (left.Count == 0) {
+        fs.File.Delete(journalPath);
+        RunTrace.Write("journal", $"Deleted the journal {journalPath}");
+      } else {
+        WriteJournal(fs, journalPath, root, left, committed);
+        RunTrace.Write("journal", $"Kept {left.Count} changes left to undo in the journal"
+            + $" {journalPath}");
+      }
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      RunTrace.Write("journal", $"Cannot update the journal {journalPath}: {ex.Message}");
+      throw WorkspaceErrors.Wrap(
+          ex,
+          "An interrupted lip operation on this workspace was"
+          + $" {(committed ? "finished" : "undone")}, but its journal '{shown}' cannot be"
+          + $" {(left.Count == 0 ? "deleted" : "updated")}. If a program is using the file, close"
+          + " it; check that you may write to .lip; then try again.");
     }
 
     return new RecoveryResult(committed, started, entries.Count, errors);
@@ -414,7 +509,7 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// process was killed right after recording it) does nothing, and so does undoing an entry
   /// undone before (a journal left by a process killed while undoing it).
   private static List<JournalEntry> Undo(
-      IFileSystem fs, List<JournalEntry> entries, out List<string> errors) {
+      IFileSystem fs, string root, List<JournalEntry> entries, out List<Exception> errors) {
     errors = [];
     List<JournalEntry> left = [];
     Dictionary<string, int> firstBackup = new(WorkspaceLayout.PathComparer);
@@ -446,10 +541,12 @@ public sealed class WorkspaceTransaction : IDisposable {
       }
 
       try {
-        UndoEntry(fs, entry);
+        UndoEntry(fs, root, entry);
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-        errors.Add($"cannot undo {entry.Describe()}: {ex.Message}");
+        RunTrace.Write("workspace", $"Cannot undo {entry.Describe(fs, root)}: {ex}");
+        errors.Add(WorkspaceErrors.Wrap(
+            ex, $"Could not undo {entry.Describe(fs, root)}: {WorkspaceErrors.Reason(ex)}"));
         left.Insert(0, entry);
       }
     }
@@ -457,12 +554,14 @@ public sealed class WorkspaceTransaction : IDisposable {
     return left;
   }
 
-  private static void UndoEntry(IFileSystem fs, JournalEntry entry) {
+  private static void UndoEntry(IFileSystem fs, string root, JournalEntry entry) {
+    string Show(string path) => WorkspaceErrors.Show(fs, root, path);
     switch (entry.Op) {
       case JournalOp.CreateFile:
         if (fs.File.Exists(entry.Path)) {
           ClearReadOnly(fs, entry.Path);
           fs.File.Delete(entry.Path);
+          RunTrace.Write("workspace", $"Undo: deleted {Show(entry.Path)}");
         }
 
         break;
@@ -475,6 +574,7 @@ public sealed class WorkspaceTransaction : IDisposable {
 
           fs.File.Move(entry.To!, entry.Path);
           fs.SetHidden(entry.Path, entry.Hidden);
+          RunTrace.Write("workspace", $"Undo: restored {Show(entry.Path)} from {Show(entry.To!)}");
         }
 
         break;
@@ -482,6 +582,7 @@ public sealed class WorkspaceTransaction : IDisposable {
         if (fs.Directory.Exists(entry.Path)
             && !fs.Directory.EnumerateFileSystemEntries(entry.Path).Any()) {
           fs.Directory.Delete(entry.Path);
+          RunTrace.Write("workspace", $"Undo: deleted the directory {Show(entry.Path)}");
         }
 
         break;
@@ -493,17 +594,23 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// Deletes the backups, then the directories to delete at commit that are empty, deepest
   /// first. Best effort: what is left behind is harmless.
   private static void Finish(
-      IFileSystem fs, List<JournalEntry> entries, out List<string> errors) {
+      IFileSystem fs, string root, List<JournalEntry> entries, out List<Exception> errors) {
+    string Show(string path) => WorkspaceErrors.Show(fs, root, path);
     errors = [];
     foreach (JournalEntry entry in entries.Where(e => e.Op == JournalOp.Backup)) {
       try {
         if (fs.File.Exists(entry.To!)) {
           ClearReadOnly(fs, entry.To!);
           fs.File.Delete(entry.To!);
+          RunTrace.Write("workspace", $"Deleted the backup {Show(entry.To!)}");
         }
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-        errors.Add($"cannot delete the backup {entry.To}, delete it yourself: {ex.Message}");
+        RunTrace.Write("workspace", $"Cannot delete the backup {Show(entry.To!)}: {ex}");
+        errors.Add(WorkspaceErrors.Wrap(
+            ex,
+            $"Could not delete '{Show(entry.To!)}', the backup of the old '{Show(entry.Path)}':"
+            + $" {WorkspaceErrors.Reason(ex)} It is no longer needed; delete it yourself."));
       }
     }
 
@@ -515,10 +622,15 @@ public sealed class WorkspaceTransaction : IDisposable {
             && fs.DirectoryInfo.New(entry.Path).LinkTarget is null
             && !fs.Directory.EnumerateFileSystemEntries(entry.Path).Any()) {
           fs.Directory.Delete(entry.Path);
+          RunTrace.Write("workspace", $"Deleted the empty directory {Show(entry.Path)}");
         }
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-        errors.Add($"cannot delete the empty directory {entry.Path}: {ex.Message}");
+        RunTrace.Write("workspace", $"Cannot delete the directory {Show(entry.Path)}: {ex}");
+        errors.Add(WorkspaceErrors.Wrap(
+            ex,
+            $"Could not delete the empty directory '{Show(entry.Path)}':"
+            + $" {WorkspaceErrors.Reason(ex)} You may delete it yourself."));
       }
     }
   }
@@ -545,11 +657,16 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// One record of the journal. To: the backup of a Backup, the start time of a Begin. Hidden: whether the file of a Backup was hidden.
   private sealed record JournalEntry(
       JournalOp Op, string Path, string? To = null, bool Hidden = false) {
-    public string Describe() => Op switch {
-      JournalOp.CreateFile => $"the creation of {Path}",
-      JournalOp.Backup => $"the change of {Path} (the original is {To})",
-      JournalOp.CreateDirectory => $"the creation of {Path}",
-      _ => $"{Op} {Path}",
-    };
+    public string Describe(IFileSystem fs, string root) {
+      string Show(string path) => WorkspaceErrors.Show(fs, root, path);
+      return Op switch {
+        JournalOp.CreateFile => $"writing '{Show(Path)}'",
+        JournalOp.Backup =>
+            $"replacing or deleting '{Show(Path)}' (the original file is kept as"
+            + $" '{Show(To!)}'; rename it back to restore it)",
+        JournalOp.CreateDirectory => $"creating the directory '{Show(Path)}'",
+        _ => $"{Op} '{Show(Path)}'",
+      };
+    }
   }
 }

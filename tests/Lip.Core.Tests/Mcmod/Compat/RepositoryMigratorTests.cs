@@ -131,7 +131,8 @@ public class RepositoryMigratorTests {
         () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
 
     // Assert
-    Assert.Contains("Invalid tooth.json of format 3", ex.Message);
+    Assert.Contains("Cannot read tooth.json", ex.Message);
+    Assert.Contains("tooth.json of format 3 does not follow that format", ex.InnerException!.Message);
     Assert.Equal(tooth, Read("tooth.json"));
     Assert.Equal(["tooth.json"], Files());
   }

@@ -23,10 +23,16 @@ public class VersionRange : IVersionConstraint {
     try {
       return new VersionRange(s, SemVersionRange.Parse(s));
     }
-    catch (OverflowException ex) {
-      throw new FormatException($"Invalid version range '{s}': {ex.Message}", ex);
+    catch (Exception ex) when (ex is FormatException or OverflowException) {
+      // Semver's own message, which says what is wrong at which position, is the inner one.
+      throw new FormatException($"The version range '{s}' is not valid. {Syntax}", ex);
     }
   }
+
+  /// How a range is written, for messages.
+  public const string Syntax = "A version range is written like 1.2.3, >=1.2.0 <2.0.0,"
+      + " ^1.2.0, ~1.2.0, 1.* or *, with SemVer versions without a leading 'v', and"
+      + " alternatives separated by ||.";
 
   public static bool TryParse(string s, out VersionRange? range) {
     try {

@@ -26,7 +26,7 @@ public class MountSource(IReadOnlyList<(string Mount, ISource Source)> mounts) :
     int slash = key.IndexOf('/');
     ISource? source = slash < 0 ? null : _mounts.FirstOrDefault(m => m.Mount == key[..slash]).Source;
     return source is null
-        ? throw new ArgumentException($"Key not found: {key}", nameof(key))
+        ? throw new ArgumentException($"No asset of the package has the file '{key}'.")
         : (source, key[(slash + 1)..]);
   }
 }

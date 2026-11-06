@@ -11,6 +11,9 @@ namespace Lip.Core.Mcmod;
 public class PackageFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
+/// The package file is of a format newer than this lip knows; updating lip helps.
+public sealed class NewerPackageFormatException(string message) : PackageFormatException(message);
+
 /// Parses and validates package files (lip.schema.yaml and protocol/package.md §3), and entries,
 /// also those derived from a tooth.json (protocol/compatibility.md §2) that the workspace file
 /// records. Keys the schema does not describe are ignored.
@@ -46,7 +49,9 @@ public static partial class PackageFileParser {
       return JsonDocument.Parse(bytes, _jsonOptions);
     }
     catch (JsonException ex) {
-      throw new PackageFormatException($"Invalid {fileName}: not strict JSON ({ex.Message})", ex);
+      throw new PackageFormatException(
+          $"Invalid {fileName}: not strict JSON (no comments, trailing commas or duplicate keys).",
+          ex);
     }
   }
 
@@ -71,7 +76,8 @@ public static partial class PackageFileParser {
       return YamlJson.Parse(yaml);
     }
     catch (YamlFormatException ex) {
-      throw new PackageFormatException($"Invalid {PackageFormat.FileName}: {ex.Message}", ex);
+      throw new PackageFormatException(
+          $"The {PackageFormat.FileName} is not a valid YAML file of the kind lip reads.", ex);
     }
   }
 
@@ -85,13 +91,21 @@ public static partial class PackageFileParser {
   /// Parses a package file. Throws PackageFormatException when it is not valid.
   public static PackageFile Parse(JsonElement root) {
     RequireObject(root, "$");
-    if (Format(root) != PackageFormat.Format) {
+    int? format = Format(root);
+    if (format > PackageFormat.Format) {
+      throw new NewerPackageFormatException(
+          $"The package file has \"{PackageFormat.FormatKey}\": {format}, a format this lip does not"
+          + $" know (it knows format {PackageFormat.Format}). The package needs a newer lip: update"
+          + " lip.");
+    }
+
+    if (format != PackageFormat.Format) {
       throw Invalid($"$.{PackageFormat.FormatKey}", $"must be {PackageFormat.Format}");
     }
 
     string id = ReadRequired(root, "id", "$", ReadString);
     if (Golang.Org.X.Mod.Module.CheckPath(id) is Exception ex) {
-      throw Invalid("$.id", $"'{id}' is not a Go module path ({ex.Message})");
+      throw Invalid("$.id", $"'{id}' is not a valid Go module path", ex);
     }
 
     SemVersion version = ReadRequired(root, "version", "$", ReadSemVersion);
@@ -212,7 +226,7 @@ public static partial class PackageFileParser {
         range = VersionRange.Parse(text);
       }
       catch (FormatException ex) {
-        throw Invalid(memberPath, $"'{text}' is not a range: {ex.Message}", ex);
+        throw Invalid(memberPath, $"'{text}' is not a version range", ex);
       }
 
       dependencies.Add(new PackageDependency(source, range));

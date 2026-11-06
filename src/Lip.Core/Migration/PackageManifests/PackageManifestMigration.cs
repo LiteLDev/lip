@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using DotNet.Globbing;
 using Lip.Core.Entities;
+using Lip.Core.Infrastructure;
 using Semver;
 
 namespace Lip.Core.Migration.PackageManifests;
@@ -10,29 +11,70 @@ namespace Lip.Core.Migration.PackageManifests;
 public static partial class PackageManifestMigration {
   public static PackageManifest Migrate(JsonDocument jsonDocument) {
     int formatVersion = jsonDocument.RootElement.GetProperty("format_version").GetInt32();
+    RunTrace.Write("parse", $"reading a tooth.json of format_version {formatVersion} as format 3");
 
     return formatVersion switch {
-      1 => MigrateV2ToV3(MigrateV1ToV2(JsonSerializer.Deserialize<PackageManifestV1>(jsonDocument)!)),
-      2 => MigrateV2ToV3(JsonSerializer.Deserialize<PackageManifestV2>(jsonDocument)!),
+      1 => MigrateV2ToV3(MigrateV1ToV2(Deserialize<PackageManifestV1>(jsonDocument))),
+      2 => MigrateV2ToV3(Deserialize<PackageManifestV2>(jsonDocument)),
       3 => ParseV3(jsonDocument),
-      _ => throw new NotSupportedException(),
+      _ => throw new NotSupportedException(
+          $"A tooth.json of format_version {formatVersion} cannot be read as format 3; only "
+          + "format_version 1, 2 and 3 can."),
     };
   }
 
+  /// Reads a tooth.json of format 1 or 2 into its model. Throws JsonException naming the field
+  /// that is missing or of the wrong type.
+  private static T Deserialize<T>(JsonDocument jsonDocument) {
+    try {
+      return JsonSerializer.Deserialize<T>(jsonDocument)!;
+    }
+    catch (JsonException ex) {
+      throw FieldError(ex);
+    }
+  }
+
+  /// A JsonException of System.Text.Json, in words for the user, naming the field by its path
+  /// inside tooth.json.
+  private static JsonException FieldError(JsonException ex) {
+    bool named = ex.Path is { Length: > 1 } path && path.StartsWith("$.", StringComparison.Ordinal);
+    string field = named ? $"the field '{ex.Path![2..]}'" : "a required field";
+    // System.Text.Json's own errors are about a missing field or a value of the wrong type and
+    // carry the position in their message; the lip converters say why a value is not valid.
+    bool ownError = ex.Message.Contains(" Path: ", StringComparison.Ordinal)
+        || ex.Message.Contains("required propert", StringComparison.Ordinal);
+    return new JsonException(
+        ownError || !named
+            ? $"In tooth.json, {field} is missing or has a value of the wrong type."
+            : $"In tooth.json, {field} has a value that is not valid.",
+        ex.Path, ex.LineNumber, ex.BytePositionInLine, ex);
+  }
+
+  /// A JsonException naming a field of a tooth.json of format 1 and what it must be.
+  private static JsonException InvalidField(string field, string expected) =>
+      new($"In tooth.json, the field '{field}' must be {expected}.", $"$.{field}", null, null);
+
   private static PackageManifestV2 MigrateV1ToV2(PackageManifestV1 manifestV1) {
     Dictionary<string, JsonElement>? data = manifestV1.Information?.Data;
+    string Text(string key) {
+      if (data is null || !data.TryGetValue(key, out JsonElement value)
+          || value.ValueKind == JsonValueKind.Null) {
+        return "";
+      }
+      return value.ValueKind == JsonValueKind.String
+          ? value.GetString()!
+          : throw InvalidField($"information.{key}", "a string");
+    }
     PackageManifestV2Info info = new() {
-      Name = data is not null && data.TryGetValue("name", out JsonElement n)
-            ? n.GetString() ?? ""
-            : "",
-      Description = data is not null && data.TryGetValue("description", out JsonElement d)
-            ? d.GetString() ?? ""
-            : "",
-      Author = data is not null && data.TryGetValue("author", out JsonElement a)
-            ? a.GetString() ?? ""
-            : "",
+      Name = Text("name"),
+      Description = Text("description"),
+      Author = Text("author"),
       Tags = data is not null && data.TryGetValue("tags", out JsonElement t) && t.ValueKind == JsonValueKind.Array
-            ? [.. t.EnumerateArray().Select(e => e.GetString() ?? "")]
+            ? [.. t.EnumerateArray().Select(e => e.ValueKind switch {
+              JsonValueKind.String => e.GetString()!,
+              JsonValueKind.Null => "",
+              _ => throw InvalidField("information.tags", "an array of strings"),
+            })]
             : []
     };
 
@@ -62,7 +104,15 @@ public static partial class PackageManifestMigration {
     PackageManifestV2Commands? commands = null;
     if (manifestV1.Commands is not null) {
       PackageManifestV2Commands rootCommands = new();
-      foreach (PackageManifestV1Command cmd in manifestV1.Commands) {
+      for (int i = 0; i < manifestV1.Commands.Count; i++) {
+        PackageManifestV1Command? cmd = manifestV1.Commands[i]
+            ?? throw InvalidField($"commands[{i}]", "an object");
+        if (cmd.Type is null) {
+          throw InvalidField($"commands[{i}].type", "\"install\" or \"uninstall\"");
+        }
+        if (cmd.Commands is null) {
+          throw InvalidField($"commands[{i}].commands", "an array of strings");
+        }
         PackageManifestV2Commands targetCommands;
         if (string.IsNullOrEmpty(cmd.GOOS)) {
           targetCommands = rootCommands;
@@ -82,6 +132,18 @@ public static partial class PackageManifestMigration {
       }
       if (HasCommands(rootCommands)) {
         commands = rootCommands;
+      }
+    }
+
+    foreach ((string name, List<List<string>> groups) in manifestV1.Dependencies ?? []) {
+      if (groups is null || groups.Any(g => g is null)) {
+        throw InvalidField($"dependencies.{name}", "an array of arrays of version ranges");
+      }
+    }
+    for (int i = 0; i < (manifestV1.Placement?.Count ?? 0); i++) {
+      PackageManifestV1Placement? placement = manifestV1.Placement![i];
+      if (placement?.Source is null || placement.Destination is null) {
+        throw InvalidField($"placement[{i}]", "an object with the strings \"source\" and \"destination\"");
       }
     }
 
@@ -117,7 +179,7 @@ public static partial class PackageManifestMigration {
       if (template is null) return "";
       // Convert $(variable) format to {{variable}} format for Scriban
       string converted = TemplateVariableRegex().Replace(template, "{{$1}}");
-      return Scriban.Template.Parse(converted).Render(model);
+      return Render(converted, template, model);
     }
 
     List<PackageManifestAssetPlacement> Placements(List<PackageManifestV2Place> places) => [
@@ -130,9 +192,19 @@ public static partial class PackageManifestMigration {
       }),
     ];
 
+    SemVersion version;
+    try {
+      version = SemVersion.Parse(manifestV2.Version, SemVersionStyles.Any);
+    }
+    catch (Exception ex) when (ex is FormatException or ArgumentException or OverflowException) {
+      throw new FormatException(
+          $"In tooth.json, the version '{manifestV2.Version}' is not a valid version, e.g. 1.2.3.",
+          ex);
+    }
+
     PackageManifest manifest = new() {
       Path = manifestV2.Tooth,
-      Version = SemVersion.Parse(manifestV2.Version, SemVersionStyles.Any),
+      Version = version,
       Info = new PackageManifestInfo {
         Name = manifestV2.Info.Name,
         Description = manifestV2.Info.Description,
@@ -156,8 +228,10 @@ public static partial class PackageManifestMigration {
               ? SemVersionRange.Parse(kvp.Value)
               : SemVersionRange.ParseNpm(kvp.Value);
         }
-        catch {
+        catch (Exception ex) {
           // Ignore invalid dependencies
+          RunTrace.Write("parse", $"dependency '{kvp.Key}': '{kvp.Value}' cannot be read as "
+              + $"format 3, ignored: {ex.Message}");
         }
       }
 
@@ -217,7 +291,9 @@ public static partial class PackageManifestMigration {
       "linux" => "linux",
       "ios" => "ios",
       "android" => "android",
-      _ => throw new PlatformNotSupportedException($"Unsupported GOOS: {p.GOOS}")
+      _ => throw new FormatException(
+          $"In tooth.json, a platform has the GOOS '{p.GOOS}', which lip does not know; it must "
+          + "be one of windows, darwin, linux, ios and android.")
     };
 
     string suffix = p.GOARCH switch {
@@ -227,7 +303,9 @@ public static partial class PackageManifestMigration {
       "arm" => "arm",
       "loong64" => "loongarch64",
       null => "*",
-      _ => throw new PlatformNotSupportedException($"Unsupported GOARCH: {p.GOARCH}")
+      _ => throw new FormatException(
+          $"In tooth.json, a platform has the GOARCH '{p.GOARCH}', which lip does not know; it "
+          + "must be one of amd64, 386, arm64, arm and loong64, or absent.")
     };
 
     return $"{prefix}-{suffix}";
@@ -240,7 +318,12 @@ public static partial class PackageManifestMigration {
 
     ProcessNode(node);
 
-    return node.Deserialize<PackageManifest>()!;
+    try {
+      return node.Deserialize<PackageManifest>()!;
+    }
+    catch (JsonException ex) {
+      throw FieldError(ex);
+    }
 
     void ProcessNode(JsonNode? current) {
       switch (current) {
@@ -248,7 +331,7 @@ public static partial class PackageManifestMigration {
           return;
 
         case JsonValue value when value.TryGetValue(out string? s): {
-            string newValue = Scriban.Template.Parse(s).Render(model);
+            string newValue = Render(s, s, model);
 
             value.ReplaceWith(newValue);
 
@@ -269,6 +352,20 @@ public static partial class PackageManifestMigration {
             return;
           }
       }
+    }
+  }
+
+  /// Renders a Scriban template made from the value of tooth.json written. Throws
+  /// InvalidOperationException naming the value when it is not a valid template.
+  private static string Render(string template, string written, object model) {
+    try {
+      return Scriban.Template.Parse(template).Render(model);
+    }
+    catch (Exception ex) when (ex is InvalidOperationException
+        or Scriban.Syntax.ScriptRuntimeException) {
+      throw new InvalidOperationException(
+          $"In tooth.json, the value '{written}' is not a valid template (text with "
+          + "variables such as {{version}}).", ex);
     }
   }
 
