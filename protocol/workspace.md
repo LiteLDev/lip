@@ -94,7 +94,7 @@ An operation succeeds or fails as a whole.
 1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a `mods` that is a link), no hook command of it runs, no change is made, and the workspace file does not change. Each step is checked against the workspace as the steps before it leave it.
 2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made is undone (Section 7.5). The workspace file does not change.
 3. **Hook commands are not undone.** Hook commands that already ran are neither run again nor reversed. They SHOULD be safe to run again, and SHOULD NOT assume that the files of the operation stay in place.
-4. The paths that uninstallation steps 2–4 delete are those that match before any hook command of the operation runs.
+4. The paths that uninstallation steps 2–4 delete are those that match when the step is carried out, including paths that hook commands of the operation created.
 5. **Interruption.** When an operation is interrupted while changing the workspace, the next operation on the workspace first recovers it (Section 7.5).
 
 ## 7. The `.lip` Directory

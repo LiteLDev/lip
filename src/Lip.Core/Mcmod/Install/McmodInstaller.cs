@@ -128,7 +128,8 @@ public partial class McmodInstaller(
     RunTrace.Write("install", $"Planning to uninstall {package.Identity} {package.Version}"
         + $" from {root} ({package.Files.Count} owned files recorded)");
 
-    // The paths to delete are those of the workspace before pre_uninstall runs.
+    // The paths to delete are planned against the workspace before pre_uninstall runs; a
+    // DeleteMatchesStep deletes what matches only after hook commands ran.
     HashSet<string> ownedByOthers = new(
         context.Lock.Packages
             .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))
@@ -139,6 +140,7 @@ public partial class McmodInstaller(
     // 2. Owned files not matching preserve_files.
     List<string> files = [];
     HashSet<string> fileSet = new(PathComparer);
+    List<string> ownedToDelete = [];
     foreach (string file in package.Files.Select(NormalizeRelative)) {
       if (!IsSafeRelativePath(file) || WorkspaceLayout.IsLipPath(file)
           || ownedByOthers.Contains(file)) {
@@ -150,6 +152,7 @@ public partial class McmodInstaller(
         RunTrace.Write("install", $"{package.Identity}: keeping {file} (preserve_files)");
         continue;
       }
+      ownedToDelete.Add(file);
       if (view.FileExists(ToFullPath(root, file)) && fileSet.Add(file)) {
         files.Add(file);
       }
@@ -217,6 +220,11 @@ public partial class McmodInstaller(
       }
     }
 
+    // Without hook commands, the workspace is as planned when the deletions run.
+    if (!context.IgnoreScripts) {
+      steps.Add(new DeleteMatchesStep(ownedToDelete, entry.RemoveFiles, ownedByOthers));
+    }
+
     if (!context.IgnoreScripts && entry.Hooks.PostUninstall.Count > 0) {
       steps.Add(new ScriptStep("post_uninstall", entry.Hooks.PostUninstall));
     }
@@ -277,10 +285,88 @@ public partial class McmodInstaller(
           }
 
           break;
+        case DeleteMatchesStep matches:
+          DeleteMatches(plan, matches, transaction);
+          break;
         default:
           throw new ArgumentException(
               $"lip planned a step it does not know ({step}). This is a bug in lip.",
               nameof(plan));
+      }
+    }
+  }
+
+  /// Deletes what uninstallation steps 2–4 match in the workspace as it is now (protocol/workspace.md
+  /// §6 rule 4), beyond what the plan already deleted.
+  private void DeleteMatches(
+      PackagePlan plan, DeleteMatchesStep step, WorkspaceTransaction transaction) {
+    WorkspaceView now = new(_fs);
+    List<string> files = [.. step.OwnedFiles];
+    List<string> directories = [];
+    foreach (PathGlob glob in step.Purge) {
+      foreach ((string path, bool isDirectory) in EnumerateMatches(plan.Root, glob, now)) {
+        if (isDirectory) {
+          if (!WorkspaceLayout.IsModsDirectory(path)) {
+            directories.Add(path);
+          }
+        } else if (!step.OwnedByOthers.Contains(path)) {
+          files.Add(path);
+        }
+      }
+    }
+
+    List<string> deleted = [];
+    foreach (string file in files.Distinct(PathComparer)) {
+      string full = ToFullPath(plan.Root, file);
+      if (!_fs.File.Exists(full)) {
+        continue;
+      }
+
+      RunTrace.Write("install", $"{plan.Name}: deleting {file}, which matches after hook commands");
+      try {
+        transaction.DeleteFile(full);
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        throw new McmodInstallException(
+            $"Cannot uninstall {plan.Name}: lip cannot delete"
+            + $" '{WorkspaceErrors.Show(_fs, plan.Root, full)}'.",
+            ex);
+      }
+
+      deleted.Add(file);
+    }
+
+    // Matched directories, and the directories these deletions leave empty, are deleted when the
+    // operation commits if they are empty then.
+    HashSet<string> scheduled = new(PathComparer);
+    foreach (string directory in directories) {
+      Schedule(ToFullPath(plan.Root, directory));
+    }
+    foreach (string path in deleted.Concat(directories)) {
+      for (string? dir = _fs.Path.GetDirectoryName(ToFullPath(plan.Root, path));
+          dir is not null && IsInside(plan.Root, dir);
+          dir = _fs.Path.GetDirectoryName(dir)) {
+        string relative = _fs.Path.GetRelativePath(plan.Root, dir)
+            .Replace(_fs.Path.DirectorySeparatorChar, '/');
+        if (WorkspaceLayout.IsModsDirectory(relative)) {
+          break;
+        }
+        Schedule(dir);
+      }
+    }
+
+    void Schedule(string full) {
+      if (!scheduled.Add(full) || !_fs.Directory.Exists(full)) {
+        return;
+      }
+      try {
+        transaction.DeleteDirectoryOnCommit(full);
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        throw new McmodInstallException(
+            $"Cannot uninstall {plan.Name}: lip cannot record that it deletes the directory"
+            + $" '{WorkspaceErrors.Show(_fs, plan.Root, full)}'.",
+            ex);
       }
     }
   }

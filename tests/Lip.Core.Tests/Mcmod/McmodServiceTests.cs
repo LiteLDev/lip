@@ -662,6 +662,73 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Uninstall_PurgeMatchesFileThatEarlierHookRestored_DeletesIt() {
+    // Arrange: app's post_uninstall restores server.exe, as LeviLamina restores
+    // bedrock_server.exe, before lib, uninstalled after it, purges it (protocol/workspace.md §6
+    // rule 4).
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("lib.dll", "lib/lib.dll") + """, "purge": [ "server.exe" ]"""),
+      ["lib.dll"] = "lib",
+    });
+    _ws.AddTag(App, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          App, "1.0.0",
+          $$""" "deps": { "{{Lib}}": "1.0.0" }, """
+              + WorkspaceHarness.SelfAsset("app.dll", "app/app.dll")
+              + """, "hooks": { "post_uninstall": [ "restore" ] }"""),
+      ["app.dll"] = "app",
+    });
+    await _ws.Service.Install([App], _options);
+    _ws.CommandRunner.Setup(r => r.Run("restore", _ws.Root))
+        .Callback(() => _ws.AddFile("server.exe", "server"))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Uninstall([App], _options);
+
+    // Assert
+    _ws.CommandRunner.Verify(r => r.Run("restore", _ws.Root), Times.Once);
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("server.exe"));
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("lib")));
+  }
+
+  [Fact]
+  public async Task Uninstall_PurgeMatchesFileThatHookCreated_FailureRestoresIt() {
+    // Arrange: lib purges server.exe, which app's post_uninstall restores; lib's post_uninstall
+    // then fails, so the operation is undone, the restored file included.
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("lib.dll", "lib/lib.dll")
+              + """, "purge": [ "server.exe" ], "hooks": { "post_uninstall": [ "fail" ] }"""),
+      ["lib.dll"] = "lib",
+    });
+    _ws.AddTag(App, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          App, "1.0.0",
+          $$""" "deps": { "{{Lib}}": "1.0.0" }, """
+              + WorkspaceHarness.SelfAsset("app.dll", "app/app.dll")
+              + """, "hooks": { "post_uninstall": [ "restore" ] }"""),
+      ["app.dll"] = "app",
+    });
+    await _ws.Service.Install([App], _options);
+    _ws.CommandRunner.Setup(r => r.Run("restore", _ws.Root))
+        .Callback(() => _ws.AddFile("server.exe", "server"))
+        .Returns(Task.CompletedTask);
+    _ws.CommandRunner.Setup(r => r.Run("fail", _ws.Root))
+        .ThrowsAsync(new InvalidOperationException("hook failed"));
+
+    // Act & Assert
+    await Assert.ThrowsAnyAsync<Exception>(() => _ws.Service.Uninstall([App], _options));
+    Assert.Equal(2, (await _ws.Lock()).Packages.Count);
+    Assert.Equal("server", _ws.Fs.File.ReadAllText(_ws.Path("server.exe")));
+    Assert.True(_ws.Exists("lib/lib.dll"));
+  }
+
+  [Fact]
   public async Task Uninstall_ByDeletedLocalPath_FailsWithoutChanges() {
     // Arrange: a local path that does not exist is an invalid package argument
     // (protocol/cli.md §3), which names no installed package (§5.2).
