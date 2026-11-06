@@ -32,12 +32,11 @@ Entries.
 | Entry | Content |
 |---|---|
 | `http-<H>` | A regular file: the body of a successful response to an HTTPS GET of URL U, following redirects. `<H>` is the lowercase hexadecimal SHA-256 of U in UTF-8; U is the URL as a source or tooth file writes it, without its fragment, whatever proxy was used. |
-| `git-<O>` | A regular file: the content of the git blob with lowercase hexadecimal object id `<O>` [GIT-OBJECTS], without the object header. |
 | `.staging` | A directory of files being written. |
 
 Any other entry is not defined here; a process MUST NOT read meaning into it.
 
-Writing. A process creates an entry only by writing the whole file below `.staging` under a name no other process uses, then renaming it to the entry's name. It MUST NOT create a `git-<O>` whose content does not have object id `<O>`, and MUST NOT modify an entry in place; if the entry exists, the rename either fails or replaces it with a file of the same meaning.
+Writing. A process creates an entry only by writing the whole file below `.staging` under a name no other process uses, then renaming it to the entry's name. It MUST NOT modify an entry in place; if the entry exists, the rename either fails or replaces it with a file of the same meaning.
 
 Reading. An existing entry is complete. A reader that knows what an `http-<H>` entry's content must be MUST check it, and MAY delete it on mismatch.
 
