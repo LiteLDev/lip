@@ -85,7 +85,8 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # The notes list the pull requests since the newest stable release the tag contains.
+      # The notes list the pull requests since the newest stable release below the tag's version, which
+      # need not be an ancestor of the tag (v0.37.0 was released from a rollback branch).
       - run: |
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             flags=(--prerelease)
@@ -94,7 +95,9 @@ jobs:
           else
             flags=(--latest=false)
           fi
-          previous=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*-*' "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          base="${GITHUB_REF_NAME%%-*}"
+          previous=$({ git tag --list 'v*' | grep -vF -- - | grep -vxF "$base"; echo "$base"; } \
+            | sort -V | grep -B1 -xF "$base" | grep -vxF "$base" || true)
           gh release create "$GITHUB_REF_NAME" dist/* \
             --verify-tag \
             --title "$GITHUB_REF_NAME" \
