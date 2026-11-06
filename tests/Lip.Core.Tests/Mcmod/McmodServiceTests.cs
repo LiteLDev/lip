@@ -631,7 +631,6 @@ public class McmodServiceTests {
   [Theory]
   [InlineData("./src")]
   [InlineData("src")]
-  [InlineData("./SRC")]
   public async Task Uninstall_ByLocalPath_RemovesPackageInstalledFromIt(string argument) {
     // Arrange
     AddLocalDirectory("src", "1.0.0", "x");
@@ -639,6 +638,24 @@ public class McmodServiceTests {
 
     // Act
     await _ws.Service.Uninstall([argument], _options);
+
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Exists("out/x.txt"));
+  }
+
+  [Fact]
+  public async Task Uninstall_ByLocalPathInOtherCase_RemovesPackageInstalledFromIt() {
+    // Elsewhere "./SRC" names no existing path, so it is an invalid package argument
+    // (protocol/cli.md §3).
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows paths are case-insensitive.");
+
+    // Arrange
+    AddLocalDirectory("src", "1.0.0", "x");
+    await _ws.Service.Install(["./src"], _options);
+
+    // Act
+    await _ws.Service.Uninstall(["./SRC"], _options);
 
     // Assert
     Assert.Empty((await _ws.Lock()).Packages);

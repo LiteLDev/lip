@@ -41,13 +41,15 @@ public class CorpusTests {
   private const string _noLeviLamina2630 = "LeviLamina has no 26.30.x tag";
   private const string _urlToothPath =
       "tooth.json at the tag declares a URL ('https://github.com/...') as its tooth path";
+  private const string _deletedRepository = "the repository was deleted upstream";
 
   // Entries outside the README's RISK list that fail for reasons outside lip's control, keyed by
   // "package@version". Only the lipr-hosted (rewritten) manifest made them installable before.
   internal static readonly Dictionary<string, string> KnownUpstreamBreakage = new() {
     ["github.com/spygamingog/Animated-Mojang-Android#client@1.0.0"] =
         "tooth.json at the tag uses the unsupported asset type 'levipack'",
-    ["github.com/Kashifro/LL-ModMenu#client@1.0.0"] = "tag v1.0.0 was deleted upstream",
+    ["github.com/Kashifro/LL-ModMenu#client@1.0.0"] = _deletedRepository,
+    ["github.com/Kashifro/LL-ModMenu#client@1.0.1-mc26.51"] = _deletedRepository,
     ["github.com/PuceLi/PlayerIPregion@1.0.1"] = _urlToothPath,
     ["github.com/PuceLi/PlayerIPregion#client@1.0.1"] = _urlToothPath,
     ["github.com/Eragon327/LazyBedrockBreaker2#server@1.3.0"] = _urlToothPath,
