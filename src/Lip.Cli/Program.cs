@@ -34,10 +34,13 @@ app.Configure(config => {
   config.Settings.Registrar.RegisterInstance(lipClient);
   config.Settings.Registrar.RegisterInstance<IUserInteraction>(userInteraction);
 
-  config.SetApplicationName("lip");
+  // An unknown option, or an argument after "--", is a usage error (protocol/cli.md §1, §2).
+  // Strict parsing is not used for this: when parsing fails, it retries with the placeholder
+  // "__default_command" inserted between the arguments, which then fills a missing option value.
+  config.Settings.Registrar.RegisterInstance<ICommandInterceptor>(
+      new UnexpectedArgumentsInterceptor());
 
-  // An unknown option or argument is a usage error (protocol/cli.md §1, §2).
-  config.UseStrictParsing();
+  config.SetApplicationName("lip");
 
   config.SetApplicationVersion(SemVersion.Parse(Assembly
       .GetEntryAssembly()?

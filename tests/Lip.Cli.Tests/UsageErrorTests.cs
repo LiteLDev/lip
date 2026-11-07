@@ -27,6 +27,39 @@ public sealed class UsageErrorTests : IDisposable {
   }
 
   [Theory]
+  [InlineData("pack", "-o")]
+  [InlineData("pack", "--output")]
+  [InlineData("pack", "-o", "--help")]
+  [InlineData("update", "--rid")]
+  [InlineData("update", "--rid", "-n")]
+  [InlineData("install", "x", "--rid")]
+  [InlineData("uninstall", "x", "--rid")]
+  public async Task OptionWithoutValue_IsUsageError(params string[] args) {
+    (int exitCode, _, string stderr) = await Run(args);
+
+    Assert.NotEqual(0, exitCode);
+    Assert.NotEqual("", stderr.Trim());
+    Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
+    Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
+  }
+
+  [Theory]
+  [InlineData("list", "--", "extra")]
+  [InlineData("update", "-n", "--", "github.com/a/b")]
+  [InlineData("install", "-n", "foo", "--", "bar")]
+  [InlineData("pack", "-o", "out.zip", "--", "dir")]
+  [InlineData("config", "list", "--", "extra")]
+  [InlineData("list", "--", "--bogus")]
+  public async Task ArgumentsAfterSeparator_AreUsageError(params string[] args) {
+    (int exitCode, _, string stderr) = await Run(args);
+
+    Assert.NotEqual(0, exitCode);
+    Assert.Contains("'--'", stderr);
+    Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
+    Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
+  }
+
+  [Theory]
   [InlineData("config")]
   [InlineData("cache")]
   public async Task BranchWithoutSubcommand_IsUsageError(string branch) {

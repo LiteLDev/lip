@@ -27,11 +27,11 @@ public static class ErrorReporter {
   /// Reports the failure and returns the exit code.
   public static int Report(Exception exception, string[] args, bool cancelled) {
     // A usage error is fully described by its message; there is nothing to analyze.
-    if (exception is CommandAppException usageError) {
-      if (usageError.Pretty is { } pretty) {
+    if (exception is CommandAppException or UsageException) {
+      if (exception is CommandAppException { Pretty: { } pretty }) {
         _console.Write(pretty);
       } else {
-        _console.MarkupLine($"[bold red]error:[/] {Markup.Escape(usageError.Message)}");
+        _console.MarkupLine($"[bold red]error:[/] {Markup.Escape(exception.Message)}");
       }
       _console.MarkupLine("Run [blue]lip --help[/] to see how to use lip.");
       return 1;
