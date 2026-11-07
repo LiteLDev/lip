@@ -254,12 +254,12 @@ public class McmodService(
               .Where(e => !replaced.Any(r => SameIdentity(r, e))),
         ]);
 
-    // The source a requested package is recorded with: a request with a ref that gives it, rather
-    // than one it stands in for (protocol/workspace.md §3); but an installed package that its
-    // recorded source gives again is not replaced, so it keeps that source even when another
-    // request gives the same package (protocol/workspace.md §5).
+    // The source a requested package is recorded with: an installed package that its recorded
+    // source gives again is not replaced, so it keeps that source even when another request
+    // gives the same package (protocol/workspace.md §5); but a request with a ref that gives it
+    // wins, since only its own candidates satisfy it (protocol/workspace.md §3).
     List<Candidate> members = [.. plan.Members];
-    foreach (bool byRecordedSource in new[] { false, true }) {
+    foreach (bool byRecordedSource in new[] { true, false }) {
       for (int i = 0; i < candidates.Count; i++) {
         Candidate candidate = candidates[i];
         int member = members.FindIndex(

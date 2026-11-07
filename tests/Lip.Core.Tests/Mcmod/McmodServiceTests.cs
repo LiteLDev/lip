@@ -1332,6 +1332,20 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Update_TwoArgumentsOfOneIdentityGivingTheInstalledPackage_RecordsTheRef() {
+    // Arrange: lib 1.0.0 is installed from lib, which gives it again.
+    AddLib("1.0.0");
+    await _ws.Service.Install([Lib], _options);
+
+    // Act
+    await _ws.Service.Update([Lib, $"{Lib}@1.0.0"], _options);
+
+    // Assert: only its own candidates satisfy lib@1.0.0 (protocol/workspace.md §3).
+    LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(("1.0.0", $"{Lib}@1.0.0"), (lib.Version, lib.Source));
+  }
+
+  [Fact]
   public async Task Update_TwoArgumentsOfOneIdentityNoPackageSatisfies_Fails() {
     // Arrange
     AddLibAndApp();
