@@ -8,9 +8,12 @@ namespace Lip.Core.Infrastructure;
 /// (links, junctions, case, 8.3 short names, subst drives), which comparing paths cannot tell.
 public readonly record struct FileIdentity(ulong Device, UInt128 File) {
   /// The identity of the file at path, following links, or null when it cannot be read (e.g.
-  /// the file does not exist).
-  public static FileIdentity? Of(string path) =>
-      OperatingSystem.IsWindows() ? OfWindows(path) : OfUnix(path);
+  /// the file does not exist). Some file systems (network redirectors, FUSE) give every file
+  /// the number 0, which tells no files apart, so 0 is not an identity either.
+  public static FileIdentity? Of(string path) {
+    FileIdentity? identity = OperatingSystem.IsWindows() ? OfWindows(path) : OfUnix(path);
+    return identity?.File == UInt128.Zero ? null : identity;
+  }
 
   private static FileIdentity? OfUnix(string path) =>
       Stat(path, out FileStatus status) == 0
