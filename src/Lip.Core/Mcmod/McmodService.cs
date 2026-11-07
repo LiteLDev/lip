@@ -184,6 +184,9 @@ public class McmodService(
     Workspace workspace = await OpenWorkspace(options);
 
     List<(string Argument, PackageRequest Request)> requests;
+    // Without arguments, the identities of the packages kept as they are, which stay pinned even
+    // when another request gives a package of their identity (protocol/cli.md §5.3).
+    List<string> keptAsIs = [];
     if (packages.Count == 0) {
       // Every explicitly installed package, requested again by its source: a remote repository
       // at its newest version, a branch at its head, a tag where it points now, a rev as it is,
@@ -196,6 +199,7 @@ public class McmodService(
           await _ui.PrintWarning(
               $"Keeping package '{package.Identity}' as it is: {source.LocalPath}, which it was"
               + " installed from, does not exist any more.");
+          keptAsIs.Add(package.Identity);
           continue;
         }
 
@@ -231,28 +235,52 @@ public class McmodService(
             + $" this workspace. To install it, run 'lip install {requests[i].Argument}'.");
       }
 
-      // Without arguments, every request goes to the solver, which fails when no one package
-      // satisfies all the requests giving an identity (protocol/workspace.md §3).
-      if (identities.Any(other => SameIdentity(other, identity))) {
-        if (packages.Count == 0) {
-          requested.Add(requests[i].Request);
-        }
-
-        continue;
+      // Every request goes to the solver, which fails when no one package satisfies all the
+      // requests giving an identity (protocol/workspace.md §3).
+      if (!identities.Any(other => SameIdentity(other, identity))
+          && !keptAsIs.Any(kept => SameIdentity(kept, identity))) {
+        identities.Add(identity);
       }
 
-      identities.Add(identity);
       requested.Add(requests[i].Request);
     }
 
-    await Execute(workspace, options, await Changes(workspace, options, await MakePlan(
+    Plan plan = await MakePlan(
         workspace,
         requested,
         unpinned: [.. identities, .. replaced],
         explicitIdentities: [
           .. ExplicitIdentities(workspace.Lock)
               .Where(e => !replaced.Any(r => SameIdentity(r, e))),
-        ])));
+        ]);
+
+    // The source a requested package is recorded with: a request with a ref that gives it, rather
+    // than one it stands in for (protocol/workspace.md §3); but an installed package that its
+    // recorded source gives again is not replaced, so it keeps that source even when another
+    // request gives the same package (protocol/workspace.md §5).
+    List<Candidate> members = [.. plan.Members];
+    foreach (bool byRecordedSource in new[] { false, true }) {
+      for (int i = 0; i < candidates.Count; i++) {
+        Candidate candidate = candidates[i];
+        int member = members.FindIndex(
+            c => SameIdentity(c.Package.Identity, candidate.Package.Identity));
+        if (member < 0 || !IsSameCandidate(candidate, members[member])) {
+          continue;
+        }
+
+        LockedPackage? installed = workspace.Lock.Packages.FirstOrDefault(
+            p => SameIdentity(p.Identity, candidate.Package.Identity));
+        if (byRecordedSource
+            ? installed is not null && installed.Source == candidate.Source.ToString()
+                && IsSamePackage(installed, candidate)
+            : candidate.Source is { Kind: RefKind.Spec, GitRef: not null }) {
+          members[member] = candidate;
+        }
+      }
+    }
+
+    await Execute(workspace, options, await Changes(
+        workspace, options, plan with { Members = members }));
   }
 
   /// The packages of the workspace file (protocol/cli.md §5.4). The workspace file derived from a
@@ -1039,6 +1067,12 @@ public class McmodService(
       SameIdentity(package.Identity, candidate.Package.Identity)
       && package.Version == candidate.Package.Version.ToString()
       && string.Equals(package.Commit, CommitOf(candidate), StringComparison.OrdinalIgnoreCase);
+
+  /// Whether two candidates are the same package: same identity, version and commit.
+  private static bool IsSameCandidate(Candidate a, Candidate b) =>
+      SameIdentity(a.Package.Identity, b.Package.Identity)
+      && a.Package.Version == b.Package.Version
+      && string.Equals(CommitOf(a), CommitOf(b), StringComparison.OrdinalIgnoreCase);
 
   /// The commit of a candidate from a remote repository (lowercase hex), or null.
   private static string? CommitOf(Candidate candidate) =>

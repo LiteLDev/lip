@@ -1237,16 +1237,50 @@ public class McmodServiceTests {
     };
     _ws.AddZip("b.zip", b);
     await _ws.Service.Install(["a.zip", "b.zip"], _options);
+    string source = (await _ws.Lock()).Packages.Single(p => p.Id == "example.com/b").Source;
     _ws.AddZip("a.zip", b);
 
     // Act
     await _ws.Service.Update([], _options);
 
-    // Assert: one package satisfies both requests.
+    // Assert: one package satisfies both requests; b is not replaced, so it keeps its source
+    // (protocol/workspace.md §5).
     Assert.Equal(
         [("example.com/b", "1.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
     Assert.False(_ws.Exists("a.txt"));
+    Assert.Equal(source, Assert.Single((await _ws.Lock()).Packages).Source);
+  }
+
+  [Fact]
+  public async Task Update_NoArgumentsSourceGivesPackageKeptAsItIs_Fails() {
+    // Arrange: a.zip now holds b 2.0.0, while b.zip, which b 1.0.0 was installed from, is gone.
+    _ws.AddZip("a.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
+      ["a.txt"] = "a",
+    });
+    string path = _ws.AddZip("b.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/b", "1.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
+      ["b.txt"] = "b1",
+    });
+    await _ws.Service.Install(["a.zip", "b.zip"], _options);
+    _ws.AddZip("a.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/b", "2.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
+      ["b.txt"] = "b2",
+    });
+    _ws.Fs.File.Delete(path);
+
+    // Act & Assert: b is kept as it is (protocol/cli.md §5.3), so a's request for b 2.0.0
+    // cannot be satisfied (protocol/workspace.md §3).
+    await Assert.ThrowsAsync<DependencyResolutionException>(
+        () => _ws.Service.Update([], _options));
+    Assert.Equal(
+        [("example.com/a", "1.0.0", true), ("example.com/b", "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal("b1", _ws.Fs.File.ReadAllText(_ws.Path("b.txt")));
   }
 
   [Fact]
@@ -1283,15 +1317,29 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Update_TwoArgumentsOfOneIdentity_UpdatesItByTheFirst() {
-    // Arrange: protocol/cli.md §5.3 defines no failure for this.
+  public async Task Update_TwoArgumentsOfOneIdentity_SatisfiesBoth() {
+    // Arrange
     AddLibAndApp();
-    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+    await _ws.Service.Install([Lib], _options);
 
-    // Act
+    // Act: lib 1.0.0 of lib@1.0.0 stands in for the request of lib (protocol/workspace.md §3).
     await _ws.Service.Update([Lib, $"{Lib}@1.0.0"], _options);
 
     // Assert
+    LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
+    Assert.Equal(("1.0.0", $"{Lib}@1.0.0"), (lib.Version, lib.Source));
+    Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Fact]
+  public async Task Update_TwoArgumentsOfOneIdentityNoPackageSatisfies_Fails() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([Lib], _options);
+
+    // Act & Assert: no one package satisfies both requests (protocol/workspace.md §3).
+    await Assert.ThrowsAsync<DependencyResolutionException>(
+        () => _ws.Service.Update([$"{Lib}@1.0.0", $"{Lib}@1.1.0"], _options));
     LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal(("1.1.0", Lib), (lib.Version, lib.Source));
   }
