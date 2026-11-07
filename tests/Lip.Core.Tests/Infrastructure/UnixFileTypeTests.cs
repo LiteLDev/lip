@@ -5,8 +5,7 @@ using Lip.Core.Infrastructure;
 namespace Lip.Core.Tests.Infrastructure;
 
 public class UnixFileTypeTests : IDisposable {
-  private readonly string _root =
-      Path.Combine(Path.GetTempPath(), "lip-unix-file-type-test-" + Guid.NewGuid().ToString("N"));
+  private readonly string _root = MakeTempRootPath();
 
   public UnixFileTypeTests() {
     Directory.CreateDirectory(_root);
@@ -17,6 +16,15 @@ public class UnixFileTypeTests : IDisposable {
       Directory.Delete(_root, recursive: true);
     }
     GC.SuppressFinalize(this);
+  }
+
+  /// Returns a new temporary directory path short enough to hold a Unix domain socket: sun_path
+  /// is limited to 104 bytes on macOS, where the per-user temporary directory is already long.
+  internal static string MakeTempRootPath() {
+    string name = "lip-" + Guid.NewGuid().ToString("N")[..8];
+    return OperatingSystem.IsWindows()
+        ? Path.Combine(Path.GetTempPath(), name)
+        : Path.Join("/tmp", name);
   }
 
   /// Creates a FIFO (named pipe) with mkfifo.

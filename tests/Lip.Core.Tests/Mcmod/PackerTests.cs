@@ -118,7 +118,7 @@ public class PackerTests {
 
     // Arrange: only regular files are packed; reading a FIFO would wait for a writer forever.
     FileSystem fs = new();
-    string root = Path.Combine(Path.GetTempPath(), "lip-packer-test-" + Guid.NewGuid().ToString("N"));
+    string root = UnixFileTypeTests.MakeTempRootPath();
     Directory.CreateDirectory(Path.Join(root, "sub"));
     try {
       File.WriteAllText(Path.Join(root, "a.txt"), "a");
@@ -126,8 +126,9 @@ public class PackerTests {
       using Socket socket = UnixFileTypeTests.MakeSocket(Path.Join(root, "socket"));
       string output = Path.Join(root, "out.zip");
 
-      // Act
-      await Packer.WriteArchive(fs, root, output)
+      // Act: run on the thread pool so that the timeout also catches a synchronous block.
+      await Task.Run(
+              () => Packer.WriteArchive(fs, root, output), TestContext.Current.CancellationToken)
           .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
       // Assert

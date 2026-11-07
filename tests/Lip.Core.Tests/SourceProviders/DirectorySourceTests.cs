@@ -7,8 +7,7 @@ namespace Lip.Core.Tests.SourceProviders;
 
 /// Directory archives (protocol/package.md §1) on the real file system.
 public class DirectorySourceTests : IDisposable {
-  private readonly string _root =
-      Path.Combine(Path.GetTempPath(), "lip-directory-source-test-" + Guid.NewGuid().ToString("N"));
+  private readonly string _root = UnixFileTypeTests.MakeTempRootPath();
 
   public DirectorySourceTests() {
     Directory.CreateDirectory(_root);
