@@ -725,6 +725,55 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_PreInstallBeforeAnyChange_RunsWithTheJournal() {
+    // Arrange: mods exists, so pre_install is the first thing the operation does; the journal
+    // exists before it runs (protocol/workspace.md §7.4 steps 5 and 6).
+    _ws.Fs.Directory.CreateDirectory(_ws.Path("mods"));
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("a.txt", "a.txt")
+              + """, "hooks": { "pre_install": [ "check" ] }"""),
+      ["a.txt"] = "a",
+    });
+    bool? journalExisted = null;
+    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root))
+        .Callback(() => journalExisted = _ws.Fs.File.Exists(_ws.JournalPath))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.True(journalExisted);
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+  }
+
+  [Fact]
+  public async Task Uninstall_OnlyHookCommands_RunsThemWithTheJournal() {
+    // Arrange: lib owns no file, so uninstalling it changes nothing but runs pre_uninstall
+    // (protocol/workspace.md §7.4 step 4 does not apply).
+    _ws.Fs.Directory.CreateDirectory(_ws.Path("mods"));
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0", """ "hooks": { "pre_uninstall": [ "check" ] }"""),
+    });
+    await _ws.Service.Install([Lib], _options);
+    bool? journalExisted = null;
+    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root))
+        .Callback(() => journalExisted = _ws.Fs.File.Exists(_ws.JournalPath))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Uninstall([Lib], _options);
+
+    // Assert
+    Assert.True(journalExisted);
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+    Assert.Empty((await _ws.Lock()).Packages);
+  }
+
+  [Fact]
   public async Task Install_PreservedFileWrittenAfterHookThenWrittenByAnother_FailsAndUndoes() {
     // Arrange: lib keeps cfg.ini as planned, but its pre_install deletes it, so lib writes and
     // owns it; app, installed after lib, then writing it is a failure (protocol/workspace.md §4).

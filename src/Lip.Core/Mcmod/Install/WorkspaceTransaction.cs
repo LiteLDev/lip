@@ -205,6 +205,14 @@ public sealed class WorkspaceTransaction : IDisposable {
   #region Journal
 
   private void Record(JournalEntry entry) {
+    Begin();
+    Append(entry);
+    _entries.Add(entry);
+  }
+
+  /// Creates the journal with its "Begin" record unless it exists: before the first change or
+  /// hook command of the operation (protocol/workspace.md §7.4 step 5).
+  public void Begin() {
     if (_committed) {
       throw new InvalidOperationException(
           "lip tried to change the workspace after committing the operation. This is a bug in"
@@ -235,9 +243,6 @@ public sealed class WorkspaceTransaction : IDisposable {
       RunTrace.Write("journal", $"Began the journal {_journalPath}");
       Append(new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O")));
     }
-
-    Append(entry);
-    _entries.Add(entry);
   }
 
   private void Append(JournalEntry entry) {

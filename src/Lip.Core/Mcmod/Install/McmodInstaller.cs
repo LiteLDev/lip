@@ -270,6 +270,11 @@ public partial class McmodInstaller(
       cancellationToken.ThrowIfCancellationRequested();
       switch (step) {
         case ScriptStep script:
+          if (script.Commands.Count > 0) {
+            // A hook command runs only once the journal exists (protocol/workspace.md §7.4).
+            transaction.Begin();
+          }
+
           await RunScripts(plan.Name, script.Stage, script.Commands, plan.Root);
           break;
         case WriteStep write: {
