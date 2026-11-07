@@ -168,12 +168,14 @@ public static partial class YamlJson {
       emitter.Emit(new Scalar(null, null, text, ScalarStyle.Plain, true, false));
 
   /// A string that a plain scalar would not read back as is double-quoted, and so is one with a
-  /// line break or another control character, which the other styles fold or cannot hold; any
-  /// other is written in the style the emitter chooses, which keeps it a string. The YAML 1.1
-  /// booleans (yes, no, on, off, ...) are quoted too, for readers that still resolve them.
+  /// line break (including U+0085, U+2028 and U+2029) or another control character, which the
+  /// other styles fold or cannot hold; any other is written in the style the emitter chooses,
+  /// which keeps it a string. The YAML 1.1 booleans (yes, no, on, off, ...) are quoted too, for
+  /// readers that still resolve them.
   private static void EmitString(IEmitter emitter, string value) {
     ScalarStyle style = ReadsBackAsString(value) && !Yaml11BoolRegex().IsMatch(value)
-        && !value.Any(char.IsControl)
+        && !value.Any(c => char.IsControl(c) || char.GetUnicodeCategory(c)
+            is UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator)
         ? ScalarStyle.Any
         : ScalarStyle.DoubleQuoted;
     emitter.Emit(new Scalar(null, null, value, style, true, true));
