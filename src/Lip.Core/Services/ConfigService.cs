@@ -16,8 +16,9 @@ namespace Lip.Core.Services;
 ///
 /// lip v0.x kept the configuration in &lt;Config&gt;/liprc.json. When config.yaml is missing and
 /// liprc.json is a JSON object whose format_version, when present, is 3 (lip before February 2026
-/// wrote none), its configuration is written atomically as config.yaml before it is read, and liprc.json is deleted (protocol/compatibility.md §4). Any
-/// other liprc.json is kept, and every key has its default.
+/// wrote none), its configuration is written atomically as config.yaml before it is read, and
+/// liprc.json is deleted (protocol/compatibility.md §4). Any other liprc.json is kept, and every
+/// key has its default.
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
   private const string _githubProxyKey = "github_proxy";
 
