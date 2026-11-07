@@ -7,9 +7,9 @@ namespace Lip.Core.Mcmod;
 /// lip pack (protocol/cli.md §5.11): writes a ZIP archive of a directory.
 public static class Packer {
   /// Writes a ZIP archive to output, replacing it: every regular file below directory at its
-  /// path relative to it, except output itself and everything below .git/ and .lip/ at its root.
-  /// Files are written in ordinal order of their paths; links are not followed, special files
-  /// (FIFOs, sockets, device nodes) are left out, and an
+  /// path relative to it, except output itself (whatever path reaches it) and everything below
+  /// .git/ and .lip/ at its root. Files are written in ordinal order of their paths; links are
+  /// not followed, special files (FIFOs, sockets, device nodes) are left out, and an
   /// inaccessible directory fails the command rather than being left out.
   public static async Task WriteArchive(IFileSystem fs, string directory, string output) {
     string root = fs.Path.GetFullPath(directory);
@@ -23,6 +23,9 @@ public static class Packer {
     StringComparison comparison = OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase
         : StringComparison.Ordinal;
+    // The same file can be reached by other paths (links, junctions, case, 8.3 short names), and
+    // packing <FILE> would read it while it is being written.
+    FileIdentity? outputIdentity = FileIdentity.Of(outputPath);
 
     List<(string Entry, string Path)> files = [];
     EnumerationOptions options = new() {
@@ -37,7 +40,8 @@ public static class Packer {
         if (string.Equals(full, outputPath, comparison)
             || entry.StartsWith(".git/", StringComparison.Ordinal)
             || entry.StartsWith(".lip/", StringComparison.Ordinal)
-            || UnixFileType.IsSpecialFile(full)) {
+            || UnixFileType.IsSpecialFile(full)
+            || (outputIdentity is not null && FileIdentity.Of(full) == outputIdentity)) {
           continue;
         }
 

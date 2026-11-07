@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using Lip.Core.Mcmod;
 using Lip.Core.Tests.Infrastructure;
 
@@ -138,6 +140,113 @@ public class PackerTests {
       Directory.Delete(root, recursive: true);
     }
   }
+
+  [Fact]
+  public async Task WriteArchive_OutputThroughALinkToTheDirectory_IsLeftOut() {
+    // Arrange: <FILE> is never part of the archive (protocol/cli.md §5.11), whatever path
+    // reaches it; here a symbolic link (a junction on Windows) to <DIR>.
+    FileSystem fs = new();
+    string temp = UnixFileTypeTests.MakeTempRootPath();
+    string root = Path.Join(temp, "pkg");
+    string link = Path.Join(temp, "link");
+    Directory.CreateDirectory(root);
+    try {
+      File.WriteAllText(Path.Join(root, "a.txt"), "a");
+      File.WriteAllText(Path.Join(root, "out.zip"), "previous");
+      Assert.SkipUnless(LinkDirectory(link, root), "Directory links cannot be created here.");
+
+      // Act
+      await Packer.WriteArchive(fs, root, Path.Join(link, "out.zip"));
+
+      // Assert
+      Assert.Equal(["a.txt"], (await Entries(fs, Path.Join(root, "out.zip"))).Keys);
+    }
+    finally {
+      if (Directory.Exists(link)) {
+        Directory.Delete(link);
+      }
+      Directory.Delete(temp, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task WriteArchive_OutputByAnotherCase_IsLeftOut() {
+    // Arrange: on a case-insensitive file system (e.g. macOS, Windows) another case names the
+    // same file.
+    FileSystem fs = new();
+    string root = UnixFileTypeTests.MakeTempRootPath();
+    Directory.CreateDirectory(root);
+    try {
+      File.WriteAllText(Path.Join(root, "a.txt"), "a");
+      File.WriteAllText(Path.Join(root, "pkg.zip"), "previous");
+      Assert.SkipUnless(
+          File.Exists(Path.Join(root, "PKG.ZIP")), "The file system is case-sensitive.");
+
+      // Act
+      await Packer.WriteArchive(fs, root, Path.Join(root, "Pkg.zip"));
+
+      // Assert
+      Assert.Equal(["a.txt"], (await Entries(fs, Path.Join(root, "pkg.zip"))).Keys);
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task WriteArchive_OutputByItsShortName_IsLeftOut() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows has 8.3 short names.");
+
+    // Arrange
+    FileSystem fs = new();
+    string root = UnixFileTypeTests.MakeTempRootPath();
+    Directory.CreateDirectory(root);
+    try {
+      File.WriteAllText(Path.Join(root, "a.txt"), "a");
+      string output = Path.Join(root, "longfilename.zip");
+      File.WriteAllText(output, "previous");
+      string shortName = ShortName(output);
+      Assert.SkipWhen(
+          shortName is "" or "longfilename.zip", "8.3 short names are disabled on this volume.");
+
+      // Act
+      await Packer.WriteArchive(fs, root, Path.Join(root, shortName));
+
+      // Assert
+      Assert.Equal(["a.txt"], (await Entries(fs, output)).Keys);
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
+  /// Links the directory link to target: a junction on Windows, which needs no privilege, and a
+  /// symbolic link elsewhere. Returns whether the link was created.
+  private static bool LinkDirectory(string link, string target) {
+    if (!OperatingSystem.IsWindows()) {
+      Directory.CreateSymbolicLink(link, target);
+      return true;
+    }
+
+    using Process process = Process.Start(new ProcessStartInfo("cmd.exe", ["/c", "mklink", "/J", link, target]) {
+      RedirectStandardOutput = true,
+      RedirectStandardError = true,
+    })!;
+    process.WaitForExit();
+    return process.ExitCode == 0 && Directory.Exists(link);
+  }
+
+  /// The 8.3 short name of an existing file, or "" when it cannot be read.
+  private static string ShortName(string path) {
+    char[] buffer = new char[path.Length + 260];
+    uint length = GetShortPathNameW(path, buffer, (uint)buffer.Length);
+    return length == 0 || length >= buffer.Length
+        ? ""
+        : Path.GetFileName(new string(buffer, 0, (int)length));
+  }
+
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  private static extern uint GetShortPathNameW(string longPath, char[] shortPath, uint length);
 
   private static async Task<Dictionary<string, string>> Entries(IFileSystem fs, string path) {
     using ZipArchive zip = new(new MemoryStream(fs.File.ReadAllBytes(path)));
