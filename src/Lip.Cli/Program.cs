@@ -34,7 +34,7 @@ app.Configure(config => {
   config.Settings.Registrar.RegisterInstance(lipClient);
   config.Settings.Registrar.RegisterInstance<IUserInteraction>(userInteraction);
 
-  // An unknown option, or an argument after "--", is a usage error (protocol/cli.md §1, §2).
+  // An unknown option, or "--", is a usage error (protocol/cli.md §1, §2).
   // Strict parsing is not used for this: when parsing fails, it retries with the placeholder
   // "__default_command" inserted between the arguments, which then fills a missing option value.
   config.Settings.Registrar.RegisterInstance<ICommandInterceptor>(
@@ -47,8 +47,15 @@ app.Configure(config => {
       .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
       .InformationalVersion!).ToString());
 
+  // With a resolver, the arguments are parsed, and an unexpected one is the cause of the failure
+  // even when binding them failed first.
   config.SetExceptionHandler((ex, resolver) =>
-      ErrorReporter.Report(ex, args, cancellation.IsCancellationRequested));
+      ErrorReporter.Report(
+          resolver?.Resolve(typeof(IRemainingArguments)) is IRemainingArguments remaining
+              ? UnexpectedArgumentsInterceptor.Find(args, remaining) ?? ex
+              : ex,
+          args,
+          cancellation.IsCancellationRequested));
 
   config.AddBranch("cache", cache => {
     cache.SetDefaultCommand<MissingSubcommandCommand>();

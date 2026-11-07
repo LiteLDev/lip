@@ -13,15 +13,23 @@ public sealed class UsageErrorTests : IDisposable {
   }
 
   [Theory]
-  [InlineData("list", "--bogus")]
-  [InlineData("uninstall", "foo", "--dryrun")]
-  [InlineData("pack", "-o", "out.zip", "--bogus")]
-  [InlineData("config", "list", "--bogus")]
-  public async Task UnknownOption_IsUsageError(params string[] args) {
+  [InlineData("--bogus", "list", "--bogus")]
+  [InlineData("--dryrun", "uninstall", "foo", "--dryrun")]
+  [InlineData("--dryrun", "uninstall", "--dryrun", "foo")]
+  [InlineData("--bogus", "install", "--bogus", "x")]
+  [InlineData("--bogus", "view", "--bogus", "x")]
+  [InlineData("--bogus", "versions", "--bogus", "x")]
+  [InlineData("--bogus", "pack", "-o", "out.zip", "--bogus")]
+  [InlineData("--bogus", "config", "list", "--bogus")]
+  [InlineData("--bogus", "config", "get", "--bogus", "x")]
+  [InlineData("--bogus", "config", "delete", "--bogus", "x")]
+  [InlineData("-x", "install", "-x", "foo")]
+  public async Task UnknownOption_IsUsageError(string option, params string[] args) {
     (int exitCode, _, string stderr) = await Run(args);
 
     Assert.NotEqual(0, exitCode);
-    Assert.Contains("--", stderr);
+    Assert.Contains($"Unknown option '{option}'", stderr);
+    Assert.DoesNotContain("missing", stderr, StringComparison.OrdinalIgnoreCase);
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
     Assert.False(File.Exists(Path.Join(_workspace, "out.zip")));
   }
@@ -38,7 +46,7 @@ public sealed class UsageErrorTests : IDisposable {
     (int exitCode, _, string stderr) = await Run(args);
 
     Assert.NotEqual(0, exitCode);
-    Assert.NotEqual("", stderr.Trim());
+    Assert.Contains("no value", stderr);
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
     Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
   }
@@ -50,11 +58,18 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("pack", "-o", "out.zip", "--", "dir")]
   [InlineData("config", "list", "--", "extra")]
   [InlineData("list", "--", "--bogus")]
-  public async Task ArgumentsAfterSeparator_AreUsageError(params string[] args) {
+  [InlineData("install", "--", "foo")]
+  [InlineData("uninstall", "--", "foo")]
+  [InlineData("view", "--", "foo")]
+  [InlineData("config", "get", "--", "key")]
+  [InlineData("list", "--")]
+  [InlineData("update", "-n", "--")]
+  public async Task Separator_IsUsageError(params string[] args) {
     (int exitCode, _, string stderr) = await Run(args);
 
     Assert.NotEqual(0, exitCode);
     Assert.Contains("'--'", stderr);
+    Assert.DoesNotContain("missing", stderr, StringComparison.OrdinalIgnoreCase);
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
     Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
   }
