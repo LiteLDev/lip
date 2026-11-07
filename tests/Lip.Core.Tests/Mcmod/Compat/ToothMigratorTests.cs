@@ -182,6 +182,63 @@ public class ToothMigratorTests {
   }
 
   [Fact]
+  public async Task Migrate_PlatformNotARuntime_AsksForRuntimesOnce() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/o/tool", "version": "1.0.0",
+          "variants": [
+            { "platform": "windows/amd64", "dependencies": { "github.com/o/a": "1.0.0" } },
+            { "label": "lua", "platform": "windows/amd64" },
+            { "platform": "linux-x64", "dependencies": { "github.com/o/b": "1.0.0" } }
+          ]
+        }
+        """);
+    FakeUi ui = new("windows/amd64", "win-x64,win-arm64");
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, ui);
+
+    // Assert
+    Assert.Equal(2, ui.Questions.Count);
+    Assert.All(ui.Questions, q => Assert.Contains("'windows/amd64'", q));
+    Assert.Contains("'windows/amd64' is not a runtime identifier", Assert.Single(ui.Warnings));
+    PackageFile file = Reparse(result);
+    Assert.Equal(
+        [
+          (McmodPlatform.Server, "win-x64", "github.com/o/a"),
+          (McmodPlatform.Client, "win-x64", "github.com/o/a"),
+          (McmodPlatform.Server, "win-arm64", "github.com/o/a"),
+          (McmodPlatform.Client, "win-arm64", "github.com/o/a"),
+          (McmodPlatform.Server, "linux-x64", "github.com/o/b"),
+          (McmodPlatform.Client, "linux-x64", "github.com/o/b"),
+        ],
+        file.Variants[""].Select(e => (e.Platform, e.Runtime,
+            Assert.Single(e.Dependencies).Source.ToString())));
+    Assert.Equal(
+        ["win-x64", "win-x64", "win-arm64", "win-arm64"],
+        file.Variants["lua"].Select(e => e.Runtime));
+  }
+
+  [Fact]
+  public async Task Migrate_PlatformNotARuntimeWithoutTerminal_ThrowsNamingThePlatform() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/o/tool", "version": "1.0.0",
+          "variants": [ { "platform": "windows/amd64" } ]
+        }
+        """);
+
+    // Act & Assert
+    CannotAskException ex = await Assert.ThrowsAsync<CannotAskException>(
+        () => ToothMigrator.Migrate(tooth, new FakeUi()));
+    Assert.Contains("'windows/amd64'", ex.Message);
+  }
+
+  [Fact]
   public async Task Migrate_QuestionWithoutTerminal_ThrowsCannotAsk() {
     // Arrange
     PackageManifest tooth = Parse($$"""

@@ -20,6 +20,7 @@ git commit -m "Migrate tooth.json to lip.yaml"
 `lip.yaml` 没有 RID 模式：每个条目只指定一个运行时。当结果需要某个旧文件未提供的值时，lip 会在终端上询问，直到回答有效为止：
 
 - `win-*` 这样的平台模式所代表的 RID，以逗号分隔（每个都必须匹配该模式）；
+- `windows/amd64` 这样不是 RID 的平台所代表的 RID，以逗号分隔；
 - 没有 `platform` 的变体所适用的 RID（存在这类变体时）。
 
 若标准输入或标准错误不是终端（例如在 CI 中），`lip migrate` 会失败，指明本应询问的值，且不做任何修改。
@@ -33,7 +34,7 @@ git commit -m "Migrate tooth.json to lip.yaml"
 `format` 为 `4`，`tooth` 变为 `id`，`version` 和 `info` 原样复制，但 `info.avatar_url` 以 `https://` 开头时变为 `info.logo`，否则被丢弃并给出警告。变体按以下方式改写：
 
 - 每个标签变为同名变体；空标签变为变体 `""`。
-- 对标签适用的每个运行时（其各平台，模式展开为你给出的 RID），该标签下适用于该运行时的变体按 lip v0.37.0 的方式合并，结果变为该运行时的一个条目。合并后的变体依赖 `github.com/LiteLDev/LeviLamina#client` 时，其平台为 `client`；依赖 `github.com/LiteLDev/LeviLamina` 的其他变体时，为 `server`；不依赖 LeviLamina 时，结果变为两个条目，每个平台各一个。
+- 对标签适用的每个运行时（其各平台，模式和不是 RID 的平台展开为你给出的 RID），该标签下适用于该运行时的变体按 lip v0.37.0 的方式合并，结果变为该运行时的一个条目。合并后的变体依赖 `github.com/LiteLDev/LeviLamina#client` 时，其平台为 `client`；依赖 `github.com/LiteLDev/LeviLamina` 的其他变体时，为 `server`；不依赖 LeviLamina 时，结果变为两个条目，每个平台各一个。
 - `dependencies` 连同其范围变为 `deps`。现在无效的范围会在终端上询问，直到回答是有效范围；没有终端时命令失败且不做任何更改。
 - 每个资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`，转换方式与 lip 读取[早期格式](../concepts/lip_yaml.md#早期格式)的 `tooth.json` 完全相同：`\` 替换为 `/`、空段和 `.` 段被移除后，`dir` 放置规则采用目录形式（`src` 和 `dest` 以 `/` 结尾，或为 `""`），`src` 含 `*`、`?` 或 `[` 的 `file` 放置规则采用 glob 形式（`dest` 以 `/` 结尾，或为 `""`），其他 `file` 放置规则采用文件形式。在 `lip.yaml` 中无效的放置规则会被省略，并给出警告。
 - `lip.yaml` 没有 `tar`、`tgz` 和 `uncompressed` 资源类型。合并后的变体含有这类资源的运行时不会得到条目，并给出警告，这与 lip 在该运行时下不安装其任何条目一致。

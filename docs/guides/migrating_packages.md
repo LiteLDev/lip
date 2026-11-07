@@ -20,6 +20,7 @@ It writes `lip.yaml` converted from `tooth.json`, then deletes `tooth.json`. Whe
 `lip.yaml` has no RID patterns: every entry names one runtime. When the result needs a value that the old file does not provide, lip asks for it on the terminal and asks again until the answer is valid:
 
 -   the RIDs a platform pattern such as `win-*` stands for, as a comma-separated list (each must match the pattern);
+-   the RIDs a platform that is not a RID, such as `windows/amd64`, stands for, as a comma-separated list;
 -   the RIDs that variants without a `platform` apply to, when there are such variants.
 
 When standard input or standard error is not a terminal (in CI, for example), `lip migrate` fails instead, naming the value it would ask for, and changes nothing.
@@ -33,7 +34,7 @@ Everything that is dropped, or converted with another meaning, is printed as a w
 `format` is `4`, `tooth` becomes `id`, and `version` and `info` are copied, except that `info.avatar_url` becomes `info.logo` when it starts with `https://` and is dropped otherwise, with a warning. The variants are rewritten as follows:
 
 -   Each label becomes a variant of the same name; the empty label becomes the variant `""`.
--   For each runtime a label applies to (its platforms, with patterns expanded to the RIDs you gave), the variants of the label that apply to that runtime are merged as lip v0.37.0 merged them, and the result becomes one entry with that runtime. Its platform is `client` when the merged variants depend on `github.com/LiteLDev/LeviLamina#client`, and `server` when they depend on another variant of `github.com/LiteLDev/LeviLamina`; without a dependency on LeviLamina, the result becomes two entries, one for each platform.
+-   For each runtime a label applies to (its platforms, with patterns and platforms that are not RIDs expanded to the RIDs you gave), the variants of the label that apply to that runtime are merged as lip v0.37.0 merged them, and the result becomes one entry with that runtime. Its platform is `client` when the merged variants depend on `github.com/LiteLDev/LeviLamina#client`, and `server` when they depend on another variant of `github.com/LiteLDev/LeviLamina`; without a dependency on LeviLamina, the result becomes two entries, one for each platform.
 -   `dependencies` become `deps`, with their ranges. A range that is not a valid range now is asked for on the terminal until the answer is one; without a terminal the command fails and changes nothing.
 -   Each asset keeps its `type` and `urls`, and its `placements` become `place`, converted exactly as lip reads a `tooth.json` of an [earlier format](../concepts/lip_yaml.md#earlier-formats): after `\` is replaced by `/` and empty and `.` segments are removed, a `dir` placement takes the directory form (`src` and `dest` ending with `/`, or `""`), a `file` placement whose `src` contains `*`, `?` or `[` the glob form (`dest` ending with `/`, or `""`), and any other `file` placement the file form. A placement that is not valid in `lip.yaml` is left out, with a warning.
 -   `lip.yaml` has no `tar`, `tgz` and `uncompressed` asset types. A runtime whose merged variants have such an asset gets no entry, with a warning, just as lip installs no entry of it for that runtime.

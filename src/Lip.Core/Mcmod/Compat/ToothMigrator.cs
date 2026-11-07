@@ -19,7 +19,8 @@ namespace Lip.Core.Mcmod.Compat;
 /// IUserInteraction.Ask.
 ///
 /// - A package file has no platform patterns and no "any runtime": the runtimes a platform pattern
-///   stands for, and those the variants without a platform apply to, are asked for.
+///   stands for, those a platform that is not a runtime identifier (e.g. "windows/amd64") stands
+///   for, and those the variants without a platform apply to, are asked for.
 /// - Each label becomes a variant. It has an entry for each runtime, holding the variants of the
 ///   label merged for the runtime and converted exactly as Section 2 converts them
 ///   (ToothCompat.ConvertEntry); a runtime whose merged variants have an asset of type tar, tgz
@@ -86,6 +87,33 @@ public static class ToothMigrator {
         RunTrace.Write("migrate", $"platform pattern '{variant.Platform}' stands for "
             + string.Join(", ", patterns[variant.Platform]));
       }
+    }
+
+    // The runtimes every platform that is neither a pattern nor a runtime identifier stands for,
+    // asked once per platform; its variants become one variant for each of them.
+    Dictionary<string, List<string>> literals = new(StringComparer.Ordinal);
+    foreach (PackageManifestVariant variant in tooth.Variants) {
+      if (variant.Platform != "" && !IsPattern(variant.Platform)
+          && !PackageFileParser.IsRuntime(variant.Platform)
+          && !literals.ContainsKey(variant.Platform)) {
+        literals[variant.Platform] = await AskRuntimes(
+            ui,
+            $"the runtimes (RIDs, comma-separated, e.g. win-x64) the platform '{variant.Platform}', "
+                + "which is not a runtime identifier, stands for",
+            null);
+        RunTrace.Write("migrate", $"platform '{variant.Platform}' stands for "
+            + string.Join(", ", literals[variant.Platform]));
+      }
+    }
+
+    if (literals.Count > 0) {
+      tooth = tooth with {
+        Variants = [
+          .. tooth.Variants.SelectMany(v => literals.TryGetValue(v.Platform, out List<string>? rs)
+              ? rs.Select(r => v with { Platform = r })
+              : [v]),
+        ],
+      };
     }
 
     List<string> anyRuntime = tooth.Variants.Any(v => v.Platform == "")
