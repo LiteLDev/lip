@@ -12,7 +12,7 @@ namespace Lip.Core.Mcmod.Compat;
 
 /// Converts a tooth.json of format 1–3 (already read as format 3) into a package file (lip
 /// migrate, protocol/compatibility.md §5), agreeing with how protocol/compatibility.md §2 reads
-/// it for every environment as far as a package file can express it. The notes list what is
+/// it for every environment it has an entry for. The notes list what is
 /// dropped or converted with another meaning, each naming the field of format 3 it comes from.
 /// Missing values, and
 /// dependency ranges that are not ranges of a package file, are asked for through
@@ -24,10 +24,9 @@ namespace Lip.Core.Mcmod.Compat;
 ///   label merged for the runtime and converted exactly as Section 2 converts them
 ///   (ToothCompat.ConvertEntry); a runtime whose merged variants have an asset of type tar, tgz
 ///   or uncompressed has no entry.
-/// - The platform of an entry is the client when its merged variants depend on
-///   github.com/LiteLDev/LeviLamina#client, and the server otherwise.
-/// - With a variant labeled "client", the client entries of "client" are also those of the
-///   variant "", which has no client entries of its own (Section 2).
+/// - The platform of an entry follows the dependency of its merged variants on
+///   github.com/LiteLDev/LeviLamina: the client for its variant "client", the server for any
+///   other variant, and both, as two entries, without such a dependency.
 public static class ToothMigrator {
   public record Result(JsonObject Document, IReadOnlyList<string> Notes);
 
@@ -101,7 +100,6 @@ public static class ToothMigrator {
           + string.Join(", ", anyRuntime));
     }
 
-    bool hasClient = tooth.Variants.Any(v => v.Label == ToothCompat.ClientLabel);
     JsonObject variants = [];
     void AddEntry(string variant, JsonObject entry) {
       if (variants[variant] is not JsonArray entries) {
@@ -130,18 +128,10 @@ public static class ToothMigrator {
           continue;
         }
 
-        McmodPlatform platform = PlatformOf(merged);
-        RunTrace.Write("migrate",
-            $"variant '{label}': entry for {platform.ToSpecString()} {runtime}");
-
-        // On the client, the variant "" is the one of the label "client"
-        // (protocol/compatibility.md §2).
-        if (label != "" || !hasClient || platform != McmodPlatform.Client) {
+        foreach (McmodPlatform platform in PlatformsOf(merged)) {
+          RunTrace.Write("migrate",
+              $"variant '{label}': entry for {platform.ToSpecString()} {runtime}");
           AddEntry(label, Entry(platform, runtime, content));
-        }
-
-        if (label == ToothCompat.ClientLabel && platform == McmodPlatform.Client) {
-          AddEntry("", Entry(McmodPlatform.Client, runtime, content));
         }
       }
     }
@@ -161,16 +151,21 @@ public static class ToothMigrator {
     }
   }
 
-  /// The platform of the entry for merged variants: the client when they depend on the variant
-  /// "client" of LeviLamina, and the server otherwise.
-  private static McmodPlatform PlatformOf(PackageManifestVariant merged) =>
-      merged.Dependencies.Keys.Any(id =>
-          string.Equals(id.Path, LeviLaminaPath, StringComparison.OrdinalIgnoreCase)
-          && id.Variant == ToothCompat.ClientLabel)
-          ? McmodPlatform.Client
-          : McmodPlatform.Server;
+  /// The platforms of the entries for merged variants: the client when they depend on the
+  /// variant "client" of LeviLamina, the server when they depend on another variant of it, and
+  /// both when they do not depend on it.
+  private static McmodPlatform[] PlatformsOf(PackageManifestVariant merged) {
+    List<PackageId> leviLamina = [
+      .. merged.Dependencies.Keys.Where(id =>
+          string.Equals(id.Path, LeviLaminaPath, StringComparison.OrdinalIgnoreCase)),
+    ];
+    return leviLamina.Count == 0 ? [McmodPlatform.Server, McmodPlatform.Client]
+        : leviLamina.Any(id => id.Variant == ClientVariant) ? [McmodPlatform.Client]
+        : [McmodPlatform.Server];
+  }
 
   private const string LeviLaminaPath = "github.com/LiteLDev/LeviLamina";
+  private const string ClientVariant = "client";
 
   /// The variants of a label merged for a runtime, as protocol/compatibility.md §2 merges them.
   private static PackageManifestVariant Merge(PackageManifest tooth, string label, string runtime) {
@@ -217,11 +212,6 @@ public static class ToothMigrator {
         content["deps"]![dependency.ToString()] = answer;
       }
 
-      if (dependency.Variant == ToothCompat.ClientLabel) {
-        notes.Add($"{dependencyField}: keeps its \"client\" variant. A tooth.json named the "
-            + "variant \"\" of a package that has a lip.yaml by it (protocol/compatibility.md §2); "
-            + "lip.yaml does not, so drop \"#client\" once that package has moved to lip.yaml.");
-      }
     }
 
     foreach (string pattern in variant.PreserveFiles.Select(GlobListJsonConverter.Format)

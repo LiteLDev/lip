@@ -51,10 +51,9 @@ public class Resolver(
       Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
-      bool clientCompat = false,
       Action<string>? onDiagnostic = null) {
     return ResolveLazyWithCauses(
-        source, range, environment, clientCompat, d => onDiagnostic?.Invoke(d.Message));
+        source, range, environment, d => onDiagnostic?.Invoke(d.Message));
   }
 
   /// ResolveLazy, reporting with each diagnostic the exception behind it, so that a failure can
@@ -63,12 +62,10 @@ public class Resolver(
       Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
-      bool clientCompat,
       Action<ResolveDiagnostic> onDiagnostic) {
-    Walk walk = new(source, range, environment, clientCompat, onDiagnostic);
+    Walk walk = new(source, range, environment, onDiagnostic);
     RunTrace.Write("resolve", $"Resolving {source} {range?.ToString() ?? "(any version)"}"
-        + $" for ({environment.Platform.ToSpecString()}, {environment.Runtime})"
-        + (clientCompat ? " as a dependency of format 3" : ""));
+        + $" for ({environment.Platform.ToSpecString()}, {environment.Runtime})");
 
     // Step 1: the archives the source names.
     if (source.Kind != RefKind.Spec) {
@@ -224,13 +221,7 @@ public class Resolver(
       return null;
     }
 
-    // protocol/compatibility.md §2: a dependency of a tooth.json on the variant "client" of a
-    // package that has a package file names its variant "".
     string variant = source.Variant;
-    if (walk.ClientCompat && variant == Compat.ToothCompat.ClientLabel && !document.IsLegacy) {
-      variant = "";
-    }
-
     PackageEntry? entry = packageFile.SelectEntry(variant, walk.Environment);
     if (entry is null) {
       ReportNoEntry(walk, archive, packageFile, fileName, variant);
@@ -312,7 +303,6 @@ public class Resolver(
       Ref Source,
       IVersionConstraint? Range,
       LipEnvironment Environment,
-      bool ClientCompat,
       Action<ResolveDiagnostic> Sink) {
     public void Report(string archive, string reason, Exception? cause = null) {
       RunTrace.Write("resolve", $"Rejected {archive} for {Source}: {reason}");

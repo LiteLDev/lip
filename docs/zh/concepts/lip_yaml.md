@@ -247,8 +247,6 @@ lip 解析、安装并记录到[工作区文件](lockfiles.md)中的都是它。
 - scripts 变为 `hooks`：`pre_install` 仍为 `pre_install`；`install` 和随后的 `post_install` 变为
   `post_install`；`pre_uninstall` 和随后的 `uninstall` 变为 `pre_uninstall`；`post_uninstall` 仍为
   `post_uninstall`。
-- 在客户端上，标签为 `client` 的变体被用作变体 `""`。
-- 对某个带有 `lip.yaml` 的包的 `client` 变体的依赖，指向该包的变体 `""`。
 
 放置规则 `{ "type": ..., "src": ..., "dest": ... }` 在 `src` 和 `dest` 中的 `\` 替换为 `/`、空段和 `.` 段被移除
 后，变为 `place` 的一个成员：

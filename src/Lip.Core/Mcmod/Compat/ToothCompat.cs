@@ -15,11 +15,8 @@ namespace Lip.Core.Mcmod.Compat;
 /// For each label L of the variants of the tooth.json, the variants labeled L whose platform is
 /// "" or matches the runtime are merged exactly like PackageManifest.GetVariant merges them for
 /// lip's own runtime in lip v0.37.0, and become the single entry of the variant L, for the
-/// platform and the runtime of the environment (ConvertEntry). On the client platform, a
-/// tooth.json with the label "client" has the variant "" derived from that label.
+/// platform and the runtime of the environment (ConvertEntry).
 public static class ToothCompat {
-  public const string ClientLabel = "client";
-
   /// The file at the root of an archive of lip v0.x that makes it a package.
   public const string ToothFileName = "tooth.json";
 
@@ -56,8 +53,8 @@ public static class ToothCompat {
 
   /// The package file that a tooth.json of format 3 is read as for an environment
   /// (protocol/compatibility.md §2), with the version of the package as its version: version, or
-  /// else the version of the tooth.json. Its entries are Derived, and their dependencies
-  /// ClientCompat. Throws PackageFormatException when the variants of a label cannot be merged
+  /// else the version of the tooth.json. Throws PackageFormatException when the variants of a
+  /// label cannot be merged
   /// (lip v0.37.0 failed on them too), or when a derived entry is not valid in a package file.
   public static PackageFile Derive(
       PackageManifest manifest, LipEnvironment environment, Semver.SemVersion? version = null) {
@@ -86,13 +83,6 @@ public static class ToothCompat {
       RunTrace.Write("compat", $"{manifest.Path} {version}: variant '{label}' "
           + (derived[label] is null ? "has no entry" : "derived")
           + $" for {environment.Platform.ToSpecString()} {environment.Runtime}");
-    }
-
-    if (environment.Platform == McmodPlatform.Client
-        && manifest.Variants.Any(v => v.Label == ClientLabel)) {
-      derived[""] = derived.TryGetValue(ClientLabel, out JsonObject? client)
-          ? (JsonObject?)client?.DeepClone()
-          : null;
     }
 
     JsonObject variants = [];
@@ -129,10 +119,7 @@ public static class ToothCompat {
             ex);
       }
 
-      entries[variant.Name] = [entry with {
-        Derived = true,
-        Dependencies = [.. entry.Dependencies.Select(d => d with { ClientCompat = true })],
-      }];
+      entries[variant.Name] = [entry];
     }
 
     return new PackageFile {

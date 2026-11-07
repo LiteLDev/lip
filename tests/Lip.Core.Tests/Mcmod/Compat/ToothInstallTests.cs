@@ -95,7 +95,6 @@ public class ToothInstallTests {
     Assert.True(document.IsLegacy);
     PackageFile packageFile = document.ReadFor(env);
     PackageEntry entry = packageFile.SelectEntry(variant, env)!;
-    Assert.True(entry.Derived);
     ArchiveHandle self = new(
         $"{packageFile.Id}@{packageFile.Version}",
         CreateSource(new(selfFiles) { ["tooth.json"] = json }),
@@ -429,7 +428,7 @@ public class ToothInstallTests {
   }
 
   [Fact]
-  public async Task Uninstall_ClientEnvironment_UsesEntryDerivedFromClientLabel() {
+  public async Task Uninstall_ClientEnvironment_UsesEntryOfTheEmptyLabel() {
     // Arrange
     LipEnvironment client = new(McmodPlatform.Client, "win-x64");
     Candidate candidate = CreateCandidate(environment: client);
@@ -438,7 +437,9 @@ public class ToothInstallTests {
     await _installer.Uninstall(Lock(candidate, []), CreateContext(environment: client));
 
     // Assert
-    _commandRunner.Verify(c => c.Run("echo client", _root), Times.Once);
+    _commandRunner.Verify(c => c.Run("echo preun", _root), Times.Once);
+    _commandRunner.Verify(c => c.Run("echo un", _root), Times.Once);
+    _commandRunner.Verify(c => c.Run("echo postun", _root), Times.Once);
     _commandRunner.VerifyNoOtherCalls();
   }
 
@@ -498,7 +499,6 @@ public class ToothInstallTests {
         _serverWin);
 
     // Assert
-    Assert.False(entry.Derived);
     Assert.Equal(AssetType.Zip, entry.Assets[1].Type);
     Assert.Equal(
         [new EntryPlacement("data/", "plugins/repo/data/")], entry.Assets[0].Placements.Skip(1));

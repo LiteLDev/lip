@@ -274,8 +274,6 @@ Nothing of format 3 remains at install time.
 - The scripts become `hooks`: `pre_install` stays `pre_install`, `install` and then
   `post_install` become `post_install`, `pre_uninstall` and then `uninstall` become
   `pre_uninstall`, and `post_uninstall` stays `post_uninstall`.
-- On a client, a variant labeled `client` is used as the variant `""`.
-- A dependency on the variant `client` of a package that has a `lip.yaml` names its variant `""`.
 
 A placement `{ "type": ..., "src": ..., "dest": ... }` becomes a member of `place` after `\` is
 replaced by `/` and empty and `.` segments are removed from `src` and `dest`:

@@ -509,7 +509,7 @@ public class McmodService(
     await _ui.PrintInfo($"Resolving {argument}...");
     List<ResolveDiagnostic> diagnostics = [];
     await foreach (Candidate candidate in workspace.Resolver.ResolveLazyWithCauses(
-        request.Ref, request.Range, workspace.Environment, false, diagnostics.Add)) {
+        request.Ref, request.Range, workspace.Environment, diagnostics.Add)) {
       RunTrace.Write("resolve", $"'{argument}' is {candidate.Package.Identity}"
           + $"@{candidate.Package.Version} from {candidate.Archive.Key}");
       return candidate;

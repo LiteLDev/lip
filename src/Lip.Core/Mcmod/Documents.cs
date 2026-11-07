@@ -34,10 +34,7 @@ public record PackageFile {
 /// An entry of a package file (lip.schema.yaml, the items of "variants"). Json is the entry as
 /// written, which the workspace file records (protocol/workspace.md §7.1).
 ///
-/// Dependencies, PreserveFiles and RemoveFiles are its "deps", "preserve" and "purge". Derived
-/// marks an entry that protocol/compatibility.md §2 derived from a tooth.json while resolving; it
-/// only decides which dependencies name the variant "" for "client"
-/// (PackageDependency.ClientCompat), and is not recorded.
+/// Dependencies, PreserveFiles and RemoveFiles are its "deps", "preserve" and "purge".
 public record PackageEntry {
   public required McmodPlatform Platform { get; init; }
 
@@ -52,8 +49,6 @@ public record PackageEntry {
   public IReadOnlyList<PathGlob> RemoveFiles { get; init; } = [];
 
   public Hooks Hooks { get; init; } = new();
-
-  public bool Derived { get; init; }
 
   public required JsonElement Json { get; init; }
 
@@ -75,11 +70,7 @@ public record PackageEntry {
 }
 
 /// A dependency (protocol/package.md §4): the source of the key, and the range of the value.
-public record PackageDependency(Ref Source, VersionRange Range) {
-  /// A dependency of an entry derived from a tooth.json: its variant "client" names the variant
-  /// "" of a package that has a package file (protocol/compatibility.md §2).
-  public bool ClientCompat { get; init; }
-}
+public record PackageDependency(Ref Source, VersionRange Range);
 
 public enum AssetType {
   Self,

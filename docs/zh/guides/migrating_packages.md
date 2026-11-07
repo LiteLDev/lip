@@ -33,8 +33,7 @@ git commit -m "Migrate tooth.json to lip.yaml"
 `format` 为 `4`，`tooth` 变为 `id`，`version` 和 `info` 原样复制，但 `info.avatar_url` 以 `https://` 开头时变为 `info.logo`，否则被丢弃并给出警告。变体按以下方式改写：
 
 - 每个标签变为同名变体；空标签变为变体 `""`。
-- 对标签适用的每个运行时（其各平台，模式展开为你给出的 RID），该标签下适用于该运行时的变体按 lip v0.37.0 的方式合并，结果变为该运行时的一个条目。合并后的变体依赖 `github.com/LiteLDev/LeviLamina#client` 时，其平台为 `client`，否则为 `server`。
-- 存在 `client` 标签时（常见的服务端/客户端拆分），变体 `""` 没有自己的客户端条目，`client` 变体的客户端条目同时也作为变体 `""` 的客户端条目写入。
+- 对标签适用的每个运行时（其各平台，模式展开为你给出的 RID），该标签下适用于该运行时的变体按 lip v0.37.0 的方式合并，结果变为该运行时的一个条目。合并后的变体依赖 `github.com/LiteLDev/LeviLamina#client` 时，其平台为 `client`；依赖 `github.com/LiteLDev/LeviLamina` 的其他变体时，为 `server`；不依赖 LeviLamina 时，结果变为两个条目，每个平台各一个。
 - `dependencies` 连同其范围变为 `deps`。现在无效的范围会在终端上询问，直到回答是有效范围；没有终端时命令失败且不做任何更改。
 - 每个资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`，转换方式与 lip 读取[早期格式](../concepts/lip_yaml.md#早期格式)的 `tooth.json` 完全相同：`\` 替换为 `/`、空段和 `.` 段被移除后，`dir` 放置规则采用目录形式（`src` 和 `dest` 以 `/` 结尾，或为 `""`），`src` 含 `*`、`?` 或 `[` 的 `file` 放置规则采用 glob 形式（`dest` 以 `/` 结尾，或为 `""`），其他 `file` 放置规则采用文件形式。在 `lip.yaml` 中无效的放置规则会被省略，并给出警告。
 - `lip.yaml` 没有 `tar`、`tgz` 和 `uncompressed` 资源类型。合并后的变体含有这类资源的运行时不会得到条目，并给出警告，这与 lip 在该运行时下不安装其任何条目一致。
@@ -50,7 +49,6 @@ git commit -m "Migrate tooth.json to lip.yaml"
 - 放置规则按上述规则转换，不查看它们放置的文件，随后按 `lip.yaml` 的方式执行：`src` 为模式的 `file` 放置规则会保留其匹配文件的子目录，而 `tooth.json` 过去只按文件名放置它们；放置缺失文件的放置规则会使安装失败，而 `tooth.json` 过去会跳过它。请检查这类放置规则。
 - 不含 `/` 的 `preserve_files` 模式过去会匹配任意目录中的文件名；它会变为 `**/<pattern>`。`remove_files` 模式过去也会删除匹配的目录；它还会以带结尾 `/` 的形式再写一遍。不是有效 glob 的模式（例如以 `/` 开头的）会被丢弃。
 - 格式 1 和 2 中版本范围无法在格式 3 中读取的依赖（例如 `2.16.x`）在安装 `tooth.json` 时本就会被忽略；lip 会报告它们，以便你手动添加。
-- 对其他包 `client` 变体的依赖会保留其 `#client`。待那个包迁移到 `lip.yaml` 后请将其删除，因为 `lip.yaml` 的变体 `""` 已涵盖客户端。
 - 安装与卸载钩子以外的脚本（例如 `pre_pack` 或自定义脚本）以及格式 2 的 `prerequisites` 没有对应项，会被丢弃。
 - 迁移得到的包是一个文件包，把文件放到与旧 `tooth.json` 相同的位置。如果你的包是 LeviLamina mod，可以考虑改为以 `mcmod` 资源发布（参见 [mod](creating_packages.md#mod)），它会被安装到 `mods/<name>/`。
 - 对其他仍带有 `tooth.json` 的包的依赖仍然有效，因为 lip 仍可安装它们。

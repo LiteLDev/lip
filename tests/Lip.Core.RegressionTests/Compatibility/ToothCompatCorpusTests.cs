@@ -84,7 +84,6 @@ public class ToothCompatCorpusTests {
     }
 
     Assert.NotNull(actual);
-    Assert.True(actual.Derived);
     Assert.Equal(
         expected.Assets.Select(a => (a.Type.ToString(), string.Join(" ", a.Urls))),
         actual.Assets.Select(a => (a.Type.ToString(), string.Join(" ", a.Urls))));
@@ -97,7 +96,6 @@ public class ToothCompatCorpusTests {
     Assert.Equal(
         expected.Dependencies.Select(d => d.Key.ToString()),
         actual.Dependencies.Select(d => d.Source.ToString()));
-    Assert.All(actual.Dependencies, d => Assert.True(d.ClientCompat));
     Assert.Equal(
         ToothCompat.PreserveFiles(expected.PreserveFiles.Select(GlobListJsonConverter.Format))
             .Where(p => ToothCompat.TryParseGlob(p) is not null),

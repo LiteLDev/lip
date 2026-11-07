@@ -98,7 +98,6 @@ public class ResolverTests {
     Assert.Equal("", candidate.Package.Variant);
     Assert.Equal(SemVersion.Parse("1.0.0"), candidate.Package.Version);
     Assert.Equal(Source(Url), candidate.Source);
-    Assert.False(candidate.Package.Entry.Derived);
     Assert.Empty(server.Diagnostics);
     Assert.Equal("client-win", MarkerOf(Assert.Single(client.Candidates)));
   }
@@ -646,7 +645,6 @@ public class ResolverTests {
 
     // Assert
     Candidate candidate = Assert.Single(server.Candidates);
-    Assert.True(candidate.Package.Entry.Derived);
     Assert.Equal(McmodPlatform.Server, candidate.Package.Entry.Platform);
     Assert.Equal("win-x64", candidate.Package.Entry.Runtime);
     Assert.Equal("win", MarkerOf(candidate));
@@ -672,7 +670,7 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_Format3OnClient_DefaultVariantIsDerivedFromClientLabel() {
+  public async Task Resolve_Format3OnClient_KeepsEachLabel() {
     // Arrange
     _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0",
         Variant3("", "", "default"),
@@ -689,7 +687,7 @@ public class ResolverTests {
     // Assert
     Assert.Equal("default", MarkerOf(Assert.Single(server.Candidates)));
     Candidate candidate = Assert.Single(client.Candidates);
-    Assert.Equal("client", MarkerOf(candidate));
+    Assert.Equal("default", MarkerOf(candidate));
     Assert.Equal(McmodPlatform.Client, candidate.Package.Entry.Platform);
     Assert.Equal(Spec, candidate.Package.Identity);
     Assert.Equal("client", MarkerOf(Assert.Single(clientLabel.Candidates)));
@@ -698,7 +696,7 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_Format3OnClientWithoutDefaultLabel_DefaultVariantIsClientLabel() {
+  public async Task Resolve_Format3OnClientWithoutDefaultLabel_HasNoDefaultVariant() {
     // Arrange
     _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0", Variant3("client", "", "client")));
 
@@ -707,95 +705,21 @@ public class ResolverTests {
     ResolveResult server = await CreateResolver().Resolve(Source(Spec), null, s_server);
 
     // Assert
-    Assert.Equal("client", MarkerOf(Assert.Single(client.Candidates)));
+    Assert.Empty(client.Candidates);
     Assert.Empty(server.Candidates);
   }
 
   [Fact]
-  public async Task Resolve_Format3OnClientWithClientLabelForOtherRuntime_HasNoDefaultVariant() {
-    // Arrange: the label "client" exists but none of its variants matches the runtime, so the
-    // variant "" derived from it does not exist either.
-    _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0",
-        Variant3("", "", "default"),
-        Variant3("client", "linux-x64", "client")));
-
-    // Act
-    ResolveResult client = await CreateResolver().Resolve(Source(Spec), null, s_client);
-
-    // Assert
-    Assert.Empty(client.Candidates);
-  }
-
-  [Fact]
-  public async Task Resolve_Format3_DependenciesAreClientCompat() {
+  public async Task Resolve_Format3_DependenciesKeepTheirRange() {
     // Arrange
     _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0", Variant3("", "", "a")));
-    _archives.AddUrl(Url, Simple4("example.com/b", "1.0.0", Marker("b")));
 
     // Act
     ResolveResult legacy = await CreateResolver().Resolve(Source(Spec), null, s_server);
-    ResolveResult format4 = await CreateResolver().Resolve(Source(Url), null, s_server);
 
     // Assert
     PackageDependency dependency = Assert.Single(legacy.Candidates[0].Package.Entry.Dependencies);
-    Assert.True(dependency.ClientCompat);
     Assert.Equal(">=1.0.0", dependency.Range.Text);
-    Assert.False(Assert.Single(format4.Candidates[0].Package.Entry.Dependencies).ClientCompat);
-  }
-
-  [Fact]
-  public async Task Resolve_ClientCompatOnFormat4_NamesDefaultVariant() {
-    // Arrange: a format 3 dependency on "<repo>#client" of a format 4 package.
-    _archives.AddTag(Spec, "v1.0.0", LipYaml(Spec, "1.0.0", $"""
-        "": [ {Entry("client", "win-x64", Marker("default"))} ],
-        "client": [ {Entry("client", "win-x64", Marker("client"))} ]
-        """));
-
-    // Act
-    ResolveResult compat = await CreateResolver().Resolve(
-        Source($"{Spec}#client"), null, s_client, clientCompat: true);
-    ResolveResult plain = await CreateResolver()
-        .Resolve(Source($"{Spec}#client"), null, s_client);
-
-    // Assert
-    Candidate candidate = Assert.Single(compat.Candidates);
-    Assert.Equal("default", MarkerOf(candidate));
-    Assert.Equal("", candidate.Package.Variant);
-    Assert.Equal(Spec, candidate.Package.Identity);
-    Assert.Equal("client", MarkerOf(Assert.Single(plain.Candidates)));
-    Assert.Equal($"{Spec}#client", plain.Candidates[0].Package.Identity);
-  }
-
-  [Fact]
-  public async Task Resolve_ClientCompatOnFormat3_KeepsClientVariant() {
-    // Arrange
-    _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0",
-        Variant3("", "", "default"),
-        Variant3("client", "", "client")));
-
-    // Act
-    ResolveResult result = await CreateResolver().Resolve(
-        Source($"{Spec}#client"), null, s_server, clientCompat: true);
-
-    // Assert
-    Candidate candidate = Assert.Single(result.Candidates);
-    Assert.Equal("client", MarkerOf(candidate));
-    Assert.Equal($"{Spec}#client", candidate.Package.Identity);
-  }
-
-  [Fact]
-  public async Task Resolve_ClientCompatOnOtherVariant_KeepsVariant() {
-    // Arrange
-    _archives.AddTag(Spec, "v1.0.0", LipYaml(Spec, "1.0.0", $"""
-        "": [ {Entry("server", "win-x64", Marker("default"))} ]
-        """));
-
-    // Act
-    ResolveResult result = await CreateResolver().Resolve(
-        Source($"{Spec}#lua"), null, s_server, clientCompat: true);
-
-    // Assert
-    Assert.Empty(result.Candidates);
   }
 
   /// Counts the reads of each archive by the real ArchiveReader.
@@ -948,11 +872,10 @@ internal static class ResolverTestExtensions {
       this Resolver resolver,
       Ref source,
       IVersionConstraint? range,
-      LipEnvironment environment,
-      bool clientCompat = false) {
+      LipEnvironment environment) {
     ResolveResult result = new([], []);
     await foreach (Candidate candidate in resolver.ResolveLazy(
-        source, range, environment, clientCompat, result.Diagnostics.Add)) {
+        source, range, environment, result.Diagnostics.Add)) {
       result.Candidates.Add(candidate);
     }
 

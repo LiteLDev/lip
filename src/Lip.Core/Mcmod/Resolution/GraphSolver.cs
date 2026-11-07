@@ -1,5 +1,4 @@
 using Lip.Core.Infrastructure;
-using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Semver;
 
@@ -213,11 +212,10 @@ public class GraphSolver(IResolver resolver) {
     }
   }
 
-  /// Identifies a candidate sequence by what determines it: the source, the range and whether
-  /// the source is resolved as a dependency of a tooth.json (clientCompat).
-  private readonly record struct ResolveKey(string Ref, object Range, bool Compat) {
-    public static ResolveKey Of(Ref source, IVersionConstraint? range, bool compat) {
-      return new(source.ToString(), RangeKey(range), compat);
+  /// Identifies a candidate sequence by what determines it: the source and the range.
+  private readonly record struct ResolveKey(string Ref, object Range) {
+    public static ResolveKey Of(Ref source, IVersionConstraint? range) {
+      return new(source.ToString(), RangeKey(range));
     }
 
     /// Ranges are keyed by text for the known range types and by value equality for others.
@@ -240,7 +238,6 @@ public class GraphSolver(IResolver resolver) {
       int OwnerLevel,
       Ref Ref,
       IVersionConstraint? Range,
-      bool Compat,
       bool Deferred = false);
 
   /// The candidate sequence of one Resolve call, produced on demand and shared by every
@@ -364,13 +361,12 @@ public class GraphSolver(IResolver resolver) {
       for (int i = 0; i < requests.Count; i++) {
         PackageRequest request = requests[i];
         _agenda.Add(new Requirement(
-            ResolveKey.Of(request.Ref, request.Range, false),
+            ResolveKey.Of(request.Ref, request.Range),
             null,
             $"You requested {ShowRequirement(request.Ref, request.Range)}",
             -1,
             request.Ref,
-            request.Range,
-            false));
+            request.Range));
       }
 
       foreach (Candidate candidate in pinned) {
@@ -741,13 +737,8 @@ public class GraphSolver(IResolver resolver) {
         return false;
       }
 
-      // protocol/compatibility.md §2: a dependency of a tooth.json on "client" names the variant
-      // "" of a package that has a package file.
       return PackageNames.AreEqual(wanted.Target, pinned.Target)
-          && (wanted.Variant == candidate.Package.Variant
-              || (requirement.Compat && !candidate.Package.Entry.Derived
-                  && wanted.Variant == ToothCompat.ClientLabel
-                  && candidate.Package.Variant == ""));
+          && wanted.Variant == candidate.Package.Variant;
     }
 
     /// Whether a member is one of the candidates of a requirement, without enumerating the
@@ -762,8 +753,7 @@ public class GraphSolver(IResolver resolver) {
           requirement.Ref,
           requirement.Ref.Kind == RefKind.Spec
               ? new ExactVersionConstraint(version)
-              : requirement.Range,
-          requirement.Compat);
+              : requirement.Range);
       for (int i = 0; await sequence.Has(i); i++) {
         if (member.Key == PackageKey.Of(sequence.Items[i])) {
           return true;
@@ -776,34 +766,33 @@ public class GraphSolver(IResolver resolver) {
     private void AddEdges(Candidate owner, int level, string suffix) {
       foreach (PackageDependency dependency in owner.Package.Entry.Dependencies) {
         _agenda.Add(new Requirement(
-            ResolveKey.Of(dependency.Source, dependency.Range, dependency.ClientCompat),
+            ResolveKey.Of(dependency.Source, dependency.Range),
             owner,
             $"{Show(owner)}{suffix} requires"
                 + $" {ShowRequirement(dependency.Source, dependency.Range)}",
             level,
             dependency.Source,
-            dependency.Range,
-            dependency.ClientCompat));
+            dependency.Range));
       }
     }
 
     private Task<Choices> GetChoices(Requirement requirement) {
       if (!_choices.TryGetValue(requirement.Key, out Choices? choices)) {
-        choices = new Choices(Resolve(requirement.Ref, requirement.Range, requirement.Compat));
+        choices = new Choices(Resolve(requirement.Ref, requirement.Range));
         _choices[requirement.Key] = choices;
       }
 
       return Task.FromResult(choices);
     }
 
-    private LazySequence Resolve(Ref reference, IVersionConstraint? range, bool compat) {
-      ResolveKey key = ResolveKey.Of(reference, range, compat);
+    private LazySequence Resolve(Ref reference, IVersionConstraint? range) {
+      ResolveKey key = ResolveKey.Of(reference, range);
       if (!_resolved.TryGetValue(key, out LazySequence? sequence)) {
         // The resolver of lip also hands over the exceptions behind its diagnostics.
         sequence = new LazySequence(s => resolver is Resolver withCauses
             ? withCauses.ResolveLazyWithCauses(
-                reference, range, environment, compat, s.AddDiagnostic)
-            : resolver.ResolveLazy(reference, range, environment, compat, s.AddDiagnostic));
+                reference, range, environment, s.AddDiagnostic)
+            : resolver.ResolveLazy(reference, range, environment, s.AddDiagnostic));
         _resolved[key] = sequence;
       }
 

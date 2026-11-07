@@ -70,7 +70,6 @@ public class PackageFileParserTests {
     Assert.Empty(entry.Hooks.PostInstall);
     Assert.Empty(entry.Hooks.PreUninstall);
     Assert.Empty(entry.Hooks.PostUninstall);
-    Assert.False(entry.Derived);
     Assert.Null(entry.McmodAsset);
     Assert.Null(entry.McmodAsset);
     Assert.Equal("server", entry.Json.GetProperty("platform").GetString());
@@ -165,7 +164,6 @@ public class PackageFileParserTests {
     Assert.Equal(
         [("example.com/a", "", "^1.0.0"), ("example.com/b", "lua", ">=2.0.0 <3.0.0")],
         entry.Dependencies.Select(d => (d.Source.Target, d.Source.Variant, d.Range.Text)));
-    Assert.All(entry.Dependencies, d => Assert.False(d.ClientCompat));
     Assert.True(entry.Dependencies[0].Range.IsSatisfiedBy(SemVersion.Parse("1.9.0")));
     Assert.False(entry.Dependencies[0].Range.IsSatisfiedBy(SemVersion.Parse("2.0.0")));
 
@@ -1100,7 +1098,6 @@ public class PackageFileParserTests {
     // Assert
     Assert.Equal(McmodPlatform.Client, entry.Platform);
     Assert.Equal("linux-x64", entry.Runtime);
-    Assert.False(entry.Derived);
     Assert.Equal(AssetType.Zip, Assert.Single(entry.Assets).Type);
     Assert.Throws<PackageFormatException>(
         () => PackageFileParser.ParseEntry(invalid.RootElement));

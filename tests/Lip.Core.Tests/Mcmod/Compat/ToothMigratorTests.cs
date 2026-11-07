@@ -16,7 +16,7 @@ public class ToothMigratorTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
   [Fact]
-  public async Task Migrate_ServerAndClientLabels_TakeThePlatformFromLeviLamina() {
+  public async Task Migrate_Labels_TakeThePlatformFromLeviLamina() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -28,7 +28,9 @@ public class ToothMigratorTests {
             { "platform": "win-x64",
               "dependencies": { "github.com/LiteLDev/LeviLamina": "1.0.0" } },
             { "label": "client", "platform": "win-x64",
-              "dependencies": { "github.com/LiteLDev/LeviLamina#client": "1.0.0" } }
+              "dependencies": { "github.com/LiteLDev/LeviLamina#client": "1.0.0" } },
+            { "label": "tool", "platform": "win-x64",
+              "dependencies": { "github.com/a/tool": "1.0.0" } }
           ]
         }
         """);
@@ -39,14 +41,16 @@ public class ToothMigratorTests {
 
     // Assert
     Assert.Empty(ui.Questions);
+    Assert.Empty(result.Notes);
     PackageFile file = Reparse(result);
     Assert.Equal("github.com/LiteLDev/LegacyMoney", file.Id);
     Assert.Equal(SemVersion.Parse("0.22.0"), file.Version);
     Assert.Equal(
         [
           ("", McmodPlatform.Server, "win-x64", "github.com/LiteLDev/LeviLamina"),
-          ("", McmodPlatform.Client, "win-x64", "github.com/LiteLDev/LeviLamina#client"),
           ("client", McmodPlatform.Client, "win-x64", "github.com/LiteLDev/LeviLamina#client"),
+          ("tool", McmodPlatform.Server, "win-x64", "github.com/a/tool"),
+          ("tool", McmodPlatform.Client, "win-x64", "github.com/a/tool"),
         ],
         Entries(file).Select(e => (e.Variant, e.Entry.Platform, e.Entry.Runtime,
             Assert.Single(e.Entry.Dependencies).Source.ToString()))
@@ -91,21 +95,21 @@ public class ToothMigratorTests {
           entry.Dependencies.Select(d => (d.Source.ToString(), d.Range.Text)));
     }
 
-    // With the label "client", the variant "" has client entries only from that label.
+    // Without a dependency on LeviLamina, the variant "" has entries for both platforms; the
+    // variant "client", which depends on LeviLamina#client, for the client only.
     Assert.Equal(
         [
           (McmodPlatform.Server, "win-x64"),
-          (McmodPlatform.Server, "linux-x64"),
-          (McmodPlatform.Server, "win-arm64"),
           (McmodPlatform.Client, "win-x64"),
+          (McmodPlatform.Server, "linux-x64"),
+          (McmodPlatform.Client, "linux-x64"),
+          (McmodPlatform.Server, "win-arm64"),
+          (McmodPlatform.Client, "win-arm64"),
         ],
         file.Variants[""].Select(e => (e.Platform, e.Runtime)));
     Assert.Equal(
         [(McmodPlatform.Client, "win-x64")],
         file.Variants["client"].Select(e => (e.Platform, e.Runtime)));
-    Assert.Contains(
-        "github.com/o/c",
-        file.Variants[""][3].Dependencies.Select(d => d.Source.ToString()));
   }
 
   [Fact]
@@ -130,7 +134,10 @@ public class ToothMigratorTests {
     PackageFile file = Reparse(result);
     Assert.Equal(["js", "lua"], file.Variants.Keys.Order(StringComparer.Ordinal));
     Assert.Equal(
-        [(McmodPlatform.Server, "win-x64"), (McmodPlatform.Server, "linux-x64")],
+        [
+          (McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64"),
+          (McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64"),
+        ],
         file.Variants["lua"].Select(e => (e.Platform, e.Runtime)));
   }
 
@@ -161,13 +168,16 @@ public class ToothMigratorTests {
     Assert.Equal(
         [
           (McmodPlatform.Server, "win-x64", "github.com/o/a"),
+          (McmodPlatform.Client, "win-x64", "github.com/o/a"),
           (McmodPlatform.Server, "win-arm64", "github.com/o/a"),
+          (McmodPlatform.Client, "win-arm64", "github.com/o/a"),
           (McmodPlatform.Server, "linux-x64", "github.com/o/b"),
+          (McmodPlatform.Client, "linux-x64", "github.com/o/b"),
         ],
         file.Variants[""].Select(e => (e.Platform, e.Runtime,
             Assert.Single(e.Dependencies).Source.ToString())));
     Assert.Equal(
-        ["win-x64", "win-arm64"],
+        ["win-x64", "win-x64", "win-arm64", "win-arm64"],
         file.Variants["lua"].Select(e => e.Runtime));
   }
 
@@ -320,7 +330,7 @@ public class ToothMigratorTests {
 
     // Assert
     Assert.Equal(
-        [(McmodPlatform.Server, "linux-x64")],
+        [(McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64")],
         Reparse(result).Variants[""].Select(e => (e.Platform, e.Runtime)));
     Assert.Contains($"\"{type}\"", Assert.Single(result.Notes));
   }
@@ -355,7 +365,7 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_ClientVariantDependency_IsKeptWithNote() {
+  public async Task Migrate_ClientVariantDependency_IsKept() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -372,10 +382,7 @@ public class ToothMigratorTests {
     // Assert
     PackageEntry entry = Reparse(result).Variants[""][0];
     Assert.Equal("example.com/a#client", Assert.Single(entry.Dependencies).Source.ToString());
-    Assert.False(entry.Dependencies[0].ClientCompat);
-    Assert.StartsWith(
-        "variants (label '', win-x64).dependencies[\"example.com/a#client\"]: keeps its",
-        Assert.Single(result.Notes.Distinct()));
+    Assert.Empty(result.Notes);
   }
 
   [Fact]

@@ -23,7 +23,6 @@ A format 3 `tooth.json` T is read, for an environment (p, r), as a package file 
   - `preserve`: each pattern P of `preserve_files`, `\` replaced by `/`, as P when it contains `/`, and as `**/` followed by P otherwise;
   - `purge`: each pattern P of `remove_files`, `\` replaced by `/`, as P, and also as P followed by `/` when it does not end with `/`;
   - `hooks`, whose `pre_install` is `pre_install`, `post_install` is `install` followed by `post_install`, `pre_uninstall` is `pre_uninstall` followed by `uninstall`, and `post_uninstall` is `post_uninstall`.
-- When p is `"client"` and T has a variant labeled `"client"`, the variant `""` of the result is the one derived from the label `"client"`.
 
 A placement (`type`, `src`, `dest`) becomes a member of `place` with, after `\` is replaced by `/` and empty and `.` segments are removed from both paths:
 
@@ -34,8 +33,6 @@ A placement (`type`, `src`, `dest`) becomes a member of `place` with, after `\` 
 A converted glob or placement that is not valid in a package file is left out.
 
 The version of such a package is the tag version of its git archive, when it has one, and otherwise the `version` of T. Installing such a package never writes its `tooth.json`.
-
-A dependency of T on the variant `client` of a package that has a package file names the variant `""` of that package.
 
 ## 3. `tooth_lock.json`
 

@@ -94,7 +94,6 @@ public class GraphSolverLazyTests {
         Ref source,
         IVersionConstraint? range,
         LipEnvironment environment,
-        bool clientCompat = false,
         Action<string>? onDiagnostic = null) {
       foreach (Candidate candidate in _candidates.GetValueOrDefault(source.ToString(), [])) {
         if (range is null || range.IsSatisfiedBy(candidate.Package.Version)) {

@@ -132,14 +132,10 @@ public interface IResolver {
   /// The candidate sequence, produced lazily: archives (e.g. older tags of a remote repository)
   /// are opened only when the caller asks for more candidates. Diagnostics, which explain every
   /// path that produced no candidate, are reported through onDiagnostic as they arise.
-  /// clientCompat: the source is the key of a dependency of an entry derived from a tooth.json,
-  /// whose variant "client" names the variant "" of a package that has a package file
-  /// (protocol/compatibility.md §2).
   public IAsyncEnumerable<Candidate> ResolveLazy(
       Ref source,
       IVersionConstraint? range,
       LipEnvironment environment,
-      bool clientCompat = false,
       Action<string>? onDiagnostic = null);
 }
 

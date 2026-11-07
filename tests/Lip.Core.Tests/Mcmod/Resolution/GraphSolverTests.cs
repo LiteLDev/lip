@@ -69,25 +69,6 @@ public class GraphSolverTests {
     Assert.Equal(resolver.Calls.Count, resolver.Calls.Distinct().Count());
   }
 
-  [Fact]
-  public async Task Solve_DependencyOfLegacyEntry_IsResolvedWithClientCompat() {
-    // Arrange
-    FakeResolver resolver = new();
-    resolver.Add(Package("github.com/legacy/pkg", "1.0.0", legacy: true,
-        dependencies: [Dependency("github.com/new/lib#client", compat: true)]));
-    resolver.Add(Package("github.com/new/lib", "4.0.0", source: "github.com/new/lib#client"));
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
-        [Request("github.com/legacy/pkg")], [], s_environment)).Order;
-
-    // Assert
-    Assert.Equal(["github.com/new/lib@4.0.0", "github.com/legacy/pkg@1.0.0"], Names(result));
-    Assert.Contains(resolver.Calls, c => c.Ref == "github.com/new/lib#client" && c.Compat);
-    Assert.Contains(resolver.Calls, c => c.Ref == "github.com/legacy/pkg" && !c.Compat);
-  }
-
   // Identities (protocol/package.md §4, protocol/workspace.md §3 rule 3)
 
   [Fact]
@@ -512,27 +493,7 @@ public class GraphSolverTests {
   }
 
   [Fact]
-  public async Task Solve_InstalledPackageOfRef_StandsInForClientCompatDependency() {
-    // Arrange: a tooth.json dependency on t#client names the variant "" of the package t, which
-    // has a package file (protocol/compatibility.md §2), so the installed t from a branch
-    // stands in for it.
-    FakeResolver resolver = new();
-    resolver.Add(Package("github.com/t/t", "1.0.0", source: "github.com/t/t#client"));
-    resolver.Add(Package("github.com/r/r", "1.0.0", legacy: true,
-        dependencies: [Dependency("github.com/t/t#client", compat: true)]));
-    Candidate installed = Package("github.com/t/t", "2.5.0", source: "github.com/t/t@branch:main");
-    GraphSolver solver = new(resolver);
-
-    // Act
-    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
-        [Request("github.com/r/r")], [installed], s_environment)).Order;
-
-    // Assert
-    Assert.Equal(["github.com/t/t@2.5.0", "github.com/r/r@1.0.0"], Names(result));
-  }
-
-  [Fact]
-  public async Task Solve_InstalledPackageOfRef_DoesNotStandInForClientVariantWithoutCompat() {
+  public async Task Solve_InstalledPackageOfRef_DoesNotStandInForClientVariant() {
     // Arrange
     FakeResolver resolver = new();
     resolver.Add(Package("github.com/t/t", "1.0.0", variant: "client"));
@@ -729,9 +690,8 @@ public class GraphSolverTests {
   private static PackageRequest Request(string source) =>
       new(Ref.Parse(source, allowFile: false), null);
 
-  private static PackageDependency Dependency(
-      string source, string range = "*", bool compat = false) =>
-      new(Ref.Parse(source, allowFile: false), VersionRange.Parse(range)) { ClientCompat = compat };
+  private static PackageDependency Dependency(string source, string range = "*") =>
+      new(Ref.Parse(source, allowFile: false), VersionRange.Parse(range));
 
   private static Candidate Package(
       string id,
@@ -741,13 +701,12 @@ public class GraphSolverTests {
       IReadOnlyList<PackageDependency>? dependencies = null,
       string? mod = null,
       byte[]? mcmod = null,
-      bool legacy = false,
       bool unavailable = false,
       List<string>? downloads = null) =>
       TestCandidates.Make(id, version, source, variant, dependencies,
-          mod is null ? mcmod : WorkspaceHarness.Mcmod(mod), legacy, unavailable, downloads);
+          mod is null ? mcmod : WorkspaceHarness.Mcmod(mod), unavailable, downloads);
 
-  private sealed record ResolveCall(string Ref, string? Range, bool Compat);
+  private sealed record ResolveCall(string Ref, string? Range);
 
   /// Maps a source, as written, to its candidates in order, and filters them by range like the
   /// real resolver.
@@ -777,9 +736,8 @@ public class GraphSolverTests {
         Ref source,
         IVersionConstraint? range,
         LipEnvironment environment,
-        bool clientCompat = false,
         Action<string>? onDiagnostic = null) {
-      Calls.Add(new ResolveCall(source.ToString(), range?.ToString(), clientCompat));
+      Calls.Add(new ResolveCall(source.ToString(), range?.ToString()));
       await Task.CompletedTask;
       foreach (Candidate candidate in _candidates.GetValueOrDefault(source.ToString(), [])) {
         if (range is null || range.IsSatisfiedBy(candidate.Package.Version)) {
@@ -816,7 +774,6 @@ internal static class TestCandidates {
       string variant = "",
       IReadOnlyList<PackageDependency>? dependencies = null,
       byte[]? mcmod = null,
-      bool legacy = false,
       bool unavailable = false,
       List<string>? downloads = null) {
     Ref reference = Ref.Parse(
@@ -829,7 +786,6 @@ internal static class TestCandidates {
       Runtime = Environment.Runtime,
       Dependencies = dependencies ?? [],
       Assets = assets,
-      Derived = legacy,
       Json = s_emptyEntry,
     };
 

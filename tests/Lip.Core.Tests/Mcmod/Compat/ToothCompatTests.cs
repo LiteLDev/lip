@@ -76,12 +76,10 @@ public class ToothCompatTests {
     Assert.Equal(SemVersion.Parse("1.2.3"), packageFile.Version);
     Assert.Equal(["", "client"], packageFile.Variants.Keys.Order(StringComparer.Ordinal));
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
-    Assert.True(entry.Derived);
     Assert.Equal(McmodPlatform.Server, entry.Platform);
     Assert.Equal("win-x64", entry.Runtime);
     Assert.Equal(
         ["github.com/user/common", "github.com/user/windows#client"], Dependencies(entry));
-    Assert.All(entry.Dependencies, d => Assert.True(d.ClientCompat));
     Assert.True(entry.Dependencies[1].Range.IsSatisfiedBy(SemVersion.Parse("1.9.0")));
     Assert.False(entry.Dependencies[1].Range.IsSatisfiedBy(SemVersion.Parse("2.0.0")));
     Assert.Equal(["config/*.json"], entry.PreserveFiles.Select(g => g.Pattern));
@@ -167,7 +165,7 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void Derive_ClientPlatform_VariantEmptyIsTheClientLabel() {
+  public void Derive_ClientPlatform_KeepsVariantEmptyAndClientLabel() {
     // Arrange
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
@@ -178,25 +176,10 @@ public class ToothCompatTests {
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
     Assert.Equal(McmodPlatform.Client, entry.Platform);
     Assert.Equal("win-x64", entry.Runtime);
-    Assert.Equal(["github.com/user/clientdep"], Dependencies(entry));
+    Assert.DoesNotContain("github.com/user/clientdep", Dependencies(entry));
     Assert.Equal(["github.com/user/clientdep"],
         Dependencies(Assert.Single(packageFile.Variants["client"])));
-    Assert.Equal(
-        packageFile.Json.GetProperty("variants").GetProperty("client").GetRawText(),
-        packageFile.Json.GetProperty("variants").GetProperty("").GetRawText());
     Assert.Same(entry, packageFile.SelectEntry("", _clientWin));
-  }
-
-  [Fact]
-  public void Derive_ClientPlatformWithoutClientVariantForRuntime_HasNoVariantEmpty() {
-    // Arrange: the label "client" exists but has no variant for linux-x64.
-    PackageManifest manifest = Manifest(_multiPlatformV3);
-
-    // Act
-    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
-
-    // Assert
-    Assert.Empty(packageFile.Variants);
   }
 
   [Fact]
@@ -454,7 +437,6 @@ public class ToothCompatTests {
     PackageEntry reparsed = PackageFileParser.ParseEntry(entry.Json);
 
     // Assert
-    Assert.False(reparsed.Derived);
     Assert.Equal(entry.Platform, reparsed.Platform);
     Assert.Equal(entry.Runtime, reparsed.Runtime);
     Assert.Equal(Dependencies(entry), Dependencies(reparsed));
@@ -551,12 +533,11 @@ public class ToothCompatTests {
     PackageFile clientWin = ToothCompat.Derive(manifest, _clientWin);
     PackageFile clientLinux = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
 
-    // Assert: on windows, the variant "client" is absent, and so is the variant "" derived from
-    // it on the client; elsewhere, it is there.
+    // Assert: on windows, the variant "client" is absent; elsewhere, it is there.
     Assert.Equal([""], serverWin.Variants.Keys);
     Assert.False(serverWin.Json.GetProperty("variants").TryGetProperty("client", out _));
-    Assert.Empty(clientWin.Variants);
-    Assert.Empty(clientWin.Json.GetProperty("variants").EnumerateObject());
+    Assert.Equal([""], clientWin.Variants.Keys);
+    Assert.False(clientWin.Json.GetProperty("variants").TryGetProperty("client", out _));
     Assert.Equal(["", "client"], clientLinux.Variants.Keys.Order(StringComparer.Ordinal));
   }
 

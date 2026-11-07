@@ -71,7 +71,6 @@ public class ArchiveReaderTests {
     PackageFile file = document.ReadFor(_environment);
     Assert.Same(document.File, file);
     PackageEntry entry = Assert.Single(file.Variants[""]);
-    Assert.False(entry.Derived);
     Assert.Same(entry, file.SelectEntry("", _environment));
   }
 
@@ -170,7 +169,6 @@ public class ArchiveReaderTests {
     // Assert
     Assert.Equal("github.com/user/repo", file.Id);
     PackageEntry entry = Assert.IsType<PackageEntry>(file.SelectEntry("", _environment));
-    Assert.True(entry.Derived);
   }
 
   [Fact]
