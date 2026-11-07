@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Abstractions;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -30,7 +31,8 @@ public class McmodInstallException(string message, Exception? inner = null)
 ///
 /// The mods directory is never deleted, and remove_files never matches it (so a directory
 /// pattern naming it removes nothing). .lip, where lip keeps the lock, is never written, deleted
-/// or matched.
+/// or matched. On Windows, these checks and ownership see a path by its long names (LongName),
+/// so that an 8.3 short name such as "LIP~1" cannot name .lip or a file of another package.
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
@@ -135,14 +137,14 @@ public partial class McmodInstaller(
         context.Lock.Packages
             .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))
             .SelectMany(p => p.Files)
-            .Select(NormalizeRelative),
+            .Select(f => LongName(root, NormalizeRelative(f))),
         PathComparer);
 
     // 2. Owned files not matching preserve_files.
     List<string> files = [];
     HashSet<string> fileSet = new(PathComparer);
     List<string> ownedToDelete = [];
-    foreach (string file in package.Files.Select(NormalizeRelative)) {
+    foreach (string file in package.Files.Select(f => LongName(root, NormalizeRelative(f)))) {
       if (!IsSafeRelativePath(file) || WorkspaceLayout.IsLipPath(file)
           || ownedByOthers.Contains(file)) {
         RunTrace.Write("install", $"{package.Identity}: not deleting {file}: it is not a safe"
@@ -503,7 +505,7 @@ public partial class McmodInstaller(
             + " valid path on Windows (a name in it ends with '.' or a space, or contains ':')."
             + " Report this to the author of the package.");
       }
-      target = string.Join('/', segments);
+      target = LongName(root, string.Join('/', segments));
       if (WorkspaceLayout.IsLipPath(target)) {
         throw new McmodInstallException(
             $"Cannot install {label}: its package file places a file at '{target}', inside"
@@ -553,7 +555,7 @@ public partial class McmodInstaller(
     foreach (LockedPackage locked in context.Lock.Packages
         .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))) {
       foreach (string file in locked.Files.Select(NormalizeRelative)) {
-        owners.TryAdd(file, locked.Identity);
+        owners.TryAdd(LongName(root, file), locked.Identity);
       }
     }
 
@@ -698,17 +700,21 @@ public partial class McmodInstaller(
 
     if (literal == segments.Length && !glob.MatchesDirectories) {
       // A literal file path.
-      string file = glob.Pattern;
+      string file = LongName(root, glob.Pattern);
       if (!WorkspaceLayout.IsLipPath(file) && view.FileExists(ToFullPath(root, file))) {
         yield return (file, false);
       }
       yield break;
     }
 
+    // The walk starts at the long name of the literal leading directory, so that the paths it
+    // finds are checked by their long names; the glob is matched against them as it spells that
+    // directory.
     string start = string.Concat(segments[..literal].Select(s => s + "/"));
-    string startFull = ToFullPath(root, start);
+    string longStart = LongName(root, start);
+    string startFull = ToFullPath(root, longStart);
     if ((start != "" && !IsInside(root, startFull)) || !view.DirectoryExists(startFull)
-        || WorkspaceLayout.IsLipPath(start)) {
+        || WorkspaceLayout.IsLipPath(longStart)) {
       yield break;
     }
 
@@ -716,10 +722,10 @@ public partial class McmodInstaller(
     if (literal == segments.Length) {
       // A literal directory path. mods is never matched, so a pattern naming it removes nothing
       // below it either.
-      if (WorkspaceLayout.IsModsDirectory(start)) {
+      if (WorkspaceLayout.IsModsDirectory(longStart)) {
         yield break;
       }
-      yield return (start.TrimEnd('/'), true);
+      yield return (longStart.TrimEnd('/'), true);
       foreach ((string, bool) entry in Walk(startFull, all: true, depth: 1)) {
         yield return entry;
       }
@@ -740,7 +746,7 @@ public partial class McmodInstaller(
         string suffix = info.IsDirectory ? "/" : "";
         bool matched = all
             || (!(info.IsDirectory && WorkspaceLayout.IsModsDirectory(path))
-                && glob.IsMatch(path + suffix));
+                && glob.IsMatch(start + path[longStart.Length..] + suffix));
         if (matched) {
           yield return (path, info.IsDirectory);
         }
@@ -764,6 +770,60 @@ public partial class McmodInstaller(
           : _fs.Path.GetFullPath(_fs.Path.Combine(
               root,
               relative.TrimEnd('/').Replace('/', _fs.Path.DirectorySeparatorChar)));
+
+  /// A workspace-relative path with each 8.3 short name in it replaced by the long name it
+  /// stands for, on Windows: "LIP~1/workspace.yaml" is ".lip/workspace.yaml" when ".lip" has the
+  /// short name "LIP~1". Only names that exist can be short names, and every short name contains
+  /// '~', so other paths are returned as they are without asking the file system, and so are
+  /// paths that are not safe workspace paths.
+  private string LongName(string root, string relative) {
+    if (!OperatingSystem.IsWindows() || !relative.Contains('~')
+        || !IsSafeRelativePath(relative.TrimEnd('/'))) {
+      return relative;
+    }
+
+    // The longest leading part of the path that exists.
+    string[] segments = relative.TrimEnd('/').Split('/');
+    int existing = segments.Length;
+    string full = ToFullPath(root, relative);
+    while (existing > 0 && !_fs.File.Exists(full) && !_fs.Directory.Exists(full)) {
+      existing--;
+      full = ToFullPath(root, string.Join('/', segments[..existing]));
+    }
+    if (!segments[..existing].Any(s => s.Contains('~'))
+        || GetLongPath(root) is not string longRoot || GetLongPath(full) is not string longPath) {
+      return relative;
+    }
+
+    string head = _fs.Path.GetRelativePath(longRoot, longPath)
+        .Replace(_fs.Path.DirectorySeparatorChar, '/');
+    if (head == "." || head == ".." || head.StartsWith("../", StringComparison.Ordinal)
+        || _fs.Path.IsPathRooted(head)) {
+      return relative;
+    }
+
+    return string.Join('/', [head, .. segments[existing..]])
+        + (relative.EndsWith('/') ? "/" : "");
+  }
+
+  /// The absolute path with its 8.3 short names replaced by long names (GetLongPathNameW), or
+  /// null when it cannot be found.
+  private static string? GetLongPath(string path) {
+    char[] buffer = new char[path.Length + 260];
+    while (true) {
+      uint length = GetLongPathNameW(path, buffer, (uint)buffer.Length);
+      if (length == 0) {
+        return null;
+      }
+      if (length < buffer.Length) {
+        return new string(buffer, 0, (int)length);
+      }
+      buffer = new char[length];
+    }
+  }
+
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  private static extern uint GetLongPathNameW(string shortPath, char[] longPath, uint length);
 
   /// Whether path is strictly below directory.
   private bool IsInside(string directory, string path) {
