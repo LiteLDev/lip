@@ -130,7 +130,8 @@ deps:
 lip installs, for each dependency, a version of that repository (and variant) whose version is
 in the range, from the repository's version tags, with an entry for the same environment. A
 package installed from a git ref, such as `@branch:main`, also satisfies a dependency on the same
-package id and variant when its version is in the range.
+package id and variant when its version is in the range and the repository has a version that
+lip could install for the dependency.
 
 Version ranges use the syntax and semantics of `SemVersionRange.Parse` of
 [Semver for .NET 3.0.0](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0) with its default

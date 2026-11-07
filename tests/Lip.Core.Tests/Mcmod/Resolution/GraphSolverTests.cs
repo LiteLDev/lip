@@ -561,6 +561,71 @@ public class GraphSolverTests {
         Names(result));
   }
 
+  [Theory]
+  [InlineData("1.0.0")]
+  [InlineData("")]
+  public async Task Solve_InstalledPackageOfRefWithoutVersionInRange_DoesNotStandIn(
+      string tag) {
+    // Arrange: the package at the branch is in the range of A's dependency, but no version tag
+    // of the repository (if any) is, so there is no candidate for it to stand in for.
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/b", tag == "" ? [] : [tag]);
+    resolver.Add(Package("github.com/a/a", "1.0.0",
+        dependencies: [Dependency("github.com/x/b", ">=1.1.0")]));
+    Candidate installed = Package("github.com/x/b", "1.2.0", source: "github.com/x/b@branch:main");
+    GraphSolver solver = new(resolver);
+
+    // Act & Assert
+    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.SolveGraph(
+        [Request("github.com/a/a")], [installed], s_environment));
+    await Assert.ThrowsAsync<DependencyResolutionException>(() => solver.SolveGraph(
+        [Request("github.com/a/a")], [], s_environment, [installed]));
+  }
+
+  [Fact]
+  public async Task Solve_InstalledPackageOfRefWithVersionInRange_StandsIn() {
+    // Arrange: a version of the repository is in the range, so the package at the branch
+    // stands in for it.
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/b", ["1.1.0", "1.0.0"]);
+    resolver.Add(Package("github.com/a/a", "1.0.0",
+        dependencies: [Dependency("github.com/x/b", ">=1.1.0")]));
+    Candidate installed = Package("github.com/x/b", "1.2.0", source: "github.com/x/b@branch:main");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> kept = (await solver.SolveGraph(
+        [Request("github.com/a/a")], [installed], s_environment)).Order;
+    IReadOnlyList<Candidate> preferred = (await solver.SolveGraph(
+        [Request("github.com/a/a")], [], s_environment, [installed])).Order;
+
+    // Assert
+    Assert.Same(installed, kept[0]);
+    Assert.Same(installed, preferred[0]);
+  }
+
+  [Theory]
+  [InlineData("1.0.0", false)]
+  [InlineData("", false)]
+  [InlineData("1.1.0", true)]
+  public async Task RequestCandidate_PackageOfRef_StandsInOnlyWithVersionInRange(
+      string tag, bool standsIn) {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/b", tag == "" ? [] : [tag]);
+    Candidate ofRef = Package("github.com/x/b", "1.2.0", source: "github.com/x/b@branch:main");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    Candidate? satisfier = await solver.RequestCandidate(
+        new(Ref.Parse("github.com/x/b", allowFile: false), VersionRange.Parse(">=1.1.0")),
+        ofRef,
+        s_environment);
+
+    // Assert
+    Assert.Equal(standsIn ? ofRef : null, satisfier);
+  }
+
   // Failures
 
   [Fact]

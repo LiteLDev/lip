@@ -120,7 +120,8 @@ deps:
 ```
 
 对每个依赖，lip 从该仓库的版本标签中安装一个版本在范围内、且有同一环境条目的版本（及变体）。从 git
-引用（例如 `@branch:main`）安装的包，只要版本在范围内，也能满足对同一包 ID 和变体的依赖。
+引用（例如 `@branch:main`）安装的包，只要版本在范围内，且该仓库有 lip 可为该依赖安装的版本，也能满足对同一包
+ID 和变体的依赖。
 
 版本范围采用 [Semver for .NET 3.0.0](https://github.com/WalkerCodeRanger/semver/tree/v3.0.0) 中
 `SemVersionRange.Parse` 在默认选项下的语法和语义，例如 `^1.2.0`、`~1.2.0`、`>=1.0.0 <2.0.0`、

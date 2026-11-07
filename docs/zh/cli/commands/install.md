@@ -37,7 +37,7 @@ git 引用把仓库固定到某个提交：
 
 以这种方式安装的包，其版本为该提交处 `lip.yaml` 声明的 `version`。只有名为 `v<SemVer>` 的标签（例如 `@tag:v1.2.0`）会让包取标签的版本，与普通版本相同：该处的 `lip.yaml` 必须声明该版本（早期格式的 `tooth.json` 则取标签版本）。[工作区文件](../../concepts/lockfiles.md)会记录来源、其解析到的提交及其包文件，因此在你更新之前，工作区始终保持该提交。
 
-从 git 引用安装的包，也能满足对其不带 git 引用的包 ID 和变体的依赖，只要其版本在依赖的范围内：要求 `github.com/LiteLDev/LeviLamina` `>=1.5.0` 的 mod，会接受从 `@branch:main` 安装且声明 `1.6.0` 的 LeviLamina；若其声明 `1.4.0` 则失败。
+从 git 引用安装的包，也能满足对其不带 git 引用的包 ID 和变体的依赖，只要其版本在依赖的范围内，且该仓库有 lip 可为该依赖安装的版本标签：要求 `github.com/LiteLDev/LeviLamina` `>=1.5.0` 的 mod，会接受从 `@branch:main` 安装且声明 `1.6.0` 的 LeviLamina；若其声明 `1.4.0`，或 LeviLamina 没有 `1.5.0` 及以上的版本标签，则失败。
 
 ## 选项
 

@@ -37,7 +37,7 @@ A git ref pins a repository to one commit:
 
 The version of a package installed this way is the `version` that its `lip.yaml` declares at that commit. Only a tag named `v<SemVer>`, such as `@tag:v1.2.0`, gives the package the tag's version, as for plain versions: the `lip.yaml` there must declare that version (a `tooth.json` of an earlier format takes the tag's version). The [workspace file](../../concepts/lockfiles.md) records the source, the commit it resolved to and its package file, so the workspace keeps that commit until you update.
 
-A package installed from a git ref also satisfies dependencies on its package id and variant without a git ref, as long as its version is in the dependency's range: a mod requiring `github.com/LiteLDev/LeviLamina` `>=1.5.0` accepts a LeviLamina installed from `@branch:main` that declares `1.6.0`, and fails if it declares `1.4.0`.
+A package installed from a git ref also satisfies dependencies on its package id and variant without a git ref, as long as its version is in the dependency's range and the repository has a version tag that lip could install for the dependency: a mod requiring `github.com/LiteLDev/LeviLamina` `>=1.5.0` accepts a LeviLamina installed from `@branch:main` that declares `1.6.0`, and fails if it declares `1.4.0`, or if no version tag of LeviLamina is `1.5.0` or higher.
 
 ## Options
 

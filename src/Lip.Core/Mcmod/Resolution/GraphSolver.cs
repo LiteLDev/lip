@@ -472,7 +472,9 @@ public class GraphSolver(IResolver resolver) {
     public async Task<Candidate?> RequestCandidate(PackageRequest request, Candidate package) {
       Requirement requirement = RequestRequirement(request);
       return await CandidateWithKey(requirement, PackageKey.Of(package))
-          ?? (IsPinnedSatisfier(requirement, package) ? package : null);
+          ?? (await IsPinnedSatisfier(requirement, await GetChoices(requirement), package)
+              ? package
+              : null);
     }
 
     private static Requirement RequestRequirement(PackageRequest request) => new(
@@ -686,7 +688,7 @@ public class GraphSolver(IResolver resolver) {
 
       if (requirement.Ref is { Kind: RefKind.Spec, GitRef: null }) {
         foreach (Member member in _members.Values) {
-          if (IsPinnedSatisfier(requirement, member.Candidate)) {
+          if (await IsPinnedSatisfier(requirement, choices, member.Candidate)) {
             return member.Candidate;
           }
         }
@@ -733,7 +735,7 @@ public class GraphSolver(IResolver resolver) {
       }
 
       foreach (Candidate candidate in preferred) {
-        if (IsPinnedSatisfier(requirement, candidate)) {
+        if (await IsPinnedSatisfier(requirement, choices, candidate)) {
           return candidate;
         }
       }
@@ -783,10 +785,12 @@ public class GraphSolver(IResolver resolver) {
 
     /// Whether a candidate resolved from a remote repository with a ref stands in for a
     /// requirement without a ref (protocol/workspace.md §3): same repository (ignoring ASCII
-    /// case) and variant, and a version in the requirement's range. A package of a ref thus
+    /// case) and variant, a version in the requirement's range, and a candidate of the
+    /// requirement to stand in for, of which only the first is loaded. A package of a ref thus
     /// stands in for the tag versions of its repository, while a requirement with a ref still
     /// needs exactly its own candidates.
-    private static bool IsPinnedSatisfier(Requirement requirement, Candidate candidate) {
+    private static async ValueTask<bool> IsPinnedSatisfier(
+        Requirement requirement, Choices choices, Candidate candidate) {
       if (candidate.Source is not { Kind: RefKind.Spec, GitRef: not null } pinned
           || requirement.Ref is not { Kind: RefKind.Spec, GitRef: null } wanted) {
         return false;
@@ -798,7 +802,8 @@ public class GraphSolver(IResolver resolver) {
       }
 
       return PackageNames.AreEqual(wanted.Target, pinned.Target)
-          && wanted.Variant == candidate.Package.Variant;
+          && wanted.Variant == candidate.Package.Variant
+          && await choices.Has(0);
     }
 
     /// Whether a member is one of the candidates of a requirement, without enumerating the
