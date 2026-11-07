@@ -13,7 +13,7 @@ lip migrate
 请在包仓库的根目录中运行。它写入一个由该处格式版本为 1、2 或 3 的 `tooth.json` 转换而来的 `lip.yaml`（参见 [lip.yaml](../../concepts/lip_yaml.md)），然后删除 `tooth.json`：
 
 - `tooth` 变为 `id`，`version` 和 `info` 原样复制；以 `https://` 开头的 `info.avatar_url` 变为 `info.logo`，否则被丢弃。
-- 每个标签变为一个变体。对其适用的每个运行时，该标签下的变体按 lip v0.37.0 的方式合并，变为一个服务端条目和一个客户端条目。存在 `client` 标签时，变体 `""` 只得到服务端条目，`client` 的条目同时也用作 `""` 的客户端条目。
+- 每个标签变为一个变体。对其适用的每个运行时，该标签下的变体按 lip v0.37.0 的方式合并，变为一个条目：合并后的变体依赖 `github.com/LiteLDev/LeviLamina#client` 时为客户端条目，否则为服务端条目。存在 `client` 标签时，变体 `""` 没有自己的客户端条目，`client` 的客户端条目同时也用作 `""` 的客户端条目。
 - 每个条目的转换方式与 lip 读取[早期格式](../../concepts/lip_yaml.md#早期格式)的 `tooth.json` 完全相同：`dependencies` 变为 `deps`；资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`；`preserve_files` 变为 `preserve`（不含 `/` 的模式加上前缀 `**/`），`remove_files` 变为 `purge`（不以 `/` 结尾的模式还会再加上以 `/` 结尾的形式）；scripts 变为 `hooks`。在 `lip.yaml` 中无效的放置规则和模式会被略去。
 - 合并后的变体含有类型为 `tar`、`tgz` 或 `uncompressed` 的资源的运行时不会得到条目，因为 `lip.yaml` 没有这些资源类型。
 

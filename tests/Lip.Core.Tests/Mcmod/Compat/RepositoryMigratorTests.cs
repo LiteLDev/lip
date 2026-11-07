@@ -158,7 +158,7 @@ public class RepositoryMigratorTests {
     PackageFile packageFile = ReadPackageFile();
     Assert.Equal("github.com/test/tool", packageFile.Id);
     Assert.Equal(
-        [(McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64")],
+        [(McmodPlatform.Server, "win-x64")],
         packageFile.Variants[""].Select(e => (e.Platform, e.Runtime)));
     Assert.All(
         packageFile.Variants[""],
@@ -330,10 +330,7 @@ public class RepositoryMigratorTests {
     // Assert
     Assert.Single(ui.Questions);
     Assert.Equal(
-        [
-          (McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64"),
-          (McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64"),
-        ],
+        [(McmodPlatform.Server, "win-x64"), (McmodPlatform.Server, "linux-x64")],
         ReadPackageFile().Variants[""].Select(e => (e.Platform, e.Runtime)));
   }
 

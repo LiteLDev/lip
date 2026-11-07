@@ -148,7 +148,7 @@ public class LipClientTests {
     JsonNode document = Yaml(bytes)!;
     JsonArray entries = document["variants"]![""]!.AsArray();
     Assert.Equal(
-        [("server", "win-x64"), ("client", "win-x64")],
+        [("server", "win-x64")],
         entries.Select(e => ((string)e!["platform"]!, (string)e["runtime"]!)));
     JsonNode server = entries[0]!;
     Assert.Equal(
@@ -185,7 +185,7 @@ public class LipClientTests {
     JsonNode document = Yaml(_ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml")))!;
     Assert.Equal(4, (int)document["format"]!);
     Assert.Equal(
-        [("client", "linux-x64"), ("client", "win-x64"), ("server", "linux-x64"), ("server", "win-x64")],
+        [("server", "linux-x64"), ("server", "win-x64")],
         document["variants"]![""]!.AsArray()
             .Select(e => ((string)e!["platform"]!, (string)e["runtime"]!)).Order());
   }

@@ -20,12 +20,14 @@ namespace Lip.Core.Mcmod.Compat;
 ///
 /// - A package file has no platform patterns and no "any runtime": the runtimes a platform pattern
 ///   stands for, and those the variants without a platform apply to, are asked for.
-/// - Each label becomes a variant. It has an entry for each platform and runtime, holding the
-///   variants of the label merged for the runtime and converted exactly as Section 2 converts
-///   them (ToothCompat.ConvertEntry); a runtime whose merged variants have an asset of type tar,
-///   tgz or uncompressed has no entry.
-/// - With a variant labeled "client", the label "" has entries for the server only, and the
-///   entries of "client" for the client are also those of the variant "" (Section 2).
+/// - Each label becomes a variant. It has an entry for each runtime, holding the variants of the
+///   label merged for the runtime and converted exactly as Section 2 converts them
+///   (ToothCompat.ConvertEntry); a runtime whose merged variants have an asset of type tar, tgz
+///   or uncompressed has no entry.
+/// - The platform of an entry is the client when its merged variants depend on
+///   github.com/LiteLDev/LeviLamina#client, and the server otherwise.
+/// - With a variant labeled "client", the client entries of "client" are also those of the
+///   variant "", which has no client entries of its own (Section 2).
 public static class ToothMigrator {
   public record Result(JsonObject Document, IReadOnlyList<string> Notes);
 
@@ -121,22 +123,24 @@ public static class ToothMigrator {
       ];
 
       foreach (string runtime in runtimes) {
-        if (await Content(context, Merge(tooth, label, runtime), runtime,
+        PackageManifestVariant merged = Merge(tooth, label, runtime);
+        if (await Content(context, merged, runtime,
             $"variants (label '{label}', {runtime})") is not JsonObject content) {
           RunTrace.Write("migrate", $"variant '{label}' has no entry for {runtime}");
           continue;
         }
 
-        RunTrace.Write("migrate", $"variant '{label}': entry for {runtime}");
-
-        AddEntry(label, Entry(McmodPlatform.Server, runtime, content));
-        if (label != "" || !hasClient) {
-          AddEntry(label, Entry(McmodPlatform.Client, runtime, content));
-        }
+        McmodPlatform platform = PlatformOf(merged);
+        RunTrace.Write("migrate",
+            $"variant '{label}': entry for {platform.ToSpecString()} {runtime}");
 
         // On the client, the variant "" is the one of the label "client"
         // (protocol/compatibility.md §2).
-        if (label == ToothCompat.ClientLabel) {
+        if (label != "" || !hasClient || platform != McmodPlatform.Client) {
+          AddEntry(label, Entry(platform, runtime, content));
+        }
+
+        if (label == ToothCompat.ClientLabel && platform == McmodPlatform.Client) {
           AddEntry("", Entry(McmodPlatform.Client, runtime, content));
         }
       }
@@ -156,6 +160,17 @@ public static class ToothMigrator {
       return entry;
     }
   }
+
+  /// The platform of the entry for merged variants: the client when they depend on the variant
+  /// "client" of LeviLamina, and the server otherwise.
+  private static McmodPlatform PlatformOf(PackageManifestVariant merged) =>
+      merged.Dependencies.Keys.Any(id =>
+          string.Equals(id.Path, LeviLaminaPath, StringComparison.OrdinalIgnoreCase)
+          && id.Variant == ToothCompat.ClientLabel)
+          ? McmodPlatform.Client
+          : McmodPlatform.Server;
+
+  private const string LeviLaminaPath = "github.com/LiteLDev/LeviLamina";
 
   /// The variants of a label merged for a runtime, as protocol/compatibility.md §2 merges them.
   private static PackageManifestVariant Merge(PackageManifest tooth, string label, string runtime) {
