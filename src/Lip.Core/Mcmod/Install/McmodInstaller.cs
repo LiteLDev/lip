@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO.Abstractions;
 using System.Runtime.InteropServices;
@@ -38,6 +39,9 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// pattern naming it removes nothing). .lip, where lip keeps the lock, is never written, deleted
 /// or matched. On Windows, these checks and ownership see a path by its long names (LongName),
 /// so that an 8.3 short name such as "LIP~1" cannot name .lip or a file of another package.
+/// Elsewhere, on a file system that ignores case (as macOS does by default), they see each name
+/// that exists as the file system spells it, so that ".LIP" or "MODS" cannot name .lip or mods,
+/// nor "Mods/a.dll" a file "mods/a.dll" of another package.
 public partial class McmodInstaller(
     IFileSystem fileSystem,
     ICommandRunner commandRunner,
@@ -45,6 +49,9 @@ public partial class McmodInstaller(
   private readonly IFileSystem _fs = fileSystem;
   private readonly ICommandRunner _commandRunner = commandRunner;
   private readonly IUserInteraction _ui = userInteraction;
+
+  /// Whether the file system of each workspace root ignores case (IgnoresCase), once known.
+  private readonly ConcurrentDictionary<string, bool> _ignoresCase = new(StringComparer.Ordinal);
 
   /// How workspace paths are compared: ignoring case on Windows, ordinal elsewhere.
   public static StringComparer PathComparer => WorkspaceLayout.PathComparer;
@@ -137,7 +144,8 @@ public partial class McmodInstaller(
         + $" from {root} ({package.Files.Count} owned files recorded)");
 
     // The paths to delete are planned against the workspace before pre_uninstall runs; a
-    // DeleteMatchesStep deletes what matches only after hook commands ran.
+    // DeleteMatchesStep deletes what matches only after hook commands ran. Each deletion is
+    // checked again against the owners when it is carried out (Apply).
     HashSet<string> ownedByOthers = new(
         context.Lock.Packages
             .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))
@@ -232,7 +240,7 @@ public partial class McmodInstaller(
 
     // Without hook commands, the workspace is as planned when the deletions run.
     if (!context.IgnoreScripts) {
-      steps.Add(new DeleteMatchesStep(ownedToDelete, entry.RemoveFiles, ownedByOthers));
+      steps.Add(new DeleteMatchesStep(ownedToDelete, entry.RemoveFiles));
     }
 
     if (!context.IgnoreScripts && entry.Hooks.PostUninstall.Count > 0) {
@@ -247,8 +255,9 @@ public partial class McmodInstaller(
   /// Runs the steps of a plan, making every file change through the transaction, and returns the
   /// files the package owns afterwards (workspace-relative, '/'-separated; none for an
   /// uninstall). Each write is checked against the write rules as the workspace and owners are
-  /// then (protocol/workspace.md §4), and adds the file it writes to owners. Throws
-  /// McmodInstallException when a step fails; the caller rolls the transaction back.
+  /// then (protocol/workspace.md §4), and adds the file it writes to owners; a file that another
+  /// package owns then is not deleted. Throws McmodInstallException when a step fails; the caller
+  /// rolls the transaction back.
   public async Task<IReadOnlyList<string>> Apply(
       PackagePlan plan,
       WorkspaceTransaction transaction,
@@ -310,7 +319,11 @@ public partial class McmodInstaller(
           }
         case DeleteFileStep delete:
           try {
-            // A hook command may have deleted it.
+            // An earlier package of the operation may own it now, and a hook command may have
+            // deleted it.
+            if (OwnedByAnother(plan, owners, delete.FullPath)) {
+              break;
+            }
             if (_fs.File.Exists(delete.FullPath)) {
               transaction.DeleteFile(delete.FullPath);
             } else {
@@ -338,7 +351,7 @@ public partial class McmodInstaller(
 
           break;
         case DeleteMatchesStep matches:
-          DeleteMatches(plan, matches, transaction);
+          DeleteMatches(plan, matches, transaction, owners);
           break;
         default:
           throw new ArgumentException(
@@ -351,9 +364,13 @@ public partial class McmodInstaller(
   }
 
   /// Deletes what uninstallation steps 2–4 match in the workspace as it is now (protocol/workspace.md
-  /// §6 rule 4), beyond what the plan already deleted.
+  /// §6 rule 4), beyond what the plan already deleted. A file that another package owns now is
+  /// kept, and so is a matched directory holding it.
   private void DeleteMatches(
-      PackagePlan plan, DeleteMatchesStep step, WorkspaceTransaction transaction) {
+      PackagePlan plan,
+      DeleteMatchesStep step,
+      WorkspaceTransaction transaction,
+      FileOwners owners) {
     WorkspaceView now = new(_fs);
     List<string> files = [.. step.OwnedFiles];
     List<string> directories = [];
@@ -363,7 +380,7 @@ public partial class McmodInstaller(
           if (!WorkspaceLayout.IsModsDirectory(path)) {
             directories.Add(path);
           }
-        } else if (!step.OwnedByOthers.Contains(path)) {
+        } else {
           files.Add(path);
         }
       }
@@ -372,7 +389,7 @@ public partial class McmodInstaller(
     List<string> deleted = [];
     foreach (string file in files.Distinct(PathComparer)) {
       string full = ToFullPath(plan.Root, file);
-      if (!_fs.File.Exists(full)) {
+      if (!_fs.File.Exists(full) || OwnedByAnother(plan, owners, full)) {
         continue;
       }
 
@@ -423,6 +440,19 @@ public partial class McmodInstaller(
             ex);
       }
     }
+  }
+
+  /// Whether a package other than the one of the plan owns the file now, so that uninstalling
+  /// the package keeps it (protocol/workspace.md §4).
+  private bool OwnedByAnother(PackagePlan plan, FileOwners owners, string full) {
+    string relative = _fs.Path.GetRelativePath(plan.Root, full)
+        .Replace(_fs.Path.DirectorySeparatorChar, '/');
+    if (owners.OwnerOf(relative) is not string owner || PackageNames.AreEqual(owner, plan.Name)) {
+      return false;
+    }
+
+    RunTrace.Write("install", $"{plan.Name}: not deleting {relative}: {owner} owns it");
+    return true;
   }
 
   /// The owners of the files of the installed packages (protocol/workspace.md §4), by the long
@@ -809,9 +839,17 @@ public partial class McmodInstaller(
   /// '~', so other paths are returned as they are without asking the file system, and so are
   /// paths that are not safe workspace paths. Null when a name containing '~' exists but its
   /// long name cannot be read: such a path cannot be checked, so it fails the checks.
+  ///
+  /// Elsewhere, on a file system that ignores case, each name in the path that exists is spelled
+  /// as the file system has it (Spelled): ".LIP/lock" is ".lip/lock" when ".lip" exists.
   private string? LongName(string root, string relative) {
-    if (!OperatingSystem.IsWindows() || !relative.Contains('~')
-        || !IsSafeRelativePath(relative.TrimEnd('/'))) {
+    if (!IsSafeRelativePath(relative.TrimEnd('/'))) {
+      return relative;
+    }
+    if (!OperatingSystem.IsWindows()) {
+      return IgnoresCase(root) ? Spelled(root, relative) : relative;
+    }
+    if (!relative.Contains('~')) {
       return relative;
     }
 
@@ -839,6 +877,80 @@ public partial class McmodInstaller(
 
     return string.Join('/', [head, .. segments[existing..]])
         + (relative.EndsWith('/') ? "/" : "");
+  }
+
+  /// A workspace-relative path with each name in it that exists spelled as the file system has
+  /// it, on a file system that ignores case: "MODS/a.dll" is "mods/a.dll" when "mods" exists.
+  /// Null when a directory on the way cannot be listed: such a path cannot be checked.
+  private string? Spelled(string root, string relative) {
+    string[] segments = relative.TrimEnd('/').Split('/');
+    string directory = root;
+    for (int i = 0; i < segments.Length; i++) {
+      List<string> names;
+      try {
+        if (!_fs.Directory.Exists(directory)) {
+          break;
+        }
+        names = [.. _fs.Directory.EnumerateFileSystemEntries(directory)
+            .Select(p => _fs.Path.GetFileName(p))];
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        RunTrace.Write("install", $"Cannot list {directory} to spell {relative}: {ex.Message}");
+        return null;
+      }
+
+      string segment = segments[i];
+      string? name = names.FirstOrDefault(n => n == segment)
+          ?? names.FirstOrDefault(n => string.Equals(
+              n.Normalize(), segment.Normalize(), StringComparison.OrdinalIgnoreCase));
+      if (name is null) {
+        break;
+      }
+      segments[i] = name;
+      directory = _fs.Path.Join(directory, name);
+    }
+
+    return string.Join('/', segments) + (relative.EndsWith('/') ? "/" : "");
+  }
+
+  /// Whether the file system of the workspace root ignores case in names, as macOS does by
+  /// default: a name in the root spelled in another case finds the same entry, and no other
+  /// entry has that spelling. Taken as false while the root holds no name with a letter.
+  private bool IgnoresCase(string root) {
+    if (_ignoresCase.TryGetValue(root, out bool known)) {
+      return known;
+    }
+
+    List<string> names;
+    try {
+      names = [.. _fs.Directory.EnumerateFileSystemEntries(root)
+          .Select(p => _fs.Path.GetFileName(p))];
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      RunTrace.Write("install", $"Cannot list {root} to tell whether it ignores case: {ex.Message}");
+      return false;
+    }
+
+    bool Exists(string name) {
+      string path = _fs.Path.Join(root, name);
+      return _fs.File.Exists(path) || _fs.Directory.Exists(path);
+    }
+
+    foreach (string name in names) {
+      string swapped = string.Concat(name.Select(
+          c => char.IsUpper(c) ? char.ToLowerInvariant(c) : char.ToUpperInvariant(c)));
+      // A link that leads nowhere does not tell.
+      if (swapped == name || !Exists(name)) {
+        continue;
+      }
+
+      bool ignores = !names.Contains(swapped, StringComparer.Ordinal) && Exists(swapped);
+      RunTrace.Write("install", $"The file system of {root} "
+          + (ignores ? "ignores case" : "tells case apart"));
+      return _ignoresCase[root] = ignores;
+    }
+
+    return false;
   }
 
   /// The absolute path with its 8.3 short names replaced by long names (GetLongPathNameW), or

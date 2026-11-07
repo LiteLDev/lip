@@ -316,6 +316,109 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     Assert.Equal("a", File.ReadAllText(Path.Combine(_root, "logs", "a.log")));
   }
 
+  // A file system that ignores case (Windows, macOS by default): a path spelled in another case
+  // names what the path does, so the write rules and purge see it as the file system spells it
+  // (protocol/workspace.md §4).
+
+  [Fact]
+  public async Task Install_DestInLipSpelledInAnotherCase_ThrowsWithoutWriting() {
+    // Arrange
+    SkipUnlessIgnoresCase();
+    string lip = Path.Combine(_root, ".lip");
+    Directory.CreateDirectory(lip);
+    File.WriteAllText(Path.Combine(lip, "workspace.yaml"), "keep");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("x.txt", ".LIP/workspace.yaml"), "", new() { ["x.txt"] = "x" });
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => Installer().Install(candidate, Context()));
+
+    // Assert
+    Assert.Contains("reserved", ex.Message);
+    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "workspace.yaml")));
+  }
+
+  [Fact]
+  public async Task Install_DestSpelledInAnotherCaseOfFileOwnedByAnother_ThrowsWithoutWriting() {
+    // Arrange
+    SkipUnlessIgnoresCase();
+    string directory = Path.Combine(_root, "mods", "foo");
+    Directory.CreateDirectory(directory);
+    File.WriteAllText(Path.Combine(directory, "a.dll"), "other");
+    Candidate other = SelfCandidate("example.com/other", "", "", []);
+    LockFile lockFile = new() {
+      Platform = "server",
+      Runtime = "win-x64",
+      Packages = [Locked(other, ["mods/foo/a.dll"])],
+    };
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.dll", "Mods/Foo/A.dll"), "", new() { ["a.dll"] = "mine" });
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => Installer().Install(candidate, Context(lockFile)));
+
+    // Assert
+    Assert.Contains("(owned by example.com/other)", ex.Message);
+    Assert.Equal("other", File.ReadAllText(Path.Combine(directory, "a.dll")));
+  }
+
+  [Fact]
+  public async Task Uninstall_PurgeNamingLipOrModsInAnotherCase_DeletesNothingThere() {
+    // Arrange
+    SkipUnlessIgnoresCase();
+    string lip = Path.Combine(_root, ".lip");
+    Directory.CreateDirectory(lip);
+    File.WriteAllText(Path.Combine(lip, "workspace.yaml"), "keep");
+    string mods = Path.Combine(_root, "mods", "Other");
+    Directory.CreateDirectory(mods);
+    File.WriteAllText(Path.Combine(mods, "other.dll"), "dll");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", "",
+        """ "purge": [ ".LIP/", ".LIP/*", ".LIP/workspace.yaml", "MODS/" ] """,
+        []);
+
+    // Act
+    await Installer().Uninstall(Locked(candidate, []), Context());
+
+    // Assert
+    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "workspace.yaml")));
+    Assert.Equal("dll", File.ReadAllText(Path.Combine(mods, "other.dll")));
+  }
+
+  [Fact]
+  public async Task Install_DestSpelledInAnotherCaseWhereCaseIsTold_IsAnotherFile() {
+    // Arrange: a file system that tells case apart has both files.
+    Assert.SkipWhen(IgnoresCase(), "The file system ignores case.");
+    string directory = Path.Combine(_root, "mods", "foo");
+    Directory.CreateDirectory(directory);
+    File.WriteAllText(Path.Combine(directory, "a.dll"), "other");
+    Candidate other = SelfCandidate("example.com/other", "", "", []);
+    LockFile lockFile = new() {
+      Platform = "server",
+      Runtime = "win-x64",
+      Packages = [Locked(other, ["mods/foo/a.dll"])],
+    };
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.dll", "Mods/foo/a.dll"), "", new() { ["a.dll"] = "mine" });
+
+    // Act
+    IReadOnlyList<string> owned = await Installer().Install(candidate, Context(lockFile));
+
+    // Assert
+    Assert.Equal(["Mods/foo/a.dll"], owned);
+    Assert.Equal("other", File.ReadAllText(Path.Combine(directory, "a.dll")));
+    Assert.Equal("mine", File.ReadAllText(Path.Combine(_root, "Mods", "foo", "a.dll")));
+  }
+
+  /// Whether the file system of the workspace ignores case.
+  private bool IgnoresCase() => Directory.Exists(
+      Path.Join(Path.GetDirectoryName(_root), Path.GetFileName(_root).ToUpperInvariant()));
+
+  private void SkipUnlessIgnoresCase() =>
+      Assert.SkipUnless(IgnoresCase(), "The file system tells case apart.");
+
   private static string Place(string src, string dest) =>
       $$""" "place": [ { "src": "{{src}}", "dest": "{{dest}}" } ] """;
 

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Install;
+using Lip.Core.Mcmod.Lock;
 using Lip.Core.Sources;
 using Moq;
 using Semver;
@@ -535,9 +536,10 @@ public class McmodInstallerTests {
   [InlineData(".LIP/x.txt")]
   public async Task Install_DestInLipDirectory_Throws(string dest) {
     // Arrange
-    if (!OperatingSystem.IsWindows() && dest.StartsWith(".LIP")) {
-      return;
-    }
+    Assert.SkipWhen(
+        dest.StartsWith(".LIP", StringComparison.Ordinal)
+            && !_fs.Directory.Exists(_root.ToUpperInvariant()),
+        "The file system tells case apart, so .LIP is not .lip.");
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", dest)), new() { ["a.txt"] = "a" });
     SortedDictionary<string, string> before = Snapshot();
@@ -1213,6 +1215,47 @@ public class McmodInstallerTests {
     Assert.True(Exists(".lip/lock"));
     Assert.True(Exists("shared.txt"));
     Assert.False(Exists("own.txt"));
+  }
+
+  [Theory]
+  [InlineData("config/*")]
+  [InlineData("config/")]
+  public async Task Apply_PurgeMatchingFileAnEarlierPackageWrote_KeepsIt(string pattern) {
+    // Arrange: a's preserved config/a.json exists when planned, but its pre_install deletes it,
+    // so a writes and owns it; b, uninstalled later in the operation, purges config/. Whether
+    // another package owns a file is decided when it is deleted (protocol/workspace.md §4, §6).
+    AddFile("config/a.json", "user");
+    AddFile("config/b.json", "b");
+    Candidate a = Candidate(
+        SelfPlacements(Placement("a.json", "config/a.json"))
+            + """, "preserve": [ "config/a.json" ], "hooks": { "pre_install": [ "reset" ] }""",
+        new() { ["a.json"] = "default" },
+        id: "example.com/a");
+    _commandRunner.Setup(r => r.Run("reset", _root))
+        .Callback(() => _fs.File.Delete(Full("config/a.json")))
+        .Returns(Task.CompletedTask);
+    Candidate b = Candidate($$""" "purge": [ "{{pattern}}" ] """, id: "example.com/b");
+    LockFile lockFile = Lock(Locked(b, []));
+    McmodInstaller installer = new(_fs, _commandRunner.Object, _ui.Object);
+    WorkspaceView view = new(_fs);
+    PackagePlan install = await installer.PlanInstall(a, Context(lockFile: lockFile), view);
+    PackagePlan uninstall =
+        await installer.PlanUninstall(Locked(b, []), Context(lockFile: lockFile), view);
+    FileOwners owners = installer.Owners(_root, lockFile.Packages);
+    CancellationToken token = TestContext.Current.CancellationToken;
+
+    // Act
+    using (WorkspaceTransaction transaction = new(
+        _fs, new LockStore(_fs).GetJournalPath(_root), install.WrittenPaths)) {
+      await installer.Apply(install, transaction, owners, token);
+      await installer.Apply(uninstall, transaction, owners, token);
+      transaction.Commit();
+      transaction.Complete();
+    }
+
+    // Assert
+    Assert.Equal("default", Read("config/a.json"));
+    Assert.False(Exists("config/b.json"));
   }
 
   [Fact]

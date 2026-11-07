@@ -42,7 +42,7 @@ public sealed record DeleteDirectoryStep(string FullPath) : PlannedStep;
 
 /// Deletes what uninstallation steps 2–4 match when it runs but the plan did not foresee, such as
 /// files that hook commands created (protocol/workspace.md §6 rule 4): the owned files not
-/// matching preserve, and the paths matching purge that no other package owns. Paths are relative.
+/// matching preserve, and the paths matching purge, except what another package owns then.
+/// Paths are relative.
 public sealed record DeleteMatchesStep(
-    IReadOnlyList<string> OwnedFiles, IReadOnlyList<PathGlob> Purge,
-    IReadOnlySet<string> OwnedByOthers) : PlannedStep;
+    IReadOnlyList<string> OwnedFiles, IReadOnlyList<PathGlob> Purge) : PlannedStep;
