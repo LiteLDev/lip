@@ -25,13 +25,8 @@ Console.CancelKeyPress += (_, e) => {
   cancellation.Cancel();
 };
 
-LipClient lipClient;
-try {
-  lipClient = await LipClient.Create(userInteraction);
-}
-catch (Exception ex) {
-  return ErrorReporter.Report(ex, args, cancelled: false);
-}
+// The configuration is read when a command first needs it, not before the arguments are parsed.
+LipClient lipClient = LipClient.Create(userInteraction);
 
 CommandApp app = new();
 

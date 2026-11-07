@@ -259,6 +259,70 @@ public class LipClientTests {
 
   #endregion
 
+  #region Configuration
+
+  private static readonly string _configPath = Path.Join(LipDirectories.Config, "config.yaml");
+
+  private static readonly string _liprcPath = Path.Join(LipDirectories.Config, "liprc.json");
+
+  /// The configuration is read, migrating liprc.json (protocol/compatibility.md §4), only by a
+  /// command that needs it, not when the client is created.
+  [Fact]
+  public async Task Create_CommandWithoutConfiguration_KeepsLiprc() {
+    // Arrange
+    _ws.Fs.AddFile(_liprcPath, new("""{ "github_proxy": "https://proxy.com" }"""));
+    _ws.Ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync("github.com/owner/repo");
+
+    // Act
+    LipClient client = LipClient.Create(_ws.Fs, _ws.Ui.Object);
+    await client.Init();
+
+    // Assert
+    Assert.True(_ws.Exists("lip.yaml"));
+    Assert.True(_ws.Fs.File.Exists(_liprcPath));
+    Assert.False(_ws.Fs.File.Exists(_configPath));
+  }
+
+  [Fact]
+  public async Task Create_CommandReadingConfiguration_MigratesLiprc() {
+    // Arrange
+    _ws.Fs.AddFile(_liprcPath, new("""{ "github_proxy": "https://proxy.com" }"""));
+
+    // Act
+    LipClient client = LipClient.Create(_ws.Fs, _ws.Ui.Object);
+    await client.List();
+
+    // Assert
+    Assert.False(_ws.Fs.File.Exists(_liprcPath));
+    Assert.Equal("https://proxy.com", await client.ConfigGet("github_proxy"));
+  }
+
+  /// When config.yaml cannot be written, the configuration cannot be read (protocol/
+  /// compatibility.md §4): a command reading it fails, and the others still work.
+  [Fact]
+  public async Task Create_MigrationWriteFails_FailsOnlyCommandsReadingConfiguration() {
+    // Arrange
+    _ws.Fs.AddFile(_liprcPath, new("""{ "github_proxy": "https://proxy.com" }"""));
+    _ws.Ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync("github.com/owner/repo");
+    FaultyFileSystem fs = new(_ws.Fs) {
+      Fail = (operation, path) =>
+          operation == "move" && path.StartsWith(LipDirectories.Config, StringComparison.Ordinal),
+    };
+
+    // Act
+    LipClient client = LipClient.Create(fs, _ws.Ui.Object);
+    await client.Init();
+    IOException ex = await Assert.ThrowsAsync<IOException>(client.List);
+
+    // Assert
+    Assert.Contains("config.yaml", ex.Message);
+    Assert.True(_ws.Exists("lip.yaml"));
+    Assert.True(_ws.Fs.File.Exists(_liprcPath));
+    Assert.False(_ws.Fs.File.Exists(_configPath));
+  }
+
+  #endregion
+
   [Fact]
   public async Task List_ReturnsIdentityAtVersionByGroupInInstallationOrder() {
     // Arrange: b, then a needing c, then c#x.

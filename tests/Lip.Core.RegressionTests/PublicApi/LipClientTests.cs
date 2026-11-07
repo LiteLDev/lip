@@ -51,7 +51,7 @@ public class LipClientTests {
 
     using TempWorkdir _ = new();
 
-    LipClient lipClient = await LipClient.Create(userInteraction);
+    LipClient lipClient = LipClient.Create(userInteraction);
 
     await lipClient.Install(packages, dryRun: false, ignoreScripts: false, noDependencies: false);
   }
@@ -104,7 +104,7 @@ public class LipClientTests {
 
     using TempWorkdir _ = new();
 
-    LipClient lipClient = await LipClient.Create(userInteraction);
+    LipClient lipClient = LipClient.Create(userInteraction);
 
     foreach (var step in testCase.Steps) {
       switch (step) {

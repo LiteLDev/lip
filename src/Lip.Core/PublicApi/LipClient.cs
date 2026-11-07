@@ -16,24 +16,63 @@ namespace Lip.Core.PublicApi;
 
 /// The commands of lip (protocol/cli.md §5), other than pack, over the services that carry them
 /// out.
-public sealed class LipClient(
-    IFileSystem fileSystem,
-    IUserInteraction userInteraction,
-    ICacheService cacheService,
-    ConfigService configService,
-    McmodService mcmodService) {
-  private readonly IFileSystem _fileSystem = fileSystem;
-  private readonly IUserInteraction _userInteraction = userInteraction;
-  private readonly ICacheService _cacheService = cacheService;
-  private readonly ConfigService _configService = configService;
-  private readonly McmodService _mcmodService = mcmodService;
+public sealed class LipClient {
+  private readonly IFileSystem _fileSystem;
+  private readonly IUserInteraction _userInteraction;
+  private readonly ICacheService _cacheService;
+  private readonly ConfigService _configService;
+  private readonly Lazy<Task<McmodService>> _mcmodService;
 
-  public static async Task<LipClient> Create(IUserInteraction userInteraction) {
-    FileSystem fileSystem = new();
+  public LipClient(
+      IFileSystem fileSystem,
+      IUserInteraction userInteraction,
+      ICacheService cacheService,
+      ConfigService configService,
+      McmodService mcmodService)
+      : this(
+          fileSystem,
+          userInteraction,
+          cacheService,
+          configService,
+          () => Task.FromResult(mcmodService)) {
+  }
 
+  private LipClient(
+      IFileSystem fileSystem,
+      IUserInteraction userInteraction,
+      ICacheService cacheService,
+      ConfigService configService,
+      Func<Task<McmodService>> createMcmodService) {
+    _fileSystem = fileSystem;
+    _userInteraction = userInteraction;
+    _cacheService = cacheService;
+    _configService = configService;
+    _mcmodService = new(createMcmodService);
+  }
+
+  public static LipClient Create(IUserInteraction userInteraction) =>
+      Create(new FileSystem(), userInteraction);
+
+  /// A client whose commands read the configuration, migrating liprc.json
+  /// (protocol/compatibility.md §4), only when they first need it: commands that do not, such as
+  /// init, work whatever the configuration directory holds.
+  public static LipClient Create(IFileSystem fileSystem, IUserInteraction userInteraction) {
     ConfigService configService = new(fileSystem, userInteraction);
-
     CacheService cacheService = new(fileSystem, userInteraction);
+    return new(
+        fileSystem,
+        userInteraction,
+        cacheService,
+        configService,
+        () => CreateMcmodService(fileSystem, userInteraction, cacheService, configService));
+  }
+
+  /// The service of the commands that may reach GitHub, which reads github_proxy.
+  private static async Task<McmodService> CreateMcmodService(
+      IFileSystem fileSystem,
+      IUserInteraction userInteraction,
+      CacheService cacheService,
+      ConfigService configService) {
     FileDownloader fileDownloader = new(userInteraction);
     string? githubProxyValue = await configService.GetGithubProxy();
     Url? githubProxy = githubProxyValue is null ? null : Url.Parse(githubProxyValue);
@@ -46,16 +85,16 @@ public sealed class LipClient(
     ArchiveProvider archiveProvider = new(
         gitRemoteClient, cacheService, fileSystem, fileDownloader, githubProxy);
 
-    McmodService mcmodService = new(
+    return new(
         fileSystem,
         userInteraction,
         new LockStore(fileSystem),
         archiveProvider,
         new ArchiveReader(),
         new McmodInstaller(fileSystem, commandRunner, userInteraction));
-
-    return new(fileSystem, userInteraction, cacheService, configService, mcmodService);
   }
+
+  private Task<McmodService> GetMcmodService() => _mcmodService.Value;
 
   public async Task CacheClean() {
     await _cacheService.Clean();
@@ -138,14 +177,14 @@ public sealed class LipClient(
       bool noDependencies,
       string? rid = null,
       CancellationToken cancellationToken = default) {
-    await _mcmodService.Install(
+    await (await GetMcmodService()).Install(
         [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependency packages,
   /// in installation order (protocol/cli.md §5.4).
   public async Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List() {
-    IReadOnlyList<InstalledPackage> packages = await _mcmodService.List();
+    IReadOnlyList<InstalledPackage> packages = await (await GetMcmodService()).List();
 
     return (
         packages.Where(p => p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct(),
@@ -171,7 +210,7 @@ public sealed class LipClient(
       bool noDependencies,
       string? rid = null,
       CancellationToken cancellationToken = default) {
-    await _mcmodService.Uninstall(
+    await (await GetMcmodService()).Uninstall(
         [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
   }
 
@@ -183,17 +222,17 @@ public sealed class LipClient(
       bool ignoreScripts,
       string? rid = null,
       CancellationToken cancellationToken = default) {
-    await _mcmodService.Update(
+    await (await GetMcmodService()).Update(
         [.. packages],
         Options(dryRun, ignoreScripts, noDependencies: false, rid, cancellationToken));
   }
 
   public async Task<IEnumerable<string>> Versions(string package) {
-    return await _mcmodService.Versions(package);
+    return await (await GetMcmodService()).Versions(package);
   }
 
   public async Task<string> View(string package) {
-    return await _mcmodService.View(package);
+    return await (await GetMcmodService()).View(package);
   }
 
   private static OperationOptions Options(
