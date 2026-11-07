@@ -372,10 +372,13 @@ public static partial class YamlJson {
       }
 
       string tag = scalar.Tag.Value;
+      if (tag == _coreTagPrefix + "str") {
+        return JsonValue.Create(value);
+      }
+
       JsonNode? resolved = ResolvePlain(value);
       JsonValueKind kind = resolved?.GetValueKind() ?? JsonValueKind.Null;
       return tag switch {
-        _coreTagPrefix + "str" => JsonValue.Create(value),
         _coreTagPrefix + "null" when kind == JsonValueKind.Null => null,
         _coreTagPrefix + "bool" when kind is JsonValueKind.True or JsonValueKind.False => resolved,
         _coreTagPrefix + "int" when DecimalRegex().IsMatch(value) || OctalRegex().IsMatch(value)
