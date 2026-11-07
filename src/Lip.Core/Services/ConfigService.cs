@@ -15,8 +15,8 @@ namespace Lip.Core.Services;
 /// every key has its default.
 ///
 /// lip v0.x kept the configuration in &lt;Config&gt;/liprc.json. When config.yaml is missing and
-/// liprc.json is a JSON object with format_version 3, its configuration is written atomically as
-/// config.yaml before it is read, and liprc.json is deleted (protocol/compatibility.md §4). Any
+/// liprc.json is a JSON object whose format_version, when present, is 3 (lip before February 2026
+/// wrote none), its configuration is written atomically as config.yaml before it is read, and liprc.json is deleted (protocol/compatibility.md §4). Any
 /// other liprc.json is kept, and every key has its default.
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
   private const string _githubProxyKey = "github_proxy";
@@ -149,10 +149,11 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
           await _fileSystem.File.ReadAllBytesAsync(_liprcPath));
       JsonElement root = document.RootElement;
       if (root.ValueKind != JsonValueKind.Object
-          || PackageFileParser.IntegerMember(root, _liprcFormatVersionKey) != 3) {
+          || (root.TryGetProperty(_liprcFormatVersionKey, out _)
+              && PackageFileParser.IntegerMember(root, _liprcFormatVersionKey) != 3)) {
         throw new InvalidDataException(
-            $"It is not a JSON object with the field {_liprcFormatVersionKey} set to 3, the only "
-            + "lip v0.x configuration that lip can convert.");
+            $"It is not a JSON object whose field {_liprcFormatVersionKey}, when present, is 3, "
+            + "the only lip v0.x configuration that lip can convert.");
       }
 
       githubProxy = root.TryGetProperty(_githubProxyKey, out JsonElement value)

@@ -54,7 +54,7 @@ A workspace operation writes it as its workspace file (Section 7.4 of [WORKSPACE
 
 ## 4. `liprc.json`
 
-When the config directory has no `config.yaml` and has a `liprc.json` that is a JSON object with `format_version` 3, the configuration is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.yaml`, then deletes `liprc.json`.
+When the config directory has no `config.yaml` and has a `liprc.json` that is a JSON object whose `format_version`, when present, is 3, the configuration is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.yaml`, then deletes `liprc.json`.
 
 ## 5. `lip migrate`
 

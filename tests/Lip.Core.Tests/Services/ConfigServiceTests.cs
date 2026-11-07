@@ -256,10 +256,36 @@ public class ConfigServiceTests {
     ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
 
+  [Fact]
+  public async Task List_LiprcJsonWithoutFormatVersion_WritesConfigYamlAndDeletesIt() {
+    // Arrange: lip before February 2026 wrote liprc.json without format_version and format_uuid.
+    (MockFileSystem fs, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
+      [GetLiprcPath()] = new("""
+          {
+            "cache": "C:/lip-cache",
+            "github_proxy": "https://proxy.com",
+            "go_module_proxy": "https://goproxy.io"
+          }
+          """),
+    });
+
+    // Act
+    IDictionary<string, string> result = await service.List();
+
+    // Assert
+    Assert.Equal("https://proxy.com", result["github_proxy"]);
+    Assert.False(fs.File.Exists(GetLiprcPath()));
+    Assert.Equal(
+        "format: 4\ngithub_proxy: https://proxy.com\n", fs.File.ReadAllText(GetConfigPath()));
+    ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
+  }
+
   [Theory]
   [InlineData("""{ "format_version": 3 }""")]
   [InlineData("""{ "format_version": 3, "github_proxy": 5 }""")]
   [InlineData("""{ "format_version": 3, "github_proxy": null }""")]
+  [InlineData("""{}""")]
+  [InlineData("""{ "cache": "C:/cache", "go_module_proxy": "https://goproxy.io" }""")]
   public async Task List_LiprcJsonWithoutStringGithubProxy_WritesFormatOnly(string json) {
     // Arrange
     (MockFileSystem fs, _, ConfigService service) = Create(new() {
@@ -278,9 +304,9 @@ public class ConfigServiceTests {
   [Theory]
   [InlineData("not json")]
   [InlineData("[]")]
-  [InlineData("""{ "github_proxy": "https://proxy.com" }""")]
   [InlineData("""{ "format_version": 2, "github_proxy": "https://proxy.com" }""")]
   [InlineData("""{ "format_version": "3", "github_proxy": "https://proxy.com" }""")]
+  [InlineData("""{ "format_version": null, "github_proxy": "https://proxy.com" }""")]
   public async Task List_LiprcJsonNotOfFormat3_KeepsItAndReturnsDefault(string json) {
     // Arrange
     (MockFileSystem fs, _, ConfigService service) = Create(new() {
