@@ -25,9 +25,14 @@ public abstract record PlannedStep;
 public sealed record ScriptStep(string Stage, IReadOnlyList<string> Commands) : PlannedStep;
 
 /// Writes the file of an archive, replacing what is there. Target is workspace-relative.
-/// Preserve: the target matches preserve, so a file there when the step runs is kept instead.
+/// Preserve: the globs of preserve of the package; a file there when the step runs that matches
+/// one is kept instead.
 public sealed record WriteStep(
-    string Target, string FullPath, ISource Source, string Key, bool Preserve) : PlannedStep;
+    string Target,
+    string FullPath,
+    ISource Source,
+    string Key,
+    IReadOnlyList<PathGlob> Preserve) : PlannedStep;
 
 /// Deletes a file, if it still exists then.
 public sealed record DeleteFileStep(string FullPath) : PlannedStep;

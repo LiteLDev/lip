@@ -551,6 +551,26 @@ public class McmodInstallerTests {
     Assert.Equal(before, Snapshot());
   }
 
+  [Fact]
+  public async Task Install_DestThroughNameWithTildeWhoseLongNameCannotBeRead_Throws() {
+    // Arrange: "dir~1" exists, so it may be a short name, but the file system cannot give its
+    // long name (the workspace exists only in memory); the write rules cannot be checked, so
+    // they fail (protocol/workspace.md §4).
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows has 8.3 short names.");
+    _fs.AddDirectory(Full("dir~1"));
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("a.txt", "dir~1/a.txt")), new() { ["a.txt"] = "a" });
+    SortedDictionary<string, string> before = Snapshot();
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => _installer.Install(candidate, Context()));
+
+    // Assert
+    Assert.Contains("long name", ex.Message);
+    Assert.Equal(before, Snapshot());
+  }
+
   [Theory]
   [InlineData("trailing./a.txt")]
   [InlineData("a.txt ")]

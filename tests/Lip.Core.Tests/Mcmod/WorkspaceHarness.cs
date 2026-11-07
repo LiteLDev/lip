@@ -307,17 +307,19 @@ internal sealed class SoloInstaller(
   /// Returns the files the package owns.
   public async Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context) {
     PackagePlan plan = await installer.PlanInstall(candidate, context, new WorkspaceView(fs));
-    return context.DryRun ? plan.OwnedFiles : await Apply(plan, context.WorkspaceRoot);
+    return context.DryRun ? plan.OwnedFiles : await Apply(plan, context);
   }
 
   public async Task Uninstall(LockedPackage package, InstallContext context) {
     PackagePlan plan = await installer.PlanUninstall(package, context, new WorkspaceView(fs));
     if (!context.DryRun) {
-      await Apply(plan, context.WorkspaceRoot);
+      await Apply(plan, context);
     }
   }
 
-  private async Task<IReadOnlyList<string>> Apply(PackagePlan plan, string root) {
+  private async Task<IReadOnlyList<string>> Apply(PackagePlan plan, InstallContext context) {
+    string root = context.WorkspaceRoot;
+    FileOwners owners = installer.Owners(root, context.Lock.Packages);
     string lip = fs.Path.Join(fs.Path.GetFullPath(root), LockStore.LipDirectory);
     bool lipExisted = fs.Directory.Exists(lip);
     try {
@@ -325,7 +327,7 @@ internal sealed class SoloInstaller(
           fs, new LockStore(fs).GetJournalPath(root), plan.WrittenPaths);
       IReadOnlyList<string> owned;
       try {
-        owned = await installer.Apply(plan, transaction, CancellationToken.None);
+        owned = await installer.Apply(plan, transaction, owners, CancellationToken.None);
       }
       catch {
         transaction.Rollback(() => { });

@@ -142,7 +142,7 @@ public class ToothCompatCorpusTests {
           new WorkspaceView(fs));
       using (WorkspaceTransaction transaction = new(
           fs, new LockStore(fs).GetJournalPath(root), plan.WrittenPaths)) {
-        await installer.Apply(plan, transaction, CancellationToken.None);
+        await installer.Apply(plan, transaction, new FileOwners(), CancellationToken.None);
         transaction.Commit();
         transaction.Complete();
       }

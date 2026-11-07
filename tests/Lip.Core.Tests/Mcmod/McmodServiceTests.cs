@@ -757,6 +757,42 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_WriteOfFileWrittenByEarlierPackage_FailsAtTheWrite() {
+    // Arrange: lib's pre_install deletes cfg.ini, which lib was to keep, so lib writes and owns
+    // it; app writing it then is the failure itself (protocol/workspace.md §4), so app's
+    // post_install never runs.
+    _ws.AddFile("cfg.ini", "user");
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
+              + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }"""),
+      ["cfg.ini"] = "lib",
+    });
+    _ws.AddTag(App, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          App, "1.0.0",
+          $$""" "deps": { "{{Lib}}": "1.0.0" }, """
+              + WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
+              + """, "hooks": { "post_install": [ "app-post" ] }"""),
+      ["cfg.ini"] = "app",
+    });
+    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root))
+        .Callback(() => _ws.Fs.File.Delete(_ws.Path("cfg.ini")))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => _ws.Service.Install([App], _options));
+
+    // Assert
+    Assert.Contains($"'cfg.ini', which belongs to {Lib}", ex.Message);
+    _ws.CommandRunner.Verify(r => r.Run("app-post", It.IsAny<string>()), Times.Never);
+    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
+    Assert.False(_ws.Exists("cfg.ini"));
+  }
+
+  [Fact]
   public async Task Uninstall_PurgeMatchesFileThatEarlierHookRestored_DeletesIt() {
     // Arrange: app's post_uninstall restores server.exe, as LeviLamina restores
     // bedrock_server.exe, before lib, uninstalled after it, purges it (protocol/workspace.md §6

@@ -189,6 +189,133 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "workspace.yaml")));
   }
 
+  [Fact]
+  public async Task Apply_DestThroughShortNameOfDirectoryEarlierPackageCreated_Throws() {
+    // Arrange: first creates pluginsdirectory in the same operation, after second was planned,
+    // so the short name second writes through names the file of first only when it is written.
+    string directory = Path.Combine(_root, "pluginsdirectory");
+    string shortName = ShortNameOfNewDirectoryOrSkip(directory);
+    Candidate first = SelfCandidate(
+        "example.com/first", Place("foo.dll", "pluginsdirectory/foo.dll"),
+        "", new() { ["foo.dll"] = "first" });
+    Candidate second = SelfCandidate(
+        "example.com/second", Place("foo.dll", $"{shortName}/foo.dll"),
+        "", new() { ["foo.dll"] = "second" });
+    FileSystem fs = new();
+    McmodInstaller installer =
+        new(fs, new CommandRunner(), new Mock<IUserInteraction>().Object);
+    WorkspaceView view = new(fs);
+    PackagePlan firstPlan = await installer.PlanInstall(first, Context(), view);
+    PackagePlan secondPlan = await installer.PlanInstall(second, Context(), view);
+    FileOwners owners = installer.Owners(_root, []);
+    using WorkspaceTransaction transaction = new(
+        fs, new LockStore(fs).GetJournalPath(_root),
+        [.. firstPlan.WrittenPaths, .. secondPlan.WrittenPaths]);
+    await installer.Apply(firstPlan, transaction, owners, CancellationToken.None);
+    Assert.SkipUnless(
+        ShortName(directory) == shortName, "The volume gave the directory another short name.");
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => installer.Apply(secondPlan, transaction, owners, CancellationToken.None));
+
+    // Assert
+    Assert.Contains("'pluginsdirectory/foo.dll', which belongs to example.com/first", ex.Message);
+    Assert.Equal("first", File.ReadAllText(Path.Combine(directory, "foo.dll")));
+    transaction.Rollback(() => { });
+  }
+
+  [Fact]
+  public async Task Install_DestThroughShortNameOfDirectoryPreInstallCreated_ThrowsWhenOwned() {
+    // Arrange: the file is owned by another package, and pre_install creates its directory.
+    string directory = Path.Combine(_root, "pluginsdirectory");
+    string shortName = ShortNameOfNewDirectoryOrSkip(directory);
+    Candidate other = SelfCandidate("example.com/other", "", "", []);
+    LockFile lockFile = new() {
+      Platform = "server",
+      Runtime = "win-x64",
+      Packages = [Locked(other, ["pluginsdirectory/foo.dll"])],
+    };
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("foo.dll", $"{shortName}/foo.dll"),
+        """ "hooks": { "pre_install": [ "mkdir pluginsdirectory" ] } """,
+        new() { ["foo.dll"] = "mine" });
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => Installer().Install(candidate, Context(lockFile)));
+
+    // Assert
+    Assert.Contains("'pluginsdirectory/foo.dll', which belongs to example.com/other", ex.Message);
+    Assert.False(File.Exists(Path.Combine(directory, "foo.dll")));
+  }
+
+  [Fact]
+  public async Task Install_DestThroughShortNameOfDirectoryPreInstallCreated_OwnsTheLongName() {
+    // Arrange
+    string directory = Path.Combine(_root, "pluginsdirectory");
+    string shortName = ShortNameOfNewDirectoryOrSkip(directory);
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("foo.dll", $"{shortName}/foo.dll"),
+        """ "hooks": { "pre_install": [ "mkdir pluginsdirectory" ] } """,
+        new() { ["foo.dll"] = "mine" });
+
+    // Act
+    IReadOnlyList<string> owned = await Installer().Install(candidate, Context());
+
+    // Assert
+    Assert.SkipUnless(
+        File.Exists(Path.Combine(directory, "foo.dll")),
+        "The volume gave the directory another short name.");
+    Assert.Equal(["pluginsdirectory/foo.dll"], owned);
+  }
+
+  [Fact]
+  public async Task Install_DestThroughShortNameInPathLongerThanMaxPath_ThrowsWhenOwned() {
+    // Arrange: the full path of the file is longer than MAX_PATH (260 characters).
+    string prefix = $"{new string('d', 100)}/{new string('e', 100)}/";
+    string directory = Path.Combine(
+        _root, new string('d', 100), new string('e', 100), "pluginsdirectory");
+    Directory.CreateDirectory(directory);
+    File.WriteAllText(Path.Combine(directory, "foo.dll"), "other");
+    Assert.True(Path.Combine(directory, "foo.dll").Length > 260);
+    string shortName = ShortNameOrSkip(directory);
+    Candidate other = SelfCandidate("example.com/other", "", "", []);
+    LockFile lockFile = new() {
+      Platform = "server",
+      Runtime = "win-x64",
+      Packages = [Locked(other, [$"{prefix}pluginsdirectory/foo.dll"])],
+    };
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("foo.dll", $"{prefix}{shortName}/foo.dll"),
+        "", new() { ["foo.dll"] = "mine" });
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => Installer().Install(candidate, Context(lockFile)));
+
+    // Assert
+    Assert.Contains(
+        $"{prefix}pluginsdirectory/foo.dll (owned by example.com/other)", ex.Message);
+    Assert.Equal("other", File.ReadAllText(Path.Combine(directory, "foo.dll")));
+  }
+
+  [Fact]
+  public async Task Uninstall_PurgeWithTrailingDotsInLiteralDirectory_MatchesNothing() {
+    // Arrange: no workspace path has a name ending in '.', though Windows opens "logs......"
+    // as "logs".
+    Directory.CreateDirectory(Path.Combine(_root, "logs"));
+    File.WriteAllText(Path.Combine(_root, "logs", "a.log"), "a");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", "", """ "purge": [ "logs....../*" ] """, []);
+
+    // Act
+    await Installer().Uninstall(Locked(candidate, []), Context());
+
+    // Assert
+    Assert.Equal("a", File.ReadAllText(Path.Combine(_root, "logs", "a.log")));
+  }
+
   private static string Place(string src, string dest) =>
       $$""" "place": [ { "src": "{{src}}", "dest": "{{dest}}" } ] """;
 
@@ -241,15 +368,33 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
   /// Windows or on a volume that does not create them.
   private static string ShortNameOrSkip(string path) {
     Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows has 8.3 short names.");
-    char[] buffer = new char[path.Length + 260];
-    uint length = GetShortPathNameW(path, buffer, (uint)buffer.Length);
-    string shortName = length == 0 || length >= buffer.Length
-        ? ""
-        : Path.GetFileName(new string(buffer, 0, (int)length));
+    string shortName = ShortName(path);
     Assert.SkipWhen(
         shortName == "" || shortName == Path.GetFileName(path),
         "The volume does not create 8.3 short names.");
     return shortName;
+  }
+
+  /// The 8.3 short name a directory created at path gets, as found by creating it and deleting
+  /// it again; skips the test as ShortNameOrSkip does.
+  private static string ShortNameOfNewDirectoryOrSkip(string path) {
+    Directory.CreateDirectory(path);
+    try {
+      return ShortNameOrSkip(path);
+    }
+    finally {
+      Directory.Delete(path);
+    }
+  }
+
+  /// The 8.3 short name of an existing file or directory, or "" when it cannot be read.
+  private static string ShortName(string path) {
+    string query = path.Length < 260 ? path : @"\\?\" + path;
+    char[] buffer = new char[query.Length + 260];
+    uint length = GetShortPathNameW(query, buffer, (uint)buffer.Length);
+    return length == 0 || length >= buffer.Length
+        ? ""
+        : Path.GetFileName(new string(buffer, 0, (int)length));
   }
 
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

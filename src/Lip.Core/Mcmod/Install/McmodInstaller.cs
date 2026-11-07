@@ -29,6 +29,11 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// would be written and matches preserve is kept and not written, so it is not owned by the
 /// package; whether it exists is decided then, after the hook commands that ran before it.
 ///
+/// The write rules are checked twice: when planning, against the workspace as the earlier
+/// changes of the operation are planned to leave it, so that a failure changes nothing
+/// (protocol/workspace.md §6 rule 1); and at each write, against the workspace and the owners
+/// as they are then (FileOwners), which decides.
+///
 /// The mods directory is never deleted, and remove_files never matches it (so a directory
 /// pattern naming it removes nothing). .lip, where lip keeps the lock, is never written, deleted
 /// or matched. On Windows, these checks and ownership see a path by its long names (LongName),
@@ -114,7 +119,7 @@ public partial class McmodInstaller(
     }
 
     steps.AddRange(plan.Select(w => new WriteStep(
-        w.Target, w.FullPath, w.Source, w.SourceKey, w.Preserve)));
+        w.Target, w.FullPath, w.Source, w.SourceKey, entry.PreserveFiles)));
     if (!context.IgnoreScripts && entry.Hooks.PostInstall.Count > 0) {
       steps.Add(new ScriptStep("post_install", entry.Hooks.PostInstall));
     }
@@ -137,18 +142,20 @@ public partial class McmodInstaller(
         context.Lock.Packages
             .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))
             .SelectMany(p => p.Files)
-            .Select(f => LongName(root, NormalizeRelative(f))),
+            .Select(f => LongName(root, NormalizeRelative(f)) ?? NormalizeRelative(f)),
         PathComparer);
 
     // 2. Owned files not matching preserve_files.
     List<string> files = [];
     HashSet<string> fileSet = new(PathComparer);
     List<string> ownedToDelete = [];
-    foreach (string file in package.Files.Select(f => LongName(root, NormalizeRelative(f)))) {
+    foreach (string recorded in package.Files.Select(NormalizeRelative)) {
+      // A path whose long name cannot be read is not deleted: it might name .lip.
+      string file = LongName(root, recorded) ?? "";
       if (!IsSafeRelativePath(file) || WorkspaceLayout.IsLipPath(file)
           || ownedByOthers.Contains(file)) {
-        RunTrace.Write("install", $"{package.Identity}: not deleting {file}: it is not a safe"
-            + " workspace path, is inside .lip, or another package owns it");
+        RunTrace.Write("install", $"{package.Identity}: not deleting {recorded}: it is not a"
+            + " safe workspace path, is inside .lip, or another package owns it");
         continue;
       }
       if (MatchesAny(entry.PreserveFiles, file)) {
@@ -239,37 +246,68 @@ public partial class McmodInstaller(
 
   /// Runs the steps of a plan, making every file change through the transaction, and returns the
   /// files the package owns afterwards (workspace-relative, '/'-separated; none for an
-  /// uninstall). Throws McmodInstallException when a step fails; the caller rolls the transaction
-  /// back.
+  /// uninstall). Each write is checked against the write rules as the workspace and owners are
+  /// then (protocol/workspace.md §4), and adds the file it writes to owners. Throws
+  /// McmodInstallException when a step fails; the caller rolls the transaction back.
   public async Task<IReadOnlyList<string>> Apply(
-      PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken) {
+      PackagePlan plan,
+      WorkspaceTransaction transaction,
+      FileOwners owners,
+      CancellationToken cancellationToken) {
     RunTrace.Write("install", $"Applying the plan of {plan.Name} ({plan.Steps.Count} steps)");
     List<string> owned = [];
+    HashSet<string> ownedSet = new(PathComparer);
     foreach (PlannedStep step in plan.Steps) {
       cancellationToken.ThrowIfCancellationRequested();
       switch (step) {
         case ScriptStep script:
           await RunScripts(plan.Name, script.Stage, script.Commands, plan.Root);
           break;
-        case WriteStep write:
-          // An existing file matching preserve is kept, as it is now (protocol/workspace.md §4).
-          if (write.Preserve && _fs.File.Exists(write.FullPath)) {
-            RunTrace.Write(
-                "install", $"{plan.Name}: keeping the existing {write.Target} (preserve)");
+        case WriteStep write: {
+            // The write rules see the target by its long names as the workspace is now: a
+            // directory that an earlier write or a hook command created can give a short name in
+            // it a meaning it did not have when the plan was made (protocol/workspace.md §4).
+            string target = LongName(plan.Root, write.Target)
+                ?? throw new McmodInstallException(
+                    $"Cannot install {plan.Name}: lip cannot tell which file '{write.Target}'"
+                    + " names, as it cannot read the long name of a short name in it, so it"
+                    + " does not write it.");
+            if (WorkspaceLayout.IsLipPath(target)) {
+              throw new McmodInstallException(
+                  $"Cannot install {plan.Name}: it writes '{target}', inside"
+                  + $" {LockStore.LipDirectory}, which is reserved for lip. Report this to the"
+                  + " author of the package.");
+            }
+            if (owners.OwnerOf(target) is string owner
+                && !PackageNames.AreEqual(owner, plan.Name)) {
+              throw new McmodInstallException(
+                  $"Cannot install {plan.Name}: it writes '{target}', which belongs to {owner}."
+                  + " Uninstall one of the packages first, or ask the authors of the packages to"
+                  + " resolve the conflict.");
+            }
+
+            // An existing file matching preserve is kept, as it is now.
+            string full = ToFullPath(plan.Root, target);
+            if (MatchesAny(write.Preserve, target) && _fs.File.Exists(full)) {
+              RunTrace.Write("install", $"{plan.Name}: keeping the existing {target} (preserve)");
+              break;
+            }
+
+            try {
+              await using Stream content = await write.Source.OpenRead(write.Key);
+              await transaction.WriteFile(full, content, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) {
+              throw new McmodInstallException(
+                  $"Cannot install {plan.Name}: lip cannot write '{target}'.", ex);
+            }
+
+            owners.Add(target, plan.Name);
+            if (ownedSet.Add(target)) {
+              owned.Add(target);
+            }
             break;
           }
-
-          try {
-            await using Stream content = await write.Source.OpenRead(write.Key);
-            await transaction.WriteFile(write.FullPath, content, cancellationToken);
-          }
-          catch (Exception ex) when (ex is not OperationCanceledException) {
-            throw new McmodInstallException(
-                $"Cannot install {plan.Name}: lip cannot write '{write.Target}'.", ex);
-          }
-
-          owned.Add(write.Target);
-          break;
         case DeleteFileStep delete:
           try {
             // A hook command may have deleted it.
@@ -387,35 +425,18 @@ public partial class McmodInstaller(
     }
   }
 
-  /// Fails when a file that a package installed by the operation owns is owned by another
-  /// installed package too (protocol/workspace.md §4). Planning checks this against the
-  /// workspace as planned, but a hook command can delete a file matching preserve that was to be
-  /// kept, which is then written and owned. packages: the installed packages in installation
-  /// order; installed: the folded identities of those the operation installed.
-  public static void CheckOwnership(
-      IReadOnlyList<LockedPackage> packages, IReadOnlySet<string> installed) {
-    Dictionary<string, string> owners = new(PathComparer);
-    foreach (LockedPackage package in packages
-        .Where(p => !installed.Contains(PackageNames.Fold(p.Identity)))) {
-      foreach (string file in package.Files) {
-        owners.TryAdd(NormalizeRelative(file), package.Identity);
+  /// The owners of the files of the installed packages (protocol/workspace.md §4), by the long
+  /// names of the files; the first package recording a file owns it.
+  public FileOwners Owners(string root, IEnumerable<LockedPackage> packages) {
+    string full = _fs.Path.GetFullPath(root);
+    FileOwners owners = new();
+    foreach (LockedPackage package in packages) {
+      foreach (string file in package.Files.Select(NormalizeRelative)) {
+        owners.TryAdd(LongName(full, file) ?? file, package.Identity);
       }
     }
 
-    foreach (LockedPackage package in packages
-        .Where(p => installed.Contains(PackageNames.Fold(p.Identity)))) {
-      foreach (string file in package.Files) {
-        if (owners.TryGetValue(file, out string? owner)) {
-          throw new McmodInstallException(
-              $"Cannot install {package.Identity}: it wrote '{file}', which belongs to {owner}"
-              + " (a hook command deleted the file, which matches preserve and was to be kept)."
-              + " Uninstall one of the packages first, or ask the authors of the packages to"
-              + " resolve the conflict.");
-        }
-
-        owners.Add(file, package.Identity);
-      }
-    }
+    return owners;
   }
 
   /// The entry of an installed package (protocol/workspace.md §7.1): the entry of its variant in
@@ -505,7 +526,10 @@ public partial class McmodInstaller(
             + " valid path on Windows (a name in it ends with '.' or a space, or contains ':')."
             + " Report this to the author of the package.");
       }
-      target = LongName(root, string.Join('/', segments));
+      target = LongName(root, string.Join('/', segments))
+          ?? throw new McmodInstallException(
+              $"Cannot install {label}: lip cannot tell which file '{target}' names, as it"
+              + " cannot read the long name of a short name in it.");
       if (WorkspaceLayout.IsLipPath(target)) {
         throw new McmodInstallException(
             $"Cannot install {label}: its package file places a file at '{target}', inside"
@@ -555,7 +579,7 @@ public partial class McmodInstaller(
     foreach (LockedPackage locked in context.Lock.Packages
         .Where(p => !PackageNames.AreEqual(p.Identity, package.Identity))) {
       foreach (string file in locked.Files.Select(NormalizeRelative)) {
-        owners.TryAdd(LongName(root, file), locked.Identity);
+        owners.TryAdd(LongName(root, file) ?? file, locked.Identity);
       }
     }
 
@@ -597,9 +621,9 @@ public partial class McmodInstaller(
         }
       }
 
-      bool preserve = MatchesAny(entry.PreserveFiles, target);
       plan.Add(new PlannedWrite(
-          target, from, key, full, preserve, preserve && view.FileExists(full)));
+          target, from, key, full,
+          MatchesAny(entry.PreserveFiles, target) && view.FileExists(full)));
     }
     return plan;
   }
@@ -700,8 +724,8 @@ public partial class McmodInstaller(
 
     if (literal == segments.Length && !glob.MatchesDirectories) {
       // A literal file path.
-      string file = LongName(root, glob.Pattern);
-      if (!WorkspaceLayout.IsLipPath(file) && view.FileExists(ToFullPath(root, file))) {
+      if (LongName(root, glob.Pattern) is string file && !WorkspaceLayout.IsLipPath(file)
+          && view.FileExists(ToFullPath(root, file))) {
         yield return (file, false);
       }
       yield break;
@@ -711,7 +735,9 @@ public partial class McmodInstaller(
     // finds are checked by their long names; the glob is matched against them as it spells that
     // directory.
     string start = string.Concat(segments[..literal].Select(s => s + "/"));
-    string longStart = LongName(root, start);
+    if (LongName(root, start) is not string longStart) {
+      yield break;
+    }
     string startFull = ToFullPath(root, longStart);
     if ((start != "" && !IsInside(root, startFull)) || !view.DirectoryExists(startFull)
         || WorkspaceLayout.IsLipPath(longStart)) {
@@ -743,10 +769,16 @@ public partial class McmodInstaller(
         if (WorkspaceLayout.IsLipPath(path)) {
           continue;
         }
+        // A path below the long name of the start is matched as the glob spells the start. A
+        // path that the start as spelled does not lead to, as when Windows drops the trailing
+        // dots of a name in it, is matched as it is.
+        string spelled = longStart != start && path.StartsWith(longStart, PathComparison)
+            ? start + path[longStart.Length..]
+            : path;
         string suffix = info.IsDirectory ? "/" : "";
         bool matched = all
             || (!(info.IsDirectory && WorkspaceLayout.IsModsDirectory(path))
-                && glob.IsMatch(start + path[longStart.Length..] + suffix));
+                && glob.IsMatch(spelled + suffix));
         if (matched) {
           yield return (path, info.IsDirectory);
         }
@@ -775,8 +807,9 @@ public partial class McmodInstaller(
   /// stands for, on Windows: "LIP~1/workspace.yaml" is ".lip/workspace.yaml" when ".lip" has the
   /// short name "LIP~1". Only names that exist can be short names, and every short name contains
   /// '~', so other paths are returned as they are without asking the file system, and so are
-  /// paths that are not safe workspace paths.
-  private string LongName(string root, string relative) {
+  /// paths that are not safe workspace paths. Null when a name containing '~' exists but its
+  /// long name cannot be read: such a path cannot be checked, so it fails the checks.
+  private string? LongName(string root, string relative) {
     if (!OperatingSystem.IsWindows() || !relative.Contains('~')
         || !IsSafeRelativePath(relative.TrimEnd('/'))) {
       return relative;
@@ -790,16 +823,18 @@ public partial class McmodInstaller(
       existing--;
       full = ToFullPath(root, string.Join('/', segments[..existing]));
     }
-    if (!segments[..existing].Any(s => s.Contains('~'))
-        || GetLongPath(root) is not string longRoot || GetLongPath(full) is not string longPath) {
+    if (!segments[..existing].Any(s => s.Contains('~'))) {
       return relative;
+    }
+    if (GetLongPath(root) is not string longRoot || GetLongPath(full) is not string longPath) {
+      return null;
     }
 
     string head = _fs.Path.GetRelativePath(longRoot, longPath)
         .Replace(_fs.Path.DirectorySeparatorChar, '/');
     if (head == "." || head == ".." || head.StartsWith("../", StringComparison.Ordinal)
         || _fs.Path.IsPathRooted(head)) {
-      return relative;
+      return null;
     }
 
     return string.Join('/', [head, .. segments[existing..]])
@@ -807,16 +842,32 @@ public partial class McmodInstaller(
   }
 
   /// The absolute path with its 8.3 short names replaced by long names (GetLongPathNameW), or
-  /// null when it cannot be found.
+  /// null when it cannot be found. A path of MAX_PATH characters or more is passed with the
+  /// "\\?\" prefix, without which GetLongPathNameW fails on it.
   private static string? GetLongPath(string path) {
-    char[] buffer = new char[path.Length + 260];
+    const string Prefix = @"\\?\";
+    const string UncPrefix = @"\\?\UNC\";
+    string query = path.Length < 260 || path.StartsWith(Prefix, StringComparison.Ordinal)
+        ? path
+        : path.StartsWith(@"\\", StringComparison.Ordinal)
+            ? UncPrefix + path[2..]
+            : Prefix + path;
+    char[] buffer = new char[query.Length + 260];
     while (true) {
-      uint length = GetLongPathNameW(path, buffer, (uint)buffer.Length);
+      uint length = GetLongPathNameW(query, buffer, (uint)buffer.Length);
       if (length == 0) {
         return null;
       }
       if (length < buffer.Length) {
-        return new string(buffer, 0, (int)length);
+        string result = new(buffer, 0, (int)length);
+        if (ReferenceEquals(query, path)) {
+          return result;
+        }
+        return result.StartsWith(UncPrefix, StringComparison.OrdinalIgnoreCase)
+            ? @"\\" + result[UncPrefix.Length..]
+            : result.StartsWith(Prefix, StringComparison.Ordinal)
+                ? result[Prefix.Length..]
+                : result;
       }
       buffer = new char[length];
     }
@@ -853,6 +904,5 @@ public partial class McmodInstaller(
       ISource Source,
       string SourceKey,
       string FullPath,
-      bool Preserve,
       bool Keep);
 }

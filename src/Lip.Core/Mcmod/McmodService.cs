@@ -836,14 +836,18 @@ public class McmodService(
       }
 
       // The files each package installed owns as its writes happened: hook commands may have
-      // changed which files matching preserve were kept (protocol/workspace.md §4).
+      // changed which files matching preserve were kept (protocol/workspace.md §4). Each write
+      // is checked against the owners as they are then.
+      FileOwners owners = _installer.Owners(workspace.Root, workspace.Lock.Packages);
       Dictionary<string, IReadOnlyList<string>> owned = new(StringComparer.Ordinal);
       foreach ((string message, PackagePlan plan) in plans) {
         await _ui.PrintInfo(message);
         IReadOnlyList<string> files =
-            await _installer.Apply(plan, transaction, options.CancellationToken);
+            await _installer.Apply(plan, transaction, owners, options.CancellationToken);
         if (installs.Contains(plan)) {
           owned[Fold(plan.Name)] = files;
+        } else {
+          owners.Release(plan.Name);
         }
       }
 
@@ -855,9 +859,6 @@ public class McmodService(
                   : p),
         ],
       };
-      McmodInstaller.CheckOwnership(
-          final.Packages, owned.Keys.ToHashSet(StringComparer.Ordinal));
-
       options.CancellationToken.ThrowIfCancellationRequested();
       // The commit point: the journal records the commit, then the workspace file moves into
       // place.
