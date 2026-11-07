@@ -27,6 +27,17 @@ public sealed class UsageErrorTests : IDisposable {
   }
 
   [Theory]
+  [InlineData("config")]
+  [InlineData("cache")]
+  public async Task BranchWithoutSubcommand_IsUsageError(string branch) {
+    (int exitCode, _, string stderr) = await Run(branch);
+
+    Assert.NotEqual(0, exitCode);
+    Assert.Contains($"'lip {branch}' needs a subcommand", stderr);
+    Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
+  }
+
+  [Theory]
   [InlineData]
   [InlineData("--help")]
   [InlineData("-h")]
