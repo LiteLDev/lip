@@ -5,7 +5,9 @@ namespace Lip.Core.Mcmod.Install;
 /// What installing or uninstalling one package does to the workspace, planned and checked before
 /// anything changes (protocol/workspace.md §4). Name: the package name, for messages. Root: the absolute
 /// workspace root, where scripts run. OwnedFiles: for an install, the files the package owns
-/// afterwards (workspace-relative, '/'-separated).
+/// afterwards (workspace-relative, '/'-separated) when the workspace is as planned; hook commands
+/// may change which files matching preserve are kept, and McmodInstaller.Apply returns the files
+/// it owns as it happened.
 public sealed record PackagePlan(
     string Name,
     string Root,
@@ -23,8 +25,9 @@ public abstract record PlannedStep;
 public sealed record ScriptStep(string Stage, IReadOnlyList<string> Commands) : PlannedStep;
 
 /// Writes the file of an archive, replacing what is there. Target is workspace-relative.
-public sealed record WriteStep(string Target, string FullPath, ISource Source, string Key)
-    : PlannedStep;
+/// Preserve: the target matches preserve, so a file there when the step runs is kept instead.
+public sealed record WriteStep(
+    string Target, string FullPath, ISource Source, string Key, bool Preserve) : PlannedStep;
 
 /// Deletes a file, if it still exists then.
 public sealed record DeleteFileStep(string FullPath) : PlannedStep;

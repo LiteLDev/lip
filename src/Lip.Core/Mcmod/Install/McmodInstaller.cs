@@ -24,8 +24,9 @@ public class McmodInstallException(string message, Exception? inner = null)
 /// name, the "name" of the manifest.json of the mcmod asset (Candidate.GetModManifest); lip
 /// writes that manifest.json as it is, like any other file.
 ///
-/// Ownership: a file is owned by a package when the package wrote it. A file that already exists
-/// and matches preserve is kept and not written, so it is not owned by the package.
+/// Ownership: a file is owned by a package when the package wrote it. A file that exists when it
+/// would be written and matches preserve is kept and not written, so it is not owned by the
+/// package; whether it exists is decided then, after the hook commands that ran before it.
 ///
 /// The mods directory is never deleted, and remove_files never matches it (so a directory
 /// pattern naming it removes nothing). .lip, where lip keeps the lock, is never written, deleted
@@ -74,16 +75,14 @@ public partial class McmodInstaller(
 
     MountSource source = new(mounts);
     List<PlannedWrite> plan = await Plan(candidate, source, root, context, view);
-    List<PlannedWrite> writes = [.. plan.Where(w => !w.Keep)];
-    foreach (PlannedWrite write in writes) {
+    foreach (PlannedWrite write in plan) {
       view.AddFile(write.FullPath);
     }
 
-    foreach (PlannedWrite kept in plan.Where(w => w.Keep)) {
-      RunTrace.Write("install", $"{name}: keeping the existing {kept.Target} (preserve_files)");
-    }
-
-    RunTrace.Write("install", $"{name}: {writes.Count} files to write");
+    // Whether a file matching preserve is kept is decided when it is written, after the hook
+    // commands before it (protocol/workspace.md §4); the plan expects the workspace as it is.
+    RunTrace.Write("install", $"{name}: {plan.Count(w => !w.Keep)} files to write,"
+        + $" {plan.Count(w => w.Keep)} existing files matching preserve to keep");
 
     if (context.DryRun) {
       foreach (PlannedWrite write in plan) {
@@ -92,10 +91,11 @@ public partial class McmodInstaller(
             : $"Would write {write.Target}");
       }
     } else {
-      // Fetch content now, so that a fetch failure changes nothing.
+      // Fetch content now, so that a fetch failure changes nothing. A file expected to be kept
+      // is fetched too: it is written when a hook command deleted it.
       try {
         await source.Prefetch(
-            writes.Where(w => w.Source == source).Select(w => w.SourceKey).Distinct());
+            plan.Where(w => w.Source == source).Select(w => w.SourceKey).Distinct());
       }
       catch (Exception ex) when (ex is not OperationCanceledException) {
         throw new McmodInstallException(
@@ -111,7 +111,8 @@ public partial class McmodInstaller(
       steps.Add(new ScriptStep("pre_install", entry.Hooks.PreInstall));
     }
 
-    steps.AddRange(writes.Select(w => new WriteStep(w.Target, w.FullPath, w.Source, w.SourceKey)));
+    steps.AddRange(plan.Select(w => new WriteStep(
+        w.Target, w.FullPath, w.Source, w.SourceKey, w.Preserve)));
     if (!context.IgnoreScripts && entry.Hooks.PostInstall.Count > 0) {
       steps.Add(new ScriptStep("post_install", entry.Hooks.PostInstall));
     }
@@ -234,11 +235,14 @@ public partial class McmodInstaller(
     return new PackagePlan(package.Identity, root, [], steps);
   }
 
-  /// Runs the steps of a plan, making every file change through the transaction. Throws
-  /// McmodInstallException when a step fails; the caller rolls the transaction back.
-  public async Task Apply(
+  /// Runs the steps of a plan, making every file change through the transaction, and returns the
+  /// files the package owns afterwards (workspace-relative, '/'-separated; none for an
+  /// uninstall). Throws McmodInstallException when a step fails; the caller rolls the transaction
+  /// back.
+  public async Task<IReadOnlyList<string>> Apply(
       PackagePlan plan, WorkspaceTransaction transaction, CancellationToken cancellationToken) {
     RunTrace.Write("install", $"Applying the plan of {plan.Name} ({plan.Steps.Count} steps)");
+    List<string> owned = [];
     foreach (PlannedStep step in plan.Steps) {
       cancellationToken.ThrowIfCancellationRequested();
       switch (step) {
@@ -246,6 +250,13 @@ public partial class McmodInstaller(
           await RunScripts(plan.Name, script.Stage, script.Commands, plan.Root);
           break;
         case WriteStep write:
+          // An existing file matching preserve is kept, as it is now (protocol/workspace.md §4).
+          if (write.Preserve && _fs.File.Exists(write.FullPath)) {
+            RunTrace.Write(
+                "install", $"{plan.Name}: keeping the existing {write.Target} (preserve)");
+            break;
+          }
+
           try {
             await using Stream content = await write.Source.OpenRead(write.Key);
             await transaction.WriteFile(write.FullPath, content, cancellationToken);
@@ -255,6 +266,7 @@ public partial class McmodInstaller(
                 $"Cannot install {plan.Name}: lip cannot write '{write.Target}'.", ex);
           }
 
+          owned.Add(write.Target);
           break;
         case DeleteFileStep delete:
           try {
@@ -294,6 +306,8 @@ public partial class McmodInstaller(
               nameof(plan));
       }
     }
+
+    return owned;
   }
 
   /// Deletes what uninstallation steps 2–4 match in the workspace as it is now (protocol/workspace.md
@@ -367,6 +381,37 @@ public partial class McmodInstaller(
             $"Cannot uninstall {plan.Name}: lip cannot record that it deletes the directory"
             + $" '{WorkspaceErrors.Show(_fs, plan.Root, full)}'.",
             ex);
+      }
+    }
+  }
+
+  /// Fails when a file that a package installed by the operation owns is owned by another
+  /// installed package too (protocol/workspace.md §4). Planning checks this against the
+  /// workspace as planned, but a hook command can delete a file matching preserve that was to be
+  /// kept, which is then written and owned. packages: the installed packages in installation
+  /// order; installed: the folded identities of those the operation installed.
+  public static void CheckOwnership(
+      IReadOnlyList<LockedPackage> packages, IReadOnlySet<string> installed) {
+    Dictionary<string, string> owners = new(PathComparer);
+    foreach (LockedPackage package in packages
+        .Where(p => !installed.Contains(PackageNames.Fold(p.Identity)))) {
+      foreach (string file in package.Files) {
+        owners.TryAdd(NormalizeRelative(file), package.Identity);
+      }
+    }
+
+    foreach (LockedPackage package in packages
+        .Where(p => installed.Contains(PackageNames.Fold(p.Identity)))) {
+      foreach (string file in package.Files) {
+        if (owners.TryGetValue(file, out string? owner)) {
+          throw new McmodInstallException(
+              $"Cannot install {package.Identity}: it wrote '{file}', which belongs to {owner}"
+              + " (a hook command deleted the file, which matches preserve and was to be kept)."
+              + " Uninstall one of the packages first, or ask the authors of the packages to"
+              + " resolve the conflict.");
+        }
+
+        owners.Add(file, package.Identity);
       }
     }
   }
@@ -550,8 +595,9 @@ public partial class McmodInstaller(
         }
       }
 
-      bool keep = view.FileExists(full) && MatchesAny(entry.PreserveFiles, target);
-      plan.Add(new PlannedWrite(target, from, key, full, keep));
+      bool preserve = MatchesAny(entry.PreserveFiles, target);
+      plan.Add(new PlannedWrite(
+          target, from, key, full, preserve, preserve && view.FileExists(full)));
     }
     return plan;
   }
@@ -747,5 +793,6 @@ public partial class McmodInstaller(
       ISource Source,
       string SourceKey,
       string FullPath,
+      bool Preserve,
       bool Keep);
 }

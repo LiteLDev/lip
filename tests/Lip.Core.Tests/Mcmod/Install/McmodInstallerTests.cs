@@ -795,7 +795,9 @@ public class McmodInstallerTests {
         ["mods/LegacyMoney/manifest.json", "mods/LegacyMoney/LegacyMoney.dll",
           "mods/LegacyMoney/config/other.json"],
         owned);
-    Assert.DoesNotContain("config/config.json", source.Prefetched);
+    // A file expected to be kept is fetched too: a hook command may delete it before it would
+    // be written.
+    Assert.Contains("config/config.json", source.Prefetched);
   }
 
   [Fact]
@@ -855,6 +857,68 @@ public class McmodInstallerTests {
     Assert.Equal("user", Read("cfg/a.ini"));
     Assert.Equal("b", Read("cfg/b.ini"));
     Assert.Equal(["cfg/b.ini"], owned);
+  }
+
+  [Fact]
+  public async Task Install_PreservedFileDeletedByPreInstall_IsWrittenAndOwned() {
+    // Arrange: whether the file exists is decided when it is written, after pre_install
+    // (protocol/workspace.md §4).
+    AddFile("cfg.ini", "user");
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("cfg.ini", "cfg.ini"))
+            + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }""",
+        new() { ["cfg.ini"] = "default" });
+    _commandRunner.Setup(r => r.Run("reset", _root))
+        .Callback(() => _fs.File.Delete(Full("cfg.ini")))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
+
+    // Assert
+    Assert.Equal("default", Read("cfg.ini"));
+    Assert.Equal(["cfg.ini"], owned);
+  }
+
+  [Fact]
+  public async Task Install_PreservedFileCreatedByPreInstall_IsKeptAndNotOwned() {
+    // Arrange
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("cfg.ini", "cfg.ini"), Placement("a.txt", "a.txt"))
+            + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "init" ] }""",
+        new() { ["cfg.ini"] = "default", ["a.txt"] = "a" });
+    _commandRunner.Setup(r => r.Run("init", _root))
+        .Callback(() => AddFile("cfg.ini", "hook"))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
+
+    // Assert
+    Assert.Equal("hook", Read("cfg.ini"));
+    Assert.Equal(["a.txt"], owned);
+  }
+
+  [Fact]
+  public async Task Install_PreservedFileDeletedByPreInstall_FailureUndoesTheWrite() {
+    // Arrange: the file written in place of the deleted one is undone; the deletion by the hook
+    // command is not (protocol/workspace.md §6 rule 3).
+    AddFile("cfg.ini", "user");
+    Candidate candidate = Candidate(
+        SelfPlacements(Placement("cfg.ini", "cfg.ini"))
+            + """, "preserve": [ "cfg.ini" ],"""
+            + """ "hooks": { "pre_install": [ "reset" ], "post_install": [ "fail" ] }""",
+        new() { ["cfg.ini"] = "default" });
+    _commandRunner.Setup(r => r.Run("reset", _root))
+        .Callback(() => _fs.File.Delete(Full("cfg.ini")))
+        .Returns(Task.CompletedTask);
+    _commandRunner.Setup(r => r.Run("fail", _root))
+        .ThrowsAsync(new InvalidOperationException("Command failed with exit code 1"));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<McmodInstallException>(
+        () => _installer.Install(candidate, Context()));
+    Assert.False(Exists("cfg.ini"));
   }
 
   [Fact]

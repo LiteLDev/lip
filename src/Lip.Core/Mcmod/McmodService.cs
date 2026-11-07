@@ -765,6 +765,7 @@ public class McmodService(
     WorkspaceView view = new(_fs, layout);
     List<LockedPackage> remaining = [.. workspace.Lock.Packages];
     List<(string Message, PackagePlan Plan)> plans = [];
+    HashSet<PackagePlan> installs = new(ReferenceEqualityComparer.Instance);
     foreach (Change change in changeSet.Changes) {
       options.CancellationToken.ThrowIfCancellationRequested();
       RunTrace.Write("workspace", "Planning " + change switch {
@@ -796,6 +797,7 @@ public class McmodService(
             PackagePlan plan = await _installer.PlanInstall(
                 candidate, Context(workspace, options, remaining), view);
             plans.Add(("Installing" + what, plan));
+            installs.Add(plan);
             remaining.Add(Locked(candidate, isExplicit, plan.OwnedFiles));
             break;
           }
@@ -833,10 +835,28 @@ public class McmodService(
         _layout.Apply(layout, transaction);
       }
 
+      // The files each package installed owns as its writes happened: hook commands may have
+      // changed which files matching preserve were kept (protocol/workspace.md §4).
+      Dictionary<string, IReadOnlyList<string>> owned = new(StringComparer.Ordinal);
       foreach ((string message, PackagePlan plan) in plans) {
         await _ui.PrintInfo(message);
-        await _installer.Apply(plan, transaction, options.CancellationToken);
+        IReadOnlyList<string> files =
+            await _installer.Apply(plan, transaction, options.CancellationToken);
+        if (installs.Contains(plan)) {
+          owned[Fold(plan.Name)] = files;
+        }
       }
+
+      final = final with {
+        Packages = [
+          .. final.Packages.Select(
+              p => owned.TryGetValue(Fold(p.Identity), out IReadOnlyList<string>? actual)
+                  ? p with { Files = [.. actual] }
+                  : p),
+        ],
+      };
+      McmodInstaller.CheckOwnership(
+          final.Packages, owned.Keys.ToHashSet(StringComparer.Ordinal));
 
       options.CancellationToken.ThrowIfCancellationRequested();
       // The commit point: the journal records the commit, then the workspace file moves into

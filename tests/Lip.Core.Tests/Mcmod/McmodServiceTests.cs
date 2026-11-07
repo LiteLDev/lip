@@ -701,6 +701,62 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_PreservedFileDeletedByPreInstall_RecordsItAsOwned() {
+    // Arrange: the file matching preserve exists when the operation is planned, but pre_install
+    // deletes it, so it is written and owned (protocol/workspace.md §4).
+    _ws.AddFile("cfg.ini", "user");
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
+              + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }"""),
+      ["cfg.ini"] = "default",
+    });
+    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root))
+        .Callback(() => _ws.Fs.File.Delete(_ws.Path("cfg.ini")))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.Equal("default", _ws.Fs.File.ReadAllText(_ws.Path("cfg.ini")));
+    Assert.Equal(["cfg.ini"], Assert.Single((await _ws.Lock()).Packages).Files);
+  }
+
+  [Fact]
+  public async Task Install_PreservedFileWrittenAfterHookThenWrittenByAnother_FailsAndUndoes() {
+    // Arrange: lib keeps cfg.ini as planned, but its pre_install deletes it, so lib writes and
+    // owns it; app, installed after lib, then writing it is a failure (protocol/workspace.md §4).
+    _ws.AddFile("cfg.ini", "user");
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
+              + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }"""),
+      ["cfg.ini"] = "lib",
+    });
+    _ws.AddTag(App, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          App, "1.0.0",
+          $$""" "deps": { "{{Lib}}": "1.0.0" }, """
+              + WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")),
+      ["cfg.ini"] = "app",
+    });
+    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root))
+        .Callback(() => _ws.Fs.File.Delete(_ws.Path("cfg.ini")))
+        .Returns(Task.CompletedTask);
+
+    // Act & Assert
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => _ws.Service.Install([App], _options));
+    Assert.Contains("cfg.ini", ex.Message);
+    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
+    Assert.False(_ws.Exists("cfg.ini"));
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+  }
+
+  [Fact]
   public async Task Uninstall_PurgeMatchesFileThatEarlierHookRestored_DeletesIt() {
     // Arrange: app's post_uninstall restores server.exe, as LeviLamina restores
     // bedrock_server.exe, before lib, uninstalled after it, purges it (protocol/workspace.md §6
