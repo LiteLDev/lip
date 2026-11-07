@@ -1,5 +1,5 @@
 # Pushing a tag like v1.2.3 releases it once every asset is built: the newest stable version becomes Latest on
-# GitHub, every stable version goes to winget, and a prerelease like v1.2.3-beta.1 is marked as a prerelease on GitHub.
+# GitHub, and a prerelease like v1.2.3-beta.1 is marked as a prerelease on GitHub.
 on:
   push:
     tags:
@@ -106,16 +106,3 @@ jobs:
             "${flags[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
-
-  publish-winget:
-    if: ${{ !contains(github.ref_name, '-') }}
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: vedantmgoyal9/winget-releaser@v2
-        with:
-          identifier: levimc.lip
-          installers-regex: '-win-(x64|arm64)\.zip$'
-          release-tag: ${{ github.ref_name }}
-          fork-user: lip-winget-bot
-          token: ${{ secrets.WINGET_TOKEN }}

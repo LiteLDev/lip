@@ -2,16 +2,6 @@
 
 `lip` is a general package installer. To get started, you need to install the `lip` executable on your system.
 
-## winget <Badge platform="windows" />
-
-```shell
-winget install levimc.lip
-```
-
-::: tip
-This package was previously published as `futrime.lip`. If you installed it under the old ID, uninstall it first with `winget uninstall futrime.lip`.
-:::
-
 ## Windows installer <Badge platform="windows" />
 
 Each [release](https://github.com/LiteLDev/lip/releases/latest) provides two installers for Windows, for x64 (`win-x64`) and ARM64 (`win-arm64`). Both install `lip` to `C:\Program Files\lip` and add that directory to the system `PATH`. Open a new terminal afterwards to use `lip`.

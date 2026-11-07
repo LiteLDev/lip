@@ -2,16 +2,6 @@
 
 `lip` 是一个通用包安装器。开始使用前，你需要先在系统中安装 `lip` 可执行文件。
 
-## winget <Badge platform="windows" />
-
-```shell
-winget install levimc.lip
-```
-
-::: tip
-该包此前以 `futrime.lip` ID 发布。如果你使用旧 ID 安装过，请先执行 `winget uninstall futrime.lip` 卸载。
-:::
-
 ## Windows 安装包 <Badge platform="windows" />
 
 每个 [Release](https://github.com/LiteLDev/lip/releases/latest) 都为 x64（`win-x64`）和 ARM64（`win-arm64`）提供两种 Windows 安装包。两者都会把 `lip` 安装到 `C:\Program Files\lip`，并把该目录加入系统 `PATH`。安装后请打开新的终端再使用 `lip`。
