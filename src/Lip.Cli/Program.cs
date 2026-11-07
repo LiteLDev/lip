@@ -41,6 +41,9 @@ app.Configure(config => {
 
   config.SetApplicationName("lip");
 
+  // An unknown option or argument is a usage error (protocol/cli.md §1, §2).
+  config.UseStrictParsing();
+
   config.SetApplicationVersion(SemVersion.Parse(Assembly
       .GetEntryAssembly()?
       .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
