@@ -89,7 +89,10 @@ public sealed class WorkspaceTransaction : IDisposable {
 
   private void Backup(string path) {
     string backup = BackupPath(path);
-    bool wasHidden = _fs.File.GetAttributes(path).HasFlag(FileAttributes.Hidden);
+    // "hidden" is the Windows hidden attribute (protocol/workspace.md §7.3); elsewhere .NET
+    // reports every name starting with '.' as hidden.
+    bool wasHidden = OperatingSystem.IsWindows()
+        && _fs.File.GetAttributes(path).HasFlag(FileAttributes.Hidden);
     Record(new JournalEntry(JournalOp.Backup, path, backup, wasHidden));
     _fs.File.Move(path, backup);
     RunTrace.Write("workspace", $"Moved {Show(path)} to the backup {Show(backup)}");

@@ -1,5 +1,7 @@
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Lip.Core.Mcmod.Install;
+using Lip.Core.Tests.Infrastructure;
 
 namespace Lip.Core.Tests.Mcmod.Install;
 
@@ -173,6 +175,31 @@ public class WorkspaceTransactionTests {
     Assert.Contains(
         """{"op":"Backup","path":"replace.txt","to":".replace.txt.bak","hidden":false}""" + "\n",
         journal);
+  }
+
+  [Fact]
+  public void Journal_BackupOfNameStartingWithDot_IsNotHidden() {
+    // Arrange: "hidden" is the Windows hidden attribute (protocol/workspace.md §7.3), though off
+    // Windows .NET reports every name starting with '.' as hidden.
+    string root = UnixFileTypeTests.MakeTempRootPath();
+    string journalPath = Path.Join(root, ".lip", "journal");
+    Directory.CreateDirectory(root);
+    try {
+      File.WriteAllText(Path.Join(root, ".env"), "env");
+
+      // Act: disposed of without commit or rollback, as by a killed process.
+      using (WorkspaceTransaction transaction = new(new FileSystem(), journalPath)) {
+        transaction.DeleteFile(Path.Join(root, ".env"));
+      }
+      string journal = File.ReadAllText(journalPath);
+
+      // Assert
+      Assert.Contains(
+          """{"op":"Backup","path":".env","to":"..env.bak","hidden":false}""" + "\n", journal);
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
   }
 
   [Fact]
