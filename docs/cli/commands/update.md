@@ -31,7 +31,7 @@ Without arguments, every explicitly installed package is requested again by the 
 | A local ZIP file | The same file, read again; the package is replaced only when its version changed. If the file no longer exists, the package is kept as it is. |
 | A local directory | The same directory, read again; the package is replaced only when its version changed. If the directory no longer exists, the package is kept as it is. |
 
-Without arguments, a package whose source now gives a package of another identity (e.g. a ZIP file whose `lip.yaml` now has another `id`) is replaced by that package, which becomes explicitly installed.
+Without arguments, a package whose source now gives a package of another identity (e.g. a ZIP file whose `lip.yaml` now has another `id`) is replaced by that package, which becomes explicitly installed. When two sources then give packages of the same identity, the update fails unless one package satisfies both.
 
 To move a package installed from a git ref back to released versions, update it by its plain repository path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
 

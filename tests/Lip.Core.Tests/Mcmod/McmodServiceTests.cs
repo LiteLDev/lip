@@ -1193,6 +1193,63 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Update_NoArgumentsTwoSourcesGiveSameIdentity_Fails() {
+    // Arrange: a.zip now holds b 2.0.0, while b.zip still holds b 1.0.0.
+    _ws.AddZip("a.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
+      ["a.txt"] = "a",
+    });
+    _ws.AddZip("b.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/b", "1.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
+      ["b.txt"] = "b1",
+    });
+    await _ws.Service.Install(["a.zip", "b.zip"], _options);
+    _ws.AddZip("a.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/b", "2.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
+      ["b.txt"] = "b2",
+    });
+
+    // Act & Assert: both requests cannot be satisfied by one package of that identity
+    // (protocol/workspace.md §3).
+    await Assert.ThrowsAsync<DependencyResolutionException>(
+        () => _ws.Service.Update([], _options));
+    Assert.Equal(
+        [("example.com/a", "1.0.0", true), ("example.com/b", "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal("b1", _ws.Fs.File.ReadAllText(_ws.Path("b.txt")));
+  }
+
+  [Fact]
+  public async Task Update_NoArgumentsTwoSourcesGiveSamePackage_ReplacesWithIt() {
+    // Arrange: a.zip now holds the package b.zip holds.
+    _ws.AddZip("a.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
+      ["a.txt"] = "a",
+    });
+    Dictionary<string, string> b = new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/b", "1.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
+      ["b.txt"] = "b",
+    };
+    _ws.AddZip("b.zip", b);
+    await _ws.Service.Install(["a.zip", "b.zip"], _options);
+    _ws.AddZip("a.zip", b);
+
+    // Act
+    await _ws.Service.Update([], _options);
+
+    // Assert: one package satisfies both requests.
+    Assert.Equal(
+        [("example.com/b", "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.False(_ws.Exists("a.txt"));
+  }
+
+  [Fact]
   public async Task Update_LocalPathGone_KeepsPackageAndWarns() {
     // Arrange
     string path = _ws.AddZip("x.zip", new() {

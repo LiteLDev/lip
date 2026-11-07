@@ -231,7 +231,13 @@ public class McmodService(
             + $" this workspace. To install it, run 'lip install {requests[i].Argument}'.");
       }
 
+      // Without arguments, every request goes to the solver, which fails when no one package
+      // satisfies all the requests giving an identity (protocol/workspace.md §3).
       if (identities.Any(other => SameIdentity(other, identity))) {
+        if (packages.Count == 0) {
+          requested.Add(requests[i].Request);
+        }
+
         continue;
       }
 
