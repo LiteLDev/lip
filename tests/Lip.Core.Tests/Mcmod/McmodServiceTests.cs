@@ -1026,6 +1026,32 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Update_NoArgumentsSourceGivesOtherIdentity_ReplacesThePackage() {
+    // Arrange: the local ZIP file now holds a package of another id.
+    _ws.AddZip("x.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "x",
+    });
+    await _ws.Service.Install(["x.zip"], _options);
+    _ws.AddZip("x.zip", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          "example.com/y", "1.0.0", WorkspaceHarness.SelfAsset("y.txt", "y.txt")),
+      ["y.txt"] = "y",
+    });
+
+    // Act
+    await _ws.Service.Update([], _options);
+
+    // Assert: it differs in identity (protocol/workspace.md §5 "Updating").
+    Assert.Equal(
+        [("example.com/y", "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.False(_ws.Exists("x.txt"));
+    Assert.Equal("y", _ws.Fs.File.ReadAllText(_ws.Path("y.txt")));
+  }
+
+  [Fact]
   public async Task Update_LocalPathGone_KeepsPackageAndWarns() {
     // Arrange
     string path = _ws.AddZip("x.zip", new() {

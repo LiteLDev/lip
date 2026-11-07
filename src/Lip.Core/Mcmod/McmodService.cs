@@ -216,9 +216,16 @@ public class McmodService(
         workspace, requests, allowSameIdentity: true);
     List<string> identities = [];
     List<PackageRequest> requested = [];
+    // Without arguments, the identities of the packages whose source now gives a package of
+    // another identity, which replaces them (protocol/workspace.md §5 "Updating").
+    List<string> replaced = [];
     for (int i = 0; i < candidates.Count; i++) {
       string identity = candidates[i].Package.Identity;
-      if (!workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, identity))) {
+      if (packages.Count == 0) {
+        if (!SameIdentity(requests[i].Argument, identity)) {
+          replaced.Add(requests[i].Argument);
+        }
+      } else if (!workspace.Lock.Packages.Any(p => SameIdentity(p.Identity, identity))) {
         throw new InvalidOperationException(
             $"Cannot update '{requests[i].Argument}': package '{identity}' is not installed in"
             + $" this workspace. To install it, run 'lip install {requests[i].Argument}'.");
@@ -235,8 +242,11 @@ public class McmodService(
     await Execute(workspace, options, await Changes(workspace, options, await MakePlan(
         workspace,
         requested,
-        unpinned: identities,
-        explicitIdentities: ExplicitIdentities(workspace.Lock))));
+        unpinned: [.. identities, .. replaced],
+        explicitIdentities: [
+          .. ExplicitIdentities(workspace.Lock)
+              .Where(e => !replaced.Any(r => SameIdentity(r, e))),
+        ])));
   }
 
   /// The packages of the workspace file (protocol/cli.md §5.4). The workspace file derived from a
