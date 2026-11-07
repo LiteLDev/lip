@@ -64,10 +64,21 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("config", "get", "--", "key")]
   [InlineData("list", "--")]
   [InlineData("update", "-n", "--")]
+  [InlineData("config", "--")]
+  [InlineData("config", "--", "get")]
+  [InlineData("config", "--", "x")]
+  [InlineData("cache", "--")]
+  [InlineData("cache", "--", "clean")]
+  [InlineData("pack", "-o", "--")]
+  [InlineData("--")]
+  [InlineData("--", "list")]
+  [InlineData("list", "--help", "--")]
+  [InlineData("config", "--help", "--")]
   public async Task Separator_IsUsageError(params string[] args) {
-    (int exitCode, _, string stderr) = await Run(args);
+    (int exitCode, string stdout, string stderr) = await Run(args);
 
     Assert.NotEqual(0, exitCode);
+    Assert.Equal("", stdout);
     Assert.Contains("'--'", stderr);
     Assert.DoesNotContain("missing", stderr, StringComparison.OrdinalIgnoreCase);
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
@@ -78,9 +89,10 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("config")]
   [InlineData("cache")]
   public async Task BranchWithoutSubcommand_IsUsageError(string branch) {
-    (int exitCode, _, string stderr) = await Run(branch);
+    (int exitCode, string stdout, string stderr) = await Run(branch);
 
     Assert.NotEqual(0, exitCode);
+    Assert.Equal("", stdout);
     Assert.Contains($"'lip {branch}' needs a subcommand", stderr);
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
   }

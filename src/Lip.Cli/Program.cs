@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Lip.Cli;
 using Lip.Cli.Commands;
 using Lip.Core.Infrastructure;
@@ -34,7 +34,7 @@ app.Configure(config => {
   config.Settings.Registrar.RegisterInstance(lipClient);
   config.Settings.Registrar.RegisterInstance<IUserInteraction>(userInteraction);
 
-  // An unknown option, or "--", is a usage error (protocol/cli.md §1, §2).
+  // An unknown option is a usage error (protocol/cli.md §1, §2).
   // Strict parsing is not used for this: when parsing fails, it retries with the placeholder
   // "__default_command" inserted between the arguments, which then fills a missing option value.
   config.Settings.Registrar.RegisterInstance<ICommandInterceptor>(
@@ -52,7 +52,7 @@ app.Configure(config => {
   config.SetExceptionHandler((ex, resolver) =>
       ErrorReporter.Report(
           resolver?.Resolve(typeof(IRemainingArguments)) is IRemainingArguments remaining
-              ? UnexpectedArgumentsInterceptor.Find(args, remaining) ?? ex
+              ? UnexpectedArgumentsInterceptor.Find(remaining) ?? ex
               : ex,
           args,
           cancellation.IsCancellationRequested));
@@ -102,6 +102,11 @@ app.Configure(config => {
   config.AddCommand<VersionsCommand>("versions")
       .WithDescription("Shows available versions for a package");
 });
+
+// "--" is a usage error too, found before parsing (see UnexpectedArgumentsInterceptor.FindSeparator).
+if (UnexpectedArgumentsInterceptor.FindSeparator(args) is { } separatorError) {
+  return ErrorReporter.Report(separatorError, args, cancelled: false);
+}
 
 try {
   return await app.RunAsync(args, cancellation.Token);
