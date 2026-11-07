@@ -24,7 +24,7 @@ Each package argument takes one of the following forms:
 
 Every package must have a `lip.yaml` at its root (see [lip.yaml](../../concepts/lip_yaml.md)) with an entry of the requested variant for the platform and RID of the workspace.
 
-The dependencies of the packages are installed too. Installing a package that is already explicitly installed is an error; use [`lip update`](update.md) to change its version. Two arguments that name the same identity are an error too. A package that is installed as a dependency becomes explicitly installed.
+The dependencies of the packages are installed too. Installing a package that is already explicitly installed is an error; use [`lip update`](update.md) to change its version. Two arguments that name the same identity are an error too. A package that is installed as a dependency becomes explicitly installed, keeping its version when that version satisfies the argument.
 
 ### Git refs
 

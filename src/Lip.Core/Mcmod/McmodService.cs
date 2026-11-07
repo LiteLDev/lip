@@ -46,7 +46,7 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// it records for a remote repository, otherwise what their source names now) and assets are
 /// opened only when needed. If the request cannot be satisfied with every installed package
 /// pinned, it is solved again with only the explicitly installed packages pinned, so that
-/// dependencies may change version. Packages that no explicitly installed package needs any more
+/// dependencies may change version; their installed versions are tried first. Packages that no explicitly installed package needs any more
 /// are removed.
 public class McmodService(
     IFileSystem fileSystem,
@@ -93,11 +93,33 @@ public class McmodService(
       }
     }
 
+    // A requested dependency package keeps its version when it satisfies its request
+    // (protocol/cli.md §5.1), recording the source of the request when it is one of the
+    // request's candidates; otherwise it is chosen again.
+    Dictionary<string, Candidate> requested = new(StringComparer.Ordinal);
+    List<string> unpinned = [];
+    for (int i = 0; i < candidates.Count; i++) {
+      string identity = candidates[i].Package.Identity;
+      if (workspace.Lock.Packages.FirstOrDefault(
+          p => SameIdentity(p.Identity, identity)) is not { } dependency) {
+        continue;
+      }
+
+      Candidate installed = PinnedCandidate(workspace, dependency);
+      if (await workspace.Solver.RequestCandidate(
+          requests[i].Request, installed, workspace.Environment) is { } satisfier) {
+        requested[Fold(identity)] = installed with { Source = satisfier.Source };
+      } else {
+        unpinned.Add(identity);
+      }
+    }
+
     await Execute(workspace, options, await Changes(workspace, options, await MakePlan(
         workspace,
         [.. requests.Select(r => r.Request)],
-        unpinned: [.. candidates.Select(c => c.Package.Identity)],
-        explicitIdentities: ExplicitIdentities(workspace.Lock))));
+        unpinned: unpinned,
+        explicitIdentities: ExplicitIdentities(workspace.Lock),
+        pinnedAs: requested)));
   }
 
   public async Task Uninstall(IReadOnlyList<string> packages, OperationOptions options) {
@@ -539,18 +561,24 @@ public class McmodService(
     throw new InvalidOperationException(message, new AggregateException(summary, causes));
   }
 
+  /// Solves the requests with the installed packages pinned, except the unpinned identities;
+  /// pinnedAs gives, by folded identity, the candidate an installed package is pinned as. When
+  /// that fails, solves them again with only the explicitly installed packages pinned, trying
+  /// the installed versions of the dependency packages first.
   private async Task<Plan> MakePlan(
       Workspace workspace,
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyCollection<string> unpinned,
-      IReadOnlyCollection<string> explicitIdentities) {
+      IReadOnlyCollection<string> explicitIdentities,
+      IReadOnlyDictionary<string, Candidate>? pinnedAs = null) {
     HashSet<string> unpinnedSet = [.. unpinned.Select(Fold)];
     HashSet<string> explicitSet = [.. explicitIdentities.Select(Fold)];
 
     List<Candidate> pinnedAll = [
       .. workspace.Lock.Packages
           .Where(p => !unpinnedSet.Contains(Fold(p.Identity)))
-          .Select(p => PinnedCandidate(workspace, p)),
+          .Select(p => pinnedAs?.GetValueOrDefault(Fold(p.Identity))
+              ?? PinnedCandidate(workspace, p)),
     ];
 
     SolvedGraph graph;
@@ -558,10 +586,14 @@ public class McmodService(
       graph = await workspace.Solver.SolveGraph(requests, pinnedAll, workspace.Environment);
     }
     catch (DependencyResolutionException withInstalled) {
-      List<Candidate> pinnedExplicit = [
-        .. pinnedAll.Where(c => explicitSet.Contains(Fold(c.Package.Identity))),
-      ];
-      if (pinnedExplicit.Count == pinnedAll.Count) {
+      List<Candidate> pinnedExplicit = [];
+      List<Candidate> preferred = [];
+      foreach (Candidate candidate in pinnedAll) {
+        (explicitSet.Contains(Fold(candidate.Package.Identity)) ? pinnedExplicit : preferred)
+            .Add(candidate);
+      }
+
+      if (preferred.Count == 0) {
         throw;
       }
 
@@ -573,7 +605,8 @@ public class McmodService(
       await _ui.PrintInfo(
           $"The installed dependency packages do not fit the request ({reason}); choosing their"
           + " versions again.");
-      graph = await workspace.Solver.SolveGraph(requests, pinnedExplicit, workspace.Environment);
+      graph = await workspace.Solver.SolveGraph(
+          requests, pinnedExplicit, workspace.Environment, preferred);
     }
 
     // Keep what the requests and the explicitly installed packages need.

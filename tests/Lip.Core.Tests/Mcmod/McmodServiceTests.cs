@@ -233,6 +233,45 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_DependencyPackageThatFitsTheRequest_KeepsItsVersion() {
+    // Arrange: lib 1.0.0 is a dependency package; lib 1.1.0 is newer.
+    AddLibAndApp();
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+    await _ws.Service.Install([$"{App}@1.0.0"], _options);
+    await _ws.Service.Uninstall([Lib], _options);
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert: it only becomes explicitly installed (protocol/cli.md §5.1).
+    LockedPackage lib = (await _ws.Lock()).Packages.Single(p => p.Id == Lib);
+    Assert.Equal((true, "1.0.0", Lib), (lib.Explicit, lib.Version, lib.Source));
+    Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Fact]
+  public async Task Install_DependencyPackagesChosenAgain_KeepTheInstalledVersionsThatFit() {
+    // Arrange: a needs d and e, installed at 1.0.0; b needs e ^2.0.0.
+    AddPackage("example.com/d", "1.0.0");
+    AddPackage("example.com/e", "1.0.0");
+    AddPackage("example.com/a", "1.0.0", "example.com/d", ">=1.0.0", "example.com/e", ">=1.0.0");
+    await _ws.Service.Install(["example.com/a"], _options);
+    AddPackage("example.com/d", "2.0.0");
+    AddPackage("example.com/e", "2.0.0");
+    AddPackage("example.com/b", "1.0.0", "example.com/e", "^2.0.0");
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Install(["example.com/b"], _options);
+
+    // Assert: only e changes version (protocol/cli.md §5.1).
+    Assert.Equal(
+        [("example.com/d", "1.0.0"), ("example.com/e", "2.0.0")],
+        (await _ws.Service.List()).Where(p => !p.Explicit).Select(p => (p.Identity, p.Version)));
+  }
+
+  [Fact]
   public async Task Install_InstalledDependencyTooOld_ReplacesIt() {
     // Arrange
     AddLibAndApp();
@@ -1219,6 +1258,20 @@ public class McmodServiceTests {
             + WorkspaceHarness.SelfAsset("app.dll", "app/app.dll")),
     ["app.dll"] = $"app {version}",
   });
+
+  /// A version of a package placing &lt;name&gt;.txt, with dependencies given as pairs of
+  /// source and range.
+  private void AddPackage(string id, string version, params string[] dependencies) {
+    string name = id[(id.LastIndexOf('/') + 1)..];
+    string deps = string.Join(", ", dependencies.Chunk(2).Select(d => $"\"{d[0]}\": \"{d[1]}\""));
+    _ws.AddTag(id, version, new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          id,
+          version,
+          $$""" "deps": { {{deps}} }, """ + WorkspaceHarness.SelfAsset($"{name}.txt", $"{name}.txt")),
+      [$"{name}.txt"] = $"{name} {version}",
+    });
+  }
 
   /// lib 1.0.0 and 1.1.0; app 1.0.0 (lib >=1.0.0) and 2.0.0 (lib >=1.1.0).
   private void AddLibAndApp(bool withApp2 = true, bool hook = false) {

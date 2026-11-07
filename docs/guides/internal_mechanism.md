@@ -36,7 +36,7 @@ At a branch, a commit, or a tag not named `v<SemVer>` given by a git ref, there 
 
 ## Solving
 
--   **Pinning**: Installed packages enter the solver as they are, rebuilt from the workspace file without network access. If the request cannot be satisfied that way, lip solves it again with only the explicitly installed packages pinned, so dependencies may change version.
+-   **Pinning**: Installed packages enter the solver as they are, rebuilt from the workspace file without network access. If the request cannot be satisfied that way, lip solves it again with only the explicitly installed packages pinned, so dependencies may change version; their installed versions are tried first, so only the dependencies that must change do.
 -   **Preference**: Earlier candidates win: the newest version of a repository.
 -   **Order**: Packages are installed dependencies first; packages in a dependency cycle are ordered by identity.
 -   **Clean-up**: Dependencies that no explicitly installed package needs any more are uninstalled.

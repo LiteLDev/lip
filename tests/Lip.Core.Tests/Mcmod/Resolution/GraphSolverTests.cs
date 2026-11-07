@@ -378,6 +378,56 @@ public class GraphSolverTests {
   }
 
   [Fact]
+  public async Task Solve_Preferred_IsTriedFirstWhereItFits() {
+    // Arrange: a needs d >=1 and e >=1; b needs e ^2. d 1.0.0 and e 1.0.0 are preferred.
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/d/d", ["2.0.0", "1.0.0"]);
+    resolver.AddVersions("github.com/e/e", ["2.0.0", "1.0.0"]);
+    resolver.Add(Package("github.com/a/a", "1.0.0", dependencies: [
+      Dependency("github.com/d/d", ">=1.0.0"), Dependency("github.com/e/e", ">=1.0.0"),
+    ]));
+    resolver.Add(Package("github.com/b/b", "1.0.0",
+        dependencies: [Dependency("github.com/e/e", "^2.0.0")]));
+    Candidate preferredD = Package("github.com/d/d", "1.0.0");
+    Candidate preferredE = Package("github.com/e/e", "1.0.0");
+    GraphSolver solver = new(resolver);
+
+    // Act
+    IReadOnlyList<Candidate> result = (await solver.SolveGraph(
+        [Request("github.com/a/a"), Request("github.com/b/b")],
+        [],
+        s_environment,
+        [preferredE, preferredD])).Order;
+
+    // Assert: d keeps its version; e cannot.
+    Assert.Equal(
+        ["github.com/d/d@1.0.0", "github.com/e/e@2.0.0", "github.com/a/a@1.0.0",
+          "github.com/b/b@1.0.0"],
+        Names(result));
+    Assert.Same(preferredD, result[0]);
+  }
+
+  [Fact]
+  public async Task RequestCandidate_SamePackage_ReturnsTheCandidateOfTheRequest() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions("github.com/x/x", ["2.0.0", "1.0.0"]);
+    Candidate installed = Package("github.com/x/x", "1.0.0");
+    Candidate ofRef = Package("github.com/x/x", "1.0.0", source: "github.com/x/x@branch:main");
+    GraphSolver solver = new(resolver);
+
+    // Act & Assert
+    Assert.Equal("github.com/x/x", (await solver.RequestCandidate(
+        Request("github.com/x/x"), installed, s_environment))?.Source.ToString());
+    Assert.Same(ofRef, await solver.RequestCandidate(
+        Request("github.com/x/x"), ofRef, s_environment));
+    Assert.Null(await solver.RequestCandidate(
+        new(Ref.Parse("github.com/x/x", allowFile: false), VersionRange.Parse(">=2.0.0")),
+        installed,
+        s_environment));
+  }
+
+  [Fact]
   public async Task Solve_SamePackageSatisfiesSeveralDependencies_AddsItOnce() {
     // Arrange
     FakeResolver resolver = new();

@@ -29,15 +29,26 @@ namespace Lip.Core.Mcmod.Resolution;
 /// satisfy it.
 public class GraphSolver(IResolver resolver) {
   /// Pinned candidates (installed packages to keep) are members of S as they are; their
-  /// dependencies must be satisfied too. Returns S in installation order (protocol/workspace.md
-  /// §5), with which member satisfies which dependency and request. Throws
-  /// DependencyResolutionException.
+  /// dependencies must be satisfied too. Each preferred candidate (an installed package that may
+  /// change version) is tried first for a requirement it satisfies, before the requirement's own
+  /// candidates. Returns S in installation order (protocol/workspace.md §5), with which member
+  /// satisfies which dependency and request. Throws DependencyResolutionException.
   public async Task<SolvedGraph> SolveGraph(
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyList<Candidate> pinned,
-      LipEnvironment environment) {
-    Search search = new(resolver, environment);
+      LipEnvironment environment,
+      IReadOnlyList<Candidate>? preferred = null) {
+    Search search = new(resolver, environment, preferred ?? []);
     return await search.Run(requests, pinned);
+  }
+
+  /// How a package satisfies a request (protocol/workspace.md §3 rule 1): the candidate of the
+  /// request with its identity, version and commit, or else the package itself when it stands in
+  /// for a candidate; null when it does neither.
+  public async Task<Candidate?> RequestCandidate(
+      PackageRequest request, Candidate package, LipEnvironment environment) {
+    Search search = new(resolver, environment, []);
+    return await search.RequestCandidate(request, package);
   }
 
   /// Orders a package set for installation (protocol/workspace.md §5): every package comes after the packages
@@ -316,7 +327,8 @@ public class GraphSolver(IResolver resolver) {
 
   private sealed record Member(Candidate Candidate, PackageKey Key, int Level);
 
-  private sealed class Search(IResolver resolver, LipEnvironment environment) {
+  private sealed class Search(
+      IResolver resolver, LipEnvironment environment, IReadOnlyList<Candidate> preferred) {
     private const int MaxRecordedFailures = 100;
 
     // The search can take very many steps; tracing them all would push the lines that explain
@@ -358,15 +370,8 @@ public class GraphSolver(IResolver resolver) {
       RunTrace.Write("resolve", $"Solving {requests.Count} requests with {pinned.Count}"
           + $" installed packages kept, for ({environment.Platform.ToSpecString()},"
           + $" {environment.Runtime})");
-      for (int i = 0; i < requests.Count; i++) {
-        PackageRequest request = requests[i];
-        _agenda.Add(new Requirement(
-            ResolveKey.Of(request.Ref, request.Range),
-            null,
-            $"You requested {ShowRequirement(request.Ref, request.Range)}",
-            -1,
-            request.Ref,
-            request.Range));
+      foreach (PackageRequest request in requests) {
+        _agenda.Add(RequestRequirement(request));
       }
 
       foreach (Candidate candidate in pinned) {
@@ -464,6 +469,20 @@ public class GraphSolver(IResolver resolver) {
           [.. requestSatisfiers.Select(s => s is null ? -1 : indexOf[PackageKey.Of(s)])]);
     }
 
+    public async Task<Candidate?> RequestCandidate(PackageRequest request, Candidate package) {
+      Requirement requirement = RequestRequirement(request);
+      return await CandidateWithKey(requirement, PackageKey.Of(package))
+          ?? (IsPinnedSatisfier(requirement, package) ? package : null);
+    }
+
+    private static Requirement RequestRequirement(PackageRequest request) => new(
+        ResolveKey.Of(request.Ref, request.Range),
+        null,
+        $"You requested {ShowRequirement(request.Ref, request.Range)}",
+        -1,
+        request.Ref,
+        request.Range);
+
     /// Satisfies the open requirements from agenda position index on. Returns null on success
     /// (the members then form S), or the decision levels whose choices together caused the
     /// failure (a nogood; -1 is never included).
@@ -501,9 +520,20 @@ public class GraphSolver(IResolver resolver) {
       List<string> blocked = [];
       int failedDeeper = 0;
       _pinnedClashes.Remove(level);
-      for (int i = 0; !choices.Unsatisfiable && await choices.Has(i); i++) {
-        Candidate candidate = choices.Candidates[i];
-        PackageKey key = choices.CandidateKeys[i];
+      // A preferred candidate is tried first (as index -1), and not again in its place.
+      Candidate? first = choices.Unsatisfiable
+          ? null
+          : await PreferredCandidate(requirement, choices);
+      PackageKey? firstKey = first is null ? null : PackageKey.Of(first);
+      for (int i = first is null ? 0 : -1;
+          !choices.Unsatisfiable && (i < 0 || await choices.Has(i));
+          i++) {
+        Candidate candidate = i < 0 ? first! : choices.Candidates[i];
+        PackageKey key = i < 0 ? firstKey!.Value : choices.CandidateKeys[i];
+        if (i >= 0 && key == firstKey) {
+          continue;
+        }
+
         if (_members.TryGetValue(key.Identity, out Member? existing)
             && existing.Key == key) {
           // A member the shortcut of SatisfyingMember missed (see the class remarks). Nothing is
@@ -694,6 +724,36 @@ public class GraphSolver(IResolver resolver) {
       return null;
     }
 
+    /// The first preferred candidate that satisfies a requirement: one of its candidates, or one
+    /// that stands in for one. Like SatisfyingMember, only preferred candidates named like a
+    /// loaded candidate are looked up.
+    private async Task<Candidate?> PreferredCandidate(Requirement requirement, Choices choices) {
+      if (preferred.Count == 0) {
+        return null;
+      }
+
+      foreach (Candidate candidate in preferred) {
+        if (IsPinnedSatisfier(requirement, candidate)) {
+          return candidate;
+        }
+      }
+
+      if (!await choices.Has(0)) {
+        return null;
+      }
+
+      HashSet<string> identities = [.. choices.CandidateKeys.Select(k => k.Identity)];
+      foreach (Candidate candidate in preferred) {
+        PackageKey key = PackageKey.Of(candidate);
+        if (identities.Contains(key.Identity)
+            && await CandidateWithKey(requirement, key) is not null) {
+          return candidate;
+        }
+      }
+
+      return null;
+    }
+
     /// The member that is one of the loaded-on-demand candidates, walking all of them.
     private async Task<Candidate?> MemberAmongCandidates(Choices choices) {
       for (int i = 0; await choices.Has(i); i++) {
@@ -743,10 +803,15 @@ public class GraphSolver(IResolver resolver) {
 
     /// Whether a member is one of the candidates of a requirement, without enumerating the
     /// candidates of other versions.
-    private async Task<bool> IsCandidate(Requirement requirement, Member member) {
-      SemVersion version = member.Candidate.Package.Version;
+    private async Task<bool> IsCandidate(Requirement requirement, Member member) =>
+        await CandidateWithKey(requirement, member.Key) is not null;
+
+    /// The candidate of a requirement with the identity, version and commit of key, or null,
+    /// without enumerating the candidates of other versions.
+    private async Task<Candidate?> CandidateWithKey(Requirement requirement, PackageKey key) {
+      SemVersion version = key.Version;
       if (requirement.Range is not null && !requirement.Range.IsSatisfiedBy(version)) {
-        return false;
+        return null;
       }
 
       LazySequence sequence = Resolve(
@@ -755,12 +820,12 @@ public class GraphSolver(IResolver resolver) {
               ? new ExactVersionConstraint(version)
               : requirement.Range);
       for (int i = 0; await sequence.Has(i); i++) {
-        if (member.Key == PackageKey.Of(sequence.Items[i])) {
-          return true;
+        if (key == PackageKey.Of(sequence.Items[i])) {
+          return sequence.Items[i];
         }
       }
 
-      return false;
+      return null;
     }
 
     private void AddEdges(Candidate owner, int level, string suffix) {
