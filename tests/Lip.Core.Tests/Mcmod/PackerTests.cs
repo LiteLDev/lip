@@ -1,6 +1,9 @@
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
+using System.Net.Sockets;
 using Lip.Core.Mcmod;
+using Lip.Core.Tests.Infrastructure;
 
 namespace Lip.Core.Tests.Mcmod;
 
@@ -109,7 +112,33 @@ public class PackerTests {
         () => Packer.WriteArchive(fs, _root, fs.Path.Join(_root, "out.zip")));
   }
 
-  private static async Task<Dictionary<string, string>> Entries(MockFileSystem fs, string path) {
+  [Fact]
+  public async Task WriteArchive_FifoAndSocket_AreLeftOut() {
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows has no FIFOs or socket files.");
+
+    // Arrange: only regular files are packed; reading a FIFO would wait for a writer forever.
+    FileSystem fs = new();
+    string root = Path.Combine(Path.GetTempPath(), "lip-packer-test-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(Path.Join(root, "sub"));
+    try {
+      File.WriteAllText(Path.Join(root, "a.txt"), "a");
+      UnixFileTypeTests.MakeFifo(Path.Join(root, "sub", "fifo"));
+      using Socket socket = UnixFileTypeTests.MakeSocket(Path.Join(root, "socket"));
+      string output = Path.Join(root, "out.zip");
+
+      // Act
+      await Packer.WriteArchive(fs, root, output)
+          .WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+      // Assert
+      Assert.Equal(["a.txt"], (await Entries(fs, output)).Keys);
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
+  private static async Task<Dictionary<string, string>> Entries(IFileSystem fs, string path) {
     using ZipArchive zip = new(new MemoryStream(fs.File.ReadAllBytes(path)));
     Dictionary<string, string> entries = [];
     foreach (ZipArchiveEntry entry in zip.Entries) {

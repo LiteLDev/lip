@@ -8,7 +8,8 @@ namespace Lip.Core.Mcmod;
 public static class Packer {
   /// Writes a ZIP archive to output, replacing it: every regular file below directory at its
   /// path relative to it, except output itself and everything below .git/ and .lip/ at its root.
-  /// Files are written in ordinal order of their paths; links are not followed, and an
+  /// Files are written in ordinal order of their paths; links are not followed, special files
+  /// (FIFOs, sockets, device nodes) are left out, and an
   /// inaccessible directory fails the command rather than being left out.
   public static async Task WriteArchive(IFileSystem fs, string directory, string output) {
     string root = fs.Path.GetFullPath(directory);
@@ -35,7 +36,8 @@ public static class Packer {
         string entry = fs.Path.GetRelativePath(root, full).Replace('\\', '/');
         if (string.Equals(full, outputPath, comparison)
             || entry.StartsWith(".git/", StringComparison.Ordinal)
-            || entry.StartsWith(".lip/", StringComparison.Ordinal)) {
+            || entry.StartsWith(".lip/", StringComparison.Ordinal)
+            || UnixFileType.IsSpecialFile(full)) {
           continue;
         }
 

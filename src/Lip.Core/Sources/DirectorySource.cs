@@ -5,7 +5,8 @@ namespace Lip.Core.Sources;
 
 /// A directory archive (protocol/package.md §1): the regular files below a directory of the local
 /// file system, keyed by their '/'-separated path relative to it, in ordinal order. Links are not
-/// followed; an inaccessible entry fails the listing rather than being left out.
+/// followed and special files (FIFOs, sockets, device nodes) are left out; an inaccessible entry
+/// fails the listing rather than being left out.
 public class DirectorySource : ISource {
   private readonly IFileSystem _fs;
   private readonly string _root;
@@ -41,7 +42,8 @@ public class DirectorySource : ISource {
     };
     List<string> keys = [];
     void Walk(string directory) {
-      foreach (string file in _fs.Directory.EnumerateFiles(directory, "*", options)) {
+      foreach (string file in _fs.Directory.EnumerateFiles(directory, "*", options)
+          .Where(f => !UnixFileType.IsSpecialFile(f))) {
         keys.Add(_fs.Path.GetRelativePath(_root, file).Replace('\\', '/'));
       }
 
