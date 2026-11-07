@@ -22,11 +22,13 @@ public class CommandRunner : ICommandRunner {
     RunTrace.Write("hook", $"Running '{command}' with {shell} in {workingDirectory}");
     CommandResult result;
     try {
-      result = await Cli.Wrap(shell)
-          .WithArguments([
-              OperatingSystem.IsWindows() ? "/c" : "-c",
-                  command
-          ])
+      Command cli = Cli.Wrap(shell);
+      // cmd.exe does not parse its command line with the MSVCRT rules CliWrap escapes with, so the
+      // command goes verbatim; /s makes cmd strip only the outer quotes added here.
+      cli = OperatingSystem.IsWindows()
+          ? cli.WithArguments($"/s /c \"{command}\"")
+          : cli.WithArguments(["-c", command]);
+      result = await cli
           .WithWorkingDirectory(workingDirectory)
           .WithStandardInputPipe(PipeSource.Null)
           .WithStandardOutputPipe(output)
