@@ -1,30 +1,24 @@
-using System.IO.Abstractions;
+using System.Collections.Concurrent;
 using System.IO.Compression;
-using Lip.Core.Infrastructure;
 using Lip.Core.Sources;
 
 namespace Lip.Core.Mcmod;
 
-/// The files of a ZIP file. Unlike ArchiveSource, which detects the archive format, this reads
-/// the file strictly as ZIP with the same parser ZipValidator checks it with, so the entries that
-/// were validated are exactly the entries that are served.
+/// The files of a ZIP file held in memory. Unlike ArchiveSource, which detects the archive format,
+/// this reads the content strictly as ZIP with the same parser ZipValidator checks it with, so the
+/// entries that were validated are exactly the entries that are served.
 ///
-/// description names the archive in error messages (e.g. "the cached download of <URL>");
-/// cachedDownload says the file is a download in the lip cache, which 'lip cache clean' removes.
-public class ZipSource(Func<Stream> openRead, string description, bool cachedDownload) : ISource {
-  private readonly Func<Stream> _openRead = openRead;
-  private readonly string _description = description;
+/// description names the archive in error messages (e.g. "the download of <URL>");
+/// cachedDownload says the content was read from a download in the lip cache, which
+/// 'lip cache clean' removes.
+public class ZipSource(byte[] content, string? description = null, bool cachedDownload = false)
+    : ISource {
+  private readonly byte[] _content = content;
+  private readonly string _description = description ?? "the ZIP archive";
   private readonly bool _cachedDownload = cachedDownload;
 
-  public ZipSource(IFileInfo zipFile, string? description = null)
-      : this(zipFile.OpenRead, description ?? $"the ZIP archive {zipFile.FullName}", cachedDownload: true) {
-  }
-
-  /// A ZIP file held in memory, e.g. one extracted from another archive.
-  public ZipSource(byte[] content, string? description = null)
-      : this(() => new MemoryStream(content, writable: false), description ?? "the ZIP archive",
-          cachedDownload: false) {
-  }
+  // Files extracted by Prefetch, by key.
+  private readonly ConcurrentDictionary<string, byte[]> _prefetched = new();
 
   public IEnumerable<string> Keys {
     get {
@@ -35,12 +29,33 @@ public class ZipSource(Func<Stream> openRead, string description, bool cachedDow
   }
 
   public async Task<Stream> OpenRead(string key) {
-    using ZipArchive zip = OpenZip();
+    if (_prefetched.TryGetValue(key, out byte[]? prefetched)) {
+      return new MemoryStream(prefetched, writable: false);
+    }
 
+    using ZipArchive zip = OpenZip();
+    return new MemoryStream(await Extract(zip, key), writable: false);
+  }
+
+  /// Extracts the given files now, so that a damaged file or one compressed with a method lip
+  /// does not support fails here rather than when it is read.
+  public async Task Prefetch(IEnumerable<string> keys) {
+    string[] missing = [.. keys.Where(k => !_prefetched.ContainsKey(k)).Distinct()];
+    if (missing.Length == 0) {
+      return;
+    }
+
+    using ZipArchive zip = OpenZip();
+    foreach (string key in missing) {
+      _prefetched.TryAdd(key, await Extract(zip, key));
+    }
+  }
+
+  private async Task<byte[]> Extract(ZipArchive zip, string key) {
     ZipArchiveEntry entry = zip.Entries.FirstOrDefault(e => e.FullName == key && !IsDirectory(e))
         ?? throw new ArgumentException($"{Capitalize(_description)} has no file '{key}'.");
 
-    MemoryStream memory = new();
+    using MemoryStream memory = new();
     try {
       using Stream entryStream = entry.Open();
       await entryStream.CopyToAsync(memory);
@@ -51,36 +66,19 @@ public class ZipSource(Func<Stream> openRead, string description, bool cachedDow
           + " compressed with a method lip does not support (only Deflate, Deflate64 and no"
           + " compression are supported)." + DamagedAdvice, ex);
     }
-    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
-      throw FileSystemExtensions.WrapFileError(
-          $"Could not read '{key}' from {_description}." + UnreadableAdvice, ex);
-    }
 
-    memory.Position = 0;
-    return memory;
+    return memory.ToArray();
   }
 
-  /// Opens the archive, naming it in the errors of opening the file or reading its directory.
+  /// Opens the archive, naming it in the errors of reading its directory.
   private ZipArchive OpenZip() {
-    Stream stream;
     try {
-      stream = _openRead();
-    }
-    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
-      throw FileSystemExtensions.WrapFileError($"Could not open {_description}." + UnreadableAdvice, ex);
-    }
-
-    try {
-      return new ZipArchive(stream, ZipArchiveMode.Read);
+      return new ZipArchive(new MemoryStream(_content, writable: false), ZipArchiveMode.Read);
     }
     catch (InvalidDataException ex) {
-      stream.Dispose();
       throw new InvalidDataException(
-          $"{Capitalize(_description)} is not a valid ZIP archive or is damaged." + DamagedAdvice, ex);
-    }
-    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
-      stream.Dispose();
-      throw FileSystemExtensions.WrapFileError($"Could not read {_description}." + UnreadableAdvice, ex);
+          $"{Capitalize(_description)} is not a valid ZIP archive or is damaged." + DamagedAdvice,
+          ex);
     }
   }
 
@@ -89,11 +87,6 @@ public class ZipSource(Func<Stream> openRead, string description, bool cachedDow
         + " again. If this keeps happening, ask the package author to create the archive with a"
         + " standard ZIP tool."
       : " Ask the package author to create the archive with a standard ZIP tool.";
-
-  private string UnreadableAdvice => _cachedDownload
-      ? " If another lip command is cleaning the cache, wait for it to finish; otherwise close"
-        + " programs that may use the file, or run 'lip cache clean', and try again."
-      : "";
 
   private static string Capitalize(string text) =>
       text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];

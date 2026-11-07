@@ -14,7 +14,8 @@ namespace Lip.Core.Mcmod;
 /// §4 step 2, §5).
 ///
 /// Downloaded ZIP archives and assets are cached under the key of their URL (CacheKeys.Http), so a
-/// URL is downloaded once until Forget. Local ZIP files are read into memory, not cached. Local
+/// URL is downloaded once until Forget, and read into memory when opened. Local ZIP files are
+/// read into memory, not cached. Local
 /// directories are read where they are. git
 /// archives are lazy GitTreeSources: only the tree is listed, and only the blobs read are fetched,
 /// on every read, never through the cache. A ref
@@ -133,8 +134,7 @@ public class ArchiveProvider(
         }
 
         RunTrace.Write("archive", $"Opening the asset {url}");
-        IFileInfo file = await DownloadZip(url);
-        return new ZipSource(file, $"the download of {url} ({file.FullName})");
+        return await DownloadZip(url);
       }
       catch (ArchiveUnavailableException ex) {
         RunTrace.Write("archive", $"Cannot use the asset URL {url}: {ex.Message}");
@@ -157,26 +157,34 @@ public class ArchiveProvider(
 
   private async Task<ArchiveHandle> OpenUrl(string url) {
     RunTrace.Write("archive", $"Opening the ZIP archive {url}");
-    IFileInfo file = await DownloadZip(url);
-    return new ArchiveHandle(url, new ZipSource(file, $"the download of {url} ({file.FullName})"));
+    return new ArchiveHandle(url, await DownloadZip(url));
   }
 
-  /// The cached download of the ZIP archive of a URL, keyed by the URL without its fragment
+  /// The ZIP archive of a URL, from its cached download keyed by the URL without its fragment
   /// (protocol/userspace.md §3). A cached copy that is not a valid ZIP archive (e.g. corrupted)
   /// is downloaded again.
-  private async Task<IFileInfo> DownloadZip(string url) {
+  ///
+  /// The download is read into memory once and validated there, so that what is installed is
+  /// exactly what was validated, even if another process deletes or replaces the cache entry
+  /// meanwhile.
+  private async Task<ZipSource> DownloadZip(string url) {
     url = url.Split('#', 2)[0];
     IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
     if (file is not null) {
       try {
-        ZipValidator.Validate(file, $"The cached download of {url} ({file.FullName})");
+        byte[] content = _fileSystem.File.ReadAllBytes(file.FullName);
+        ValidateZip(content, $"The cached download of {url} ({file.FullName})");
         RunTrace.Write("cache", $"Using the cached download of {url}: {file.FullName}");
-        return file;
+        return CachedZipSource(url, file, content);
       }
       catch (ArchiveUnavailableException ex) {
         RunTrace.Write("cache", $"The cached download of {url} is damaged, downloading it again:"
             + $" {ex.Message}");
         DeleteCached(file, url);
+      }
+      catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) {
+        RunTrace.Write("cache", $"The cached download of {url} was deleted meanwhile,"
+            + " downloading it again");
       }
       catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
         RunTrace.Write("cache", $"Cannot read the cached download of {url} ({file.FullName}):"
@@ -190,8 +198,30 @@ public class ArchiveProvider(
       RunTrace.Write("cache", $"{url} is not cached yet");
     }
 
-    // Download validates what it downloads.
-    return await Download(url);
+    // Download validates what it downloads; the content read back is validated again, since
+    // another process may have replaced the file meanwhile.
+    IFileInfo downloaded = await Download(url);
+    byte[] downloadedContent;
+    try {
+      downloadedContent = _fileSystem.File.ReadAllBytes(downloaded.FullName);
+    }
+    catch (Exception ex) when (IsUnavailable(ex)) {
+      throw new ArchiveUnavailableException(
+          $"Could not read the download of {url} ({downloaded.FullName}). If another lip command"
+          + " is cleaning the cache, wait for it to finish; otherwise close programs that may use"
+          + " the file, or run 'lip cache clean', and try again.", ex);
+    }
+
+    ValidateZip(downloadedContent, $"The download of {url} ({downloaded.FullName})");
+    return CachedZipSource(url, downloaded, downloadedContent);
+  }
+
+  private static ZipSource CachedZipSource(string url, IFileInfo file, byte[] content) =>
+      new(content, $"the download of {url} ({file.FullName})", cachedDownload: true);
+
+  private static void ValidateZip(byte[] content, string subject) {
+    using MemoryStream stream = new(content, writable: false);
+    ZipValidator.Validate(stream, subject);
   }
 
   /// Deletes the cached download of a URL. Throws IOException or UnauthorizedAccessException

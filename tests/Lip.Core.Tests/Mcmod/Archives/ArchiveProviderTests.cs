@@ -509,6 +509,51 @@ public class ArchiveProviderTests {
   }
 
   [Fact]
+  public async Task Open_CacheEntryDeletedAfterOpen_StillServesTheOpenedArchive() {
+    // Arrange: another process may delete cache entries at any time (protocol/userspace.md §3).
+    _downloads[_url] = Zip(("lip.yaml", "{}"));
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
+
+    // Act
+    _fileSystem.File.Delete(Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)));
+
+    // Assert
+    Assert.Equal(["lip.yaml"], archive.Source.Keys);
+    Assert.Equal("{}", await Read(archive, "lip.yaml"));
+  }
+
+  [Fact]
+  public async Task OpenAsset_CacheEntryReplacedAfterOpen_StillServesTheOpenedArchive() {
+    // Arrange
+    _downloads[_url] = Zip(("a.txt", "a"));
+    ISource asset = await CreateProvider().OpenAsset([_url]);
+
+    // Act
+    _fileSystem.File.WriteAllBytes(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), Zip(("b.txt", "b")));
+
+    // Assert
+    Assert.Equal(["a.txt"], asset.Keys);
+    await asset.Prefetch(["a.txt"]);
+    Assert.Equal("a", await Read(asset, "a.txt"));
+  }
+
+  [Fact]
+  public async Task Open_CachedUrl_ServesTheCachedArchiveAfterItIsDeleted() {
+    // Arrange: opening a cached download reads it once.
+    _downloads[_url] = Zip(("lip.yaml", "{}"));
+    await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
+
+    // Act
+    _fileSystem.File.Delete(Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)));
+
+    // Assert
+    Assert.Equal("{}", await Read(archive, "lip.yaml"));
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
   public async Task Open_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
     // Arrange
     const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.zip";

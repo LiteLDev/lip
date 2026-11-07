@@ -687,6 +687,23 @@ public class McmodInstallerTests {
   }
 
   [Fact]
+  public async Task Install_DamagedZipEntry_ThrowsBeforeScripts() {
+    // Arrange: the data of a.txt is damaged, which only extracting it reveals.
+    byte[] zip = Archives.ZipSourceTests.Zip(("a.txt", "content"));
+    Archives.ZipSourceTests.CorruptData(zip, "a.txt");
+    Candidate candidate = Candidate(
+        Entry(SelfPlacements(Placement("a.txt", "a.txt"))
+            + """, "hooks": { "pre_install": [ "pre" ] }"""),
+        new ZipSource(zip));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<McmodInstallException>(
+        () => _installer.Install(candidate, Context()));
+    _commandRunner.VerifyNoOtherCalls();
+    Assert.False(Exists("a.txt"));
+  }
+
+  [Fact]
   public async Task Install_FileOwnedByAnotherPackage_ThrowsAndLeavesWorkspaceIdentical() {
     // Arrange
     AddFile("PeEditor.exe", "other's");
