@@ -66,8 +66,9 @@ The globs of `preserve` and `purge` are matched against paths relative to the wo
 1. Run `hooks.pre_uninstall`.
 2. Delete each file owned by P that matches no glob of its `preserve`.
 3. Delete each path that matches a glob of its `purge` and is not owned by another package; a directory is deleted with everything below it. `mods` and `.lip` at the workspace root, and everything below `.lip`, never match.
-4. Delete each directory that steps 2 and 3 left empty, except `mods`.
-5. Run `hooks.post_uninstall`.
+4. Run `hooks.post_uninstall`.
+
+Each directory that steps 2 and 3 left empty, except `mods`, is deleted when the operation completes, if it is empty then (Section 7.5).
 
 **Updating** a package uninstalls the old package, then installs the new one.
 
@@ -94,7 +95,7 @@ An operation succeeds or fails as a whole.
 1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a `mods` that is a link), no hook command of it runs, no change is made, and the workspace file does not change. Each step is checked against the workspace as the steps before it leave it.
 2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made is undone (Section 7.5). The workspace file does not change.
 3. **Hook commands are not undone.** Hook commands that already ran are neither run again nor reversed. They SHOULD be safe to run again, and SHOULD NOT assume that the files of the operation stay in place.
-4. The paths that uninstallation steps 2–4 delete are those that match when the step is carried out, including paths that hook commands of the operation created.
+4. The paths that uninstallation steps 2 and 3 delete are those that match when the step is carried out, including paths that hook commands of the operation created.
 5. **Interruption.** When an operation is interrupted while changing the workspace, the next operation on the workspace first recovers it (Section 7.5).
 
 ## 7. The `.lip` Directory
@@ -154,7 +155,7 @@ An operation does, in order:
 1. Take the workspace lock. When another process holds it, it is a failure.
 2. When `.lip/journal` exists, recover (Section 7.5).
 3. Read the workspace file, and decide what the operation does (Sections 3 to 5). A failure here is an early failure (Section 6 rule 1).
-4. When the operation makes no change, write the new workspace file to `.lip/workspace.yaml.tmp`, rename it to `.lip/workspace.yaml`, and go to step 10.
+4. When the operation makes no change and runs no hook command, write the new workspace file to `.lip/workspace.yaml.tmp`, rename it to `.lip/workspace.yaml`, and go to step 10.
 5. Create `.lip/journal` with a `"Begin"` record. A journal that already exists is never overwritten.
 6. Make the changes and run the hook commands (Sections 2 and 4), each change after its record. When a step fails or the operation is cancelled, undo the operation (Section 7.5) and fail.
 7. Write the new workspace file to `.lip/workspace.yaml.tmp`.

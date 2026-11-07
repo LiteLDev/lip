@@ -36,4 +36,4 @@ Writing. A process creates an entry only by writing it atomically, through a `.t
 
 Reading. An existing entry is complete. A reader that knows what an `http-<H>` entry's content must be MUST check it, and MAY delete it on mismatch.
 
-Deleting. An `http-<H>` entry MAY be deleted at any time; a `.tmp` file, when no process is writing it.
+Deleting. An `http-<H>` entry MAY be deleted at any time; a `.tmp` file, when no process is writing it. `lip cache clean` (Section 5.9 of [CLI]) is exempt: it MAY delete the whole cache directory, and a process writing to the cache then MAY fail.
