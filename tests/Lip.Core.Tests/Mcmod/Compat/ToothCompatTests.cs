@@ -1,8 +1,8 @@
-using Lip.Core.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Entities;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Migration.PackageManifests;
