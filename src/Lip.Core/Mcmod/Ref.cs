@@ -186,19 +186,20 @@ public partial record Ref {
 
     if (!OperatingSystem.IsWindows()) {
       return path.StartsWith('/')
-          ? "file://" + string.Join('/', path.Split('/').Select(Escape))
+          ? "file://" + string.Join('/', path.Split('/').Select(s => Escape(s)))
           : null;
     }
 
     string[] segments = path.Split('\\', '/');
     if (path.Length >= 2 && path[0] is '\\' or '/' && path[1] is '\\' or '/') {
       return segments.Length >= 4 && segments[2] != "" && segments[3] != ""
-          ? $"file://{Escape(segments[2])}/{string.Join('/', segments[3..].Select(Escape))}"
+          ? $"file://{Escape(segments[2], host: true)}/"
+              + string.Join('/', segments[3..].Select(s => Escape(s)))
           : null;
     }
 
     return segments.Length >= 2 && IsDrive(segments[0])
-        ? $"file:///{segments[0]}/{string.Join('/', segments[1..].Select(Escape))}"
+        ? $"file:///{segments[0]}/{string.Join('/', segments[1..].Select(s => Escape(s)))}"
         : null;
   }
 
@@ -222,8 +223,10 @@ public partial record Ref {
       path = path[slash..];
     }
 
+    // The host is a reg-name: no userinfo ('@') and no port (':').
     if (!path.StartsWith('/') || !UriTextRegex().IsMatch(host + path)
-        || (host + path).IndexOfAny(['?', '#', '[', ']']) >= 0) {
+        || (host + path).IndexOfAny(['?', '#', '[', ']']) >= 0
+        || host.IndexOfAny([':', '@']) >= 0) {
       return null;
     }
 
@@ -262,11 +265,13 @@ public partial record Ref {
 
   /// Percent-encodes the UTF-8 octets of a path segment but those RFC 3986 allows as they are
   /// (pchar).
-  private static string Escape(string segment) {
+  private static string Escape(string segment, bool host = false) {
     StringBuilder builder = new();
     foreach (byte b in Encoding.UTF8.GetBytes(segment)) {
       char c = (char)b;
-      if (char.IsAsciiLetterOrDigit(c) || "-._~!$&'()*+,;=:@".Contains(c)) {
+      // A host (reg-name) allows neither ':' nor '@', which would start a port or end userinfo.
+      if (char.IsAsciiLetterOrDigit(c) || "-._~!$&'()*+,;=".Contains(c)
+          || (!host && c is ':' or '@')) {
         builder.Append(c);
       } else {
         builder.Append(CultureInfo.InvariantCulture, $"%{b:X2}");

@@ -204,6 +204,29 @@ public class RefTests {
   }
 
   [Fact]
+  public void FromFile_UncHostWithAtOrColonOnWindows_EscapesThem() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "UNC paths are Windows paths.");
+
+    // Arrange: a reg-name has neither '@' (userinfo) nor ':' (port) [RFC3986].
+    string path = @"\\server@SSL\share\x";
+
+    // Act
+    Ref r = Ref.FromFile(path);
+
+    // Assert
+    Assert.Equal("file://server%40SSL/share/x", r.Target);
+    Assert.Equal(path, r.LocalPath);
+    Assert.Equal(r, Ref.Parse(r.ToString(), allowFile: true));
+  }
+
+  [Theory]
+  [InlineData("file://user@server/share/x")]
+  [InlineData("file://server:80/share/x")]
+  public void Parse_FileUriWithUserinfoOrPort_ThrowsFormatException(string uri) {
+    Assert.Throws<FormatException>(() => Ref.Parse(uri, allowFile: true));
+  }
+
+  [Fact]
   public void WithVariant_ReplacesVariant() {
     // Act
     Ref r = Ref.Parse("github.com/a/b#client", allowFile: false).WithVariant("");
