@@ -30,6 +30,7 @@ public sealed class WorkspaceTransaction : IDisposable {
   private readonly HashSet<string> _reserved;
   private readonly List<JournalEntry> _entries = [];
   private Stream? _journal;
+  private string? _started;
   private bool _committed;
   private bool _disposed;
 
@@ -164,7 +165,7 @@ public sealed class WorkspaceTransaction : IDisposable {
       try {
         _journal.Dispose();
         _journal = null;
-        WriteJournal(_fs, _journalPath, _root, _entries, committed: false);
+        WriteJournal(_fs, _journalPath, _root, _entries, committed: false, _started);
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
         // The journal still commits the operation, and the staged workspace file is kept, so
@@ -241,7 +242,8 @@ public sealed class WorkspaceTransaction : IDisposable {
       }
 
       RunTrace.Write("journal", $"Began the journal {_journalPath}");
-      Append(new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O")));
+      _started = DateTimeOffset.UtcNow.ToString("O");
+      Append(new JournalEntry(JournalOp.Begin, "", _started));
     }
   }
 
@@ -279,7 +281,7 @@ public sealed class WorkspaceTransaction : IDisposable {
           RunTrace.Write("journal", $"Deleted the journal {_journalPath}");
         }
       } else {
-        WriteJournal(_fs, _journalPath, _root, left, committed);
+        WriteJournal(_fs, _journalPath, _root, left, committed, _started);
         RunTrace.Write("journal", $"Kept {left.Count} changes left to undo in the journal"
             + $" {_journalPath}");
       }
@@ -293,11 +295,18 @@ public sealed class WorkspaceTransaction : IDisposable {
     }
   }
 
+  /// Replaces the journal by one with the records of entries. Started: the time the operation
+  /// started, as its "Begin" record gave it, or null when unknown.
   private static void WriteJournal(
-      IFileSystem fs, string path, string root, List<JournalEntry> entries, bool committed) {
+      IFileSystem fs,
+      string path,
+      string root,
+      List<JournalEntry> entries,
+      bool committed,
+      string? started) {
     StringBuilder text = new();
     foreach (JournalEntry entry in (List<JournalEntry>)[
-        new JournalEntry(JournalOp.Begin, "", DateTimeOffset.UtcNow.ToString("O")),
+        new JournalEntry(JournalOp.Begin, "", started),
         .. entries,
         .. committed ? [new JournalEntry(JournalOp.Commit, "")] : (JournalEntry[])[]]) {
       text.Append(Serialize(ToJournal(fs, root, entry))).Append('\n');
@@ -323,7 +332,9 @@ public sealed class WorkspaceTransaction : IDisposable {
       return entry;
     }
 
-    string Relative(string path) => fs.Path.GetRelativePath(root, path).Replace('\\', '/');
+    // Only the separator becomes '/': outside Windows '\' is a character of a name.
+    string Relative(string path) =>
+        fs.Path.GetRelativePath(root, path).Replace(fs.Path.DirectorySeparatorChar, '/');
     return entry with {
       Path = Relative(entry.Path),
       To = HasDestination(entry.Op) ? Relative(entry.To!) : entry.To,
@@ -494,7 +505,7 @@ public sealed class WorkspaceTransaction : IDisposable {
         fs.File.Delete(journalPath);
         RunTrace.Write("journal", $"Deleted the journal {journalPath}");
       } else {
-        WriteJournal(fs, journalPath, root, left, committed);
+        WriteJournal(fs, journalPath, root, left, committed, started);
         RunTrace.Write("journal", $"Kept {left.Count} changes left to undo in the journal"
             + $" {journalPath}");
       }

@@ -314,6 +314,55 @@ public class WorkspaceTransactionTests {
   }
 
   [Fact]
+  public void Recover_NameWithBackslashOffWindows_RestoresIt() {
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows names cannot contain '\\'.");
+
+    // Arrange: off Windows '\' is a character of a name, not a separator (protocol/workspace.md
+    // §7.3: the paths of the journal are '/'-separated).
+    string root = UnixFileTypeTests.MakeTempRootPath();
+    string journalPath = Path.Join(root, ".lip", "journal");
+    Directory.CreateDirectory(Path.Join(root, "logs"));
+    try {
+      File.WriteAllText(Path.Join(root, "logs", @"a\b.txt"), "log");
+      using (WorkspaceTransaction transaction = new(new FileSystem(), journalPath)) {
+        transaction.DeleteFile(Path.Join(root, "logs", @"a\b.txt"));
+      }
+
+      // Act
+      string journal = File.ReadAllText(journalPath);
+      WorkspaceTransaction.Recover(new FileSystem(), journalPath, () => { }, () => { });
+
+      // Assert
+      Assert.Contains(""""path":"logs/a\\b.txt","to":"logs/.a\\b.txt.bak"""", journal);
+      Assert.Equal("log", File.ReadAllText(Path.Join(root, "logs", @"a\b.txt")));
+      Assert.False(File.Exists(Path.Join(root, "logs", @".a\b.txt.bak")));
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task Recover_ChangeCannotBeUndone_KeepsTheStartTime() {
+    // Arrange: the created file is in use by another process, so the first recovery rewrites the
+    // journal.
+    using (WorkspaceTransaction transaction = new(_fs, _journal)) {
+      await Change(transaction);
+    }
+
+    string begin = _fs.File.ReadAllLines(_journal)[0];
+    _fs.GetFile(Full("new/deep/created.txt")).AllowedFileShare = FileShare.None;
+
+    // Act
+    WorkspaceTransaction.RecoveryResult? first =
+        WorkspaceTransaction.Recover(_fs, _journal, () => { }, () => { });
+
+    // Assert: "to" of "Begin" is when the operation started, not when the journal was rewritten.
+    Assert.NotEmpty(first!.Errors);
+    Assert.Equal(begin, _fs.File.ReadAllLines(_journal)[0]);
+  }
+
+  [Fact]
   public async Task Recover_ChangeCannotBeUndone_KeepsItInJournalForNextTime() {
     // Arrange: the created file is in use by another process.
     SortedDictionary<string, string> before = Snapshot();
