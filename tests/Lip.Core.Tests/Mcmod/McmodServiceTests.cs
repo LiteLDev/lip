@@ -377,6 +377,28 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Uninstall_NoDependenciesOfAMemberOfACycle_RecordsTheRestInInstallationOrder() {
+    // Arrange: a needs c, c needs b and b needs a, a cycle recorded as a, b, c.
+    const string a = "example.com/cycle/a", b = "example.com/cycle/b", c = "example.com/cycle/c";
+    foreach ((string id, string dependency) in new[] { (a, c), (c, b), (b, a) }) {
+      _ws.AddTag(id, "1.0.0", new() {
+        ["lip.yaml"] = WorkspaceHarness.LipYaml(
+            id, "1.0.0", $$""" "deps": { "{{dependency}}": "1.0.0" }"""),
+      });
+    }
+
+    await _ws.Service.Install([a], _options);
+    Assert.Equal([a, b, c], (await _ws.Lock()).Packages.Select(p => p.Identity));
+
+    // Act
+    await _ws.Service.Uninstall([b], _options with { NoDependencies = true });
+
+    // Assert: without b, c satisfies the dependency of a and comes first
+    // (protocol/workspace.md §5, §7.1).
+    Assert.Equal([c, a], (await _ws.Lock()).Packages.Select(p => p.Identity));
+  }
+
+  [Fact]
   public async Task Install_NoDependenciesDryRunOfInstalledDependency_ReportsMarkingIt() {
     // Arrange
     AddLibAndApp();

@@ -160,7 +160,9 @@ public class McmodService(
                 .Where(targets.Contains)
                 .Select(p => new UninstallChange(p)),
           ],
-          Task.FromResult));
+          // Without a package of a cycle, the others may need another order (protocol/workspace.md
+          // §5, §7.1).
+          remaining => Task.FromResult(InInstallationOrder(remaining, workspace.Environment))));
       return;
     }
 
