@@ -1321,17 +1321,39 @@ public class McmodInstallerTests {
   [InlineData("plugins/")]
   [InlineData("*/")]
   [InlineData("plugins")]
+  [InlineData("**/mods/")]
+  [InlineData("**/mods")]
   public async Task Uninstall_PurgeNamingLayoutDirectories_RemovesNothingThroughThem(
       string pattern) {
-    // Arrange
+    // Arrange: a path below mods does not match only because mods does (protocol/workspace.md
+    // §4).
     Candidate candidate = Candidate($$""" "purge": [ "{{pattern}}" ] """);
     AddFile("mods/Other/other.dll", "dll");
+    AddFile("mods/readme.txt", "text");
 
     // Act
     await _installer.Uninstall(Locked(candidate, []), Context());
 
     // Assert
     Assert.True(Exists("mods/Other/other.dll"));
+    Assert.True(Exists("mods/readme.txt"));
+    Assert.True(_fs.Directory.Exists(Full("mods")));
+  }
+
+  [Fact]
+  public async Task Uninstall_PurgeOfEveryDirectory_RemovesBelowModsOnlyWhatMatchesItself() {
+    // Arrange: "**/*/" matches mods/Other/ itself, but mods/readme.txt only through mods
+    // (protocol/workspace.md §4).
+    Candidate candidate = Candidate(""" "purge": [ "**/*/" ] """);
+    AddFile("mods/Other/other.dll", "dll");
+    AddFile("mods/readme.txt", "text");
+
+    // Act
+    await _installer.Uninstall(Locked(candidate, []), Context());
+
+    // Assert
+    Assert.False(Exists("mods/Other/other.dll"));
+    Assert.True(Exists("mods/readme.txt"));
     Assert.True(_fs.Directory.Exists(Full("mods")));
   }
 

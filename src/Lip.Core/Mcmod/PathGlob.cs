@@ -84,8 +84,10 @@ public class PathGlob {
     return prefix.ToString();
   }
 
-  /// Whether the path is matched. A directory path must end with '/'.
-  public bool IsMatch(string path) {
+  /// Whether the path is matched. A directory path must end with '/'. A directory pattern
+  /// matches a path below a directory only through a directory of at least minSegments segments
+  /// (e.g. 2 for a path below mods, which a pattern matching mods alone does not reach).
+  public bool IsMatch(string path, int minSegments = 0) {
     bool isDirectory = path.EndsWith('/');
     string[] segments = (isDirectory ? path[..^1] : path).Split('/');
 
@@ -97,7 +99,7 @@ public class PathGlob {
     // file path is the file itself, never a directory. The empty prefix is the base directory,
     // which only a pattern of "**" segments matches (e.g. "**/" matches every path).
     int maxPrefix = isDirectory ? segments.Length : segments.Length - 1;
-    for (int length = 0; length <= maxPrefix; length++) {
+    for (int length = minSegments; length <= maxPrefix; length++) {
       if (MatchSegments(0, segments, 0, length)) {
         return true;
       }

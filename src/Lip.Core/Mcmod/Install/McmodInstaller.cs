@@ -811,9 +811,12 @@ public partial class McmodInstaller(
             ? start + path[longStart.Length..]
             : path;
         string suffix = info.IsDirectory ? "/" : "";
+        // A path below mods does not match only because mods does (protocol/workspace.md §4).
+        int slash = path.IndexOf('/', StringComparison.Ordinal);
+        bool belowMods = slash >= 0 && WorkspaceLayout.IsModsDirectory(path[..slash]);
         bool matched = all
             || (!(info.IsDirectory && WorkspaceLayout.IsModsDirectory(path))
-                && glob.IsMatch(spelled + suffix));
+                && glob.IsMatch(spelled + suffix, minSegments: belowMods ? 2 : 0));
         if (matched) {
           yield return (path, info.IsDirectory);
         }
