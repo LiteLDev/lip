@@ -1,17 +1,143 @@
 // lip documentation — levimc-kit site config (replaces .vitepress/config.mts).
-// Nav and sidebars are ported verbatim from the former VitePress themeConfig (root + zh locales).
-import { defineDocsConfig } from './kit/docs/node/config.ts';
+// The LeviMC navigation model (kit 2.19): every top-level nav entry is a section with its own sidebar tree.
+import { defineDocsConfig, type NavEntry } from './kit/docs/node/config.ts';
+
+const repo = 'https://github.com/LiteLDev/lip';
+
+interface Labels {
+  guide: string;
+  gettingStarted: string;
+  installation: string;
+  quickStart: string;
+  howTo: string;
+  creatingPackages: string;
+  migratingPackages: string;
+  installingDependencies: string;
+  managingConfiguration: string;
+  help: string;
+  faq: string;
+  concepts: string;
+  architecture: string;
+  workspaceFile: string;
+  internalMechanism: string;
+  cli: string;
+  overview: string;
+  configuration: string;
+  commands: string;
+}
+
+const LABELS: Record<'root' | 'zh', Labels> = {
+  root: {
+    guide: 'Guide',
+    gettingStarted: 'Getting Started',
+    installation: 'Installation',
+    quickStart: 'Quick Start',
+    howTo: 'How-to Guides',
+    creatingPackages: 'Creating Packages',
+    migratingPackages: 'Migrating Packages',
+    installingDependencies: 'Installing Dependencies',
+    managingConfiguration: 'Managing Configuration',
+    help: 'Help',
+    faq: 'FAQ',
+    concepts: 'Concepts',
+    architecture: 'Architecture',
+    workspaceFile: 'Workspace File',
+    internalMechanism: 'Internal Mechanism',
+    cli: 'CLI Reference',
+    overview: 'Overview',
+    configuration: 'Configuration',
+    commands: 'Commands',
+  },
+  zh: {
+    guide: '指南',
+    gettingStarted: '入门',
+    installation: '安装',
+    quickStart: '快速开始',
+    howTo: '实践指南',
+    creatingPackages: '创建包',
+    migratingPackages: '迁移包',
+    installingDependencies: '安装依赖',
+    managingConfiguration: '管理配置',
+    help: '帮助',
+    faq: '常见问题',
+    concepts: '概念',
+    architecture: '架构',
+    workspaceFile: '工作区文件',
+    internalMechanism: '内部机制',
+    cli: 'CLI 参考',
+    overview: '概览',
+    configuration: '配置',
+    commands: '命令',
+  },
+};
+
+const COMMANDS = ['cache_clean', 'config', 'init', 'install', 'list', 'migrate', 'pack', 'uninstall', 'update', 'versions', 'view'];
+
+/** The sections of one locale (`p`: its URL prefix, '/' or '/zh/'); zh-Hant is converted from zh by the kit. */
+const nav = (p: string, t: Labels): NavEntry[] => [
+  {
+    text: t.guide,
+    items: [
+      {
+        text: t.gettingStarted,
+        items: [
+          { text: t.installation, link: `${p}intro/installation` },
+          { text: t.quickStart, link: `${p}intro/quick_start` },
+        ],
+      },
+      {
+        text: t.howTo,
+        items: [
+          { text: t.creatingPackages, link: `${p}guides/creating_packages` },
+          { text: t.migratingPackages, link: `${p}guides/migrating_packages` },
+          { text: t.installingDependencies, link: `${p}guides/installing_dependencies` },
+          { text: t.managingConfiguration, link: `${p}guides/managing_configuration` },
+        ],
+      },
+      { text: t.help, items: [{ text: t.faq, link: `${p}faq` }] },
+    ],
+  },
+  {
+    text: t.concepts,
+    items: [
+      { text: t.architecture, link: `${p}concepts/architecture` },
+      { text: 'lip.yaml', link: `${p}concepts/lip_yaml` },
+      { text: t.workspaceFile, link: `${p}concepts/lockfiles` },
+      { text: t.internalMechanism, link: `${p}guides/internal_mechanism` },
+    ],
+  },
+  {
+    text: t.cli,
+    items: [
+      { text: t.overview, link: `${p}cli/overview` },
+      { text: t.configuration, link: `${p}cli/configuration` },
+      { text: t.commands, items: COMMANDS.map((c) => ({ text: c.replace('_', ' '), link: `${p}cli/commands/${c}` })) },
+    ],
+  },
+];
+
+// Pages removed in lip v1 (JSON-RPC, tooth.json → lip.yaml): their old URLs, in every locale, open the closest page.
+const MOVED: Record<string, string> = {
+  'rpc/overview': 'cli/overview.html',
+  'rpc/json_rpc_spec': 'cli/overview.html',
+  'cli/commands/rpc': 'cli/overview.html',
+  'concepts/tooth_json': 'concepts/lip_yaml.html',
+};
+const redirects = Object.fromEntries(
+  ['', 'zh/', 'zh-Hant/'].flatMap((p) => Object.entries(MOVED).map(([from, to]) => [p + from, p + to])),
+);
 
 export default defineDocsConfig({
   base: '/lip/',
   title: 'lip',
   description: 'A general package installer',
-  // lip has no logo of its own: the header shows the kit's grass block, and the tab icon matches it.
-  favicon: 'favicon.svg',
+  // the same mark as lip's tile in the LeviMC Projects menu (levimc.org/logos/lip.webp)
+  logo: { src: '/logo.webp', alt: 'lip' },
+  favicon: '/logo.webp',
   project: 'lip',
   contentDir: '.',
-  repo: 'https://github.com/LiteLDev/lip',
-  editLink: 'https://github.com/LiteLDev/lip/edit/main/docs/:path',
+  repo,
+  editLink: `${repo}/edit/main/docs/:path`,
   hostname: 'https://docs.levimc.org',
   sitemap: { hostname: 'https://docs.levimc.org' },
   i18n: {
@@ -31,141 +157,7 @@ export default defineDocsConfig({
   markdown: { compat: 'commonmark' },
   // VitePress default (the old config set no outline): "On this page" lists h2 headings only.
   outline: 2,
-  nav: {
-    root: [
-      { text: 'Intro', link: '/intro/quick_start' },
-      { text: 'Concepts', link: '/concepts/architecture' },
-      { text: 'Guides', link: '/guides/creating_packages' },
-      { text: 'CLI', link: '/cli/overview' },
-    ],
-    zh: [
-      { text: '介绍', link: '/zh/intro/quick_start' },
-      { text: '概念', link: '/zh/concepts/architecture' },
-      { text: '指南', link: '/zh/guides/creating_packages' },
-      { text: 'CLI', link: '/zh/cli/overview' },
-    ],
-  },
-  sidebar: {
-    root: {
-      '/intro/': [
-        {
-          text: 'Introduction',
-          items: [
-            { text: 'Installation', link: '/intro/installation' },
-            { text: 'Quick Start', link: '/intro/quick_start' },
-          ],
-        },
-      ],
-      '/concepts/': [
-        {
-          text: 'Concepts',
-          items: [
-            { text: 'Architecture', link: '/concepts/architecture' },
-            { text: 'lip.yaml', link: '/concepts/lip_yaml' },
-            { text: 'Workspace File', link: '/concepts/lockfiles' },
-          ],
-        },
-      ],
-      '/cli/': [
-        {
-          text: 'CLI Reference',
-          items: [
-            { text: 'Overview', link: '/cli/overview' },
-            { text: 'Configuration', link: '/cli/configuration' },
-            {
-              text: 'Commands',
-              items: [
-                { text: 'cache clean', link: '/cli/commands/cache_clean' },
-                { text: 'config', link: '/cli/commands/config' },
-                { text: 'init', link: '/cli/commands/init' },
-                { text: 'install', link: '/cli/commands/install' },
-                { text: 'list', link: '/cli/commands/list' },
-                { text: 'migrate', link: '/cli/commands/migrate' },
-                { text: 'pack', link: '/cli/commands/pack' },
-                { text: 'uninstall', link: '/cli/commands/uninstall' },
-                { text: 'update', link: '/cli/commands/update' },
-                { text: 'versions', link: '/cli/commands/versions' },
-                { text: 'view', link: '/cli/commands/view' },
-              ],
-            },
-          ],
-        },
-      ],
-        },
-      ],
-      '/guides/': [
-        {
-          text: 'How-to Guides',
-          items: [
-            { text: 'Creating Packages', link: '/guides/creating_packages' },
-            { text: 'Migrating Packages', link: '/guides/migrating_packages' },
-            { text: 'Installing Dependencies', link: '/guides/installing_dependencies' },
-            { text: 'Managing Configuration', link: '/guides/managing_configuration' },
-            { text: 'Internal Mechanism', link: '/guides/internal_mechanism' },
-          ],
-        },
-      ],
-    },
-    zh: {
-      '/zh/intro/': [
-        {
-          text: '入门',
-          items: [
-            { text: '安装', link: '/zh/intro/installation' },
-            { text: '快速开始', link: '/zh/intro/quick_start' },
-          ],
-        },
-      ],
-      '/zh/concepts/': [
-        {
-          text: '概念',
-          items: [
-            { text: '架构', link: '/zh/concepts/architecture' },
-            { text: 'lip.yaml', link: '/zh/concepts/lip_yaml' },
-            { text: '工作区文件', link: '/zh/concepts/lockfiles' },
-          ],
-        },
-      ],
-      '/zh/cli/': [
-        {
-          text: 'CLI 参考',
-          items: [
-            { text: '概览', link: '/zh/cli/overview' },
-            { text: '配置', link: '/zh/cli/configuration' },
-            {
-              text: '命令',
-              items: [
-                { text: 'cache clean', link: '/zh/cli/commands/cache_clean' },
-                { text: 'config', link: '/zh/cli/commands/config' },
-                { text: 'init', link: '/zh/cli/commands/init' },
-                { text: 'install', link: '/zh/cli/commands/install' },
-                { text: 'list', link: '/zh/cli/commands/list' },
-                { text: 'migrate', link: '/zh/cli/commands/migrate' },
-                { text: 'pack', link: '/zh/cli/commands/pack' },
-                { text: 'uninstall', link: '/zh/cli/commands/uninstall' },
-                { text: 'update', link: '/zh/cli/commands/update' },
-                { text: 'versions', link: '/zh/cli/commands/versions' },
-                { text: 'view', link: '/zh/cli/commands/view' },
-              ],
-            },
-          ],
-        },
-      ],
-        },
-      ],
-      '/zh/guides/': [
-        {
-          text: '实践指南',
-          items: [
-            { text: '创建包', link: '/zh/guides/creating_packages' },
-            { text: '迁移包', link: '/zh/guides/migrating_packages' },
-            { text: '安装依赖', link: '/zh/guides/installing_dependencies' },
-            { text: '管理配置', link: '/zh/guides/managing_configuration' },
-            { text: '内部机制', link: '/zh/guides/internal_mechanism' },
-          ],
-        },
-      ],
-    },
-  },
-  social: [{ icon: 'github', link: 'https://github.com/LiteLDev/lip', label: 'GitHub' }],
+  sidebar: 'tabs',
+  nav: { root: nav('/', LABELS.root), zh: nav('/zh/', LABELS.zh) },
+  redirects,
 });

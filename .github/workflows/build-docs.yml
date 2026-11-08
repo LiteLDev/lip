@@ -33,6 +33,8 @@ jobs:
           node-version: 24
 
       - run: pnpm install --frozen-lockfile
+      # type-check docs.config.ts (and the kit) first: a config that does not parse fails the pull request clearly
+      - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm linkcheck
 

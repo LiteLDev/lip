@@ -5,6 +5,9 @@ hero:
   name: "lip"
   text: "通用包安装器"
   tagline: 从公开 Git 仓库安装包
+  image:
+    src: /logo.webp
+    alt: lip
   actions:
     - theme: brand
       text: 快速开始

@@ -5,6 +5,9 @@ hero:
   name: "lip"
   text: "A general package installer"
   tagline: Install packages from public Git repositories
+  image:
+    src: /logo.webp
+    alt: lip
   actions:
     - theme: brand
       text: Getting Started
