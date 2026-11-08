@@ -44,8 +44,10 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the workspace
 /// file (with the package file it records) without network access, and their archives (the commit
 /// it records for a remote repository, otherwise what their source names now) and assets are
-/// opened only when needed. If the request cannot be satisfied with every installed package
-/// pinned, it is solved again with only the explicitly installed packages pinned, so that
+/// opened only when needed. A candidate the solver resolves with the identity, version and commit
+/// of an installed package is that installed package, which is not replaced. If the request
+/// cannot be satisfied with every installed package pinned, it is solved again with only the
+/// explicitly installed packages pinned, so that
 /// dependencies may change version; their installed versions are tried first. An update solves
 /// so from the start, so that the dependency packages give way to the newest versions of the
 /// requested packages. Packages that no explicitly installed package needs any more are removed.
@@ -279,7 +281,8 @@ public class McmodService(
             ? installed is not null && installed.Source == candidate.Source.ToString()
                 && IsSamePackage(installed, candidate)
             : candidate.Source is { Kind: RefKind.Spec, GitRef: not null }) {
-          members[member] = candidate;
+          // The planned package keeps its package file, which may be the installed one's.
+          members[member] = members[member] with { Source = candidate.Source };
         }
       }
     }
@@ -403,7 +406,34 @@ public class McmodService(
       }
     }
 
-    return new Workspace(root, lockFile, environment, resolver, new GraphSolver(resolver));
+    Workspace? workspace = null;
+    workspace = new Workspace(root, lockFile, environment, resolver, new GraphSolver(
+        new InstalledPackageResolver(resolver, c => AsInstalled(workspace!, c))));
+    return workspace;
+  }
+
+  /// The installed package with the identity, version and commit of a candidate, with the
+  /// source of the candidate; otherwise the candidate. Such a package is not replaced
+  /// (protocol/workspace.md §5), so it is planned with the package file the workspace file
+  /// records, whatever the package file of the candidate says.
+  private Candidate AsInstalled(Workspace workspace, Candidate candidate) =>
+      workspace.Lock.Packages.FirstOrDefault(p => IsSamePackage(p, candidate)) is { } installed
+          ? PinnedCandidate(workspace, installed) with { Source = candidate.Source }
+          : candidate;
+
+  /// A resolver whose candidates are mapped, for the graph solver.
+  private sealed class InstalledPackageResolver(IResolver resolver, Func<Candidate, Candidate> map)
+      : IResolver {
+    public async IAsyncEnumerable<Candidate> ResolveLazy(
+        Ref source,
+        IVersionConstraint? range,
+        LipEnvironment environment,
+        Action<string>? onDiagnostic = null) {
+      await foreach (Candidate candidate in resolver.ResolveLazy(
+          source, range, environment, onDiagnostic)) {
+        yield return map(candidate);
+      }
+    }
   }
 
   /// The workspace file protocol/compatibility.md §3 derives from the tooth_lock.json of a

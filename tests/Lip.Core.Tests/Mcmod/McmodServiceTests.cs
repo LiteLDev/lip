@@ -1360,6 +1360,35 @@ public class McmodServiceTests {
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
   }
 
+  [Theory]
+  [InlineData(true)]
+  [InlineData(false)]
+  public async Task Update_LocalPathOfSameVersionWithOtherDependencies_KeepsTheRecordedOnes(
+      bool withArgument) {
+    // Arrange: the local package needs lib; then its package file drops the dependency.
+    AddLib("1.0.0");
+    _ws.AddFile("src/x.txt", "x");
+    _ws.AddFile("src/lip.yaml", WorkspaceHarness.LipYaml("example.com/local", "1.0.0",
+        $$""" "deps": { "{{Lib}}": ">=1.0.0" }, """ + WorkspaceHarness.SelfAsset("x.txt", "x.txt")));
+    await _ws.Service.Install(["./src"], _options);
+    _ws.AddFile("src/lip.yaml", WorkspaceHarness.LipYaml(
+        "example.com/local", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")));
+    LockFile before = await _ws.Lock();
+
+    // Act
+    await _ws.Service.Update(withArgument ? ["./src"] : [], _options);
+
+    // Assert: the package is not replaced, so its recorded package file, which needs lib, stays
+    // (protocol/workspace.md §3 rule 2 and §5).
+    LockFile after = await _ws.Lock();
+    Assert.Equal(
+        [(Lib, "1.0.0", false), ("example.com/local", "1.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal(
+        before.Packages[1].Manifest.GetRawText(), after.Packages[1].Manifest.GetRawText());
+    Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
   [Fact]
   public async Task Update_TwoArgumentsOfOneIdentity_SatisfiesBoth() {
     // Arrange
