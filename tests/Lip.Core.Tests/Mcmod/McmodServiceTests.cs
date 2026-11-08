@@ -725,6 +725,20 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_DependencyWithInvalidPackageFile_KeepsTheCause() {
+    // Arrange: app needs lib, whose only tag has a package file that is no valid YAML.
+    _ws.AddTag(Lib, "1.0.0", new() { ["lip.yaml"] = "id: [" });
+    AddApp("1.0.0", "1.0.0");
+
+    // Act
+    DependencyResolutionException ex = await Assert.ThrowsAsync<DependencyResolutionException>(
+        () => _ws.Service.Install([App], _options));
+
+    // Assert: the failure keeps the exception behind it, for the failure report.
+    Assert.NotNull(ex.InnerException);
+  }
+
+  [Fact]
   public async Task Install_PreInstallBeforeAnyChange_RunsWithTheJournal() {
     // Arrange: mods exists, so pre_install is the first thing the operation does; the journal
     // exists before it runs (protocol/workspace.md §7.4 steps 5 and 6).

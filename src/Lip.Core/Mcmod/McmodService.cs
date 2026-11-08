@@ -423,7 +423,7 @@ public class McmodService(
 
   /// A resolver whose candidates are mapped, for the graph solver.
   private sealed class InstalledPackageResolver(IResolver resolver, Func<Candidate, Candidate> map)
-      : IResolver {
+      : ICausalResolver {
     public async IAsyncEnumerable<Candidate> ResolveLazy(
         Ref source,
         IVersionConstraint? range,
@@ -431,6 +431,21 @@ public class McmodService(
         Action<string>? onDiagnostic = null) {
       await foreach (Candidate candidate in resolver.ResolveLazy(
           source, range, environment, onDiagnostic)) {
+        yield return map(candidate);
+      }
+    }
+
+    // The exceptions behind the diagnostics of the resolver it wraps, when it hands them over.
+    public async IAsyncEnumerable<Candidate> ResolveLazyWithCauses(
+        Ref source,
+        IVersionConstraint? range,
+        LipEnvironment environment,
+        Action<ResolveDiagnostic> onDiagnostic) {
+      IAsyncEnumerable<Candidate> candidates = resolver is ICausalResolver withCauses
+          ? withCauses.ResolveLazyWithCauses(source, range, environment, onDiagnostic)
+          : resolver.ResolveLazy(
+              source, range, environment, d => onDiagnostic(new ResolveDiagnostic(d, null)));
+      await foreach (Candidate candidate in candidates) {
         yield return map(candidate);
       }
     }

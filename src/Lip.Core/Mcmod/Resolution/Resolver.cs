@@ -8,6 +8,16 @@ namespace Lip.Core.Mcmod.Resolution;
 /// exception behind it, if any (e.g. the network failure of a download).
 public record ResolveDiagnostic(string Message, Exception? Cause);
 
+/// A resolver that also hands over the exception behind each diagnostic, so that a failure can
+/// keep it as its cause.
+public interface ICausalResolver : IResolver {
+  public IAsyncEnumerable<Candidate> ResolveLazyWithCauses(
+      Ref source,
+      IVersionConstraint? range,
+      LipEnvironment environment,
+      Action<ResolveDiagnostic> onDiagnostic);
+}
+
 /// Resolve(source, range, environment) (protocol/package.md §4), reading an archive without a
 /// package file as protocol/compatibility.md §2 does.
 ///
@@ -22,7 +32,7 @@ public record ResolveDiagnostic(string Message, Exception? Cause);
 public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
-    Action<string>? onWarning = null) : IResolver {
+    Action<string>? onWarning = null) : ICausalResolver {
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
   private readonly Action<string> _onWarning = onWarning ?? (_ => { });

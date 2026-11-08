@@ -859,7 +859,7 @@ public class GraphSolver(IResolver resolver) {
       ResolveKey key = ResolveKey.Of(reference, range);
       if (!_resolved.TryGetValue(key, out LazySequence? sequence)) {
         // The resolver of lip also hands over the exceptions behind its diagnostics.
-        sequence = new LazySequence(s => resolver is Resolver withCauses
+        sequence = new LazySequence(s => resolver is ICausalResolver withCauses
             ? withCauses.ResolveLazyWithCauses(
                 reference, range, environment, s.AddDiagnostic)
             : resolver.ResolveLazy(reference, range, environment, s.AddDiagnostic));
