@@ -242,6 +242,8 @@ public class GitRemoteClientTests {
   [InlineData(".")]
   [InlineData("")]
   [InlineData("a/b")]
+  [InlineData(@"a\b")]
+  [InlineData(@"..\..\x")]
   public async Task ListTree_UnsafeEntryName_Throws(string name) {
     byte[] tree = PackBuilder.Tree(("100644", name, new string('a', 40)));
     byte[] commit = PackBuilder.Commit(PackBuilder.ObjectId(GitObjectType.Tree, tree));
@@ -260,9 +262,10 @@ public class GitRemoteClientTests {
 
   [Theory]
   [InlineData(".git")]
-  [InlineData(@"a\b")]
+  [InlineData("a b.")]
   public async Task ListTree_NameGitDoesNotCheckOut_IsListed(string name) {
-    // protocol/package.md §1 puts no restriction on the names in a git archive.
+    // protocol/package.md §1 restricts the names in a git archive only by "", ".", "..", '/'
+    // and '\'.
     string blobId = new('a', 40);
     byte[] tree = PackBuilder.Tree(("100644", name, blobId));
     byte[] commit = PackBuilder.Commit(PackBuilder.ObjectId(GitObjectType.Tree, tree));

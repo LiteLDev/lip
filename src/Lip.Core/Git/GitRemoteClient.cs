@@ -677,7 +677,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
 
   /// Rejects names a git archive cannot hold (protocol/package.md §1).
   private static bool IsSafeEntryName(string name) {
-    return name is not ("" or "." or "..") && !name.Contains('/');
+    return name is not ("" or "." or "..") && !name.Contains('/') && !name.Contains('\\');
   }
 
   private static GitRemoteRef ParseRef(string line) {

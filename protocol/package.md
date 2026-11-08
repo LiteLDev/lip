@@ -5,8 +5,8 @@
 - **ASCII case-insensitive**: Two strings are equal ASCII case-insensitively when equal after `A`–`Z` is replaced by `a`–`z` in both.
 - **archive**: A tree of regular files and directories, each named by its path from the root; one of:
   - **ZIP archive**: a file in the ZIP format [APPNOTE], by content, whatever its name. Each entry MUST be a regular file or directory; entry paths are decoded as UTF-8, MUST be `/`-separated, and MUST NOT be empty, start with `/`, or contain a `..` segment or `\`.
-  - **directory archive**: a directory, taken as the archive of its contents.
-  - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees. The name of each entry of each of its trees MUST NOT be empty, `.` or `..`, or contain `/`.
+  - **directory archive**: a directory, taken as the archive of its contents. The name of each file and directory below it MUST NOT contain `\`.
+  - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees. The name of each entry of each of its trees MUST NOT be empty, `.` or `..`, or contain `/` or `\`.
 - **package file**: The YAML file `lip.yaml` at the root of an archive.
 - **package**: An archive whose package file is valid against `lip.schema.yaml` and satisfies Section 3, or one that Section 2 of [COMPATIBILITY] reads as such.
 - **package id**: The `id` of a package, a Go module path [GO-MODULE], compared ASCII case-insensitively.

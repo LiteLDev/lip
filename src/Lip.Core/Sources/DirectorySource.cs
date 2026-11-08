@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod;
 
 namespace Lip.Core.Sources;
 
@@ -41,13 +42,25 @@ public class DirectorySource : ISource {
       AttributesToSkip = FileAttributes.ReparsePoint,
     };
     List<string> keys = [];
+    // Outside Windows '\' is not a separator, so a name may contain it; such a directory is not
+    // a valid archive (protocol/package.md §1).
+    void Check(string path) {
+      if (_fs.Path.DirectorySeparatorChar != '\\' && _fs.Path.GetFileName(path).Contains('\\')) {
+        throw new ArchiveUnavailableException(
+            $"The package directory {_root} is not a valid archive: '{path}' has a '\\' in its"
+            + " name, which lip does not install. Rename it.");
+      }
+    }
+
     void Walk(string directory) {
       foreach (string file in _fs.Directory.EnumerateFiles(directory, "*", options)
           .Where(f => !UnixFileType.IsSpecialFile(f))) {
+        Check(file);
         keys.Add(_fs.Path.GetRelativePath(_root, file).Replace('\\', '/'));
       }
 
       foreach (string sub in _fs.Directory.EnumerateDirectories(directory, "*", options)) {
+        Check(sub);
         Walk(sub);
       }
     }

@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using System.Net.Sockets;
+using Lip.Core.Mcmod;
 using Lip.Core.Sources;
 using Lip.Core.Tests.Infrastructure;
 
@@ -49,5 +50,23 @@ public class DirectorySourceTests : IDisposable {
 
     // Assert
     Assert.Equal(["a.txt"], source.Keys);
+  }
+
+  [Theory]
+  [InlineData(@"a\b.txt")]
+  [InlineData(@"d\e/f.txt")]
+  public void Keys_NameWithBackslash_Throws(string path) {
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows names cannot contain '\\'.");
+
+    // Arrange: such a directory is not an archive (protocol/package.md §1).
+    string full = Path.Join(_root, path);
+    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+    File.WriteAllText(full, "x");
+    DirectorySource source = new(new FileSystem(), _root);
+
+    // Act & Assert
+    ArchiveUnavailableException ex =
+        Assert.Throws<ArchiveUnavailableException>(() => source.Keys.ToList());
+    Assert.Contains("'\\'", ex.Message);
   }
 }
