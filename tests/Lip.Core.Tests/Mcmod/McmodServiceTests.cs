@@ -1316,6 +1316,50 @@ public class McmodServiceTests {
     Assert.True((await _ws.Lock()).Packages.Single(p => p.Id == Lib).Explicit);
   }
 
+  [Theory]
+  [InlineData(true)]
+  [InlineData(false)]
+  public async Task Update_NewestVersionNeedsNewerDependencyPackage_UpdatesBoth(bool withArgument) {
+    // Arrange: lib 1.0.0 is a dependency package of app 1.0.0; app 2.0.0 needs lib >=1.1.0.
+    AddLibAndApp(withApp2: false);
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+    await _ws.Service.Install([App], _options);
+    await _ws.Service.Uninstall([Lib], _options);
+    AddApp("2.0.0", ">=1.1.0");
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Update(withArgument ? [App] : [], _options);
+
+    // Assert: a remote repository without a ref gives its highest version tag, and the dependency
+    // package gives way (protocol/workspace.md §5, protocol/cli.md §5.3).
+    Assert.Equal(
+        [(Lib, "1.1.0", false), (App, "2.0.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+    Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Theory]
+  [InlineData(true)]
+  [InlineData(false)]
+  public async Task Update_DependencyPackagesThatFit_KeepTheirVersions(bool withArgument) {
+    // Arrange: a needs d, installed at 1.0.0; then a 1.1.0 and d 2.0.0 are tagged.
+    AddPackage("example.com/d", "1.0.0");
+    AddPackage("example.com/a", "1.0.0", "example.com/d", ">=1.0.0");
+    await _ws.Service.Install(["example.com/a"], _options);
+    AddPackage("example.com/d", "2.0.0");
+    AddPackage("example.com/a", "1.1.0", "example.com/d", ">=1.0.0");
+    _ws.Restart();
+
+    // Act
+    await _ws.Service.Update(withArgument ? ["example.com/a"] : [], _options);
+
+    // Assert: d is updated only as far as Section 3 requires (protocol/cli.md §5.3).
+    Assert.Equal(
+        [("example.com/d", "1.0.0", false), ("example.com/a", "1.1.0", true)],
+        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
+  }
+
   [Fact]
   public async Task Update_TwoArgumentsOfOneIdentity_SatisfiesBoth() {
     // Arrange

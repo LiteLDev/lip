@@ -46,8 +46,9 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// it records for a remote repository, otherwise what their source names now) and assets are
 /// opened only when needed. If the request cannot be satisfied with every installed package
 /// pinned, it is solved again with only the explicitly installed packages pinned, so that
-/// dependencies may change version; their installed versions are tried first. Packages that no explicitly installed package needs any more
-/// are removed.
+/// dependencies may change version; their installed versions are tried first. An update solves
+/// so from the start, so that the dependency packages give way to the newest versions of the
+/// requested packages. Packages that no explicitly installed package needs any more are removed.
 public class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
@@ -252,7 +253,11 @@ public class McmodService(
         explicitIdentities: [
           .. ExplicitIdentities(workspace.Lock)
               .Where(e => !replaced.Any(r => SameIdentity(r, e))),
-        ]);
+        ],
+        // A requested package gets its earliest candidate that Section 3 allows, so the
+        // installed dependency packages keep their versions only where they fit it
+        // (protocol/workspace.md §5 "Updating", protocol/cli.md §5.3).
+        preferDependencyPackages: true);
 
     // The source a requested package is recorded with: an installed package that its recorded
     // source gives again is not replaced, so it keeps that source even when another request
@@ -608,13 +613,16 @@ public class McmodService(
   /// Solves the requests with the installed packages pinned, except the unpinned identities;
   /// pinnedAs gives, by folded identity, the candidate an installed package is pinned as. When
   /// that fails, solves them again with only the explicitly installed packages pinned, trying
-  /// the installed versions of the dependency packages first.
+  /// the installed versions of the dependency packages first. With preferDependencyPackages,
+  /// the dependency packages are only tried first from the start, so that they give way to the
+  /// requested packages' earlier candidates.
   private async Task<Plan> MakePlan(
       Workspace workspace,
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyCollection<string> unpinned,
       IReadOnlyCollection<string> explicitIdentities,
-      IReadOnlyDictionary<string, Candidate>? pinnedAs = null) {
+      IReadOnlyDictionary<string, Candidate>? pinnedAs = null,
+      bool preferDependencyPackages = false) {
     HashSet<string> unpinnedSet = [.. unpinned.Select(Fold)];
     HashSet<string> explicitSet = [.. explicitIdentities.Select(Fold)];
 
@@ -624,20 +632,22 @@ public class McmodService(
           .Select(p => pinnedAs?.GetValueOrDefault(Fold(p.Identity))
               ?? PinnedCandidate(workspace, p)),
     ];
+    List<Candidate> pinnedExplicit = [];
+    List<Candidate> preferred = [];
+    foreach (Candidate candidate in pinnedAll) {
+      (explicitSet.Contains(Fold(candidate.Package.Identity)) ? pinnedExplicit : preferred)
+          .Add(candidate);
+    }
 
     SolvedGraph graph;
     try {
-      graph = await workspace.Solver.SolveGraph(requests, pinnedAll, workspace.Environment);
+      graph = preferDependencyPackages
+          ? await workspace.Solver.SolveGraph(
+              requests, pinnedExplicit, workspace.Environment, preferred)
+          : await workspace.Solver.SolveGraph(requests, pinnedAll, workspace.Environment);
     }
     catch (DependencyResolutionException withInstalled) {
-      List<Candidate> pinnedExplicit = [];
-      List<Candidate> preferred = [];
-      foreach (Candidate candidate in pinnedAll) {
-        (explicitSet.Contains(Fold(candidate.Package.Identity)) ? pinnedExplicit : preferred)
-            .Add(candidate);
-      }
-
-      if (preferred.Count == 0) {
+      if (preferDependencyPackages || preferred.Count == 0) {
         throw;
       }
 
