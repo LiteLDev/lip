@@ -220,6 +220,20 @@ public class RefTests {
   }
 
   [Theory]
+  [InlineData(@"\\localhost\share\x")]
+  [InlineData(@"\\LOCALHOST\c$\x")]
+  public void FromFile_UncPathOnLocalhostOnWindows_RoundTrips(string path) {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "UNC paths are Windows paths.");
+
+    // Act
+    Ref r = Ref.FromFile(path);
+
+    // Assert
+    Assert.Equal(path, r.LocalPath);
+    Assert.Equal(r, Ref.Parse(r.ToString(), allowFile: true));
+  }
+
+  [Theory]
   [InlineData("file://user@server/share/x")]
   [InlineData("file://server:80/share/x")]
   public void Parse_FileUriWithUserinfoOrPort_ThrowsFormatException(string uri) {

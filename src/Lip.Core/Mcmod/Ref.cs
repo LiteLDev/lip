@@ -250,7 +250,8 @@ public partial record Ref {
       return local ? "/" + string.Join('/', names) : null;
     }
 
-    if (!local) {
+    // A UNC path on the host localhost, such as \\localhost\C$\x, is not on a drive.
+    if (!local || (hostName != "" && !IsDrive(names[0]))) {
       return names[0] == "" ? null : $@"\\{hostName}\{string.Join('\\', names)}";
     }
 
