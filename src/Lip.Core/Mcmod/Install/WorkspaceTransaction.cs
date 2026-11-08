@@ -267,7 +267,9 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// is left. Adds a failure to errors rather than throwing: the journal only matters after a
   /// crash, and recovering from an outdated one changes nothing that is already right.
   private void CloseJournal(List<JournalEntry> left, bool committed, List<Exception> errors) {
-    bool written = _journal is not null || _entries.Count > 0;
+    // Begin sets _started when it creates the journal, which an operation of only hook commands
+    // has too, though it records no change.
+    bool written = _started is not null || _journal is not null || _entries.Count > 0;
     _journal?.Dispose();
     _journal = null;
     if (!written) {

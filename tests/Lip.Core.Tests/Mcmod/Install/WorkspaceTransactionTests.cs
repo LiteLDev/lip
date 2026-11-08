@@ -314,6 +314,22 @@ public class WorkspaceTransactionTests {
   }
 
   [Fact]
+  public void Rollback_AfterCommitOfOnlyHookCommands_DeletesTheJournal() {
+    // Arrange: an operation of only hook commands has a journal with no change (§7.4); then
+    // the workspace file cannot be renamed into place (step 9).
+    using WorkspaceTransaction transaction = new(_fs, _journal);
+    transaction.Begin();
+    transaction.Commit();
+
+    // Act
+    IReadOnlyList<Exception> errors = transaction.Rollback(() => { });
+
+    // Assert: every record was undone, so the journal is deleted (§7.5).
+    Assert.Empty(errors);
+    Assert.False(_fs.File.Exists(_journal));
+  }
+
+  [Fact]
   public void Recover_NameWithBackslashOffWindows_RestoresIt() {
     Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows names cannot contain '\\'.");
 
