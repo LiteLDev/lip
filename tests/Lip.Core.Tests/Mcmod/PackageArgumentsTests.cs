@@ -121,6 +121,21 @@ public class PackageArgumentsTests {
     Assert.StartsWith("file:///", request.Ref.ToString());
   }
 
+  [Fact]
+  public void Parse_DirectoryWithPercentInName_NamesThatDirectory() {
+    // Arrange: "%41" is part of the name, not an escape of "A".
+    string path = _ws.Path("pkg%41dir");
+    _ws.Fs.AddDirectory(path);
+    _ws.Fs.AddDirectory(_ws.Path("pkgAdir"));
+
+    // Act
+    PackageRequest request = Parse("./pkg%41dir");
+
+    // Assert
+    Assert.Equal(path, request.Ref.LocalPath);
+    Assert.EndsWith("/pkg%2541dir", request.Ref.ToString());
+  }
+
   [Theory]
   [InlineData("./pkg", "pkg", "")]
   [InlineData("./pkg/", "pkg", "")]

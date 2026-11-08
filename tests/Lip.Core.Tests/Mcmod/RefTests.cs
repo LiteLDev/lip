@@ -128,6 +128,81 @@ public class RefTests {
     Assert.Equal(r, Ref.Parse(r.ToString(), allowFile: true));
   }
 
+  [Theory]
+  [InlineData("pkg%41dir", "pkg%2541dir")]
+  [InlineData("a%20b", "a%2520b")]
+  [InlineData("a #1", "a%20%231")]
+  [InlineData("why?.zip", "why%3F.zip")]
+  [InlineData("模组 é", "%E6%A8%A1%E7%BB%84%20%C3%A9")]
+  [InlineData("a;b=c@d", "a;b=c@d")]
+  public void FromFile_SpecialCharacters_PercentEncodesThemAndRoundTrips(
+      string name, string encoded) {
+    // Arrange: a '%' in a path is no escape (protocol/workspace.md §7.1, RFC 8089).
+    string path = OperatingSystem.IsWindows() ? $@"C:\ws\{name}\x" : $"/ws/{name}/x";
+    string uri = OperatingSystem.IsWindows()
+        ? $"file:///C:/ws/{encoded}/x"
+        : $"file:///ws/{encoded}/x";
+
+    // Act
+    Ref r = Ref.FromFile(path, "lua");
+    Ref parsed = Ref.Parse(r.ToString(), allowFile: true);
+
+    // Assert
+    Assert.Equal(uri, r.Target);
+    Assert.Equal(path, r.LocalPath);
+    Assert.Equal(r, parsed);
+    Assert.Equal(path, parsed.LocalPath);
+  }
+
+  [Fact]
+  public void Parse_FileUri_DecodesEveryPercentEncodedOctetOnce() {
+    // Arrange
+    string uri = OperatingSystem.IsWindows()
+        ? "file:///c:/ws/pkg%2541dir/%E6%A8%A1"
+        : "file:///ws/pkg%2541dir/%E6%A8%A1";
+
+    // Act
+    Ref r = Ref.Parse(uri, allowFile: true);
+
+    // Assert
+    Assert.Equal(
+        OperatingSystem.IsWindows() ? @"c:\ws\pkg%41dir\模" : "/ws/pkg%41dir/模", r.LocalPath);
+    Assert.Equal(uri, r.Target);
+  }
+
+  [Theory]
+  [InlineData("a?x=1")]
+  [InlineData("a%zz")]
+  [InlineData("a%2Fb")]
+  [InlineData("%FF")]
+  [InlineData("a b")]
+  [InlineData("[a]")]
+  public void Parse_InvalidFileUri_ThrowsFormatException(string name) {
+    // Arrange
+    string uri = (OperatingSystem.IsWindows() ? "file:///C:/ws/" : "file:///ws/") + name;
+
+    // Act & Assert
+    Assert.Throws<FormatException>(() => Ref.Parse(uri, allowFile: true));
+  }
+
+  [Fact]
+  public void FromFile_UncPathOnWindows_RoundTrips() {
+    if (!OperatingSystem.IsWindows()) {
+      return;
+    }
+
+    // Arrange
+    string path = @"\\server\share\a%41 #";
+
+    // Act
+    Ref r = Ref.FromFile(path);
+
+    // Assert
+    Assert.Equal("file://server/share/a%2541%20%23", r.Target);
+    Assert.Equal(path, r.LocalPath);
+    Assert.Equal(r, Ref.Parse(r.ToString(), allowFile: true));
+  }
+
   [Fact]
   public void WithVariant_ReplacesVariant() {
     // Act

@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Lip.Core.Mcmod;
@@ -125,6 +127,7 @@ public sealed partial record GitRef {
 /// followed by [ "@" ref ] after the variant.
 public partial record Ref {
   private const string _fileScheme = "file:";
+  private static readonly UTF8Encoding _strictUtf8 = new(false, true);
 
   private Ref(RefKind kind, string target, string variant, GitRef? gitRef = null) {
     Kind = kind;
@@ -147,7 +150,7 @@ public partial record Ref {
 
   /// For file refs, the absolute local path.
   public string LocalPath => Kind == RefKind.File
-      ? new Uri(Target).LocalPath
+      ? FileUriToPath(Target)!
       : throw new InvalidOperationException(
           $"The source '{this}' is not a local path, so it has no local file path.");
 
@@ -167,11 +170,132 @@ public partial record Ref {
   public static bool IsValidVariant(string variant) => VariantRegex().IsMatch(variant);
 
   /// A file ref for an absolute local path.
-  public static Ref FromFile(string absolutePath, string variant = "") {
-    Uri uri = new(absolutePath, UriKind.Absolute);
-    return uri.IsFile
-        ? new Ref(RefKind.File, uri.AbsoluteUri, "").WithVariant(variant)
-        : throw new ArgumentException($"'{absolutePath}' is not an absolute local path.");
+  public static Ref FromFile(string absolutePath, string variant = "") =>
+      PathToFileUri(absolutePath) is string uri
+          ? new Ref(RefKind.File, uri, "").WithVariant(variant)
+          : throw new ArgumentException($"'{absolutePath}' is not an absolute local path.");
+
+  /// The file: URI [RFC8089] of an absolute local path, with every octet a path segment does not
+  /// allow as it is percent-encoded, or null when the path is not absolute. On Windows, it is
+  /// "file:///" drive "/" ... for a path on a drive and "file://" host "/" share "/" ... for a
+  /// UNC path.
+  private static string? PathToFileUri(string path) {
+    if (path.Contains('\0')) {
+      return null;
+    }
+
+    if (!OperatingSystem.IsWindows()) {
+      return path.StartsWith('/')
+          ? "file://" + string.Join('/', path.Split('/').Select(Escape))
+          : null;
+    }
+
+    string[] segments = path.Split('\\', '/');
+    if (path.Length >= 2 && path[0] is '\\' or '/' && path[1] is '\\' or '/') {
+      return segments.Length >= 4 && segments[2] != "" && segments[3] != ""
+          ? $"file://{Escape(segments[2])}/{string.Join('/', segments[3..].Select(Escape))}"
+          : null;
+    }
+
+    return segments.Length >= 2 && IsDrive(segments[0])
+        ? $"file:///{segments[0]}/{string.Join('/', segments[1..].Select(Escape))}"
+        : null;
+  }
+
+  /// The absolute local path a file: URI [RFC8089] names, the reverse of PathToFileUri, or null
+  /// when it names none: when it has a query or fragment, is no valid URI, or names a remote
+  /// host other than on Windows, or no drive on Windows.
+  private static string? FileUriToPath(string uri) {
+    if (!uri.StartsWith(_fileScheme, StringComparison.OrdinalIgnoreCase)) {
+      return null;
+    }
+
+    string path = uri[_fileScheme.Length..];
+    string host = "";
+    if (path.StartsWith("//", StringComparison.Ordinal)) {
+      int slash = path.IndexOf('/', 2);
+      if (slash < 0) {
+        return null;
+      }
+
+      host = path[2..slash];
+      path = path[slash..];
+    }
+
+    if (!path.StartsWith('/') || !UriTextRegex().IsMatch(host + path)
+        || (host + path).IndexOfAny(['?', '#', '[', ']']) >= 0) {
+      return null;
+    }
+
+    char separator = OperatingSystem.IsWindows() ? '\\' : '/';
+    List<string> names = [];
+    foreach (string segment in path[1..].Split('/')) {
+      if (Unescape(segment) is not string name || name.IndexOfAny(['/', separator, '\0']) >= 0) {
+        return null;
+      }
+
+      names.Add(name);
+    }
+
+    string? hostName = Unescape(host);
+    if (hostName is null || hostName.IndexOfAny(['/', '\\', '\0']) >= 0) {
+      return null;
+    }
+
+    bool local = hostName == "" || hostName.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+    if (!OperatingSystem.IsWindows()) {
+      return local ? "/" + string.Join('/', names) : null;
+    }
+
+    if (!local) {
+      return names[0] == "" ? null : $@"\\{hostName}\{string.Join('\\', names)}";
+    }
+
+    return IsDrive(names[0])
+        ? string.Join('\\', names.Count == 1 ? [names[0], ""] : names)
+        : null;
+  }
+
+  /// Whether a Windows path segment is a drive, such as "C:".
+  private static bool IsDrive(string segment) =>
+      segment.Length == 2 && char.IsAsciiLetter(segment[0]) && segment[1] == ':';
+
+  /// Percent-encodes the UTF-8 octets of a path segment but those RFC 3986 allows as they are
+  /// (pchar).
+  private static string Escape(string segment) {
+    StringBuilder builder = new();
+    foreach (byte b in Encoding.UTF8.GetBytes(segment)) {
+      char c = (char)b;
+      if (char.IsAsciiLetterOrDigit(c) || "-._~!$&'()*+,;=:@".Contains(c)) {
+        builder.Append(c);
+      } else {
+        builder.Append(CultureInfo.InvariantCulture, $"%{b:X2}");
+      }
+    }
+
+    return builder.ToString();
+  }
+
+  /// Decodes the percent-encoded octets of an ASCII URI component with every '%' starting one,
+  /// as UTF-8, or null when they are no valid UTF-8.
+  private static string? Unescape(string component) {
+    List<byte> bytes = [];
+    for (int i = 0; i < component.Length; i++) {
+      if (component[i] == '%') {
+        bytes.Add(byte.Parse(component.AsSpan(i + 1, 2), NumberStyles.HexNumber,
+            CultureInfo.InvariantCulture));
+        i += 2;
+      } else {
+        bytes.Add((byte)component[i]);
+      }
+    }
+
+    try {
+      return _strictUtf8.GetString([.. bytes]);
+    }
+    catch (DecoderFallbackException) {
+      return null;
+    }
   }
 
   /// Parses a source; allowFile also accepts local paths as file: URIs.
@@ -244,12 +368,12 @@ public partial record Ref {
         return false;
       }
 
-      if (!Uri.TryCreate(target, UriKind.Absolute, out Uri? uri) || !uri.IsFile) {
+      if (FileUriToPath(target) is not string path || PathToFileUri(path) is not string uri) {
         error = $"'{target}' is not an absolute file: URI";
         return false;
       }
 
-      result = new Ref(RefKind.File, uri.AbsoluteUri, variant);
+      result = new Ref(RefKind.File, uri, variant);
     } else {
       if (Golang.Org.X.Mod.Module.CheckPath(target) is Exception ex) {
         // The reason alone; the outer message names the path again.

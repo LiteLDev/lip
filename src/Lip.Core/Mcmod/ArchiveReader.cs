@@ -109,7 +109,7 @@ public class ArchiveReader : IArchiveReader {
   /// The archive as the user knows it: the path of a local file or directory, else its key.
   private static string Describe(ArchiveHandle archive) =>
       archive.Key.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
-          && Uri.TryCreate(archive.Key, UriKind.Absolute, out Uri? uri)
-          ? uri.LocalPath
+          && Ref.TryParse(archive.Key, allowFile: true, out Ref? file, out _)
+          ? file.LocalPath
           : archive.Key;
 }
