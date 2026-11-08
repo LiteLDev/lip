@@ -1522,6 +1522,28 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_OnlyKeptPreservedFileModsIsALink_Succeeds() {
+    // Arrange: the only file the package places exists and matches preserve, and no hook command
+    // runs, so it is kept and the operation makes no change (protocol/workspace.md §2, §4).
+    _ws.AddFile("cfg.ini", "user");
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini") + """, "preserve": [ "cfg.ini" ]"""),
+      ["cfg.ini"] = "default",
+    });
+    LinkMods();
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.Equal("user", _ws.Fs.File.ReadAllText(_ws.Path("cfg.ini")));
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+    Assert.Empty(Assert.Single((await _ws.Lock()).Packages).Files);
+  }
+
+  [Fact]
   public async Task Install_OnlyHookCommandsIgnored_CreatesNoMods() {
     // Arrange
     AddEmptyLib(""" "hooks": { "pre_install": [ "check" ] }""");

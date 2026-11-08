@@ -22,10 +22,12 @@ public sealed record PackagePlan(
 
   /// Whether the plan may change the workspace (protocol/workspace.md §1): it writes a file,
   /// deletes a file or a directory, or, when hook commands of the operation run
-  /// (hooksRun), deletes what they leave matching when it runs (§6 rule 4); without them the
-  /// workspace stays as planned. Hook commands alone are no change.
+  /// (hooksRun), writes a file planned to be kept or deletes what they leave matching when it
+  /// runs (§6 rule 4); without them the workspace stays as planned. Hook commands alone are no
+  /// change.
   public bool MayChange(bool hooksRun) => Steps.Any(s => s switch {
-    WriteStep or DeleteFileStep or DeleteDirectoryStep => true,
+    WriteStep w => hooksRun || !w.PlannedKeep,
+    DeleteFileStep or DeleteDirectoryStep => true,
     DeleteMatchesStep m => hooksRun && (m.OwnedFiles.Count > 0 || m.Purge.Count > 0),
     _ => false,
   });
@@ -39,13 +41,15 @@ public sealed record ScriptStep(string Stage, IReadOnlyList<string> Commands) : 
 
 /// Writes the file of an archive, replacing what is there. Target is workspace-relative.
 /// Preserve: the globs of preserve of the package; a file there when the step runs that matches
-/// one is kept instead.
+/// one is kept instead. PlannedKeep: whether the file is kept with the workspace as planned,
+/// i.e. unless hook commands change it.
 public sealed record WriteStep(
     string Target,
     string FullPath,
     ISource Source,
     string Key,
-    IReadOnlyList<PathGlob> Preserve) : PlannedStep;
+    IReadOnlyList<PathGlob> Preserve,
+    bool PlannedKeep = false) : PlannedStep;
 
 /// Deletes a file, if it still exists then.
 public sealed record DeleteFileStep(string FullPath) : PlannedStep;

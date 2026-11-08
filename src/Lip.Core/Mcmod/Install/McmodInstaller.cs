@@ -126,7 +126,7 @@ public partial class McmodInstaller(
     }
 
     steps.AddRange(plan.Select(w => new WriteStep(
-        w.Target, w.FullPath, w.Source, w.SourceKey, entry.PreserveFiles)));
+        w.Target, w.FullPath, w.Source, w.SourceKey, entry.PreserveFiles, w.Keep)));
     if (!context.IgnoreScripts && entry.Hooks.PostInstall.Count > 0) {
       steps.Add(new ScriptStep("post_install", entry.Hooks.PostInstall));
     }
