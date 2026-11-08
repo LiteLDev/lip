@@ -45,6 +45,7 @@ Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose i
 - [RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017, <https://www.rfc-editor.org/info/rfc8174>.
 - [RFC8259] Bray, T., Ed., "The JavaScript Object Notation (JSON) Data Interchange Format", STD 90, RFC 8259, DOI 10.17487/RFC8259, December 2017, <https://www.rfc-editor.org/info/rfc8259>.
 - [RID] Microsoft, ".NET RID catalog", <https://learn.microsoft.com/dotnet/core/rid-catalog>.
+- [SCRIBAN] Mutel, A., "Scriban language", Scriban version 7.5.0, <https://github.com/scriban/scriban/blob/7.5.0/site/docs/language.md>.
 - [SEMVER-NET] Walker, J., "Semver for .NET", version 3.0.0, `SemVersionRange.Parse`, <https://github.com/WalkerCodeRanger/semver/tree/v3.0.0>.
 - [SEMVER] Preston-Werner, T., "Semantic Versioning 2.0.0", <https://semver.org/spec/v2.0.0.html>.
 - [TOML] Preston-Werner, T., "TOML: Tom's Obvious Minimal Language", version 1.0.0, <https://toml.io/en/v1.0.0>.

@@ -69,15 +69,21 @@ public static partial class PackageFileParser {
           ? (int)value
           : null;
 
-  /// Reads lip.toml, a TOML file (protocol/README.md). The caller disposes the result. Throws
-  /// PackageFormatException when it is not one.
+  /// Reads lip.toml, a TOML file (protocol/README.md), with its templates rendered
+  /// (protocol/package.md §3). The caller disposes the result. Throws PackageFormatException when
+  /// it is not one, or a template cannot be rendered.
   public static JsonDocument ParseToml(byte[] toml) {
+    JsonDocument written;
     try {
-      return TomlJson.Parse(toml);
+      written = TomlJson.Parse(toml);
     }
     catch (TomlFormatException ex) {
       throw new PackageFormatException(
           $"The {PackageFormat.FileName} is not a valid TOML file of the kind lip reads.", ex);
+    }
+
+    using (written) {
+      return PackageTemplates.Render(written.RootElement);
     }
   }
 
