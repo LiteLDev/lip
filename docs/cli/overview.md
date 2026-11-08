@@ -13,16 +13,16 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 
 Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md), [`list`](commands/list.md), and [`versions`](commands/versions.md). [`view`](commands/view.md) always prints JSON.
 
-[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) accept `--rid <RID>` to set the RID of the workspace [environment](../concepts/lip_yaml.md#environment). lip manages server workspaces only.
+[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) accept `--rid <RID>` to set the RID of the workspace [environment](../concepts/lip_toml.md#environment). lip manages server workspaces only.
 
 ## Commands
 
 -   [`lip cache clean`](commands/cache_clean.md): Clean the local cache.
 -   [`lip config`](commands/config.md): Get, set, list, and delete configuration values.
--   [`lip init`](commands/init.md): Create a `lip.yaml` for a new package.
+-   [`lip init`](commands/init.md): Create a `lip.toml` for a new package.
 -   [`lip install`](commands/install.md): Install packages.
 -   [`lip list`](commands/list.md): List installed packages.
--   [`lip migrate`](commands/migrate.md): Migrate the `tooth.json` of lip v0.x in the current directory to `lip.yaml`.
+-   [`lip migrate`](commands/migrate.md): Migrate the `tooth.json` of lip v0.x in the current directory to `lip.toml`.
 -   [`lip pack`](commands/pack.md): Pack a directory into a ZIP archive.
 -   [`lip uninstall`](commands/uninstall.md): Uninstall packages.
 -   [`lip update`](commands/update.md): Update packages.

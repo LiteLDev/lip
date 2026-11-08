@@ -13,7 +13,7 @@ public class PackageInstallTests {
   public async Task Install_SelfAsset_PlacesFilesAndRecordsWorkspaceFile() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("bin/", "tools/a/")),
       ["bin/a.exe"] = "a",
       ["bin/lib/b.dll"] = "b",
@@ -37,7 +37,7 @@ public class PackageInstallTests {
     Assert.Equal(["tools/a/a.exe", "tools/a/lib/b.dll"], package.Files);
     Assert.Equal(4, package.Manifest.GetProperty("format").GetInt32());
 
-    using JsonDocument document = YamlJson.Parse(h.Fs.File.ReadAllBytes(h.LockPath));
+    using JsonDocument document = JsonFile.Parse(h.Fs.File.ReadAllBytes(h.LockPath));
     Assert.Equal(
         ["format", "platform", "runtime", "packages"],
         document.RootElement.EnumerateObject().Select(p => p.Name));
@@ -54,11 +54,11 @@ public class PackageInstallTests {
         "https://example.com/top.mcmod",
         WorkspaceHarness.Mcmod("Top", """ "dependencies": [ { "name": "Other" } ] """));
     h.AddTag("example.com/base", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/base", "1.0.0",
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/base", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/base.mcmod" ] } ] """),
     });
     h.AddTag("example.com/top", "2.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/top", "2.0.0",
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/top", "2.0.0",
           """
           "deps": { "example.com/base": "^1.0.0" },
           "assets": [ { "type": "mcmod", "urls": [ "https://example.com/top.mcmod" ] } ]
@@ -86,7 +86,7 @@ public class PackageInstallTests {
         "https://example.com/top.mcmod",
         WorkspaceHarness.Zip(new() { ["manifest.json"] = """{ "entry": "x.dll" }""" }));
     h.AddTag("example.com/top", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/top", "1.0.0",
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/top", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/top.mcmod" ] } ] """),
     });
 
@@ -107,7 +107,7 @@ public class PackageInstallTests {
       ("example.com/y", "https://example.com/y.mcmod"),
     }) {
       h.AddTag(id, "1.0.0", new() {
-        ["lip.yaml"] = WorkspaceHarness.LipYaml(id, "1.0.0",
+        ["lip.toml"] = WorkspaceHarness.LipToml(id, "1.0.0",
             $$""" "assets": [ { "type": "mcmod", "urls": [ "{{url}}" ] } ] """),
       });
     }
@@ -143,7 +143,7 @@ public class PackageInstallTests {
   public async Task Install_VersionDiffersFromTag_NoCandidate() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.1"),
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/a", "1.0.1"),
     });
 
     await Assert.ThrowsAsync<InvalidOperationException>(
@@ -154,7 +154,7 @@ public class PackageInstallTests {
   public async Task Install_PackageIdDiffersFromRepository_NoCandidate() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/b", "1.0.0"),
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/b", "1.0.0"),
     });
 
     await Assert.ThrowsAsync<InvalidOperationException>(
@@ -165,13 +165,13 @@ public class PackageInstallTests {
   public async Task Update_NewTag_ReplacesPackage() {
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
       ["a.txt"] = "1",
     });
     await h.Service.Install(["example.com/a"], _options);
     h.AddTag("example.com/a", "1.1.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/a", "1.1.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
       ["a.txt"] = "2",
     });
@@ -187,7 +187,7 @@ public class PackageInstallTests {
   public async Task Install_LocalDirectory_RecordsFileUriAndNoCommit() {
     WorkspaceHarness h = new();
     string directory = h.Fs.Path.Combine(h.Root, "src");
-    h.Fs.AddFile(h.Fs.Path.Combine(directory, "lip.yaml"), new(WorkspaceHarness.LipYaml(
+    h.Fs.AddFile(h.Fs.Path.Combine(directory, "lip.toml"), new(WorkspaceHarness.LipToml(
         "example.com/local", "0.1.0", WorkspaceHarness.SelfAsset("x.txt", "out/x.txt"))));
     h.Fs.AddFile(h.Fs.Path.Combine(directory, "x.txt"), new("x"));
 

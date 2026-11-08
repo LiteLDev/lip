@@ -117,7 +117,7 @@ public class McmodInstallerTests {
     Files = [.. files],
   };
 
-  /// A workspace file of the environment (server, win-x64) with the given packages.
+  /// A state file of the environment (server, win-x64) with the given packages.
   private static LockFile Lock(params LockedPackage[] packages) => new() {
     Platform = "server",
     Runtime = "win-x64",
@@ -149,7 +149,7 @@ public class McmodInstallerTests {
     // Arrange
     Candidate candidate = Candidate(
         SelfPlacements(Placement("PeEditor.exe", "PeEditor.exe")),
-        new() { ["lip.yaml"] = "{}", ["PeEditor.exe"] = "exe", ["README.md"] = "readme" });
+        new() { ["lip.toml"] = "{}", ["PeEditor.exe"] = "exe", ["README.md"] = "readme" });
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
@@ -157,7 +157,7 @@ public class McmodInstallerTests {
     // Assert
     Assert.Equal(["PeEditor.exe"], owned);
     Assert.Equal("exe", Read("PeEditor.exe"));
-    Assert.False(Exists("lip.yaml"));
+    Assert.False(Exists("lip.toml"));
     Assert.False(Exists("README.md"));
   }
 
@@ -184,10 +184,10 @@ public class McmodInstallerTests {
             Placement("assets/", "resource_packs/pack/"),
             Placement("", "copy/")),
         new() {
-          ["lip.yaml"] = "{}",
+          ["lip.toml"] = "{}",
           ["assets/a.txt"] = "a",
           ["assets/sub/b.txt"] = "b",
-          ["assets/lip.yaml"] = "nested",
+          ["assets/lip.toml"] = "nested",
         });
 
     // Act
@@ -196,11 +196,11 @@ public class McmodInstallerTests {
     // Assert
     Assert.Equal("a", Read("resource_packs/pack/a.txt"));
     Assert.Equal("b", Read("resource_packs/pack/sub/b.txt"));
-    Assert.Equal("nested", Read("resource_packs/pack/lip.yaml"));
+    Assert.Equal("nested", Read("resource_packs/pack/lip.toml"));
     Assert.Equal("a", Read("copy/assets/a.txt"));
-    Assert.Equal("nested", Read("copy/assets/lip.yaml"));
+    Assert.Equal("nested", Read("copy/assets/lip.toml"));
     // The package file of the package is never written (protocol/workspace.md §4 step 2).
-    Assert.False(Exists("copy/lip.yaml"));
+    Assert.False(Exists("copy/lip.toml"));
     Assert.Equal(6, owned.Count);
   }
 
@@ -272,15 +272,15 @@ public class McmodInstallerTests {
   public async Task Install_GlobFormMatchingPackageFile_NeverWritesIt() {
     // Arrange
     Candidate candidate = Candidate(
-        SelfPlacements(Placement("*.yaml", "cfg/")),
-        new() { ["lip.yaml"] = "{}", ["a.yaml"] = "a" });
+        SelfPlacements(Placement("*.toml", "cfg/")),
+        new() { ["lip.toml"] = "{}", ["a.toml"] = "a" });
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
 
     // Assert
-    Assert.Equal(["cfg/a.yaml"], owned);
-    Assert.False(Exists("cfg/lip.yaml"));
+    Assert.Equal(["cfg/a.toml"], owned);
+    Assert.False(Exists("cfg/lip.toml"));
   }
 
   [Fact]
@@ -289,7 +289,7 @@ public class McmodInstallerTests {
     // other.
     Candidate candidate = Candidate(
         SelfPlacements(Placement("*.json", "cfg/")),
-        new() { ["lip.yaml"] = "{}", ["tooth.json"] = "{}", ["a.json"] = "a" });
+        new() { ["lip.toml"] = "{}", ["tooth.json"] = "{}", ["a.json"] = "a" });
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
@@ -374,7 +374,7 @@ public class McmodInstallerTests {
     _assets["https://example.com/bds.zip"] = new InMemorySource(new() {
       ["bedrock_server.exe"] = "bds",
       ["worlds/a.mcworld"] = "w",
-      ["lip.yaml"] = "zip's",
+      ["lip.toml"] = "zip's",
     });
     Candidate candidate = Candidate(
         """
@@ -384,19 +384,19 @@ public class McmodInstallerTests {
           { "type": "self", "place": [ { "src": "defaults/", "dest": "" } ] }
         ]
         """,
-        new() { ["lip.yaml"] = "{}", ["defaults/server.properties"] = "props" });
+        new() { ["lip.toml"] = "{}", ["defaults/server.properties"] = "props" });
 
     // Act
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
 
     // Assert
     Assert.Equal(
-        ["bedrock_server.exe", "lip.yaml", "server.properties", "worlds/a.mcworld"],
+        ["bedrock_server.exe", "lip.toml", "server.properties", "worlds/a.mcworld"],
         owned.Order(StringComparer.Ordinal));
     Assert.Equal("bds", Read("bedrock_server.exe"));
     Assert.Equal("props", Read("server.properties"));
     // Only the package file of the package itself is never written.
-    Assert.Equal("zip's", Read("lip.yaml"));
+    Assert.Equal("zip's", Read("lip.toml"));
     _provider.Verify(p => p.OpenAsset(
         It.Is<IReadOnlyList<string>>(u => u.SequenceEqual(
             new[] { "https://mirror.invalid/bds.zip", "https://example.com/bds.zip" }))));
@@ -595,7 +595,7 @@ public class McmodInstallerTests {
   [InlineData("lip_lock.json")]
   [InlineData("tooth_lock.json")]
   [InlineData("tooth.json")]
-  [InlineData("lip.yaml")]
+  [InlineData("lip.toml")]
   [InlineData(".git/hooks/pre-commit")]
   public async Task Install_DestNamedLikeLipOrGitFile_Writes(string dest) {
     // Arrange
@@ -612,7 +612,7 @@ public class McmodInstallerTests {
 
   [Fact]
   public async Task Install_DestWithDotSegment_WritesAndOwnsThePathWithoutIt() {
-    // Arrange: lip.schema.yaml #/definitions/path allows "." segments.
+    // Arrange: lip.schema.toml #/definitions/path allows "." segments.
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", "x/./a.txt")), new() { ["a.txt"] = "a" });
 
@@ -629,7 +629,7 @@ public class McmodInstallerTests {
   [InlineData("trailing./a.txt")]
   [InlineData("a.txt ")]
   public async Task Install_SchemaValidDestOutsideWindows_Writes(string dest) {
-    // Arrange: lip.schema.yaml #/definitions/path allows ':' after the first segment and
+    // Arrange: lip.schema.toml #/definitions/path allows ':' after the first segment and
     // segments ending in '.' or ' '.
     Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows cannot write such names as they are.");
     Candidate candidate = Candidate(
@@ -1566,7 +1566,7 @@ public class McmodInstallerAssetDownloadTests {
     h.AddDownload("https://two.example.com/a.zip", WorkspaceHarness.Zip(new() { ["a.txt"] = "two" }));
     h.AddDownload("https://three.example.com/a.zip", WorkspaceHarness.Zip(new() { ["a.txt"] = "three" }));
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.0", ZipEntry(
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/a", "1.0.0", ZipEntry(
           "https://one.example.com/a.zip",
           "https://two.example.com/a.zip",
           "https://three.example.com/a.zip")),
@@ -1585,7 +1585,7 @@ public class McmodInstallerAssetDownloadTests {
     // Arrange
     WorkspaceHarness h = new();
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.0", ZipEntry(
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/a", "1.0.0", ZipEntry(
           "https://one.example.com/a.zip", "https://two.example.com/a.zip")),
     });
     SortedDictionary<string, string> before = Workspace(h);
@@ -1602,7 +1602,7 @@ public class McmodInstallerAssetDownloadTests {
     WorkspaceHarness h = new();
     h.AddDownload("https://one.example.com/a.zip", Encoding.UTF8.GetBytes("not a zip"));
     h.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/a", "1.0.0", ZipEntry("https://one.example.com/a.zip")),
     });
     SortedDictionary<string, string> before = Workspace(h);

@@ -13,7 +13,7 @@ Besides these directories, `lip` writes only to the workspace it operates on and
 
 ## 2. Configuration
 
-The **configuration** is the YAML file `config.yaml` in the config directory, valid against `config.schema.yaml`: `format` and a mapping of configuration keys to values. Absent keys take their default; keys that are not configuration keys are ignored. If the file is missing, unreadable or invalid, every key takes its default, unless Section 4 of [COMPATIBILITY] reads a configuration instead.
+The **configuration** is the TOML file `config.toml` in the config directory, valid against `config.schema.toml`: `format` and a mapping of configuration keys to values. Absent keys take their default; keys that are not configuration keys are ignored. If the file is missing, unreadable or invalid, every key takes its default, unless Section 4 of [COMPATIBILITY] reads a configuration instead.
 
 The only **configuration key** is `github_proxy`: a URI prefix, default none, through which `lip` sends network requests to GitHub (git repositories and downloads); a request that fails through it is sent to GitHub directly.
 

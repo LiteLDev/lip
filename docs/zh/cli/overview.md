@@ -13,16 +13,16 @@
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`list`](commands/list.md) 和 [`versions`](commands/versions.md)。[`view`](commands/view.md) 始终输出 JSON。
 
-[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--rid <RID>`，用于设置工作区[环境](../concepts/lip_yaml.md#环境)中的 RID。lip 只管理服务端工作区。
+[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--rid <RID>`，用于设置工作区[环境](../concepts/lip_toml.md#环境)中的 RID。lip 只管理服务端工作区。
 
 ## 命令
 
 - [`lip cache clean`](commands/cache_clean.md)：清理本地缓存。
 - [`lip config`](commands/config.md)：获取、设置、列出和删除配置项。
-- [`lip init`](commands/init.md)：为新包创建 `lip.yaml`。
+- [`lip init`](commands/init.md)：为新包创建 `lip.toml`。
 - [`lip install`](commands/install.md)：安装包。
 - [`lip list`](commands/list.md)：列出已安装包。
-- [`lip migrate`](commands/migrate.md)：把当前目录中 lip v0.x 的 `tooth.json` 迁移为 `lip.yaml`。
+- [`lip migrate`](commands/migrate.md)：把当前目录中 lip v0.x 的 `tooth.json` 迁移为 `lip.toml`。
 - [`lip pack`](commands/pack.md)：把一个目录打包为 ZIP 归档。
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。

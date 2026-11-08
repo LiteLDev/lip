@@ -6,7 +6,7 @@ using Lip.Core.Mcmod.Lock;
 
 namespace Lip.Core.Tests.Mcmod.Lock;
 
-/// The workspace file (protocol/workspace.md §7.1, workspace.schema.yaml).
+/// The state file (protocol/workspace.md §7.1, state.schema.json).
 public class LockStoreTests {
   private static readonly string _root = OperatingSystem.IsWindows()
       ? @"C:\lip-workspace"
@@ -22,7 +22,7 @@ public class LockStoreTests {
     _store = new LockStore(_fs);
   }
 
-  private string LipLockPath => _fs.Path.Join(_root, ".lip", "workspace.yaml");
+  private string LipLockPath => _fs.Path.Join(_root, ".lip", "state.json");
 
   private static string ManifestJson(
       string id,
@@ -57,9 +57,9 @@ public class LockStoreTests {
   private static LockedPackage GitPackage(string id = "github.com/LiteLDev/A") =>
       SamplePackage(id, id, _commit);
 
-  /// The workspace file as written, read as the JSON value it represents.
+  /// The state file as written, read as the JSON value it represents.
   private JsonElement ReadWorkspaceFile() {
-    using JsonDocument document = YamlJson.Parse(_fs.File.ReadAllBytes(LipLockPath));
+    using JsonDocument document = JsonFile.Parse(_fs.File.ReadAllBytes(LipLockPath));
     return document.RootElement.Clone();
   }
 
@@ -149,7 +149,10 @@ public class LockStoreTests {
 
     // Assert
     string text = _fs.File.ReadAllText(LipLockPath);
-    Assert.StartsWith("format: 4\nplatform: server\nruntime: win-x64\npackages:\n", text);
+    Assert.StartsWith(
+        "{\n  \"format\": 4,\n  \"platform\": \"server\",\n  \"runtime\": \"win-x64\",\n"
+        + "  \"packages\": [\n", text);
+    Assert.EndsWith("}\n", text);
     JsonElement root = ReadWorkspaceFile();
     Assert.Equal(["format", "platform", "runtime", "packages"], PropertyNames(root));
     Assert.Equal(4, root.GetProperty("format").GetInt32());
@@ -183,10 +186,10 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Stage_ThenCommitStaged_RenamesWorkspaceYamlTmpOverWorkspaceYaml() {
+  public async Task Stage_ThenCommitStaged_RenamesStateJsonTmpOverStateJson() {
     // Arrange
     await _store.Save(_root, Lock() with { Runtime = "linux-x64" });
-    string staged = _fs.Path.Join(_root, ".lip", "workspace.yaml.tmp");
+    string staged = _fs.Path.Join(_root, ".lip", "state.json.tmp");
 
     // Act
     await _store.Stage(_root, Lock());
@@ -200,7 +203,7 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task DiscardStaged_StagedLock_DeletesItAndKeepsWorkspaceYaml() {
+  public async Task DiscardStaged_StagedLock_DeletesItAndKeepsStateJson() {
     // Arrange
     await _store.Save(_root, Lock() with { Runtime = "linux-x64" });
     await _store.Stage(_root, Lock());
@@ -210,13 +213,13 @@ public class LockStoreTests {
     _store.CommitStaged(_root);
 
     // Assert
-    Assert.False(_fs.File.Exists(_fs.Path.Join(_root, ".lip", "workspace.yaml.tmp")));
+    Assert.False(_fs.File.Exists(_fs.Path.Join(_root, ".lip", "state.json.tmp")));
     Assert.Equal("linux-x64", (await _store.Load(_root))!.Runtime);
   }
 
   [Fact]
   public async Task CommitStaged_FirstWorkspaceFileBesideToothLock_DeletesToothLock() {
-    // Arrange: the workspace file was derived from tooth_lock.json (protocol/compatibility.md §3).
+    // Arrange: the state file was derived from tooth_lock.json (protocol/compatibility.md §3).
     string toothLock = _fs.Path.Join(_root, "tooth_lock.json");
     _fs.AddFile(toothLock, new MockFileData(_toothLock));
     await _store.Stage(_root, Lock());
@@ -231,7 +234,7 @@ public class LockStoreTests {
 
   [Fact]
   public async Task CommitStaged_ExistingWorkspaceFile_KeepsToothLock() {
-    // Arrange: a tooth_lock.json is not read once there is a workspace file.
+    // Arrange: a tooth_lock.json is not read once there is a state file.
     await _store.Save(_root, Lock());
     string toothLock = _fs.Path.Join(_root, "tooth_lock.json");
     _fs.AddFile(toothLock, new MockFileData(_toothLock));
@@ -320,26 +323,29 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Load_HandWrittenBlockYaml_ReadsIt() {
+  public async Task Load_HandWrittenJson_ReadsIt() {
     // Arrange
     _fs.AddFile(LipLockPath, new MockFileData($$"""
-        format: 4
-        platform: server
-        runtime: win-x64
-        packages:
-          - manifest:
-              format: 4
-              id: github.com/a/b
-              version: 1.2.3
-              variants:
-                "":
-                  - platform: server
-                    runtime: win-x64
-            variant: ""
-            explicit: true
-            ref: github.com/a/b
-            commit: {{_commit}}
-            files: [a.txt, "1.0"]
+        {
+          "format": 4,
+          "platform": "server",
+          "runtime": "win-x64",
+          "packages": [
+            {
+              "manifest": {
+                "format": 4,
+                "id": "github.com/a/b",
+                "version": "1.2.3",
+                "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] }
+              },
+              "variant": "",
+              "explicit": true,
+              "ref": "github.com/a/b",
+              "commit": "{{_commit}}",
+              "files": [ "a.txt", "1.0" ]
+            }
+          ]
+        }
         """));
 
     // Act
@@ -352,7 +358,7 @@ public class LockStoreTests {
     Assert.True(package.Explicit);
   }
 
-  /// protocol/workspace.md §7.1: a workspace without a workspace file has no installed packages,
+  /// protocol/workspace.md §7.1: a workspace without a state file has no installed packages,
   /// whatever other files it has; a tooth_lock.json is read by McmodService
   /// (protocol/compatibility.md §3).
   [Theory]
@@ -379,10 +385,10 @@ public class LockStoreTests {
     """{ "packages": [] }""",
     """{ "format": 5, "platform": "server", "runtime": "win-x64", "packages": [] }""",
     """{ "format": "4", "platform": "server", "runtime": "win-x64", "packages": [] }""",
-    "format: '4'\nplatform: server\nruntime: win-x64\npackages: []\n",
+    """{ "format": [4], "platform": "server", "runtime": "win-x64", "packages": [] }""",
   ];
 
-  /// A workspace file not of format 4 is not valid against workspace.schema.yaml.
+  /// A state file not of format 4 is not valid against state.schema.json.
   [Theory]
   [MemberData(nameof(WorkspaceFilesWithoutFormat4))]
   public async Task Load_WorkspaceFileWithoutFormat4_ThrowsAndKeepsIt(string json) {
@@ -436,7 +442,8 @@ public class LockStoreTests {
       "[]",
       "null",
       """{ "format": 4 """,
-      "format: 4\n---\nformat: 4\n",
+      "format: 4\n",
+      "{ \"format\": 4 } { \"format\": 4 }",
       $$"""{ {{head}}, "packages": null }""",
       $$"""{ {{head}}, "packages": [null] }""",
       $$"""{ {{head}}, "packages": [], "packages": [] }""",

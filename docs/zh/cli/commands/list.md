@@ -16,7 +16,7 @@ lip list [options]
 
 ## 说明
 
-读取该工作区的[工作区文件](../../concepts/lockfiles.md)，并以 `<身份>@<版本>` 的形式分两组显示已安装的包：
+读取该工作区的[状态文件](../../concepts/lockfiles.md)，并以 `<身份>@<版本>` 的形式分两组显示已安装的包：
 
 - **User-Requested** — 用户显式安装的包。
 - **Dependencies** — 作为依赖安装的包。

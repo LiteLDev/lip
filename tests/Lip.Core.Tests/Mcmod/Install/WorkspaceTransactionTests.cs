@@ -316,7 +316,7 @@ public class WorkspaceTransactionTests {
   [Fact]
   public void Rollback_AfterCommitOfOnlyHookCommands_DeletesTheJournal() {
     // Arrange: an operation of only hook commands has a journal with no change (§7.4); then
-    // the workspace file cannot be renamed into place (step 9).
+    // the state file cannot be renamed into place (step 9).
     using WorkspaceTransaction transaction = new(_fs, _journal);
     transaction.Begin();
     transaction.Commit();
@@ -416,7 +416,7 @@ public class WorkspaceTransactionTests {
     IReadOnlyList<Exception> errors = transaction.Rollback(
         () => journalWhenDiscarding = _fs.File.ReadAllText(_journal));
 
-    // Assert: the journal lost its "Commit" record before the staged workspace file was
+    // Assert: the journal lost its "Commit" record before the staged state file was
     // discarded (protocol/workspace.md §7.4).
     Assert.Empty(errors);
     Assert.NotNull(journalWhenDiscarding);

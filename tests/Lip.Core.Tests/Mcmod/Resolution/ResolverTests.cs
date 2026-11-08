@@ -20,20 +20,19 @@ public class ResolverTests {
 
   private Resolver CreateResolver() => new(_archives, _reader, _warnings.Add);
 
-  /// A lip.yaml, as a YAML flow mapping; variants is the JSON object of "variants" without
-  /// braces.
-  private static string LipYaml(string id, string version, string variants) => $$"""
+  /// A lip.toml; variants is the JSON object of "variants" without braces.
+  private static string LipToml(string id, string version, string variants) => WorkspaceHarness.Toml($$"""
       {
         "format": 4,
         "id": "{{id}}",
         "version": "{{version}}",
         "variants": { {{variants}} }
       }
-      """;
+      """);
 
-  /// A lip.yaml whose variant "" has one entry for (server, win-x64).
+  /// A lip.toml whose variant "" has one entry for (server, win-x64).
   private static string Simple4(string id, string version, string members = "") =>
-      LipYaml(id, version, $"\"\": [ {Entry("server", "win-x64", members)} ]");
+      LipToml(id, version, $"\"\": [ {Entry("server", "win-x64", members)} ]");
 
   /// An entry of a package file with the given extra members, comma-separated without braces.
   private static string Entry(string platform, string runtime, string members = "") =>
@@ -76,7 +75,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_Url_SelectsEntryOfExactPlatformAndRuntime() {
     // Arrange
-    _archives.AddUrl(Url, LipYaml(Spec, "1.0.0", $"""
+    _archives.AddUrl(Url, LipToml(Spec, "1.0.0", $"""
         "": [
           {Entry("server", "linux-x64", Marker("server-linux"))},
           {Entry("client", "win-x64", Marker("client-win"))},
@@ -138,7 +137,7 @@ public class ResolverTests {
   [InlineData("node/v20", "node")]
   public async Task Resolve_Variant_SelectsEntryOfVariantOfSource(string variant, string marker) {
     // Arrange
-    _archives.AddTag(Spec, "v1.0.0", LipYaml(Spec, "1.0.0", $"""
+    _archives.AddTag(Spec, "v1.0.0", LipToml(Spec, "1.0.0", $"""
         "": [ {Entry("server", "win-x64", Marker("default"))} ],
         "lua": [ {Entry("server", "win-x64", Marker("lua"))} ],
         "node/v20": [ {Entry("server", "win-x64", Marker("node"))} ]
@@ -159,7 +158,7 @@ public class ResolverTests {
   [Fact]
   public async Task Resolve_UnknownVariant_NoCandidate() {
     // Arrange
-    _archives.AddUrl(Url, LipYaml(Spec, "1.0.0", $"\"lua\": [ {Entry("server", "win-x64")} ]"));
+    _archives.AddUrl(Url, LipToml(Spec, "1.0.0", $"\"lua\": [ {Entry("server", "win-x64")} ]"));
 
     // Act
     ResolveResult withoutVariant = await CreateResolver().Resolve(Source(Url), null, s_server);
@@ -735,7 +734,7 @@ public class ResolverTests {
   }
 
   /// In-memory archives: URLs and local paths, and remote repositories with tags, branches and
-  /// commits. Each archive holds its lip.yaml or tooth.json only (FileName).
+  /// commits. Each archive holds its lip.toml or tooth.json only (FileName).
   private sealed class FakeArchives : IArchiveProvider {
     private readonly Dictionary<string, string?> _urls = [];
     private readonly Dictionary<string, Repository> _repositories = [];
@@ -842,9 +841,9 @@ public class ResolverTests {
         Handle(key, Get(spec).Commits[commit], commit);
 
     /// The name of the file holding content: tooth.json for a tooth.json (with "format_version"),
-    /// lip.yaml otherwise.
+    /// lip.toml otherwise.
     private static string FileName(string content) =>
-        content.Contains("\"format_version\"", StringComparison.Ordinal) ? "tooth.json" : "lip.yaml";
+        content.Contains("\"format_version\"", StringComparison.Ordinal) ? "tooth.json" : "lip.toml";
 
     private static ArchiveHandle Handle(string key, string? content, string? commit) =>
         new(key,

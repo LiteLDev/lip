@@ -43,7 +43,7 @@ public class ArchiveProviderTests {
 
     // Assert
     TestContext.Current.TestOutputHelper?.WriteLine(
-        $"{spec}: {versions.Count} versions, newest {versions[0].Tag}, read from {(document.IsLegacy ? "tooth.json" : "lip.yaml")}");
+        $"{spec}: {versions.Count} versions, newest {versions[0].Tag}, read from {(document.IsLegacy ? "tooth.json" : "lip.toml")}");
     Assert.True(versions.Count > 10);
     Assert.Equal($"{spec}@{versions[0].Version}", archive.Key);
     Assert.Matches("^[0-9a-f]{40}$", archive.Commit);

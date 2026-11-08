@@ -15,7 +15,7 @@ Example:
 lip install github.com/user/repo
 ```
 
-This installs the newest version of the package that has an entry for your workspace's platform and RID, and the dependencies it declares, into your workspace, and records them in the [workspace file](../concepts/lockfiles.md). It does not modify any `lip.yaml`.
+This installs the newest version of the package that has an entry for your workspace's platform and RID, and the dependencies it declares, into your workspace, and records them in the [state file](../concepts/lockfiles.md). It does not modify any `lip.toml`.
 
 ## Specifying Versions
 
@@ -37,11 +37,11 @@ lip install github.com/user/repo@tag:nightly
 lip install github.com/user/repo@rev:0123456789abcdef0123456789abcdef01234567
 ```
 
-The workspace file records the commit, so the workspace stays on it until `lip update`, which follows a branch to its new head. See [Git refs](../cli/commands/install.md#git-refs).
+The state file records the commit, so the workspace stays on it until `lip update`, which follows a branch to its new head. See [Git refs](../cli/commands/install.md#git-refs).
 
 ## Installing from Local Files and Directories
 
-You can install a package directly from a local ZIP file or directory with a `lip.yaml` at its root, by a path relative to the current directory or an absolute path:
+You can install a package directly from a local ZIP file or directory with a `lip.toml` at its root, by a path relative to the current directory or an absolute path:
 
 ```sh
 lip install ./path/to/package.zip
@@ -53,7 +53,7 @@ This is useful for testing packages before publishing.
 
 ## Installing from Remote URLs
 
-You can also install a ZIP archive with a `lip.yaml` at its root directly from an HTTPS URL:
+You can also install a ZIP archive with a `lip.toml` at its root directly from an HTTPS URL:
 
 ```sh
 lip install https://example.com/package.zip
@@ -61,7 +61,7 @@ lip install https://example.com/package.zip
 
 ## Server Workspaces Only
 
-lip manages server workspaces: mods are installed to `mods/<name>/` (see [Environment](../concepts/lip_yaml.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
+lip manages server workspaces: mods are installed to `mods/<name>/` (see [Environment](../concepts/lip_toml.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
 Before `lip install`, `lip uninstall` or `lip update` writes or deletes files in the workspace, lip creates `mods` if it is missing; an operation that writes and deletes nothing, such as installing a package without assets, leaves `mods` alone. If `mods` is a link, lip stops and changes nothing.
 

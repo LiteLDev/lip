@@ -168,7 +168,7 @@ public sealed class WorkspaceTransaction : IDisposable {
         WriteJournal(_fs, _journalPath, _root, _entries, committed: false, _started);
       }
       catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-        // The journal still commits the operation, and the staged workspace file is kept, so
+        // The journal still commits the operation, and the staged state file is kept, so
         // that the next operation completes it rather than finding it partly undone.
         RunTrace.Write("journal", $"Cannot uncommit the journal {_journalPath}: {ex}");
         errors.Add(WorkspaceErrors.Wrap(

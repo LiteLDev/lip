@@ -13,7 +13,7 @@ public class MigrateCommand(LipClient lipClient, IUserInteraction userInteractio
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     await _lipClient.Migrate();
-    await _userInteraction.PrintSuccess("Migrated tooth.json to lip.yaml.");
+    await _userInteraction.PrintSuccess("Migrated tooth.json to lip.toml.");
     return 0;
   }
 }

@@ -55,7 +55,7 @@ public class ArchiveReaderTests {
   public async Task Read_PackageFile_ReturnsIt() {
     // Arrange
     ArchiveHandle archive = CreateArchive(new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "github.com/user/repo", "1.2.3", WorkspaceHarness.SelfAsset("a.dll", "plugins/a.dll")),
       ["manifest.json"] = "{}",
     });
@@ -78,7 +78,7 @@ public class ArchiveReaderTests {
   public async Task Read_PackageFileAndToothJson_ReadsThePackageFile() {
     // Arrange
     ArchiveHandle archive = CreateArchive(new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("github.com/user/repo", "4.0.0"),
+      ["lip.toml"] = WorkspaceHarness.LipToml("github.com/user/repo", "4.0.0"),
       ["tooth.json"] = _toothV3,
     });
 
@@ -94,7 +94,7 @@ public class ArchiveReaderTests {
   public async Task Read_InvalidPackageFileAndValidToothJson_ThrowsArchiveUnavailable() {
     // Arrange: an archive with a package file is a package only when that is valid.
     ArchiveHandle archive = CreateArchive(new() {
-      ["lip.yaml"] = "format: 4\n",
+      ["lip.toml"] = "format = 4\n",
       ["tooth.json"] = _toothV3,
     });
 
@@ -103,28 +103,27 @@ public class ArchiveReaderTests {
   }
 
   [Fact]
-  public async Task Read_PackageFileInBlockYaml_ReturnsIt() {
+  public async Task Read_HandWrittenPackageFile_ReturnsIt() {
     // Arrange
     ArchiveHandle archive = CreateArchive(new() {
-      ["lip.yaml"] = """
+      ["lip.toml"] = """
           # A comment.
-          format: 4
-          id: github.com/user/repo
-          version: 1.0.0
-          info:
-            name: Repo
-            tags: [a, "b"]
-          variants:
-            "":
-              - platform: server
-                runtime: win-x64
-                deps:
-                  github.com/user/dep: ">=1.0.0"
-                assets:
-                  - type: self
-                    place:
-                      - src: a.dll
-                        dest: plugins/a.dll
+          format = 4
+          id = "github.com/user/repo"
+          version = "1.0.0"
+
+          [info]
+          name = "Repo"
+          tags = ["a", 'b']
+
+          [[variants.""]]
+          platform = "server"
+          runtime = "win-x64"
+          deps = { "github.com/user/dep" = ">=1.0.0" }
+
+          [[variants."".assets]]
+          type = "self"
+          place = [{ src = "a.dll", dest = "plugins/a.dll" }]
           """,
     });
 
@@ -186,7 +185,7 @@ public class ArchiveReaderTests {
   public async Task Read_PackageFileNotAtTheRoot_ThrowsArchiveUnavailable() {
     // Arrange
     ArchiveHandle archive = CreateArchive(new() {
-      ["sub/lip.yaml"] = WorkspaceHarness.LipYaml("github.com/user/repo", "1.0.0"),
+      ["sub/lip.toml"] = WorkspaceHarness.LipToml("github.com/user/repo", "1.0.0"),
     });
 
     // Act & Assert
@@ -194,19 +193,20 @@ public class ArchiveReaderTests {
   }
 
   [Theory]
-  [InlineData("not a mapping")]
+  [InlineData("not a table")]
   [InlineData("[]")]
   [InlineData("")]
-  [InlineData("format: 4\n---\nformat: 4\n")]
-  [InlineData("{ id: github.com/user/repo, version: 1.0.0, variants: {} }")]
-  [InlineData("{ format: 5, id: github.com/user/repo, version: 1.0.0, variants: {} }")]
-  [InlineData("{ format: \"4\", id: github.com/user/repo, version: 1.0.0, variants: {} }")]
-  [InlineData("{ format: 4, id: github.com/user/repo, version: 1.0.0 }")]
-  [InlineData("{ format: 4, id: github.com/user/repo, version: v1.0.0, variants: {} }")]
-  [InlineData("{ format: 4, format: 4, id: github.com/user/repo, version: 1.0.0, variants: {} }")]
-  public async Task Read_InvalidPackageFile_ThrowsArchiveUnavailable(string yaml) {
+  [InlineData("{ \"format\": 4 }")]
+  [InlineData("id = \"github.com/user/repo\"\nversion = \"1.0.0\"\nvariants = {}")]
+  [InlineData("format = 5\nid = \"github.com/user/repo\"\nversion = \"1.0.0\"\nvariants = {}")]
+  [InlineData("format = \"4\"\nid = \"github.com/user/repo\"\nversion = \"1.0.0\"\nvariants = {}")]
+  [InlineData("format = 4\nid = \"github.com/user/repo\"\nversion = \"1.0.0\"")]
+  [InlineData("format = 4\nid = \"github.com/user/repo\"\nversion = \"v1.0.0\"\nvariants = {}")]
+  [InlineData("format = 4\nformat = 4\nid = \"github.com/user/repo\"\nversion = \"1.0.0\"\nvariants = {}")]
+  [InlineData("format = 4\nid = \"github.com/user/repo\"\nversion = 1979-05-27\nvariants = {}")]
+  public async Task Read_InvalidPackageFile_ThrowsArchiveUnavailable(string toml) {
     // Arrange
-    ArchiveHandle archive = CreateArchive(new() { ["lip.yaml"] = yaml });
+    ArchiveHandle archive = CreateArchive(new() { ["lip.toml"] = toml });
 
     // Act & Assert
     await Assert.ThrowsAsync<ArchiveUnavailableException>(() => new ArchiveReader().Read(archive));

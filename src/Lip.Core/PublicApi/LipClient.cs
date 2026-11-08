@@ -116,8 +116,8 @@ public sealed class LipClient {
     await _configService.Set(key, value);
   }
 
-  /// Writes a lip.yaml with one entry for the server on win-x64 (protocol/cli.md §5.7), asking
-  /// the user for its package id. Fails when lip.yaml exists, or when the user cannot be asked.
+  /// Writes a lip.toml with one entry for the server on win-x64 (protocol/cli.md §5.7), asking
+  /// the user for its package id. Fails when lip.toml exists, or when the user cannot be asked.
   public async Task Init() {
     string path = PackageFormat.FileName;
     string directory = _fileSystem.Directory.GetCurrentDirectory();
@@ -152,7 +152,7 @@ public sealed class LipClient {
       },
     };
 
-    // Asking may take a while; a lip.yaml written meanwhile is not replaced.
+    // Asking may take a while; a lip.toml written meanwhile is not replaced.
     RunTrace.Write("init", $"writing {path} in {directory} for {id}");
     Stream stream;
     try {
@@ -166,7 +166,7 @@ public sealed class LipClient {
     }
 
     using (stream) {
-      await stream.WriteAsync(Encoding.UTF8.GetBytes(YamlJson.Serialize(document)));
+      await stream.WriteAsync(Encoding.UTF8.GetBytes(TomlJson.Serialize(document)));
     }
   }
 
@@ -191,7 +191,7 @@ public sealed class LipClient {
         packages.Where(p => !p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct());
   }
 
-  /// Migrates the tooth.json of format 1, 2 or 3 in the current directory to a lip.yaml
+  /// Migrates the tooth.json of format 1, 2 or 3 in the current directory to a lip.toml
   /// (RepositoryMigrator, protocol/compatibility.md §5), asking the user for missing values.
   /// Everything dropped or converted with another meaning is reported as a warning.
   public async Task Migrate() {

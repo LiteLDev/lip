@@ -6,7 +6,7 @@ namespace Lip.Core.Tests.Mcmod;
 
 /// Operations are all or nothing (protocol/workspace.md §6): an early failure changes nothing and
 /// runs no hook command; a later failure undoes every change of the workspace, the layout and the
-/// workspace file.
+/// state file.
 public class McmodServiceAtomicityTests {
   private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
 
@@ -47,7 +47,7 @@ public class McmodServiceAtomicityTests {
       string entry,
       Dictionary<string, string>? files = null) {
     Dictionary<string, string> content = new(files ?? []) {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(Id(name), version, entry),
+      ["lip.toml"] = WorkspaceHarness.LipToml(Id(name), version, entry),
     };
     _ws.AddZip(file, content);
   }
@@ -353,7 +353,7 @@ public class McmodServiceAtomicityTests {
 
   [Fact]
   public async Task Operation_AfterInterruptedOperation_UndoesItFirst() {
-    // Arrange: a process killed while installing over Base, with a staged workspace file.
+    // Arrange: a process killed while installing over Base, with a staged state file.
     AddMod("base.zip", "Base", files: new() { ["Base.dll"] = "base", ["sub/x.txt"] = "x" });
     await _ws.Service.Install(["base.zip"], _options);
     SortedDictionary<string, string> before = _ws.Snapshot();
@@ -387,7 +387,7 @@ public class McmodServiceAtomicityTests {
   [Fact]
   public async Task Operation_AfterInterruptedCommit_FinishesIt() {
     // Arrange: a process killed after committing the uninstall of Base, before moving the
-    // workspace file into place.
+    // state file into place.
     AddMod("base.zip", "Base", files: new() { ["Base.dll"] = "base", ["sub/x.txt"] = "x" });
     await _ws.Service.Install(["base.zip"], _options);
     using (WorkspaceTransaction killed = new(_ws.Fs, _ws.JournalPath)) {

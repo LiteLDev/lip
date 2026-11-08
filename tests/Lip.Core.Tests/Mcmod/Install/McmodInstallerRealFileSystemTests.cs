@@ -60,7 +60,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     };
     ArchiveHandle archive = new(
         "example.com/legacymoney@0.22.0",
-        new ZipSource(WorkspaceHarness.Zip(new() { ["lip.yaml"] = "{}" })),
+        new ZipSource(WorkspaceHarness.Zip(new() { ["lip.toml"] = "{}" })),
         new string('0', 40));
     Candidate candidate = Candidate.Create(
         package, archive, Ref.Parse("example.com/legacymoney", allowFile: false), provider.Object);
@@ -115,17 +115,17 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     // Arrange
     string lip = Path.Combine(_root, ".lip");
     Directory.CreateDirectory(lip);
-    File.WriteAllText(Path.Combine(lip, "workspace.yaml"), "keep");
+    File.WriteAllText(Path.Combine(lip, "state.json"), "keep");
     string shortName = ShortNameOrSkip(lip);
     Candidate candidate = SelfCandidate(
-        "example.com/x", Place("x.txt", $"{shortName}/workspace.yaml"),
+        "example.com/x", Place("x.txt", $"{shortName}/state.json"),
         "", new() { ["x.txt"] = "x" });
 
     // Act & Assert
     McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
         () => Installer().Install(candidate, Context()));
-    Assert.Contains(".lip/workspace.yaml", ex.Message);
-    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "workspace.yaml")));
+    Assert.Contains(".lip/state.json", ex.Message);
+    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "state.json")));
   }
 
   [Fact]
@@ -175,18 +175,18 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     // Arrange
     string lip = Path.Combine(_root, ".lip");
     Directory.CreateDirectory(lip);
-    File.WriteAllText(Path.Combine(lip, "workspace.yaml"), "keep");
+    File.WriteAllText(Path.Combine(lip, "state.json"), "keep");
     string shortName = ShortNameOrSkip(lip);
     Candidate candidate = SelfCandidate(
         "example.com/x", "",
-        $$""" "purge": [ "{{shortName}}/", "{{shortName}}/*", "{{shortName}}/workspace.yaml" ] """,
+        $$""" "purge": [ "{{shortName}}/", "{{shortName}}/*", "{{shortName}}/state.json" ] """,
         []);
 
     // Act
     await Installer().Uninstall(Locked(candidate, []), Context());
 
     // Assert
-    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "workspace.yaml")));
+    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "state.json")));
   }
 
   [Fact]
@@ -326,9 +326,9 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     SkipUnlessIgnoresCase();
     string lip = Path.Combine(_root, ".lip");
     Directory.CreateDirectory(lip);
-    File.WriteAllText(Path.Combine(lip, "workspace.yaml"), "keep");
+    File.WriteAllText(Path.Combine(lip, "state.json"), "keep");
     Candidate candidate = SelfCandidate(
-        "example.com/x", Place("x.txt", ".LIP/workspace.yaml"), "", new() { ["x.txt"] = "x" });
+        "example.com/x", Place("x.txt", ".LIP/state.json"), "", new() { ["x.txt"] = "x" });
 
     // Act
     McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
@@ -336,7 +336,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
 
     // Assert
     Assert.Contains("reserved", ex.Message);
-    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "workspace.yaml")));
+    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "state.json")));
   }
 
   [Fact]
@@ -370,20 +370,20 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     SkipUnlessIgnoresCase();
     string lip = Path.Combine(_root, ".lip");
     Directory.CreateDirectory(lip);
-    File.WriteAllText(Path.Combine(lip, "workspace.yaml"), "keep");
+    File.WriteAllText(Path.Combine(lip, "state.json"), "keep");
     string mods = Path.Combine(_root, "mods", "Other");
     Directory.CreateDirectory(mods);
     File.WriteAllText(Path.Combine(mods, "other.dll"), "dll");
     Candidate candidate = SelfCandidate(
         "example.com/x", "",
-        """ "purge": [ ".LIP/", ".LIP/*", ".LIP/workspace.yaml", "MODS/" ] """,
+        """ "purge": [ ".LIP/", ".LIP/*", ".LIP/state.json", "MODS/" ] """,
         []);
 
     // Act
     await Installer().Uninstall(Locked(candidate, []), Context());
 
     // Assert
-    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "workspace.yaml")));
+    Assert.Equal("keep", File.ReadAllText(Path.Combine(lip, "state.json")));
     Assert.Equal("dll", File.ReadAllText(Path.Combine(mods, "other.dll")));
   }
 

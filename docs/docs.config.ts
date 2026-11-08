@@ -18,7 +18,7 @@ interface Labels {
   faq: string;
   concepts: string;
   architecture: string;
-  workspaceFile: string;
+  stateFile: string;
   internalMechanism: string;
   cli: string;
   overview: string;
@@ -41,7 +41,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
     faq: 'FAQ',
     concepts: 'Concepts',
     architecture: 'Architecture',
-    workspaceFile: 'Workspace File',
+    stateFile: 'State File',
     internalMechanism: 'Internal Mechanism',
     cli: 'CLI Reference',
     overview: 'Overview',
@@ -62,7 +62,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
     faq: '常见问题',
     concepts: '概念',
     architecture: '架构',
-    workspaceFile: '工作区文件',
+    stateFile: '状态文件',
     internalMechanism: '内部机制',
     cli: 'CLI 参考',
     overview: '概览',
@@ -101,8 +101,8 @@ const nav = (p: string, t: Labels): NavEntry[] => [
     text: t.concepts,
     items: [
       { text: t.architecture, link: `${p}concepts/architecture` },
-      { text: 'lip.yaml', link: `${p}concepts/lip_yaml` },
-      { text: t.workspaceFile, link: `${p}concepts/lockfiles` },
+      { text: 'lip.toml', link: `${p}concepts/lip_toml` },
+      { text: t.stateFile, link: `${p}concepts/lockfiles` },
       { text: t.internalMechanism, link: `${p}guides/internal_mechanism` },
     ],
   },
@@ -116,12 +116,13 @@ const nav = (p: string, t: Labels): NavEntry[] => [
   },
 ];
 
-// Pages removed in lip v1 (JSON-RPC, tooth.json → lip.yaml): their old URLs, in every locale, open the closest page.
+// Pages removed or renamed since lip v1 (JSON-RPC, tooth.json → lip.toml): their old URLs, in every locale, open the closest page.
 const MOVED: Record<string, string> = {
   'rpc/overview': 'cli/overview.html',
   'rpc/json_rpc_spec': 'cli/overview.html',
   'cli/commands/rpc': 'cli/overview.html',
-  'concepts/tooth_json': 'concepts/lip_yaml.html',
+  'concepts/tooth_json': 'concepts/lip_toml.html',
+  'concepts/lip_yaml': 'concepts/lip_toml.html',
 };
 const redirects = Object.fromEntries(
   ['', 'zh/', 'zh-Hant/'].flatMap((p) => Object.entries(MOVED).map(([from, to]) => [p + from, p + to])),

@@ -9,7 +9,7 @@ public class WorkspaceBusyException(string message, Exception? inner = null)
 
 /// The workspace lock (protocol/workspace.md §7.2), held while an install, uninstall or update
 /// changes a workspace, so that two processes never interleave their changes, their journals or
-/// their workspace files.
+/// their state files.
 ///
 /// It is the file &lt;root&gt;/.lip/lock, opened without sharing: on Windows no other process can
 /// open it, elsewhere .NET takes an exclusive flock on it. The file is never deleted, so every

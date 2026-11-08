@@ -14,8 +14,8 @@ public class PackageFormatException(string message, Exception? inner = null)
 /// The package file is of a format newer than this lip knows; updating lip helps.
 public sealed class NewerPackageFormatException(string message) : PackageFormatException(message);
 
-/// Parses and validates package files (lip.schema.yaml and protocol/package.md §3), and entries,
-/// also those derived from a tooth.json (protocol/compatibility.md §2) that the workspace file
+/// Parses and validates package files (lip.schema.toml and protocol/package.md §3), and entries,
+/// also those derived from a tooth.json (protocol/compatibility.md §2) that the state file
 /// records. Keys the schema does not describe are ignored.
 public static partial class PackageFileParser {
   private static readonly UTF8Encoding _strictUtf8 = new(
@@ -55,7 +55,7 @@ public static partial class PackageFileParser {
     }
   }
 
-  /// The "format" of a package file or of the workspace file, or null when it has none that is an
+  /// The "format" of a package file or of the state file, or null when it has none that is an
   /// integer.
   public static int? Format(JsonElement root) => IntegerMember(root, PackageFormat.FormatKey);
 
@@ -69,22 +69,22 @@ public static partial class PackageFileParser {
           ? (int)value
           : null;
 
-  /// Reads lip.yaml, a YAML file (protocol/README.md). The caller disposes the result. Throws
+  /// Reads lip.toml, a TOML file (protocol/README.md). The caller disposes the result. Throws
   /// PackageFormatException when it is not one.
-  public static JsonDocument ParseYaml(byte[] yaml) {
+  public static JsonDocument ParseToml(byte[] toml) {
     try {
-      return YamlJson.Parse(yaml);
+      return TomlJson.Parse(toml);
     }
-    catch (YamlFormatException ex) {
+    catch (TomlFormatException ex) {
       throw new PackageFormatException(
-          $"The {PackageFormat.FileName} is not a valid YAML file of the kind lip reads.", ex);
+          $"The {PackageFormat.FileName} is not a valid TOML file of the kind lip reads.", ex);
     }
   }
 
-  /// Parses a package file, the bytes of lip.yaml. Throws PackageFormatException when it is not
+  /// Parses a package file, the bytes of lip.toml. Throws PackageFormatException when it is not
   /// valid.
-  public static PackageFile Parse(byte[] yaml) {
-    using JsonDocument json = ParseYaml(yaml);
+  public static PackageFile Parse(byte[] toml) {
+    using JsonDocument json = ParseToml(toml);
     return Parse(json.RootElement);
   }
 
@@ -150,7 +150,7 @@ public static partial class PackageFileParser {
   /// Parses an entry of a package file. Throws PackageFormatException.
   public static PackageEntry ParseEntry(JsonElement element) => ParseEntryAt(element, "$");
 
-  /// Whether a member of place is valid (lip.schema.yaml "place").
+  /// Whether a member of place is valid (lip.schema.toml "place").
   public static bool IsValidPlacement(string src, string dest) {
     using JsonDocument json = JsonDocument.Parse(JsonSerializer.Serialize(new { src, dest }));
     try {
@@ -298,7 +298,7 @@ public static partial class PackageFileParser {
     return placement;
   }
 
-  /// A path (lip.schema.yaml "path").
+  /// A path (lip.schema.toml "path").
   private static string ReadPath(JsonElement element, string path) {
     string value = ReadString(element, path);
 

@@ -54,8 +54,8 @@ public class LipClientTests {
           "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] }
         }
         """)!;
-    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml"));
-    Assert.True(JsonNode.DeepEquals(expected, Yaml(bytes)));
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.toml"));
+    Assert.True(JsonNode.DeepEquals(expected, Toml(bytes)));
     Assert.Equal("github.com/owner/repo", PackageFileParser.Parse(bytes).Id);
     Assert.False(_ws.Exists("tooth.json"));
     _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Exactly(2));
@@ -65,19 +65,19 @@ public class LipClientTests {
   [Fact]
   public async Task Init_PackageFileExists_ThrowsWithoutAskingOrWriting() {
     // Arrange
-    _ws.AddFile("lip.yaml", "{}");
+    _ws.AddFile("lip.toml", "{}");
 
     // Act & Assert
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(_client.Init);
-    Assert.Contains("lip.yaml already exists", ex.Message);
-    Assert.Contains("delete lip.yaml", ex.Message);
-    Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("lip.yaml")));
+    Assert.Contains("lip.toml already exists", ex.Message);
+    Assert.Contains("delete lip.toml", ex.Message);
+    Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("lip.toml")));
     _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
   }
 
   [Fact]
   public async Task Init_OnlyToothJsonExists_WritesPackageFile() {
-    // Arrange: only lip.yaml makes lip init fail (protocol/cli.md §5.7).
+    // Arrange: only lip.toml makes lip init fail (protocol/cli.md §5.7).
     _ws.AddFile("tooth.json", "{}");
     _ws.Ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync("github.com/owner/repo");
 
@@ -85,7 +85,7 @@ public class LipClientTests {
     await _client.Init();
 
     // Assert
-    Assert.True(_ws.Exists("lip.yaml"));
+    Assert.True(_ws.Exists("lip.toml"));
     Assert.Equal("{}", _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
   }
 
@@ -97,7 +97,7 @@ public class LipClientTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<CannotAskException>(_client.Init);
-    Assert.False(_ws.Exists("lip.yaml"));
+    Assert.False(_ws.Exists("lip.toml"));
   }
 
   [Fact]
@@ -107,7 +107,7 @@ public class LipClientTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<CannotAskException>(_client.Init);
-    Assert.False(_ws.Exists("lip.yaml"));
+    Assert.False(_ws.Exists("lip.toml"));
   }
 
   #endregion
@@ -140,12 +140,12 @@ public class LipClientTests {
     await _client.Migrate();
 
     // Assert: protocol/compatibility.md §5, a valid package file.
-    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml"));
-    Assert.StartsWith("format: 4\n", System.Text.Encoding.UTF8.GetString(bytes));
+    byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.toml"));
+    Assert.StartsWith("format = 4\n", System.Text.Encoding.UTF8.GetString(bytes));
     PackageFile packageFile = PackageFileParser.Parse(bytes);
     Assert.Equal(
         ("github.com/test/repo", "1.2.3"), (packageFile.Id, packageFile.Version.ToString()));
-    JsonNode document = Yaml(bytes)!;
+    JsonNode document = Toml(bytes)!;
     JsonArray entries = document["variants"]![""]!.AsArray();
     Assert.Equal(
         [("server", "win-x64")],
@@ -158,7 +158,7 @@ public class LipClientTests {
     Assert.True(JsonNode.DeepEquals(
         JsonNode.Parse("""[ { "type": "self", "place": [ { "src": "a.txt", "dest": "a.txt" } ] } ]"""),
         server["assets"]));
-    Assert.Equal(["a.txt", "lip.yaml"], _ws.Fs.Directory.GetFiles(_ws.Root).Select(
+    Assert.Equal(["a.txt", "lip.toml"], _ws.Fs.Directory.GetFiles(_ws.Root).Select(
         f => _ws.Fs.Path.GetFileName(f)).Order());
   }
 
@@ -182,7 +182,7 @@ public class LipClientTests {
     await _client.Migrate();
 
     // Assert
-    JsonNode document = Yaml(_ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml")))!;
+    JsonNode document = Toml(_ws.Fs.File.ReadAllBytes(_ws.Path("lip.toml")))!;
     Assert.Equal(4, (int)document["format"]!);
     Assert.Equal(
         [("client", "linux-x64"), ("client", "win-x64"), ("server", "linux-x64"), ("server", "win-x64")],
@@ -201,7 +201,7 @@ public class LipClientTests {
     await _client.Migrate();
 
     // Assert
-    JsonNode document = Yaml(_ws.Fs.File.ReadAllBytes(_ws.Path("lip.yaml")))!;
+    JsonNode document = Toml(_ws.Fs.File.ReadAllBytes(_ws.Path("lip.toml")))!;
     Assert.Equal(
         ["linux-arm64", "win-x64"],
         document["variants"]![""]!.AsArray()
@@ -220,13 +220,13 @@ public class LipClientTests {
     // Act & Assert
     await Assert.ThrowsAsync<CannotAskException>(_client.Migrate);
     Assert.Equal(original, _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
-    Assert.False(_ws.Exists("lip.yaml"));
+    Assert.False(_ws.Exists("lip.toml"));
   }
 
   [Fact]
   public async Task Migrate_NoToothJson_ThrowsAndWritesNothing() {
     await Assert.ThrowsAsync<InvalidOperationException>(_client.Migrate);
-    Assert.False(_ws.Exists("lip.yaml"));
+    Assert.False(_ws.Exists("lip.toml"));
   }
 
   [Fact]
@@ -234,12 +234,12 @@ public class LipClientTests {
     // Arrange
     string original = WorkspaceHarness.Tooth("github.com/test/repo", "1.0.0", "x.dll");
     _ws.AddFile("tooth.json", original);
-    _ws.AddFile("lip.yaml", "mine");
+    _ws.AddFile("lip.toml", "mine");
 
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(_client.Migrate);
     Assert.Equal(original, _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
-    Assert.Equal("mine", _ws.Fs.File.ReadAllText(_ws.Path("lip.yaml")));
+    Assert.Equal("mine", _ws.Fs.File.ReadAllText(_ws.Path("lip.toml")));
     _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
   }
 
@@ -254,14 +254,14 @@ public class LipClientTests {
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(_client.Migrate);
     Assert.Equal(content, _ws.Fs.File.ReadAllText(_ws.Path("tooth.json")));
-    Assert.False(_ws.Exists("lip.yaml"));
+    Assert.False(_ws.Exists("lip.toml"));
   }
 
   #endregion
 
   #region Configuration
 
-  private static readonly string _configPath = Path.Join(LipDirectories.Config, "config.yaml");
+  private static readonly string _configPath = Path.Join(LipDirectories.Config, "config.toml");
 
   private static readonly string _liprcPath = Path.Join(LipDirectories.Config, "liprc.json");
 
@@ -278,7 +278,7 @@ public class LipClientTests {
     await client.Init();
 
     // Assert
-    Assert.True(_ws.Exists("lip.yaml"));
+    Assert.True(_ws.Exists("lip.toml"));
     Assert.True(_ws.Fs.File.Exists(_liprcPath));
     Assert.False(_ws.Fs.File.Exists(_configPath));
   }
@@ -297,7 +297,7 @@ public class LipClientTests {
     Assert.Equal("https://proxy.com", await client.ConfigGet("github_proxy"));
   }
 
-  /// When config.yaml cannot be written, the configuration cannot be read (protocol/
+  /// When config.toml cannot be written, the configuration cannot be read (protocol/
   /// compatibility.md §4): a command reading it fails, and the others still work.
   [Fact]
   public async Task Create_MigrationWriteFails_FailsOnlyCommandsReadingConfiguration() {
@@ -315,8 +315,8 @@ public class LipClientTests {
     IOException ex = await Assert.ThrowsAsync<IOException>(client.List);
 
     // Assert
-    Assert.Contains("config.yaml", ex.Message);
-    Assert.True(_ws.Exists("lip.yaml"));
+    Assert.Contains("config.toml", ex.Message);
+    Assert.True(_ws.Exists("lip.toml"));
     Assert.True(_ws.Fs.File.Exists(_liprcPath));
     Assert.False(_ws.Fs.File.Exists(_configPath));
   }
@@ -331,18 +331,18 @@ public class LipClientTests {
       ("example.com/c", ""),
       ("example.com/a", """ "deps": { "example.com/c": "^2.0.0" } """),
     }) {
-      _ws.AddTag(id, "2.0.0", new() { ["lip.yaml"] = WorkspaceHarness.LipYaml(id, "2.0.0", entry) });
+      _ws.AddTag(id, "2.0.0", new() { ["lip.toml"] = WorkspaceHarness.LipToml(id, "2.0.0", entry) });
     }
 
     _ws.AddTag("example.com/v", "1.0.0", new() {
-      ["lip.yaml"] = """
+      ["lip.toml"] = WorkspaceHarness.Toml("""
           {
             "format": 4,
             "id": "example.com/v",
             "version": "1.0.0",
             "variants": { "x": [ { "platform": "server", "runtime": "win-x64" } ] }
           }
-          """,
+          """),
     });
     OperationOptions options = new(Rid: WorkspaceHarness.Runtime);
     await _ws.Service.Install(["example.com/b"], options);
@@ -368,9 +368,9 @@ public class LipClientTests {
     Assert.Empty(implicitPackages);
   }
 
-  /// A YAML file as the JSON value it represents.
-  private static JsonNode? Yaml(byte[] yaml) {
-    using JsonDocument document = YamlJson.Parse(yaml);
+  /// A TOML file as the JSON value it represents.
+  private static JsonNode? Toml(byte[] toml) {
+    using JsonDocument document = TomlJson.Parse(toml);
     return JsonNode.Parse(document.RootElement.GetRawText());
   }
 }

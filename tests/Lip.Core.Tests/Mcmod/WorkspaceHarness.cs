@@ -3,9 +3,11 @@ using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using Flurl;
 using Lip.Core.Git;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
@@ -143,9 +145,9 @@ internal sealed class WorkspaceHarness {
     return snapshot;
   }
 
-  /// The workspace file. Throws when there is none.
+  /// The state file. Throws when there is none.
   public async Task<LockFile> Lock() =>
-      await LockStore.Load(Root) ?? throw new InvalidOperationException("No workspace file.");
+      await LockStore.Load(Root) ?? throw new InvalidOperationException("No state file.");
 
   /// Where the lock of the workspace lives, in .lip inside the workspace.
   public string LockPath => Fs.Path.Join(Root, LockStore.LipDirectory, LockStore.FileName);
@@ -185,17 +187,21 @@ internal sealed class WorkspaceHarness {
   /// The runtime of the environment the tests install for.
   public const string Runtime = "win-x64";
 
-  /// A lip.yaml whose variant "" has one entry for (server, Runtime) with the given members
-  /// (e.g. "\"assets\": [...]"), comma-separated JSON members without braces, written as a YAML
-  /// flow mapping in a block document.
-  public static string LipYaml(string id, string version, string entry = "") => $$"""
-      format: 4
-      id: {{id}}
-      version: "{{version}}"
-      variants:
-        "":
-          - { "platform": "server", "runtime": "{{Runtime}}"{{(entry == "" ? "" : ", " + entry.ReplaceLineEndings("\n      "))}} }
-      """;
+  /// A lip.toml whose variant "" has one entry for (server, Runtime) with the given members
+  /// (e.g. "\"assets\": [...]"), comma-separated JSON members without braces.
+  public static string LipToml(string id, string version, string entry = "") => Toml($$"""
+      {
+        "format": 4,
+        "id": "{{id}}",
+        "version": "{{version}}",
+        "variants": {
+          "": [ { "platform": "server", "runtime": "{{Runtime}}"{{(entry == "" ? "" : ", " + entry)}} } ]
+        }
+      }
+      """);
+
+  /// The TOML file of the JSON object json.
+  public static string Toml(string json) => TomlJson.Serialize(JsonNode.Parse(json));
 
   /// The member "assets" of an entry with one asset of type "self" placing the file "src" at
   /// "dest".

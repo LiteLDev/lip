@@ -16,7 +16,7 @@
 
 ## 2. Environment and Layout
 
-A workspace has one environment, recorded in its workspace file; every operation on it resolves sources for that environment. How a workspace without a recorded environment gets one is not defined here.
+A workspace has one environment, recorded in its state file; every operation on it resolves sources for that environment. How a workspace without a recorded environment gets one is not defined here.
 
 `.lip` at the workspace root is the directory of Section 7.
 
@@ -86,31 +86,31 @@ Updating an explicitly installed package makes a request of its source again:
 
 The package is replaced only when the package obtained differs in identity, version or commit.
 
-**Reinstalling.** Installing a package again from the workspace file installs it with the package file the workspace file records: for a remote repository, from the commit it records; otherwise from the archive its source names now.
+**Reinstalling.** Installing a package again from the state file installs it with the package file the state file records: for a remote repository, from the commit it records; otherwise from the archive its source names now.
 
 ## 6. Atomicity
 
 An operation succeeds or fails as a whole.
 
-1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a `mods` that is a link), no hook command of it runs, no change is made, and the workspace file does not change. Each step is checked against the workspace as the steps before it leave it.
-2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made is undone (Section 7.5). The workspace file does not change.
+1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace (Section 3, an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a `mods` that is a link), no hook command of it runs, no change is made, and the state file does not change. Each step is checked against the workspace as the steps before it leave it.
+2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made is undone (Section 7.5). The state file does not change.
 3. **Hook commands are not undone.** Hook commands that already ran are neither run again nor reversed. They SHOULD be safe to run again, and SHOULD NOT assume that the files of the operation stay in place.
 4. The paths that uninstallation steps 2 and 3 delete are those that match when the step is carried out, including paths that hook commands of the operation created.
 5. **Interruption.** When an operation is interrupted while changing the workspace, the next operation on the workspace first recovers it (Section 7.5).
 
 ## 7. The `.lip` Directory
 
-`.lip` holds `workspace.yaml` (Section 7.1), `workspace.yaml.tmp` (Section 7.4), `lock` (Section 7.2) and `journal` (Section 7.3). On Windows it SHOULD have the hidden attribute. Its other entries are not defined here, and an implementation MUST NOT read meaning into them.
+`.lip` holds `state.json` (Section 7.1), `state.json.tmp` (Section 7.4), `lock` (Section 7.2) and `journal` (Section 7.3). On Windows it SHOULD have the hidden attribute. Its other entries are not defined here, and an implementation MUST NOT read meaning into them.
 
 Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early (Section 6 rule 1) MAY leave them.
 
 `.lip/logs` holds failure reports (Section 2.5 of [CLI]). Creating it and writing or deleting below it is not a change, and any process MAY do so at any time.
 
-### 7.1. Workspace File
+### 7.1. State File
 
-The **workspace file** is the YAML file `.lip/workspace.yaml`, valid against `workspace.schema.yaml`. A workspace without a workspace file has no installed packages and no recorded environment, unless Section 3 of [COMPATIBILITY] reads one for it.
+The **state file** is the JSON file `.lip/state.json`, valid against `state.schema.json`. A workspace without a state file has no installed packages and no recorded environment, unless Section 3 of [COMPATIBILITY] reads one for it.
 
-The workspace file is only written atomically, through `.lip/workspace.yaml.tmp` (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
+The state file is only written atomically, through `.lip/state.json.tmp` (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
 
 It records the environment (`platform` and `runtime`), and for each installed package, in installation order:
 
@@ -127,7 +127,7 @@ The **workspace lock** is held on `.lip/lock`. To take it, a process creates `.l
 
 `.lip/lock` MUST NOT be deleted, renamed or replaced while the workspace lock is held. Its content is not defined here.
 
-A process that only reads the workspace file need not take the workspace lock.
+A process that only reads the state file need not take the workspace lock.
 
 ### 7.3. Journal
 
@@ -154,13 +154,13 @@ An operation does, in order:
 
 1. Take the workspace lock. When another process holds it, it is a failure.
 2. When `.lip/journal` exists, recover (Section 7.5).
-3. Read the workspace file, and decide what the operation does (Sections 3 to 5). A failure here is an early failure (Section 6 rule 1).
-4. When the operation makes no change and runs no hook command, write the new workspace file to `.lip/workspace.yaml.tmp`, rename it to `.lip/workspace.yaml`, and go to step 10.
+3. Read the state file, and decide what the operation does (Sections 3 to 5). A failure here is an early failure (Section 6 rule 1).
+4. When the operation makes no change and runs no hook command, write the new state file to `.lip/state.json.tmp`, rename it to `.lip/state.json`, and go to step 10.
 5. Create `.lip/journal` with a `"Begin"` record. A journal that already exists is never overwritten.
 6. Make the changes and run the hook commands (Sections 2 and 4), each change after its record. When a step fails or the operation is cancelled, undo the operation (Section 7.5) and fail.
-7. Write the new workspace file to `.lip/workspace.yaml.tmp`.
+7. Write the new state file to `.lip/state.json.tmp`.
 8. Append a `"Commit"` record to the journal, and flush it to the operating system.
-9. Rename `.lip/workspace.yaml.tmp` to `.lip/workspace.yaml`, then complete the operation (Section 7.5).
+9. Rename `.lip/state.json.tmp` to `.lip/state.json`, then complete the operation (Section 7.5).
 10. Release the workspace lock.
 
 When step 9 fails to rename the file, the implementation MUST replace the journal by one without the `"Commit"` record before it undoes the operation.
@@ -169,7 +169,7 @@ When step 9 fails to rename the file, the implementation MUST replace the journa
 
 **Completing** an operation whose journal has a `"Commit"` record:
 
-1. When `.lip/workspace.yaml.tmp` exists, rename it to `.lip/workspace.yaml`.
+1. When `.lip/state.json.tmp` exists, rename it to `.lip/state.json`.
 2. For each `"Backup"` record, delete the file `to` when it exists.
 3. For each `"DeleteDirectoryOnCommit"` record, longest `path` first, delete the directory `path` when it exists, is not a link and is empty.
 4. Delete the journal.
@@ -178,7 +178,7 @@ A file or directory that step 2 or 3 cannot delete is left in place.
 
 **Undoing** an operation whose journal has no `"Commit"` record:
 
-1. Delete `.lip/workspace.yaml.tmp` when it exists.
+1. Delete `.lip/state.json.tmp` when it exists.
 2. Undo each record from the last to the first:
    - `"CreateFile"`: delete the file `path` when it exists, unless an earlier `"Backup"` record of the same `path` exists whose `to` no longer exists.
    - `"Backup"`: when `to` exists, delete `path` when it exists, rename `to` to `path`, and, on Windows, set the hidden attribute of `path` to `hidden`.

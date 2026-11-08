@@ -1,13 +1,15 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Parsing;
 
-/// Validation of package files (lip.schema.yaml and protocol/package.md §3), which are YAML files
-/// (protocol/README.md); the tests write them as JSON, which is YAML too.
+/// Validation of package files (lip.schema.toml and protocol/package.md §3), which are TOML files
+/// (protocol/README.md); the tests build them as JSON values, written as TOML. A value TOML cannot
+/// hold (null, a root that is not a table) is validated as a JSON value.
 public class PackageFileParserTests {
   /// A minimal valid package file.
   private static JsonObject Valid() => JsonNode.Parse("""
@@ -32,8 +34,25 @@ public class PackageFileParserTests {
   private static JsonObject WithMembers(string members) =>
       WithEntry($$"""{ "platform": "server", "runtime": "win-x64", {{members}} }""");
 
-  private static PackageFile Parse(JsonNode document) =>
-      PackageFileParser.Parse(Encoding.UTF8.GetBytes(document.ToJsonString()));
+  private static PackageFile Parse(JsonNode? document) {
+    if (document is JsonObject && !HasNull(document)) {
+      return PackageFileParser.Parse(TomlJson.SerializeToUtf8Bytes(Element(document)));
+    }
+
+    return PackageFileParser.Parse(Element(document));
+  }
+
+  private static JsonElement Element(JsonNode? node) {
+    using JsonDocument json = JsonDocument.Parse(node?.ToJsonString() ?? "null");
+    return json.RootElement.Clone();
+  }
+
+  private static bool HasNull(JsonNode? node) => node switch {
+    null => true,
+    JsonObject o => o.Any(m => HasNull(m.Value)),
+    JsonArray a => a.Any(HasNull),
+    _ => false,
+  };
 
   private static PackageEntry ParseEntry(JsonNode document) =>
       Assert.Single(Parse(document).Variants[""]);
@@ -44,8 +63,11 @@ public class PackageFileParserTests {
     return ex;
   }
 
-  private static PackageFormatException AssertInvalid(string json) =>
-      Assert.Throws<PackageFormatException>(() => PackageFileParser.Parse(Encoding.UTF8.GetBytes(json)));
+  private static PackageFormatException AssertInvalid(string toml) =>
+      Assert.Throws<PackageFormatException>(() => PackageFileParser.Parse(Encoding.UTF8.GetBytes(toml)));
+
+  private static PackageFormatException AssertInvalidJson(string json) =>
+      Assert.Throws<PackageFormatException>(() => Parse(JsonNode.Parse(json)));
 
   [Fact]
   public void Parse_MinimalDocument_ReadsMembers() {
@@ -77,29 +99,29 @@ public class PackageFileParserTests {
   }
 
   [Fact]
-  public void Parse_BlockYaml_ReadsMembers() {
-    // Arrange: plain scalars that look like other values are not strings.
-    byte[] yaml = Encoding.UTF8.GetBytes("""
-        # lip.yaml
-        format: 4
-        id: example.com/owner/tool
-        version: 1.0.0
-        info:
-          name: 'true'
-          tags: ['null', "~"]
-        variants:
-          "":
-            - platform: server
-              runtime: win-x64
-              deps:
-                example.com/a: ^1.0.0
-              hooks:
-                post_install:
-                  - echo yes
+  public void Parse_HandWrittenToml_ReadsMembers() {
+    // Arrange
+    byte[] toml = Encoding.UTF8.GetBytes("""
+        # lip.toml
+        format = 4
+        id = "example.com/owner/tool"
+        version = "1.0.0"
+
+        [info]
+        name = 'true'
+        tags = ["null", "~"]
+
+        [[variants.""]]
+        platform = "server"
+        runtime = "win-x64"
+        hooks.post_install = ["echo yes"]
+
+        [variants."".deps]
+        "example.com/a" = "^1.0.0"
         """);
 
     // Act
-    PackageFile file = PackageFileParser.Parse(yaml);
+    PackageFile file = PackageFileParser.Parse(toml);
 
     // Assert
     Assert.Equal(SemVersion.Parse("1.0.0"), file.Version);
@@ -113,25 +135,24 @@ public class PackageFileParserTests {
   }
 
   [Theory]
-  [InlineData("version: 1.0", "$.version")]
-  [InlineData("version: true", "$.version")]
-  [InlineData("version: null", "$.version")]
-  [InlineData("version:", "$.version")]
-  [InlineData("format: \"4\"", "$.format")]
-  [InlineData("format: 4.5", "$.format")]
-  public void Parse_PlainScalarOfOtherType_Throws(string line, string path) {
+  [InlineData("version = 1.0", "$.version")]
+  [InlineData("version = true", "$.version")]
+  [InlineData("version = []", "$.version")]
+  [InlineData("format = \"4\"", "$.format")]
+  [InlineData("format = 4.5", "$.format")]
+  public void Parse_ValueOfOtherType_Throws(string line, string path) {
     // Arrange
-    string key = line[..line.IndexOf(':')];
-    string yaml = $$"""
-        format: 4
-        id: example.com/owner/tool
-        version: 1.2.3
-        variants: { "": [ { platform: server, runtime: win-x64 } ] }
+    string key = line[..line.IndexOf(' ')];
+    string toml = """
+        format = 4
+        id = "example.com/owner/tool"
+        version = "1.2.3"
+        variants = { "" = [ { platform = "server", runtime = "win-x64" } ] }
         """;
-    yaml = string.Join('\n', yaml.Split('\n').Select(l => l.StartsWith($"{key}:") ? line : l));
+    toml = string.Join('\n', toml.Split('\n').Select(l => l.StartsWith($"{key} =") ? line : l));
 
     // Act & Assert
-    Assert.Contains(path, AssertInvalid(yaml).Message);
+    Assert.Contains(path, AssertInvalid(toml).Message);
   }
 
   [Fact]
@@ -974,63 +995,58 @@ public class PackageFileParserTests {
   [InlineData("null")]
   public void Parse_RootNotAnObject_Throws(string json) {
     // Act & Assert
-    Assert.Contains("at $:", AssertInvalid(json).Message);
+    Assert.Contains("at $:", AssertInvalidJson(json).Message);
   }
 
   [Fact]
   public void Parse_Comment_IsIgnored() {
     // Arrange
-    string yaml = "# comment\n" + Valid().ToJsonString();
+    string toml = "# comment\n" + TomlJson.Serialize(Valid());
 
     // Act
-    PackageFile file = PackageFileParser.Parse(Encoding.UTF8.GetBytes(yaml));
+    PackageFile file = PackageFileParser.Parse(Encoding.UTF8.GetBytes(toml));
 
     // Assert
     Assert.Equal("example.com/owner/tool", file.Id);
   }
 
-  [Fact]
-  public void Parse_NotYaml_Throws() {
-    // Arrange
-    string yaml = Valid().ToJsonString()[..^1];
-
+  [Theory]
+  [InlineData("{ \"format\": 4 }")]
+  [InlineData("format: 4")]
+  [InlineData("format = ")]
+  public void Parse_NotToml_Throws(string text) {
     // Act & Assert
-    Assert.Contains("not valid YAML", AssertInvalid(yaml).InnerException!.Message);
+    Assert.Contains("not valid TOML", AssertInvalid(text).InnerException!.Message);
   }
 
   [Fact]
-  public void Parse_TwoDocuments_Throws() {
+  public void Parse_DuplicateKey_Throws() {
     // Arrange
-    string yaml = Valid().ToJsonString() + "\n---\n" + Valid().ToJsonString();
+    string toml = "version = \"1.2.3\"\n" + TomlJson.Serialize(Valid());
 
     // Act & Assert
-    Assert.Contains("more than one YAML document", AssertInvalid(yaml).InnerException!.Message);
+    Assert.Contains("not valid TOML", AssertInvalid(toml).InnerException!.Message);
   }
 
-  [Fact]
-  public void Parse_DuplicateMember_Throws() {
+  [Theory]
+  [InlineData("released = 1979-05-27T07:32:00Z")]
+  [InlineData("released = 1979-05-27")]
+  [InlineData("released = 07:32:00")]
+  [InlineData("size = inf")]
+  [InlineData("size = nan")]
+  public void Parse_ValueJsonCannotHold_Throws(string line) {
     // Arrange
-    string json = Valid().ToJsonString()[..^1] + ",\"version\":\"1.2.3\"}";
+    string toml = line + "\n" + TomlJson.Serialize(Valid());
 
     // Act & Assert
-    Assert.Contains("appears twice", AssertInvalid(json).InnerException!.Message);
-  }
-
-  [Fact]
-  public void Parse_DuplicateMemberInEntry_Throws() {
-    // Arrange
-    string json = WithMembers(""" "hooks": {} """).ToJsonString()
-        .Replace("\"hooks\":{}", "\"hooks\":{},\"hooks\":{}");
-
-    // Act & Assert
-    Assert.Contains("appears twice", AssertInvalid(json).InnerException!.Message);
+    AssertInvalid(toml);
   }
 
   [Fact]
   public void Parse_InvalidUtf8_Throws() {
     // Arrange
-    byte[] bytes = [.. Encoding.UTF8.GetBytes(Valid().ToJsonString()[..^1] + ",\"x\":\""),
-                    0xC3, 0x28, .. "\"}"u8];
+    byte[] bytes = [.. Encoding.UTF8.GetBytes(TomlJson.Serialize(Valid()) + "x = \""),
+                    0xC3, 0x28, .. "\"\n"u8];
 
     // Act
     PackageFormatException ex = Assert.Throws<PackageFormatException>(() => PackageFileParser.Parse(bytes));
@@ -1040,18 +1056,18 @@ public class PackageFileParserTests {
   }
 
   [Fact]
-  public void Parse_LoneSurrogateEscape_Throws() {
+  public void Parse_SurrogateEscape_Throws() {
     // Arrange
-    string json = Valid().ToJsonString().Replace("\"1.2.3\"", "\"\\uD800\"");
+    string toml = TomlJson.Serialize(Valid()).Replace("\"1.2.3\"", "\"\\uD800\"");
 
     // Act & Assert
-    AssertInvalid(json);
+    AssertInvalid(toml);
   }
 
   [Fact]
   public void Parse_ByteOrderMark_IsIgnored() {
     // Arrange
-    byte[] bytes = [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes(Valid().ToJsonString())];
+    byte[] bytes = [.. Encoding.UTF8.Preamble, .. TomlJson.SerializeToUtf8Bytes(Element(Valid()))];
 
     // Act
     PackageFile file = PackageFileParser.Parse(bytes);

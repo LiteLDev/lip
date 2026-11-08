@@ -107,8 +107,8 @@ A package argument is made into the request (source, range) whose range matches 
 
 `lip` manages only workspaces whose platform is `"server"`. The environment of `install`, `uninstall` and `update` is:
 
-- platform: `"server"`. When the workspace file records another platform, the command fails.
-- runtime: the value of the `--rid` option of the command, when given; otherwise the runtime the workspace file records; otherwise the RID lip runs on.
+- platform: `"server"`. When the state file records another platform, the command fails.
+- runtime: the value of the `--rid` option of the command, when given; otherwise the runtime the state file records; otherwise the RID lip runs on.
 
 A workspace without a recorded environment gets the environment above from its first workspace operation.
 
@@ -234,7 +234,7 @@ Options:
 | `--json` | none | OPTIONAL | The result is written as JSON (Section 2.4), of the shape below. |
 | `-h`, `--help` | none | OPTIONAL | Writes the help for `lip list` (Section 2.1). |
 
-The result is the packages that the workspace file records, each as `<identity>@<version>`, in installation order, in two groups: the explicitly installed packages, then the dependency packages. `lip list` changes nothing.
+The result is the packages that the state file records, each as `<identity>@<version>`, in installation order, in two groups: the explicitly installed packages, then the dependency packages. `lip list` changes nothing.
 
 With `--json`, the result is a JSON object with exactly these members:
 
@@ -297,9 +297,9 @@ Options:
 |---|---|---|---|
 | `-h`, `--help` | none | OPTIONAL | Writes the help for `lip init` (Section 2.1). |
 
-`lip init` writes `lip.yaml` in the current working directory: a package file with exactly the members of `{ "format": 4, "id": "<id>", "version": "0.1.0", "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] } }`. `lip` asks the user on the terminal for `<id>` until the answer is a Go module path [GO-MODULE]. When standard input or standard error is not a terminal, the command fails instead.
+`lip init` writes `lip.toml` in the current working directory: a package file with exactly the members of `{ "format": 4, "id": "<id>", "version": "0.1.0", "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] } }`. `lip` asks the user on the terminal for `<id>` until the answer is a Go module path [GO-MODULE]. When standard input or standard error is not a terminal, the command fails instead.
 
-When `lip.yaml` exists, the command fails and writes nothing.
+When `lip.toml` exists, the command fails and writes nothing.
 
 `lip init` has no result.
 

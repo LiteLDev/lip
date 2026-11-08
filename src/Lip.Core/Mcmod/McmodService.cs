@@ -20,13 +20,13 @@ public record OperationOptions(
     string? Rid = null,
     CancellationToken CancellationToken = default);
 
-/// One package of the workspace file, as listed to the user.
+/// One package of the state file, as listed to the user.
 public record InstalledPackage(string Identity, string Version, bool Explicit);
 
 /// The workspace operations: install, uninstall, update and list (protocol/workspace.md §3–§7,
 /// protocol/cli.md §5).
 ///
-/// Every operation loads the workspace file (or the one protocol/compatibility.md §3 derives from
+/// Every operation loads the state file (or the one protocol/compatibility.md §3 derives from
 /// a tooth_lock.json), determines the environment, computes the new
 /// package set with the graph solver, then uninstalls what leaves the set (in reverse
 /// installation order) and installs what enters it (in installation order). Updating a package
@@ -35,9 +35,9 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// Operations are all or nothing (protocol/workspace.md §6). An operation first plans every
 /// uninstall and install against a view of the workspace as the earlier steps leave it, checking
 /// everything and fetching every archive and asset; a failure then changes nothing. It then
-/// applies the plans through one WorkspaceTransaction, journaled next to the workspace file in
-/// .lip, and writes the workspace file last; a failure (or cancellation) undoes every change and
-/// leaves the workspace file as it was. An operation other than a dry run holds the workspace's
+/// applies the plans through one WorkspaceTransaction, journaled next to the state file in
+/// .lip, and writes the state file last; a failure (or cancellation) undoes every change and
+/// leaves the state file as it was. An operation other than a dry run holds the workspace's
 /// WorkspaceMutex throughout, and first finishes or undoes what an interrupted operation left in
 /// the journal (protocol/workspace.md §7.4).
 ///
@@ -61,7 +61,7 @@ public class McmodService(
     Func<string>? workspaceRoot = null) {
   private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
 
-  /// The workspace file as the user sees it from the workspace root.
+  /// The state file as the user sees it from the workspace root.
   private const string WorkspaceFile = LockStore.LipDirectory + "/" + LockStore.FileName;
 
   private readonly IFileSystem _fs = fileSystem;
@@ -293,7 +293,7 @@ public class McmodService(
         workspace, options, plan with { Members = members }));
   }
 
-  /// The packages of the workspace file (protocol/cli.md §5.4). The workspace file derived from a
+  /// The packages of the state file (protocol/cli.md §5.4). The state file derived from a
   /// tooth_lock.json is only read, for the environment a workspace operation would give it,
   /// without the commits it would record, which are not listed.
   public async Task<IReadOnlyList<InstalledPackage>> List() {
@@ -372,8 +372,8 @@ public class McmodService(
       runtime = (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Runtime;
     }
     catch (LockFormatException ex) {
-      // A workspace file lip cannot read records no environment it can use.
-      RunTrace.Write("workspace", $"Ignoring the unreadable workspace file: {ex.Message}");
+      // A state file lip cannot read records no environment it can use.
+      RunTrace.Write("workspace", $"Ignoring the unreadable state file: {ex.Message}");
     }
 
     LipEnvironment environment = new(
@@ -390,11 +390,11 @@ public class McmodService(
     recorded ??= await ReadToothLock(root, environment, resolveCommits: true);
     RunTrace.Write("workspace", $"Workspace {root}: "
         + (recorded is null
-            ? "no workspace file yet"
+            ? "no state file yet"
             : $"{recorded.Packages.Count} installed packages, runtime {recorded.Runtime}")
         + $"; using the environment ({environment.Platform.ToSpecString()},"
         + $" {environment.Runtime})" + (options.Rid is null ? "" : " from --rid"));
-    // A workspace without a workspace file gets the environment of its first operation.
+    // A workspace without a state file gets the environment of its first operation.
     LockFile lockFile = recorded ?? new LockFile {
       Platform = environment.Platform.ToSpecString(),
       Runtime = environment.Runtime,
@@ -416,7 +416,7 @@ public class McmodService(
 
   /// The installed package with the identity, version and commit of a candidate, with the
   /// source of the candidate; otherwise the candidate. Such a package is not replaced
-  /// (protocol/workspace.md §5), so it is planned with the package file the workspace file
+  /// (protocol/workspace.md §5), so it is planned with the package file the state file
   /// records, whatever the package file of the candidate says.
   private Candidate AsInstalled(Workspace workspace, Candidate candidate) =>
       workspace.Lock.Packages.FirstOrDefault(p => IsSamePackage(p, candidate)) is { } installed
@@ -453,8 +453,8 @@ public class McmodService(
     }
   }
 
-  /// The workspace file protocol/compatibility.md §3 derives from the tooth_lock.json of a
-  /// workspace without a workspace file, for its environment; null when it has none that
+  /// The state file protocol/compatibility.md §3 derives from the tooth_lock.json of a
+  /// workspace without a state file, for its environment; null when it has none that
   /// Section 3 reads. With resolveCommits, the commit of each package is that of the tag
   /// "v&lt;version&gt;" of its remote repository, and it fails when that cannot be obtained.
   private async Task<LockFile?> ReadToothLock(
@@ -465,7 +465,7 @@ public class McmodService(
 
     if (resolveCommits) {
       await _ui.PrintInfo(
-          $"Migrating {ToothLockMigration.FileName} of lip v0.x to the workspace file.");
+          $"Migrating {ToothLockMigration.FileName} of lip v0.x to the state file.");
     }
 
     return await ToothLockMigration.Derive(
@@ -568,18 +568,18 @@ public class McmodService(
 
     await _ui.PrintWarning(
         $"A lip operation on this workspace was interrupted{started}; undid its"
-        + $" {result.Changes} changes. The workspace and its workspace file are as they were"
+        + $" {result.Changes} changes. The workspace and its state file are as they were"
         + " before it.");
   }
 
   /// The environment of the workspace (protocol/cli.md §4). lip manages server workspaces only,
-  /// so the platform is always server. The runtime is --rid, then the workspace file, then the
+  /// so the platform is always server. The runtime is --rid, then the state file, then the
   /// RID lip itself runs on.
   private static LipEnvironment DetermineEnvironment(LockFile? lockFile, string? explicitRid) {
     string server = McmodPlatform.Server.ToSpecString();
     if (lockFile?.Platform is { } platform && platform != server) {
       throw new InvalidOperationException(
-          $"The workspace file {WorkspaceFile} records the platform \"{platform}\" in its"
+          $"The state file {WorkspaceFile} records the platform \"{platform}\" in its"
           + $" \"platform\" field, but lip manages server workspaces only (\"{server}\")."
           + " Client workspaces are managed by launchers such as LeviLauncher.");
     }
@@ -739,7 +739,7 @@ public class McmodService(
 
   #region Applying
 
-  /// What an operation changes, in order, and how the workspace file entries left at the end are
+  /// What an operation changes, in order, and how the state file entries left at the end are
   /// ordered and marked.
   private sealed record ChangeSet(
       List<Change> Changes, Func<List<LockedPackage>, Task<List<LockedPackage>>> Finish);
@@ -782,7 +782,7 @@ public class McmodService(
     }
 
     async Task<List<LockedPackage>> Finish(List<LockedPackage> remaining) {
-      // The workspace file lists the members of the new set in installation order.
+      // The state file lists the members of the new set in installation order.
       List<LockedPackage> final = [];
       foreach (LockedPackage package in plan.Members.Select(c => remaining.First(
           p => SameIdentity(p.Identity, c.Package.Identity)))) {
@@ -819,7 +819,7 @@ public class McmodService(
     await _ui.PrintWarning(
         "--no-dependencies is enabled. This operation may result in a broken workspace.");
 
-    // In installation order (protocol/workspace.md §5), as the workspace file afterwards
+    // In installation order (protocol/workspace.md §5), as the state file afterwards
     // records it: the order of the requested packages among every package installed then, so
     // that a cycle through an installed package counts too.
     List<Candidate> requested = await RequestedCandidates(workspace, requests);
@@ -906,8 +906,8 @@ public class McmodService(
 
   /// Plans every change against a view of the workspace as the earlier changes leave it, so
   /// that every check and every fetch happens before anything changes; then applies the plans
-  /// in one transaction and writes the workspace file last. A failure while applying (or
-  /// cancellation) undoes every change and leaves the workspace file as it was
+  /// in one transaction and writes the state file last. A failure while applying (or
+  /// cancellation) undoes every change and leaves the state file as it was
   /// (protocol/workspace.md §6). In a dry run, reports the plans instead.
   private async Task Execute(Workspace workspace, OperationOptions options, ChangeSet changeSet) {
     // The changes are planned against the layout an operation that changes the workspace makes
@@ -1021,7 +1021,7 @@ public class McmodService(
         ],
       };
       options.CancellationToken.ThrowIfCancellationRequested();
-      // The commit point: the journal records the commit, then the workspace file moves into
+      // The commit point: the journal records the commit, then the state file moves into
       // place.
       await _lockStore.Stage(workspace.Root, final);
       transaction.Commit();
@@ -1037,8 +1037,8 @@ public class McmodService(
           _lockStore.DiscardStaged(workspace.Root);
         }
         catch (Exception discard) when (discard is IOException or UnauthorizedAccessException) {
-          // A staged workspace file is never read, and the next save replaces it.
-          RunTrace.Write("workspace", $"Could not delete the staged workspace file: {discard}");
+          // A staged state file is never read, and the next save replaces it.
+          RunTrace.Write("workspace", $"Could not delete the staged state file: {discard}");
         }
       });
       foreach (Exception error in errors) {
@@ -1084,7 +1084,7 @@ public class McmodService(
         options.IgnoreScripts);
   }
 
-  /// The workspace file with the given packages and the environment, once known.
+  /// The state file with the given packages and the environment, once known.
   private static LockFile LockWith(Workspace workspace, List<LockedPackage> packages) {
     return workspace.Lock with {
       Platform = workspace.Environment.Platform.ToSpecString(),
@@ -1097,8 +1097,8 @@ public class McmodService(
 
   #region Installed packages
 
-  /// Rebuilds an installed package from the workspace file (protocol/workspace.md §5,
-  /// "Reinstalling"): with the package file the workspace file records, and the archive of the
+  /// Rebuilds an installed package from the state file (protocol/workspace.md §5,
+  /// "Reinstalling"): with the package file the state file records, and the archive of the
   /// commit it records for a remote repository, otherwise the archive its source names now,
   /// opened when first needed. Fails when it is no candidate in the environment, e.g. when its
   /// package file has no entry for another --rid (protocol/workspace.md §3).
@@ -1130,7 +1130,7 @@ public class McmodService(
     catch (Exception ex) when (ex is McmodInstallException or FormatException
         or ArgumentException or InvalidOperationException) {
       throw new InvalidOperationException(
-          $"Cannot use the installed package '{package.Identity}' as the workspace file"
+          $"Cannot use the installed package '{package.Identity}' as the state file"
           + $" {WorkspaceFile} records it, in the environment"
           + $" ({workspace.Environment.Platform.ToSpecString()}, {workspace.Environment.Runtime})."
           // LockedEntry throws McmodInstallException when the package has no entry for the
@@ -1145,14 +1145,14 @@ public class McmodService(
     }
   }
 
-  /// The source an entry of the workspace file records.
+  /// The source an entry of the state file records.
   private static Ref ParseRecordedSource(LockedPackage package) {
     try {
       return Ref.Parse(package.Source, allowFile: true);
     }
     catch (FormatException ex) {
       throw new LockFormatException(
-          $"The workspace file {WorkspaceFile} records \"{package.Source}\" in the \"ref\" field"
+          $"The state file {WorkspaceFile} records \"{package.Source}\" in the \"ref\" field"
           + $" of package '{package.Identity}', which is not a valid package source. If the file"
           + " was edited by hand, undo the edit.",
           ex);

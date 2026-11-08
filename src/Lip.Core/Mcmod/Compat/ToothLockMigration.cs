@@ -7,9 +7,9 @@ using Semver;
 namespace Lip.Core.Mcmod.Compat;
 
 /// The tooth_lock.json of lip v0.x at the root of a workspace (protocol/compatibility.md §3).
-/// A workspace without a workspace file whose tooth_lock.json is one Section 3 reads (Read) has
-/// the workspace file Section 3 derives from it for its environment (Derive). A workspace
-/// operation writes that workspace file, then deletes tooth_lock.json (LockStore.CommitStaged).
+/// A workspace without a state file whose tooth_lock.json is one Section 3 reads (Read) has
+/// the state file Section 3 derives from it for its environment (Derive). A workspace
+/// operation writes that state file, then deletes tooth_lock.json (LockStore.CommitStaged).
 public static class ToothLockMigration {
   public const string FileName = "tooth_lock.json";
 
@@ -73,7 +73,7 @@ public static class ToothLockMigration {
     return members;
   }
 
-  /// The workspace file protocol/compatibility.md §3 derives from the members of a
+  /// The state file protocol/compatibility.md §3 derives from the members of a
   /// tooth_lock.json for an environment: for each member whose manifest protocol/compatibility.md
   /// §2 reads, for the environment, with a variant "variant", in installation order, a package
   /// with that manifest, its variant, "locked" as explicit, the source "&lt;tooth&gt;[#variant]",
@@ -116,7 +116,7 @@ public static class ToothLockMigration {
         commit = (await commitOf(packageFile.Id, packageFile.Version))?.ToLowerInvariant()
             ?? throw new InvalidOperationException(
                 $"lip cannot convert {fs.Path.Join(root, FileName)}, written by lip v0.x, to the"
-                + $" workspace file: the commit of the tag v{packageFile.Version} of"
+                + $" state file: the commit of the tag v{packageFile.Version} of"
                 + $" {packageFile.Id} cannot be found. The tag may have been deleted, or the"
                 + " repository cannot be reached. Check your network connection and GitHub proxy,"
                 + " then try again.");

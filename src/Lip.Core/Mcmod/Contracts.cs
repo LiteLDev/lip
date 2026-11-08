@@ -160,7 +160,7 @@ public record InstallContext(
     bool DryRun,
     bool IgnoreScripts);
 
-/// The workspace file (protocol/workspace.md §7.1, workspace.schema.yaml).
+/// The state file (protocol/workspace.md §7.1, state.schema.json).
 public record LockFile {
   [JsonPropertyName(PackageFormat.FormatKey)]
   public int Format { get; init; } = PackageFormat.Format;
@@ -177,7 +177,7 @@ public record LockFile {
   public required List<LockedPackage> Packages { get; init; }
 }
 
-/// An installed package in the workspace file (protocol/workspace.md §7.1).
+/// An installed package in the state file (protocol/workspace.md §7.1).
 public record LockedPackage {
   /// Its package file, as protocol/package.md §4 read it (for a package read from a tooth.json,
   /// the one protocol/compatibility.md §2 derives from it for the environment of the workspace).

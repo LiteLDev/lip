@@ -60,7 +60,7 @@ public class ToothLockMigrationTests {
         Member(
             Manifest(Lib, "lib/lib.dll"), locked: false, "lib/lib.dll", "../x.dll", outside, ""));
     _ws.AddTag(Other, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Other, "1.0.0", WorkspaceHarness.SelfAsset("o.txt", "o.txt")),
       ["o.txt"] = "o",
     });
@@ -210,7 +210,7 @@ public class ToothLockMigrationTests {
   public async Task Install_ToothLockNotReadBySection3_IsIgnoredAndKept(string json) {
     // Arrange
     _ws.Fs.AddFile(ToothLockPath, new(json));
-    _ws.AddTag(Other, "1.0.0", new() { ["lip.yaml"] = WorkspaceHarness.LipYaml(Other, "1.0.0") });
+    _ws.AddTag(Other, "1.0.0", new() { ["lip.toml"] = WorkspaceHarness.LipToml(Other, "1.0.0") });
 
     // Act
     Assert.Empty(await _ws.Service.List());

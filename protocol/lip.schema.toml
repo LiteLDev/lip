@@ -1,0 +1,129 @@
+"$schema" = "http://json-schema.org/draft-07/schema#"
+"$id" = "https://github.com/LiteLDev/lip/raw/main/protocol/lip.schema.toml"
+title = "lip lip.toml (format 4)"
+description = "Keys not described here are ignored. Within a variant, no two entries have the same platform and runtime."
+type = "object"
+required = ["format", "id", "version", "variants"]
+
+[properties.format]
+const = 4
+
+[properties.id]
+description = "A Go module path."
+type = "string"
+
+[properties.version]
+type = "string"
+
+[properties.info]
+description = "Information for people; not used by lip."
+type = "object"
+
+[properties.info.properties.name]
+type = "string"
+
+[properties.info.properties.description]
+type = "string"
+
+[properties.info.properties.tags]
+type = "array"
+items = { type = "string" }
+
+[properties.info.properties.logo]
+description = "An https URL whose response, directly or after 3xx redirects, is the logo image."
+type = "string"
+pattern = "^https://"
+
+[properties.variants]
+description = 'Maps each variant name, "" for the default variant, to its entries.'
+type = "object"
+propertyNames = { pattern = "^([a-z0-9_]+(/[a-z0-9_]+)?)?$" }
+
+[properties.variants.additionalProperties]
+type = "array"
+minItems = 1
+
+[properties.variants.additionalProperties.items]
+type = "object"
+required = ["platform", "runtime"]
+
+[properties.variants.additionalProperties.items.properties.platform]
+type = "string"
+enum = ["server", "client"]
+
+[properties.variants.additionalProperties.items.properties.runtime]
+description = "A .NET runtime identifier."
+type = "string"
+
+[properties.variants.additionalProperties.items.properties.deps]
+description = 'Maps "<id>" or "<id>#<variant>" to a version range.'
+type = "object"
+additionalProperties = { type = "string" }
+
+[properties.variants.additionalProperties.items.properties.assets]
+description = 'At most one asset has the type "mcmod".'
+type = "array"
+
+[[properties.variants.additionalProperties.items.properties.assets.items.oneOf]]
+description = "The archive of the package file itself."
+required = ["type"]
+properties.type = { const = "self" }
+properties.place = { "$ref" = "#/definitions/place" }
+
+[[properties.variants.additionalProperties.items.properties.assets.items.oneOf]]
+description = "A ZIP archive downloaded from urls."
+required = ["type", "urls"]
+properties.type = { const = "zip" }
+properties.urls = { "$ref" = "#/definitions/urls" }
+properties.place = { "$ref" = "#/definitions/place" }
+
+[[properties.variants.additionalProperties.items.properties.assets.items.oneOf]]
+description = "A ZIP archive downloaded from urls, with a LeviLamina manifest.json at its root, written whole into mods/<the name in that manifest.json>/."
+required = ["type", "urls"]
+properties.type = { const = "mcmod" }
+properties.urls = { "$ref" = "#/definitions/urls" }
+not = { required = ["place"] }
+
+[properties.variants.additionalProperties.items.properties.preserve]
+"$ref" = "#/definitions/globs"
+
+[properties.variants.additionalProperties.items.properties.purge]
+"$ref" = "#/definitions/globs"
+
+[properties.variants.additionalProperties.items.properties.hooks]
+type = "object"
+
+[properties.variants.additionalProperties.items.properties.hooks.properties]
+pre_install = { "$ref" = "#/definitions/commands" }
+post_install = { "$ref" = "#/definitions/commands" }
+pre_uninstall = { "$ref" = "#/definitions/commands" }
+post_uninstall = { "$ref" = "#/definitions/commands" }
+
+[definitions.urls]
+description = "HTTPS URLs of the same file, tried in order."
+type = "array"
+minItems = 1
+items = { type = "string" }
+
+[definitions.path]
+description = "'/'-separated; MUST NOT start with '/' or with an ASCII letter and ':', or contain '//', a '..' segment or '\\'."
+type = "string"
+
+[definitions.globs]
+description = "POSIX fnmatch patterns with FNM_PATHNAME and without FNM_PERIOD, matched segment by segment ('*', '?', bracket expressions; no escape character); a '**' segment matches zero or more segments; a trailing '/' matches directories and everything below them. A glob MUST NOT be empty, start with '/', or contain '//' or '\\'. Matched against paths relative to the workspace."
+type = "array"
+items = { type = "string" }
+
+[definitions.commands]
+type = "array"
+items = { type = "string" }
+
+[definitions.place]
+description = "The glob form when src contains '*', '?' or '['; otherwise the directory form when src is \"\" or ends with '/'; otherwise the file form. In the glob and directory forms, dest MUST be \"\" or end with '/'; in the file form, it MUST NOT. dest is relative to the workspace."
+type = "array"
+
+[definitions.place.items]
+type = "object"
+required = ["src", "dest"]
+properties.src = { "$ref" = "#/definitions/path" }
+properties.dest = { "$ref" = "#/definitions/path" }

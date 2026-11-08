@@ -8,13 +8,13 @@
 
 ## 初始化项目
 
-如果你要创建 mod 或其他包，请先初始化其 `lip.yaml`。在项目根目录运行：
+如果你要创建 mod 或其他包，请先初始化其 `lip.toml`。在项目根目录运行：
 
 ```shell
 lip init
 ```
 
-该命令会询问你的包的包 ID（例如 `github.com/user/MyMod`），并在当前目录创建 `lip.yaml` 文件（若已存在则失败）。这个文件向 lip 描述你的包。如果只是安装包，则不需要它。
+该命令会询问你的包的包 ID（例如 `github.com/user/MyMod`），并在当前目录创建 `lip.toml` 文件（若已存在则失败）。这个文件向 lip 描述你的包。如果只是安装包，则不需要它。
 
 ## 安装包
 
@@ -27,7 +27,7 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 `lip` 支持从多种来源安装（包括 Git 仓库、URL，以及磁盘上的 ZIP 文件和目录）。安装时会：
 - 下载到本地缓存；
 - 解析并安装其依赖；
-- 记录到[工作区文件](../concepts/lockfiles.md)（工作区中的 `.lip/workspace.yaml`）中。你的 `lip.yaml` 不会被修改。
+- 记录到[状态文件](../concepts/lockfiles.md)（工作区中的 `.lip/state.json`）中。你的 `lip.toml` 不会被修改。
 
 lip 只管理服务端工作区。客户端 mod 由 LeviLauncher 等启动器管理。
 
@@ -94,4 +94,4 @@ lip config set github_proxy https://mirror.ghproxy.com/
 ## 下一步
 
 - 查看 [CLI 概览](../cli/overview.md) 了解更多高级命令用法。
-- 查看 [lip.yaml](../concepts/lip_yaml.md) 了解结构细节。
+- 查看 [lip.toml](../concepts/lip_toml.md) 了解结构细节。

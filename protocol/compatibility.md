@@ -14,7 +14,7 @@
 
 An archive without a package file whose `tooth.json` at its root is a JSON [RFC8259] object with `format_version` 1, 2 or 3 is a package, read for an environment as the package file that this section derives from that `tooth.json`. Formats 1 and 2 are first read as format 3, as lip v0.37.0 [TOOTH-V3] reads them.
 
-A format 3 `tooth.json` T is read, for an environment (p, r), as a package file with `"format": 4`, the `tooth` of T as `id`, the version of the package as `version`, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
+A format 3 `tooth.json` T is read, for an environment (p, r), as a package file with `format` 4, the `tooth` of T as `id`, the version of the package as `version`, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
 
 - Let V be the variants of T labeled L whose `platform` is `""` or matches r as [TOOTH-V3] matches it. When V is empty, the result has no variant L.
 - Otherwise the result maps L to one entry with `"platform": p`, `"runtime": r`, and, from the variants of V merged as [TOOTH-V3] merges them:
@@ -36,9 +36,9 @@ The version of such a package is the tag version of its git archive, when it has
 
 ## 3. `tooth_lock.json`
 
-A workspace without a workspace file whose root holds a `tooth_lock.json` that is a JSON object with `format_version` 3 and an array `packages`, each member an object with `manifest` (a `tooth.json` of format 1 to 3), `variant` (a string), `locked` (a boolean) and `files` (an array of strings), has the workspace file that this section derives from it, for the environment (p, r) the workspace gets (Section 2 of [WORKSPACE]).
+A workspace without a state file whose root holds a `tooth_lock.json` that is a JSON object with `format_version` 3 and an array `packages`, each member an object with `manifest` (a `tooth.json` of format 1 to 3), `variant` (a string), `locked` (a boolean) and `files` (an array of strings), has the state file that this section derives from it, for the environment (p, r) the workspace gets (Section 2 of [WORKSPACE]).
 
-That workspace file has `"format": 4`, `platform` p, `runtime` r and, for each member M of `packages` whose `manifest` Section 2 reads, for (p, r), with a variant `variant`, in installation order (Section 5 of [WORKSPACE]), a package with:
+That state file has `format` 4, `platform` p, `runtime` r and, for each member M of `packages` whose `manifest` Section 2 reads, for (p, r), with a variant `variant`, in installation order (Section 5 of [WORKSPACE]), a package with:
 
 - `manifest`: the `manifest` of M as Section 2 reads it, its version being its `version`;
 - `variant`: the `variant` of M;
@@ -47,14 +47,14 @@ That workspace file has `"format": 4`, `platform` p, `runtime` r and, for each m
 - `commit`: the commit that the tag `v<version>` of that remote repository points to; when a workspace operation cannot obtain it, it is a failure;
 - `files`: each member of `files` of M that names a path below the workspace, relative to the workspace when not absolute, as that path relative to the workspace, `/`-separated.
 
-A workspace operation writes it as its workspace file (Section 7.4 of [WORKSPACE]), then deletes `tooth_lock.json`.
+A workspace operation writes it as its state file (Section 7.4 of [WORKSPACE]), then deletes `tooth_lock.json`.
 
 ## 4. `liprc.json`
 
-When the config directory has no `config.yaml` and has a `liprc.json` that is a JSON object whose `format_version`, when present, is 3, the configuration is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.yaml`, then deletes `liprc.json`.
+When the config directory has no `config.toml` and has a `liprc.json` that is a JSON object whose `format_version`, when present, is 3, the configuration is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.toml`, then deletes `liprc.json`.
 
 ## 5. `lip migrate`
 
-`lip migrate` (Section 5.8 of [CLI]) writes atomically, as `lip.yaml` in the current directory, a package file migrated from the `tooth.json` there, then deletes `tooth.json`. When `lip.yaml` exists, or `tooth.json` is missing or is not one that Section 2 reads, the command fails and changes nothing.
+`lip migrate` (Section 5.8 of [CLI]) writes atomically, as `lip.toml` in the current directory, a package file migrated from the `tooth.json` there, then deletes `tooth.json`. When `lip.toml` exists, or `tooth.json` is missing or is not one that Section 2 reads, the command fails and changes nothing.
 
 The mapping is not defined here; it SHOULD agree with Section 2 for every environment. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.

@@ -4,14 +4,14 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Migrates the tooth.json of a package repository, of format 1, 2 or 3, to a lip.yaml (lip
+/// Migrates the tooth.json of a package repository, of format 1, 2 or 3, to a lip.toml (lip
 /// migrate, protocol/compatibility.md §5), by ToothMigrator.
 ///
-/// - When lip.yaml exists, or tooth.json is missing or is not one that protocol/compatibility.md
+/// - When lip.toml exists, or tooth.json is missing or is not one that protocol/compatibility.md
 ///   §2 reads (PackageDocument.ParseToothJson), it is a failure, and nothing is changed.
 /// - Questions are asked through IUserInteraction.Ask before anything is written, and a result
 ///   that is not a valid package file is a failure.
-/// - lip.yaml is written atomically, through lip.yaml.tmp, then tooth.json is deleted.
+/// - lip.toml is written atomically, through lip.toml.tmp, then tooth.json is deleted.
 ///
 /// The notes are ToothMigrator's and those of ToothMigrator.DroppedFields.
 public static class RepositoryMigrator {
@@ -53,9 +53,10 @@ public static class RepositoryMigrator {
     ];
     RunTrace.Write("migrate", $"converted to {PackageFormat.FileName} with {notes.Count} notes");
 
-    byte[] bytes = ToothMigrator.Serialize(result.Document);
+    byte[] bytes;
     try {
-      using JsonDocument written = PackageFileParser.ParseYaml(bytes);
+      bytes = ToothMigrator.Serialize(result.Document);
+      using JsonDocument written = PackageFileParser.ParseToml(bytes);
       _ = PackageFileParser.Parse(written.RootElement);
     }
     catch (PackageFormatException ex) {
@@ -71,8 +72,8 @@ public static class RepositoryMigrator {
           ex);
     }
 
-    // Written atomically (protocol/README.md): a lip.yaml created meanwhile is not replaced, and
-    // tooth.json is deleted only once lip.yaml is in place.
+    // Written atomically (protocol/README.md): a lip.toml created meanwhile is not replaced, and
+    // tooth.json is deleted only once lip.toml is in place.
     string tempPath = packageFilePath + ".tmp";
     try {
       RunTrace.Write("migrate", $"writing {tempPath}");

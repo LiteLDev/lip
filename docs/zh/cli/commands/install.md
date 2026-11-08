@@ -22,7 +22,7 @@ lip install <PACKAGES> [options]
 4. **URL** — ZIP 文件的 `https://` URL（例如 `https://example.com/package.zip`），后面可跟 `#<variant>`。不接受 `http://` 和 `file://` 等其他协议。
 5. **本地路径** — 磁盘上的 ZIP 文件或目录，使用绝对路径或相对于当前目录的路径（例如 `./package.zip`、`C:\Downloads\package.zip` 或 `../MyTool`），后面可跟 `#<variant>`。以 `./`、`../`、`.\` 或 `..\` 开头、为 `.` 或 `..`、为绝对路径，或不含 `@` 且以 `.zip` 结尾（不区分大小写）或指向已存在的文件或目录的参数，都按本地处理。本地文件必须是 ZIP 归档，与文件名无关；本地目录以其内容作为归档。
 
-每个包的根部都必须有 `lip.yaml`（参见 [lip.yaml](../../concepts/lip_yaml.md)），且其所请求的变体有对应工作区平台和 RID 的条目。
+每个包的根部都必须有 `lip.toml`（参见 [lip.toml](../../concepts/lip_toml.md)），且其所请求的变体有对应工作区平台和 RID 的条目。
 
 包的依赖也会一并安装。安装一个已被显式安装的包会报错；如需改变其版本，请使用 [`lip update`](update.md)。两个参数指向同一身份同样会报错。作为依赖安装的包会变为显式安装；若其版本满足该参数，则保持该版本不变。
 
@@ -35,7 +35,7 @@ git 引用把仓库固定到某个提交：
 - `@tag:<tag>` 取标签所指的提交；任意标签名均可，例如 `@tag:nightly`。`lip update` 会重新解析该标签。
 - `@rev:<commit>` 恰好取该提交，它永远不会变化。不接受缩写的提交 ID，因为解析缩写需要仓库的全部历史。
 
-以这种方式安装的包，其版本为该提交处 `lip.yaml` 声明的 `version`。只有名为 `v<SemVer>` 的标签（例如 `@tag:v1.2.0`）会让包取标签的版本，与普通版本相同：该处的 `lip.yaml` 必须声明该版本（早期格式的 `tooth.json` 则取标签版本）。[工作区文件](../../concepts/lockfiles.md)会记录来源、其解析到的提交及其包文件，因此在你更新之前，工作区始终保持该提交。
+以这种方式安装的包，其版本为该提交处 `lip.toml` 声明的 `version`。只有名为 `v<SemVer>` 的标签（例如 `@tag:v1.2.0`）会让包取标签的版本，与普通版本相同：该处的 `lip.toml` 必须声明该版本（早期格式的 `tooth.json` 则取标签版本）。[状态文件](../../concepts/lockfiles.md)会记录来源、其解析到的提交及其包文件，因此在你更新之前，工作区始终保持该提交。
 
 从 git 引用安装的包，也能满足对其不带 git 引用的包 ID 和变体的依赖，只要其版本在依赖的范围内，且该仓库有 lip 可为该依赖安装的版本标签：要求 `github.com/LiteLDev/LeviLamina` `>=1.5.0` 的 mod，会接受从 `@branch:main` 安装且声明 `1.6.0` 的 LeviLamina；若其声明 `1.4.0`，或 LeviLamina 没有 `1.5.0` 及以上的版本标签，则失败。
 

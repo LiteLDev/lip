@@ -11,7 +11,7 @@ namespace Lip.Core.Tests.Mcmod.Compat;
 
 /// Installing and uninstalling packages read from a tooth.json of format 3 with McmodInstaller:
 /// they are installed with the package file derived from it (protocol/compatibility.md §2), which
-/// the workspace file records (protocol/workspace.md §7.1), with nothing of format 3 left.
+/// the state file records (protocol/workspace.md §7.1), with nothing of format 3 left.
 public class ToothInstallTests {
   private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -136,7 +136,7 @@ public class ToothInstallTests {
   private string Workspace(string relativePath) => _fileSystem.Path.Combine(
       _root, relativePath.Replace('/', Path.DirectorySeparatorChar));
 
-  /// The workspace file entry of an installed candidate (protocol/workspace.md §7.1).
+  /// The state file entry of an installed candidate (protocol/workspace.md §7.1).
   private static LockedPackage Lock(Candidate candidate, IReadOnlyList<string> files) => new() {
     Manifest = candidate.Package.Manifest,
     Variant = candidate.Package.Variant,

@@ -51,16 +51,16 @@ public class RepositoryMigratorTests {
   public async Task Migrate_PackageFileExists_ThrowsAndChangesNothing() {
     // Arrange
     AddFile("tooth.json", _packageTooth);
-    AddFile("lip.yaml", "mine");
+    AddFile("lip.toml", "mine");
 
     // Act
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
         () => RepositoryMigrator.Migrate(_fs, _root, new FakeUi()));
 
     // Assert
-    Assert.Contains("lip.yaml already exists", ex.Message);
-    Assert.Equal(["lip.yaml", "tooth.json"], Files());
-    Assert.Equal("mine", Read("lip.yaml"));
+    Assert.Contains("lip.toml already exists", ex.Message);
+    Assert.Equal(["lip.toml", "tooth.json"], Files());
+    Assert.Equal("mine", Read("lip.toml"));
     Assert.Equal(_packageTooth, Read("tooth.json"));
   }
 
@@ -148,10 +148,10 @@ public class RepositoryMigratorTests {
 
     // Assert
     Assert.Empty(notes);
-    Assert.Equal(["lip.yaml", "tool.exe"], Files());
+    Assert.Equal(["lip.toml", "tool.exe"], Files());
     Assert.Equal("exe", Read("tool.exe"));
-    string text = Read("lip.yaml");
-    Assert.StartsWith("format: 4\nid: github.com/test/tool\nversion: 1.0.0\n", text);
+    string text = Read("lip.toml");
+    Assert.StartsWith("format = 4\nid = \"github.com/test/tool\"\nversion = \"1.0.0\"\n", text);
     Assert.EndsWith("\n", text);
     Assert.DoesNotContain("\r", text);
     Assert.DoesNotContain("\t", text);
@@ -235,7 +235,7 @@ public class RepositoryMigratorTests {
 
   [Fact]
   public async Task Migrate_OtherFiles_AreNotTouched() {
-    // Arrange: only lip.yaml is written and tooth.json deleted (protocol/compatibility.md §5).
+    // Arrange: only lip.toml is written and tooth.json deleted (protocol/compatibility.md §5).
     AddFile("tooth.json", _packageTooth);
     AddFile(".tooth.json.tmp", "mine");
 
@@ -243,9 +243,9 @@ public class RepositoryMigratorTests {
     await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    Assert.Equal([".tooth.json.tmp", "lip.yaml"], Files());
+    Assert.Equal([".tooth.json.tmp", "lip.toml"], Files());
     Assert.Equal("mine", Read(".tooth.json.tmp"));
-    Assert.StartsWith("format: 4\n", Read("lip.yaml"));
+    Assert.StartsWith("format = 4\n", Read("lip.toml"));
   }
 
   [Fact]
@@ -272,7 +272,7 @@ public class RepositoryMigratorTests {
     await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    Assert.Equal(["lip.yaml"], Files());
+    Assert.Equal(["lip.toml"], Files());
   }
 
   [Fact]
@@ -285,7 +285,7 @@ public class RepositoryMigratorTests {
     await RepositoryMigrator.Migrate(_fs, _root, new FakeUi());
 
     // Assert
-    Assert.StartsWith("format: 4\n", Read("lip.yaml"));
+    Assert.StartsWith("format = 4\n", Read("lip.toml"));
   }
 
   [Fact]
@@ -358,14 +358,14 @@ public class RepositoryMigratorTests {
 
     // Assert
     Assert.Contains(notes, n => n.StartsWith("variants[0].scripts.build:"));
-    Assert.StartsWith("format: 4\n", Read("lip.yaml"));
+    Assert.StartsWith("format = 4\n", Read("lip.toml"));
     Assert.Equal(
         [new EntryPlacement("a/b.dll", "b.dll")],
         ReadPackageFile().Variants[""][0].Assets[0].Placements);
   }
 
   private PackageFile ReadPackageFile() =>
-      PackageFileParser.Parse(_fs.File.ReadAllBytes(Path("lip.yaml")));
+      PackageFileParser.Parse(_fs.File.ReadAllBytes(Path("lip.toml")));
 
   private string Path(string name) => _fs.Path.Join(_root, name);
 

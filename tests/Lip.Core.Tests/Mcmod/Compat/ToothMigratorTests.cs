@@ -358,7 +358,7 @@ public class ToothMigratorTests {
     // Assert
     // Assert: as protocol/compatibility.md §2 reads it, the variant has no entry for win-x64.
     Assert.StartsWith(
-        "variants (label '', win-x64).assets[0]: lip.yaml has no asset type \"tar\"",
+        "variants (label '', win-x64).assets[0]: lip.toml has no asset type \"tar\"",
         Assert.Single(result.Notes));
     Assert.Empty(result.Document["variants"]!.AsObject());
   }
@@ -721,7 +721,7 @@ public class ToothMigratorTests {
   }
 
   [Fact]
-  public void Serialize_WritesYamlIndentedByTwoSpacesWithFinalLineBreak() {
+  public void Serialize_WritesTomlWithFinalLineBreak() {
     // Arrange
     JsonObject document = new() {
       ["a"] = new JsonObject { ["b"] = "<é>", ["c"] = "1.0" },
@@ -731,7 +731,16 @@ public class ToothMigratorTests {
     string text = Encoding.UTF8.GetString(ToothMigrator.Serialize(document));
 
     // Assert
-    Assert.Equal("a:\n  b: <é>\n  c: \"1.0\"\n", text);
+    Assert.Equal("[a]\nb = \"<é>\"\nc = \"1.0\"\n", text);
+  }
+
+  [Fact]
+  public void Serialize_Null_ThrowsPackageFormatException() {
+    // Arrange: TOML has no null.
+    JsonObject document = new() { ["info"] = new JsonObject { ["tags"] = new JsonArray((JsonNode?)null) } };
+
+    // Act & Assert
+    Assert.Throws<PackageFormatException>(() => ToothMigrator.Serialize(document));
   }
 
   [Fact]

@@ -1,3 +1,4 @@
+using Lip.Core.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -597,7 +598,7 @@ public class ToothCompatTests {
         [new EntryPlacement("c.dll", "plugins/c.dll")], Assert.Single(entry.Assets).Placements);
     Assert.Equal(["**/ok.json"], entry.PreserveFiles.Select(g => g.Pattern));
     Assert.Equal(["logs/"], entry.RemoveFiles.Select(g => g.Pattern));
-    _ = PackageFileParser.Parse(Encoding.UTF8.GetBytes(packageFile.Json.GetRawText()));
+    _ = PackageFileParser.Parse(TomlJson.SerializeToUtf8Bytes(packageFile.Json));
   }
 
   [Fact]
@@ -819,7 +820,7 @@ public class ToothCompatTests {
     PackageFile packageFile = ToothCompat.Derive(Manifest(_multiPlatformV3), _serverWin);
 
     // Act
-    byte[] bytes = Encoding.UTF8.GetBytes(packageFile.Json.GetRawText());
+    byte[] bytes = TomlJson.SerializeToUtf8Bytes(packageFile.Json);
 
     // Assert: the derived document is a valid package file.
     PackageFile reparsed = PackageFileParser.Parse(bytes);

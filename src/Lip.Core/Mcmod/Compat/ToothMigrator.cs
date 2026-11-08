@@ -53,7 +53,7 @@ public static class ToothMigrator {
       document["info"] = ToothCompat.Info(info);
       if (info.AvatarUrl is { Length: > 0 } avatarUrl && !ToothCompat.IsLogo(avatarUrl)) {
         notes.Add($"info.avatar_url: '{avatarUrl}' does not start with \"https://\", which "
-            + "info.logo of lip.yaml must; it was dropped. Set info.logo to the https URL of the "
+            + "info.logo of lip.toml must; it was dropped. Set info.logo to the https URL of the "
             + "logo image.");
       }
     }
@@ -232,7 +232,7 @@ public static class ToothMigrator {
       if (!VersionRange.TryParse(text, out _)) {
         if (!context.Ranges.TryGetValue((dependency, text), out string? answer)) {
           answer = await context.Ui.AskValid(
-              $"a version range of lip.yaml for {dependencyField}, whose range '{text}' is not one",
+              $"a version range of lip.toml for {dependencyField}, whose range '{text}' is not one",
               a => VersionRange.TryParse(a, out _) ? null : $"'{a}' is not a version range.");
           context.Ranges[(dependency, text)] = answer;
         }
@@ -282,7 +282,7 @@ public static class ToothMigrator {
   private static bool IsPattern(string s) => s.IndexOfAny(['*', '?', '[']) >= 0;
 
   /// Notes for the fields of a raw tooth.json that its format 3 form (tooth, read from root)
-  /// does not keep and that therefore cannot reach the migrated lip.yaml: dependencies of
+  /// does not keep and that therefore cannot reach the migrated lip.toml: dependencies of
   /// format 1 and 2 whose range the migration to format 3 could not read, prerequisites of
   /// format 2, and scripts of format 3 other than the six install and uninstall hooks (e.g.
   /// pre_pack, or custom scripts).
@@ -318,7 +318,7 @@ public static class ToothMigrator {
         if (root.TryGetProperty("prerequisites", out JsonElement prerequisites)
             && prerequisites.ValueKind == JsonValueKind.Object
             && prerequisites.EnumerateObject().Any()) {
-          notes.Add("prerequisites: has no equivalent in lip.yaml and was dropped; declare the "
+          notes.Add("prerequisites: has no equivalent in lip.toml and was dropped; declare the "
               + "packages that must already be installed as dependencies instead.");
         }
 
@@ -339,7 +339,7 @@ public static class ToothMigrator {
               bool empty = script.Value.ValueKind == JsonValueKind.Array
                   && script.Value.GetArrayLength() == 0;
               if (!_knownScripts.Contains(script.Name) && !empty) {
-                notes.Add($"variants[{i}].scripts.{script.Name}: lip.yaml only has install and "
+                notes.Add($"variants[{i}].scripts.{script.Name}: lip.toml only has install and "
                     + "uninstall hooks; it was dropped.");
               }
             }
@@ -354,8 +354,16 @@ public static class ToothMigrator {
     return notes;
   }
 
-  /// The UTF-8 bytes of a package file as lip writes it: a YAML file (YamlJson), ending with a
-  /// line break.
-  public static byte[] Serialize(JsonObject document) =>
-      Encoding.UTF8.GetBytes(YamlJson.Serialize(document));
+  /// The UTF-8 bytes of a package file as lip writes it: a TOML file (TomlJson), ending with a
+  /// line break. Throws PackageFormatException when the document holds a null, which TOML
+  /// cannot hold.
+  public static byte[] Serialize(JsonObject document) {
+    try {
+      return Encoding.UTF8.GetBytes(TomlJson.Serialize(document));
+    }
+    catch (ArgumentException ex) {
+      throw new PackageFormatException(
+          "The converted file holds a null value, which a TOML file cannot hold.", ex);
+    }
+  }
 }

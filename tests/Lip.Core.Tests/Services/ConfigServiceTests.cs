@@ -5,11 +5,11 @@ using Moq;
 
 namespace Lip.Core.Tests.Services;
 
-/// The configuration (protocol/userspace.md §2, config.schema.yaml) and the migration of
+/// The configuration (protocol/userspace.md §2, config.schema.toml) and the migration of
 /// liprc.json (protocol/compatibility.md §4).
 public class ConfigServiceTests {
   private static string GetConfigPath() =>
-      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "config.yaml");
+      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "config.toml");
 
   private static string GetLiprcPath() =>
       Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "liprc.json");
@@ -50,7 +50,7 @@ public class ConfigServiceTests {
   public async Task Get_ValidFile_ReturnsConfig() {
     // Arrange
     (_, _, ConfigService service) = Create(new() {
-      [GetConfigPath()] = new("format: 4\ngithub_proxy: https://proxy.com\n"),
+      [GetConfigPath()] = new("format = 4\ngithub_proxy = \"https://proxy.com\"\n"),
     });
 
     // Act
@@ -60,20 +60,21 @@ public class ConfigServiceTests {
     Assert.Equal("https://proxy.com", result);
   }
 
-  /// protocol/userspace.md §2: a config.yaml that is not valid against config.schema.yaml, which
+  /// protocol/userspace.md §2: a config.toml that is not valid against config.schema.toml, which
   /// requires "format": 4, means every key has its default.
   [Theory]
   [InlineData("")]
-  [InlineData("github_proxy: https://proxy.com\n")]
-  [InlineData("format: 3\ngithub_proxy: https://proxy.com\n")]
-  [InlineData("format: \"4\"\ngithub_proxy: https://proxy.com\n")]
-  [InlineData("format: 4\ngithub_proxy: 5\n")]
-  [InlineData("format: 4\ngithub_proxy: [unclosed\n")]
-  [InlineData("- format: 4\n")]
-  public async Task Get_InvalidFile_PrintsErrorAndReturnsDefault(string yaml) {
+  [InlineData("github_proxy = \"https://proxy.com\"\n")]
+  [InlineData("format = 3\ngithub_proxy = \"https://proxy.com\"\n")]
+  [InlineData("format = \"4\"\ngithub_proxy = \"https://proxy.com\"\n")]
+  [InlineData("format = 4\ngithub_proxy = 5\n")]
+  [InlineData("format = 4\ngithub_proxy = [\"unclosed\"\n")]
+  [InlineData("format = 4\nformat = 4\n")]
+  [InlineData("[[format]]\n")]
+  public async Task Get_InvalidFile_PrintsErrorAndReturnsDefault(string toml) {
     // Arrange
     (_, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
-      [GetConfigPath()] = new(yaml),
+      [GetConfigPath()] = new(toml),
     });
 
     // Act
@@ -88,7 +89,7 @@ public class ConfigServiceTests {
   public async Task Get_FormatWithoutKeys_ReturnsDefault() {
     // Arrange
     (_, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
-      [GetConfigPath()] = new("format: 4\n"),
+      [GetConfigPath()] = new("format = 4\n"),
     });
 
     // Act
@@ -100,7 +101,7 @@ public class ConfigServiceTests {
   }
 
   [Fact]
-  public async Task Set_CreatesYamlFileWithFormatAndConfig() {
+  public async Task Set_CreatesTomlFileWithFormatAndConfig() {
     // Arrange
     string configPath = GetConfigPath();
     (MockFileSystem fs, _, ConfigService service) = Create(new() {
@@ -111,7 +112,7 @@ public class ConfigServiceTests {
     await service.Set("github_proxy", "https://new.com");
 
     // Assert
-    Assert.Equal("format: 4\ngithub_proxy: https://new.com\n", fs.File.ReadAllText(configPath));
+    Assert.Equal("format = 4\ngithub_proxy = \"https://new.com\"\n", fs.File.ReadAllText(configPath));
     Assert.Equal("https://new.com", await service.Get("github_proxy"));
   }
 
@@ -136,14 +137,14 @@ public class ConfigServiceTests {
     // Arrange
     string configPath = GetConfigPath();
     (MockFileSystem fs, _, ConfigService service) = Create(new() {
-      [configPath] = new("format: 4\ngithub_proxy: https://proxy.com\n"),
+      [configPath] = new("format = 4\ngithub_proxy = \"https://proxy.com\"\n"),
     });
 
     // Act
     await service.Delete("github_proxy");
 
     // Assert
-    Assert.Equal("format: 4\n", fs.File.ReadAllText(configPath));
+    Assert.Equal("format = 4\n", fs.File.ReadAllText(configPath));
     Assert.Equal("", await service.Get("github_proxy"));
   }
 
@@ -154,14 +155,14 @@ public class ConfigServiceTests {
     // Arrange
     string configPath = GetConfigPath();
     (MockFileSystem fs, _, ConfigService service) = Create(new() {
-      [configPath] = new("format: 4\ngithub_proxy: https://old.com\n"),
+      [configPath] = new("format = 4\ngithub_proxy = \"https://old.com\"\n"),
     });
 
     // Act
     await service.Set("github_proxy", "https://new.com");
 
     // Assert
-    Assert.Equal("format: 4\ngithub_proxy: https://new.com\n", fs.File.ReadAllText(configPath));
+    Assert.Equal("format = 4\ngithub_proxy = \"https://new.com\"\n", fs.File.ReadAllText(configPath));
     Assert.Equal([configPath], fs.Directory.GetFiles(Path.GetDirectoryName(configPath)!));
   }
 
@@ -169,7 +170,7 @@ public class ConfigServiceTests {
   public async Task Get_GoModuleProxyKey_ThrowsNamingTheValidKey() {
     // Arrange
     (_, _, ConfigService service) = Create(new() {
-      [GetConfigPath()] = new("format: 4\ngo_module_proxy: https://goproxy.cn\n"),
+      [GetConfigPath()] = new("format = 4\ngo_module_proxy = \"https://goproxy.cn\"\n"),
     });
 
     // Act & Assert
@@ -180,11 +181,11 @@ public class ConfigServiceTests {
   }
 
   [Fact]
-  public async Task Get_UnknownYamlKey_IsIgnored() {
+  public async Task Get_UnknownTomlKey_IsIgnored() {
     // Arrange
     (_, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
       [GetConfigPath()] = new(
-          "format: 4\ngo_module_proxy: https://goproxy.cn\ngithub_proxy: https://proxy.com\n"),
+          "format = 4\ngo_module_proxy = \"https://goproxy.cn\"\ngithub_proxy = \"https://proxy.com\"\n"),
     });
 
     // Act
@@ -198,12 +199,12 @@ public class ConfigServiceTests {
   /// protocol/userspace.md §2: keys that are not configuration keys are ignored, whatever their
   /// value.
   [Theory]
-  [InlineData("foo:\n  a: 1\n")]
-  [InlineData("foo: [1, 2]\n")]
-  public async Task Get_UnknownYamlKeyWithNonScalarValue_IsIgnored(string unknown) {
+  [InlineData("foo = { a = 1 }\n")]
+  [InlineData("foo = [1, 2]\n")]
+  public async Task Get_UnknownTomlKeyWithNonScalarValue_IsIgnored(string unknown) {
     // Arrange
     (_, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
-      [GetConfigPath()] = new("format: 4\n" + unknown + "github_proxy: https://proxy.com\n"),
+      [GetConfigPath()] = new("format = 4\n" + unknown + "github_proxy = \"https://proxy.com\"\n"),
     });
 
     // Act
@@ -237,7 +238,7 @@ public class ConfigServiceTests {
   // liprc.json (protocol/compatibility.md §4)
 
   [Fact]
-  public async Task List_LiprcJson_WritesConfigYamlAndDeletesIt() {
+  public async Task List_LiprcJson_WritesConfigTomlAndDeletesIt() {
     // Arrange
     (MockFileSystem fs, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
       [GetLiprcPath()] = new(_liprcJson),
@@ -251,13 +252,13 @@ public class ConfigServiceTests {
     Assert.False(result.ContainsKey("go_module_proxy"));
     Assert.False(fs.File.Exists(GetLiprcPath()));
     Assert.Equal(
-        "format: 4\ngithub_proxy: https://proxy.com\n", fs.File.ReadAllText(GetConfigPath()));
+        "format = 4\ngithub_proxy = \"https://proxy.com\"\n", fs.File.ReadAllText(GetConfigPath()));
     Assert.Equal([GetConfigPath()], fs.Directory.GetFiles(Path.GetDirectoryName(GetConfigPath())!));
     ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
 
   [Fact]
-  public async Task List_LiprcJsonWithoutFormatVersion_WritesConfigYamlAndDeletesIt() {
+  public async Task List_LiprcJsonWithoutFormatVersion_WritesConfigTomlAndDeletesIt() {
     // Arrange: lip before February 2026 wrote liprc.json without format_version and format_uuid.
     (MockFileSystem fs, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
       [GetLiprcPath()] = new("""
@@ -276,7 +277,7 @@ public class ConfigServiceTests {
     Assert.Equal("https://proxy.com", result["github_proxy"]);
     Assert.False(fs.File.Exists(GetLiprcPath()));
     Assert.Equal(
-        "format: 4\ngithub_proxy: https://proxy.com\n", fs.File.ReadAllText(GetConfigPath()));
+        "format = 4\ngithub_proxy = \"https://proxy.com\"\n", fs.File.ReadAllText(GetConfigPath()));
     ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
 
@@ -298,7 +299,7 @@ public class ConfigServiceTests {
     // Assert
     Assert.Equal("", result["github_proxy"]);
     Assert.False(fs.File.Exists(GetLiprcPath()));
-    Assert.Equal("format: 4\n", fs.File.ReadAllText(GetConfigPath()));
+    Assert.Equal("format = 4\n", fs.File.ReadAllText(GetConfigPath()));
   }
 
   [Theory]
@@ -323,13 +324,13 @@ public class ConfigServiceTests {
   }
 
   [Theory]
-  [InlineData("format: 4\ngithub_proxy: https://yaml.com\n", "https://yaml.com")]
-  [InlineData("github_proxy: https://yaml.com\n", "")]
-  public async Task List_ConfigYamlAndLiprcJson_ReadsConfigYamlAndKeepsLiprc(
-      string yaml, string expected) {
-    // Arrange: liprc.json is read only when there is no config.yaml, even an invalid one.
+  [InlineData("format = 4\ngithub_proxy = \"https://toml.com\"\n", "https://toml.com")]
+  [InlineData("github_proxy = \"https://toml.com\"\n", "")]
+  public async Task List_ConfigTomlAndLiprcJson_ReadsConfigTomlAndKeepsLiprc(
+      string toml, string expected) {
+    // Arrange: liprc.json is read only when there is no config.toml, even an invalid one.
     (MockFileSystem fs, _, ConfigService service) = Create(new() {
-      [GetConfigPath()] = new(yaml),
+      [GetConfigPath()] = new(toml),
       [GetLiprcPath()] = new(_liprcJson),
     });
 
@@ -339,7 +340,7 @@ public class ConfigServiceTests {
     // Assert
     Assert.Equal(expected, result["github_proxy"]);
     Assert.Equal(_liprcJson, fs.File.ReadAllText(GetLiprcPath()));
-    Assert.Equal(yaml, fs.File.ReadAllText(GetConfigPath()));
+    Assert.Equal(toml, fs.File.ReadAllText(GetConfigPath()));
   }
 
   [Fact]
@@ -354,6 +355,6 @@ public class ConfigServiceTests {
 
     // Assert
     Assert.False(fs.File.Exists(GetLiprcPath()));
-    Assert.Equal("format: 4\ngithub_proxy: https://new.com\n", fs.File.ReadAllText(GetConfigPath()));
+    Assert.Equal("format = 4\ngithub_proxy = \"https://new.com\"\n", fs.File.ReadAllText(GetConfigPath()));
   }
 }

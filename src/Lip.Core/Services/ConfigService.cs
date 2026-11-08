@@ -8,15 +8,15 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Services;
 
-/// Reads and writes the user configuration, &lt;Config&gt;/config.yaml: a YAML file
-/// (protocol/README.md) with "format": 4 and a mapping of the configuration keys to their values
-/// (protocol/userspace.md §2, config.schema.yaml). The only configuration key is github_proxy; an
-/// absent key has its default value, none. A missing, unreadable or invalid config.yaml means
+/// Reads and writes the user configuration, &lt;Config&gt;/config.toml: a TOML file
+/// (protocol/README.md) with "format" 4 and a mapping of the configuration keys to their values
+/// (protocol/userspace.md §2, config.schema.toml). The only configuration key is github_proxy; an
+/// absent key has its default value, none. A missing, unreadable or invalid config.toml means
 /// every key has its default.
 ///
-/// lip v0.x kept the configuration in &lt;Config&gt;/liprc.json. When config.yaml is missing and
+/// lip v0.x kept the configuration in &lt;Config&gt;/liprc.json. When config.toml is missing and
 /// liprc.json is a JSON object whose format_version, when present, is 3 (lip before February 2026
-/// wrote none), its configuration is written atomically as config.yaml before it is read, and
+/// wrote none), its configuration is written atomically as config.toml before it is read, and
 /// liprc.json is deleted (protocol/compatibility.md §4). Any other liprc.json is kept, and every
 /// key has its default.
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
@@ -26,7 +26,7 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   private const string _liprcFormatVersionKey = "format_version";
 
-  private static readonly string _configPath = Path.Join(LipDirectories.Config, "config.yaml");
+  private static readonly string _configPath = Path.Join(LipDirectories.Config, "config.toml");
 
   private static readonly string _liprcPath = Path.Join(LipDirectories.Config, _liprcFileName);
 
@@ -90,19 +90,19 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     try {
       RunTrace.Write("config", $"reading {_configPath}");
       using JsonDocument document =
-          YamlJson.Parse(await _fileSystem.File.ReadAllBytesAsync(_configPath));
+          TomlJson.Parse(await _fileSystem.File.ReadAllBytesAsync(_configPath));
       JsonElement root = document.RootElement;
       if (root.ValueKind != JsonValueKind.Object) {
         throw new InvalidDataException(
-            $"It is not a YAML mapping of configuration keys to their values, like "
-            + $"'{PackageFormat.FormatKey}: {PackageFormat.Format}' and "
-            + $"'{_githubProxyKey}: https://example.com/' on separate lines.");
+            $"It is not a TOML table of configuration keys to their values, like "
+            + $"'{PackageFormat.FormatKey} = {PackageFormat.Format}' and "
+            + $"'{_githubProxyKey} = \"https://example.com/\"' on separate lines.");
       }
 
       if (PackageFileParser.Format(root) != PackageFormat.Format) {
         throw new InvalidDataException(
             $"Its field {PackageFormat.FormatKey} is missing or not {PackageFormat.Format}; it "
-            + $"must be '{PackageFormat.FormatKey}: {PackageFormat.Format}'.");
+            + $"must be '{PackageFormat.FormatKey} = {PackageFormat.Format}'.");
       }
 
       // Keys that are not configuration keys are ignored, whatever their value.
@@ -124,9 +124,9 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
           $"Cannot read the configuration file {_configPath}: {ex.Message}");
       await _userInteraction.PrintInfo(
           $"lip continues with the default configuration (no {_githubProxyKey}). Fix the file "
-          + $"so that it is YAML with the lines "
-          + $"'{PackageFormat.FormatKey}: {PackageFormat.Format}' and "
-          + $"'{_githubProxyKey}: https://example.com/', or run "
+          + $"so that it is TOML with the lines "
+          + $"'{PackageFormat.FormatKey} = {PackageFormat.Format}' and "
+          + $"'{_githubProxyKey} = \"https://example.com/\"', or run "
           + $"'lip config set {_githubProxyKey} <URL>' or 'lip config delete {_githubProxyKey}' "
           + "to rewrite it.");
 
@@ -134,7 +134,7 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     }
   }
 
-  /// Migrates liprc.json to config.yaml (protocol/compatibility.md §4). Returns the github_proxy
+  /// Migrates liprc.json to config.toml (protocol/compatibility.md §4). Returns the github_proxy
   /// it holds; null when it holds none, or when there is no liprc.json or it is not one that
   /// Section 4 reads, which is kept.
   private async Task<string?> MigrateLiprc() {
@@ -184,9 +184,9 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     return githubProxy;
   }
 
-  /// Writes config.yaml atomically (protocol/userspace.md §2, protocol/README.md): with "format",
+  /// Writes config.toml atomically (protocol/userspace.md §2, protocol/README.md): with "format",
   /// without the keys at their default; the whole content goes to a uniquely named .tmp file in
-  /// the config directory, which is then renamed over config.yaml.
+  /// the config directory, which is then renamed over config.toml.
   private async Task SaveConfig(string? githubProxy) {
     JsonObject values = new() { [PackageFormat.FormatKey] = PackageFormat.Format };
     if (githubProxy is not null) {
@@ -198,7 +198,7 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
       RunTrace.Write("config", $"writing {tempPath}");
       using (Stream writeStream = _fileSystem.CreateFileWithDirectory(tempPath))
       using (StreamWriter writer = new(writeStream)) {
-        await writer.WriteAsync(YamlJson.Serialize(values));
+        await writer.WriteAsync(TomlJson.Serialize(values));
       }
 
       RunTrace.Write("config", $"renaming {tempPath} to {_configPath}");

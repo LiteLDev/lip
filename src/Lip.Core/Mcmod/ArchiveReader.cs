@@ -26,9 +26,9 @@ public record PackageDocument(PackageFile? File, PackageManifest? Legacy, JsonEl
   public PackageFile ReadFor(LipEnvironment environment, SemVersion? version = null) =>
       File ?? ToothCompat.Derive(Legacy!, environment, version);
 
-  /// Reads lip.yaml. Throws PackageFormatException when it is not a valid package file.
-  public static PackageDocument ParsePackageFile(byte[] yaml) {
-    using JsonDocument json = PackageFileParser.ParseYaml(yaml);
+  /// Reads lip.toml. Throws PackageFormatException when it is not a valid package file.
+  public static PackageDocument ParsePackageFile(byte[] toml) {
+    using JsonDocument json = PackageFileParser.ParseToml(toml);
     return new PackageDocument(
         PackageFileParser.Parse(json.RootElement), null, json.RootElement.Clone());
   }
@@ -42,7 +42,7 @@ public record PackageDocument(PackageFile? File, PackageManifest? Legacy, JsonEl
   }
 }
 
-/// Reads the file that makes an archive a package (protocol/package.md §1): lip.yaml at its root,
+/// Reads the file that makes an archive a package (protocol/package.md §1): lip.toml at its root,
 /// or, when there is none, tooth.json (protocol/compatibility.md §2).
 public interface IArchiveReader {
   /// Throws ArchiveUnavailableException when the archive is not a package: it has neither file,

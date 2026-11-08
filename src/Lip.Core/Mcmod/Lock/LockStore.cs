@@ -7,24 +7,23 @@ using Lip.Core.Mcmod.Compat;
 
 namespace Lip.Core.Mcmod.Lock;
 
-/// Thrown when a workspace file exists but cannot be read.
+/// Thrown when a state file exists but cannot be read.
 public class LockFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Reads and writes the workspace file (protocol/workspace.md §7.1, workspace.schema.yaml), called
-/// the lock in the code. It is a YAML file (protocol/README.md), read and written through
-/// YamlJson.
+/// Reads and writes the state file (protocol/workspace.md §7.1, state.schema.json), called the
+/// lock in the code. It is a JSON file (protocol/README.md), read and written through JsonFile.
 ///
-/// The workspace file lives inside the workspace, in &lt;root&gt;/.lip/workspace.yaml, so that it
+/// The state file lives inside the workspace, in &lt;root&gt;/.lip/state.json, so that it
 /// follows the workspace when the workspace is moved, renamed or copied. Next to it in .lip are
 /// the workspace lock (WorkspaceMutex) and the journal (WorkspaceTransaction). A workspace without
-/// the workspace file has no installed packages, unless it has a tooth_lock.json
-/// (ToothLockMigration), which the first workspace file written replaces (CommitStaged).
+/// the state file has no installed packages, unless it has a tooth_lock.json
+/// (ToothLockMigration), which the first state file written replaces (CommitStaged).
 public partial class LockStore(IFileSystem fs) {
   /// The directory of lip's own files in the workspace root, and the files in it.
   public const string LipDirectory = ".lip";
-  public const string FileName = "workspace.yaml";
-  public const string StagedFileName = "workspace.yaml.tmp";
+  public const string FileName = "state.json";
+  public const string StagedFileName = "state.json.tmp";
   public const string MutexFileName = "lock";
   public const string JournalFileName = "journal";
 
@@ -52,7 +51,7 @@ public partial class LockStore(IFileSystem fs) {
 
     string path = LipPath(root, FileName);
     if (!_fs.File.Exists(path)) {
-      RunTrace.Write("workspace", $"No workspace file at {path}: no packages are installed");
+      RunTrace.Write("workspace", $"No state file at {path}: no packages are installed");
       return null;
     }
 
@@ -61,11 +60,11 @@ public partial class LockStore(IFileSystem fs) {
       bytes = await _fs.File.ReadAllBytesAsync(path);
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-      throw WorkspaceErrors.Wrap(ex, $"Cannot read the workspace file '{path}'.");
+      throw WorkspaceErrors.Wrap(ex, $"Cannot read the state file '{path}'.");
     }
 
     LockFile lockFile = Parse(bytes, path);
-    RunTrace.Write("workspace", $"Read the workspace file {path}: platform {lockFile.Platform},"
+    RunTrace.Write("workspace", $"Read the state file {path}: platform {lockFile.Platform},"
         + $" runtime {lockFile.Runtime}, {lockFile.Packages.Count} packages");
     return lockFile;
   }
@@ -76,14 +75,14 @@ public partial class LockStore(IFileSystem fs) {
     CommitStaged(workspaceRoot);
   }
 
-  /// Writes the lock to &lt;root&gt;/.lip/workspace.yaml.tmp, replacing an earlier staged lock.
+  /// Writes the lock to &lt;root&gt;/.lip/state.json.tmp, replacing an earlier staged lock.
   public async Task Stage(string workspaceRoot, LockFile lockFile) {
     try {
       Validate(lockFile);
     }
     catch (LockFormatException ex) {
       throw new ArgumentException(
-          "lip was about to write an invalid workspace file, and did not write it. This is a bug"
+          "lip was about to write an invalid state file, and did not write it. This is a bug"
           + " in lip.",
           nameof(lockFile),
           ex);
@@ -93,10 +92,10 @@ public partial class LockStore(IFileSystem fs) {
     CreateLipDirectory(root);
     string tempPath = LipPath(root, StagedFileName);
 
-    byte[] bytes = YamlJson.SerializeToUtf8Bytes(JsonSerializer.SerializeToElement(lockFile));
+    byte[] bytes = JsonFile.SerializeToUtf8Bytes(JsonSerializer.SerializeToElement(lockFile));
     try {
       await _fs.File.WriteAllBytesAsync(tempPath, bytes);
-      RunTrace.Write("workspace", $"Wrote the new workspace file {tempPath}"
+      RunTrace.Write("workspace", $"Wrote the new state file {tempPath}"
           + $" ({lockFile.Packages.Count} packages)");
     }
     catch (Exception ex) {
@@ -106,12 +105,12 @@ public partial class LockStore(IFileSystem fs) {
         }
       }
       catch (Exception delete) when (delete is IOException or UnauthorizedAccessException) {
-        // A staged workspace file is never read, and the next save replaces it.
+        // A staged state file is never read, and the next save replaces it.
         RunTrace.Write("workspace", $"Cannot delete {tempPath}: {delete.Message}");
       }
 
       if (ex is IOException or UnauthorizedAccessException) {
-        throw WorkspaceErrors.Wrap(ex, $"Cannot write the new workspace file '{tempPath}'.");
+        throw WorkspaceErrors.Wrap(ex, $"Cannot write the new state file '{tempPath}'.");
       }
 
       throw;
@@ -121,8 +120,8 @@ public partial class LockStore(IFileSystem fs) {
   /// Moves the staged lock into place in one rename, the point at which an operation commits.
   /// Does nothing when no lock is staged. Throws only when the lock was not moved.
   ///
-  /// The first workspace file of a workspace whose workspace file was derived from its
-  /// tooth_lock.json replaces it: tooth_lock.json is deleted once the workspace file is in place
+  /// The first state file of a workspace whose state file was derived from its
+  /// tooth_lock.json replaces it: tooth_lock.json is deleted once the state file is in place
   /// (protocol/compatibility.md §3).
   public void CommitStaged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
@@ -138,7 +137,7 @@ public partial class LockStore(IFileSystem fs) {
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
       throw WorkspaceErrors.Wrap(
-          ex, $"Cannot replace the workspace file '{path}' with the new one '{tempPath}'.");
+          ex, $"Cannot replace the state file '{path}' with the new one '{tempPath}'.");
     }
 
     RunTrace.Write("workspace", $"Moved {tempPath} to {path}");
@@ -146,14 +145,14 @@ public partial class LockStore(IFileSystem fs) {
       return;
     }
 
-    // The workspace file is in place; what follows must not fail the operation.
+    // The state file is in place; what follows must not fail the operation.
     string toothLock = _fs.Path.Join(root, ToothLockMigration.FileName);
     try {
       _fs.File.Delete(toothLock);
-      RunTrace.Write("workspace", $"Deleted {toothLock}, which the workspace file replaces");
+      RunTrace.Write("workspace", $"Deleted {toothLock}, which the state file replaces");
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-      // A tooth_lock.json is not read once the workspace file exists.
+      // A tooth_lock.json is not read once the state file exists.
       RunTrace.Write("workspace", $"Cannot delete {toothLock}: {ex.Message}");
     }
   }
@@ -169,7 +168,7 @@ public partial class LockStore(IFileSystem fs) {
       _fs.File.Delete(tempPath);
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-      throw WorkspaceErrors.Wrap(ex, $"Cannot delete the unused new workspace file '{tempPath}'.");
+      throw WorkspaceErrors.Wrap(ex, $"Cannot delete the unused new state file '{tempPath}'.");
     }
 
     RunTrace.Write("workspace", $"Deleted {tempPath}");
@@ -189,7 +188,7 @@ public partial class LockStore(IFileSystem fs) {
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
       throw WorkspaceErrors.Wrap(
           ex,
-          $"Cannot create the directory '{directory}', where lip keeps the workspace file. Check"
+          $"Cannot create the directory '{directory}', where lip keeps the state file. Check"
           + " that you may write to the workspace.");
     }
 
@@ -208,10 +207,10 @@ public partial class LockStore(IFileSystem fs) {
   private static LockFile Parse(byte[] bytes, string path) {
     bool otherFormat = false;
     try {
-      using JsonDocument document = YamlJson.Parse(bytes);
+      using JsonDocument document = JsonFile.Parse(bytes);
       JsonElement root = document.RootElement;
       if (root.ValueKind != JsonValueKind.Object) {
-        throw new LockFormatException("The file is not a YAML mapping of keys to values.");
+        throw new LockFormatException("The file is not a JSON object.");
       }
 
       int? format = PackageFileParser.Format(root);
@@ -243,24 +242,24 @@ public partial class LockStore(IFileSystem fs) {
 
       LockFile lockFile = root.Deserialize<LockFile>(_readOptions)
           ?? throw new LockFormatException(
-              "The file is empty instead of a YAML mapping of keys to values.");
+              "The file is null instead of a JSON object.");
       Validate(lockFile);
       return lockFile;
     }
     catch (Exception ex) when (ex is JsonException or LockFormatException or ArgumentException
-        or NotSupportedException or InvalidOperationException or YamlFormatException) {
-      RunTrace.Write("workspace", $"Cannot read the workspace file {path}: {ex.Message}");
+        or NotSupportedException or InvalidOperationException) {
+      RunTrace.Write("workspace", $"Cannot read the state file {path}: {ex.Message}");
       throw new LockFormatException(otherFormat
-          ? $"The workspace file '{path}' was written by a different version of lip, so this lip"
+          ? $"The state file '{path}' was written by a different version of lip, so this lip"
             + " cannot tell which packages are installed."
-          : $"The workspace file '{path}' is invalid, so lip cannot tell which packages are"
+          : $"The state file '{path}' is invalid, so lip cannot tell which packages are"
             + " installed. If you edited it by hand, undo the change; if you have a copy of the"
             + " file, restore it.",
           ex);
     }
   }
 
-  /// Checks what workspace.schema.yaml requires beyond what deserializing checks.
+  /// Checks what state.schema.json requires beyond what deserializing checks.
   private static void Validate(LockFile lockFile) {
     if (lockFile.Packages is null) {
       throw new LockFormatException("\"packages\" is null, but it must be an array.");

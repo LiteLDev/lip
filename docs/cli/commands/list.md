@@ -16,7 +16,7 @@ lip list [options]
 
 ## Description
 
-Reads the workspace's [workspace file](../../concepts/lockfiles.md) and displays the installed packages as `<identity>@<version>` in two groups:
+Reads the workspace's [state file](../../concepts/lockfiles.md) and displays the installed packages as `<identity>@<version>` in two groups:
 
 - **User-Requested** — Packages explicitly installed by the user.
 - **Dependencies** — Packages installed as dependencies.

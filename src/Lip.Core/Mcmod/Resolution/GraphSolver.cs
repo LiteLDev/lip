@@ -383,7 +383,7 @@ public class GraphSolver(IResolver resolver) {
           }
 
           throw Fail($"Installed packages {ShowSource(other.Candidate)} and {ShowSource(candidate)}"
-              + " have the same identity, which the workspace file .lip/workspace.yaml must not"
+              + " have the same identity, which the state file .lip/state.json must not"
               + " record. Uninstall them with --no-dependencies and install the one you want"
               + " again.");
         }

@@ -1,16 +1,16 @@
-# lip.yaml
+# lip.toml
 
-lip 包是根部带有**包文件** `lip.yaml` 的归档。`lip.yaml` 给出包的名称和版本，并针对每个变体、平台和运行时
+lip 包是根部带有**包文件** `lip.toml` 的归档。`lip.toml` 给出包的名称和版本，并针对每个变体、平台和运行时
 描述 lip 要安装的内容：依赖、要放置的文件、要安装的 mod 以及要运行的命令。
 规范性定义见[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md)。
 
-`lip.yaml` 是格式 4 的 YAML 文件，由 JSON Schema
-[`lip.schema.yaml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.yaml)
+`lip.toml` 是格式 4 的 [TOML 1.0](https://toml.io/cn/v1.0.0) 文件，由以 TOML 编写的 JSON Schema
+[`lip.schema.toml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.toml)
 描述。lip 也可读取 lip v0.x 包的 `tooth.json`（格式 1 到 3），参见[早期格式](#早期格式)。
 
 ## 归档
 
-包位于一个**归档**中，归档是一棵根部带有 `lip.yaml` 的文件和目录树：
+包位于一个**归档**中，归档是一棵根部带有 `lip.toml` 的文件和目录树：
 
 - **git 归档**：git 仓库的一个提交，通常是某个版本标签所指的提交。只有其中的普通文件和目录属于
   该归档（不含符号链接和子模块）；
@@ -23,43 +23,48 @@ lip 包是根部带有**包文件** `lip.yaml` 的归档。`lip.yaml` 给出包�
 
 一个 mod，以附加到每个 GitHub Release 的 ZIP 文件发布，支持 Windows x64 上的服务端和客户端：
 
-```yaml
-format: 4
-id: github.com/example/MyMod
-version: 1.0.0
-info:
-  name: My Mod
-  description: A short description
-  tags: [levilamina, mod]
-variants:
-  "":
-    - platform: server
-      runtime: win-x64
-      deps:
-        github.com/LiteLDev/LeviLamina: ">=1.0.0 <2.0.0"
-        github.com/example/MyLib: ^0.3.0
-      assets:
-        - type: mcmod
-          urls:
-            - https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip
-      preserve: [mods/MyMod/config/]
-    - platform: client
-      runtime: win-x64
-      deps:
-        github.com/LiteLDev/LeviLamina: ">=1.0.0 <2.0.0"
-        github.com/example/MyLib: ^0.3.0
-      assets:
-        - type: mcmod
-          urls:
-            - https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip
-      preserve: [mods/MyMod/config/]
+```toml
+format = 4
+id = "github.com/example/MyMod"
+version = "1.0.0"
+
+[info]
+name = "My Mod"
+description = "A short description"
+tags = ["levilamina", "mod"]
+
+[[variants.""]]
+platform = "server"
+runtime = "win-x64"
+preserve = ["mods/MyMod/config/"]
+
+[variants."".deps]
+"github.com/LiteLDev/LeviLamina" = ">=1.0.0 <2.0.0"
+"github.com/example/MyLib" = "^0.3.0"
+
+[[variants."".assets]]
+type = "mcmod"
+urls = ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
+
+[[variants.""]]
+platform = "client"
+runtime = "win-x64"
+preserve = ["mods/MyMod/config/"]
+
+[variants."".deps]
+"github.com/LiteLDev/LeviLamina" = ">=1.0.0 <2.0.0"
+"github.com/example/MyLib" = "^0.3.0"
+
+[[variants."".assets]]
+type = "mcmod"
+urls = ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"]
 ```
 
-若某个值 YAML 不会读作字符串，例如以 `>` 或 `*` 开头的范围，或 YAML 会读作数字的 `1.0` 这类版本，请为其加引号。
+版本和版本范围都是字符串，因此总要加引号。含有 ASCII 字母、数字、`_` 和 `-` 以外字符的键也要加引号，例如 `deps` 中的包 id 或默认变体 `""`：`[[variants.""]]` 为默认变体添加一个条目。
 
 ## 字段
 
-`lip.yaml` 必须是一个 YAML 映射。此处未描述的键会被忽略。
+`lip.toml` 不得包含日期时间、日期、时间，或浮点数 `inf`、`nan`。此处未描述的键会被忽略。
 
 ### 顶层
 
@@ -72,7 +77,7 @@ variants:
 | `variants` | `object` | 是 | 把每个变体名映射到其条目。参见[变体](#变体)。 |
 
 对于 git 仓库中的包，`id` 必须是该仓库的路径：`https://github.com/user/repo.git` 中的
-`lip.yaml` 必须写 `id: github.com/user/repo`。在版本标签 `v<version>` 处，`version` 必须
+`lip.toml` 必须写 `id = "github.com/user/repo"`。在版本标签 `v<version>` 处，`version` 必须
 等于标签版本。否则该提交不是包，lip 不会安装它。
 
 ### Info
@@ -113,10 +118,10 @@ lip 不使用 `info`。
 
 `deps` 把 `<包 ID>` 或 `<包 ID>#<variant>` 映射到版本范围：
 
-```yaml
-deps:
-  github.com/LiteLDev/LeviLamina: ">=1.0.0 <2.0.0"
-  github.com/LiteLDev/LegacyScriptEngine#lua: ^0.9.0
+```toml
+[variants."".deps]
+"github.com/LiteLDev/LeviLamina" = ">=1.0.0 <2.0.0"
+"github.com/LiteLDev/LegacyScriptEngine#lua" = "^0.9.0"
 ```
 
 对每个依赖，lip 从该仓库的版本标签中安装一个版本在范围内、且有同一环境条目的版本（及变体）。从 git
@@ -133,7 +138,7 @@ ID 和变体的依赖。
 
 | 类型 | 字段 | 说明 |
 | --- | --- | --- |
-| `self` | `place`（可选） | `lip.yaml` 自身所在的归档，例如标签处的仓库。 |
+| `self` | `place`（可选） | `lip.toml` 自身所在的归档，例如标签处的仓库。 |
 | `zip` | `urls`、`place`（可选） | 通过 HTTPS 下载的 ZIP 归档。 |
 | `mcmod` | `urls` | 通过 HTTPS 下载、包含一个 LeviLamina mod 的 ZIP 归档；它没有 `place`。参见 [Mod](#mod)。 |
 
@@ -153,16 +158,18 @@ ID 和变体的依赖。
   之下，保留其相对于 `src` 的路径。`src` 之下必须至少有一个文件。
 - **文件形式**：其他情况。文件 `src` 写入 `dest`，`dest` 不得以 `/` 结尾。该文件必须存在。
 
-```yaml
-type: zip
-urls: [https://example.com/tool-1.0.0-win-x64.zip]
-place:
-  - { src: bin/, dest: tools/ }
-  - { src: README.md, dest: tools/README.md }
-  - { src: "plugins/*.dll", dest: tools/plugins/ }
+```toml
+[[variants."".assets]]
+type = "zip"
+urls = ["https://example.com/tool-1.0.0-win-x64.zip"]
+place = [
+  { src = "bin/", dest = "tools/" },
+  { src = "README.md", dest = "tools/README.md" },
+  { src = "plugins/*.dll", dest = "tools/plugins/" },
+]
 ```
 
-包根部的 `lip.yaml` 永远不会被写入。
+包根部的 `lip.toml` 永远不会被写入。
 
 ### glob
 
@@ -213,7 +220,7 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
 [`lip list`](../cli/commands/list.md) 显示身份，[`lip uninstall`](../cli/commands/uninstall.md) 也接受
 身份。
 
-身份来自包的 `id`，而不是安装来源：`lip.yaml` 写有 `id: github.com/user/repo` 的 ZIP 文件，
+身份来自包的 `id`，而不是安装来源：`lip.toml` 写有 `id = "github.com/user/repo"` 的 ZIP 文件，
 与来自该仓库的包身份相同，因此两者不能同时安装。
 
 ## 环境
@@ -221,18 +228,18 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
 工作区的环境是一个二元组 `(platform, runtime)`：
 
 - **platform**：`server` 或 `client`。lip 只管理服务端工作区，因此始终使用 `server`。客户端工作区由
-  LeviLauncher 等启动器管理；若工作区的[工作区文件](lockfiles.md)记录的是 `client`，lip 会拒绝处理。
-- **runtime**：`--rid`，否则为工作区文件记录的运行时，否则为 lip 自身运行的 RID（例如 `win-x64`）。
+  LeviLauncher 等启动器管理；若工作区的[状态文件](lockfiles.md)记录的是 `client`，lip 会拒绝处理。
+- **runtime**：`--rid`，否则为状态文件记录的运行时，否则为 lip 自身运行的 RID（例如 `win-x64`）。
 
 ## 早期格式
 
-lip v0.37.0 及更早版本的包没有 `lip.yaml`，而是有格式版本 1、2 或 3 的 `tooth.json`。lip 仍会安装它们，
-但从不写入它们；请使用 [`lip migrate`](../cli/commands/migrate.md) 把你的包转换为 `lip.yaml`。带有
-`lip.yaml` 的归档从 `lip.yaml` 读取，不论它是否还有 `tooth.json`；其他格式的 `tooth.json` 不会被读取。
+lip v0.37.0 及更早版本的包没有 `lip.toml`，而是有格式版本 1、2 或 3 的 `tooth.json`。lip 仍会安装它们，
+但从不写入它们；请使用 [`lip migrate`](../cli/commands/migrate.md) 把你的包转换为 `lip.toml`。带有
+`lip.toml` 的归档从 `lip.toml` 读取，不论它是否还有 `tooth.json`；其他格式的 `tooth.json` 不会被读取。
 
 格式 1 和 2 先像 lip v0.37.0 那样读取为格式 3。格式 3 的 `tooth.json` 随后针对工作区的环境被完整地
 转换为一个包文件，lip 只使用转换结果：
-lip 解析、安装并记录到[工作区文件](lockfiles.md)中的都是它。安装时不再保留任何格式 3 的语义。
+lip 解析、安装并记录到[状态文件](lockfiles.md)中的都是它。安装时不再保留任何格式 3 的语义。
 
 - `tooth` 变为 `id`。`version` 为包的版本：在版本标签处为标签版本，而不论 `tooth.json` 的 `version` 写的是
   什么；否则为该 `version`。
@@ -241,7 +248,7 @@ lip 解析、安装并记录到[工作区文件](lockfiles.md)中的都是它。
   v0.37.0 的方式合并为一个对应该环境平台和运行时的条目。没有这类变体的标签不构成变体。
 - `dependencies` 原样变为 `deps`。
 - 每个资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`（见下文）。类型为 `tar`、`tgz` 或
-  `uncompressed` 的资源在 `lip.yaml` 中不存在，会使该标签在该环境下没有变体。
+  `uncompressed` 的资源在 `lip.toml` 中不存在，会使该标签在该环境下没有变体。
 - `preserve_files` 变为 `preserve`：`\` 替换为 `/`，不含 `/` 的模式加上前缀 `**/`，因此 `config.json`
   变为 `**/config.json`。
 - `remove_files` 变为 `purge`：`\` 替换为 `/`，不以 `/` 结尾的模式还会再加上一个以 `/` 结尾的形式，因此
@@ -259,7 +266,7 @@ lip 解析、安装并记录到[工作区文件](lockfiles.md)中的都是它。
 | `type` 为 `file`，`src` 含 `*`、`?` 或 `[` | `src`，以及加上 `/` 的 `dest`（为空时除外）：glob 形式。 |
 | `type` 为 `file`，其他 `src` | `src` 和 `dest`：文件形式。 |
 
-转换后在包文件中无效的 glob 或放置规则会被略去。随后放置规则按 `lip.yaml` 的方式执行：例如，缺失的文件现在会使安装
+转换后在包文件中无效的 glob 或放置规则会被略去。随后放置规则按 `lip.toml` 的方式执行：例如，缺失的文件现在会使安装
 失败，包的 `tooth.json` 也永远不会被写入。
 早期格式的包始终是文件包。其身份遵循同样的规则，例如 `github.com/LiteLDev/LegacyScriptEngine#lua`。
 

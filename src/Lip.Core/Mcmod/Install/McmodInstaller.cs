@@ -483,9 +483,9 @@ public partial class McmodInstaller(
     }
     catch (FormatException ex) {
       throw new McmodInstallException(
-          $"The package file that the workspace file ({LockStore.LipDirectory}/"
+          $"The package file that the state file ({LockStore.LipDirectory}/"
           + $"{LockStore.FileName}) records for {package.Identity} {package.Version} is invalid."
-          + " If you edited the workspace file by hand, undo the change.",
+          + " If you edited the state file by hand, undo the change.",
           ex);
     }
 
@@ -494,7 +494,7 @@ public partial class McmodInstaller(
         : $"the variant \"{package.Variant}\"";
     return manifest.SelectEntry(package.Variant, environment)
         ?? throw new McmodInstallException(
-            $"The package file that the workspace file ({LockStore.LipDirectory}/"
+            $"The package file that the state file ({LockStore.LipDirectory}/"
             + $"{LockStore.FileName}) records for {package.Identity} {package.Version} has no"
             + $" entry of {variant} for the platform {environment.Platform.ToSpecString()} and"
             + $" the runtime {environment.Runtime}. If you passed --rid, pass the runtime the"
@@ -589,7 +589,7 @@ public partial class McmodInstaller(
       ];
 
       // The package file of the package is never written (protocol/workspace.md §4 step 2): its
-      // lip.yaml, or, for an archive without one, the tooth.json it is read from.
+      // lip.toml, or, for an archive without one, the tooth.json it is read from.
       if (asset.Type == AssetType.Self) {
         string packageFile = files.Any(f => f.Path == PackageFormat.FileName)
             ? PackageFormat.FileName
@@ -842,7 +842,7 @@ public partial class McmodInstaller(
               relative.TrimEnd('/').Replace('/', _fs.Path.DirectorySeparatorChar)));
 
   /// A workspace-relative path with each 8.3 short name in it replaced by the long name it
-  /// stands for, on Windows: "LIP~1/workspace.yaml" is ".lip/workspace.yaml" when ".lip" has the
+  /// stands for, on Windows: "LIP~1/state.json" is ".lip/state.json" when ".lip" has the
   /// short name "LIP~1". Only names that exist can be short names, and every short name contains
   /// '~', so other paths are returned as they are without asking the file system, and so are
   /// paths that are not safe workspace paths. Null when a name containing '~' exists but its
@@ -1007,7 +1007,7 @@ public partial class McmodInstaller(
   private static string NormalizeRelative(string path) =>
       string.Join('/', path.Replace('\\', '/').Split('/').Where(s => s != "."));
 
-  /// A non-empty '/'-separated relative path as lip.schema.yaml #/definitions/path allows it:
+  /// A non-empty '/'-separated relative path as lip.schema.toml #/definitions/path allows it:
   /// without empty or ".." segments, backslashes, or a leading ASCII letter and ':'.
   private static bool IsSafeRelativePath(string path) =>
       path != ""

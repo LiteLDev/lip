@@ -9,7 +9,7 @@ public interface IVersionConstraint {
 }
 
 /// A package file (protocol/package.md §3), or the one protocol/compatibility.md §2 derives from
-/// a tooth.json for an environment. Json is the package file as read (for lip.yaml) or the
+/// a tooth.json for an environment. Json is the package file as read (for lip.toml) or the
 /// derived one.
 public record PackageFile {
   /// The package id.
@@ -31,8 +31,8 @@ public record PackageFile {
           : null;
 }
 
-/// An entry of a package file (lip.schema.yaml, the items of "variants"). Json is the entry as
-/// written, which the workspace file records (protocol/workspace.md §7.1).
+/// An entry of a package file (lip.schema.toml, the items of "variants"). Json is the entry as
+/// written, which the state file records (protocol/workspace.md §7.1).
 ///
 /// Dependencies, PreserveFiles and RemoveFiles are its "deps", "preserve" and "purge".
 public record PackageEntry {
@@ -78,7 +78,7 @@ public enum AssetType {
   Mcmod,
 }
 
-/// An asset of an entry (lip.schema.yaml, the items of "assets").
+/// An asset of an entry (lip.schema.toml, the items of "assets").
 public record EntryAsset(
     AssetType Type,
     IReadOnlyList<string> Urls,
@@ -90,7 +90,7 @@ public enum PlacementForm {
   Glob,
 }
 
-/// A member of the "place" of an asset, whose form Src decides (lip.schema.yaml "place").
+/// A member of the "place" of an asset, whose form Src decides (lip.schema.toml "place").
 public record EntryPlacement(string Src, string Dest) {
   public PlacementForm Form =>
       PathGlob.HasMetacharacters(Src) ? PlacementForm.Glob

@@ -4,7 +4,7 @@ using Semver;
 namespace Lip.Core.Mcmod;
 
 /// An opened archive: a key naming it in messages and caches, its file tree, and, for a git
-/// archive, the commit (lowercase hex) it is the tree of, which the workspace file records
+/// archive, the commit (lowercase hex) it is the tree of, which the state file records
 /// (protocol/workspace.md §7.1). Source keys are '/'-separated relative file paths, as for every
 /// ISource.
 public record ArchiveHandle(string Key, ISource Source, string? Commit = null);

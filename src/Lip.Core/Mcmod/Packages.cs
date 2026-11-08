@@ -9,7 +9,7 @@ namespace Lip.Core.Mcmod;
 /// tooth.json whose "client" names "" of a package that has a package file).
 public record Package(string Id, string Variant, SemVersion Version, PackageEntry Entry) {
   /// The package file of the package (for a package read from a tooth.json, the one
-  /// protocol/compatibility.md §2 derives from it for the environment), which the workspace file
+  /// protocol/compatibility.md §2 derives from it for the environment), which the state file
   /// records.
   public required JsonElement Manifest { get; init; }
 

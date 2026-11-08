@@ -20,7 +20,7 @@ public class WorkspaceLayoutTests {
       ["Demo.dll"] = "dll",
     }));
     _ws.AddTag(Demo, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(Demo, "1.0.0",
+      ["lip.toml"] = WorkspaceHarness.LipToml(Demo, "1.0.0",
           $$""" "assets": [ { "type": "mcmod", "urls": [ "{{DemoUrl}}" ] } ] """),
     });
   }
@@ -101,7 +101,7 @@ public class WorkspaceLayoutTests {
   public async Task Install_PackagePlacingUnderPlugins_WritesAndLocksUnderPlugins() {
     // Arrange: plugins is a directory like any other.
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0", WorkspaceHarness.SelfAsset("file.dll", "plugins/lib/lib.dll")),
       ["file.dll"] = "lib",
     });

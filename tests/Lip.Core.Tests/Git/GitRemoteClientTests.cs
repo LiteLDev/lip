@@ -150,13 +150,13 @@ public class GitRemoteClientTests {
     List<string> received = [];
     await client.FetchBlobs(
         new Url("https://github.com/owner/repo.git"),
-        [blobIds["lip.yaml"], blobIds["README.md"]],
+        [blobIds["lip.toml"], blobIds["README.md"]],
         (objectId, _) => {
           received.Add(objectId);
           return Task.CompletedTask;
         });
 
-    Assert.Equal(new[] { blobIds["README.md"], blobIds["lip.yaml"] }.Order(), received.Order());
+    Assert.Equal(new[] { blobIds["README.md"], blobIds["lip.toml"] }.Order(), received.Order());
     httpTest.ShouldHaveCalled("https://github.com/owner/repo.git/git-upload-pack").Times(1);
   }
 
@@ -225,9 +225,9 @@ public class GitRemoteClientTests {
       new GitTreeEntry("README.md", 100644, blobIds["README.md"]),
       new GitTreeEntry("bin/link", 120000, blobIds["README.md"]),
       new GitTreeEntry("bin/run.sh", 100755, blobIds["bin/run.sh"]),
-      new GitTreeEntry("lip.yaml", 100644, blobIds["lip.yaml"]),
+      new GitTreeEntry("lip.toml", 100644, blobIds["lip.toml"]),
     ], entries);
-    Assert.Equal(100644, entries.Single(e => e.Path == "lip.yaml").Mode);
+    Assert.Equal(100644, entries.Single(e => e.Path == "lip.toml").Mode);
 
     string body = await RequestBody(httpTest, 1);
     Assert.Contains($"want {tagId}\n", body);
@@ -414,7 +414,7 @@ public class GitRemoteClientTests {
         ("100644", "README.md", readmeId),
         ("40000", "bin", binTreeId),
         ("160000", "submodule", new string('d', 40)),
-        ("100644", "lip.yaml", packageFileId));
+        ("100644", "lip.toml", packageFileId));
     string rootTreeId = PackBuilder.ObjectId(GitObjectType.Tree, rootTree);
     byte[] commit = PackBuilder.Commit(rootTreeId);
     byte[] tag = PackBuilder.Tag(PackBuilder.ObjectId(GitObjectType.Commit, commit));
@@ -433,7 +433,7 @@ public class GitRemoteClientTests {
     return (builder.Build(), PackBuilder.ObjectId(GitObjectType.Tag, tag), new() {
       ["README.md"] = readmeId,
       ["bin/run.sh"] = scriptId,
-      ["lip.yaml"] = packageFileId,
+      ["lip.toml"] = packageFileId,
     });
   }
 

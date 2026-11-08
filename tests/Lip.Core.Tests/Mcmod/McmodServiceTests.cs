@@ -24,7 +24,7 @@ public class McmodServiceTests {
   public async Task Install_RemoteRepository_RecordsWorkspaceFile() {
     // Arrange
     string commit = _ws.Git.AddTag(Lib, "v1.0.0", new() {
-      ["lip.yaml"] = LibPackageFile("1.0.0"),
+      ["lip.toml"] = LibPackageFile("1.0.0"),
       ["lib.dll"] = "lib 1.0.0",
     });
 
@@ -43,7 +43,7 @@ public class McmodServiceTests {
     Assert.Equal(commit, package.Commit);
     Assert.Equal(["lib/lib.dll"], package.Files);
     Assert.True(JsonNode.DeepEquals(
-        Yaml(LibPackageFile("1.0.0")), JsonNode.Parse(package.Manifest.GetRawText())));
+        Toml(LibPackageFile("1.0.0")), JsonNode.Parse(package.Manifest.GetRawText())));
   }
 
   [Fact]
@@ -51,7 +51,7 @@ public class McmodServiceTests {
     // Arrange
     AddLib("1.0.0");
     _ws.AddZip("x.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "x",
     });
@@ -60,7 +60,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([Lib, "x.zip"], _options);
 
     // Assert: "commit" only for a package from a remote repository.
-    using JsonDocument document = YamlJson.Parse(_ws.Fs.File.ReadAllBytes(_ws.LockPath));
+    using JsonDocument document = JsonFile.Parse(_ws.Fs.File.ReadAllBytes(_ws.LockPath));
     JsonElement[] packages = [.. document.RootElement.GetProperty("packages").EnumerateArray()];
     Assert.Equal(
         ["manifest", "variant", "explicit", "ref", "commit", "files"],
@@ -75,7 +75,7 @@ public class McmodServiceTests {
     // Arrange: a self asset placing through plugins/, and a zip asset.
     byte[] extra = WorkspaceHarness.Zip(new() { ["y.txt"] = "y" });
     _ws.AddDownload("https://example.com/extra.zip", extra);
-    string packageFile = WorkspaceHarness.LipYaml("example.com/pkg", "1.0.0", """
+    string packageFile = WorkspaceHarness.LipToml("example.com/pkg", "1.0.0", """
         "assets": [
           { "type": "self", "place": [ { "src": "x.txt", "dest": "mods/pkg/x.txt" } ] },
           {
@@ -85,7 +85,7 @@ public class McmodServiceTests {
           }
         ]
         """);
-    string path = _ws.AddZip("pkg.zip", new() { ["lip.yaml"] = packageFile, ["x.txt"] = "x" });
+    string path = _ws.AddZip("pkg.zip", new() { ["lip.toml"] = packageFile, ["x.txt"] = "x" });
 
     // Act
     await _ws.Service.Install(["pkg.zip"], _options);
@@ -100,7 +100,7 @@ public class McmodServiceTests {
     Assert.Null(package.Commit);
     Assert.Equal(["mods/pkg/x.txt", "extra/y.txt"], package.Files);
     Assert.True(JsonNode.DeepEquals(
-        Yaml(packageFile), JsonNode.Parse(package.Manifest.GetRawText())));
+        Toml(packageFile), JsonNode.Parse(package.Manifest.GetRawText())));
   }
 
   [Fact]
@@ -384,7 +384,7 @@ public class McmodServiceTests {
     const string zeta = "example.com/cycle/zeta";
     foreach ((string id, string dependency) in new[] { (zeta, c), (c, alpha), (alpha, zeta) }) {
       _ws.AddTag(id, "1.0.0", new() {
-        ["lip.yaml"] = WorkspaceHarness.LipYaml(
+        ["lip.toml"] = WorkspaceHarness.LipToml(
             id, "1.0.0", $$""" "deps": { "{{dependency}}": "1.0.0" }"""),
       });
     }
@@ -413,7 +413,7 @@ public class McmodServiceTests {
     const string a = "example.com/cycle/a", b = "example.com/cycle/b", c = "example.com/cycle/c";
     foreach ((string id, string dependency) in new[] { (a, c), (c, b), (b, a) }) {
       _ws.AddTag(id, "1.0.0", new() {
-        ["lip.yaml"] = WorkspaceHarness.LipYaml(
+        ["lip.toml"] = WorkspaceHarness.LipToml(
             id, "1.0.0", $$""" "deps": { "{{dependency}}": "1.0.0" }"""),
       });
     }
@@ -499,7 +499,7 @@ public class McmodServiceTests {
   public async Task Install_BranchRef_RecordsCommitAndUpdateFollowsHead() {
     // Arrange
     string first = _ws.Git.AddBranch(Lib, "main", new() {
-      ["lip.yaml"] = LibPackageFile("1.2.0"),
+      ["lip.toml"] = LibPackageFile("1.2.0"),
       ["lib.dll"] = "head 1",
     });
 
@@ -507,7 +507,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
     LockedPackage installed = Assert.Single((await _ws.Lock()).Packages);
     string second = _ws.Git.AddBranch(Lib, "main", new() {
-      ["lip.yaml"] = LibPackageFile("1.2.0"),
+      ["lip.toml"] = LibPackageFile("1.2.0"),
       ["lib.dll"] = "head 2",
     });
     _ws.Restart();
@@ -527,13 +527,13 @@ public class McmodServiceTests {
   public async Task Install_TagAndRevRefs_UsePackageFileVersionAndExactCommit() {
     // Arrange
     _ws.Git.AddTag(Lib, "nightly", new() {
-      ["lip.yaml"] = LibPackageFile("3.0.0-nightly"),
+      ["lip.toml"] = LibPackageFile("3.0.0-nightly"),
       ["lib.dll"] = "nightly",
     });
     string rev = _ws.Git.AddBranch(App, "dev", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(App, "0.1.0"),
+      ["lip.toml"] = WorkspaceHarness.LipToml(App, "0.1.0"),
     });
-    _ws.Git.AddBranch(App, "dev", new() { ["lip.yaml"] = WorkspaceHarness.LipYaml(App, "0.2.0") });
+    _ws.Git.AddBranch(App, "dev", new() { ["lip.toml"] = WorkspaceHarness.LipToml(App, "0.2.0") });
 
     // Act
     await _ws.Service.Install([$"{Lib}@tag:nightly", $"{App}@rev:{rev}"], _options);
@@ -565,7 +565,7 @@ public class McmodServiceTests {
   public async Task Install_ClientPlatformRecorded_ThrowsWithoutChanges() {
     // Arrange
     AddLibAndApp();
-    _ws.AddFile(".lip/workspace.yaml", """
+    _ws.AddFile(".lip/state.json", """
         { "format": 4, "platform": "client", "runtime": "win-x64", "packages": [] }
         """);
     SortedDictionary<string, string> before = WorkspaceSnapshot();
@@ -580,7 +580,7 @@ public class McmodServiceTests {
   public async Task Install_RidOption_RecordsRuntime() {
     // Arrange: lib has entries for win-x64 and linux-x64.
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = $$"""
+      ["lip.toml"] = WorkspaceHarness.Toml($$"""
           {
             "format": 4,
             "id": "{{Lib}}",
@@ -594,7 +594,7 @@ public class McmodServiceTests {
               ]
             }
           }
-          """,
+          """),
       ["win.dll"] = "win",
       ["linux.so"] = "linux",
     });
@@ -744,7 +744,7 @@ public class McmodServiceTests {
   public async Task Uninstall_SourceWithoutRef_MatchesEveryRef() {
     // Arrange: the identity is example.com/lib; the argument is the location in other case
     // with a variant-free, ref-free source.
-    _ws.Git.AddBranch(Lib, "main", new() { ["lip.yaml"] = LibPackageFile("1.5.0"), ["lib.dll"] = "x" });
+    _ws.Git.AddBranch(Lib, "main", new() { ["lip.toml"] = LibPackageFile("1.5.0"), ["lib.dll"] = "x" });
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
 
     // Act
@@ -794,7 +794,7 @@ public class McmodServiceTests {
     // deletes it, so it is written and owned (protocol/workspace.md §4).
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
           WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
               + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }"""),
@@ -814,8 +814,8 @@ public class McmodServiceTests {
 
   [Fact]
   public async Task Install_DependencyWithInvalidPackageFile_KeepsTheCause() {
-    // Arrange: app needs lib, whose only tag has a package file that is no valid YAML.
-    _ws.AddTag(Lib, "1.0.0", new() { ["lip.yaml"] = "id: [" });
+    // Arrange: app needs lib, whose only tag has a package file that is no valid TOML.
+    _ws.AddTag(Lib, "1.0.0", new() { ["lip.toml"] = "id: [" });
     AddApp("1.0.0", "1.0.0");
 
     // Act
@@ -832,7 +832,7 @@ public class McmodServiceTests {
     // exists before it runs (protocol/workspace.md §7.4 steps 5 and 6).
     _ws.Fs.Directory.CreateDirectory(_ws.Path("mods"));
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
           WorkspaceHarness.SelfAsset("a.txt", "a.txt")
               + """, "hooks": { "pre_install": [ "check" ] }"""),
@@ -857,7 +857,7 @@ public class McmodServiceTests {
     // (protocol/workspace.md §7.4 step 4 does not apply).
     _ws.Fs.Directory.CreateDirectory(_ws.Path("mods"));
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0", """ "hooks": { "pre_uninstall": [ "check" ] }"""),
     });
     await _ws.Service.Install([Lib], _options);
@@ -881,14 +881,14 @@ public class McmodServiceTests {
     // owns it; app, installed after lib, then writing it is a failure (protocol/workspace.md §4).
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
           WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
               + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }"""),
       ["cfg.ini"] = "lib",
     });
     _ws.AddTag(App, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           App, "1.0.0",
           $$""" "deps": { "{{Lib}}": "1.0.0" }, """
               + WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")),
@@ -914,14 +914,14 @@ public class McmodServiceTests {
     // post_install never runs.
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
           WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
               + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }"""),
       ["cfg.ini"] = "lib",
     });
     _ws.AddTag(App, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           App, "1.0.0",
           $$""" "deps": { "{{Lib}}": "1.0.0" }, """
               + WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")
@@ -949,13 +949,13 @@ public class McmodServiceTests {
     // bedrock_server.exe, before lib, uninstalled after it, purges it (protocol/workspace.md §6
     // rule 4).
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
           WorkspaceHarness.SelfAsset("lib.dll", "lib/lib.dll") + """, "purge": [ "server.exe" ]"""),
       ["lib.dll"] = "lib",
     });
     _ws.AddTag(App, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           App, "1.0.0",
           $$""" "deps": { "{{Lib}}": "1.0.0" }, """
               + WorkspaceHarness.SelfAsset("app.dll", "app/app.dll")
@@ -982,14 +982,14 @@ public class McmodServiceTests {
     // Arrange: lib purges server.exe, which app's post_uninstall restores; lib's post_uninstall
     // then fails, so the operation is undone, the restored file included.
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
           WorkspaceHarness.SelfAsset("lib.dll", "lib/lib.dll")
               + """, "purge": [ "server.exe" ], "hooks": { "post_uninstall": [ "fail" ] }"""),
       ["lib.dll"] = "lib",
     });
     _ws.AddTag(App, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           App, "1.0.0",
           $$""" "deps": { "{{Lib}}": "1.0.0" }, """
               + WorkspaceHarness.SelfAsset("app.dll", "app/app.dll")
@@ -1015,7 +1015,7 @@ public class McmodServiceTests {
     // Arrange: a local path that does not exist is an invalid package argument
     // (protocol/cli.md §3), which names no installed package (§5.2).
     string path = _ws.AddZip("x.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "x",
     });
@@ -1088,7 +1088,7 @@ public class McmodServiceTests {
     AddLib("1.0.0");
     await _ws.Service.Install([Lib], _options);
     string moved = _ws.Git.AddTag(Lib, "v1.0.0", new() {
-      ["lip.yaml"] = LibPackageFile("1.0.0"),
+      ["lip.toml"] = LibPackageFile("1.0.0"),
       ["lib.dll"] = "lib moved",
     });
     _ws.Restart();
@@ -1105,7 +1105,7 @@ public class McmodServiceTests {
   public async Task Update_BranchAtTheSameCommit_ReplacesNothing() {
     // Arrange
     string commit = _ws.Git.AddBranch(Lib, "main", new() {
-      ["lip.yaml"] = LibPackageFile("1.0.0", hook: true),
+      ["lip.toml"] = LibPackageFile("1.0.0", hook: true),
       ["lib.dll"] = "head",
     });
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
@@ -1125,7 +1125,7 @@ public class McmodServiceTests {
     AddLib("1.0.0", hook: true);
     await _ws.Service.Install([Lib], _options);
     string moved = _ws.Git.AddTag(Lib, "v1.0.0", new() {
-      ["lip.yaml"] = LibPackageFile("1.0.0", hook: true),
+      ["lip.toml"] = LibPackageFile("1.0.0", hook: true),
       ["lib.dll"] = "lib moved",
     });
     _ws.Restart();
@@ -1146,13 +1146,13 @@ public class McmodServiceTests {
     await _ws.Service.Install(["example.com/a"], _options);
     _ws.AddDownload("https://example.com/moved.mcmod", WorkspaceHarness.Mcmod("B"));
     _ws.AddTag("example.com/a", "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml("example.com/a", "1.0.0",
+      ["lip.toml"] = WorkspaceHarness.LipToml("example.com/a", "1.0.0",
           """ "assets": [ { "type": "mcmod", "urls": [ "https://example.com/moved.mcmod" ] } ]"""),
     });
     AddMod("example.com/b", "B");
     _ws.Restart();
 
-    // Act: the installed package is reinstalled with the package file the workspace file records,
+    // Act: the installed package is reinstalled with the package file the state file records,
     // so its mod name is still A, and b's mod name B does not clash with it.
     await _ws.Service.Install(["example.com/b"], _options);
 
@@ -1172,7 +1172,7 @@ public class McmodServiceTests {
     // Arrange
     AddLib("1.0.0");
     await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
-    _ws.Git.AddTag(Lib, "v1.0.0", new() { ["lip.yaml"] = LibPackageFile("1.0.0"), ["lib.dll"] = "moved" });
+    _ws.Git.AddTag(Lib, "v1.0.0", new() { ["lip.toml"] = LibPackageFile("1.0.0"), ["lib.dll"] = "moved" });
     AddLib("1.1.0");
     _ws.Restart();
 
@@ -1189,7 +1189,7 @@ public class McmodServiceTests {
   public async Task Update_SourceWithoutRef_MovesBackToVersionTags() {
     // Arrange
     AddLibAndApp();
-    _ws.Git.AddBranch(Lib, "main", new() { ["lip.yaml"] = LibPackageFile("1.5.0"), ["lib.dll"] = "head" });
+    _ws.Git.AddBranch(Lib, "main", new() { ["lip.toml"] = LibPackageFile("1.5.0"), ["lib.dll"] = "head" });
     await _ws.Service.Install([$"{Lib}@branch:main"], _options);
 
     // Act
@@ -1206,7 +1206,7 @@ public class McmodServiceTests {
     // Arrange: same tag, but the asset its URL serves changes.
     _ws.AddDownload("https://example.com/data.zip", WorkspaceHarness.Zip(new() { ["d.txt"] = "1" }));
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(Lib, "1.0.0", """
+      ["lip.toml"] = WorkspaceHarness.LipToml(Lib, "1.0.0", """
           "assets": [ { "type": "zip", "urls": [ "https://example.com/data.zip" ],
             "place": [ { "src": "d.txt", "dest": "d.txt" } ] } ]
           """),
@@ -1228,13 +1228,13 @@ public class McmodServiceTests {
   public async Task Update_LocalZipOfSameVersion_ReplacesNothing() {
     // Arrange
     _ws.AddZip("x.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "v1",
     });
     await _ws.Service.Install(["x.zip"], _options);
     _ws.AddZip("x.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "v2",
     });
@@ -1272,13 +1272,13 @@ public class McmodServiceTests {
   public async Task Update_NoArgumentsSourceGivesOtherIdentity_ReplacesThePackage() {
     // Arrange: the local ZIP file now holds a package of another id.
     _ws.AddZip("x.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "x",
     });
     await _ws.Service.Install(["x.zip"], _options);
     _ws.AddZip("x.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/y", "1.0.0", WorkspaceHarness.SelfAsset("y.txt", "y.txt")),
       ["y.txt"] = "y",
     });
@@ -1298,18 +1298,18 @@ public class McmodServiceTests {
   public async Task Update_NoArgumentsTwoSourcesGiveSameIdentity_Fails() {
     // Arrange: a.zip now holds b 2.0.0, while b.zip still holds b 1.0.0.
     _ws.AddZip("a.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
       ["a.txt"] = "a",
     });
     _ws.AddZip("b.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/b", "1.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
       ["b.txt"] = "b1",
     });
     await _ws.Service.Install(["a.zip", "b.zip"], _options);
     _ws.AddZip("a.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/b", "2.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
       ["b.txt"] = "b2",
     });
@@ -1328,12 +1328,12 @@ public class McmodServiceTests {
   public async Task Update_NoArgumentsTwoSourcesGiveSamePackage_ReplacesWithIt() {
     // Arrange: a.zip now holds the package b.zip holds.
     _ws.AddZip("a.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
       ["a.txt"] = "a",
     });
     Dictionary<string, string> b = new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/b", "1.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
       ["b.txt"] = "b",
     };
@@ -1358,18 +1358,18 @@ public class McmodServiceTests {
   public async Task Update_NoArgumentsSourceGivesPackageKeptAsItIs_Fails() {
     // Arrange: a.zip now holds b 2.0.0, while b.zip, which b 1.0.0 was installed from, is gone.
     _ws.AddZip("a.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/a", "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
       ["a.txt"] = "a",
     });
     string path = _ws.AddZip("b.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/b", "1.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
       ["b.txt"] = "b1",
     });
     await _ws.Service.Install(["a.zip", "b.zip"], _options);
     _ws.AddZip("a.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/b", "2.0.0", WorkspaceHarness.SelfAsset("b.txt", "b.txt")),
       ["b.txt"] = "b2",
     });
@@ -1389,7 +1389,7 @@ public class McmodServiceTests {
   public async Task Update_LocalPathGone_KeepsPackageAndWarns() {
     // Arrange
     string path = _ws.AddZip("x.zip", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
       ["x.txt"] = "v1",
     });
@@ -1470,10 +1470,10 @@ public class McmodServiceTests {
     // Arrange: the local package needs lib; then its package file drops the dependency.
     AddLib("1.0.0");
     _ws.AddFile("src/x.txt", "x");
-    _ws.AddFile("src/lip.yaml", WorkspaceHarness.LipYaml("example.com/local", "1.0.0",
+    _ws.AddFile("src/lip.toml", WorkspaceHarness.LipToml("example.com/local", "1.0.0",
         $$""" "deps": { "{{Lib}}": ">=1.0.0" }, """ + WorkspaceHarness.SelfAsset("x.txt", "x.txt")));
     await _ws.Service.Install(["./src"], _options);
-    _ws.AddFile("src/lip.yaml", WorkspaceHarness.LipYaml(
+    _ws.AddFile("src/lip.toml", WorkspaceHarness.LipToml(
         "example.com/local", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")));
     LockFile before = await _ws.Lock();
 
@@ -1597,14 +1597,14 @@ public class McmodServiceTests {
     await _ws.Service.Install([Lib], _options);
     const string any = "example.com/any";
     _ws.AddTag(any, "1.0.0", new() {
-      ["lip.yaml"] = $$"""
+      ["lip.toml"] = WorkspaceHarness.Toml($$"""
           {
             "format": 4,
             "id": "{{any}}",
             "version": "1.0.0",
             "variants": { "": [ { "platform": "server", "runtime": "linux-x64" } ] }
           }
-          """,
+          """),
     });
     SortedDictionary<string, string> before = WorkspaceSnapshot();
 
@@ -1657,12 +1657,12 @@ public class McmodServiceTests {
 
   #endregion
 
-  #region Invalid workspace files
+  #region Invalid state files
 
   [Theory]
-  [InlineData(".lip/workspace.yaml", """{ "format": "bf45b1", "platform": "server", "packages": [] }""")]
-  [InlineData(".lip/workspace.yaml", """{ "format_version": 3, "packages": [] }""")]
-  [InlineData(".lip/workspace.yaml", "format: 4\nplatform: server\nruntime: win-x64\npackages: [ { } ]\n")]
+  [InlineData(".lip/state.json", """{ "format": "bf45b1", "platform": "server", "packages": [] }""")]
+  [InlineData(".lip/state.json", """{ "format_version": 3, "packages": [] }""")]
+  [InlineData(".lip/state.json", """{ "format": 4, "platform": "server", "runtime": "win-x64", "packages": [ { } ] }""")]
   public async Task Operations_InvalidWorkspaceFile_FailWithoutChanges(string file, string content) {
     // Arrange
     AddLibAndApp();
@@ -1702,7 +1702,7 @@ public class McmodServiceTests {
     // runs, so it is kept and the operation makes no change (protocol/workspace.md §2, §4).
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
           WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini") + """, "preserve": [ "cfg.ini" ]"""),
       ["cfg.ini"] = "default",
@@ -1866,7 +1866,7 @@ public class McmodServiceTests {
 
   /// Version 1.0.0 of lib with no asset; entry holds extra members of its entry.
   private void AddEmptyLib(string entry = "") => _ws.AddTag(Lib, "1.0.0", new() {
-    ["lip.yaml"] = WorkspaceHarness.LipYaml(Lib, "1.0.0", entry),
+    ["lip.toml"] = WorkspaceHarness.LipToml(Lib, "1.0.0", entry),
   });
 
   /// Makes mods a link to the directory shared.
@@ -1891,25 +1891,25 @@ public class McmodServiceTests {
   }
 
 
-  /// A YAML file as the JSON value it represents.
-  private static JsonNode? Yaml(string yaml) {
-    using JsonDocument document = YamlJson.Parse(yaml);
+  /// A TOML file as the JSON value it represents.
+  private static JsonNode? Toml(string toml) {
+    using JsonDocument document = TomlJson.Parse(toml);
     return JsonNode.Parse(document.RootElement.GetRawText());
   }
 
-  private static string LibPackageFile(string version, bool hook = false) => WorkspaceHarness.LipYaml(
+  private static string LibPackageFile(string version, bool hook = false) => WorkspaceHarness.LipToml(
       Lib,
       version,
       WorkspaceHarness.SelfAsset("lib.dll", "lib/lib.dll")
           + (hook ? """, "hooks": { "post_install": [ "lib-installed" ] }""" : ""));
 
   private void AddLib(string version, bool hook = false) => _ws.AddTag(Lib, version, new() {
-    ["lip.yaml"] = LibPackageFile(version, hook),
+    ["lip.toml"] = LibPackageFile(version, hook),
     ["lib.dll"] = $"lib {version}",
   });
 
   private void AddApp(string version, string libRange) => _ws.AddTag(App, version, new() {
-    ["lip.yaml"] = WorkspaceHarness.LipYaml(
+    ["lip.toml"] = WorkspaceHarness.LipToml(
         App,
         version,
         $$""" "deps": { "{{Lib}}": "{{libRange}}" }, """
@@ -1923,7 +1923,7 @@ public class McmodServiceTests {
     string name = id[(id.LastIndexOf('/') + 1)..];
     string deps = string.Join(", ", dependencies.Chunk(2).Select(d => $"\"{d[0]}\": \"{d[1]}\""));
     _ws.AddTag(id, version, new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(
+      ["lip.toml"] = WorkspaceHarness.LipToml(
           id,
           version,
           $$""" "deps": { {{deps}} }, """ + WorkspaceHarness.SelfAsset($"{name}.txt", $"{name}.txt")),
@@ -1943,7 +1943,7 @@ public class McmodServiceTests {
 
   /// Version 1.0.0 of a package whose variants "a" and "b" place a.dll and b.dll.
   private void AddVariantsPackage(string id = Lib) => _ws.AddTag(id, "1.0.0", new() {
-    ["lip.yaml"] = $$"""
+    ["lip.toml"] = WorkspaceHarness.Toml($$"""
         {
           "format": 4,
           "id": "{{id}}",
@@ -1955,14 +1955,14 @@ public class McmodServiceTests {
               "assets": [ { "type": "self", "place": [ { "src": "b.dll", "dest": "b.dll" } ] } ] } ]
           }
         }
-        """,
+        """),
     ["a.dll"] = "a",
     ["b.dll"] = "b",
   });
 
   /// A local directory holding a package example.com/local placing x.txt at out/x.txt.
   private void AddLocalDirectory(string relative, string version, string content) {
-    _ws.AddFile($"{relative}/lip.yaml", WorkspaceHarness.LipYaml(
+    _ws.AddFile($"{relative}/lip.toml", WorkspaceHarness.LipToml(
         "example.com/local", version, WorkspaceHarness.SelfAsset("x.txt", "out/x.txt")));
     _ws.AddFile($"{relative}/x.txt", content);
   }
@@ -1973,7 +1973,7 @@ public class McmodServiceTests {
     string url = $"https://example.com/{name}.mcmod";
     _ws.AddDownload(url, WorkspaceHarness.Mcmod(name));
     _ws.AddTag(id, "1.0.0", new() {
-      ["lip.yaml"] = WorkspaceHarness.LipYaml(id, "1.0.0",
+      ["lip.toml"] = WorkspaceHarness.LipToml(id, "1.0.0",
           $$"""{{entry}} "assets": [ { "type": "mcmod", "urls": [ "{{url}}" ] } ]"""),
     });
   }

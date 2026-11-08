@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/LiteLDev/lip/raw/main/protocol/state.schema.json",
+  "title": "lip state.json (format 4)",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": 4
+    },
+    "platform": {
+      "enum": ["server", "client"]
+    },
+    "runtime": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "description": "The package file of the package.",
+            "$ref": "lip.schema.toml"
+          },
+          "variant": {
+            "type": "string"
+          },
+          "explicit": {
+            "type": "boolean"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["manifest", "variant", "explicit", "ref", "files"]
+      }
+    }
+  },
+  "required": ["format", "platform", "runtime", "packages"]
+}
