@@ -189,7 +189,8 @@ escape character. A glob must not be empty, start with `/`, or contain `//` or `
 
 `preserve` and `purge` are matched against paths relative to the workspace, also for
 a mod: write `mods/MyMod/config/`, not `config/`. `purge` never matches `mods`
-or `.lip` at the workspace root, nor anything below `.lip`.
+or `.lip` at the workspace root, nor anything below `.lip`, and a path below `mods`
+does not match only because `mods` does: `mods/` and `*/` delete nothing below `mods`.
 
 ### Hooks
 

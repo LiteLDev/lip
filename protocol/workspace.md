@@ -65,7 +65,7 @@ The globs of `preserve` and `purge` are matched against paths relative to the wo
 
 1. Run `hooks.pre_uninstall`.
 2. Delete each file owned by P that matches no glob of its `preserve`.
-3. Delete each path that matches a glob of its `purge` and is not owned by another package; a directory is deleted with everything below it. `mods` and `.lip` at the workspace root, and everything below `.lip`, never match.
+3. Delete each path that matches a glob of its `purge` and is not owned by another package; a directory is deleted with everything below it. `mods` and `.lip` at the workspace root, and everything below `.lip`, never match, and a path below `mods` does not match a glob only because `mods` does.
 4. Run `hooks.post_uninstall`.
 
 Each directory that steps 2 and 3 left empty, except `mods`, is deleted when the operation completes, if it is empty then (Section 7.5).
