@@ -10,7 +10,8 @@ public static class Packer {
   /// path relative to it, except output itself (whatever path reaches it) and everything below
   /// .git/ and .lip/ at its root. Files are written in ordinal order of their paths; links are
   /// not followed, special files (FIFOs, sockets, device nodes) are left out, and an
-  /// inaccessible directory fails the command rather than being left out.
+  /// inaccessible directory, or a '\' in the name of a packed file or of a directory above it,
+  /// fails the command before output is touched.
   public static async Task WriteArchive(IFileSystem fs, string directory, string output) {
     string root = fs.Path.GetFullPath(directory);
     if (!fs.Directory.Exists(root)) {
@@ -36,13 +37,25 @@ public static class Packer {
     try {
       foreach (string file in fs.Directory.EnumerateFiles(root, "*", options)) {
         string full = fs.Path.GetFullPath(file);
-        string entry = fs.Path.GetRelativePath(root, full).Replace('\\', '/');
+        string entry = fs.Path.GetRelativePath(root, full);
+        if (fs.Path.DirectorySeparatorChar == '\\') {
+          entry = entry.Replace('\\', '/');
+        }
+
         if (string.Equals(full, outputPath, comparison)
             || entry.StartsWith(".git/", StringComparison.Ordinal)
             || entry.StartsWith(".lip/", StringComparison.Ordinal)
             || UnixFileType.IsSpecialFile(full)
             || (outputIdentity is not null && FileIdentity.Of(full) == outputIdentity)) {
           continue;
+        }
+
+        // Outside Windows '\' is not a separator, so a name may contain it; a ZIP entry cannot
+        // (protocol/package.md §1), so the file cannot be packed at its own path.
+        if (entry.Contains('\\')) {
+          throw new InvalidOperationException(
+              $"Cannot pack {root}: '{full}' has a '\\' in its path, which a ZIP archive cannot"
+              + " hold. Rename it.");
         }
 
         files.Add((entry, full));

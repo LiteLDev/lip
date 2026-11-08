@@ -141,6 +141,34 @@ public class PackerTests {
     }
   }
 
+  [Theory]
+  [InlineData(@"a\b.txt")]
+  [InlineData(@"d\e/f.txt")]
+  public async Task WriteArchive_NameWithBackslash_ThrowsWithoutWriting(string path) {
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows names cannot contain '\\'.");
+
+    // Arrange: a ZIP entry cannot contain '\' (protocol/package.md §1), so the file cannot be
+    // packed at its own path (protocol/cli.md §5.11).
+    FileSystem fs = new();
+    string root = UnixFileTypeTests.MakeTempRootPath();
+    string full = Path.Join(root, path);
+    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+    try {
+      File.WriteAllText(full, "x");
+      string output = Path.Join(root, "out.zip");
+      File.WriteAllText(output, "previous");
+
+      // Act & Assert: nothing is written, not even the truncation of <FILE>.
+      InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+          () => Packer.WriteArchive(fs, root, output));
+      Assert.Contains(full, ex.Message);
+      Assert.Equal("previous", File.ReadAllText(output));
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
   [Fact]
   public async Task WriteArchive_OutputThroughALinkToTheDirectory_IsLeftOut() {
     // Arrange: <FILE> is never part of the archive (protocol/cli.md §5.11), whatever path

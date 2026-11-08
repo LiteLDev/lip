@@ -24,6 +24,8 @@ lip pack [DIR] -o <FILE>
 
 Writes to `<FILE>`, replacing any existing file, a ZIP archive holding every regular file below `DIR` at its path relative to `DIR`. `<FILE>` itself, and everything in `.git/` and `.lip/` at the root of `DIR`, are left out. The files are packed as they are: `lip pack` does not read or check `lip.yaml` or `manifest.json`.
 
+A ZIP archive cannot hold a `\` in a name, so on Linux and macOS `lip pack` fails, without writing `<FILE>`, if the name of a file to pack, or of a directory above it, contains `\`. Rename it first.
+
 Use it to build:
 
 - the archive of an `mcmod` asset, from a directory with the LeviLamina `manifest.json` of the mod at its root, e.g. the output directory of your build. Attach it to the release and list its URL in the `urls` of the asset. See [A Mod](../../guides/creating_packages.md#a-mod).
