@@ -19,6 +19,6 @@ A package is an archive with a `lip.yaml` at its root. See [lip.yaml](lip_yaml.m
 - **git repositories**: A package id such as `github.com/user/repo` is the git repository `https://github.com/user/repo.git`, read with lip's built-in git smart-HTTP (protocol version 2) client; the `git` command-line tool is not required. There is no central registry: the versions are the repository's `v<semver>` tags, and a git ref (`@branch:`, `@tag:`, `@rev:`) picks one commit instead.
 - **URLs**: ZIP archives downloaded over HTTPS.
 - **Local files and directories**: ZIP files and directories with a `lip.yaml` at their root, given to `lip install` by path.
-- **Cache**: Stores downloaded git objects by object id (`git-<id>`), so they are shared across versions and packages, and HTTP(S) downloads by the SHA-256 of their URL (`http-<hash>`).
+- **Cache**: Stores HTTP(S) downloads by the SHA-256 of their URL (`http-<hash>`). Git archives are not cached.
 
 See [Internal Mechanism](../guides/internal_mechanism.md#package-resolution) for details.

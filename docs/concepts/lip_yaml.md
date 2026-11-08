@@ -18,7 +18,7 @@ A package lives in an **archive**, a tree of files and directories with `lip.yam
   regular files and directories belong to it (no symbolic links or submodules);
 - a **ZIP archive**: a ZIP file, downloaded over HTTPS or on your disk. Whether a file is a ZIP
   archive depends only on its content, not its name. Its entries must be regular files or
-  directories with `/`-separated paths that do not start with `/` or contain `..` or `\`;
+  directories with `/`-separated paths that do not start with `/` or contain a `..` segment or `\`;
 - a **directory archive**: a directory on your disk, taken as the archive of its contents.
 
 ## Example
