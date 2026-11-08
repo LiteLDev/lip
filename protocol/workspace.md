@@ -104,7 +104,7 @@ An operation succeeds or fails as a whole.
 
 Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early (Section 6 rule 1) MAY leave them.
 
-`.lip/logs` holds failure reports (Section 2 of [CLI]). Creating it and writing or deleting below it is not a change, and any process MAY do so at any time.
+`.lip/logs` holds failure reports (Section 2.5 of [CLI]). Creating it and writing or deleting below it is not a change, and any process MAY do so at any time.
 
 ### 7.1. Workspace File
 
