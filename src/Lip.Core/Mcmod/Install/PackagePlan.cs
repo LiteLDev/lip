@@ -17,12 +17,16 @@ public sealed record PackagePlan(
   public IEnumerable<string> WrittenPaths =>
       Steps.OfType<WriteStep>().Select(s => s.FullPath);
 
+  /// Whether the plan runs a hook command.
+  public bool RunsHooks => Steps.OfType<ScriptStep>().Any(s => s.Commands.Count > 0);
+
   /// Whether the plan may change the workspace (protocol/workspace.md §1): it writes a file,
-  /// deletes a file or a directory, or deletes what matches when it runs (§6 rule 4). Hook
-  /// commands alone are no change.
-  public bool MayChange => Steps.Any(s => s switch {
+  /// deletes a file or a directory, or, when hook commands of the operation run
+  /// (hooksRun), deletes what they leave matching when it runs (§6 rule 4); without them the
+  /// workspace stays as planned. Hook commands alone are no change.
+  public bool MayChange(bool hooksRun) => Steps.Any(s => s switch {
     WriteStep or DeleteFileStep or DeleteDirectoryStep => true,
-    DeleteMatchesStep m => m.OwnedFiles.Count > 0 || m.Purge.Count > 0,
+    DeleteMatchesStep m => hooksRun && (m.OwnedFiles.Count > 0 || m.Purge.Count > 0),
     _ => false,
   });
 }

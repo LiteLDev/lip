@@ -1637,10 +1637,11 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Uninstall_PackageWithPurgeModsIsALink_ThrowsWithoutChanges() {
-    // Arrange: purge matches when it runs (protocol/workspace.md §6 rule 4), so it may change the
-    // workspace even when nothing matches now.
-    AddEmptyLib(""" "purge": [ "cache/" ]""");
+  public async Task Uninstall_PackageWithPurgeAndHooksModsIsALink_ThrowsWithoutChanges() {
+    // Arrange: purge matches when it runs (protocol/workspace.md §6 rule 4), after hook commands
+    // that may create what it matches, so it may change the workspace even when nothing matches
+    // now.
+    AddEmptyLib(""" "purge": [ "cache/" ], "hooks": { "pre_uninstall": [ "make-cache" ] }""");
     await _ws.Service.Install([Lib], _options);
     LinkMods();
     SortedDictionary<string, string> before = WorkspaceSnapshot();
@@ -1649,6 +1650,21 @@ public class McmodServiceTests {
     await Assert.ThrowsAsync<WorkspaceLayoutException>(
         () => _ws.Service.Uninstall([Lib], _options));
     Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Fact]
+  public async Task Uninstall_PackageWithPurgeMatchingNothingNoHooks_CreatesNoMods() {
+    // Arrange: without hook commands the workspace stays as planned, and purge matches nothing.
+    AddEmptyLib(""" "purge": [ "cache/" ]""");
+    await _ws.Service.Install([Lib], _options);
+    LinkMods();
+
+    // Act
+    await _ws.Service.Uninstall([Lib], _options);
+
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
   }
 
   /// Version 1.0.0 of lib with no asset; entry holds extra members of its entry.

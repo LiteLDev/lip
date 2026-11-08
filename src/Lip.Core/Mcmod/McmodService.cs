@@ -847,7 +847,8 @@ public class McmodService(
       }
     }
 
-    bool changesWorkspace = plans.Any(p => p.Plan.MayChange);
+    bool hooksRun = plans.Any(p => p.Plan.RunsHooks);
+    bool changesWorkspace = plans.Any(p => p.Plan.MayChange(hooksRun));
     if (changesWorkspace) {
       _layout.Check(layout);
       if (options.DryRun) {
