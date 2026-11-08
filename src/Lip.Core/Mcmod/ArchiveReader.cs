@@ -8,7 +8,8 @@ namespace Lip.Core.Mcmod;
 
 /// What makes an archive a package (protocol/package.md §1): its package file (File), or, for an
 /// archive without one, its tooth.json of format 1, 2 or 3 read as format 3 (Legacy,
-/// protocol/compatibility.md §2). Json is the file as written.
+/// protocol/compatibility.md §2). Json is the file as read: lip.toml with its templates rendered
+/// (protocol/package.md §3), or tooth.json as written.
 public record PackageDocument(PackageFile? File, PackageManifest? Legacy, JsonElement Json) {
   /// The package id.
   public string Id => File?.Id ?? Legacy!.Path;

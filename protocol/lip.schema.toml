@@ -1,7 +1,7 @@
 "$schema" = "http://json-schema.org/draft-07/schema#"
 "$id" = "https://github.com/LiteLDev/lip/raw/main/protocol/lip.schema.toml"
 title = "lip lip.toml (format 4)"
-description = "Keys not described here are ignored. Within a variant, no two entries have the same platform and runtime."
+description = "Constrains lip.toml after its templates (Scriban, e.g. {{version}}) are rendered. Keys not described here are ignored. Within a variant, no two entries have the same platform and runtime."
 type = "object"
 required = ["format", "id", "version", "variants"]
 

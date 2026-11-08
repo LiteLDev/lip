@@ -47,7 +47,7 @@ preserve = ["mods/MyMod/config/"]
 
 [[variants."".assets]]
 type = "mcmod"
-urls = ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
+urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-server-win-x64.zip"]
 
 [[variants.""]]
 platform = "client"
@@ -60,7 +60,7 @@ preserve = ["mods/MyMod/config/"]
 
 [[variants."".assets]]
 type = "mcmod"
-urls = ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"]
+urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-client-win-x64.zip"]
 ```
 
 Versions and ranges are strings, so they are always quoted. Quote a key that has characters other
@@ -213,6 +213,30 @@ does not match only because `mods` does: `mods/` and `*/` delete nothing below `
 Commands run in the workspace root with `cmd /c` on Windows and `sh -c` elsewhere. A command
 that exits with a non-zero code fails the operation. If an operation fails, lip undoes its file
 changes, but not what hook commands already did, so hook commands should be safe to run again.
+
+## Templates
+
+Every string of `lip.toml`, other than a key, is a template in the
+[Scriban language](https://github.com/scriban/scriban/blob/7.5.0/site/docs/language.md), as in the
+`tooth.json` of lip v0.37.0. lip renders each one before it reads the file, so everything described
+above, such as the version check and the validation of URLs and globs, applies to the rendered
+values. The variables are the top-level fields as written: `{{version}}`, `{{id}}`, `{{format}}`,
+`{{info.name}}`, `{{variants}}`, and any other top-level key you add. A variable holds the field as
+written, before its own templates are rendered.
+
+```toml
+version = "1.2.3"
+
+[[variants."".assets]]
+type = "mcmod"
+urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-{{version}}.zip"]
+```
+
+A template may use any Scriban expression, e.g. `{{version | string.replace "." "_"}}`. An undefined
+variable renders as nothing. A template that does not parse or fails to render, such as
+`{{ if }}`, makes the archive not a package. To write `{{` literally, write `{{ "{{" }}`.
+[`lip view`](../cli/commands/view.md) shows the package file with its templates rendered, and the
+[state file](lockfiles.md) records it so.
 
 ## Mods
 

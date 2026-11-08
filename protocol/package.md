@@ -7,7 +7,7 @@
   - **ZIP archive**: a file in the ZIP format [APPNOTE], by content, whatever its name. Each entry MUST be a regular file or directory; entry paths are decoded as UTF-8, MUST be `/`-separated, and MUST NOT be empty, start with `/`, or contain a `..` segment or `\`.
   - **directory archive**: a directory, taken as the archive of its contents. The name of each file and directory below it MUST NOT contain `\`.
   - **git archive**: the tree of a git commit [GIT-OBJECTS], with only its regular files (modes `100644` and `100755`) and trees. The name of each entry of each of its trees MUST NOT be empty, `.` or `..`, or contain `/` or `\`.
-- **package file**: The TOML file `lip.toml` at the root of an archive.
+- **package file**: The TOML file `lip.toml` at the root of an archive, read with its templates rendered (Section 3).
 - **package**: An archive whose package file is valid against `lip.schema.toml` and satisfies Section 3, or one that Section 2 of [COMPATIBILITY] reads as such.
 - **package id**: The `id` of a package, a Go module path [GO-MODULE], compared ASCII case-insensitively.
 - **version**: A [SEMVER] version, without a leading `v`.
@@ -81,6 +81,8 @@ A **URL** names the ZIP archive in the response body of an HTTPS GET of the loca
 A **local file** is a local path naming a file, which MUST be a ZIP archive. A **local directory** is a local path naming a directory, which is a directory archive.
 
 ## 3. Package Files
+
+Each string of the TOML file `lip.toml`, other than a key, is a **template**: text in the Scriban language [SCRIBAN]. The package file is the value of that TOML file with each template replaced by its rendering, in which each member of the top-level object of the value as written is a variable of the same name, holding that member's value as written; e.g. `{{version}}` renders as the `version` written. A template that cannot be parsed or rendered makes the archive not a package. Everything else that this protocol says of the package file, its schema included, applies to the rendered value.
 
 A package file MUST also satisfy:
 

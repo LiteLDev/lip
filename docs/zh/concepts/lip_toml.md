@@ -44,7 +44,7 @@ preserve = ["mods/MyMod/config/"]
 
 [[variants."".assets]]
 type = "mcmod"
-urls = ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"]
+urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-server-win-x64.zip"]
 
 [[variants.""]]
 platform = "client"
@@ -57,7 +57,7 @@ preserve = ["mods/MyMod/config/"]
 
 [[variants."".assets]]
 type = "mcmod"
-urls = ["https://github.com/example/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"]
+urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-client-win-x64.zip"]
 ```
 
 版本和版本范围都是字符串，因此总要加引号。含有 ASCII 字母、数字、`_` 和 `-` 以外字符的键也要加引号，例如 `deps` 中的包 id 或默认变体 `""`：`[[variants.""]]` 为默认变体添加一个条目。
@@ -195,6 +195,26 @@ glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 命令在工作区根目录中运行，Windows 上使用 `cmd /c`，其他系统上使用 `sh -c`。以非零退出码退出的命令会
 使操作失败。操作失败时，lip 会撤销其文件改动，但不会撤销钩子命令已经做过的事，因此钩子命令应当可以
 安全地再次运行。
+
+## 模板
+
+与 lip v0.37.0 的 `tooth.json` 一样，`lip.toml` 中除键以外的每个字符串都是
+[Scriban 语言](https://github.com/scriban/scriban/blob/7.5.0/site/docs/language.md)的模板。lip 在读取文件之前
+先渲染每个模板，因此上文所述的一切，例如版本检查以及 URL 和 glob 的校验，都作用于渲染后的值。变量是按原样书写的
+顶层字段：`{{version}}`、`{{id}}`、`{{format}}`、`{{info.name}}`、`{{variants}}`，以及你添加的任何其他顶层键。
+变量保存的是字段的原样内容，其中的模板不会先被渲染。
+
+```toml
+version = "1.2.3"
+
+[[variants."".assets]]
+type = "mcmod"
+urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-{{version}}.zip"]
+```
+
+模板中可以使用任何 Scriban 表达式，例如 `{{version | string.replace "." "_"}}`。未定义的变量渲染为空。
+无法解析或渲染失败的模板（例如 `{{ if }}`）会使该归档不是包。要原样写出 `{{`，请写成 `{{ "{{" }}`。
+[`lip view`](../cli/commands/view.md) 显示渲染后的包文件，[状态文件](lockfiles.md)中记录的也是渲染后的包文件。
 
 ## Mod
 
