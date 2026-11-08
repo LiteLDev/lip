@@ -11,6 +11,7 @@ namespace Lip.Core.Mcmod.Compat;
 ///   §2 reads (PackageDocument.ParseToothJson), it is a failure, and nothing is changed.
 /// - Questions are asked through IUserInteraction.Ask before anything is written, and a result
 ///   that is not a valid package file is a failure.
+/// - The templates of tooth.json are kept where they read back as migrated (ToothTemplates).
 /// - lip.toml is written atomically, through lip.toml.tmp, then tooth.json is deleted.
 ///
 /// The notes are ToothMigrator's and those of ToothMigrator.DroppedFields.
@@ -55,7 +56,7 @@ public static class RepositoryMigrator {
 
     byte[] bytes;
     try {
-      bytes = ToothMigrator.Serialize(result.Document);
+      bytes = ToothMigrator.Serialize(ToothTemplates.Restore(result.Document, document.Json));
       using JsonDocument written = PackageFileParser.ParseToml(bytes);
       _ = PackageFileParser.Parse(written.RootElement);
     }

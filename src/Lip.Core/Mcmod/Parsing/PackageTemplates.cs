@@ -12,6 +12,16 @@ public static class PackageTemplates {
   /// The value with each string rendered. Throws PackageFormatException, naming the string, when
   /// a template cannot be parsed or rendered.
   public static JsonDocument Render(JsonElement root) {
+    JsonNode? rendered = RenderNode(root, Model(root), "$");
+    return JsonDocument.Parse(rendered?.ToJsonString() ?? "null");
+  }
+
+  /// One template rendered with the top-level members of root as its variables. Throws
+  /// PackageFormatException when it cannot be parsed or rendered.
+  public static string Render(string text, JsonElement root) =>
+      RenderString(text, Model(root), "$");
+
+  private static ScriptObject Model(JsonElement root) {
     ScriptObject model = [];
     if (root.ValueKind == JsonValueKind.Object) {
       foreach (JsonProperty member in root.EnumerateObject()) {
@@ -19,8 +29,7 @@ public static class PackageTemplates {
       }
     }
 
-    JsonNode? rendered = RenderNode(root, model, "$");
-    return JsonDocument.Parse(rendered?.ToJsonString() ?? "null");
+    return model;
   }
 
   private static JsonNode? RenderNode(JsonElement element, ScriptObject model, string path) {

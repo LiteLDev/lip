@@ -16,6 +16,7 @@ lip migrate
 - 每个标签变为一个变体。对其适用的每个运行时，该标签下的变体按 lip v0.37.0 的方式合并，合并后的变体依赖 `github.com/LiteLDev/LeviLamina#client` 时变为一个客户端条目，依赖 `github.com/LiteLDev/LeviLamina` 的其他变体时变为一个服务端条目，不依赖 LeviLamina 时变为两个条目，每个平台各一个。
 - 每个条目的转换方式与 lip 读取[早期格式](../../concepts/lip_toml.md#早期格式)的 `tooth.json` 完全相同：`dependencies` 变为 `deps`；资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`；`preserve_files` 变为 `preserve`（不含 `/` 的模式加上前缀 `**/`），`remove_files` 变为 `purge`（不以 `/` 结尾的模式还会再加上以 `/` 结尾的形式）；scripts 变为 `hooks`。在 `lip.toml` 中无效的放置规则和模式会被略去。
 - 合并后的变体含有类型为 `tar`、`tgz` 或 `uncompressed` 的资源的运行时不会得到条目，因为 `lip.toml` 没有这些资源类型。
+- [模板](../../concepts/lip_toml.md#模板)会被保留：`https://example.com/v{{version}}/tool.zip` 这样的值（格式 1 和 2 中的 `$(version)`）在 `lip.toml` 中写为同样的模板，其中 `{{tooth}}`（格式 1 和 2 中的 `$(path)`）改名为 `{{id}}`。在 `lip.toml` 中会渲染出不同值的模板（例如 `{{format_version}}`）写为其渲染后的值。
 
 `lip.toml` 没有 RID 模式。当结果需要的某个值缺失或无效时，例如 `win-*` 这样的平台模式或 `windows/amd64` 这样不是 RID 的平台所代表的 RID，或没有 platform 的变体所适用的 RID，lip 会在终端上询问，直到回答有效为止。若标准输入或标准错误不是终端，则会失败，指明本应询问的值，且不做任何修改。
 
