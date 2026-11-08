@@ -63,7 +63,7 @@ lip install https://example.com/package.zip
 
 lip 管理服务端工作区：mod 安装到 `mods/<name>/`（参见[环境](../concepts/lip_yaml.md#环境)）。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
 
-在 `lip install`、`lip uninstall` 或 `lip update` 改动任何包之前，lip 会在 `mods` 不存在时创建它。若 `mods` 是链接，lip 停止，不做任何改动。
+在 `lip install`、`lip uninstall` 或 `lip update` 在工作区中写入或删除文件之前，lip 会在 `mods` 不存在时创建它；不写入也不删除任何文件的操作（例如安装一个没有资源的包）不会触及 `mods`。若 `mods` 是链接，lip 停止，不做任何改动。
 
 ## 命令参数
 

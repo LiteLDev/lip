@@ -788,14 +788,10 @@ public class McmodService(
   /// cancellation) undoes every change and leaves the workspace file as it was
   /// (protocol/workspace.md §6). In a dry run, reports the plans instead.
   private async Task Execute(Workspace workspace, OperationOptions options, ChangeSet changeSet) {
-    WorkspaceLayout.LayoutPlan? layout = null;
-    if (changeSet.Changes.Any(c => c is not MarkExplicitChange)) {
-      layout = _layout.Plan(workspace.Root);
-      if (options.DryRun) {
-        await _layout.ReportDryRun(layout);
-      }
-    }
-
+    // The changes are planned against the layout an operation that changes the workspace makes
+    // first; it is checked and made only when the operation may change the workspace
+    // (protocol/workspace.md §2).
+    WorkspaceLayout.LayoutPlan layout = _layout.Plan(workspace.Root);
     WorkspaceView view = new(_fs, layout);
     List<LockedPackage> remaining = [.. workspace.Lock.Packages];
     List<(string Message, PackagePlan Plan)> plans = [];
@@ -851,6 +847,14 @@ public class McmodService(
       }
     }
 
+    bool changesWorkspace = plans.Any(p => p.Plan.MayChange);
+    if (changesWorkspace) {
+      _layout.Check(layout);
+      if (options.DryRun) {
+        await _layout.ReportDryRun(layout);
+      }
+    }
+
     LockFile final = LockWith(workspace, await changeSet.Finish(remaining));
     if (options.DryRun) {
       return;
@@ -865,7 +869,7 @@ public class McmodService(
     using WorkspaceTransaction transaction = new(
         _fs, JournalPath(workspace.Root), plans.SelectMany(p => p.Plan.WrittenPaths));
     try {
-      if (layout is not null) {
+      if (changesWorkspace) {
         _layout.Apply(layout, transaction);
       }
 

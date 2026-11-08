@@ -16,6 +16,15 @@ public sealed record PackagePlan(
   /// The absolute paths the plan writes.
   public IEnumerable<string> WrittenPaths =>
       Steps.OfType<WriteStep>().Select(s => s.FullPath);
+
+  /// Whether the plan may change the workspace (protocol/workspace.md §1): it writes a file,
+  /// deletes a file or a directory, or deletes what matches when it runs (§6 rule 4). Hook
+  /// commands alone are no change.
+  public bool MayChange => Steps.Any(s => s switch {
+    WriteStep or DeleteFileStep or DeleteDirectoryStep => true,
+    DeleteMatchesStep m => m.OwnedFiles.Count > 0 || m.Purge.Count > 0,
+    _ => false,
+  });
 }
 
 /// One step of a package plan. Paths are absolute.

@@ -33,28 +33,35 @@ public class WorkspaceLayout(IFileSystem fileSystem, IUserInteraction userIntera
       string.Equals(path.TrimEnd('/'), LockStore.LipDirectory, PathComparison)
       || path.StartsWith(LockStore.LipDirectory + "/", PathComparison);
 
-  /// What making the layout right takes (see Plan). Mods is absolute.
-  public sealed record LayoutPlan(string Mods, bool CreateMods);
+  /// What making the layout right takes (see Plan). Mods is absolute; LinkTarget is where mods
+  /// links to when it is a link.
+  public sealed record LayoutPlan(string Mods, bool CreateMods, string? LinkTarget);
 
-  /// Checks the layout before a mutating operation and returns what makes it right, without
-  /// changing anything: mods is created when missing; a mods that is a link is an error.
+  /// Reads what making the layout right takes, without changing anything: mods is created when
+  /// missing. Whether the layout is right is checked (Check) only when the operation changes the
+  /// workspace.
   public LayoutPlan Plan(string workspaceRoot) {
     string mods = _fs.Path.Join(_fs.Path.GetFullPath(workspaceRoot), ModsDirectory);
+    string? target = _fs.DirectoryInfo.New(mods).LinkTarget;
+    bool create = target is null && !_fs.Directory.Exists(mods);
+    RunTrace.Write("workspace", target is not null
+        ? $"{mods} is a link to {target}"
+        : create
+            ? $"{mods} does not exist; it is created if the operation changes the workspace"
+            : $"{mods} exists");
+    return new LayoutPlan(mods, create, target);
+  }
 
+  /// Checks the layout before an operation changes the workspace: a mods that is a link is an
+  /// error. Throws WorkspaceLayoutException.
+  public void Check(LayoutPlan plan) {
     // A mods link would let writes under mods/ land outside the workspace.
-    if (_fs.DirectoryInfo.New(mods).LinkTarget is { } target) {
-      RunTrace.Write("workspace", $"{mods} is a link to {target}");
+    if (plan.LinkTarget is { } target) {
       throw new WorkspaceLayoutException(
-          $"The mods directory '{mods}' is a link to '{target}', but lip only installs into a"
+          $"The mods directory '{plan.Mods}' is a link to '{target}', but lip only installs into a"
           + " real directory, so that it never writes outside the workspace. Replace the link"
           + " with a directory (move the mods into it), then try again.");
     }
-
-    bool create = !_fs.Directory.Exists(mods);
-    RunTrace.Write("workspace", create
-        ? $"{mods} does not exist; it will be created"
-        : $"{mods} exists");
-    return new LayoutPlan(mods, create);
   }
 
   /// Reports what applying the plan would do.

@@ -63,7 +63,7 @@ lip install https://example.com/package.zip
 
 lip manages server workspaces: mods are installed to `mods/<name>/` (see [Environment](../concepts/lip_yaml.md#environment)). Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
-Before `lip install`, `lip uninstall` or `lip update` changes any package, lip creates `mods` if it is missing. If `mods` is a link, lip stops and changes nothing.
+Before `lip install`, `lip uninstall` or `lip update` writes or deletes files in the workspace, lip creates `mods` if it is missing; an operation that writes and deletes nothing, such as installing a package without assets, leaves `mods` alone. If `mods` is a link, lip stops and changes nothing.
 
 ## Command Flags
 

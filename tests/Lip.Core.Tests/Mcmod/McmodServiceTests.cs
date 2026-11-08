@@ -1505,6 +1505,165 @@ public class McmodServiceTests {
 
   #endregion
 
+  #region Layout
+
+  [Fact]
+  public async Task Install_PackageWritingNothing_CreatesNoMods() {
+    // Arrange: an install that writes no file makes no change (protocol/workspace.md §1 and §2).
+    AddEmptyLib();
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+    Assert.Equal(Lib, Assert.Single((await _ws.Lock()).Packages).Id);
+  }
+
+  [Fact]
+  public async Task Install_OnlyHookCommandsIgnored_CreatesNoMods() {
+    // Arrange
+    AddEmptyLib(""" "hooks": { "pre_install": [ "check" ] }""");
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { IgnoreScripts = true });
+
+    // Assert
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
+    _ws.CommandRunner.Verify(r => r.Run(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    Assert.Single((await _ws.Lock()).Packages);
+  }
+
+  [Fact]
+  public async Task Install_OnlyHookCommands_RunsThemWithoutCreatingMods() {
+    // Arrange: hook commands alone are no change, but they run with the journal
+    // (protocol/workspace.md §7.4).
+    AddEmptyLib(""" "hooks": { "pre_install": [ "check" ] }""");
+    bool? journalExisted = null;
+    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root))
+        .Callback(() => journalExisted = _ws.Fs.File.Exists(_ws.JournalPath))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.True(journalExisted);
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+  }
+
+  [Fact]
+  public async Task Install_PackageWritingNothingModsIsALink_Succeeds() {
+    // Arrange
+    AddEmptyLib();
+    LinkMods();
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.Single((await _ws.Lock()).Packages);
+  }
+
+  [Fact]
+  public async Task Install_PackageWritingNothingDryRun_ReportsNoMods() {
+    // Arrange
+    AddEmptyLib();
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { DryRun = true });
+
+    // Assert
+    _ws.Ui.Verify(
+        u => u.PrintInfo("Dry run: would create the directory mods/"), Times.Never);
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
+  }
+
+  [Fact]
+  public async Task Install_PackageWritingFiles_CreatesMods() {
+    // Arrange
+    AddLib("1.0.0");
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.True(_ws.Fs.Directory.Exists(_ws.Path("mods")));
+    Assert.True(_ws.Exists("lib/lib.dll"));
+  }
+
+  [Fact]
+  public async Task Install_PackageWritingFilesModsIsALink_ThrowsWithoutChanges() {
+    // Arrange
+    AddLib("1.0.0");
+    LinkMods();
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act & Assert
+    await Assert.ThrowsAsync<WorkspaceLayoutException>(
+        () => _ws.Service.Install([Lib], _options));
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Fact]
+  public async Task Uninstall_PackageOwningNothing_CreatesNoMods() {
+    // Arrange
+    AddEmptyLib();
+    await _ws.Service.Install([Lib], _options);
+
+    // Act
+    await _ws.Service.Uninstall([Lib], _options);
+
+    // Assert
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+    Assert.Empty((await _ws.Lock()).Packages);
+  }
+
+  [Fact]
+  public async Task Uninstall_PackageOwningNothingModsIsALink_Succeeds() {
+    // Arrange
+    AddEmptyLib();
+    await _ws.Service.Install([Lib], _options);
+    LinkMods();
+
+    // Act
+    await _ws.Service.Uninstall([Lib], _options);
+
+    // Assert
+    Assert.Empty((await _ws.Lock()).Packages);
+  }
+
+  [Fact]
+  public async Task Uninstall_PackageWithPurgeModsIsALink_ThrowsWithoutChanges() {
+    // Arrange: purge matches when it runs (protocol/workspace.md §6 rule 4), so it may change the
+    // workspace even when nothing matches now.
+    AddEmptyLib(""" "purge": [ "cache/" ]""");
+    await _ws.Service.Install([Lib], _options);
+    LinkMods();
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act & Assert
+    await Assert.ThrowsAsync<WorkspaceLayoutException>(
+        () => _ws.Service.Uninstall([Lib], _options));
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  /// Version 1.0.0 of lib with no asset; entry holds extra members of its entry.
+  private void AddEmptyLib(string entry = "") => _ws.AddTag(Lib, "1.0.0", new() {
+    ["lip.yaml"] = WorkspaceHarness.LipYaml(Lib, "1.0.0", entry),
+  });
+
+  /// Makes mods a link to the directory shared.
+  private void LinkMods() {
+    _ws.Fs.AddDirectory(_ws.Path("shared"));
+    _ws.Fs.Directory.CreateSymbolicLink(_ws.Path("mods"), "shared");
+  }
+
+  #endregion
+
   /// The files, directories and links of the workspace, without lip's cache outside it.
   private SortedDictionary<string, string> WorkspaceSnapshot() => new(
       _ws.Snapshot().Where(e => e.Key.StartsWith(_ws.Root, StringComparison.Ordinal))
