@@ -819,14 +819,20 @@ public class McmodService(
     await _ui.PrintWarning(
         "--no-dependencies is enabled. This operation may result in a broken workspace.");
 
-    // In installation order (protocol/workspace.md §5): after the requested packages that
-    // satisfy its dependencies.
+    // In installation order (protocol/workspace.md §5), as the workspace file afterwards
+    // records it: the order of the requested packages among every package installed then, so
+    // that a cycle through an installed package counts too.
     List<Candidate> requested = await RequestedCandidates(workspace, requests);
-    IReadOnlyList<Candidate> candidates = GraphSolver.InstallOrder(requested, c =>
-        c.Package.Entry.Dependencies.SelectMany(d => requested.Where(
-            r => SameIdentity(
-                    r.Package.Identity, Package.GetIdentity(d.Source.Target, d.Source.Variant))
-                && d.Range.IsSatisfiedBy(r.Package.Version))));
+    List<OrderNode> nodes = [
+      .. workspace.Lock.Packages
+          .Where(p => !requested.Any(c => SameIdentity(c.Package.Identity, p.Identity)))
+          .Select(p => OrderNode.Of(p, workspace.Environment)),
+      .. requested.Select(c => new OrderNode(
+          c.Package.Identity, c.Package.Version, c.Package.Entry.Dependencies, c)),
+    ];
+    List<Candidate> candidates = [
+      .. InstallationOrder(nodes).Select(n => n.Candidate).OfType<Candidate>(),
+    ];
     List<Change> changes = [];
     foreach (Candidate candidate in candidates) {
       LockedPackage? existing = workspace.Lock.Packages.FirstOrDefault(
@@ -852,32 +858,49 @@ public class McmodService(
   /// identities with A-Z replaced by a-z. A package without an entry for the environment has no
   /// dependencies here.
   private static List<LockedPackage> InInstallationOrder(
-      List<LockedPackage> packages, LipEnvironment environment) {
-    List<LockedPackage> sorted = [
-      .. packages.OrderBy(p => PackageNames.Fold(p.Identity), StringComparer.Ordinal),
-    ];
-    List<IReadOnlyList<PackageDependency>> dependencies = [
-      .. sorted.Select(p => DependenciesOf(p, environment)),
-    ];
-    List<SemVersion?> versions = [
-      .. sorted.Select(p => SemVersion.TryParse(
-          p.Version, SemVersionStyles.Strict, out SemVersion? v) ? v : null),
+      List<LockedPackage> packages, LipEnvironment environment) =>
+      [.. InstallationOrder([.. packages.Select(p => OrderNode.Of(p, environment))])
+          .Select(n => n.Locked!)];
+
+  /// Nodes in installation order (protocol/workspace.md §5): a package after the packages that
+  /// satisfy its dependencies, and a cycle in ascending order of identities with A-Z replaced by
+  /// a-z.
+  private static IEnumerable<OrderNode> InstallationOrder(List<OrderNode> nodes) {
+    List<OrderNode> sorted = [
+      .. nodes.OrderBy(n => PackageNames.Fold(n.Identity), StringComparer.Ordinal),
     ];
     IReadOnlyList<int> order = GraphSolver.InstallOrder(sorted.Count, i =>
-        dependencies[i].SelectMany(d => Enumerable.Range(0, sorted.Count).Where(
+        sorted[i].Dependencies.SelectMany(d => Enumerable.Range(0, sorted.Count).Where(
             j => SameIdentity(
                     sorted[j].Identity, Package.GetIdentity(d.Source.Target, d.Source.Variant))
-                && versions[j] is SemVersion v && d.Range.IsSatisfiedBy(v))));
-    return [.. order.Select(i => sorted[i])];
+                && sorted[j].Version is SemVersion v && d.Range.IsSatisfiedBy(v))));
+    return order.Select(i => sorted[i]);
+  }
 
-    static IReadOnlyList<PackageDependency> DependenciesOf(
-        LockedPackage package, LipEnvironment environment) {
+  /// A package to put in installation order: installed (Locked) or to install (Candidate).
+  private sealed record OrderNode(
+      string Identity,
+      SemVersion? Version,
+      IReadOnlyList<PackageDependency> Dependencies,
+      Candidate? Candidate = null,
+      LockedPackage? Locked = null) {
+    /// An installed package; one without an entry for the environment has no dependencies here.
+    public static OrderNode Of(LockedPackage package, LipEnvironment environment) {
+      IReadOnlyList<PackageDependency> dependencies;
       try {
-        return McmodInstaller.LockedEntry(package, environment).Dependencies;
+        dependencies = McmodInstaller.LockedEntry(package, environment).Dependencies;
       }
       catch (McmodInstallException) {
-        return [];
+        dependencies = [];
       }
+
+      return new OrderNode(
+          package.Identity,
+          SemVersion.TryParse(package.Version, SemVersionStyles.Strict, out SemVersion? v)
+              ? v
+              : null,
+          dependencies,
+          Locked: package);
     }
   }
 

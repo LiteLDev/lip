@@ -377,6 +377,37 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_NoDependenciesOfACycleThroughAnInstalledPackage_InstallsInInstallationOrder() {
+    // Arrange: zeta needs c, c needs alpha and alpha needs zeta; c is installed.
+    const string alpha = "example.com/cycle/alpha";
+    const string c = "example.com/cycle/c";
+    const string zeta = "example.com/cycle/zeta";
+    foreach ((string id, string dependency) in new[] { (zeta, c), (c, alpha), (alpha, zeta) }) {
+      _ws.AddTag(id, "1.0.0", new() {
+        ["lip.yaml"] = WorkspaceHarness.LipYaml(
+            id, "1.0.0", $$""" "deps": { "{{dependency}}": "1.0.0" }"""),
+      });
+    }
+
+    await _ws.Service.Install([c], _options with { NoDependencies = true });
+    List<string> installed = [];
+    _ws.Ui.Setup(u => u.PrintInfo(It.Is<string>(m => m.StartsWith("Installing"))))
+        .Callback((string message) => installed.Add(message))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([zeta, alpha], _options with { NoDependencies = true });
+
+    // Assert: the three are a cycle, installed and recorded in ascending order of identities
+    // (protocol/workspace.md §5, §7.1).
+    Assert.Collection(
+        installed,
+        m => Assert.Contains($"'{alpha}'", m),
+        m => Assert.Contains($"'{zeta}'", m));
+    Assert.Equal([alpha, c, zeta], (await _ws.Lock()).Packages.Select(p => p.Identity));
+  }
+
+  [Fact]
   public async Task Uninstall_NoDependenciesOfAMemberOfACycle_RecordsTheRestInInstallationOrder() {
     // Arrange: a needs c, c needs b and b needs a, a cycle recorded as a, b, c.
     const string a = "example.com/cycle/a", b = "example.com/cycle/b", c = "example.com/cycle/c";
