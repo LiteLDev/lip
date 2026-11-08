@@ -27,6 +27,16 @@ public static class Packer {
     // The same file can be reached by other paths (links, junctions, case, 8.3 short names), and
     // packing <FILE> would read it while it is being written.
     FileIdentity? outputIdentity = FileIdentity.Of(outputPath);
+    // Whether the entry is below the directory name at the root, also when it is spelled in
+    // another case on a file system that ignores case: then both name the same directory.
+    bool IsBelow(string entry, string name) {
+      int slash = entry.IndexOf('/', StringComparison.Ordinal);
+      string first = slash < 0 ? "" : entry[..slash];
+      return first == name
+          || (first.Equals(name, StringComparison.OrdinalIgnoreCase)
+              && FileIdentity.Of(fs.Path.Join(root, name)) is FileIdentity identity
+              && FileIdentity.Of(fs.Path.Join(root, first)) == identity);
+    }
 
     List<(string Entry, string Path)> files = [];
     EnumerationOptions options = new() {
@@ -43,8 +53,7 @@ public static class Packer {
         }
 
         if (string.Equals(full, outputPath, comparison)
-            || entry.StartsWith(".git/", StringComparison.Ordinal)
-            || entry.StartsWith(".lip/", StringComparison.Ordinal)
+            || IsBelow(entry, ".git") || IsBelow(entry, ".lip")
             || UnixFileType.IsSpecialFile(full)
             || (outputIdentity is not null && FileIdentity.Of(full) == outputIdentity)) {
           continue;

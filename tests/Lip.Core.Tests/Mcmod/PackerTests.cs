@@ -198,6 +198,34 @@ public class PackerTests {
   }
 
   [Fact]
+  public async Task WriteArchive_GitAndLipInAnotherCase_AreLeftOutWhereTheyAreThem() {
+    // Arrange: on a case-insensitive file system (e.g. macOS, Windows) .GIT and .Lip are .git and
+    // .lip; on a case-sensitive one they are other directories, which are packed.
+    FileSystem fs = new();
+    string root = UnixFileTypeTests.MakeTempRootPath();
+    Directory.CreateDirectory(Path.Join(root, ".GIT"));
+    Directory.CreateDirectory(Path.Join(root, ".Lip"));
+    try {
+      File.WriteAllText(Path.Join(root, "a.txt"), "a");
+      File.WriteAllText(Path.Join(root, ".GIT", "x"), "x");
+      File.WriteAllText(Path.Join(root, ".Lip", "y"), "y");
+      bool ignoresCase = Directory.Exists(Path.Join(root, ".git"));
+      string output = Path.Join(root, "out.zip");
+
+      // Act
+      await Packer.WriteArchive(fs, root, output);
+
+      // Assert
+      Assert.Equal(
+          ignoresCase ? ["a.txt"] : [".GIT/x", ".Lip/y", "a.txt"],
+          (await Entries(fs, output)).Keys.Order(StringComparer.Ordinal));
+    }
+    finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
   public async Task WriteArchive_OutputByAnotherCase_IsLeftOut() {
     // Arrange: on a case-insensitive file system (e.g. macOS, Windows) another case names the
     // same file.
