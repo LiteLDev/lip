@@ -342,6 +342,41 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_NoDependenciesOtherVersion_KeepsInstallationOrder() {
+    // Arrange
+    AddLibAndApp();
+    await _ws.Service.Install([$"{App}@1.0.0", $"{Lib}@1.0.0"], _options);
+
+    // Act
+    await _ws.Service.Install([$"{Lib}@1.1.0"], _options with { NoDependencies = true });
+
+    // Assert: lib still satisfies the dependency of app, so it comes first
+    // (protocol/workspace.md §5, §7.1).
+    Assert.Equal([Lib, App], (await _ws.Lock()).Packages.Select(p => p.Identity));
+  }
+
+  [Fact]
+  public async Task Install_NoDependenciesOfADependencyAndItsDependent_InstallsInInstallationOrder() {
+    // Arrange
+    AddLibAndApp();
+    List<string> installed = [];
+    _ws.Ui.Setup(u => u.PrintInfo(It.Is<string>(m => m.StartsWith("Installing"))))
+        .Callback((string message) => installed.Add(message))
+        .Returns(Task.CompletedTask);
+
+    // Act: app is named before lib, which satisfies its dependency.
+    await _ws.Service.Install(
+        [$"{App}@1.0.0", $"{Lib}@1.0.0"], _options with { NoDependencies = true });
+
+    // Assert
+    Assert.Equal([Lib, App], (await _ws.Lock()).Packages.Select(p => p.Identity));
+    Assert.Collection(
+        installed,
+        m => Assert.Contains($"'{Lib}'", m),
+        m => Assert.Contains($"'{App}'", m));
+  }
+
+  [Fact]
   public async Task Install_NoDependenciesDryRunOfInstalledDependency_ReportsMarkingIt() {
     // Arrange
     AddLibAndApp();
