@@ -7,12 +7,13 @@
     "format": {
       "const": 4
     },
-    "platform": {
+    "side": {
       "enum": ["server", "client"]
     },
-    "runtime": {
+    "platform": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "not": { "enum": ["server", "client"] }
     },
     "packages": {
       "type": "array",
@@ -47,5 +48,9 @@
       }
     }
   },
-  "required": ["format", "platform", "runtime", "packages"]
+  "required": ["format", "side", "platform", "packages"],
+  "not": {
+    "description": "The keys of lip before v0.40.",
+    "required": ["runtime"]
+  }
 }

@@ -14,9 +14,9 @@
 - **version of a package**: The `version` of its package file.
 - **range**: A string that `SemVersionRange.Parse` of [SEMVER-NET] accepts with its default options, with the matching semantics of that range. A version satisfies a range that matches it.
 - **variant**: `""`, or a string matching `^[a-z0-9_]+(/[a-z0-9_]+)?$`.
-- **platform**: `"server"` or `"client"`.
-- **runtime**: A .NET runtime identifier [RID].
-- **environment**: A pair (platform, runtime) for which packages are resolved.
+- **side**: `"server"` or `"client"`.
+- **platform**: A .NET runtime identifier [RID].
+- **environment**: A pair (side, platform) for which packages are resolved.
 
 ## 2. Sources
 
@@ -88,8 +88,9 @@ A package file MUST also satisfy:
 
 - `id` is a valid Go module path [GO-MODULE], and `version` is a version.
 - Each key of `deps` is `<package id>` or `<package id>#<variant>`, the variant other than `""`, and each value is a range.
-- In each entry, `platform` is a platform and `runtime` is a runtime.
-- No two entries of the same variant have the same `platform` and the same `runtime`.
+- In each entry, `side` is a side and `platform` is a platform.
+- No entry has the key `runtime`, and no entry's `platform` is `"server"` or `"client"`: these are the keys of lip before v0.40.
+- No two entries of the same variant have the same `side` and the same `platform`.
 - Each entry has at most one asset whose `type` is `"mcmod"`.
 - Each glob of `preserve` and `purge`, and each `src` in the glob form, is a glob as the schema describes it.
 
@@ -103,7 +104,7 @@ Resolve(source, range, environment) is the ordered sequence of **candidates** th
 
    An archive that cannot be obtained, or is not a package, contributes no candidate.
 
-2. Entries. A package is a candidate, with the entry of `variants[v]` (v the variant of the source) whose `platform` and `runtime` equal the corresponding components of `environment`, when such an entry exists and the version of the package satisfies `range`. Otherwise it contributes no candidate.
+2. Entries. A package is a candidate, with the entry of `variants[v]` (v the variant of the source) whose `side` and `platform` equal the corresponding components of `environment`, when such an entry exists and the version of the package satisfies `range`. Otherwise it contributes no candidate.
 
 The **identity** of a candidate is its package id, followed by `#` and the variant of the source when that is not `""`.
 

@@ -496,9 +496,9 @@ public partial class McmodInstaller(
         ?? throw new McmodInstallException(
             $"The package file that the state file ({LockStore.LipDirectory}/"
             + $"{LockStore.FileName}) records for {package.Identity} {package.Version} has no"
-            + $" entry of {variant} for the platform {environment.Platform.ToSpecString()} and"
-            + $" the runtime {environment.Runtime}. If you passed --rid, pass the runtime the"
-            + " workspace was installed for instead.");
+            + $" entry of {variant} for the side {environment.Side.ToSpecString()} and"
+            + $" the platform {environment.Platform}. If you passed --platform, pass the platform"
+            + " the workspace was installed for instead.");
   }
 
   /// A package for messages: its identity and version.

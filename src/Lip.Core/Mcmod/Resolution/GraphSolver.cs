@@ -368,8 +368,8 @@ public class GraphSolver(IResolver resolver) {
         IReadOnlyList<PackageRequest> requests,
         IReadOnlyList<Candidate> pinned) {
       RunTrace.Write("resolve", $"Solving {requests.Count} requests with {pinned.Count}"
-          + $" installed packages kept, for ({environment.Platform.ToSpecString()},"
-          + $" {environment.Runtime})");
+          + $" installed packages kept, for ({environment.Side.ToSpecString()},"
+          + $" {environment.Platform})");
       foreach (PackageRequest request in requests) {
         _agenda.Add(RequestRequirement(request));
       }

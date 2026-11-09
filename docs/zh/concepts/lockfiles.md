@@ -18,7 +18,7 @@
 2.  **可复现性**：记录安装每个已安装包时所用的包文件，对于来自 git 仓库的包还记录其所在的提交。当 lip 再次需要某个包时，会用该包文件安装它，而不是重新解析该包。
 3.  **卸载**：`lip` 追踪包写入磁盘的每个文件，使 `lip uninstall` 能干净地删除与包相关的所有文件，避免工作区中残留"腐烂文件"。
 4.  **依赖图**：区分用户显式安装的包和作为依赖安装的包。这样 `lip uninstall` 也能移除不再被任何显式安装的包需要的依赖（除非指定了 `--no-dependencies`），`lip list` 也能把两组分开显示。
-5.  **环境**：一旦得知工作区的平台和 RID，就将其记录下来，使后续命令使用同一[环境](lip_toml.md#环境)。
+5.  **环境**：一旦得知工作区的运行端和平台，就将其记录下来，使后续命令使用同一[环境](lip_toml.md#环境)。
 
 状态文件在一次操作的所有包都安装或卸载完成后才替换一次。若操作失败，lip 会撤销其对工作区的修改，状态文件保持原样，因此两者始终一致（参见[内部机制](../guides/internal_mechanism.md#流程)）。
 
@@ -29,8 +29,8 @@
 ```json
 {
   "format": 4,
-  "platform": "server",
-  "runtime": "win-x64",
+  "side": "server",
+  "platform": "win-x64",
   "packages": [...]
 }
 ```
@@ -38,11 +38,11 @@
 ### 字段
 
 *   **`format`**：状态文件的格式，`4`。
-*   **`platform`**：工作区的平台，`"server"` 或 `"client"`。lip 写入 `"server"`。
-*   **`runtime`**：工作区的 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)。
+*   **`side`**：工作区的运行端，`"server"` 或 `"client"`。lip 写入 `"server"`。
+*   **`platform`**：工作区的平台，一个 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)。
 *   **`packages`**：已安装的包，按安装顺序排列：一个包排在满足其依赖的包之后。
 
-`platform` 和 `runtime` 总是存在且从不为 `null`；缺少它们的状态文件无效。没有状态文件的工作区从其第一次 `install`、`uninstall` 或 `update` 获得环境（参见 [`lip install`](../cli/commands/install.md)）。
+`side` 和 `platform` 总是存在且从不为 `null`；缺少它们的状态文件无效。没有状态文件的工作区从其第一次 `install`、`uninstall` 或 `update` 获得环境（参见 [`lip install`](../cli/commands/install.md)）。
 
 ### 包条目
 
@@ -57,7 +57,7 @@
 *   **`commit`**：仅用于来自 git 仓库的包：其归档所在的提交，以小写十六进制表示。来自 URL 或本地路径的包没有 `commit`。
 *   **`files`**：包拥有的文件，相对于工作区根目录，以 `/` 分隔。
 
-已安装的条目是 `manifest.variants[variant]` 中 `platform` 和 `runtime` 与工作区相同的那个条目。
+已安装的条目是 `manifest.variants[variant]` 中 `side` 和 `platform` 与工作区相同的那个条目。
 
 lip 只按身份、版本和提交比较已安装的包与它解析出的包：身份和版本相同、且都不来自 git 仓库或来自同一提交的两个包是同一个包，即使 URL 或本地路径的文件此后已经改变。下载的 ZIP 归档或资源的校验和既不记录也不检查。
 
@@ -68,8 +68,8 @@ lip 只按身份、版本和提交比较已安装的包与它解析出的包：�
 ```json
 {
   "format": 4,
-  "platform": "server",
-  "runtime": "win-x64",
+  "side": "server",
+  "platform": "win-x64",
   "packages": [
     {
       "manifest": {
@@ -79,8 +79,8 @@ lip 只按身份、版本和提交比较已安装的包与它解析出的包：�
         "variants": {
           "": [
             {
-              "platform": "server",
-              "runtime": "win-x64",
+              "side": "server",
+              "platform": "win-x64",
               "deps": { "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0" },
               "assets": [
                 {
@@ -101,6 +101,10 @@ lip 只按身份、版本和提交比较已安装的包与它解析出的包：�
   ]
 }
 ```
+
+## lip v0.39.x 的工作区
+
+lip v0.39.x 的状态文件同样是格式 4，但在其根部以及每个记录的 `manifest` 的条目中，把运行端写作 `platform`、把平台写作 `runtime`。lip 不读取这样的状态文件：含有 `runtime`、或 `platform` 为 `"server"` 或 `"client"` 的根部或条目会使命令失败，并给出消息，提示把 `platform` 改名为 `side`、把 `runtime` 改名为 `platform`。lip 不会迁移它；请在根部以及每个 `manifest` 的每个条目中改名这两个键。下一节介绍 lip v0.37.0 及更早版本的工作区。
 
 ## lip v0.x 的工作区
 

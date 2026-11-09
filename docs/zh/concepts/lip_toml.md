@@ -1,6 +1,6 @@
 # lip.toml
 
-lip 包是根部带有**包文件** `lip.toml` 的归档。`lip.toml` 给出包的名称和版本，并针对每个变体、平台和运行时
+lip 包是根部带有**包文件** `lip.toml` 的归档。`lip.toml` 给出包的名称和版本，并针对每个变体、运行端和平台
 描述 lip 要安装的内容：依赖、要放置的文件、要安装的 mod 以及要运行的命令。
 规范性定义见[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md)。
 
@@ -31,11 +31,11 @@ version = "1.0.0"
 [info]
 name = "My Mod"
 description = "A short description"
-tags = ["levilamina", "mod"]
+tags = ["utility"]
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 preserve = ["mods/MyMod/config/"]
 
 [variants."".deps]
@@ -47,8 +47,8 @@ type = "mcmod"
 urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-server-win-x64.zip"]
 
 [[variants.""]]
-platform = "client"
-runtime = "win-x64"
+side = "client"
+platform = "win-x64"
 preserve = ["mods/MyMod/config/"]
 
 [variants."".deps]
@@ -86,7 +86,7 @@ urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-c
 | --- | --- | --- |
 | `name` | `string` | 显示名称。 |
 | `description` | `string` | 简短描述。 |
-| `tags` | `string[]` | 标签。 |
+| `tags` | `string[]` | 标签。参见[推荐标签](../guides/creating_packages.md#推荐标签)。 |
 | `logo` | `string` | 徽标图片的 URL，必须以 `https://` 开头；其响应（直接或经重定向后）即为该图片。 |
 
 lip 不使用 `info`。
@@ -97,17 +97,17 @@ lip 不使用 `info`。
 `^[a-z0-9_]+(/[a-z0-9_]+)?$`，例如 `lua` 或 `quickjs`。用户在来源后加上 `#<variant>` 来选择变体，例如
 `lip install github.com/LiteLDev/LegacyScriptEngine#lua`；不带 `#` 的来源选择 `""`。
 
-每个条目恰好适用于一个**平台**和一个**运行时**。lip 解析包时，取所选变体中 `platform` 和 `runtime`
-与工作区[环境](#环境)完全相同的那个条目。没有通配符：支持多个运行时的包要为每个运行时各写一个条目。
+每个条目恰好适用于一个**运行端**和一个**平台**。lip 解析包时，取所选变体中 `side` 和 `platform`
+与工作区[环境](#环境)完全相同的那个条目。没有通配符：支持多个平台的包要为每个平台各写一个条目。
 若该变体没有这样的条目，则该包不是该环境下的候选。同一变体中的任意两个条目不得具有相同的
-`platform` 和 `runtime`。
+`side` 和 `platform`。
 
 ### 条目
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `platform` | `string` | 是 | `"server"` 或 `"client"`。 |
-| `runtime` | `string` | 是 | [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)，例如 `win-x64`。 |
+| `side` | `string` | 是 | `"server"` 或 `"client"`。 |
+| `platform` | `string` | 是 | [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)，例如 `win-x64`。 |
 | `deps` | `object` | 否 | 参见[依赖](#依赖)。 |
 | `assets` | `array` | 否 | 参见[资源](#资源)。 |
 | `preserve` | `string[]` | 否 | 需保留文件的 [glob](#glob)：安装时不覆盖已存在的文件，卸载时也不删除它。 |
@@ -245,13 +245,20 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
 
 ## 环境
 
-工作区的环境是一个二元组 `(platform, runtime)`：
+工作区的环境是一个二元组 `(side, platform)`：
 
-- **platform**：`server` 或 `client`。lip 只管理服务端工作区，因此始终使用 `server`。客户端工作区由
-  LeviLauncher 等启动器管理；若工作区的[状态文件](lockfiles.md)记录的是 `client`，lip 会拒绝处理。
-- **runtime**：`--rid`，否则为状态文件记录的运行时，否则为 lip 自身运行的 RID（例如 `win-x64`）。
+- **运行端**（side）：`server` 或 `client`，即工作区是游戏的哪一端。lip 只管理服务端工作区，因此始终使用
+  `server`。客户端工作区由 LeviLauncher 等启动器管理；若工作区的[状态文件](lockfiles.md)记录的是
+  `client`，lip 会拒绝处理。
+- **平台**（platform）：一个 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)：`--platform`，
+  否则为状态文件记录的平台，否则为 lip 自身运行的平台（例如 `win-x64`）。
 
 ## 早期格式
+
+lip v0.39 的 `lip.toml` 同样是格式 4，但把运行端写作 `platform`、把平台写作 `runtime`，例如
+`platform = "server"` 和 `runtime = "win-x64"`。lip 不读取这样的条目：含有 `runtime`、或 `platform` 为
+`"server"` 或 `"client"` 的条目会使该归档不是包，并给出消息，提示把 `platform` 改名为 `side`、把
+`runtime` 改名为 `platform`。把每个条目的这两个键改名即可，其余内容保持不变。
 
 lip v0.37.0 及更早版本的包没有 `lip.toml`，而是有格式版本 1、2 或 3 的 `tooth.json`。lip 仍会安装它们，
 但从不写入它们；请使用 [`lip migrate`](../cli/commands/migrate.md) 把你的包转换为 `lip.toml`。带有
@@ -264,8 +271,9 @@ lip 解析、安装并记录到[状态文件](lockfiles.md)中的都是它。安
 - `tooth` 变为 `id`。`version` 为包的版本：在版本标签处为标签版本，而不论 `tooth.json` 的 `version` 写的是
   什么；否则为该 `version`。
 - 保留 `info`，但其 `avatar_url` 以 `https://` 开头时变为 `logo`，否则被丢弃。
-- 对每个标签，将该标签下 `platform` 为空或与运行时匹配（作为 RID 模式，例如 `win-*`）的变体，按 lip
-  v0.37.0 的方式合并为一个对应该环境平台和运行时的条目。没有这类变体的标签不构成变体。
+- 对每个标签，将该标签下 `platform` 为空或与环境的平台匹配（`tooth.json` 的 `platform` 是 RID 模式，
+  例如 `win-*`）的变体，按 lip v0.37.0 的方式合并为一个对应该环境运行端和平台的条目。
+  没有这类变体的标签不构成变体。
 - `dependencies` 原样变为 `deps`。
 - 每个资源保留其 `type` 和 `urls`，其 `placements` 变为 `place`（见下文）。类型为 `tar`、`tgz` 或
   `uncompressed` 的资源在 `lip.toml` 中不存在，会使该标签在该环境下没有变体。

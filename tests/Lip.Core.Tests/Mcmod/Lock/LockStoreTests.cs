@@ -28,7 +28,7 @@ public class LockStoreTests {
       string id,
       string version = "1.0.0",
       string variant = "",
-      string entry = """{"platform":"server","runtime":"win-x64"}""") => $$"""
+      string entry = """{"side":"server","platform":"win-x64"}""") => $$"""
       {"format":4,
        "id":"{{id}}","version":"{{version}}","variants":{"{{variant}}":[{{entry}}]} }
       """;
@@ -37,7 +37,7 @@ public class LockStoreTests {
       string id,
       string version = "1.0.0",
       string variant = "",
-      string entry = """{"platform":"server","runtime":"win-x64"}""") =>
+      string entry = """{"side":"server","platform":"win-x64"}""") =>
       JsonDocument.Parse(ManifestJson(id, version, variant, entry)).RootElement.Clone();
 
   private static LockedPackage SamplePackage(
@@ -45,7 +45,7 @@ public class LockStoreTests {
       string source,
       string? commit = null,
       string variant = "",
-      string entry = """{"platform":"server","runtime":"win-x64"}""") => new() {
+      string entry = """{"side":"server","platform":"win-x64"}""") => new() {
         Manifest = Manifest(id, variant: variant, entry: entry),
         Variant = variant,
         Explicit = true,
@@ -69,8 +69,8 @@ public class LockStoreTests {
       """;
 
   private static LockFile Lock(params LockedPackage[] packages) => new() {
-    Platform = "server",
-    Runtime = "win-x64",
+    Side = "server",
+    Platform = "win-x64",
     Packages = [.. packages],
   };
 
@@ -95,7 +95,7 @@ public class LockStoreTests {
             "github.com/a/zip",
             "https://example.com/z.zip",
             entry: """
-                {"platform":"server","runtime":"win-x64","assets":[{"type":"self"},
+                {"side":"server","platform":"win-x64","assets":[{"type":"self"},
                 {"type":"mcmod","urls":["https://example.com/m.zip"]}]}
                 """),
         SamplePackage("github.com/a/git", "github.com/a/git#lua/client@1.0.0", _commit,
@@ -106,7 +106,7 @@ public class LockStoreTests {
             "github.com/a/derived",
             _commit,
             entry: """
-                {"platform":"server","runtime":"win-x64","preserve":["**/config.json"],
+                {"side":"server","platform":"win-x64","preserve":["**/config.json"],
                 "purge":["data","data/"],"hooks":{"post_install":["echo"]}}
                 """));
 
@@ -115,8 +115,8 @@ public class LockStoreTests {
     LockFile loaded = (await _store.Load(_root))!;
 
     // Assert
+    Assert.Equal(original.Side, loaded.Side);
     Assert.Equal(original.Platform, loaded.Platform);
-    Assert.Equal(original.Runtime, loaded.Runtime);
     Assert.Equal(original.Packages.Count, loaded.Packages.Count);
     for (int i = 0; i < original.Packages.Count; i++) {
       LockedPackage expected = original.Packages[i];
@@ -150,14 +150,14 @@ public class LockStoreTests {
     // Assert
     string text = _fs.File.ReadAllText(LipLockPath);
     Assert.StartsWith(
-        "{\n  \"format\": 4,\n  \"platform\": \"server\",\n  \"runtime\": \"win-x64\",\n"
+        "{\n  \"format\": 4,\n  \"side\": \"server\",\n  \"platform\": \"win-x64\",\n"
         + "  \"packages\": [\n", text);
     Assert.EndsWith("}\n", text);
     JsonElement root = ReadWorkspaceFile();
-    Assert.Equal(["format", "platform", "runtime", "packages"], PropertyNames(root));
+    Assert.Equal(["format", "side", "platform", "packages"], PropertyNames(root));
     Assert.Equal(4, root.GetProperty("format").GetInt32());
-    Assert.Equal("server", root.GetProperty("platform").GetString());
-    Assert.Equal("win-x64", root.GetProperty("runtime").GetString());
+    Assert.Equal("server", root.GetProperty("side").GetString());
+    Assert.Equal("win-x64", root.GetProperty("platform").GetString());
     JsonElement[] packages = [.. root.GetProperty("packages").EnumerateArray()];
     Assert.Equal(
         ["manifest", "variant", "explicit", "ref", "files"], PropertyNames(packages[0]));
@@ -188,7 +188,7 @@ public class LockStoreTests {
   [Fact]
   public async Task Stage_ThenCommitStaged_RenamesStateJsonTmpOverStateJson() {
     // Arrange
-    await _store.Save(_root, Lock() with { Runtime = "linux-x64" });
+    await _store.Save(_root, Lock() with { Platform = "linux-x64" });
     string staged = _fs.Path.Join(_root, ".lip", "state.json.tmp");
 
     // Act
@@ -196,16 +196,16 @@ public class LockStoreTests {
 
     // Assert
     Assert.True(_fs.File.Exists(staged));
-    Assert.Equal("linux-x64", (await _store.Load(_root))!.Runtime);
+    Assert.Equal("linux-x64", (await _store.Load(_root))!.Platform);
     _store.CommitStaged(_root);
     Assert.False(_fs.File.Exists(staged));
-    Assert.Equal("win-x64", (await _store.Load(_root))!.Runtime);
+    Assert.Equal("win-x64", (await _store.Load(_root))!.Platform);
   }
 
   [Fact]
   public async Task DiscardStaged_StagedLock_DeletesItAndKeepsStateJson() {
     // Arrange
-    await _store.Save(_root, Lock() with { Runtime = "linux-x64" });
+    await _store.Save(_root, Lock() with { Platform = "linux-x64" });
     await _store.Stage(_root, Lock());
 
     // Act
@@ -214,7 +214,7 @@ public class LockStoreTests {
 
     // Assert
     Assert.False(_fs.File.Exists(_fs.Path.Join(_root, ".lip", "state.json.tmp")));
-    Assert.Equal("linux-x64", (await _store.Load(_root))!.Runtime);
+    Assert.Equal("linux-x64", (await _store.Load(_root))!.Platform);
   }
 
   [Fact]
@@ -301,7 +301,7 @@ public class LockStoreTests {
     // Arrange
     _fs.AddFile(LipLockPath, new MockFileData($$"""
         {
-          "format": 4, "platform": "server", "runtime": "win-x64",
+          "format": 4, "side": "server", "platform": "win-x64",
           "packages": [{
             "files": ["a.txt"], "ref": "github.com/a/b@branch:main", "commit": "{{_commit}}",
             "explicit": false, "variant": "",
@@ -328,15 +328,15 @@ public class LockStoreTests {
     _fs.AddFile(LipLockPath, new MockFileData($$"""
         {
           "format": 4,
-          "platform": "server",
-          "runtime": "win-x64",
+          "side": "server",
+          "platform": "win-x64",
           "packages": [
             {
               "manifest": {
                 "format": 4,
                 "id": "github.com/a/b",
                 "version": "1.2.3",
-                "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] }
+                "variants": { "": [ { "side": "server", "platform": "win-x64" } ] }
               },
               "variant": "",
               "explicit": true,
@@ -380,12 +380,12 @@ public class LockStoreTests {
 
   public static TheoryData<string> WorkspaceFilesWithoutFormat4() => [
     """{ "format_version": 3, "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d", "packages": [] }""",
-    """{ "format_version": 4, "platform": "server", "runtime": "win-x64", "packages": [] }""",
+    """{ "format_version": 4, "side": "server", "platform": "win-x64", "packages": [] }""",
     """{ "format": "bf45b1", "packages": [] }""",
     """{ "packages": [] }""",
-    """{ "format": 5, "platform": "server", "runtime": "win-x64", "packages": [] }""",
-    """{ "format": "4", "platform": "server", "runtime": "win-x64", "packages": [] }""",
-    """{ "format": [4], "platform": "server", "runtime": "win-x64", "packages": [] }""",
+    """{ "format": 5, "side": "server", "platform": "win-x64", "packages": [] }""",
+    """{ "format": "4", "side": "server", "platform": "win-x64", "packages": [] }""",
+    """{ "format": [4], "side": "server", "platform": "win-x64", "packages": [] }""",
   ];
 
   /// A state file not of format 4 is not valid against state.schema.json.
@@ -406,10 +406,10 @@ public class LockStoreTests {
 
   public static TheoryData<LockFile> InvalidLocks() => [
     Lock() with { Format = 3 },
-    Lock() with { Platform = "Server" },
+    Lock() with { Side = "Server" },
+    Lock() with { Side = null! },
+    Lock() with { Platform = "" },
     Lock() with { Platform = null! },
-    Lock() with { Runtime = "" },
-    Lock() with { Runtime = null! },
     Lock(GitPackage() with { Manifest = default }),
     Lock(GitPackage() with { Manifest = Manifest("github.com/a/b", "v1.0.0") }),
     Lock(GitPackage() with { Variant = "Client" }),
@@ -428,7 +428,7 @@ public class LockStoreTests {
 
   public static TheoryData<string> CorruptWorkspaceFiles() {
     const string head = """
-        "format": 4, "platform": "server", "runtime": "win-x64"
+        "format": 4, "side": "server", "platform": "win-x64"
         """;
     string manifest = ManifestJson("github.com/a/b");
     string Package(string members = "") =>
@@ -448,13 +448,13 @@ public class LockStoreTests {
       $$"""{ {{head}}, "packages": [null] }""",
       $$"""{ {{head}}, "packages": [], "packages": [] }""",
       // The environment is required and never null.
-      """{ "format": 4, "platform": null, "runtime": "win-x64", "packages": [] }""",
-      """{ "format": 4, "platform": "server", "runtime": null, "packages": [] }""",
-      """{ "format": 4, "platform": "server", "runtime": ~, "packages": [] }""",
-      """{ "format": 4, "runtime": "win-x64", "packages": [] }""",
-      """{ "format": 4, "platform": "server", "packages": [] }""",
-      """{ "format": 4, "platform": "universal", "runtime": "win-x64", "packages": [] }""",
-      """{ "format": 4, "platform": "server", "runtime": "", "packages": [] }""",
+      """{ "format": 4, "side": null, "platform": "win-x64", "packages": [] }""",
+      """{ "format": 4, "side": "server", "platform": null, "packages": [] }""",
+      """{ "format": 4, "side": "server", "platform": ~, "packages": [] }""",
+      """{ "format": 4, "platform": "win-x64", "packages": [] }""",
+      """{ "format": 4, "side": "server", "packages": [] }""",
+      """{ "format": 4, "side": "universal", "platform": "win-x64", "packages": [] }""",
+      """{ "format": 4, "side": "server", "platform": "", "packages": [] }""",
       // The package members are required.
       $$"""{ {{head}}, "packages": [{ "manifest": {{manifest}} }] }""",
       $$"""{ {{head}}, "packages": [{ {{Package().Replace("\"explicit\": true,", "")}} }] }""",
@@ -487,17 +487,70 @@ public class LockStoreTests {
   }
 
   [Fact]
-  public async Task Load_InvalidPlatform_CauseNamesTheFieldAndExpectedValues() {
+  public async Task Load_InvalidSide_CauseNamesTheFieldAndExpectedValues() {
     // Arrange
     _fs.AddFile(LipLockPath, new MockFileData(
-        """{ "format": 4, "platform": "universal", "runtime": "win-x64", "packages": [] }"""));
+        """{ "format": 4, "side": "universal", "platform": "win-x64", "packages": [] }"""));
 
     // Act
     LockFormatException ex =
         await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
 
     // Assert
-    Assert.Contains("\"platform\"", ex.InnerException!.Message);
+    Assert.Contains("\"side\"", ex.InnerException!.Message);
     Assert.Contains("\"server\"", ex.InnerException.Message);
+  }
+
+  public static TheoryData<string> WorkspaceFilesOfLipBefore040() => [
+    """{ "format": 4, "platform": "server", "runtime": "win-x64", "packages": [] }""",
+    """{ "format": 4, "platform": "client", "packages": [] }""",
+    """{ "format": 4, "side": "server", "runtime": "win-x64", "packages": [] }""",
+  ];
+
+  /// A state file of lip before v0.40 has "platform" for the side and "runtime" for the
+  /// platform; the cause names the rename instead of a missing "side".
+  [Theory]
+  [MemberData(nameof(WorkspaceFilesOfLipBefore040))]
+  public async Task Load_OldEnvironmentKeys_CauseNamesTheRename(string json) {
+    // Arrange
+    _fs.AddFile(LipLockPath, new MockFileData(json));
+
+    // Act
+    LockFormatException ex =
+        await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
+
+    // Assert
+    Assert.Contains(LipLockPath, ex.Message);
+    Assert.Contains("different version of lip", ex.Message);
+    Assert.Equal(
+        "The file uses the keys \"platform\" and \"runtime\" of lip before v0.40; rename"
+        + " \"platform\" to \"side\" and \"runtime\" to \"platform\".",
+        ex.InnerException!.Message);
+    Assert.Equal(json, _fs.File.ReadAllText(LipLockPath));
+  }
+
+  [Fact]
+  public async Task Load_RecordedManifestWithOldEnvironmentKeys_CauseNamesTheRename() {
+    // Arrange: the root uses the keys of lip v0.40, the recorded package file those before.
+    string manifest = ManifestJson(
+        "github.com/a/b", entry: """{"platform":"server","runtime":"win-x64"}""");
+    _fs.AddFile(LipLockPath, new MockFileData($$"""
+        { "format": 4, "side": "server", "platform": "win-x64", "packages": [ {
+          "manifest": {{manifest}}, "variant": "", "explicit": true, "ref": "github.com/a/b",
+          "commit": "{{_commit}}", "files": [] } ] }
+        """));
+
+    // Act
+    LockFormatException ex =
+        await Assert.ThrowsAsync<LockFormatException>(() => _store.Load(_root));
+
+    // Assert
+    PackageFormatException cause = Assert.IsType<PackageFormatException>(
+        ex.InnerException!.InnerException);
+    Assert.Equal(
+        "Invalid package file at $.variants[\"\"][0]: uses the keys \"platform\" and"
+        + " \"runtime\" of lip before v0.40; rename \"platform\" to \"side\" and"
+        + " \"runtime\" to \"platform\".",
+        cause.Message);
   }
 }

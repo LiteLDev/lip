@@ -15,7 +15,7 @@ Example:
 lip install github.com/user/repo
 ```
 
-This installs the newest version of the package that has an entry for your workspace's platform and RID, and the dependencies it declares, into your workspace, and records them in the [state file](../concepts/lockfiles.md). It does not modify any `lip.toml`.
+This installs the newest version of the package that has an entry for your workspace's side and platform, and the dependencies it declares, into your workspace, and records them in the [state file](../concepts/lockfiles.md). It does not modify any `lip.toml`.
 
 ## Specifying Versions
 
@@ -70,4 +70,4 @@ Before `lip install`, `lip uninstall` or `lip update` writes or deletes files in
 -   `-n, --dry-run`: Simulate the installation without making any changes. Useful to see what would happen.
 -   `--no-dependencies`: Install only the specified package, ignoring its dependencies, and uninstall no other package. This may leave the workspace broken.
 -   `--ignore-scripts`: Do not run any package hooks, including the uninstall hooks of packages the installation removes or replaces.
--   `--rid <RID>`: Set the .NET RID of the workspace, e.g. `win-x64`.
+-   `--platform <RID>`: Set the platform of the workspace, a .NET RID such as `win-x64`.

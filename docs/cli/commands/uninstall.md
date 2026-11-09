@@ -29,4 +29,4 @@ Dependencies that no explicitly installed package needs any more are uninstalled
 | `-n, --dry-run` | Run without making any changes. |
 | `--ignore-scripts` | Skip running `pre_uninstall` and `post_uninstall` hooks. |
 | `--no-dependencies` | Uninstall exactly the given packages, even dependencies, and do not remove other dependencies. This may leave the workspace broken. |
-| `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |
+| `--platform <RID>` | The platform of the workspace, a .NET RID such as `win-x64`. |

@@ -40,4 +40,4 @@ lip view github.com/user/repo@branch:main
 
 Reads the `lip.toml` at the root of the archive the argument names and prints it as JSON. For a remote repository, the archive is the repository at the newest version tag, at the tag of the given version, or at the commit of the git ref. It changes nothing.
 
-A `tooth.json` of an [earlier format](../../concepts/lip_toml.md#earlier-formats) is printed as the package file lip reads from it, for the environment of the workspace: the platform `server` and the RID the [state file](../../concepts/lockfiles.md) records, or else the RID lip runs on.
+A `tooth.json` of an [earlier format](../../concepts/lip_toml.md#earlier-formats) is printed as the package file lip reads from it, for the environment of the workspace: the side `server` and the platform the [state file](../../concepts/lockfiles.md) records, or else the platform lip runs on.

@@ -14,7 +14,7 @@ public class McmodServiceTests {
   private const string Lib = "example.com/lib";
   private const string App = "example.com/app";
 
-  private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
+  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 
   private readonly WorkspaceHarness _ws = new();
 
@@ -35,8 +35,8 @@ public class McmodServiceTests {
     Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
     LockFile lockFile = await _ws.Lock();
     Assert.Equal(4, lockFile.Format);
-    Assert.Equal("server", lockFile.Platform);
-    Assert.Equal(WorkspaceHarness.Runtime, lockFile.Runtime);
+    Assert.Equal("server", lockFile.Side);
+    Assert.Equal(WorkspaceHarness.Platform, lockFile.Platform);
     LockedPackage package = Assert.Single(lockFile.Packages);
     Assert.Equal((Lib, "", "1.0.0", true, Lib), (
         package.Id, package.Variant, package.Version, package.Explicit, package.Source));
@@ -163,8 +163,8 @@ public class McmodServiceTests {
               "version": "1.0.0",
               "variants": {
                 "": [ {
-                  "platform": "server",
-                  "runtime": "{{WorkspaceHarness.Runtime}}",
+                  "side": "server",
+                  "platform": "{{WorkspaceHarness.Platform}}",
                   "assets": [
                     { "type": "self", "place": [ { "src": "file.dll", "dest": "lib/lib.dll" } ] }
                   ]
@@ -562,11 +562,11 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_ClientPlatformRecorded_ThrowsWithoutChanges() {
+  public async Task Install_ClientSideRecorded_ThrowsWithoutChanges() {
     // Arrange
     AddLibAndApp();
     _ws.AddFile(".lip/state.json", """
-        { "format": 4, "platform": "client", "runtime": "win-x64", "packages": [] }
+        { "format": 4, "side": "client", "platform": "win-x64", "packages": [] }
         """);
     SortedDictionary<string, string> before = WorkspaceSnapshot();
 
@@ -577,7 +577,7 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_RidOption_RecordsRuntime() {
+  public async Task Install_PlatformOption_RecordsPlatform() {
     // Arrange: lib has entries for win-x64 and linux-x64.
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.Toml($$"""
@@ -587,9 +587,9 @@ public class McmodServiceTests {
             "version": "1.0.0",
             "variants": {
               "": [
-                { "platform": "server", "runtime": "win-x64",
+                { "side": "server", "platform": "win-x64",
                   "assets": [ { "type": "self", "place": [ { "src": "win.dll", "dest": "lib.dll" } ] } ] },
-                { "platform": "server", "runtime": "linux-x64",
+                { "side": "server", "platform": "linux-x64",
                   "assets": [ { "type": "self", "place": [ { "src": "linux.so", "dest": "lib.so" } ] } ] }
               ]
             }
@@ -600,12 +600,12 @@ public class McmodServiceTests {
     });
 
     // Act
-    await _ws.Service.Install([Lib], _options with { Rid = "linux-x64" });
+    await _ws.Service.Install([Lib], _options with { Platform = "linux-x64" });
 
     // Assert
     Assert.Equal("linux", _ws.Fs.File.ReadAllText(_ws.Path("lib.so")));
     Assert.False(_ws.Exists("lib.dll"));
-    Assert.Equal("linux-x64", (await _ws.Lock()).Runtime);
+    Assert.Equal("linux-x64", (await _ws.Lock()).Platform);
   }
 
   #endregion
@@ -1590,7 +1590,7 @@ public class McmodServiceTests {
   #region Environment
 
   [Fact]
-  public async Task Install_InstalledPackageWithoutEntryForTheRuntime_FailsWithoutChanges() {
+  public async Task Install_InstalledPackageWithoutEntryForThePlatform_FailsWithoutChanges() {
     // Arrange: lib has an entry for win-x64 only, so it is no candidate for linux-x64
     // (protocol/workspace.md §3).
     AddLib("1.0.0");
@@ -1602,7 +1602,7 @@ public class McmodServiceTests {
             "format": 4,
             "id": "{{any}}",
             "version": "1.0.0",
-            "variants": { "": [ { "platform": "server", "runtime": "linux-x64" } ] }
+            "variants": { "": [ { "side": "server", "platform": "linux-x64" } ] }
           }
           """),
     });
@@ -1610,7 +1610,7 @@ public class McmodServiceTests {
 
     // Act
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Install([any], _options with { Rid = "linux-x64" }));
+        () => _ws.Service.Install([any], _options with { Platform = "linux-x64" }));
 
     // Assert
     Assert.Contains($"'{Lib}'", ex.Message);
@@ -1660,9 +1660,9 @@ public class McmodServiceTests {
   #region Invalid state files
 
   [Theory]
-  [InlineData(".lip/state.json", """{ "format": "bf45b1", "platform": "server", "packages": [] }""")]
+  [InlineData(".lip/state.json", """{ "format": "bf45b1", "side": "server", "packages": [] }""")]
   [InlineData(".lip/state.json", """{ "format_version": 3, "packages": [] }""")]
-  [InlineData(".lip/state.json", """{ "format": 4, "platform": "server", "runtime": "win-x64", "packages": [ { } ] }""")]
+  [InlineData(".lip/state.json", """{ "format": 4, "side": "server", "platform": "win-x64", "packages": [ { } ] }""")]
   public async Task Operations_InvalidWorkspaceFile_FailWithoutChanges(string file, string content) {
     // Arrange
     AddLibAndApp();
@@ -1949,9 +1949,9 @@ public class McmodServiceTests {
           "id": "{{id}}",
           "version": "1.0.0",
           "variants": {
-            "a": [ { "platform": "server", "runtime": "{{WorkspaceHarness.Runtime}}",
+            "a": [ { "side": "server", "platform": "{{WorkspaceHarness.Platform}}",
               "assets": [ { "type": "self", "place": [ { "src": "a.dll", "dest": "a.dll" } ] } ] } ],
-            "b": [ { "platform": "server", "runtime": "{{WorkspaceHarness.Runtime}}",
+            "b": [ { "side": "server", "platform": "{{WorkspaceHarness.Platform}}",
               "assets": [ { "type": "self", "place": [ { "src": "b.dll", "dest": "b.dll" } ] } ] } ]
           }
         }

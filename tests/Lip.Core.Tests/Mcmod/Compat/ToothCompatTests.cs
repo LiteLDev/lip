@@ -14,9 +14,9 @@ namespace Lip.Core.Tests.Mcmod.Compat;
 public class ToothCompatTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
-  private static readonly LipEnvironment _serverWin = new(McmodPlatform.Server, "win-x64");
+  private static readonly LipEnvironment _serverWin = new(McmodSide.Server, "win-x64");
 
-  private static readonly LipEnvironment _clientWin = new(McmodPlatform.Client, "win-x64");
+  private static readonly LipEnvironment _clientWin = new(McmodSide.Client, "win-x64");
 
   private static readonly string _multiPlatformV3 = $$"""
       {
@@ -77,8 +77,8 @@ public class ToothCompatTests {
     Assert.Equal(SemVersion.Parse("1.2.3"), packageFile.Version);
     Assert.Equal(["", "client"], packageFile.Variants.Keys.Order(StringComparer.Ordinal));
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
-    Assert.Equal(McmodPlatform.Server, entry.Platform);
-    Assert.Equal("win-x64", entry.Runtime);
+    Assert.Equal(McmodSide.Server, entry.Side);
+    Assert.Equal("win-x64", entry.Platform);
     Assert.Equal(
         ["github.com/user/common", "github.com/user/windows#client"], Dependencies(entry));
     Assert.True(entry.Dependencies[1].Range.IsSatisfiedBy(SemVersion.Parse("1.9.0")));
@@ -96,10 +96,10 @@ public class ToothCompatTests {
   [Theory]
   [InlineData("win-arm64")]
   [InlineData("win-x86")]
-  public void Derive_OtherRuntimeMatchingPattern_UsesThatRuntime(string runtime) {
+  public void Derive_OtherPlatformMatchingPattern_UsesThatPlatform(string platform) {
     // Arrange
     PackageManifest manifest = Manifest(_multiPlatformV3);
-    LipEnvironment environment = new(McmodPlatform.Server, runtime);
+    LipEnvironment environment = new(McmodSide.Server, platform);
 
     // Act
     PackageFile packageFile = ToothCompat.Derive(manifest, environment);
@@ -107,7 +107,7 @@ public class ToothCompatTests {
     // Assert
     Assert.Equal([""], packageFile.Variants.Keys);
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
-    Assert.Equal(runtime, entry.Runtime);
+    Assert.Equal(platform, entry.Platform);
     Assert.Equal(
         ["github.com/user/common", "github.com/user/windows#client"], Dependencies(entry));
     Assert.Same(entry, packageFile.SelectEntry("", environment));
@@ -115,12 +115,12 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void Derive_ExactPlatform_SelectsOnlyThatRuntime() {
+  public void Derive_ExactPlatform_SelectsOnlyThatPlatform() {
     // Arrange
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodSide.Server, "linux-x64"));
 
     // Assert
     Assert.Equal([""], packageFile.Variants.Keys);
@@ -137,7 +137,7 @@ public class ToothCompatTests {
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
     // Act
-    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "osx-arm64"));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodSide.Server, "osx-arm64"));
 
     // Assert
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
@@ -147,7 +147,7 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void Derive_NoVariantMatchesRuntime_HasNoVariants() {
+  public void Derive_NoVariantMatchesPlatform_HasNoVariants() {
     // Arrange
     PackageManifest manifest = Manifest($$"""
         {
@@ -158,7 +158,7 @@ public class ToothCompatTests {
         """);
 
     // Act
-    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new(McmodSide.Server, "linux-x64"));
 
     // Assert
     Assert.Empty(packageFile.Variants);
@@ -166,7 +166,7 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void Derive_ClientPlatform_KeepsVariantEmptyAndClientLabel() {
+  public void Derive_ClientSide_KeepsVariantEmptyAndClientLabel() {
     // Arrange
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
@@ -175,8 +175,8 @@ public class ToothCompatTests {
 
     // Assert
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
-    Assert.Equal(McmodPlatform.Client, entry.Platform);
-    Assert.Equal("win-x64", entry.Runtime);
+    Assert.Equal(McmodSide.Client, entry.Side);
+    Assert.Equal("win-x64", entry.Platform);
     Assert.DoesNotContain("github.com/user/clientdep", Dependencies(entry));
     Assert.Equal(["github.com/user/clientdep"],
         Dependencies(Assert.Single(packageFile.Variants["client"])));
@@ -184,7 +184,7 @@ public class ToothCompatTests {
   }
 
   [Fact]
-  public void Derive_ClientPlatformWithoutClientLabel_KeepsVariantEmpty() {
+  public void Derive_ClientSideWithoutClientLabel_KeepsVariantEmpty() {
     // Arrange
     PackageManifest manifest = Manifest($$"""
         {
@@ -200,12 +200,12 @@ public class ToothCompatTests {
 
     // Assert
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
-    Assert.Equal(McmodPlatform.Client, entry.Platform);
+    Assert.Equal(McmodSide.Client, entry.Side);
     Assert.Equal(["github.com/user/a"], Dependencies(entry));
   }
 
   [Fact]
-  public void Derive_ServerPlatform_KeepsVariantEmptyAndClientLabel() {
+  public void Derive_ServerSide_KeepsVariantEmptyAndClientLabel() {
     // Arrange
     PackageManifest manifest = Manifest(_multiPlatformV3);
 
@@ -216,7 +216,7 @@ public class ToothCompatTests {
     Assert.NotEqual(
         Dependencies(Assert.Single(packageFile.Variants[""])),
         Dependencies(Assert.Single(packageFile.Variants["client"])));
-    Assert.Equal(McmodPlatform.Server, packageFile.Variants["client"][0].Platform);
+    Assert.Equal(McmodSide.Server, packageFile.Variants["client"][0].Side);
   }
 
   [Fact]
@@ -236,10 +236,10 @@ public class ToothCompatTests {
     Assert.Equal("Repo", json.GetProperty("info").GetProperty("name").GetString());
     JsonElement entry = Assert.Single(json.GetProperty("variants").GetProperty("").EnumerateArray());
     Assert.Equal(
-        ["platform", "runtime", "deps", "assets", "preserve", "hooks"],
+        ["side", "platform", "deps", "assets", "preserve", "hooks"],
         entry.EnumerateObject().Select(p => p.Name));
-    Assert.Equal("server", entry.GetProperty("platform").GetString());
-    Assert.Equal("win-x64", entry.GetProperty("runtime").GetString());
+    Assert.Equal("server", entry.GetProperty("side").GetString());
+    Assert.Equal("win-x64", entry.GetProperty("platform").GetString());
     Assert.Equal(
         """{"post_install":["echo win"]}""", entry.GetProperty("hooks").GetRawText());
     Assert.Equal(entry.GetRawText(), packageFile.Variants[""][0].Json.GetRawText());
@@ -403,7 +403,7 @@ public class ToothCompatTests {
 
     // Assert: everything is converted to a package file.
     Assert.Equal(
-        ["platform", "runtime", "assets", "preserve", "purge"],
+        ["side", "platform", "assets", "preserve", "purge"],
         entry.EnumerateObject().Select(p => p.Name));
     Assert.Equal("""["**/config.json"]""", entry.GetProperty("preserve").GetRawText());
     Assert.Equal("""["logs","logs/"]""", entry.GetProperty("purge").GetRawText());
@@ -416,7 +416,7 @@ public class ToothCompatTests {
   public void ParseEntry_EntryWithGlobKeysOfFormat3_IgnoresThem() {
     // Arrange
     using JsonDocument json = JsonDocument.Parse("""
-        { "platform": "server", "runtime": "win-x64",
+        { "side": "server", "platform": "win-x64",
           "preserve_files": ["config.json"], "remove_files": ["logs"] }
         """);
 
@@ -438,8 +438,8 @@ public class ToothCompatTests {
     PackageEntry reparsed = PackageFileParser.ParseEntry(entry.Json);
 
     // Assert
+    Assert.Equal(entry.Side, reparsed.Side);
     Assert.Equal(entry.Platform, reparsed.Platform);
-    Assert.Equal(entry.Runtime, reparsed.Runtime);
     Assert.Equal(Dependencies(entry), Dependencies(reparsed));
     Assert.Equal(entry.Assets[0].Placements, reparsed.Assets[0].Placements);
     Assert.Equal(
@@ -532,7 +532,7 @@ public class ToothCompatTests {
     // Act
     PackageFile serverWin = ToothCompat.Derive(manifest, _serverWin);
     PackageFile clientWin = ToothCompat.Derive(manifest, _clientWin);
-    PackageFile clientLinux = ToothCompat.Derive(manifest, new(McmodPlatform.Client, "linux-x64"));
+    PackageFile clientLinux = ToothCompat.Derive(manifest, new(McmodSide.Client, "linux-x64"));
 
     // Assert: on windows, the variant "client" is absent; elsewhere, it is there.
     Assert.Equal([""], serverWin.Variants.Keys);
@@ -637,7 +637,7 @@ public class ToothCompatTests {
 
     // Assert
     Assert.Contains("labeled ''", ex.Message);
-    PackageFile linux = ToothCompat.Derive(manifest, new(McmodPlatform.Server, "linux-x64"));
+    PackageFile linux = ToothCompat.Derive(manifest, new(McmodSide.Server, "linux-x64"));
     Assert.Equal(["a"], linux.Variants[""][0].Hooks.PostInstall);
   }
 
@@ -733,8 +733,8 @@ public class ToothCompatTests {
   [InlineData("win-x64", true)]
   [InlineData("linux-x64", false)]
   [InlineData("osx-arm64", false)]
-  public void Derive_V2PlatformPattern_HasVariantForEveryRuntime(string runtime, bool windows) {
-    // Arrange: lip v0.37.0, running on the runtime, added an empty variant for it when a
+  public void Derive_V2PlatformPattern_HasVariantForEveryPlatform(string platform, bool windows) {
+    // Arrange: lip v0.37.0, running on the platform, added an empty variant for it when a
     // platform is a pattern; the result does not depend on the machine lip runs on.
     PackageManifest manifest = Manifest("""
         {
@@ -747,11 +747,11 @@ public class ToothCompatTests {
         """);
 
     // Act
-    PackageFile packageFile = ToothCompat.Derive(manifest, new LipEnvironment(McmodPlatform.Server, runtime));
+    PackageFile packageFile = ToothCompat.Derive(manifest, new LipEnvironment(McmodSide.Server, platform));
 
     // Assert
     PackageEntry entry = Assert.Single(packageFile.Variants[""]);
-    Assert.Equal(runtime, entry.Runtime);
+    Assert.Equal(platform, entry.Platform);
     Assert.Equal(windows ? new[] { "echo" } : [], entry.Hooks.PostInstall);
   }
 

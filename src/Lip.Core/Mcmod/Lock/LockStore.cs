@@ -64,8 +64,8 @@ public partial class LockStore(IFileSystem fs) {
     }
 
     LockFile lockFile = Parse(bytes, path);
-    RunTrace.Write("workspace", $"Read the state file {path}: platform {lockFile.Platform},"
-        + $" runtime {lockFile.Runtime}, {lockFile.Packages.Count} packages");
+    RunTrace.Write("workspace", $"Read the state file {path}: side {lockFile.Side},"
+        + $" platform {lockFile.Platform}, {lockFile.Packages.Count} packages");
     return lockFile;
   }
 
@@ -223,6 +223,14 @@ public partial class LockStore(IFileSystem fs) {
             + " version of lip wrote the file, use that version.");
       }
 
+      // Before the required keys are read, so that a state file of lip before v0.40 gets the
+      // rename instead of a missing "side".
+      if (PackageFileParser.UsesOldEnvironmentKeys(root)) {
+        otherFormat = true;
+        throw new LockFormatException(
+            $"The file {PackageFileParser.OldEnvironmentKeysReason}.");
+      }
+
       // "commit" is omitted, not null, for a package that is not from a remote repository.
       if (root.TryGetProperty("packages", out JsonElement packages)
           && packages.ValueKind == JsonValueKind.Array) {
@@ -271,15 +279,14 @@ public partial class LockStore(IFileSystem fs) {
           + $" {PackageFormat.Format}.");
     }
 
-    if (lockFile.Platform is null
-        || !McmodPlatformExtensions.TryParse(lockFile.Platform, out _)) {
+    if (lockFile.Side is null || !McmodSideExtensions.TryParse(lockFile.Side, out _)) {
       throw new LockFormatException(
-          $"\"platform\" is \"{lockFile.Platform}\", but it must be \"server\" or \"client\".");
+          $"\"side\" is \"{lockFile.Side}\", but it must be \"server\" or \"client\".");
     }
 
-    if (lockFile.Runtime is null or "") {
+    if (lockFile.Platform is null or "") {
       throw new LockFormatException(
-          "\"runtime\" is missing or empty, but it must be a runtime identifier such as"
+          "\"platform\" is missing or empty, but it must be a runtime identifier such as"
           + " \"win-x64\".");
     }
 

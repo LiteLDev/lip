@@ -15,7 +15,7 @@ lip init
 - `format`：`4`
 - `id`：你输入的包 ID。
 - `version`：`0.1.0`
-- `variants`：变体 `""` 的一个条目，`platform = "server"`，`runtime = "win-x64"`
+- `variants`：变体 `""` 的一个条目，`side = "server"`，`platform = "win-x64"`
 
 若当前目录已存在 `lip.toml`，命令会失败且不写入任何内容。若标准输入或标准错误不是终端，则无法询问，命令同样会失败。
 

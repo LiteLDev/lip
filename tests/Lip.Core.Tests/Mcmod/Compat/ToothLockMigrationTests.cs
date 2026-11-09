@@ -12,7 +12,7 @@ public class ToothLockMigrationTests {
   private const string App = "example.com/app";
   private const string Other = "example.com/other";
 
-  private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
+  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 
   private readonly WorkspaceHarness _ws = new();
 
@@ -96,7 +96,7 @@ public class ToothLockMigrationTests {
     // Assert
     Assert.False(_ws.Fs.File.Exists(ToothLockPath));
     LockFile lockFile = await _ws.Lock();
-    Assert.Equal(("server", WorkspaceHarness.Runtime), (lockFile.Platform, lockFile.Runtime));
+    Assert.Equal(("server", WorkspaceHarness.Platform), (lockFile.Side, lockFile.Platform));
     Assert.Equal(
         [
           (Lib, false, Lib, (string?)libCommit),
@@ -112,8 +112,8 @@ public class ToothLockMigrationTests {
     Assert.Equal("1.0.0", manifest.GetProperty("version").GetString());
     JsonElement entry = Assert.Single(manifest.GetProperty("variants").GetProperty("").EnumerateArray());
     Assert.Equal(
-        ("server", WorkspaceHarness.Runtime),
-        (entry.GetProperty("platform").GetString(), entry.GetProperty("runtime").GetString()));
+        ("server", WorkspaceHarness.Platform),
+        (entry.GetProperty("side").GetString(), entry.GetProperty("platform").GetString()));
     Assert.Equal("lib", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
   }
 
@@ -237,7 +237,7 @@ public class ToothLockMigrationTests {
 
     // Act
     LockFile lockFile = await ToothLockMigration.Derive(
-        members, _ws.Fs, _ws.Root, new(McmodPlatform.Server, WorkspaceHarness.Runtime), null);
+        members, _ws.Fs, _ws.Root, new(McmodSide.Server, WorkspaceHarness.Platform), null);
 
     // Assert
     Assert.Equal(
@@ -255,7 +255,7 @@ public class ToothLockMigrationTests {
 
     // Act
     LockFile lockFile = await ToothLockMigration.Derive(
-        [member], _ws.Fs, _ws.Root, new(McmodPlatform.Server, WorkspaceHarness.Runtime),
+        [member], _ws.Fs, _ws.Root, new(McmodSide.Server, WorkspaceHarness.Platform),
         (_, _) => Task.FromResult<string?>(new string('A', 40)));
 
     // Assert

@@ -9,7 +9,7 @@ public class WorkspaceLayoutTests {
   private const string Demo = "example.com/demo";
   private const string DemoUrl = "https://example.com/demo.mcmod";
 
-  private static readonly OperationOptions s_options = new(Rid: WorkspaceHarness.Runtime);
+  private static readonly OperationOptions s_options = new(Platform: WorkspaceHarness.Platform);
 
   private readonly WorkspaceHarness _ws = new();
 

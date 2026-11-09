@@ -75,7 +75,7 @@ public class Resolver(
       Action<ResolveDiagnostic> onDiagnostic) {
     Walk walk = new(source, range, environment, onDiagnostic);
     RunTrace.Write("resolve", $"Resolving {source} {range?.ToString() ?? "(any version)"}"
-        + $" for ({environment.Platform.ToSpecString()}, {environment.Runtime})");
+        + $" for ({environment.Side.ToSpecString()}, {environment.Platform})");
 
     // Step 1: the archives the source names.
     if (source.Kind != RefKind.Spec) {
@@ -258,8 +258,8 @@ public class Resolver(
       Walk walk, ArchiveHandle archive, PackageFile packageFile, string fileName, string variant) {
     LipEnvironment environment = walk.Environment;
     string variantName = variant == "" ? "the default variant" : $"the variant \"{variant}\"";
-    string wanted = $"no entry of {variantName} for the platform"
-        + $" {environment.Platform.ToSpecString()} and the runtime {environment.Runtime}";
+    string wanted = $"no entry of {variantName} for the side"
+        + $" {environment.Side.ToSpecString()} and the platform {environment.Platform}";
     if (!packageFile.Variants.TryGetValue(variant, out IReadOnlyList<PackageEntry>? entries)
         || entries.Count == 0) {
       walk.Report(archive.Key, packageFile.Variants.Count == 0
@@ -271,16 +271,16 @@ public class Resolver(
     }
 
     string available = string.Join(", ", entries.Select(
-        e => $"({e.Platform.ToSpecString()}, {e.Runtime})"));
-    // An entry for another runtime of the same platform: the package does not support the
-    // runtime lip installs for. Whether --rid can help depends on the workspace, which is not
-    // known here, so the advice is conditional.
-    string runtimeNote = entries.Any(e => e.Platform == environment.Platform)
-        ? $"; it does not support the runtime {environment.Runtime} (if the server runs another"
-          + " runtime and the workspace has no packages yet, pass it with --rid)"
+        e => $"({e.Side.ToSpecString()}, {e.Platform})"));
+    // An entry for another platform of the same side: the package does not support the
+    // platform lip installs for. Whether --platform can help depends on the workspace, which is
+    // not known here, so the advice is conditional.
+    string platformNote = entries.Any(e => e.Side == environment.Side)
+        ? $"; it does not support the platform {environment.Platform} (if the server runs on"
+          + " another platform and the workspace has no packages yet, pass it with --platform)"
         : "";
     walk.Report(
-        archive.Key, $"its {fileName} has {wanted}; it has entries for {available}{runtimeNote}");
+        archive.Key, $"its {fileName} has {wanted}; it has entries for {available}{platformNote}");
   }
 
   /// The versions of a version list, newest first, cut short when long.

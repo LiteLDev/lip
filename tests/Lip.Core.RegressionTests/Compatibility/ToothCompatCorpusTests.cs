@@ -20,7 +20,7 @@ namespace Lip.Core.RegressionTests.Compatibility;
 /// PackageManifest.GetVariant picks, converted as Section 2 converts it, and McmodInstaller must write exactly the files it
 /// reports for the derived entry.
 public class ToothCompatCorpusTests {
-  private static readonly LipEnvironment _environment = new(McmodPlatform.Server, "win-x64");
+  private static readonly LipEnvironment _environment = new(McmodSide.Server, "win-x64");
 
   private static readonly GitRemoteClient _client = new(githubProxy: null);
 
@@ -67,7 +67,7 @@ public class ToothCompatCorpusTests {
     PackageManifest manifest = Assert.IsType<PackageManifest>(document.Legacy);
     PackageManifestVariant? expected;
     try {
-      expected = manifest.GetVariant(reference.Variant, _environment.Runtime);
+      expected = manifest.GetVariant(reference.Variant, _environment.Platform);
     }
     catch (KeyNotFoundException) {
       expected = null;
@@ -136,7 +136,7 @@ public class ToothCompatCorpusTests {
           new InstallContext(
               root,
               _environment,
-              new LockFile { Platform = "server", Runtime = _environment.Runtime, Packages = [] },
+              new LockFile { Side = "server", Platform = _environment.Platform, Packages = [] },
               DryRun: false,
               IgnoreScripts: true),
           new WorkspaceView(fs));

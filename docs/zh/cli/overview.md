@@ -13,7 +13,7 @@
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`list`](commands/list.md) 和 [`versions`](commands/versions.md)。[`view`](commands/view.md) 始终输出 JSON。
 
-[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--rid <RID>`，用于设置工作区[环境](../concepts/lip_toml.md#环境)中的 RID。lip 只管理服务端工作区。
+[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--platform <RID>`，用于设置工作区[环境](../concepts/lip_toml.md#环境)中的平台。lip 只管理服务端工作区。
 
 ## 命令
 

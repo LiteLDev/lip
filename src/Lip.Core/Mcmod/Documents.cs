@@ -22,9 +22,9 @@ public record PackageFile {
 
   public required JsonElement Json { get; init; }
 
-  /// The entry of a variant whose platform and runtime are those of the environment
+  /// The entry of a variant whose side and platform are those of the environment
   /// (protocol/package.md §4 step 2), or null. No two entries of one variant have the same
-  /// platform and runtime, so there is at most one.
+  /// side and platform, so there is at most one.
   public PackageEntry? SelectEntry(string variant, LipEnvironment environment) =>
       Variants.TryGetValue(variant, out IReadOnlyList<PackageEntry>? entries)
           ? entries.FirstOrDefault(e => e.Contains(environment))
@@ -36,9 +36,9 @@ public record PackageFile {
 ///
 /// Dependencies, PreserveFiles and RemoveFiles are its "deps", "preserve" and "purge".
 public record PackageEntry {
-  public required McmodPlatform Platform { get; init; }
+  public required McmodSide Side { get; init; }
 
-  public required string Runtime { get; init; }
+  public required string Platform { get; init; }
 
   public IReadOnlyList<PackageDependency> Dependencies { get; init; } = [];
 
@@ -53,7 +53,7 @@ public record PackageEntry {
   public required JsonElement Json { get; init; }
 
   public bool Contains(LipEnvironment environment) =>
-      Platform == environment.Platform && Runtime == environment.Runtime;
+      Side == environment.Side && Platform == environment.Platform;
 
   /// The index of the asset of type "mcmod", or null.
   public int? McmodAsset {

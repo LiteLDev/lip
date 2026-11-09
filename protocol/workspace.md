@@ -112,7 +112,7 @@ The **state file** is the JSON file `.lip/state.json`, valid against `state.sche
 
 The state file is only written atomically, through `.lip/state.json.tmp` (Section 7.4), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
 
-It records the environment (`platform` and `runtime`), and for each installed package, in installation order:
+It records the environment (`side` and `platform`), and for each installed package, in installation order:
 
 - its package file (`manifest`), as Section 4 of [PACKAGE] read it;
 - the variant of its source (`variant`);
@@ -120,6 +120,8 @@ It records the environment (`platform` and `runtime`), and for each installed pa
 - its source (`ref`), a local path recorded as the `file:` URI [RFC8089] of its absolute path;
 - for a remote repository, the commit its archive was at (`commit`), in lowercase hexadecimal;
 - the paths of the files it owns (`files`).
+
+A state file whose top-level object has the key `runtime`, or whose `platform` is `"server"` or `"client"`, is invalid: these are the keys of lip before v0.40.
 
 ### 7.2. Workspace Lock
 

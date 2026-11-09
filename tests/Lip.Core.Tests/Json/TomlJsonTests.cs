@@ -98,7 +98,7 @@ public class TomlJsonTests {
         "variants": {
           "": [
             {
-              "platform": "server", "runtime": "win-x64",
+              "side": "server", "platform": "win-x64",
               "deps": { "github.com/a/b#c/d": ">=1.0.0" },
               "assets": [
                 { "type": "self", "place": [ { "src": "a/", "dest": "b/" } ] },
@@ -107,9 +107,9 @@ public class TomlJsonTests {
               "preserve": [ "**/config.json" ],
               "hooks": { "post_install": [ "echo hi" ] }
             },
-            { "platform": "server", "runtime": "linux-x64" }
+            { "side": "server", "platform": "linux-x64" }
           ],
-          "x/y": [ { "platform": "client", "runtime": "win-x64" } ]
+          "x/y": [ { "side": "client", "platform": "win-x64" } ]
         }
       }
       """)]
@@ -124,7 +124,7 @@ public class TomlJsonTests {
     JsonNode value = JsonNode.Parse("""
         {
           "format": 4, "id": "github.com/user/repo", "version": "0.1.0",
-          "variants": { "": [ { "platform": "server", "runtime": "win-x64",
+          "variants": { "": [ { "side": "server", "platform": "win-x64",
             "assets": [ { "type": "self", "place": [ { "src": "a", "dest": "b" } ] } ] } ] }
         }
         """)!;
@@ -140,8 +140,8 @@ public class TomlJsonTests {
         version = "0.1.0"
 
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
 
         [[variants."".assets]]
         type = "self"

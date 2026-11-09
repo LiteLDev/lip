@@ -8,7 +8,7 @@ namespace Lip.Core.Tests.Mcmod;
 /// runs no hook command; a later failure undoes every change of the workspace, the layout and the
 /// state file.
 public class McmodServiceAtomicityTests {
-  private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
+  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 
   private WorkspaceHarness _ws = new();
 
@@ -367,7 +367,7 @@ public class McmodServiceAtomicityTests {
       killed.DeleteFile(_ws.Path("mods/Base/sub/x.txt"));
       killed.DeleteDirectoryOnCommit(_ws.Path("mods/Base/sub"));
       await _ws.LockStore.Stage(
-          _ws.Root, new LockFile { Platform = "server", Runtime = "win-x64", Packages = [] });
+          _ws.Root, new LockFile { Side = "server", Platform = "win-x64", Packages = [] });
     }
 
     // A cut-off last line, as when lip is killed while writing it.

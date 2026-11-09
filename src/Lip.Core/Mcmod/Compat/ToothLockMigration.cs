@@ -107,7 +107,8 @@ public static class ToothLockMigration {
 
       if (packageFile.SelectEntry(member.Variant, environment) is not PackageEntry entry) {
         RunTrace.Write("migration", $"left out {packageFile.Id} {packageFile.Version}: it has no"
-            + $" variant '{member.Variant}' for {environment.Platform.ToSpecString()}");
+            + $" variant '{member.Variant}' for {environment.Side.ToSpecString()}"
+            + $" {environment.Platform}");
         continue;
       }
 
@@ -150,8 +151,8 @@ public static class ToothLockMigration {
                 && d.Range.IsSatisfiedBy(packages[j].Version))));
 
     return new LockFile {
-      Platform = environment.Platform.ToSpecString(),
-      Runtime = environment.Runtime,
+      Side = environment.Side.ToSpecString(),
+      Platform = environment.Platform,
       Packages = [.. order.Select(i => packages[i].Locked)],
     };
   }

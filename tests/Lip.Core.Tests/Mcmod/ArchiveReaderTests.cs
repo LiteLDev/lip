@@ -10,7 +10,7 @@ namespace Lip.Core.Tests.Mcmod;
 /// (protocol/compatibility.md §2).
 public class ArchiveReaderTests {
   private static readonly LipEnvironment _environment =
-      new(McmodPlatform.Server, WorkspaceHarness.Runtime);
+      new(McmodSide.Server, WorkspaceHarness.Platform);
 
   private const string _toothV3 = """
       {
@@ -117,8 +117,8 @@ public class ArchiveReaderTests {
           tags = ["a", 'b']
 
           [[variants.""]]
-          platform = "server"
-          runtime = "win-x64"
+          side = "server"
+          platform = "win-x64"
           deps = { "github.com/user/dep" = ">=1.0.0" }
 
           [[variants."".assets]]

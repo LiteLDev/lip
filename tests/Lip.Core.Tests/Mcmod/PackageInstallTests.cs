@@ -7,7 +7,7 @@ namespace Lip.Core.Tests.Mcmod;
 
 /// End-to-end tests of installing packages with a package file (protocol/workspace.md §4).
 public class PackageInstallTests {
-  private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
+  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 
   [Fact]
   public async Task Install_SelfAsset_PlacesFilesAndRecordsWorkspaceFile() {
@@ -25,8 +25,8 @@ public class PackageInstallTests {
     Assert.Equal("b", h.Fs.File.ReadAllText(h.Path("tools/a/lib/b.dll")));
     LockFile lockFile = await h.Lock();
     Assert.Equal(4, lockFile.Format);
-    Assert.Equal("server", lockFile.Platform);
-    Assert.Equal(WorkspaceHarness.Runtime, lockFile.Runtime);
+    Assert.Equal("server", lockFile.Side);
+    Assert.Equal(WorkspaceHarness.Platform, lockFile.Platform);
     LockedPackage package = Assert.Single(lockFile.Packages);
     Assert.Equal("example.com/a", package.Id);
     Assert.Equal("", package.Variant);
@@ -39,7 +39,7 @@ public class PackageInstallTests {
 
     using JsonDocument document = JsonFile.Parse(h.Fs.File.ReadAllBytes(h.LockPath));
     Assert.Equal(
-        ["format", "platform", "runtime", "packages"],
+        ["format", "side", "platform", "packages"],
         document.RootElement.EnumerateObject().Select(p => p.Name));
     Assert.Equal(
         ["manifest", "variant", "explicit", "ref", "commit", "files"],
@@ -131,8 +131,8 @@ public class PackageInstallTests {
     LockedPackage package = Assert.Single((await h.Lock()).Packages);
     Assert.Equal(4, package.Manifest.GetProperty("format").GetInt32());
     JsonElement entry = package.Manifest.GetProperty("variants").GetProperty("")[0];
-    Assert.Equal("server", entry.GetProperty("platform").GetString());
-    Assert.Equal(WorkspaceHarness.Runtime, entry.GetProperty("runtime").GetString());
+    Assert.Equal("server", entry.GetProperty("side").GetString());
+    Assert.Equal(WorkspaceHarness.Platform, entry.GetProperty("platform").GetString());
 
     await h.Service.Uninstall(["example.com/old"], _options);
     Assert.False(h.Exists("plugins/old/old.dll"));

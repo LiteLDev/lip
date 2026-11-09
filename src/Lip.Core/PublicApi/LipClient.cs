@@ -146,8 +146,8 @@ public sealed class LipClient {
       ["version"] = "0.1.0",
       ["variants"] = new JsonObject {
         [""] = new JsonArray(new JsonObject {
-          ["platform"] = "server",
-          ["runtime"] = "win-x64",
+          ["side"] = "server",
+          ["platform"] = "win-x64",
         }),
       },
     };
@@ -175,10 +175,11 @@ public sealed class LipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null,
+      string? platform = null,
       CancellationToken cancellationToken = default) {
     await (await GetMcmodService()).Install(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
+        [.. packages],
+        Options(dryRun, ignoreScripts, noDependencies, platform, cancellationToken));
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependency packages,
@@ -208,10 +209,11 @@ public sealed class LipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid = null,
+      string? platform = null,
       CancellationToken cancellationToken = default) {
     await (await GetMcmodService()).Uninstall(
-        [.. packages], Options(dryRun, ignoreScripts, noDependencies, rid, cancellationToken));
+        [.. packages],
+        Options(dryRun, ignoreScripts, noDependencies, platform, cancellationToken));
   }
 
   /// Updates the given packages to the requested (or newest) version; without packages, every
@@ -220,11 +222,11 @@ public sealed class LipClient {
       IEnumerable<string> packages,
       bool dryRun,
       bool ignoreScripts,
-      string? rid = null,
+      string? platform = null,
       CancellationToken cancellationToken = default) {
     await (await GetMcmodService()).Update(
         [.. packages],
-        Options(dryRun, ignoreScripts, noDependencies: false, rid, cancellationToken));
+        Options(dryRun, ignoreScripts, noDependencies: false, platform, cancellationToken));
   }
 
   public async Task<IEnumerable<string>> Versions(string package) {
@@ -239,13 +241,13 @@ public sealed class LipClient {
       bool dryRun,
       bool ignoreScripts,
       bool noDependencies,
-      string? rid,
+      string? platform,
       CancellationToken cancellationToken) {
     return new OperationOptions(
         dryRun,
         ignoreScripts,
         noDependencies,
-        string.IsNullOrEmpty(rid) ? null : rid,
+        string.IsNullOrEmpty(platform) ? null : platform,
         cancellationToken);
   }
 }

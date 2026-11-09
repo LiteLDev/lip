@@ -18,8 +18,8 @@ id = "github.com/user/MyTool"
 version = "0.1.0"
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 ```
 
 The command fails if a `lip.toml` already exists there, or if it cannot ask (when standard input or standard error is not a terminal).
@@ -40,8 +40,8 @@ id = "github.com/user/MyTool"
 version = "1.0.0"
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 preserve = ["config/mytool/"]
 
 [[variants."".assets]]
@@ -77,8 +77,8 @@ version = "1.0.0"
 name = "My Mod"
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 preserve = ["mods/MyMod/config/"]
 
 [variants."".deps]
@@ -94,28 +94,28 @@ urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win
 
 On the client, mods are also installed to `mods/<name>/`, by launchers such as LeviLauncher; lip itself installs to servers only.
 
-## Several Platforms and Runtimes
+## Several Sides and Platforms
 
-An entry applies to exactly one platform and one runtime, which must equal those of the workspace. Add an entry for each platform and runtime the package supports, each with its own assets:
+An entry applies to exactly one side (`server` or `client`) and one platform (a .NET RID such as `win-x64`), which must equal those of the workspace [environment](../concepts/lip_toml.md#environment). Add an entry for each side and platform the package supports, each with its own assets:
 
 ```toml
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"] }]
 
 [[variants.""]]
-platform = "client"
-runtime = "win-x64"
+side = "client"
+platform = "win-x64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"] }]
 
 [[variants.""]]
-platform = "client"
-runtime = "win-arm64"
+side = "client"
+platform = "win-arm64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-arm64.zip"] }]
 ```
 
-A workspace whose platform and runtime has no entry cannot install the package.
+A workspace whose side and platform have no entry cannot install the package.
 
 ## Variants
 
@@ -123,17 +123,44 @@ Use variants to offer several packages from one repository. Users select one wit
 
 ```toml
 [[variants.lua]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 assets = [{ type = "self", place = [{ src = "lua/", dest = "myengine/lua/" }] }]
 
 [[variants.quickjs]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 assets = [{ type = "self", place = [{ src = "quickjs/", dest = "myengine/quickjs/" }] }]
 ```
 
 Each variant installs as a package of its own, with the identity `<package id>#<variant>`, so several variants of one repository can be installed side by side. Another package depends on a variant with the key `<package id>#<variant>` in its `deps`.
+
+## Recommended Tags
+
+`info.tags` is for people and for the sites and launchers that list packages; lip itself ignores tags. Mod listings such as [levimc.org](https://levimc.org/mods/) and LeviLauncher show the tags below first, with a localized name, and let users filter by them. Use the ids as written here, in lower case and without a prefix such as `category:`; other spellings or synonyms are not needed. Pick the few that describe your package best, and add any other tags you like:
+
+```toml
+[info]
+tags = ["management", "economy"]
+```
+
+| Tag | Name | Use it for |
+| --- | --- | --- |
+| `library` | Library / API | A library or API that other mods depend on, e.g. events, forms or exported functions. |
+| `utility` | Utility | Everyday tools for players, e.g. inventory helpers, info displays, tooltips and recipe viewers. |
+| `management` | Server management | Running a server, e.g. backups, bans, whitelists, logins, commands and land claims. |
+| `game-mechanics` | Game mechanics | Changes to how the game plays, e.g. vanilla-plus features and achievements. |
+| `adventure` | Content & adventure | New content to explore, e.g. world generation, terrain and biomes. |
+| `visual` | Visual & HUD | What players see, e.g. HUDs, sidebars, shaders, replays and recording. |
+| `economy` | Economy | Money, shops and trading. |
+| `teleport` | Teleport | Teleport commands, homes, warps and waystones. |
+| `anticheat` | Anti-cheat | Detecting and stopping cheats, e.g. anti-xray. |
+| `optimization` | Optimization | Better performance, e.g. entity and item cleaners. |
+| `bugfix` | Bug fixes | Fixes for bugs of the game. |
+| `technology` | Technical & redstone | Redstone, pistons and automation. |
+| `protocol` | Protocol & multi-version | The network protocol, e.g. letting clients of several game versions join. |
+
+You need not tag the side or platform, or that the package is a LeviLamina mod: the entries and `deps` already say so, and listings hide tags such as `server`, `client`, `levilamina` and `mod`.
 
 ## Testing Locally
 

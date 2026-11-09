@@ -1,10 +1,10 @@
 # 常见问题
 
 ### 什么是 `lip.toml`？
-`lip.toml` 是 lip 包的包文件：它给出包 ID、版本，以及针对每个变体、平台和 RID 的依赖、要放置的文件、要安装的 mod 和要运行的命令。参见 [lip.toml](concepts/lip_toml.md)。
+`lip.toml` 是 lip 包的包文件：它给出包 ID、版本，以及针对每个变体、运行端和平台的依赖、要放置的文件、要安装的 mod 和要运行的命令。参见 [lip.toml](concepts/lip_toml.md)。
 
 ### 还能安装带有 `tooth.json` 的 lip v0.x 包吗？
-**可以。** lip 仍会读取格式版本 1 到 3 的 `tooth.json`：它针对工作区的平台和 RID 把每个文件读取为包文件，并像其他包一样安装，放置的文件与以前相同，因此已有的包仍可使用。lip 不再写入 `tooth.json`；请使用 [`lip migrate`](cli/commands/migrate.md) 把你的包转换为 `lip.toml`。lip v0.x 的工作区（带有 `tooth_lock.json`）和 `liprc.json` 会被自动迁移。
+**可以。** lip 仍会读取格式版本 1 到 3 的 `tooth.json`：它针对工作区的运行端和平台把每个文件读取为包文件，并像其他包一样安装，放置的文件与以前相同，因此已有的包仍可使用。lip 不再写入 `tooth.json`；请使用 [`lip migrate`](cli/commands/migrate.md) 把你的包转换为 `lip.toml`。lip v0.x 的工作区（带有 `tooth_lock.json`）和 `liprc.json` 会被自动迁移。
 
 ### `lip install` 会更新 `lip.toml` 吗？
 **不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[状态文件](concepts/lockfiles.md)来记录状态，但**不会**修改任何 `lip.toml`。如果你希望依赖长期保留在包的要求中，需要手动把它加入你的 `lip.toml` 的 `deps`。

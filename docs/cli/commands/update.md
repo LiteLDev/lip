@@ -41,4 +41,4 @@ To move a package installed from a git ref back to released versions, update it 
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
 | `--ignore-scripts` | Skip running install and uninstall hooks while updating packages. |
-| `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |
+| `--platform <RID>` | The platform of the workspace, a .NET RID such as `win-x64`. |

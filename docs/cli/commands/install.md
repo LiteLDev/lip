@@ -22,7 +22,7 @@ Each package argument takes one of the following forms:
 4. **URL** — an `https://` URL of a ZIP file (e.g. `https://example.com/package.zip`), optionally followed by `#<variant>`. Other schemes, such as `http://` and `file://`, are not accepted.
 5. **Local path** — a ZIP file or a directory on your disk, by an absolute path or a path relative to the current directory (e.g. `./package.zip`, `C:\Downloads\package.zip` or `../MyTool`), optionally followed by `#<variant>`. An argument is local when it starts with `./`, `../`, `.\` or `..\`, is `.` or `..`, is an absolute path, or contains no `@` and either ends with `.zip` (ignoring case) or names an existing file or directory. A local file must be a ZIP archive, whatever its name; a local directory is taken as the archive of its contents.
 
-Every package must have a `lip.toml` at its root (see [lip.toml](../../concepts/lip_toml.md)) with an entry of the requested variant for the platform and RID of the workspace.
+Every package must have a `lip.toml` at its root (see [lip.toml](../../concepts/lip_toml.md)) with an entry of the requested variant for the side and platform of the workspace.
 
 The dependencies of the packages are installed too. Installing a package that is already explicitly installed is an error; use [`lip update`](update.md) to change its version. Two arguments that name the same identity are an error too. A package that is installed as a dependency becomes explicitly installed, keeping its version when that version satisfies the argument.
 
@@ -46,14 +46,14 @@ A package installed from a git ref also satisfies dependencies on its package id
 | `-n, --dry-run` | Run without making any changes. |
 | `--ignore-scripts` | Do not run package `hooks`, including the uninstall hooks of packages the operation removes or replaces. |
 | `--no-dependencies` | Install exactly the first candidate of each argument, replacing an installed package of the same identity; no dependencies are installed and no other package is uninstalled. An installed package with the same identity, version and commit is only marked explicitly installed. This may leave the workspace broken. |
-| `--rid <RID>` | The .NET RID of the workspace, e.g. `win-x64`. |
+| `--platform <RID>` | The platform of the workspace, a .NET RID such as `win-x64`. |
 
 ## Examples
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina
 lip install github.com/LiteLDev/LegacyScriptEngine#lua
-lip install github.com/user/repo@1.0.0 --rid win-x64
+lip install github.com/user/repo@1.0.0 --platform win-x64
 lip install github.com/LiteLDev/LeviLamina@branch:main
 lip install github.com/user/repo@tag:v1.0.0
 lip install https://example.com/package.zip

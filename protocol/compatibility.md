@@ -14,10 +14,10 @@
 
 An archive without a package file whose `tooth.json` at its root is a JSON [RFC8259] object with `format_version` 1, 2 or 3 is a package, read for an environment as the package file that this section derives from that `tooth.json`. Formats 1 and 2 are first read as format 3, as lip v0.37.0 [TOOTH-V3] reads them.
 
-A format 3 `tooth.json` T is read, for an environment (p, r), as a package file with `format` 4, the `tooth` of T as `id`, the version of the package as `version`, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
+A format 3 `tooth.json` T is read, for an environment (s, r), as a package file with `format` 4, the `tooth` of T as `id`, the version of the package as `version`, the `info` of T except that its `avatar_url` becomes `logo` when it starts with `https://` and is dropped otherwise, and, for each label L of the variants of T:
 
-- Let V be the variants of T labeled L whose `platform` is `""` or matches r as [TOOTH-V3] matches it. When V is empty, the result has no variant L.
-- Otherwise the result maps L to one entry with `"platform": p`, `"runtime": r`, and, from the variants of V merged as [TOOTH-V3] merges them:
+- Let V be the variants of T labeled L whose `platform`, a RID pattern of [TOOTH-V3], is `""` or matches r as [TOOTH-V3] matches it. When V is empty, the result has no variant L.
+- Otherwise the result maps L to one entry with `"side": s`, `"platform": r`, and, from the variants of V merged as [TOOTH-V3] merges them:
   - `deps`: the `dependencies`, as they are;
   - `assets`: each asset with its `type` and `urls`, and with `place` converted from its `placements` as below. When an asset has the type `tar`, `tgz` or `uncompressed`, the result has no variant L;
   - `preserve`: each pattern P of `preserve_files`, `\` replaced by `/`, as P when it contains `/`, and as `**/` followed by P otherwise;
@@ -36,9 +36,9 @@ The version of such a package is the tag version of its git archive, when it has
 
 ## 3. `tooth_lock.json`
 
-A workspace without a state file whose root holds a `tooth_lock.json` that is a JSON object with `format_version` 3 and an array `packages`, each member an object with `manifest` (a `tooth.json` of format 1 to 3), `variant` (a string), `locked` (a boolean) and `files` (an array of strings), has the state file that this section derives from it, for the environment (p, r) the workspace gets (Section 2 of [WORKSPACE]).
+A workspace without a state file whose root holds a `tooth_lock.json` that is a JSON object with `format_version` 3 and an array `packages`, each member an object with `manifest` (a `tooth.json` of format 1 to 3), `variant` (a string), `locked` (a boolean) and `files` (an array of strings), has the state file that this section derives from it, for the environment (s, r) the workspace gets (Section 2 of [WORKSPACE]).
 
-That state file has `format` 4, `platform` p, `runtime` r and, for each member M of `packages` whose `manifest` Section 2 reads, for (p, r), with a variant `variant`, in installation order (Section 5 of [WORKSPACE]), a package with:
+That state file has `format` 4, `side` s, `platform` r and, for each member M of `packages` whose `manifest` Section 2 reads, for (s, r), with a variant `variant`, in installation order (Section 5 of [WORKSPACE]), a package with:
 
 - `manifest`: the `manifest` of M as Section 2 reads it, its version being its `version`;
 - `variant`: the `variant` of M;

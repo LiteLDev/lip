@@ -18,14 +18,15 @@ namespace Lip.Core.Mcmod.Compat;
 /// dependency ranges that are not ranges of a package file, are asked for through
 /// IUserInteraction.Ask.
 ///
-/// - A package file has no platform patterns and no "any runtime": the runtimes a platform pattern
-///   stands for, those a platform that is not a runtime identifier (e.g. "windows/amd64") stands
-///   for, and those the variants without a platform apply to, are asked for.
-/// - Each label becomes a variant. It has an entry for each runtime, holding the variants of the
-///   label merged for the runtime and converted exactly as Section 2 converts them
-///   (ToothCompat.ConvertEntry); a runtime whose merged variants have an asset of type tar, tgz
+/// - The platform of a tooth.json variant is a RID pattern, while that of an entry of a package
+///   file is a RID. A package file has no RID patterns and no "any platform": the RIDs a platform
+///   pattern stands for, those a platform that is not a runtime identifier (e.g. "windows/amd64")
+///   stands for, and those the variants without a platform apply to, are asked for.
+/// - Each label becomes a variant. It has an entry for each RID, holding the variants of the
+///   label merged for the RID and converted exactly as Section 2 converts them
+///   (ToothCompat.ConvertEntry); a RID whose merged variants have an asset of type tar, tgz
 ///   or uncompressed has no entry.
-/// - The platform of an entry follows the dependency of its merged variants on
+/// - The side of an entry follows the dependency of its merged variants on
 ///   github.com/LiteLDev/LeviLamina: the client for its variant "client", the server for any
 ///   other variant, and both, as two entries, without such a dependency.
 public static class ToothMigrator {
@@ -74,14 +75,14 @@ public static class ToothMigrator {
     PackageManifest tooth = context.Tooth;
     IUserInteraction ui = context.Ui;
 
-    // The runtimes every platform pattern stands for, asked once per pattern, and the runtimes
-    // the variants without a platform apply to, asked once.
+    // The RIDs every platform pattern stands for, asked once per pattern, and the RIDs the
+    // variants without a platform apply to, asked once.
     Dictionary<string, List<string>> patterns = new(StringComparer.Ordinal);
     foreach (PackageManifestVariant variant in tooth.Variants) {
       if (IsPattern(variant.Platform) && !patterns.ContainsKey(variant.Platform)) {
-        patterns[variant.Platform] = await AskRuntimes(
+        patterns[variant.Platform] = await AskRids(
             ui,
-            $"the runtimes (RIDs, comma-separated) the platform pattern '{variant.Platform}' "
+            $"the platforms (RIDs, comma-separated) the platform pattern '{variant.Platform}' "
                 + "stands for",
             variant.Platform);
         RunTrace.Write("migrate", $"platform pattern '{variant.Platform}' stands for "
@@ -89,16 +90,16 @@ public static class ToothMigrator {
       }
     }
 
-    // The runtimes every platform that is neither a pattern nor a runtime identifier stands for,
+    // The RIDs every platform that is neither a pattern nor a runtime identifier stands for,
     // asked once per platform; its variants become one variant for each of them.
     Dictionary<string, List<string>> literals = new(StringComparer.Ordinal);
     foreach (PackageManifestVariant variant in tooth.Variants) {
       if (variant.Platform != "" && !IsPattern(variant.Platform)
-          && !PackageFileParser.IsRuntime(variant.Platform)
+          && !PackageFileParser.IsPlatform(variant.Platform)
           && !literals.ContainsKey(variant.Platform)) {
-        literals[variant.Platform] = await AskRuntimes(
+        literals[variant.Platform] = await AskRids(
             ui,
-            $"the runtimes (RIDs, comma-separated, e.g. win-x64) the platform '{variant.Platform}', "
+            $"the platforms (RIDs, comma-separated, e.g. win-x64) the platform '{variant.Platform}', "
                 + "which is not a runtime identifier, stands for",
             null);
         RunTrace.Write("migrate", $"platform '{variant.Platform}' stands for "
@@ -116,16 +117,16 @@ public static class ToothMigrator {
       };
     }
 
-    List<string> anyRuntime = tooth.Variants.Any(v => v.Platform == "")
-        ? await AskRuntimes(
+    List<string> anyRid = tooth.Variants.Any(v => v.Platform == "")
+        ? await AskRids(
             ui,
-            "the runtimes (RIDs, comma-separated, e.g. win-x64) the variants without a platform "
+            "the platforms (RIDs, comma-separated, e.g. win-x64) the variants without a platform "
                 + "apply to",
             null)
         : [];
-    if (anyRuntime.Count > 0) {
+    if (anyRid.Count > 0) {
       RunTrace.Write("migrate", "variants without a platform apply to "
-          + string.Join(", ", anyRuntime));
+          + string.Join(", ", anyRid));
     }
 
     JsonObject variants = [];
@@ -140,36 +141,36 @@ public static class ToothMigrator {
 
     foreach (string label in tooth.Variants.Select(v => v.Label).Distinct()) {
       List<PackageManifestVariant> labeled = [.. tooth.Variants.Where(v => v.Label == label)];
-      List<string> runtimes = [
+      List<string> rids = [
         .. labeled
-            .SelectMany(v => v.Platform == "" ? anyRuntime
+            .SelectMany(v => v.Platform == "" ? anyRid
                 : IsPattern(v.Platform) ? patterns[v.Platform]
                 : [v.Platform])
             .Distinct(StringComparer.Ordinal),
       ];
 
-      foreach (string runtime in runtimes) {
-        PackageManifestVariant merged = Merge(tooth, label, runtime);
-        if (await Content(context, merged, runtime,
-            $"variants (label '{label}', {runtime})") is not JsonObject content) {
-          RunTrace.Write("migrate", $"variant '{label}' has no entry for {runtime}");
+      foreach (string rid in rids) {
+        PackageManifestVariant merged = Merge(tooth, label, rid);
+        if (await Content(context, merged, rid,
+            $"variants (label '{label}', {rid})") is not JsonObject content) {
+          RunTrace.Write("migrate", $"variant '{label}' has no entry for {rid}");
           continue;
         }
 
-        foreach (McmodPlatform platform in PlatformsOf(merged)) {
+        foreach (McmodSide side in SidesOf(merged)) {
           RunTrace.Write("migrate",
-              $"variant '{label}': entry for {platform.ToSpecString()} {runtime}");
-          AddEntry(label, Entry(platform, runtime, content));
+              $"variant '{label}': entry for {side.ToSpecString()} {rid}");
+          AddEntry(label, Entry(side, rid, content));
         }
       }
     }
 
     return variants;
 
-    static JsonObject Entry(McmodPlatform platform, string runtime, JsonObject content) {
+    static JsonObject Entry(McmodSide side, string rid, JsonObject content) {
       JsonObject entry = new() {
-        ["platform"] = platform.ToSpecString(),
-        ["runtime"] = runtime,
+        ["side"] = side.ToSpecString(),
+        ["platform"] = rid,
       };
       foreach ((string key, JsonNode? value) in content) {
         entry[key] = value?.DeepClone();
@@ -179,52 +180,52 @@ public static class ToothMigrator {
     }
   }
 
-  /// The platforms of the entries for merged variants: the client when they depend on the
+  /// The sides of the entries for merged variants: the client when they depend on the
   /// variant "client" of LeviLamina, the server when they depend on another variant of it, and
   /// both when they do not depend on it.
-  private static McmodPlatform[] PlatformsOf(PackageManifestVariant merged) {
+  private static McmodSide[] SidesOf(PackageManifestVariant merged) {
     List<PackageId> leviLamina = [
       .. merged.Dependencies.Keys.Where(id =>
           string.Equals(id.Path, LeviLaminaPath, StringComparison.OrdinalIgnoreCase)),
     ];
-    return leviLamina.Count == 0 ? [McmodPlatform.Server, McmodPlatform.Client]
-        : leviLamina.Any(id => id.Variant == ClientVariant) ? [McmodPlatform.Client]
-        : [McmodPlatform.Server];
+    return leviLamina.Count == 0 ? [McmodSide.Server, McmodSide.Client]
+        : leviLamina.Any(id => id.Variant == ClientVariant) ? [McmodSide.Client]
+        : [McmodSide.Server];
   }
 
   private const string LeviLaminaPath = "github.com/LiteLDev/LeviLamina";
   private const string ClientVariant = "client";
 
-  /// The variants of a label merged for a runtime, as protocol/compatibility.md §2 merges them.
-  private static PackageManifestVariant Merge(PackageManifest tooth, string label, string runtime) {
+  /// The variants of a label merged for a RID, as protocol/compatibility.md §2 merges them.
+  private static PackageManifestVariant Merge(PackageManifest tooth, string label, string rid) {
     try {
-      return tooth.GetVariant(label, runtime);
+      return tooth.GetVariant(label, rid);
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
         or KeyNotFoundException) {
       throw new InvalidOperationException(
           $"Cannot migrate tooth.json: the variants labeled '{label}' cannot be merged for "
-          + $"{runtime}, because {ToothCompat.MergeFailureReason(ex)}; lip v0.37.0 could not "
-          + $"install them for {runtime} either. Fix these variants in tooth.json so that each "
+          + $"{rid}, because {ToothCompat.MergeFailureReason(ex)}; lip v0.37.0 could not "
+          + $"install them for {rid} either. Fix these variants in tooth.json so that each "
           + $"dependency is declared, and each kind of script is set, in only one of the variants "
-          + $"that apply to {runtime}, then run 'lip migrate' again.", ex);
+          + $"that apply to {rid}, then run 'lip migrate' again.", ex);
     }
   }
 
   /// The content of an entry for a merged variant, converted as protocol/compatibility.md §2
-  /// converts it (ToothCompat.ConvertEntry), without platform and runtime, with each dependency
+  /// converts it (ToothCompat.ConvertEntry), without side and platform, with each dependency
   /// range that is not a range of a package file asked for; null when the variant has no entry
-  /// for the runtime.
+  /// for the RID.
   private static async Task<JsonObject?> Content(
-      Context context, PackageManifestVariant variant, string runtime, string field) {
+      Context context, PackageManifestVariant variant, string rid, string field) {
     List<string> notes = context.Notes;
-    if (ToothCompat.ConvertEntry(variant, McmodPlatform.Server, runtime, notes, field)
+    if (ToothCompat.ConvertEntry(variant, McmodSide.Server, rid, notes, field)
         is not JsonObject content) {
       return null;
     }
 
+    content.Remove("side");
     content.Remove("platform");
-    content.Remove("runtime");
 
     foreach ((PackageId dependency, SemVersionRange range) in variant.Dependencies) {
       string dependencyField = $"{field}.dependencies[\"{dependency}\"]";
@@ -251,21 +252,21 @@ public static class ToothMigrator {
     return content;
   }
 
-  /// Asks for a non-empty list of runtimes, each matching pattern when it is given.
-  private static async Task<List<string>> AskRuntimes(
+  /// Asks for a non-empty list of RIDs, each matching pattern when it is given.
+  private static async Task<List<string>> AskRids(
       IUserInteraction ui, string question, string? pattern) {
     Glob? glob = pattern is null ? null : Glob.Parse(pattern);
     string answer = await ui.AskValid(question, a => {
-      List<string> runtimes = SplitList(a);
-      if (runtimes.Count == 0) {
+      List<string> rids = SplitList(a);
+      if (rids.Count == 0) {
         return "enter at least one RID, e.g. win-x64.";
       }
 
-      if (runtimes.FirstOrDefault(r => !PackageFileParser.IsRuntime(r)) is string invalid) {
+      if (rids.FirstOrDefault(r => !PackageFileParser.IsPlatform(r)) is string invalid) {
         return $"'{invalid}' is not a runtime identifier.";
       }
 
-      return glob is not null && runtimes.FirstOrDefault(r => !glob.IsMatch(r)) is string other
+      return glob is not null && rids.FirstOrDefault(r => !glob.IsMatch(r)) is string other
           ? $"'{other}' does not match '{pattern}'."
           : null;
     });

@@ -15,7 +15,7 @@ lip install <PACKAGES>
 lip install github.com/user/repo
 ```
 
-这会把该包中有对应工作区平台和 RID 条目的最新版本，及其声明的依赖安装到工作区，并记录到[状态文件](../concepts/lockfiles.md)中，但不会修改任何 `lip.toml`。
+这会把该包中有对应工作区运行端和平台条目的最新版本，及其声明的依赖安装到工作区，并记录到[状态文件](../concepts/lockfiles.md)中，但不会修改任何 `lip.toml`。
 
 ## 指定版本
 
@@ -70,4 +70,4 @@ lip 管理服务端工作区：mod 安装到 `mods/<name>/`（参见[环境](../
 - `-n, --dry-run`：仅模拟安装，不做实际更改，可用于预览结果。
 - `--no-dependencies`：仅安装指定包，忽略其依赖，也不卸载其他包。这可能导致工作区损坏。
 - `--ignore-scripts`：不执行任何包钩子，包括安装过程中被移除或替换的包的卸载钩子。
-- `--rid <RID>`：设置工作区的 .NET RID，例如 `win-x64`。
+- `--platform <RID>`：设置工作区的平台，即 .NET RID，例如 `win-x64`。

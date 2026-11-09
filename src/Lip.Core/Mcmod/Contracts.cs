@@ -166,11 +166,12 @@ public record LockFile {
   public int Format { get; init; } = PackageFormat.Format;
 
   /// "server" or "client". lip writes "server".
+  [JsonPropertyName("side")]
+  public required string Side { get; init; }
+
+  /// A .NET runtime identifier (RID).
   [JsonPropertyName("platform")]
   public required string Platform { get; init; }
-
-  [JsonPropertyName("runtime")]
-  public required string Runtime { get; init; }
 
   /// In installation order.
   [JsonPropertyName("packages")]

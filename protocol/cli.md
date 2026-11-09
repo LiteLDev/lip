@@ -13,7 +13,7 @@
 - **message**: Any text other than a result or help (progress, information, warnings, errors, the final success line); its wording is not defined here.
 - **help**: Text describing how to invoke `lip` or a command; its wording is not defined here.
 - **workspace operation**: An operation (Section 1 of [WORKSPACE]) that `install`, `uninstall` or `update` carries out without `-n` or `--dry-run`.
-- **RID lip runs on**: The runtime of the process running `lip`.
+- **platform lip runs on**: The platform (Section 1 of [PACKAGE]) of the process running `lip`.
 
 ## 2. Invocation
 
@@ -105,10 +105,10 @@ A package argument is made into the request (source, range) whose range matches 
 
 ## 4. Environment and Workspace Operations
 
-`lip` manages only workspaces whose platform is `"server"`. The environment of `install`, `uninstall` and `update` is:
+`lip` manages only workspaces whose side is `"server"`. The environment of `install`, `uninstall` and `update` is:
 
-- platform: `"server"`. When the state file records another platform, the command fails.
-- runtime: the value of the `--rid` option of the command, when given; otherwise the runtime the state file records; otherwise the RID lip runs on.
+- side: `"server"`. When the state file records another side, the command fails.
+- platform: the value of the `--platform` option of the command, when given; otherwise the platform the state file records; otherwise the platform lip runs on.
 
 A workspace without a recorded environment gets the environment above from its first workspace operation.
 
@@ -123,7 +123,7 @@ A workspace operation that finds the workspace lock held by another process fail
 ### 5.1. `lip install`
 
 ```
-lip install <PACKAGES>... [-n | --dry-run] [--ignore-scripts] [--no-dependencies] [--rid <RID>] [-h | --help]
+lip install <PACKAGES>... [-n | --dry-run] [--ignore-scripts] [--no-dependencies] [--platform <RID>] [-h | --help]
 ```
 
 Operands:
@@ -139,7 +139,7 @@ Options:
 | `-n`, `--dry-run` | none | OPTIONAL | The command carries out every step that changes nothing, and writes as messages the packages that the operation would install, uninstall or mark explicitly installed. It does not take the workspace lock. When `.lip/journal` exists, it writes a message that an operation was interrupted, does not recover it, and plans with the workspace as it is. It creates, replaces or deletes no file or directory other than a failure report (Section 2.5), and runs no hook command. |
 | `--ignore-scripts` | none | OPTIONAL | The operation runs no hook command. Nothing else changes. |
 | `--no-dependencies` | none | OPTIONAL | Selects the behavior below. |
-| `--rid` | `<RID>` | OPTIONAL | The runtime of the environment (Section 4) is `<RID>`. |
+| `--platform` | `<RID>` | OPTIONAL | The platform of the environment (Section 4) is `<RID>`. |
 | `-h`, `--help` | none | OPTIONAL | Writes the help for `lip install` (Section 2.1). |
 
 Without `--no-dependencies`, `lip install` installs a set of packages that satisfies Section 3 of [WORKSPACE] for the requests of the package arguments and the requests that made the installed explicitly installed packages:
@@ -155,7 +155,7 @@ With `--no-dependencies`, `lip install` installs, for each package argument, exa
 ### 5.2. `lip uninstall`
 
 ```
-lip uninstall <PACKAGES>... [-n | --dry-run] [--ignore-scripts] [--no-dependencies] [--rid <RID>] [-h | --help]
+lip uninstall <PACKAGES>... [-n | --dry-run] [--ignore-scripts] [--no-dependencies] [--platform <RID>] [-h | --help]
 ```
 
 Operands:
@@ -171,7 +171,7 @@ Options:
 | `-n`, `--dry-run` | none | OPTIONAL | The command carries out every step that changes nothing, and writes as messages the packages that the operation would uninstall or mark no longer explicitly installed. It does not take the workspace lock. When `.lip/journal` exists, it writes a message that an operation was interrupted, does not recover it, and plans with the workspace as it is. It creates, replaces or deletes no file or directory other than a failure report (Section 2.5), and runs no hook command. |
 | `--ignore-scripts` | none | OPTIONAL | The operation runs no hook command. Nothing else changes. |
 | `--no-dependencies` | none | OPTIONAL | Selects the behavior below. |
-| `--rid` | `<RID>` | OPTIONAL | The runtime of the environment (Section 4) is `<RID>`. |
+| `--platform` | `<RID>` | OPTIONAL | The platform of the environment (Section 4) is `<RID>`. |
 | `-h`, `--help` | none | OPTIONAL | Writes the help for `lip uninstall` (Section 2.1). |
 
 Each operand names the installed packages that match it by the first of these rules that matches any installed package:
@@ -193,7 +193,7 @@ With `--no-dependencies`, exactly the named packages are uninstalled, dependency
 ### 5.3. `lip update`
 
 ```
-lip update [<PACKAGES>...] [-n | --dry-run] [--ignore-scripts] [--rid <RID>] [-h | --help]
+lip update [<PACKAGES>...] [-n | --dry-run] [--ignore-scripts] [--platform <RID>] [-h | --help]
 ```
 
 Operands:
@@ -208,7 +208,7 @@ Options:
 |---|---|---|---|
 | `-n`, `--dry-run` | none | OPTIONAL | The command carries out every step that changes nothing, and writes as messages the packages that the operation would install, uninstall or mark explicitly installed. It does not take the workspace lock. When `.lip/journal` exists, it writes a message that an operation was interrupted, does not recover it, and plans with the workspace as it is. It creates, replaces or deletes no file or directory other than a failure report (Section 2.5), and runs no hook command. |
 | `--ignore-scripts` | none | OPTIONAL | The operation runs no hook command. Nothing else changes. |
-| `--rid` | `<RID>` | OPTIONAL | The runtime of the environment (Section 4) is `<RID>`. |
+| `--platform` | `<RID>` | OPTIONAL | The platform of the environment (Section 4) is `<RID>`. |
 | `-h`, `--help` | none | OPTIONAL | Writes the help for `lip update` (Section 2.1). |
 
 With operands, `lip update` makes the request of each package argument again, as "Updating" in Section 5 of [WORKSPACE] defines for its source. Every requested package MUST already be installed; otherwise the command fails. The requested packages become explicitly installed.
@@ -297,7 +297,7 @@ Options:
 |---|---|---|---|
 | `-h`, `--help` | none | OPTIONAL | Writes the help for `lip init` (Section 2.1). |
 
-`lip init` writes `lip.toml` in the current working directory: a package file with exactly the members of `{ "format": 4, "id": "<id>", "version": "0.1.0", "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] } }`. `lip` asks the user on the terminal for `<id>` until the answer is a Go module path [GO-MODULE]. When standard input or standard error is not a terminal, the command fails instead.
+`lip init` writes `lip.toml` in the current working directory: a package file with exactly the members of `{ "format": 4, "id": "<id>", "version": "0.1.0", "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } }`. `lip` asks the user on the terminal for `<id>` until the answer is a Go module path [GO-MODULE]. When standard input or standard error is not a terminal, the command fails instead.
 
 When `lip.toml` exists, the command fails and writes nothing.
 

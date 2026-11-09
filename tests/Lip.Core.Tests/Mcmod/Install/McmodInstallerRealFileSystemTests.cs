@@ -43,8 +43,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         .ReturnsAsync(new ZipSource(zip));
     using JsonDocument entryJson = JsonDocument.Parse($$"""
         {
-          "platform": "server",
-          "runtime": "win-x64",
+          "side": "server",
+          "platform": "win-x64",
           "assets": [ { "type": "mcmod", "urls": [ "{{ModUrl}}" ] } ],
           "purge": [ "mods/LegacyMoney/data/" ],
           "hooks": {
@@ -70,8 +70,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         new(fs, new McmodInstaller(fs, new CommandRunner(), new Mock<IUserInteraction>().Object));
     InstallContext context = new(
         _root,
-        new LipEnvironment(McmodPlatform.Server, "win-x64"),
-        new LockFile { Platform = "server", Runtime = "win-x64", Packages = [] },
+        new LipEnvironment(McmodSide.Server, "win-x64"),
+        new LockFile { Side = "server", Platform = "win-x64", Packages = [] },
         false,
         false);
     // Act: install
@@ -137,8 +137,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     string shortName = ShortNameOrSkip(directory);
     Candidate other = SelfCandidate("example.com/other", "", "", []);
     LockFile lockFile = new() {
-      Platform = "server",
-      Runtime = "win-x64",
+      Side = "server",
+      Platform = "win-x64",
       Packages = [Locked(other, ["pluginsdirectory/foo.dll"])],
     };
     Candidate candidate = SelfCandidate(
@@ -232,8 +232,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     string shortName = ShortNameOfNewDirectoryOrSkip(directory);
     Candidate other = SelfCandidate("example.com/other", "", "", []);
     LockFile lockFile = new() {
-      Platform = "server",
-      Runtime = "win-x64",
+      Side = "server",
+      Platform = "win-x64",
       Packages = [Locked(other, ["pluginsdirectory/foo.dll"])],
     };
     Candidate candidate = SelfCandidate(
@@ -282,8 +282,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     string shortName = ShortNameOrSkip(directory);
     Candidate other = SelfCandidate("example.com/other", "", "", []);
     LockFile lockFile = new() {
-      Platform = "server",
-      Runtime = "win-x64",
+      Side = "server",
+      Platform = "win-x64",
       Packages = [Locked(other, [$"{prefix}pluginsdirectory/foo.dll"])],
     };
     Candidate candidate = SelfCandidate(
@@ -348,8 +348,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     File.WriteAllText(Path.Combine(directory, "a.dll"), "other");
     Candidate other = SelfCandidate("example.com/other", "", "", []);
     LockFile lockFile = new() {
-      Platform = "server",
-      Runtime = "win-x64",
+      Side = "server",
+      Platform = "win-x64",
       Packages = [Locked(other, ["mods/foo/a.dll"])],
     };
     Candidate candidate = SelfCandidate(
@@ -396,8 +396,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     File.WriteAllText(Path.Combine(directory, "a.dll"), "other");
     Candidate other = SelfCandidate("example.com/other", "", "", []);
     LockFile lockFile = new() {
-      Platform = "server",
-      Runtime = "win-x64",
+      Side = "server",
+      Platform = "win-x64",
       Packages = [Locked(other, ["mods/foo/a.dll"])],
     };
     Candidate candidate = SelfCandidate(
@@ -430,8 +430,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
 
   private InstallContext Context(LockFile? lockFile = null) => new(
       _root,
-      new LipEnvironment(McmodPlatform.Server, "win-x64"),
-      lockFile ?? new LockFile { Platform = "server", Runtime = "win-x64", Packages = [] },
+      new LipEnvironment(McmodSide.Server, "win-x64"),
+      lockFile ?? new LockFile { Side = "server", Platform = "win-x64", Packages = [] },
       false,
       false);
 
@@ -443,8 +443,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     string entryMembers = entry == "" ? "" : ", " + entry;
     using JsonDocument json = JsonDocument.Parse($$"""
         {
-          "platform": "server",
-          "runtime": "win-x64",
+          "side": "server",
+          "platform": "win-x64",
           "assets": [ { "type": "self"{{assetMembers}} } ]{{entryMembers}}
         }
         """);

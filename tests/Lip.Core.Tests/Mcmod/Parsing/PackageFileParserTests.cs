@@ -18,7 +18,7 @@ public class PackageFileParserTests {
         "id": "example.com/owner/tool",
         "version": "1.2.3",
         "variants": {
-          "": [ { "platform": "server", "runtime": "win-x64" } ]
+          "": [ { "side": "server", "platform": "win-x64" } ]
         }
       }
       """)!.AsObject();
@@ -30,9 +30,9 @@ public class PackageFileParserTests {
     return document;
   }
 
-  /// A valid package file whose single entry has these members besides platform and runtime.
+  /// A valid package file whose single entry has these members besides side and platform.
   private static JsonObject WithMembers(string members) =>
-      WithEntry($$"""{ "platform": "server", "runtime": "win-x64", {{members}} }""");
+      WithEntry($$"""{ "side": "server", "platform": "win-x64", {{members}} }""");
 
   private static PackageFile Parse(JsonNode? document) {
     if (document is JsonObject && !HasNull(document)) {
@@ -82,8 +82,8 @@ public class PackageFileParserTests {
     Assert.Equal(SemVersion.Parse("1.2.3"), file.Version);
     Assert.Equal([""], file.Variants.Keys);
     PackageEntry entry = Assert.Single(file.Variants[""]);
-    Assert.Equal(McmodPlatform.Server, entry.Platform);
-    Assert.Equal("win-x64", entry.Runtime);
+    Assert.Equal(McmodSide.Server, entry.Side);
+    Assert.Equal("win-x64", entry.Platform);
     Assert.Empty(entry.Dependencies);
     Assert.Empty(entry.Assets);
     Assert.Empty(entry.PreserveFiles);
@@ -94,7 +94,7 @@ public class PackageFileParserTests {
     Assert.Empty(entry.Hooks.PostUninstall);
     Assert.Null(entry.McmodAsset);
     Assert.Null(entry.McmodAsset);
-    Assert.Equal("server", entry.Json.GetProperty("platform").GetString());
+    Assert.Equal("server", entry.Json.GetProperty("side").GetString());
     Assert.Equal(4, file.Json.GetProperty("format").GetInt32());
   }
 
@@ -112,8 +112,8 @@ public class PackageFileParserTests {
         tags = ["null", "~"]
 
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
         hooks.post_install = ["echo yes"]
 
         [variants."".deps]
@@ -147,7 +147,7 @@ public class PackageFileParserTests {
         format = 4
         id = "example.com/owner/tool"
         version = "1.2.3"
-        variants = { "" = [ { platform = "server", runtime = "win-x64" } ] }
+        variants = { "" = [ { side = "server", platform = "win-x64" } ] }
         """;
     toml = string.Join('\n', toml.Split('\n').Select(l => l.StartsWith($"{key} =") ? line : l));
 
@@ -260,7 +260,7 @@ public class PackageFileParserTests {
           "format_uuid": "f74a5fda-cb2a-4de8-959f-a1a76bad3102",
           "tooth": "example.com/owner/tool",
           "version": "1.2.3",
-          "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] }
+          "variants": { "": [ { "side": "server", "platform": "win-x64" } ] }
         }
         """)!.AsObject();
 
@@ -353,14 +353,14 @@ public class PackageFileParserTests {
     // Arrange
     JsonObject document = Valid();
     document["variants"]![variant] = JsonNode.Parse(
-        """[ { "platform": "client", "runtime": "win-x64" } ]""");
+        """[ { "side": "client", "platform": "win-x64" } ]""");
 
     // Act
     PackageFile file = Parse(document);
 
     // Assert
     Assert.Equal(["", variant], file.Variants.Keys.Order(StringComparer.Ordinal));
-    Assert.Equal(McmodPlatform.Client, Assert.Single(file.Variants[variant]).Platform);
+    Assert.Equal(McmodSide.Client, Assert.Single(file.Variants[variant]).Side);
   }
 
   [Theory]
@@ -375,7 +375,7 @@ public class PackageFileParserTests {
     // Arrange
     JsonObject document = Valid();
     document["variants"]![variant] = JsonNode.Parse(
-        """[ { "platform": "server", "runtime": "win-x64" } ]""");
+        """[ { "side": "server", "platform": "win-x64" } ]""");
 
     // Act & Assert
     AssertInvalid(document, $"$.variants[\"{variant}\"]");
@@ -425,18 +425,18 @@ public class PackageFileParserTests {
   [InlineData("\"any\"")]
   [InlineData("\"win-x64\"")]
   [InlineData("null")]
-  public void Parse_NotAPlatform_Throws(string platform) {
+  public void Parse_NotASide_Throws(string side) {
     // Arrange
-    JsonObject document = WithEntry($$"""{ "platform": {{platform}}, "runtime": "win-x64" }""");
+    JsonObject document = WithEntry($$"""{ "side": {{side}}, "platform": "win-x64" }""");
 
     // Act & Assert
-    AssertInvalid(document, "$.variants[\"\"][0].platform");
+    AssertInvalid(document, "$.variants[\"\"][0].side");
   }
 
   [Theory]
+  [InlineData("side")]
   [InlineData("platform")]
-  [InlineData("runtime")]
-  public void Parse_EntryWithoutPlatformOrRuntime_Throws(string key) {
+  public void Parse_EntryWithoutSideOrPlatform_Throws(string key) {
     // Arrange
     JsonObject document = Valid();
     document["variants"]![""]![0]!.AsObject().Remove(key);
@@ -450,15 +450,15 @@ public class PackageFileParserTests {
   [InlineData("linux-musl-arm64")]
   [InlineData("osx.13-arm64")]
   [InlineData("any")]
-  public void Parse_Runtime_IsAccepted(string runtime) {
+  public void Parse_Platform_IsAccepted(string platform) {
     // Arrange
-    JsonObject document = WithEntry($$"""{ "platform": "server", "runtime": "{{runtime}}" }""");
+    JsonObject document = WithEntry($$"""{ "side": "server", "platform": "{{platform}}" }""");
 
     // Act
     PackageEntry entry = ParseEntry(document);
 
     // Assert
-    Assert.Equal(runtime, entry.Runtime);
+    Assert.Equal(platform, entry.Platform);
   }
 
   [Theory]
@@ -468,23 +468,69 @@ public class PackageFileParserTests {
   [InlineData("\"win--x64\"")]
   [InlineData("\"-win\"")]
   [InlineData("1")]
-  public void Parse_NotARuntime_Throws(string runtime) {
+  public void Parse_NotAPlatform_Throws(string platform) {
     // Arrange
-    JsonObject document = WithEntry($$"""{ "platform": "server", "runtime": {{runtime}} }""");
+    JsonObject document = WithEntry($$"""{ "side": "server", "platform": {{platform}} }""");
 
     // Act & Assert
-    AssertInvalid(document, "$.variants[\"\"][0].runtime");
+    AssertInvalid(document, "$.variants[\"\"][0].platform");
+  }
+
+  /// An entry of lip before v0.40 has "platform" for the side and "runtime" for the platform;
+  /// the error names the rename instead of a missing "side".
+  [Theory]
+  [InlineData("""{ "platform": "server", "runtime": "win-x64" }""")]
+  [InlineData("""{ "platform": "client", "runtime": "win-x64" }""")]
+  [InlineData("""{ "platform": "server" }""")]
+  [InlineData("""{ "runtime": "win-x64" }""")]
+  [InlineData("""{ "side": "server", "platform": "win-x64", "runtime": "win-x64" }""")]
+  public void Parse_EntryWithOldEnvironmentKeys_ThrowsRenameMessage(string entry) {
+    // Arrange
+    JsonObject document = WithEntry(entry);
+
+    // Act
+    PackageFormatException ex = Assert.Throws<PackageFormatException>(() => Parse(document));
+
+    // Assert
+    Assert.Equal(
+        "Invalid package file at $.variants[\"\"][0]: uses the keys \"platform\" and"
+        + " \"runtime\" of lip before v0.40; rename \"platform\" to \"side\" and"
+        + " \"runtime\" to \"platform\".",
+        ex.Message);
   }
 
   [Fact]
-  public void Parse_TwoEntriesWithSamePlatformAndRuntime_Throws() {
+  public void Parse_HandWrittenTomlWithOldEnvironmentKeys_ThrowsRenameMessage() {
+    // Arrange: a lip.toml written for lip v0.39.
+    byte[] toml = Encoding.UTF8.GetBytes("""
+        format = 4
+        id = "example.com/owner/tool"
+        version = "1.0.0"
+
+        [[variants.client]]
+        platform = "client"
+        runtime = "win-x64"
+        """);
+
+    // Act
+    PackageFormatException ex =
+        Assert.Throws<PackageFormatException>(() => PackageFileParser.Parse(toml));
+
+    // Assert
+    Assert.StartsWith(
+        "Invalid package file at $.variants[\"client\"][0]: uses the keys", ex.Message);
+    Assert.Contains(PackageFileParser.OldEnvironmentKeysReason, ex.Message);
+  }
+
+  [Fact]
+  public void Parse_TwoEntriesWithSameSideAndPlatform_Throws() {
     // Arrange
     JsonObject document = Valid();
     document["variants"]![""] = JsonNode.Parse("""
         [
-          { "platform": "server", "runtime": "win-x64" },
-          { "platform": "client", "runtime": "win-x64" },
-          { "platform": "server", "runtime": "win-x64", "hooks": {} }
+          { "side": "server", "platform": "win-x64" },
+          { "side": "client", "platform": "win-x64" },
+          { "side": "server", "platform": "win-x64", "hooks": {} }
         ]
         """);
 
@@ -496,17 +542,17 @@ public class PackageFileParserTests {
   }
 
   [Fact]
-  public void Parse_EntriesDifferingInPlatformRuntimeOrVariant_AreAccepted() {
+  public void Parse_EntriesDifferingInSidePlatformOrVariant_AreAccepted() {
     // Arrange
     JsonObject document = Valid();
     document["variants"] = JsonNode.Parse("""
         {
           "": [
-            { "platform": "server", "runtime": "win-x64" },
-            { "platform": "client", "runtime": "win-x64" },
-            { "platform": "server", "runtime": "linux-x64" }
+            { "side": "server", "platform": "win-x64" },
+            { "side": "client", "platform": "win-x64" },
+            { "side": "server", "platform": "linux-x64" }
           ],
-          "lua": [ { "platform": "server", "runtime": "win-x64" } ]
+          "lua": [ { "side": "server", "platform": "win-x64" } ]
         }
         """);
 
@@ -515,14 +561,14 @@ public class PackageFileParserTests {
 
     // Assert
     Assert.Equal(
-        [(McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64"),
-         (McmodPlatform.Server, "linux-x64")],
-        file.Variants[""].Select(e => (e.Platform, e.Runtime)));
+        [(McmodSide.Server, "win-x64"), (McmodSide.Client, "win-x64"),
+         (McmodSide.Server, "linux-x64")],
+        file.Variants[""].Select(e => (e.Side, e.Platform)));
     Assert.Same(
         file.Variants[""][1],
-        file.SelectEntry("", new LipEnvironment(McmodPlatform.Client, "win-x64")));
-    Assert.Null(file.SelectEntry("", new LipEnvironment(McmodPlatform.Client, "linux-x64")));
-    Assert.Null(file.SelectEntry("js", new LipEnvironment(McmodPlatform.Server, "win-x64")));
+        file.SelectEntry("", new LipEnvironment(McmodSide.Client, "win-x64")));
+    Assert.Null(file.SelectEntry("", new LipEnvironment(McmodSide.Client, "linux-x64")));
+    Assert.Null(file.SelectEntry("js", new LipEnvironment(McmodSide.Server, "win-x64")));
   }
 
   [Theory]
@@ -756,9 +802,9 @@ public class PackageFileParserTests {
     JsonObject document = Valid();
     document["variants"]![""] = JsonNode.Parse("""
         [
-          { "platform": "server", "runtime": "win-x64",
+          { "side": "server", "platform": "win-x64",
             "assets": [ { "type": "mcmod", "urls": [ "https://a.example/s.mcmod" ] } ] },
-          { "platform": "client", "runtime": "win-x64",
+          { "side": "client", "platform": "win-x64",
             "assets": [ { "type": "mcmod", "urls": [ "https://a.example/c.mcmod" ] } ] }
         ]
         """);
@@ -1100,11 +1146,11 @@ public class PackageFileParserTests {
   public void ParseEntry_Entry_IsValidated() {
     // Arrange
     using JsonDocument valid = JsonDocument.Parse("""
-        { "platform": "client", "runtime": "linux-x64",
+        { "side": "client", "platform": "linux-x64",
           "assets": [ { "type": "zip", "urls": [ "https://a.example/x.zip" ] } ] }
         """);
     using JsonDocument invalid = JsonDocument.Parse("""
-        { "platform": "client", "runtime": "linux-x64",
+        { "side": "client", "platform": "linux-x64",
           "assets": [ { "type": "tar", "urls": [ "https://a.example/x.tar" ] } ] }
         """);
 
@@ -1112,8 +1158,8 @@ public class PackageFileParserTests {
     PackageEntry entry = PackageFileParser.ParseEntry(valid.RootElement);
 
     // Assert
-    Assert.Equal(McmodPlatform.Client, entry.Platform);
-    Assert.Equal("linux-x64", entry.Runtime);
+    Assert.Equal(McmodSide.Client, entry.Side);
+    Assert.Equal("linux-x64", entry.Platform);
     Assert.Equal(AssetType.Zip, Assert.Single(entry.Assets).Type);
     Assert.Throws<PackageFormatException>(
         () => PackageFileParser.ParseEntry(invalid.RootElement));
@@ -1129,9 +1175,9 @@ public class PackageFileParserTests {
   [InlineData("win-", false)]
   [InlineData("win x64", false)]
   [InlineData("win-x64\n", false)]
-  public void IsRuntime_ChecksRuntimeIdentifier(string value, bool expected) {
+  public void IsPlatform_ChecksRuntimeIdentifier(string value, bool expected) {
     // Act & Assert
-    Assert.Equal(expected, PackageFileParser.IsRuntime(value));
+    Assert.Equal(expected, PackageFileParser.IsPlatform(value));
   }
 
   [Theory]

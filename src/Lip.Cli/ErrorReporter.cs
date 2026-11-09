@@ -180,7 +180,7 @@ public static class ErrorReporter {
       case WorkspaceBusyException:
         break;
       case PlatformNotSupportedException:
-        yield return "Use --rid to choose the runtime to install packages for.";
+        yield return "Use --platform to choose the platform to install packages for.";
         break;
     }
   }

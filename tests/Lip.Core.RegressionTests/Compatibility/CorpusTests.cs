@@ -33,7 +33,7 @@ namespace Lip.Core.RegressionTests.Compatibility;
 public class CorpusTests {
   private const string _skipReason = "upstream breakage";
 
-  private static readonly LipEnvironment _environment = new(McmodPlatform.Server, "win-x64");
+  private static readonly LipEnvironment _environment = new(McmodSide.Server, "win-x64");
 
   private const string _translatorApi =
       "no LLTranslatorApi tag in range has a valid tooth.json (v26.x declares '>=26.20.*')";

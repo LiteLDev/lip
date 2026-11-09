@@ -135,9 +135,9 @@ public static partial class PackageFileParser {
           variant.Value, path, nonEmpty: true, ParseEntryAt);
       for (int i = 0; i < list.Count; i++) {
         for (int j = 0; j < i; j++) {
-          if (list[i].Platform == list[j].Platform && list[i].Runtime == list[j].Runtime) {
+          if (list[i].Side == list[j].Side && list[i].Platform == list[j].Platform) {
             throw Invalid($"{path}[{i}]",
-                $"has the platform and the runtime of {path}[{j}]");
+                $"has the side and the platform of {path}[{j}]");
           }
         }
       }
@@ -168,11 +168,29 @@ public static partial class PackageFileParser {
     }
   }
 
-  /// Whether a string is a runtime: a .NET runtime identifier, without wildcards.
-  public static bool IsRuntime(string value) => RuntimeRegex().IsMatch(value);
+  /// Whether a string is a platform: a .NET runtime identifier, without wildcards.
+  public static bool IsPlatform(string value) => PlatformRegex().IsMatch(value);
+
+  /// Why an entry, or the root of the state file, is invalid when it uses the keys of lip before
+  /// v0.40: "platform" for the side and "runtime" for the platform.
+  public const string OldEnvironmentKeysReason =
+      "uses the keys \"platform\" and \"runtime\" of lip before v0.40; rename \"platform\" to"
+      + " \"side\" and \"runtime\" to \"platform\"";
+
+  /// Whether an object uses the keys of lip before v0.40 for its environment: it has "runtime",
+  /// or its "platform" is a side ("server" or "client") rather than a RID.
+  public static bool UsesOldEnvironmentKeys(JsonElement element) =>
+      element.ValueKind == JsonValueKind.Object
+      && (element.TryGetProperty("runtime", out _)
+          || (element.TryGetProperty("platform", out JsonElement platform)
+              && platform.ValueKind == JsonValueKind.String
+              && McmodSideExtensions.TryParse(platform.GetString()!, out _)));
 
   private static PackageEntry ParseEntryAt(JsonElement element, string path) {
     RequireObject(element, path);
+    if (UsesOldEnvironmentKeys(element)) {
+      throw Invalid(path, OldEnvironmentKeysReason);
+    }
 
     List<EntryAsset> assets = ReadOptional(element, "assets", path, ArrayOf(ReadAsset)) ?? [];
     if (assets.Count(a => a.Type == AssetType.Mcmod) > 1) {
@@ -180,12 +198,12 @@ public static partial class PackageFileParser {
     }
 
     return new PackageEntry {
-      Platform = ReadRequired(element, "platform", path, ReadPlatform),
-      Runtime = ReadRequired(element, "runtime", path, (e, p) => {
-        string runtime = ReadString(e, p);
-        return IsRuntime(runtime)
-            ? runtime
-            : throw Invalid(p, $"'{runtime}' is not a runtime identifier");
+      Side = ReadRequired(element, "side", path, ReadSide),
+      Platform = ReadRequired(element, "platform", path, (e, p) => {
+        string platform = ReadString(e, p);
+        return IsPlatform(platform)
+            ? platform
+            : throw Invalid(p, $"'{platform}' is not a runtime identifier");
       }),
       Dependencies = ReadOptional(element, "deps", path, ReadDependencies) ?? [],
       Assets = assets,
@@ -208,10 +226,10 @@ public static partial class PackageFileParser {
     }
   }
 
-  private static McmodPlatform ReadPlatform(JsonElement element, string path) =>
+  private static McmodSide ReadSide(JsonElement element, string path) =>
       element.ValueKind == JsonValueKind.String
-      && McmodPlatformExtensions.TryParse(element.GetString()!, out McmodPlatform platform)
-          ? platform
+      && McmodSideExtensions.TryParse(element.GetString()!, out McmodSide side)
+          ? side
           : throw Invalid(path, "must be \"server\" or \"client\"");
 
   private static List<PackageDependency> ReadDependencies(JsonElement element, string path) {
@@ -425,7 +443,7 @@ public static partial class PackageFileParser {
   /// A RID: dot- or dash-separated parts of letters, digits and '_' (e.g. "win-x64",
   /// "linux-musl-arm64", "osx.13-arm64").
   [GeneratedRegex(@"^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*\z")]
-  private static partial Regex RuntimeRegex();
+  private static partial Regex PlatformRegex();
 
   [GeneratedRegex(@"^[A-Za-z]:")]
   private static partial Regex DriveLetterRegex();

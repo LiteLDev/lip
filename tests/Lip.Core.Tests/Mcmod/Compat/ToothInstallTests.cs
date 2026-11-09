@@ -15,7 +15,7 @@ namespace Lip.Core.Tests.Mcmod.Compat;
 public class ToothInstallTests {
   private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
-  private static readonly LipEnvironment _serverWin = new(McmodPlatform.Server, "win-x64");
+  private static readonly LipEnvironment _serverWin = new(McmodSide.Server, "win-x64");
 
   private readonly Mock<ICommandRunner> _commandRunner = new();
   private readonly MockFileSystem _fileSystem = new();
@@ -126,8 +126,8 @@ public class ToothInstallTests {
           _root,
           environment ?? _serverWin,
           new LockFile {
-            Platform = (environment ?? _serverWin).Platform.ToSpecString(),
-            Runtime = (environment ?? _serverWin).Runtime,
+            Side = (environment ?? _serverWin).Side.ToSpecString(),
+            Platform = (environment ?? _serverWin).Platform,
             Packages = [],
           },
           dryRun,
@@ -430,7 +430,7 @@ public class ToothInstallTests {
   [Fact]
   public async Task Uninstall_ClientEnvironment_UsesEntryOfTheEmptyLabel() {
     // Arrange
-    LipEnvironment client = new(McmodPlatform.Client, "win-x64");
+    LipEnvironment client = new(McmodSide.Client, "win-x64");
     Candidate candidate = CreateCandidate(environment: client);
 
     // Act
@@ -454,7 +454,7 @@ public class ToothInstallTests {
         Lock(candidate, ["tool.exe"]),
         CreateContext(
             ignoreScripts: true,
-            environment: new LipEnvironment(McmodPlatform.Server, "linux-x64"))));
+            environment: new LipEnvironment(McmodSide.Server, "linux-x64"))));
     Assert.True(_fileSystem.File.Exists(Workspace("tool.exe")));
   }
 

@@ -1,7 +1,7 @@
 # lip.toml
 
 A lip package is an archive with a **package file**, `lip.toml`, at its root. `lip.toml` names the
-package, gives its version, and describes, for each variant, platform and runtime, what lip
+package, gives its version, and describes, for each variant, side and platform, what lip
 installs: the dependencies, the files to place, the mod to install and the commands to run.
 The normative definition is the [package protocol](https://github.com/LiteLDev/lip/blob/main/protocol/package.md).
 
@@ -34,11 +34,11 @@ version = "1.0.0"
 [info]
 name = "My Mod"
 description = "A short description"
-tags = ["levilamina", "mod"]
+tags = ["utility"]
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 preserve = ["mods/MyMod/config/"]
 
 [variants."".deps]
@@ -50,8 +50,8 @@ type = "mcmod"
 urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-server-win-x64.zip"]
 
 [[variants.""]]
-platform = "client"
-runtime = "win-x64"
+side = "client"
+platform = "win-x64"
 preserve = ["mods/MyMod/config/"]
 
 [variants."".deps]
@@ -93,7 +93,7 @@ package, and lip does not install it.
 | --- | --- | --- |
 | `name` | `string` | Display name. |
 | `description` | `string` | Short description. |
-| `tags` | `string[]` | Tags. |
+| `tags` | `string[]` | Tags. See [Recommended Tags](../guides/creating_packages.md#recommended-tags). |
 | `logo` | `string` | URL of the logo image. It must start with `https://`; the image is the response, directly or after redirects. |
 
 lip does not use `info`.
@@ -105,19 +105,19 @@ default; other names match `^[a-z0-9_]+(/[a-z0-9_]+)?$`, e.g. `lua` or `quickjs`
 variant by appending `#<variant>` to the source, e.g.
 `lip install github.com/LiteLDev/LegacyScriptEngine#lua`; a source without `#` selects `""`.
 
-Each entry applies to exactly one **platform** and one **runtime**. When lip resolves a package,
-it takes the entry of the selected variant whose `platform` and `runtime` are exactly those of
+Each entry applies to exactly one **side** and one **platform**. When lip resolves a package,
+it takes the entry of the selected variant whose `side` and `platform` are exactly those of
 the workspace [environment](#environment). There are no wildcards: a package that supports
-several runtimes has one entry for each. If the variant has no such entry, the package is not a
-candidate for that environment. No two entries of the same variant may have the same `platform`
-and `runtime`.
+several platforms has one entry for each. If the variant has no such entry, the package is not a
+candidate for that environment. No two entries of the same variant may have the same `side`
+and `platform`.
 
 ### Entry
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `platform` | `string` | Yes | `"server"` or `"client"`. |
-| `runtime` | `string` | Yes | A [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog), e.g. `win-x64`. |
+| `side` | `string` | Yes | `"server"` or `"client"`. |
+| `platform` | `string` | Yes | A [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog), e.g. `win-x64`. |
 | `deps` | `object` | No | See [Dependencies](#dependencies). |
 | `assets` | `array` | No | See [Assets](#assets). |
 | `preserve` | `string[]` | No | [Globs](#globs) of files that are kept: an existing file is not overwritten on install, and is not deleted on uninstall. |
@@ -271,15 +271,21 @@ package from that repository, so the two cannot be installed together.
 
 ## Environment
 
-The environment of a workspace is a pair `(platform, runtime)`:
+The environment of a workspace is a pair `(side, platform)`:
 
-- **platform**: `server` or `client`. lip manages server workspaces only, so it always uses
-  `server`. Client workspaces are managed by launchers such as LeviLauncher; lip refuses a
-  workspace whose [state file](lockfiles.md) records `client`.
-- **runtime**: `--rid`, else the runtime the state file records, else the RID lip itself
-  runs on (e.g. `win-x64`).
+- **side**: `server` or `client`, the side of the game the workspace is. lip manages server
+  workspaces only, so it always uses `server`. Client workspaces are managed by launchers such as
+  LeviLauncher; lip refuses a workspace whose [state file](lockfiles.md) records `client`.
+- **platform**: a [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog): `--platform`,
+  else the platform the state file records, else the platform lip itself runs on (e.g. `win-x64`).
 
 ## Earlier Formats
+
+The `lip.toml` of lip v0.39, also of format 4, named the side `platform` and the platform
+`runtime`, e.g. `platform = "server"` and `runtime = "win-x64"`. lip does not read such an entry: an
+entry that has `runtime`, or whose `platform` is `"server"` or `"client"`, makes the archive not a
+package, with a message to rename `platform` to `side` and `runtime` to `platform`. Rename the two
+keys of each entry, and keep everything else.
 
 Packages of lip v0.37.0 and earlier have, instead of `lip.toml`, a `tooth.json` of format
 version 1, 2 or 3. lip still installs them, but never writes them; convert yours to `lip.toml`
@@ -295,9 +301,10 @@ Nothing of format 3 remains at install time.
   whatever the `version` of the `tooth.json` says, and that `version` otherwise.
 - `info` is kept, except that `avatar_url` becomes `logo` when it starts with `https://` and is
   dropped otherwise.
-- For each label, the variants with that label whose `platform` is empty or matches the runtime
-  (as a RID pattern, e.g. `win-*`) are merged as lip v0.37.0 merged them, into one entry for the
-  platform and runtime of the environment. A label without such variants is no variant.
+- For each label, the variants with that label whose `platform` is empty or matches the platform
+  of the environment (the `platform` of `tooth.json` is a RID pattern, e.g. `win-*`) are merged as
+  lip v0.37.0 merged them, into one entry for the side and platform of the environment. A label
+  without such variants is no variant.
 - `dependencies` become `deps`, as they are.
 - Each asset keeps its `type` and `urls`, and its `placements` become `place` (see below). An
   asset of type `tar`, `tgz` or `uncompressed`, which `lip.toml` does not have, leaves the label
