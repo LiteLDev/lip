@@ -18,7 +18,7 @@ The state file serves several purposes:
 2.  **Reproducibility**: It records the package file every installed package was installed with, and, for a package from a git repository, the commit it was at. When lip needs a package again, it installs it with that package file instead of resolving the package again.
 3.  **Uninstallation**: `lip` tracks every file written to disk by a package. This allows `lip uninstall` to cleanly delete all files associated with a package, preventing "file rot" in the workspace.
 4.  **Dependency Graph**: It distinguishes between packages explicitly installed by the user and those installed as dependencies. This allows `lip uninstall` to also remove dependencies that no explicitly installed package needs any more (unless `--no-dependencies` is given), and `lip list` to show the two groups separately.
-5.  **Environment**: It records the platform and RID of the workspace once they are known, so later commands use the same [environment](lip_toml.md#environment).
+5.  **Environment**: It records the side and platform of the workspace once they are known, so later commands use the same [environment](lip_toml.md#environment).
 
 The state file is replaced once, after every package of an operation has been installed or uninstalled. If the operation fails, lip undoes its changes to the workspace and the state file stays as it was, so the two always match (see [Internal Mechanism](../guides/internal_mechanism.md#pipeline)).
 
@@ -29,8 +29,8 @@ The state file is a JSON file described by the JSON Schema [`state.schema.json`]
 ```json
 {
   "format": 4,
-  "platform": "server",
-  "runtime": "win-x64",
+  "side": "server",
+  "platform": "win-x64",
   "packages": [...]
 }
 ```
@@ -38,11 +38,11 @@ The state file is a JSON file described by the JSON Schema [`state.schema.json`]
 ### Fields
 
 *   **`format`**: The format of the state file, `4`.
-*   **`platform`**: The platform of the workspace, `"server"` or `"client"`. lip writes `"server"`.
-*   **`runtime`**: The [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog) of the workspace.
+*   **`side`**: The side of the workspace, `"server"` or `"client"`. lip writes `"server"`.
+*   **`platform`**: The platform of the workspace, a [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog).
 *   **`packages`**: The installed packages, in installation order: a package comes after the packages that satisfy its dependencies.
 
-`platform` and `runtime` are always present and never `null`; a state file without them is invalid. A workspace without a state file gets its environment from its first `install`, `uninstall` or `update` (see [`lip install`](../cli/commands/install.md)).
+`side` and `platform` are always present and never `null`; a state file without them is invalid. A workspace without a state file gets its environment from its first `install`, `uninstall` or `update` (see [`lip install`](../cli/commands/install.md)).
 
 ### Package Entry
 
@@ -57,7 +57,7 @@ Each package is recorded with exactly these members:
 *   **`commit`**: Only for a package from a git repository: the commit its archive was at, in lowercase hexadecimal. A package from a URL or a local path has no `commit`.
 *   **`files`**: The files the package owns, relative to the workspace root and `/`-separated.
 
-The installed entry is the entry of `manifest.variants[variant]` whose `platform` and `runtime` are those of the workspace.
+The installed entry is the entry of `manifest.variants[variant]` whose `side` and `platform` are those of the workspace.
 
 lip compares an installed package with a package it resolves by identity, version and commit only: two packages with the same identity and version, from no git repository or from the same commit, are the same package, even if the files of a URL or local path have changed since. No checksum of a downloaded ZIP archive or asset is recorded or checked.
 
@@ -68,8 +68,8 @@ When lip needs the files of an installed package again, it installs it with the 
 ```json
 {
   "format": 4,
-  "platform": "server",
-  "runtime": "win-x64",
+  "side": "server",
+  "platform": "win-x64",
   "packages": [
     {
       "manifest": {
@@ -79,8 +79,8 @@ When lip needs the files of an installed package again, it installs it with the 
         "variants": {
           "": [
             {
-              "platform": "server",
-              "runtime": "win-x64",
+              "side": "server",
+              "platform": "win-x64",
               "deps": { "github.com/LiteLDev/LeviLamina": ">=1.0.0 <2.0.0" },
               "assets": [
                 {
@@ -101,6 +101,10 @@ When lip needs the files of an installed package again, it installs it with the 
   ]
 }
 ```
+
+## Workspaces of lip v0.39.x
+
+The state file of lip v0.39.x, also of format 4, named the side `platform` and the platform `runtime`, at its root and in the entries of each recorded `manifest`. lip does not read such a state file: a root or an entry that has `runtime`, or whose `platform` is `"server"` or `"client"`, fails the command with a message to rename `platform` to `side` and `runtime` to `platform`. lip does not migrate it; rename the two keys at the root and in every entry of every `manifest`. The next section covers the workspaces of lip v0.37.0 and earlier.
 
 ## Workspaces of lip v0.x
 

@@ -29,4 +29,4 @@ lip uninstall <PACKAGES> [options]
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
 | `--ignore-scripts` | 跳过执行 `pre_uninstall` 和 `post_uninstall` 钩子。 |
 | `--no-dependencies` | 只卸载给定的包（依赖也可以），不移除其他依赖。这可能导致工作区损坏。 |
-| `--rid <RID>` | 工作区的 .NET RID，例如 `win-x64`。 |
+| `--platform <RID>` | 工作区的平台，即 .NET RID，例如 `win-x64`。 |

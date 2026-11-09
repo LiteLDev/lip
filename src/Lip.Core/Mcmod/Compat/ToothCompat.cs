@@ -12,10 +12,11 @@ namespace Lip.Core.Mcmod.Compat;
 /// package file that Section 2 derives from it (Derive). Nothing of format 3 is carried beyond
 /// that: the result is an ordinary package file.
 ///
-/// For each label L of the variants of the tooth.json, the variants labeled L whose platform is
-/// "" or matches the runtime are merged exactly like PackageManifest.GetVariant merges them for
-/// lip's own runtime in lip v0.37.0, and become the single entry of the variant L, for the
-/// platform and the runtime of the environment (ConvertEntry).
+/// For each label L of the variants of the tooth.json, the variants labeled L whose platform (a
+/// RID pattern in tooth.json) is "" or matches the platform of the environment are merged exactly
+/// like PackageManifest.GetVariant merges them for lip's own RID in lip v0.37.0, and become the
+/// single entry of the variant L, for the side and the platform of the environment
+/// (ConvertEntry).
 public static class ToothCompat {
   /// The file at the root of an archive of lip v0.x that makes it a package.
   public const string ToothFileName = "tooth.json";
@@ -63,26 +64,26 @@ public static class ToothCompat {
     foreach (string label in manifest.Variants.Select(v => v.Label).Distinct()) {
       PackageManifestVariant merged;
       try {
-        merged = manifest.GetVariant(label, environment.Runtime);
+        merged = manifest.GetVariant(label, environment.Platform);
       }
       catch (KeyNotFoundException) {
         RunTrace.Write("compat", $"{manifest.Path} {version}: variant '{label}' has no variants "
-            + $"for {environment.Runtime}");
+            + $"for {environment.Platform}");
         continue;
       }
       catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) {
         throw new PackageFormatException(
             $"The {ToothFileName} of {manifest.Path} {version} is not valid: its variants labeled "
-            + $"'{label}' cannot be merged for {environment.Runtime}, because "
+            + $"'{label}' cannot be merged for {environment.Platform}, because "
             + $"{MergeFailureReason(ex)}. lip v0.37.0 could not install them either; ask the "
             + $"package author to fix {ToothFileName}.",
             ex);
       }
 
-      derived[label] = ConvertEntry(merged, environment.Platform, environment.Runtime);
+      derived[label] = ConvertEntry(merged, environment.Side, environment.Platform);
       RunTrace.Write("compat", $"{manifest.Path} {version}: variant '{label}' "
           + (derived[label] is null ? "has no entry" : "derived")
-          + $" for {environment.Platform.ToSpecString()} {environment.Runtime}");
+          + $" for {environment.Side.ToSpecString()} {environment.Platform}");
     }
 
     JsonObject variants = [];
@@ -113,7 +114,7 @@ public static class ToothCompat {
       catch (PackageFormatException ex) {
         throw new PackageFormatException(
             $"The {ToothFileName} of {manifest.Path} {version} cannot be read for "
-            + $"{environment.Runtime}: its variant '{variant.Name}' does not convert to a valid "
+            + $"{environment.Platform}: its variant '{variant.Name}' does not convert to a valid "
             + $"variant of {PackageFormat.FileName}. Ask the package author to move "
             + $"{ToothFileName} to {PackageFormat.FileName} with 'lip migrate'.",
             ex);
@@ -137,23 +138,23 @@ public static class ToothCompat {
     ArgumentException => "more than one of them declares the same dependency",
     InvalidOperationException => "more than one of them sets the same kind of script"
         + " (pre_install, install, post_install, pre_uninstall, uninstall or post_uninstall)",
-    _ => "none of them is for this runtime",
+    _ => "none of them is for this platform",
   };
 
-  /// The entry of a package file for the variants of a label merged for a runtime
-  /// (protocol/compatibility.md §2), for a platform and the runtime; null when an asset has the
+  /// The entry of a package file for the variants of a label merged for a platform
+  /// (protocol/compatibility.md §2), for a side and the platform; null when an asset has the
   /// type tar, tgz or uncompressed, which makes the variant absent. Placements and globs that are
   /// not valid in a package file are left out; notes, when given, tell about them and about
   /// dropped variants, each prefixed by field.
   public static JsonObject? ConvertEntry(
       PackageManifestVariant merged,
-      McmodPlatform platform,
-      string runtime,
+      McmodSide side,
+      string platform,
       List<string>? notes = null,
       string field = "") {
     JsonObject entry = new() {
-      ["platform"] = platform.ToSpecString(),
-      ["runtime"] = runtime,
+      ["side"] = side.ToSpecString(),
+      ["platform"] = platform,
     };
 
     if (merged.Dependencies.Count > 0) {

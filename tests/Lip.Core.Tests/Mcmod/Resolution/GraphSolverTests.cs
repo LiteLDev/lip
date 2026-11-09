@@ -865,7 +865,7 @@ public class GraphSolverTests {
 
 /// Candidates for solver tests: a package with one entry for TestCandidates.Environment.
 internal static class TestCandidates {
-  public static readonly LipEnvironment Environment = new(McmodPlatform.Server, "win-x64");
+  public static readonly LipEnvironment Environment = new(McmodSide.Server, "win-x64");
 
   /// The JSON of every entry, which the solver never reads.
   private static readonly JsonElement s_emptyEntry = JsonDocument.Parse("{}").RootElement.Clone();
@@ -897,8 +897,8 @@ internal static class TestCandidates {
     string url = $"https://example.com/{id}/{version}.mcmod";
     List<EntryAsset> assets = mcmod is null ? [] : [new EntryAsset(AssetType.Mcmod, [url], [])];
     PackageEntry entry = new() {
+      Side = Environment.Side,
       Platform = Environment.Platform,
-      Runtime = Environment.Runtime,
       Dependencies = dependencies ?? [],
       Assets = assets,
       Json = s_emptyEntry,

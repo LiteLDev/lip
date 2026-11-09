@@ -184,10 +184,10 @@ internal sealed class WorkspaceHarness {
       }
       """;
 
-  /// The runtime of the environment the tests install for.
-  public const string Runtime = "win-x64";
+  /// The platform of the environment the tests install for.
+  public const string Platform = "win-x64";
 
-  /// A lip.toml whose variant "" has one entry for (server, Runtime) with the given members
+  /// A lip.toml whose variant "" has one entry for (server, Platform) with the given members
   /// (e.g. "\"assets\": [...]"), comma-separated JSON members without braces.
   public static string LipToml(string id, string version, string entry = "") => Toml($$"""
       {
@@ -195,7 +195,7 @@ internal sealed class WorkspaceHarness {
         "id": "{{id}}",
         "version": "{{version}}",
         "variants": {
-          "": [ { "platform": "server", "runtime": "{{Runtime}}"{{(entry == "" ? "" : ", " + entry)}} } ]
+          "": [ { "side": "server", "platform": "{{Platform}}"{{(entry == "" ? "" : ", " + entry)}} } ]
         }
       }
       """);

@@ -18,8 +18,8 @@ public class McmodInstallerTests {
 
   private static readonly string _root = OperatingSystem.IsWindows() ? @"C:\ws" : "/ws";
 
-  private static readonly LipEnvironment _server = new(McmodPlatform.Server, "win-x64");
-  private static readonly LipEnvironment _client = new(McmodPlatform.Client, "win-x64");
+  private static readonly LipEnvironment _server = new(McmodSide.Server, "win-x64");
+  private static readonly LipEnvironment _client = new(McmodSide.Client, "win-x64");
 
   private readonly MockFileSystem _fs = new();
   private readonly Mock<ICommandRunner> _commandRunner = new();
@@ -64,7 +64,7 @@ public class McmodInstallerTests {
   /// An entry of format 4 for (server, win-x64) with the given members.
   private static PackageEntry Entry(string members) {
     using JsonDocument json = JsonDocument.Parse(
-        $$"""{ "platform": "server", "runtime": "win-x64"{{(members == "" ? "" : ", " + members)}} }""");
+        $$"""{ "side": "server", "platform": "win-x64"{{(members == "" ? "" : ", " + members)}} }""");
     return PackageFileParser.ParseEntry(json.RootElement);
   }
 
@@ -119,8 +119,8 @@ public class McmodInstallerTests {
 
   /// A state file of the environment (server, win-x64) with the given packages.
   private static LockFile Lock(params LockedPackage[] packages) => new() {
-    Platform = "server",
-    Runtime = "win-x64",
+    Side = "server",
+    Platform = "win-x64",
     Packages = [.. packages],
   };
 
@@ -1098,7 +1098,7 @@ public class McmodInstallerTests {
           "variants": {
             "": [
               {
-                "platform": "server", "runtime": "win-x64",
+                "side": "server", "platform": "win-x64",
                 "assets": [ { "type": "zip", "urls": [ "https://example.com/gone.zip" ] } ],
                 "preserve": [ "keep.txt" ],
                 "purge": [ "logs/" ],
@@ -1546,7 +1546,7 @@ public class McmodInstallerTests {
 
 /// Assets downloaded through the archive provider (protocol/workspace.md §4 step 2).
 public class McmodInstallerAssetDownloadTests {
-  private static readonly OperationOptions _options = new(Rid: WorkspaceHarness.Runtime);
+  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 
   private static string ZipEntry(params string[] urls) => $$"""
       "assets": [ { "type": "zip", "urls": [ {{string.Join(", ", urls.Select(u => $"\"{u}\""))}} ],

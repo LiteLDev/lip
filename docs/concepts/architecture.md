@@ -6,7 +6,7 @@
 
 Represents the current state of the workspace, tracking which packages are installed and how.
 - **Packages**: The installed packages, recorded in the [state file](lockfiles.md), which lip keeps in the workspace as `.lip/state.json`.
-- **Environment**: The platform (`server` or `client`) and the .NET RID of the workspace. See [Environment](lip_toml.md#environment).
+- **Environment**: The side (`server` or `client`) and the platform (a .NET RID) of the workspace. See [Environment](lip_toml.md#environment).
 
 ## Configuration
 

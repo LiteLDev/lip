@@ -10,14 +10,14 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Options shared by the workspace operations. Rid overrides the runtime of the environment
+/// Options shared by the workspace operations. Platform overrides the platform of the environment
 /// (protocol/cli.md §4). Cancelling the token stops an operation; one that has started changing
 /// the workspace undoes its changes first.
 public record OperationOptions(
     bool DryRun = false,
     bool IgnoreScripts = false,
     bool NoDependencies = false,
-    string? Rid = null,
+    string? Platform = null,
     CancellationToken CancellationToken = default);
 
 /// One package of the state file, as listed to the user.
@@ -367,9 +367,9 @@ public class McmodService(
       return JsonSerializer.Serialize(document.Json, _indented);
     }
 
-    string? runtime = null;
+    string? platform = null;
     try {
-      runtime = (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Runtime;
+      platform = (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Platform;
     }
     catch (LockFormatException ex) {
       // A state file lip cannot read records no environment it can use.
@@ -377,7 +377,7 @@ public class McmodService(
     }
 
     LipEnvironment environment = new(
-        McmodPlatform.Server, runtime ?? RuntimeInformation.RuntimeIdentifier);
+        McmodSide.Server, platform ?? RuntimeInformation.RuntimeIdentifier);
     return JsonSerializer.Serialize(document.ReadFor(environment, tagVersion).Json, _indented);
   }
 
@@ -386,18 +386,18 @@ public class McmodService(
   private async Task<Workspace> OpenWorkspace(OperationOptions options) {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LockFile? recorded = await _lockStore.Load(root);
-    LipEnvironment environment = DetermineEnvironment(recorded, options.Rid);
+    LipEnvironment environment = DetermineEnvironment(recorded, options.Platform);
     recorded ??= await ReadToothLock(root, environment, resolveCommits: true);
     RunTrace.Write("workspace", $"Workspace {root}: "
         + (recorded is null
             ? "no state file yet"
-            : $"{recorded.Packages.Count} installed packages, runtime {recorded.Runtime}")
-        + $"; using the environment ({environment.Platform.ToSpecString()},"
-        + $" {environment.Runtime})" + (options.Rid is null ? "" : " from --rid"));
+            : $"{recorded.Packages.Count} installed packages, platform {recorded.Platform}")
+        + $"; using the environment ({environment.Side.ToSpecString()},"
+        + $" {environment.Platform})" + (options.Platform is null ? "" : " from --platform"));
     // A workspace without a state file gets the environment of its first operation.
     LockFile lockFile = recorded ?? new LockFile {
-      Platform = environment.Platform.ToSpecString(),
-      Runtime = environment.Runtime,
+      Side = environment.Side.ToSpecString(),
+      Platform = environment.Platform,
       Packages = [],
     };
     Resolver resolver = new(_archiveProvider, _archiveReader, Warn);
@@ -573,20 +573,22 @@ public class McmodService(
   }
 
   /// The environment of the workspace (protocol/cli.md §4). lip manages server workspaces only,
-  /// so the platform is always server. The runtime is --rid, then the state file, then the
+  /// so the side is always server. The platform is --platform, then the state file, then the
   /// RID lip itself runs on.
-  private static LipEnvironment DetermineEnvironment(LockFile? lockFile, string? explicitRid) {
-    string server = McmodPlatform.Server.ToSpecString();
-    if (lockFile?.Platform is { } platform && platform != server) {
+  private static LipEnvironment DetermineEnvironment(
+      LockFile? lockFile,
+      string? explicitPlatform) {
+    string server = McmodSide.Server.ToSpecString();
+    if (lockFile?.Side is { } side && side != server) {
       throw new InvalidOperationException(
-          $"The state file {WorkspaceFile} records the platform \"{platform}\" in its"
-          + $" \"platform\" field, but lip manages server workspaces only (\"{server}\")."
+          $"The state file {WorkspaceFile} records the side \"{side}\" in its"
+          + $" \"side\" field, but lip manages server workspaces only (\"{server}\")."
           + " Client workspaces are managed by launchers such as LeviLauncher.");
     }
 
     return new LipEnvironment(
-        McmodPlatform.Server,
-        explicitRid ?? lockFile?.Runtime ?? RuntimeInformation.RuntimeIdentifier);
+        McmodSide.Server,
+        explicitPlatform ?? lockFile?.Platform ?? RuntimeInformation.RuntimeIdentifier);
   }
 
   private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
@@ -635,7 +637,7 @@ public class McmodService(
 
     const int Shown = 10;
     string summary = $"No package found for '{argument}' that can be installed in this workspace"
-        + $" ({workspace.Environment.Platform.ToSpecString()}, {workspace.Environment.Runtime}).";
+        + $" ({workspace.Environment.Side.ToSpecString()}, {workspace.Environment.Platform}).";
     string message = summary
         + (diagnostics.Count == 0 ? "" : " Every place lip looked failed:" + string.Concat(
             diagnostics.Take(Shown).Select(d => $"\n  - {d.Message}")))
@@ -1087,8 +1089,8 @@ public class McmodService(
   /// The state file with the given packages and the environment, once known.
   private static LockFile LockWith(Workspace workspace, List<LockedPackage> packages) {
     return workspace.Lock with {
-      Platform = workspace.Environment.Platform.ToSpecString(),
-      Runtime = workspace.Environment.Runtime,
+      Side = workspace.Environment.Side.ToSpecString(),
+      Platform = workspace.Environment.Platform,
       Packages = [.. packages],
     };
   }
@@ -1101,7 +1103,7 @@ public class McmodService(
   /// "Reinstalling"): with the package file the state file records, and the archive of the
   /// commit it records for a remote repository, otherwise the archive its source names now,
   /// opened when first needed. Fails when it is no candidate in the environment, e.g. when its
-  /// package file has no entry for another --rid (protocol/workspace.md §3).
+  /// package file has no entry for another --platform (protocol/workspace.md §3).
   private Candidate PinnedCandidate(Workspace workspace, LockedPackage package) {
     try {
       Package rebuilt = new(
@@ -1132,12 +1134,13 @@ public class McmodService(
       throw new InvalidOperationException(
           $"Cannot use the installed package '{package.Identity}' as the state file"
           + $" {WorkspaceFile} records it, in the environment"
-          + $" ({workspace.Environment.Platform.ToSpecString()}, {workspace.Environment.Runtime})."
+          + $" ({workspace.Environment.Side.ToSpecString()}, {workspace.Environment.Platform})."
           // LockedEntry throws McmodInstallException when the package has no entry for the
           // environment; a LockFormatException already says what to do.
-          + (ex is McmodInstallException && workspace.Environment.Runtime != workspace.Lock.Runtime
-              ? $" The workspace was installed for the runtime {workspace.Lock.Runtime}; run lip"
-                  + " without --rid, or with that runtime."
+          + (ex is McmodInstallException
+              && workspace.Environment.Platform != workspace.Lock.Platform
+              ? $" The workspace was installed for the platform {workspace.Lock.Platform}; run"
+                  + " lip without --platform, or with that platform."
               : ex is LockFormatException
                   ? ""
                   : " If the file was edited by hand, undo the edit."),

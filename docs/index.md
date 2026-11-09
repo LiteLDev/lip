@@ -25,5 +25,5 @@ features:
   - title: Dependency Resolution
     details: Automatic dependency solving with topological ordering.
   - title: Cross-Platform
-    details: Available on Windows, Linux, and macOS with platform-aware variants.
+    details: Available on Windows, Linux, and macOS with side- and platform-aware variants.
 ---

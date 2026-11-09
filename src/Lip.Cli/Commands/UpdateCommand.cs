@@ -28,7 +28,7 @@ public class UpdateCommand(LipClient lipClient, IUserInteraction userInteraction
         settings.Packages,
         settings.DryRun,
         settings.IgnoreScripts,
-        settings.Rid,
+        settings.Platform,
         cancellationToken);
     await _userInteraction.PrintSuccess("Packages updated successfully.");
     return 0;

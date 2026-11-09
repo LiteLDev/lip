@@ -1,36 +1,37 @@
 namespace Lip.Core.Mcmod;
 
-public enum McmodPlatform {
+public enum McmodSide {
   Server,
   Client,
 }
 
-public static class McmodPlatformExtensions {
-  public static string ToSpecString(this McmodPlatform platform) => platform switch {
-    McmodPlatform.Server => "server",
-    McmodPlatform.Client => "client",
+public static class McmodSideExtensions {
+  public static string ToSpecString(this McmodSide side) => side switch {
+    McmodSide.Server => "server",
+    McmodSide.Client => "client",
     _ => throw new ArgumentOutOfRangeException(
-        nameof(platform), platform, "The platform must be server or client."),
+        nameof(side), side, "The side must be server or client."),
   };
 
-  public static bool TryParse(string s, out McmodPlatform platform) {
+  public static bool TryParse(string s, out McmodSide side) {
     switch (s) {
       case "server":
-        platform = McmodPlatform.Server;
+        side = McmodSide.Server;
         return true;
       case "client":
-        platform = McmodPlatform.Client;
+        side = McmodSide.Client;
         return true;
       default:
-        platform = default;
+        side = default;
         return false;
     }
   }
 }
 
-/// The environment (platform, runtime) of a workspace (protocol/package.md §1). Runtime is a .NET RID.
+/// The environment (side, platform) of a workspace (protocol/package.md §1). Platform is a
+/// .NET RID.
 ///
-/// lip manages server workspaces only: its operations always use McmodPlatform.Server. Client
+/// lip manages server workspaces only: its operations always use McmodSide.Server. Client
 /// workspaces are left to launchers implementing the same spec (LeviLauncher). The client
-/// platform is still part of the model, since documents select targets by platform.
-public record LipEnvironment(McmodPlatform Platform, string Runtime);
+/// side is still part of the model, since documents select targets by side.
+public record LipEnvironment(McmodSide Side, string Platform);

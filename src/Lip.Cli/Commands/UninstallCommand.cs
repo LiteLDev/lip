@@ -33,7 +33,7 @@ public class UninstallCommand(LipClient lipClient, IUserInteraction userInteract
         settings.DryRun,
         settings.IgnoreScripts,
         settings.NoDependencies,
-        settings.Rid, cancellationToken);
+        settings.Platform, cancellationToken);
     await _userInteraction.PrintSuccess("Packages uninstalled successfully.");
     return 0;
   }

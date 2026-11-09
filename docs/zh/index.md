@@ -25,5 +25,5 @@ features:
   - title: 依赖解析
     details: 自动依赖求解并按拓扑顺序安装。
   - title: 跨平台
-    details: 支持 Windows、Linux 和 macOS，并可根据平台选择变体。
+    details: 支持 Windows、Linux 和 macOS，并可根据运行端和平台选择变体。
 ---

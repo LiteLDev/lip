@@ -6,7 +6,7 @@
 
 表示工作区当前状态，追踪安装了哪些包以及安装方式。
 - **Packages**：已安装包集合，记录在[状态文件](lockfiles.md)中；lip 将其保存在工作区中的 `.lip/state.json`。
-- **环境**：工作区的平台（`server` 或 `client`）和 .NET RID。参见[环境](lip_toml.md#环境)。
+- **环境**：工作区的运行端（`server` 或 `client`）和平台（.NET RID）。参见[环境](lip_toml.md#环境)。
 
 ## 配置
 

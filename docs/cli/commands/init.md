@@ -15,7 +15,7 @@ Asks on the terminal for the package id, a [Go module path](https://go.dev/ref/m
 - `format`: `4`
 - `id`: The package id you entered.
 - `version`: `0.1.0`
-- `variants`: one entry of the variant `""`, with `platform = "server"` and `runtime = "win-x64"`
+- `variants`: one entry of the variant `""`, with `side = "server"` and `platform = "win-x64"`
 
 If a `lip.toml` already exists in the current directory, the command fails and writes nothing. When standard input or standard error is not a terminal, it cannot ask, so it fails instead.
 

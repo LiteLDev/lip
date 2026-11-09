@@ -28,8 +28,8 @@ public class PackageTemplatesTests {
     // Act
     PackageEntry entry = Entry("""
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
 
         [[variants."".assets]]
         type = "mcmod"
@@ -47,8 +47,8 @@ public class PackageTemplatesTests {
     // Act
     PackageEntry entry = Entry("""
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
         preserve = ["mods/{{info.name}}/config/"]
 
         [variants."".hooks]
@@ -70,8 +70,8 @@ public class PackageTemplatesTests {
         info = { name = "MyMod", description = "{{info.name}} {{version}}" }
 
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
         hooks = { pre_install = ["echo {{info.description}}"] }
         """);
 
@@ -99,8 +99,8 @@ public class PackageTemplatesTests {
     // Act
     PackageEntry entry = Entry("""
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
         preserve = ["a{{nothing}}/"]
         """);
 
@@ -115,8 +115,8 @@ public class PackageTemplatesTests {
     // Act
     PackageFormatException ex = Assert.Throws<PackageFormatException>(() => Entry($$"""
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
 
         [variants."".hooks]
         pre_install = ["{{text}}"]
@@ -132,8 +132,8 @@ public class PackageTemplatesTests {
     // Act
     PackageEntry entry = Entry("""
         [[variants.""]]
-        platform = "server"
-        runtime = "win-x64"
+        side = "server"
+        platform = "win-x64"
 
         [variants."".hooks]
         pre_install = ["echo {{ '{{' }}x}}"]

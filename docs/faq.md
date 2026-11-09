@@ -1,10 +1,10 @@
 # Frequently Asked Questions
 
 ### What is `lip.toml`?
-`lip.toml` is the package file of a lip package: its package id, its version, and for each variant, platform and RID, the dependencies, the files to place, the mod to install and the commands to run. See [lip.toml](concepts/lip_toml.md).
+`lip.toml` is the package file of a lip package: its package id, its version, and for each variant, side and platform, the dependencies, the files to place, the mod to install and the commands to run. See [lip.toml](concepts/lip_toml.md).
 
 ### Can I still install packages of lip v0.x, with a `tooth.json`?
-**Yes.** lip still reads `tooth.json` of format versions 1 to 3: it reads each one as a package file for the workspace's platform and RID, and installs it like any other package, placing the same files as before, so existing packages keep working. lip no longer writes `tooth.json`; use [`lip migrate`](cli/commands/migrate.md) to convert your package to `lip.toml`. A workspace of lip v0.x (with a `tooth_lock.json`) and a `liprc.json` are migrated automatically.
+**Yes.** lip still reads `tooth.json` of format versions 1 to 3: it reads each one as a package file for the workspace's side and platform, and installs it like any other package, placing the same files as before, so existing packages keep working. lip no longer writes `tooth.json`; use [`lip migrate`](cli/commands/migrate.md) to convert your package to `lip.toml`. A workspace of lip v0.x (with a `tooth_lock.json`) and a `liprc.json` are migrated automatically.
 
 ### Does `lip install` update `lip.toml`?
 **No.** Running `lip install <package>` installs the package into your workspace and updates the [state file](concepts/lockfiles.md) to track the state, but it **does not** modify any `lip.toml`. You must manually add dependencies to the `deps` of your `lip.toml` if you want them to be permanent parts of your package's requirements.

@@ -41,4 +41,4 @@ lip update [PACKAGES] [options]
 | --- | --- |
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
 | `--ignore-scripts` | 更新时跳过安装与卸载钩子。 |
-| `--rid <RID>` | 工作区的 .NET RID，例如 `win-x64`。 |
+| `--platform <RID>` | 工作区的平台，即 .NET RID，例如 `win-x64`。 |

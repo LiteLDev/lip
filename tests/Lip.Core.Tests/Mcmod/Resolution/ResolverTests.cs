@@ -11,8 +11,8 @@ public class ResolverTests {
   private const string Url = "https://example.com/pkg.zip";
   private const string Format3Uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
-  private static readonly LipEnvironment s_server = new(McmodPlatform.Server, "win-x64");
-  private static readonly LipEnvironment s_client = new(McmodPlatform.Client, "win-x64");
+  private static readonly LipEnvironment s_server = new(McmodSide.Server, "win-x64");
+  private static readonly LipEnvironment s_client = new(McmodSide.Client, "win-x64");
 
   private readonly FakeArchives _archives = new();
   private readonly CountingReader _reader = new();
@@ -35,8 +35,8 @@ public class ResolverTests {
       LipToml(id, version, $"\"\": [ {Entry("server", "win-x64", members)} ]");
 
   /// An entry of a package file with the given extra members, comma-separated without braces.
-  private static string Entry(string platform, string runtime, string members = "") =>
-      $$"""{ "platform": "{{platform}}", "runtime": "{{runtime}}"{{(members == "" ? "" : ", " + members)}} }""";
+  private static string Entry(string side, string platform, string members = "") =>
+      $$"""{ "side": "{{side}}", "platform": "{{platform}}"{{(members == "" ? "" : ", " + members)}} }""";
 
   /// The member "deps" with one dependency on a marker repository, which tells entries
   /// apart.
@@ -73,7 +73,7 @@ public class ResolverTests {
   // Entries (protocol/package.md §4 step 2)
 
   [Fact]
-  public async Task Resolve_Url_SelectsEntryOfExactPlatformAndRuntime() {
+  public async Task Resolve_Url_SelectsEntryOfExactSideAndPlatform() {
     // Arrange
     _archives.AddUrl(Url, LipToml(Spec, "1.0.0", $"""
         "": [
@@ -91,8 +91,8 @@ public class ResolverTests {
     // Assert
     Candidate candidate = Assert.Single(server.Candidates);
     Assert.Equal("server-win", MarkerOf(candidate));
-    Assert.Equal(McmodPlatform.Server, candidate.Package.Entry.Platform);
-    Assert.Equal("win-x64", candidate.Package.Entry.Runtime);
+    Assert.Equal(McmodSide.Server, candidate.Package.Entry.Side);
+    Assert.Equal("win-x64", candidate.Package.Entry.Platform);
     Assert.Equal(Spec, candidate.Package.Identity);
     Assert.Equal("", candidate.Package.Variant);
     Assert.Equal(SemVersion.Parse("1.0.0"), candidate.Package.Version);
@@ -105,13 +105,13 @@ public class ResolverTests {
   [InlineData("linux-x64")]
   [InlineData("win")]
   [InlineData("WIN-X64")]
-  public async Task Resolve_NoEntryForRuntime_NoCandidate(string runtime) {
-    // Arrange: runtimes are compared exactly, not as RID graphs or ignoring case.
+  public async Task Resolve_NoEntryForPlatform_NoCandidate(string platform) {
+    // Arrange: platforms are compared exactly, not as RID graphs or ignoring case.
     _archives.AddUrl(Url, Simple4(Spec, "1.0.0"));
 
     // Act
     ResolveResult result = await CreateResolver().Resolve(
-        Source(Url), null, new LipEnvironment(McmodPlatform.Server, runtime));
+        Source(Url), null, new LipEnvironment(McmodSide.Server, platform));
 
     // Assert
     Assert.Empty(result.Candidates);
@@ -119,7 +119,7 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_NoEntryForPlatform_NoCandidate() {
+  public async Task Resolve_NoEntryForSide_NoCandidate() {
     // Arrange
     _archives.AddUrl(Url, Simple4(Spec, "1.0.0"));
 
@@ -630,7 +630,7 @@ public class ResolverTests {
 
   [Fact]
   public async Task Resolve_Format3_DerivesEntryForEnvironment() {
-    // Arrange: variants whose platform does not match the runtime are left out.
+    // Arrange: variants whose platform pattern does not match the platform are left out.
     _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0",
         Variant3("", "linux-x64", "linux"),
         Variant3("", "win-x64", "win")));
@@ -638,14 +638,14 @@ public class ResolverTests {
     // Act
     ResolveResult server = await CreateResolver().Resolve(Source(Spec), null, s_server);
     ResolveResult linux = await CreateResolver().Resolve(
-        Source(Spec), null, new LipEnvironment(McmodPlatform.Server, "linux-x64"));
+        Source(Spec), null, new LipEnvironment(McmodSide.Server, "linux-x64"));
     ResolveResult osx = await CreateResolver().Resolve(
-        Source(Spec), null, new LipEnvironment(McmodPlatform.Server, "osx-arm64"));
+        Source(Spec), null, new LipEnvironment(McmodSide.Server, "osx-arm64"));
 
     // Assert
     Candidate candidate = Assert.Single(server.Candidates);
-    Assert.Equal(McmodPlatform.Server, candidate.Package.Entry.Platform);
-    Assert.Equal("win-x64", candidate.Package.Entry.Runtime);
+    Assert.Equal(McmodSide.Server, candidate.Package.Entry.Side);
+    Assert.Equal("win-x64", candidate.Package.Entry.Platform);
     Assert.Equal("win", MarkerOf(candidate));
     Assert.Equal(Spec, candidate.Package.Identity);
     Assert.Equal("linux", MarkerOf(Assert.Single(linux.Candidates)));
@@ -654,7 +654,7 @@ public class ResolverTests {
 
   [Fact]
   public async Task Resolve_Format3_MergesVariantsOfOneLabel() {
-    // Arrange: a variant without platform and one matching the runtime by glob are merged.
+    // Arrange: a variant without platform and one matching the platform by glob are merged.
     _archives.AddTag(Spec, "v1.0.0", Tooth3(Spec, "1.0.0",
         Variant3("", "", "any"),
         Variant3("", "win-*", "win"),
@@ -687,7 +687,7 @@ public class ResolverTests {
     Assert.Equal("default", MarkerOf(Assert.Single(server.Candidates)));
     Candidate candidate = Assert.Single(client.Candidates);
     Assert.Equal("default", MarkerOf(candidate));
-    Assert.Equal(McmodPlatform.Client, candidate.Package.Entry.Platform);
+    Assert.Equal(McmodSide.Client, candidate.Package.Entry.Side);
     Assert.Equal(Spec, candidate.Package.Identity);
     Assert.Equal("client", MarkerOf(Assert.Single(clientLabel.Candidates)));
     Assert.Equal($"{Spec}#client", clientLabel.Candidates[0].Package.Identity);

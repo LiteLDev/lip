@@ -24,6 +24,8 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("--bogus", "config", "get", "--bogus", "x")]
   [InlineData("--bogus", "config", "delete", "--bogus", "x")]
   [InlineData("-x", "install", "-x", "foo")]
+  // Renamed to --platform in lip v0.40.
+  [InlineData("--rid", "install", "x", "--rid")]
   public async Task UnknownOption_IsUsageError(string option, params string[] args) {
     (int exitCode, _, string stderr) = await Run(args);
 
@@ -38,10 +40,10 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("pack", "-o")]
   [InlineData("pack", "--output")]
   [InlineData("pack", "-o", "--help")]
-  [InlineData("update", "--rid")]
-  [InlineData("update", "--rid", "-n")]
-  [InlineData("install", "x", "--rid")]
-  [InlineData("uninstall", "x", "--rid")]
+  [InlineData("update", "--platform")]
+  [InlineData("update", "--platform", "-n")]
+  [InlineData("install", "x", "--platform")]
+  [InlineData("uninstall", "x", "--platform")]
   public async Task OptionWithoutValue_IsUsageError(params string[] args) {
     (int exitCode, _, string stderr) = await Run(args);
 

@@ -51,7 +51,7 @@ public class LipClientTests {
           "format": 4,
           "id": "github.com/owner/repo",
           "version": "0.1.0",
-          "variants": { "": [ { "platform": "server", "runtime": "win-x64" } ] }
+          "variants": { "": [ { "side": "server", "platform": "win-x64" } ] }
         }
         """)!;
     byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.toml"));
@@ -149,7 +149,7 @@ public class LipClientTests {
     JsonArray entries = document["variants"]![""]!.AsArray();
     Assert.Equal(
         [("server", "win-x64")],
-        entries.Select(e => ((string)e!["platform"]!, (string)e["runtime"]!)));
+        entries.Select(e => ((string)e!["side"]!, (string)e["platform"]!)));
     JsonNode server = entries[0]!;
     Assert.Equal(
         ">=1.9.0 <1.10.0", (string)server["deps"]!["github.com/LiteLDev/LeviLamina"]!);
@@ -163,7 +163,7 @@ public class LipClientTests {
   }
 
   [Fact]
-  public async Task Migrate_FormatTwoPlatforms_WritesEntryPerPlatformAndRuntime() {
+  public async Task Migrate_FormatTwoPlatforms_WritesEntryPerSideAndPlatform() {
     // Arrange
     _ws.AddFile("tooth.json", """
         {
@@ -187,11 +187,11 @@ public class LipClientTests {
     Assert.Equal(
         [("client", "linux-x64"), ("client", "win-x64"), ("server", "linux-x64"), ("server", "win-x64")],
         document["variants"]![""]!.AsArray()
-            .Select(e => ((string)e!["platform"]!, (string)e["runtime"]!)).Order());
+            .Select(e => ((string)e!["side"]!, (string)e["platform"]!)).Order());
   }
 
   [Fact]
-  public async Task Migrate_VariantWithoutPlatform_AsksForRuntimes() {
+  public async Task Migrate_VariantWithoutPlatform_AsksForPlatforms() {
     // Arrange
     _ws.AddFile("tooth.json", WorkspaceHarness.Tooth("github.com/test/repo", "1.0.0", "x.dll"));
     _ws.AddFile("file.dll", "x");
@@ -205,8 +205,8 @@ public class LipClientTests {
     Assert.Equal(
         ["linux-arm64", "win-x64"],
         document["variants"]![""]!.AsArray()
-            .Where(e => (string)e!["platform"]! == "server")
-            .Select(e => (string)e!["runtime"]!).Order());
+            .Where(e => (string)e!["side"]! == "server")
+            .Select(e => (string)e!["platform"]!).Order());
   }
 
   [Fact]
@@ -340,11 +340,11 @@ public class LipClientTests {
             "format": 4,
             "id": "example.com/v",
             "version": "1.0.0",
-            "variants": { "x": [ { "platform": "server", "runtime": "win-x64" } ] }
+            "variants": { "x": [ { "side": "server", "platform": "win-x64" } ] }
           }
           """),
     });
-    OperationOptions options = new(Rid: WorkspaceHarness.Runtime);
+    OperationOptions options = new(Platform: WorkspaceHarness.Platform);
     await _ws.Service.Install(["example.com/b"], options);
     await _ws.Service.Install(["example.com/a"], options);
     await _ws.Service.Install(["example.com/v#x"], options);

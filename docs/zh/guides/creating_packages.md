@@ -18,8 +18,8 @@ id = "github.com/user/MyTool"
 version = "0.1.0"
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 ```
 
 若该目录已存在 `lip.toml`，或无法询问（标准输入或标准错误不是终端），命令会失败。
@@ -40,8 +40,8 @@ id = "github.com/user/MyTool"
 version = "1.0.0"
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 preserve = ["config/mytool/"]
 
 [[variants."".assets]]
@@ -77,8 +77,8 @@ version = "1.0.0"
 name = "My Mod"
 
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 preserve = ["mods/MyMod/config/"]
 
 [variants."".deps]
@@ -94,28 +94,28 @@ urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win
 
 在客户端上，mod 同样安装到 `mods/<name>/`，由 LeviLauncher 等启动器负责；lip 本身只安装到服务端。
 
-## 多个平台和运行时
+## 多个运行端和平台
 
-一个条目恰好适用于一个平台和一个运行时，且必须与工作区的平台和运行时相同。请为包支持的每个平台和运行时各添加一个条目，每个条目有自己的资源：
+一个条目恰好适用于一个运行端（`server` 或 `client`）和一个平台（.NET RID，例如 `win-x64`），且必须与工作区[环境](../concepts/lip_toml.md#环境)的运行端和平台相同。请为包支持的每个运行端和平台各添加一个条目，每个条目有自己的资源：
 
 ```toml
 [[variants.""]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-server-win-x64.zip"] }]
 
 [[variants.""]]
-platform = "client"
-runtime = "win-x64"
+side = "client"
+platform = "win-x64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-x64.zip"] }]
 
 [[variants.""]]
-platform = "client"
-runtime = "win-arm64"
+side = "client"
+platform = "win-arm64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-arm64.zip"] }]
 ```
 
-平台和运行时没有对应条目的工作区无法安装该包。
+运行端和平台没有对应条目的工作区无法安装该包。
 
 ## 变体
 
@@ -123,17 +123,44 @@ assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/down
 
 ```toml
 [[variants.lua]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 assets = [{ type = "self", place = [{ src = "lua/", dest = "myengine/lua/" }] }]
 
 [[variants.quickjs]]
-platform = "server"
-runtime = "win-x64"
+side = "server"
+platform = "win-x64"
 assets = [{ type = "self", place = [{ src = "quickjs/", dest = "myengine/quickjs/" }] }]
 ```
 
 每个变体都作为独立的包安装，身份为 `<包 ID>#<variant>`，因此同一仓库的多个变体可以并存。其他包在 `deps` 中以键 `<包 ID>#<variant>` 依赖某个变体。
+
+## 推荐标签
+
+`info.tags` 供人阅读，也供列出包的网站和启动器使用；lip 本身忽略标签。[levimc.org](https://levimc.org/mods/) 和 LeviLauncher 等模组列表会优先显示下列标签及其本地化名称，并允许用户按它们筛选。请按此处的写法使用这些 ID：小写，且不加 `category:` 之类的前缀；不需要其他拼写或同义词。挑选最能描述你的包的几个，此外也可以添加任何其他标签：
+
+```toml
+[info]
+tags = ["management", "economy"]
+```
+
+| 标签 | 名称 | 适用于 |
+| --- | --- | --- |
+| `library` | 前置库 / API | 其他 mod 依赖的库或 API，例如事件、表单或导出函数。 |
+| `utility` | 实用工具 | 玩家日常使用的工具，例如背包辅助、信息显示、物品提示和配方查看。 |
+| `management` | 服务器管理 | 运营服务器，例如备份、封禁、白名单、登录、命令和领地。 |
+| `game-mechanics` | 游戏机制 | 改变游戏玩法，例如原版增强功能和成就。 |
+| `adventure` | 内容与冒险 | 可供探索的新内容，例如世界生成、地形和生物群系。 |
+| `visual` | 视觉与界面 | 玩家看到的内容，例如 HUD、侧边栏、光影、回放和录制。 |
+| `economy` | 经济 | 货币、商店和交易。 |
+| `teleport` | 传送 | 传送命令、家园、传送点和传送石碑。 |
+| `anticheat` | 反作弊 | 检测和阻止作弊，例如反矿透。 |
+| `optimization` | 性能优化 | 提升性能，例如实体和掉落物清理。 |
+| `bugfix` | 错误修复 | 修复游戏的错误。 |
+| `technology` | 技术与红石 | 红石、活塞和自动化。 |
+| `protocol` | 协议与多版本 | 网络协议，例如让多个游戏版本的客户端加入。 |
+
+无需为运行端、平台或“这是 LeviLamina mod”添加标签：条目和 `deps` 已经说明了这些，模组列表也会隐藏 `server`、`client`、`levilamina` 和 `mod` 等标签。
 
 ## 本地测试
 

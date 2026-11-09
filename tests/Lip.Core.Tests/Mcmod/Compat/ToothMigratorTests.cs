@@ -47,12 +47,12 @@ public class ToothMigratorTests {
     Assert.Equal(SemVersion.Parse("0.22.0"), file.Version);
     Assert.Equal(
         [
-          ("", McmodPlatform.Server, "win-x64", "github.com/LiteLDev/LeviLamina"),
-          ("client", McmodPlatform.Client, "win-x64", "github.com/LiteLDev/LeviLamina#client"),
-          ("tool", McmodPlatform.Server, "win-x64", "github.com/a/tool"),
-          ("tool", McmodPlatform.Client, "win-x64", "github.com/a/tool"),
+          ("", McmodSide.Server, "win-x64", "github.com/LiteLDev/LeviLamina"),
+          ("client", McmodSide.Client, "win-x64", "github.com/LiteLDev/LeviLamina#client"),
+          ("tool", McmodSide.Server, "win-x64", "github.com/a/tool"),
+          ("tool", McmodSide.Client, "win-x64", "github.com/a/tool"),
         ],
-        Entries(file).Select(e => (e.Variant, e.Entry.Platform, e.Entry.Runtime,
+        Entries(file).Select(e => (e.Variant, e.Entry.Side, e.Entry.Platform,
             Assert.Single(e.Entry.Dependencies).Source.ToString()))
             .OrderBy(e => e.Item1, StringComparer.Ordinal).ThenBy(e => e.Item2));
     JsonObject info = result.Document["info"]!.AsObject();
@@ -88,32 +88,32 @@ public class ToothMigratorTests {
 
     // Assert
     foreach ((string variant, PackageEntry entry) in Entries(file)) {
-      LipEnvironment environment = new(entry.Platform, entry.Runtime);
+      LipEnvironment environment = new(entry.Side, entry.Platform);
       PackageEntry derived = ToothCompat.Derive(tooth, environment).Variants[variant].Single();
       Assert.Equal(
           derived.Dependencies.Select(d => (d.Source.ToString(), d.Range.Text)),
           entry.Dependencies.Select(d => (d.Source.ToString(), d.Range.Text)));
     }
 
-    // Without a dependency on LeviLamina, the variant "" has entries for both platforms; the
+    // Without a dependency on LeviLamina, the variant "" has entries for both sides; the
     // variant "client", which depends on LeviLamina#client, for the client only.
     Assert.Equal(
         [
-          (McmodPlatform.Server, "win-x64"),
-          (McmodPlatform.Client, "win-x64"),
-          (McmodPlatform.Server, "linux-x64"),
-          (McmodPlatform.Client, "linux-x64"),
-          (McmodPlatform.Server, "win-arm64"),
-          (McmodPlatform.Client, "win-arm64"),
+          (McmodSide.Server, "win-x64"),
+          (McmodSide.Client, "win-x64"),
+          (McmodSide.Server, "linux-x64"),
+          (McmodSide.Client, "linux-x64"),
+          (McmodSide.Server, "win-arm64"),
+          (McmodSide.Client, "win-arm64"),
         ],
-        file.Variants[""].Select(e => (e.Platform, e.Runtime)));
+        file.Variants[""].Select(e => (e.Side, e.Platform)));
     Assert.Equal(
-        [(McmodPlatform.Client, "win-x64")],
-        file.Variants["client"].Select(e => (e.Platform, e.Runtime)));
+        [(McmodSide.Client, "win-x64")],
+        file.Variants["client"].Select(e => (e.Side, e.Platform)));
   }
 
   [Fact]
-  public async Task Migrate_VariantsWithoutPlatform_AskForRuntimes() {
+  public async Task Migrate_VariantsWithoutPlatform_AskForPlatforms() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -135,14 +135,14 @@ public class ToothMigratorTests {
     Assert.Equal(["js", "lua"], file.Variants.Keys.Order(StringComparer.Ordinal));
     Assert.Equal(
         [
-          (McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64"),
-          (McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64"),
+          (McmodSide.Server, "win-x64"), (McmodSide.Client, "win-x64"),
+          (McmodSide.Server, "linux-x64"), (McmodSide.Client, "linux-x64"),
         ],
-        file.Variants["lua"].Select(e => (e.Platform, e.Runtime)));
+        file.Variants["lua"].Select(e => (e.Side, e.Platform)));
   }
 
   [Fact]
-  public async Task Migrate_PlatformPattern_AsksForMatchingRuntimesOnce() {
+  public async Task Migrate_PlatformPattern_AsksForMatchingPlatformsOnce() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -167,22 +167,22 @@ public class ToothMigratorTests {
     PackageFile file = Reparse(result);
     Assert.Equal(
         [
-          (McmodPlatform.Server, "win-x64", "github.com/o/a"),
-          (McmodPlatform.Client, "win-x64", "github.com/o/a"),
-          (McmodPlatform.Server, "win-arm64", "github.com/o/a"),
-          (McmodPlatform.Client, "win-arm64", "github.com/o/a"),
-          (McmodPlatform.Server, "linux-x64", "github.com/o/b"),
-          (McmodPlatform.Client, "linux-x64", "github.com/o/b"),
+          (McmodSide.Server, "win-x64", "github.com/o/a"),
+          (McmodSide.Client, "win-x64", "github.com/o/a"),
+          (McmodSide.Server, "win-arm64", "github.com/o/a"),
+          (McmodSide.Client, "win-arm64", "github.com/o/a"),
+          (McmodSide.Server, "linux-x64", "github.com/o/b"),
+          (McmodSide.Client, "linux-x64", "github.com/o/b"),
         ],
-        file.Variants[""].Select(e => (e.Platform, e.Runtime,
+        file.Variants[""].Select(e => (e.Side, e.Platform,
             Assert.Single(e.Dependencies).Source.ToString())));
     Assert.Equal(
         ["win-x64", "win-x64", "win-arm64", "win-arm64"],
-        file.Variants["lua"].Select(e => e.Runtime));
+        file.Variants["lua"].Select(e => e.Platform));
   }
 
   [Fact]
-  public async Task Migrate_PlatformNotARuntime_AsksForRuntimesOnce() {
+  public async Task Migrate_PlatformNotARid_AsksForPlatformsOnce() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -207,22 +207,22 @@ public class ToothMigratorTests {
     PackageFile file = Reparse(result);
     Assert.Equal(
         [
-          (McmodPlatform.Server, "win-x64", "github.com/o/a"),
-          (McmodPlatform.Client, "win-x64", "github.com/o/a"),
-          (McmodPlatform.Server, "win-arm64", "github.com/o/a"),
-          (McmodPlatform.Client, "win-arm64", "github.com/o/a"),
-          (McmodPlatform.Server, "linux-x64", "github.com/o/b"),
-          (McmodPlatform.Client, "linux-x64", "github.com/o/b"),
+          (McmodSide.Server, "win-x64", "github.com/o/a"),
+          (McmodSide.Client, "win-x64", "github.com/o/a"),
+          (McmodSide.Server, "win-arm64", "github.com/o/a"),
+          (McmodSide.Client, "win-arm64", "github.com/o/a"),
+          (McmodSide.Server, "linux-x64", "github.com/o/b"),
+          (McmodSide.Client, "linux-x64", "github.com/o/b"),
         ],
-        file.Variants[""].Select(e => (e.Platform, e.Runtime,
+        file.Variants[""].Select(e => (e.Side, e.Platform,
             Assert.Single(e.Dependencies).Source.ToString())));
     Assert.Equal(
         ["win-x64", "win-x64", "win-arm64", "win-arm64"],
-        file.Variants["lua"].Select(e => e.Runtime));
+        file.Variants["lua"].Select(e => e.Platform));
   }
 
   [Fact]
-  public async Task Migrate_PlatformNotARuntimeWithoutTerminal_ThrowsNamingThePlatform() {
+  public async Task Migrate_PlatformNotARidWithoutTerminal_ThrowsNamingThePlatform() {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -367,7 +367,7 @@ public class ToothMigratorTests {
   [InlineData("tar")]
   [InlineData("tgz")]
   [InlineData("uncompressed")]
-  public async Task Migrate_UnsupportedAssetTypeForOneRuntime_LeavesOutOnlyItsEntries(string type) {
+  public async Task Migrate_UnsupportedAssetTypeForOnePlatform_LeavesOutOnlyItsEntries(string type) {
     // Arrange
     PackageManifest tooth = Parse($$"""
         {
@@ -387,8 +387,8 @@ public class ToothMigratorTests {
 
     // Assert
     Assert.Equal(
-        [(McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64")],
-        Reparse(result).Variants[""].Select(e => (e.Platform, e.Runtime)));
+        [(McmodSide.Server, "linux-x64"), (McmodSide.Client, "linux-x64")],
+        Reparse(result).Variants[""].Select(e => (e.Side, e.Platform)));
     Assert.Contains($"\"{type}\"", Assert.Single(result.Notes));
   }
 
@@ -500,7 +500,7 @@ public class ToothMigratorTests {
     // Assert
     JsonObject entry = result.Document["variants"]![""]![0]!.AsObject();
     Assert.Equal(
-        ["platform", "runtime", "assets", "preserve", "purge"], entry.Select(p => p.Key));
+        ["side", "platform", "assets", "preserve", "purge"], entry.Select(p => p.Key));
     Assert.Equal("""["config/"]""", entry["preserve"]!.ToJsonString());
     Assert.Equal("""["logs/"]""", entry["purge"]!.ToJsonString());
     JsonObject asset = entry["assets"]![0]!.AsObject();
@@ -638,7 +638,7 @@ public class ToothMigratorTests {
     // Assert
     Assert.False(result.Document.ContainsKey("info"));
     Assert.Equal(
-        """{"platform":"server","runtime":"win-x64"}""",
+        """{"side":"server","platform":"win-x64"}""",
         result.Document["variants"]![""]![0]!.ToJsonString());
   }
 
@@ -664,7 +664,7 @@ public class ToothMigratorTests {
     // Assert
     PackageFile file = Reparse(result);
     PackageEntry entry = file.Variants[""][0];
-    Assert.Equal("win-x64", entry.Runtime);
+    Assert.Equal("win-x64", entry.Platform);
     Assert.Equal(["echo install"], entry.Hooks.PostInstall);
     Assert.Equal(["github.com/user/dep"], entry.Dependencies.Select(d => d.Source.ToString()));
   }

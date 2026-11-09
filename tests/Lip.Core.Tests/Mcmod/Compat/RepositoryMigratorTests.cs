@@ -158,8 +158,8 @@ public class RepositoryMigratorTests {
     PackageFile packageFile = ReadPackageFile();
     Assert.Equal("github.com/test/tool", packageFile.Id);
     Assert.Equal(
-        [(McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64")],
-        packageFile.Variants[""].Select(e => (e.Platform, e.Runtime)));
+        [(McmodSide.Server, "win-x64"), (McmodSide.Client, "win-x64")],
+        packageFile.Variants[""].Select(e => (e.Side, e.Platform)));
     Assert.All(
         packageFile.Variants[""],
         e => Assert.Equal(
@@ -306,7 +306,7 @@ public class RepositoryMigratorTests {
 
   [Fact]
   public async Task Migrate_QuestionWithoutTerminal_ThrowsAndChangesNothing() {
-    // Arrange: the variant without a platform needs its runtimes asked for.
+    // Arrange: the variant without a platform needs its platforms (RIDs) asked for.
     string tooth = _packageTooth.Replace("\"platform\": \"win-x64\", ", "");
     AddFile("tooth.json", tooth);
 
@@ -318,7 +318,7 @@ public class RepositoryMigratorTests {
   }
 
   [Fact]
-  public async Task Migrate_AnsweredQuestions_WritesEntriesForTheRuntimes() {
+  public async Task Migrate_AnsweredQuestions_WritesEntriesForThePlatforms() {
     // Arrange
     AddFile("tooth.json", _packageTooth.Replace("\"platform\": \"win-x64\", ", ""));
     AddFile("tool.exe", "exe");
@@ -331,10 +331,10 @@ public class RepositoryMigratorTests {
     Assert.Single(ui.Questions);
     Assert.Equal(
         [
-          (McmodPlatform.Server, "win-x64"), (McmodPlatform.Client, "win-x64"),
-          (McmodPlatform.Server, "linux-x64"), (McmodPlatform.Client, "linux-x64"),
+          (McmodSide.Server, "win-x64"), (McmodSide.Client, "win-x64"),
+          (McmodSide.Server, "linux-x64"), (McmodSide.Client, "linux-x64"),
         ],
-        ReadPackageFile().Variants[""].Select(e => (e.Platform, e.Runtime)));
+        ReadPackageFile().Variants[""].Select(e => (e.Side, e.Platform)));
   }
 
   [Fact]
