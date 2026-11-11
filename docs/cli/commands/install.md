@@ -39,21 +39,32 @@ The version of a package installed this way is the `version` that its `lip.toml`
 
 A package installed from a git ref also satisfies dependencies on its package id and variant without a git ref, as long as its version is in the dependency's range and the repository has a version tag that lip could install for the dependency: a mod requiring `github.com/LiteLDev/LeviLamina` `>=1.5.0` accepts a LeviLamina installed from `@branch:main` that declares `1.6.0`, and fails if it declares `1.4.0`, or if no version tag of LeviLamina is `1.5.0` or higher.
 
+### Platforms
+
+lip installs the entries for the side `server` and the platform of the workspace [environment](../../concepts/lip_toml.md#environment). The platform is `--platform` when given, else the platform the [state file](../../concepts/lockfiles.md) records, else `win-x64`, **whatever system lip runs on**: on Linux and macOS too, lip installs the Windows server by default and runs it, and the hooks of its packages, through Wine (see [Running a Server](../../guides/running_server.md)).
+
+To install the packages of another platform, such as the Linux-native server of `github.com/LiteLDev/bds`, name it on the first command of the workspace:
+
+```shell
+lip install github.com/LiteLDev/bds --platform linux-x64
+```
+
+The state file then records `linux-x64`, so later commands in the workspace use it without `--platform`. [`lip run`](run.md) cannot start such a Linux-native server, as it runs only `bedrock_server_mod.exe`; see [Running a Server](../../guides/running_server.md#linux-native-packages).
+
 ## Options
 
 | Option | Description |
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
-| `--ignore-scripts` | Do not run package `hooks`, including the uninstall hooks of packages the operation removes or replaces. |
-| `--no-dependencies` | Install exactly the first candidate of each argument, replacing an installed package of the same identity; no dependencies are installed and no other package is uninstalled. An installed package with the same identity, version and commit is only marked explicitly installed. This may leave the workspace broken. |
-| `--platform <RID>` | The platform of the workspace, a .NET RID such as `win-x64`. |
+| `--platform <RID>` | The platform of the workspace [environment](../../concepts/lip_toml.md#environment), a .NET RID such as `linux-x64`. Without it, the platform the state file records, or else `win-x64`, whatever system lip runs on. |
 
 ## Examples
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina
 lip install github.com/LiteLDev/LegacyScriptEngine#lua
-lip install github.com/user/repo@1.0.0 --platform win-x64
+lip install github.com/user/repo@1.0.0
+lip install github.com/LiteLDev/bds --platform linux-x64
 lip install github.com/LiteLDev/LeviLamina@branch:main
 lip install github.com/user/repo@tag:v1.0.0
 lip install https://example.com/package.zip

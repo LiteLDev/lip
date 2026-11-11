@@ -303,7 +303,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
             + " 'lip config delete github_proxy'."
         : "";
 
-    // An invalid github_proxy value is accepted by the configuration and fails only here.
+    // A github_proxy that is a URI but not a usable URL prefix fails only here.
     if (viaProxy && HasCause<UriFormatException>(ex)) {
       return new UriFormatException(
           $"The GitHub proxy set in github_proxy does not give a valid URL ({url}). Set a valid"

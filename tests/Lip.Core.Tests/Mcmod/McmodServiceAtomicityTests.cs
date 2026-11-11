@@ -55,7 +55,7 @@ public class McmodServiceAtomicityTests {
   private static string Id(string name) => $"example.com/{name.ToLowerInvariant()}";
 
   private void FailCommand(string command) =>
-      _ws.CommandRunner.Setup(r => r.Run(command, It.IsAny<string>()))
+      _ws.CommandRunner.Setup(r => r.Run(command, It.IsAny<string>(), It.IsAny<string>()))
           .ThrowsAsync(new InvalidOperationException("Command failed with exit code 1"));
 
   /// The files, directories and links of the workspace, without lip's cache outside it.
@@ -65,7 +65,7 @@ public class McmodServiceAtomicityTests {
       StringComparer.Ordinal);
 
   private void VerifyNoCommandRan() =>
-      _ws.CommandRunner.Verify(r => r.Run(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+      _ws.CommandRunner.Verify(r => r.Run(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
 
   #region Early failures
 
@@ -206,7 +206,7 @@ public class McmodServiceAtomicityTests {
 
     // Assert: A's hook ran (hook commands are not undone), but its files are gone again.
     Assert.Contains("command 'fail' failed", ex.Message);
-    _ws.CommandRunner.Verify(r => r.Run("a-post", _ws.Root), Times.Once);
+    _ws.CommandRunner.Verify(r => r.Run("a-post", _ws.Root, It.IsAny<string>()), Times.Once);
     Assert.Equal(before, WorkspaceSnapshot());
     Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
   }
@@ -313,7 +313,7 @@ public class McmodServiceAtomicityTests {
   }
 
   [Fact]
-  public async Task Uninstall_NoDependenciesSecondPackageFails_UndoesFirst() {
+  public async Task Uninstall_SecondPackageFails_UndoesFirst() {
     // Arrange: B is uninstalled first (reverse installation order), then A's hook fails.
     AddMod("a.zip", "A", extra: Hooks("pre_uninstall", "fail"));
     AddMod("b.zip", "B");
@@ -323,7 +323,7 @@ public class McmodServiceAtomicityTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(() => _ws.Service.Uninstall(
-        [Id("A"), Id("B")], _options with { NoDependencies = true }));
+        [Id("A"), Id("B")], _options));
     Assert.Equal(before, WorkspaceSnapshot());
   }
 
@@ -335,7 +335,7 @@ public class McmodServiceAtomicityTests {
     AddMod("a.zip", "A", extra: Hooks("post_install", "a-post"));
     AddMod("b.zip", "B");
     using CancellationTokenSource cancellation = new();
-    _ws.CommandRunner.Setup(r => r.Run("a-post", It.IsAny<string>()))
+    _ws.CommandRunner.Setup(r => r.Run("a-post", It.IsAny<string>(), It.IsAny<string>()))
         .Callback(cancellation.Cancel)
         .Returns(Task.CompletedTask);
     SortedDictionary<string, string> before = WorkspaceSnapshot();

@@ -49,4 +49,9 @@ public interface IArchiveProvider {
   /// Forgets the cached download of the archive of a URL, so that the next Open downloads it
   /// again (protocol/lip-workspace.md, "Operations" "Updating").
   public Task Forget(string url);
+
+  /// From now on, changes no file or directory of the cache (protocol/lip.md, "Dry run"): Forget
+  /// only stops the cached download of the URL from being used, a damaged cached download is not
+  /// deleted, and a download that is not taken from the cache is kept in memory.
+  public void LeaveCacheUnchanged();
 }

@@ -49,6 +49,41 @@ public class PathGlobTests {
     Assert.Equal(expected, new PathGlob(pattern).IsMatch(path));
   }
 
+  /// Ignoring case, A-Z equal a-z, and no other characters are folded (protocol/lip-workspace.md,
+  /// "Environment and layout").
+  [Theory]
+  [InlineData("Config.json", "config.JSON", true)]
+  [InlineData("CONFIG/", "config/a.json", true)]
+  [InlineData("*.LOG", "a.log", true)]
+  [InlineData("**/Data/", "x/DATA/y.bin", true)]
+  [InlineData("[ab].txt", "B.TXT", true)]
+  [InlineData("[!ab].txt", "B.txt", false)]
+  [InlineData("[!ab].txt", "c.txt", true)]
+  [InlineData("[A-C]", "b", true)]
+  [InlineData("[A-C]", "d", false)]
+  [InlineData("[[:upper:]]", "a", true)]
+  [InlineData("[[:lower:]]", "A", true)]
+  [InlineData("[!Z-a]", "_", false)]
+  [InlineData("[!Z-a]", "A", false)]
+  [InlineData("[!Z-a]", "b", true)]
+  [InlineData("É.txt", "é.txt", false)]
+  [InlineData("*é", "Xé", true)]
+  [InlineData("*É", "xé", false)]
+  public void IsMatch_IgnoringCase_FoldsAsciiLettersOnly(
+      string pattern, string path, bool expected) {
+    // Act & Assert
+    Assert.Equal(expected, new PathGlob(pattern).IsMatch(path, ignoreCase: true));
+  }
+
+  [Theory]
+  [InlineData("Config.json", "config.json")]
+  [InlineData("[ab].txt", "B.txt")]
+  [InlineData("*.LOG", "a.log")]
+  public void IsMatch_NotIgnoringCase_TellsCaseApart(string pattern, string path) {
+    // Act & Assert
+    Assert.False(new PathGlob(pattern).IsMatch(path));
+  }
+
   [Theory]
   [InlineData("")]
   [InlineData("/a")]

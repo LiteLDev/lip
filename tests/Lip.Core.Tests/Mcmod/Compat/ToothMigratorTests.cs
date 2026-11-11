@@ -10,8 +10,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Converting tooth.json of format 1–3 to a package file (lip migrate,
-/// protocol/lip-compatibility.md, "lip migrate"), agreeing with protocol/lip-compatibility.md,
+/// Converting tooth.json of format 1–3 to a package file (lip pkg migrate,
+/// protocol/lip-compatibility.md, "lip pkg migrate"), agreeing with protocol/lip-compatibility.md,
 /// "tooth.json".
 public class ToothMigratorTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";

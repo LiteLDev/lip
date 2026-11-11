@@ -22,7 +22,7 @@ A `liprc.json` of lip v0.x in the same directory, when there is no `config.toml`
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `github_proxy` | `string?` | `null` | Proxy URL for GitHub requests and downloads (git requests and release assets). If a proxied request fails, lip retries it against `github.com` directly. |
+| `github_proxy` | `string?` | `null` | Proxy URL for GitHub requests and downloads (git requests and release assets). If a proxied request fails, lip retries it against `github.com` directly. Must be a URI, such as `https://proxy.example.com/`: `lip config set` rejects any other value, and a `config.toml` holding another value is invalid, so every key takes its default. |
 
 Packages are resolved and downloaded directly from their git repositories, so no package registry or module proxy needs to be configured.
 

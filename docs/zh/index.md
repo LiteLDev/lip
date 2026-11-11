@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: "lip"
-  text: "通用包安装器"
+  text: "运行 LeviLamina 服务器并管理其包"
   tagline: 从公开 Git 仓库安装包
   image:
     src: /logo.webp

@@ -85,6 +85,24 @@ public class ToothLockMigrationTests {
     Assert.Empty(_ws.Git.ListedRefs);
   }
 
+  /// protocol/lip-pkg.md, "lip pkg view": without .lip/state.json the package file is read for
+  /// side server and win-x64; a tooth_lock.json is not read, and no workspace file changes.
+  [Fact]
+  public async Task View_ToothLock_IsNotReadAndKept() {
+    // Arrange
+    AddInstalledLibAndApp();
+    string before = _ws.Fs.File.ReadAllText(ToothLockPath);
+
+    // Act
+    JsonNode result = JsonNode.Parse(await _ws.Service.View(Lib))!;
+
+    // Assert
+    JsonNode entry = result["manifest"]!["variants"]![""]!.AsArray().Single()!;
+    Assert.Equal(("server", "win-x64"), ((string?)entry["side"], (string?)entry["platform"]));
+    Assert.Equal(before, _ws.Fs.File.ReadAllText(ToothLockPath));
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path(".lip")));
+  }
+
   [Fact]
   public async Task Install_ToothLock_WritesDerivedWorkspaceFileAndDeletesToothLock() {
     // Arrange

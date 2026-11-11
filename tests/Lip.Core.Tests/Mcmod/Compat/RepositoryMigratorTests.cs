@@ -6,7 +6,7 @@ using Lip.Core.Mcmod.Compat;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// lip migrate on a package repository (protocol/lip-compatibility.md, "lip migrate").
+/// lip pkg migrate on a package repository (protocol/lip-compatibility.md, "lip pkg migrate").
 public class RepositoryMigratorTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 

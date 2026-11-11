@@ -18,7 +18,7 @@ lip uninstall <PACKAGES> [options]
 
 ## 说明
 
-删除包拥有的文件，并执行其卸载钩子。除非指定 `--no-dependencies`，否则只能卸载显式安装的包。
+删除包拥有的文件，并执行其卸载钩子。只能卸载显式安装的包。
 
 不再被任何显式安装的包需要的依赖也会被卸载。仍被其他包需要的包会保留，并改为依赖。
 
@@ -27,6 +27,4 @@ lip uninstall <PACKAGES> [options]
 | 选项 | 说明 |
 | --- | --- |
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
-| `--ignore-scripts` | 跳过执行 `pre_uninstall` 和 `post_uninstall` 钩子。 |
-| `--no-dependencies` | 只卸载给定的包（依赖也可以），不移除其他依赖。这可能导致工作区损坏。 |
-| `--platform <RID>` | 工作区的平台，即 .NET RID，例如 `win-x64`。 |
+| `--platform <RID>` | 工作区[环境](../../concepts/lip_toml.md#环境)的平台，即 .NET RID，例如 `linux-x64`。不指定时为状态文件记录的平台，否则为 `win-x64`，无论 lip 运行在什么系统上。 |

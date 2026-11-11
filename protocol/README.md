@@ -13,13 +13,10 @@ Commands (section 1):
 | [lip-uninstall(1)](lip-uninstall.md) | `lip uninstall` |
 | [lip-update(1)](lip-update.md) | `lip update` |
 | [lip-list(1)](lip-list.md) | `lip list` |
-| [lip-versions(1)](lip-versions.md) | `lip versions` |
-| [lip-view(1)](lip-view.md) | `lip view` |
-| [lip-init(1)](lip-init.md) | `lip init` |
-| [lip-migrate(1)](lip-migrate.md) | `lip migrate` |
+| [lip-run(1)](lip-run.md) | `lip run` |
 | [lip-cache(1)](lip-cache.md) | `lip cache clean` |
 | [lip-config(1)](lip-config.md) | `lip config get`, `set`, `list` and `delete` |
-| [lip-pack(1)](lip-pack.md) | `lip pack` |
+| [lip-pkg(1)](lip-pkg.md) | `lip pkg init`, `pack`, `view` and `migrate` |
 
 File formats (section 5):
 
@@ -35,7 +32,7 @@ Concepts (section 7):
 | Page | Describes |
 |---|---|
 | [lip-package(7)](lip-package.md) | Archives, packages, sources and resolution. |
-| [lip-workspace(7)](lip-workspace.md) | Workspaces and operations on them. |
+| [lip-workspace(7)](lip-workspace.md) | Workspaces, operations on them, and the programs run in them. |
 | [lip-userspace(7)](lip-userspace.md) | The per-user directories, and the cache. |
 | [lip-compatibility(7)](lip-compatibility.md) | Reading and migrating the files of formats 1 to 3, and the packages that `lip` must install. |
 

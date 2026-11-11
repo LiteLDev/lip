@@ -773,6 +773,9 @@ public class ResolverTests {
 
     public Task Forget(string url) => Task.CompletedTask;
 
+    public void LeaveCacheUnchanged() {
+    }
+
     public Task<ArchiveHandle> Open(Ref target) {
       if (FailOnce.Remove(target.Target)) {
         throw new ArchiveUnavailableException($"timeout {target.Target}");

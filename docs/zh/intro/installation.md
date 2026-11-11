@@ -1,6 +1,6 @@
 # 安装
 
-`lip` 是一个通用包安装器。开始使用前，你需要先在系统中安装 `lip` 可执行文件。
+`lip` 用于运行 LeviLamina 服务器并管理其包。开始使用前，你需要先在系统中安装 `lip` 可执行文件。
 
 ## Windows 安装包 <Badge platform="windows" />
 

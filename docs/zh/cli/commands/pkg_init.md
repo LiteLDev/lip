@@ -1,11 +1,11 @@
-# lip init
+# lip pkg init
 
 在当前目录创建 `lip.toml`，以初始化一个新包。
 
 ## 概要
 
 ```shell
-lip init
+lip pkg init
 ```
 
 ## 说明

@@ -33,8 +33,8 @@ public class LipClientTests {
 
   #region Init
 
-  /// protocol/lip-init.md: asks until the answer is a Go module path, then writes exactly the
-  /// members of the document it gives.
+  /// protocol/lip-pkg.md, "lip pkg init": asks until the answer is a Go module path, then writes
+  /// exactly the members of the document it gives.
   [Fact]
   public async Task Init_AsksPackageIdUntilValid_WritesPackageFile() {
     // Arrange
@@ -77,7 +77,7 @@ public class LipClientTests {
 
   [Fact]
   public async Task Init_OnlyToothJsonExists_WritesPackageFile() {
-    // Arrange: only lip.toml makes lip init fail (protocol/lip-init.md).
+    // Arrange: only lip.toml makes lip pkg init fail (protocol/lip-pkg.md).
     _ws.AddFile("tooth.json", "{}");
     _ws.Ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync("github.com/owner/repo");
 
@@ -139,7 +139,7 @@ public class LipClientTests {
     // Act
     await _client.Migrate();
 
-    // Assert: protocol/lip-compatibility.md, "lip migrate", a valid package file.
+    // Assert: protocol/lip-compatibility.md, "lip pkg migrate", a valid package file.
     byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.toml"));
     Assert.StartsWith("format = 4\n", System.Text.Encoding.UTF8.GetString(bytes));
     PackageFile packageFile = PackageFileParser.Parse(bytes);
@@ -295,6 +295,56 @@ public class LipClientTests {
     // Assert
     Assert.False(_ws.Fs.File.Exists(_liprcPath));
     Assert.Equal("https://proxy.com", await client.ConfigGet("github_proxy"));
+  }
+
+  /// protocol/lip-compatibility.md, "liprc.json": a dry run reads the configuration from
+  /// liprc.json, but writes no config.toml and keeps liprc.json.
+  [Theory]
+  [InlineData("install")]
+  [InlineData("uninstall")]
+  [InlineData("update")]
+  public async Task Create_DryRun_ReadsLiprcWithoutMigratingIt(string command) {
+    // Arrange: a package installed from a local directory, so that no command reaches GitHub.
+    const string id = "example.com/lib";
+    const string liprc = """{ "github_proxy": "https://proxy.com" }""";
+    _ws.AddFile("pkg/lip.toml", WorkspaceHarness.LipToml(id, "1.0.0"));
+    if (command != "install") {
+      await _ws.Service.Install(["./pkg"], new(Platform: WorkspaceHarness.Platform));
+    }
+
+    _ws.Fs.AddFile(_liprcPath, new(liprc));
+    LipClient client = LipClient.Create(_ws.Fs, _ws.Ui.Object);
+    CancellationToken ct = TestContext.Current.CancellationToken;
+
+    // Act
+    await (command switch {
+      "install" => client.Install(["./pkg"], dryRun: true, cancellationToken: ct),
+      "uninstall" => client.Uninstall([id], dryRun: true, cancellationToken: ct),
+      _ => client.Update([], dryRun: true, cancellationToken: ct),
+    });
+
+    // Assert
+    Assert.Equal([_liprcPath], _ws.Fs.Directory.GetFiles(LipDirectories.Config));
+    Assert.Equal(liprc, _ws.Fs.File.ReadAllText(_liprcPath));
+    _ws.Ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
+  }
+
+  /// Without a dry run, the same commands migrate liprc.json.
+  [Fact]
+  public async Task Create_InstallWithoutDryRun_MigratesLiprc() {
+    // Arrange
+    _ws.AddFile("pkg/lip.toml", WorkspaceHarness.LipToml("example.com/lib", "1.0.0"));
+    _ws.Fs.AddFile(_liprcPath, new("""{ "github_proxy": "https://proxy.com" }"""));
+    LipClient client = LipClient.Create(_ws.Fs, _ws.Ui.Object);
+
+    // Act
+    await client.Install(
+        ["./pkg"], dryRun: false, cancellationToken: TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.False(_ws.Fs.File.Exists(_liprcPath));
+    Assert.Equal(
+        "format = 4\ngithub_proxy = \"https://proxy.com\"\n", _ws.Fs.File.ReadAllText(_configPath));
   }
 
   /// When config.toml cannot be written, the configuration cannot be read

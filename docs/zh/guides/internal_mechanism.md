@@ -48,7 +48,7 @@ git 引用所给的分支、提交或名称不是 `v<SemVer>` 的标签没有标
 `lip.toml` 和 `config.toml` 分别由以 TOML 编写的 JSON Schema [`protocol/lip.schema.toml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.toml) 和 [`protocol/config.schema.toml`](https://github.com/LiteLDev/lip/blob/main/protocol/config.schema.toml) 描述，状态文件由 JSON Schema [`protocol/state.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/state.schema.json) 描述。lip v0.x 的文件曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。
 
 - **校验**：除 schema 之外，lip 还检查 [lip.toml(5)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.toml.md) 的要求：合法的包 ID、版本、依赖键和范围、运行端和平台，同一变体中没有两个条目对应相同的运行端和平台，每个条目至多一个 `mcmod` 资源，以及合法的 glob。`lip.toml` 无效的归档不是包，不产出候选，lip 会报告原因。
-- **lip v0.x 的文件**：没有 `lip.toml` 的归档从其格式 1、2 或 3 的 `tooth.json` 读取：格式 1 和 2 会在内存中转换为格式 3，格式 3 再针对环境完整地转换为包文件（[lip-compatibility(7)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-compatibility.md#toothjson) "tooth.json"）；如需在包仓库中用 `lip.toml` 取代 `tooth.json`，请在仓库中运行 `lip migrate`（"lip migrate"）。`tooth_lock.json` 会被自动迁移为 `.lip/state.json`（"tooth_lock.json"），`liprc.json` 会被自动迁移为 `config.toml`（"liprc.json"）。
+- **lip v0.x 的文件**：没有 `lip.toml` 的归档从其格式 1、2 或 3 的 `tooth.json` 读取：格式 1 和 2 会在内存中转换为格式 3，格式 3 再针对环境完整地转换为包文件（[lip-compatibility(7)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-compatibility.md#toothjson) "tooth.json"）；如需在包仓库中用 `lip.toml` 取代 `tooth.json`，请在仓库中运行 `lip pkg migrate`（"lip pkg migrate"）。`tooth_lock.json` 会被自动迁移为 `.lip/state.json`（"tooth_lock.json"），`liprc.json` 会被自动迁移为 `config.toml`（"liprc.json"）。
 
 ## 工作区状态
 
@@ -62,8 +62,8 @@ lip 在保存于工作区中 `.lip/state.json` 的状态文件里维护已安装
 
 下面的日志和工作区锁与状态文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/journal.md`](https://github.com/LiteLDev/lip/blob/main/protocol/journal.md) 和 [`protocol/lip-workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/lip-workspace.md#workspace-lock) 中，其他程序也可以参与。
 
-- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存状态文件的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
-- **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。
+- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次在该工作区中运行的 `lip install`、`uninstall`、`update` 或 `run` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存状态文件的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
+- **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。[`lip run`](../cli/commands/run.md) 只在启动服务器之前持有该锁。
 
 ## 关于规范的说明
 

@@ -7,7 +7,7 @@ lip-uninstall - uninstall packages from the workspace
 ## SYNOPSIS
 
 ```
-lip uninstall <PACKAGES>... [-n | --dry-run] [--ignore-scripts] [--no-dependencies] [--platform <RID>] [-h | --help]
+lip uninstall <PACKAGES>... [-n | --dry-run] [--platform <RID>] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -19,16 +19,11 @@ Each of `<PACKAGES>` names installed packages; it is not a package argument. It 
 
 When an operand names no installed package, the command fails.
 
-Without `--no-dependencies`:
-
-- Every named package must be explicitly installed; otherwise the command fails.
-- The named packages stop being explicitly installed. Each package that no remaining explicitly installed package needs is uninstalled; the others stay installed.
+Every named package must be explicitly installed; otherwise the command fails. The named packages stop being explicitly installed. Each package that no remaining explicitly installed package needs is uninstalled; the others stay installed.
 
 ## OPTIONS
 
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would uninstall or mark no longer explicitly installed.
-- `--ignore-scripts`: The operation runs no hook command. Nothing else changes.
-- `--no-dependencies`: Exactly the named packages are uninstalled, dependency packages included, and no other package is. [lip-workspace(7), "Valid states"](lip-workspace.md#valid-states) is not guaranteed to hold afterwards.
 - `--platform <RID>`: The platform of the environment ([lip(1), "Environment"](lip.md#environment)) is `<RID>`.
 
 ## SEE ALSO

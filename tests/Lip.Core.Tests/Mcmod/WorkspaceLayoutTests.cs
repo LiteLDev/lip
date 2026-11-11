@@ -114,6 +114,92 @@ public class WorkspaceLayoutTests {
     Assert.Equal(["plugins/lib/lib.dll"], Assert.Single((await _ws.Lock()).Packages).Files);
   }
 
+  // A workspace for a Windows platform where lip does not run on Windows: its paths are
+  // case-insensitive (protocol/lip-workspace.md, "Environment and layout"), though the mock file
+  // system tells case apart there.
+
+  [Fact]
+  public async Task Install_WindowsPlatformModsInAnotherCase_InstallsIntoIt() {
+    // Arrange
+    SkipOnWindows();
+    AddMod();
+    _ws.AddFile("Mods/Other/Other.dll", "other");
+
+    // Act
+    await _ws.Service.Install([Demo], s_options);
+
+    // Assert
+    Assert.True(_ws.Exists("Mods/Demo/Demo.dll"));
+    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
+    Assert.All(
+        Assert.Single((await _ws.Lock()).Packages).Files,
+        f => Assert.StartsWith("Mods/Demo/", f));
+  }
+
+  [Fact]
+  public async Task Install_WindowsPlatformModsIsALinkInAnotherCase_ThrowsWithoutChanges() {
+    // Arrange
+    SkipOnWindows();
+    AddMod();
+    _ws.Fs.AddDirectory(_ws.Path("shared"));
+    _ws.Fs.Directory.CreateSymbolicLink(_ws.Path("MODS"), "shared");
+    SortedDictionary<string, string> before = Snapshot();
+
+    // Act & Assert
+    await Assert.ThrowsAsync<WorkspaceLayoutException>(
+        () => _ws.Service.Install([Demo], s_options));
+    Assert.Equal(before, Snapshot());
+  }
+
+  [Fact]
+  public async Task Install_WindowsPlatformModsNamingTwoDirectories_ThrowsWithoutChanges() {
+    // Arrange: the package writes outside mods, which the layout names all the same.
+    SkipOnWindows();
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          Lib, "1.0.0", WorkspaceHarness.SelfAsset("file.dll", "plugins/lib/lib.dll")),
+      ["file.dll"] = "lib",
+    });
+    _ws.Fs.AddDirectory(_ws.Path("mods"));
+    _ws.Fs.AddDirectory(_ws.Path("Mods"));
+    SortedDictionary<string, string> before = Snapshot();
+
+    // Act
+    WorkspaceLayoutException ex = await Assert.ThrowsAsync<WorkspaceLayoutException>(
+        () => _ws.Service.Install([Lib], s_options));
+
+    // Assert
+    Assert.Contains("'Mods' and 'mods'", ex.Message);
+    Assert.Equal(before, Snapshot());
+  }
+
+  [Fact]
+  public async Task Install_OtherPlatformModsInAnotherCase_CreatesMods() {
+    // Arrange: the paths of a workspace for another platform tell case apart.
+    SkipOnWindows();
+    _ws.AddTag(Demo, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.Toml($$"""
+          {
+            "format": 4, "id": "{{Demo}}", "version": "1.0.0",
+            "variants": { "": [ { "side": "server", "platform": "linux-x64",
+              "assets": [ { "type": "self", "place": [ { "src": "Demo.so", "dest": "mods/Demo/Demo.so" } ] } ] } ] }
+          }
+          """),
+      ["Demo.so"] = "so",
+    });
+    _ws.AddFile("Mods/Other/Other.so", "other");
+
+    // Act
+    await _ws.Service.Install([Demo], new OperationOptions(Platform: "linux-x64"));
+
+    // Assert
+    Assert.True(_ws.Exists("mods/Demo/Demo.so"));
+    Assert.True(_ws.Exists("Mods/Other/Other.so"));
+  }
+
+  private static void SkipOnWindows() =>
+      Assert.SkipWhen(OperatingSystem.IsWindows(), "lip runs on Windows, which ignores case.");
+
   [Fact]
   public async Task Uninstall_LastPackage_KeepsMods() {
     // Arrange

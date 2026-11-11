@@ -7,10 +7,13 @@ namespace Lip.Core.Infrastructure;
 
 public interface IFileDownloader {
   Task DownloadFile(Url url, IFileInfo destination);
+
+  /// Writes the body to a stream instead of a file, e.g. to keep it in memory.
+  Task Download(Url url, Stream destination);
 }
 
 /// Writes the body of a successful response to one HTTPS GET of a URL, following redirects, to a
-/// file (protocol/lip-package.md, "URLs", protocol/lip-userspace.md, "Cache").
+/// file or a stream (protocol/lip-package.md, "URLs", protocol/lip-userspace.md, "Cache").
 ///
 /// Failures of the network or of the server are HttpRequestExceptions naming the URL, with the
 /// HTTP status code when the server answered; failures of writing the file are IOExceptions or
@@ -20,7 +23,31 @@ public class FileDownloader(IUserInteraction userInteraction) : IFileDownloader 
 
   public async Task DownloadFile(Url url, IFileInfo destination) {
     RunTrace.Write("download", $"Downloading {url} to {destination.FullName}");
+    await Download(
+        url,
+        () => {
+          try {
+            return destination.Create();
+          }
+          catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+            throw FileSystemExtensions.WrapFileError(
+                $"Could not create the file {destination.FullName} to save the download of {url}"
+                + " in.", ex);
+          }
+        },
+        disposeDestination: true,
+        destination.FullName);
+  }
 
+  public async Task Download(Url url, Stream destination) {
+    RunTrace.Write("download", $"Downloading {url} into memory");
+    await Download(url, () => destination, disposeDestination: false, "memory");
+  }
+
+  /// Downloads the body of url to the stream that open gives once the response has arrived,
+  /// naming it destinationName in messages.
+  private async Task Download(
+      Url url, Func<Stream> open, bool disposeDestination, string destinationName) {
     IFlurlResponse response;
     try {
       response = await url
@@ -46,17 +73,8 @@ public class FileDownloader(IUserInteraction userInteraction) : IFileDownloader 
       long total = 0;
       await _userInteraction.RunWithProgress($"Downloading {url}", async progress => {
         await using Stream body = await response.GetStreamAsync();
-        Stream file;
+        Stream file = open();
         try {
-          file = destination.Create();
-        }
-        catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
-          throw FileSystemExtensions.WrapFileError(
-              $"Could not create the file {destination.FullName} to save the download of {url}"
-              + " in.", ex);
-        }
-
-        await using (file) {
           byte[] buffer = new byte[81920];
           while (true) {
             int read;
@@ -79,13 +97,18 @@ public class FileDownloader(IUserInteraction userInteraction) : IFileDownloader 
             }
             catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
               throw FileSystemExtensions.WrapFileError(
-                  $"Could not write the download of {url} to {destination.FullName}.", ex);
+                  $"Could not write the download of {url} to {destinationName}.", ex);
             }
 
             total += read;
             if (length > 0) {
               progress.Report(100.0 * total / length.Value);
             }
+          }
+        }
+        finally {
+          if (disposeDestination) {
+            await file.DisposeAsync();
           }
         }
       });

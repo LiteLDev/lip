@@ -13,7 +13,9 @@ ConsoleUserInteraction userInteraction = new();
 
 // Ctrl+C while an operation changes a workspace cancels it, which undoes its changes. Otherwise,
 // and on a second Ctrl+C, lip ends at once: nothing is changed yet, or the next operation on the
-// workspace undoes the changes (see WorkspaceTransaction).
+// workspace undoes the changes (see WorkspaceTransaction). While lip run runs the server, its own
+// handler (ServerSession.ListenForSignals) cancels the termination, which this handler leaves
+// cancelled: .NET passes one cancellation through every handler of a signal.
 using CancellationTokenSource cancellation = new();
 Console.CancelKeyPress += (_, e) => {
   if (!WorkspaceTransaction.AnyOpen || cancellation.IsCancellationRequested) {
@@ -75,8 +77,18 @@ app.Configure(config => {
         .WithDescription("Resets a configuration value to its default");
   });
 
-  config.AddCommand<InitCommand>("init")
-      .WithDescription("Creates a lip.toml for a new package");
+  // The commands for developing packages (protocol/lip-pkg.md).
+  config.AddBranch("pkg", pkg => {
+    pkg.SetDefaultCommand<MissingSubcommandCommand>();
+    pkg.AddCommand<PkgInitCommand>("init")
+        .WithDescription("Creates a lip.toml for a new package");
+    pkg.AddCommand<PkgPackCommand>("pack")
+        .WithDescription("Packs a directory into a ZIP archive");
+    pkg.AddCommand<PkgViewCommand>("view")
+        .WithDescription("Shows the package file and the versions of a package, as JSON");
+    pkg.AddCommand<PkgMigrateCommand>("migrate")
+        .WithDescription("Migrates the tooth.json in the current directory to lip.toml");
+  });
 
   config.AddCommand<InstallCommand>("install")
       .WithDescription("Installs packages");
@@ -84,29 +96,25 @@ app.Configure(config => {
   config.AddCommand<ListCommand>("list")
       .WithDescription("Lists installed packages");
 
-  config.AddCommand<MigrateCommand>("migrate")
-      .WithDescription("Migrates the tooth.json in the current directory to lip.toml");
-
-  config.AddCommand<PackCommand>("pack")
-      .WithDescription("Packs a directory into a ZIP archive");
+  config.AddCommand<RunCommand>("run")
+      .WithDescription("Runs the server of the workspace");
 
   config.AddCommand<UninstallCommand>("uninstall")
       .WithDescription("Uninstalls packages");
 
   config.AddCommand<UpdateCommand>("update")
       .WithDescription("Updates packages");
-
-  config.AddCommand<ViewCommand>("view")
-      .WithDescription("Views package details");
-
-  config.AddCommand<VersionsCommand>("versions")
-      .WithDescription("Shows available versions for a package");
 });
 
 // "--" is a usage error too, found before parsing (see
 // UnexpectedArgumentsInterceptor.FindSeparator).
 if (UnexpectedArgumentsInterceptor.FindSeparator(args) is { } separatorError) {
   return ErrorReporter.Report(separatorError, args, cancelled: false);
+}
+
+// So is an empty option value, even with -h (see UnexpectedArgumentsInterceptor.FindEmptyValue).
+if (UnexpectedArgumentsInterceptor.FindEmptyValue(args) is { } emptyValueError) {
+  return ErrorReporter.Report(emptyValueError, args, cancelled: false);
 }
 
 try {

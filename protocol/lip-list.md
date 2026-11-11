@@ -12,7 +12,7 @@ lip list [--json] [-h | --help]
 
 ## DESCRIPTION
 
-The result is the packages that the state file ([state.json(5)](state.json.md)) records, each as `<identity>@<version>`, in installation order, in two groups: the explicitly installed packages, then the dependency packages. `lip list` changes nothing.
+The result is the packages that the state file ([state.json(5)](state.json.md)) records; for a workspace without `.lip/state.json`, the state file that [lip-compatibility(7), "tooth_lock.json"](lip-compatibility.md#tooth_lockjson) derives for the side `"server"` and the platform `"win-x64"`, each as `<identity>@<version>`, in installation order, in two groups: the explicitly installed packages, then the dependency packages. `lip list` changes nothing.
 
 ## OPTIONS
 

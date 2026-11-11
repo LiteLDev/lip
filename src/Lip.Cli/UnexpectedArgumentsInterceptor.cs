@@ -30,6 +30,27 @@ public sealed class UnexpectedArgumentsInterceptor : ICommandInterceptor {
         : new UsageException("Unexpected argument '--': lip takes no '--' separator.");
   }
 
+  /// Returns the usage error for an option of a command that takes a value and is given an empty
+  /// one as the next argument, such as 'lip update --platform ""', or null (protocol/lip.md,
+  /// "Arguments": a value must not be empty, and such an option has none). Spectre.Console.Cli
+  /// binds the empty argument as the value, and writes the help without validating the settings
+  /// when -h or --help is given too, which this usage error does not allow; so lip checks for it
+  /// before parsing. "--platform=" is already rejected by Spectre.Console.Cli.
+  public static UsageException? FindEmptyValue(string[] args) {
+    string[] valueOptions = args switch {
+      ["install" or "uninstall" or "update", ..] => ["--platform"],
+      ["pkg", "pack", ..] => ["-o", "--output"],
+      _ => [],
+    };
+    for (int i = 0; i + 1 < args.Length; i++) {
+      if (valueOptions.Contains(args[i]) && args[i + 1] == "") {
+        return new UsageException(
+            $"Option '{args[i]}' has no value: its value must not be empty.");
+      }
+    }
+    return null;
+  }
+
   /// Returns the usage error for the arguments of a command that were not mapped to it, or null.
   ///
   /// Spectre.Console.Cli binds the arguments before any interceptor runs, so an unknown option can

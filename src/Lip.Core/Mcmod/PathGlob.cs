@@ -13,6 +13,10 @@ namespace Lip.Core.Mcmod;
 /// matches directories together with every path below a matched directory.
 ///
 /// Paths are '/'-separated and relative; a directory path is written with a trailing '/'.
+///
+/// Matched ignoring case (protocol/lip-workspace.md, "Environment and layout"), the ASCII letters
+/// A-Z equal a-z: a character matches a character of the pattern equal to it so, and a bracket
+/// expression when a character equal to it so is in its set ('[!...]': when none is).
 public class PathGlob {
   private static readonly Dictionary<string, string> _classes = new(StringComparer.Ordinal) {
     ["alnum"] = "A-Za-z0-9",
@@ -31,6 +35,9 @@ public class PathGlob {
 
   private readonly string[] _segments;
   private readonly Regex?[] _segmentRegexes;
+
+  // The regular expressions of the segments when case is ignored, made when first needed.
+  private Regex?[]? _foldedRegexes;
 
   /// Throws FormatException when the pattern is not a glob.
   public PathGlob(string pattern) {
@@ -53,12 +60,15 @@ public class PathGlob {
       throw Invalid(pattern, "it contains '//', an empty path segment");
     }
 
-    _segmentRegexes = [.. _segments.Select(seg => seg == "**" || !HasMetacharacters(seg)
-        ? null
-        : new Regex(
-            "^" + Translate(seg, pattern) + @"\z",
-            RegexOptions.CultureInvariant))];
+    _segmentRegexes = Compile(ignoreCase: false);
   }
+
+  private Regex?[] Compile(bool ignoreCase) =>
+      [.. _segments.Select(seg => seg == "**" || !HasMetacharacters(seg)
+          ? null
+          : new Regex(
+              "^" + Translate(seg, Pattern, ignoreCase) + @"\z",
+              RegexOptions.CultureInvariant))];
 
   public string Pattern { get; }
 
@@ -88,12 +98,16 @@ public class PathGlob {
   /// Whether the path is matched. A directory path must end with '/'. A directory pattern
   /// matches a path below a directory only through a directory of at least minSegments segments
   /// (e.g. 2 for a path below mods, which a pattern matching mods alone does not reach).
-  public bool IsMatch(string path, int minSegments = 0) {
+  /// ignoreCase: whether A-Z equal a-z.
+  public bool IsMatch(string path, int minSegments = 0, bool ignoreCase = false) {
     bool isDirectory = path.EndsWith('/');
     string[] segments = (isDirectory ? path[..^1] : path).Split('/');
+    Regex?[] regexes = ignoreCase
+        ? _foldedRegexes ??= Compile(ignoreCase: true)
+        : _segmentRegexes;
 
     if (!MatchesDirectories) {
-      return !isDirectory && MatchSegments(0, segments, 0, segments.Length);
+      return !isDirectory && MatchSegments(0, segments, 0, segments.Length, regexes, ignoreCase);
     }
 
     // A directory pattern matches a directory and everything below it. The last segment of a
@@ -101,21 +115,22 @@ public class PathGlob {
     // which only a pattern of "**" segments matches (e.g. "**/" matches every path).
     int maxPrefix = isDirectory ? segments.Length : segments.Length - 1;
     for (int length = minSegments; length <= maxPrefix; length++) {
-      if (MatchSegments(0, segments, 0, length)) {
+      if (MatchSegments(0, segments, 0, length, regexes, ignoreCase)) {
         return true;
       }
     }
     return false;
   }
 
-  private bool MatchSegments(int p, string[] path, int i, int end) {
+  private bool MatchSegments(
+      int p, string[] path, int i, int end, Regex?[] regexes, bool ignoreCase) {
     if (p == _segments.Length) {
       return i == end;
     }
 
     if (_segments[p] == "**") {
       for (int k = i; k <= end; k++) {
-        if (MatchSegments(p + 1, path, k, end)) {
+        if (MatchSegments(p + 1, path, k, end, regexes, ignoreCase)) {
           return true;
         }
       }
@@ -126,15 +141,18 @@ public class PathGlob {
       return false;
     }
 
-    bool segmentMatches = _segmentRegexes[p] is Regex regex
+    bool segmentMatches = regexes[p] is Regex regex
         ? regex.IsMatch(path[i])
-        : _segments[p] == path[i];
+        : ignoreCase
+            ? AsciiIgnoreCaseComparer.Instance.Equals(_segments[p], path[i])
+            : _segments[p] == path[i];
 
-    return segmentMatches && MatchSegments(p + 1, path, i + 1, end);
+    return segmentMatches && MatchSegments(p + 1, path, i + 1, end, regexes, ignoreCase);
   }
 
-  /// The .NET regular expression of one pattern segment (which contains no '/').
-  private static string Translate(string segment, string pattern) {
+  /// The .NET regular expression of one pattern segment (which contains no '/'); with
+  /// ignoreCase, an ASCII letter matches either case.
+  private static string Translate(string segment, string pattern, bool ignoreCase) {
     StringBuilder regex = new();
     for (int i = 0; i < segment.Length; i++) {
       char c = segment[i];
@@ -146,7 +164,7 @@ public class PathGlob {
           regex.Append("[^/]");
           break;
         case '[':
-          int close = TranslateBracket(segment, i, regex, pattern);
+          int close = TranslateBracket(segment, i, regex, pattern, ignoreCase);
           if (close < 0) {
             regex.Append(@"\[");
           } else {
@@ -155,7 +173,9 @@ public class PathGlob {
 
           break;
         default:
-          regex.Append(Regex.Escape(c.ToString()));
+          regex.Append(ignoreCase && char.IsAsciiLetter(c)
+              ? $"[{char.ToLowerInvariant(c)}{char.ToUpperInvariant(c)}]"
+              : Regex.Escape(c.ToString()));
           break;
       }
     }
@@ -165,9 +185,10 @@ public class PathGlob {
 
   /// Appends the character class of the bracket expression starting at segment[start] and
   /// returns the index of its closing ']', or returns -1 when there is none. Throws when a
-  /// complete bracket expression is invalid, e.g. starts with '^'.
+  /// complete bracket expression is invalid, e.g. starts with '^'. With ignoreCase, the set also
+  /// holds the other case of each ASCII letter in it.
   private static int TranslateBracket(
-      string segment, int start, StringBuilder regex, string pattern) {
+      string segment, int start, StringBuilder regex, string pattern, bool ignoreCase) {
     int i = start + 1;
     bool negated = false;
     string? error = null;
@@ -186,6 +207,18 @@ public class PathGlob {
       if (c == ']' && !first) {
         if (error is not null) {
           throw Invalid(pattern, error);
+        }
+
+        if (ignoreCase) {
+          Regex members = new($"^[{set}]\\z", RegexOptions.CultureInvariant);
+          foreach (char letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") {
+            if (members.IsMatch(letter.ToString())) {
+              char other = char.IsAsciiLetterUpper(letter)
+                  ? char.ToLowerInvariant(letter)
+                  : char.ToUpperInvariant(letter);
+              set.Append(other);
+            }
+          }
         }
 
         regex.Append(negated ? "[^/" : "[").Append(set).Append(']');

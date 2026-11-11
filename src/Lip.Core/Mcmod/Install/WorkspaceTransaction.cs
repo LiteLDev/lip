@@ -28,6 +28,7 @@ public sealed class WorkspaceTransaction : IDisposable {
   private readonly IFileSystem _fs;
   private readonly string _journalPath;
   private readonly string _root;
+  private readonly WorkspacePaths _paths;
   private readonly HashSet<string> _reserved;
   private readonly List<JournalEntry> _entries = [];
   private Stream? _journal;
@@ -36,12 +37,18 @@ public sealed class WorkspaceTransaction : IDisposable {
   private bool _disposed;
 
   /// reserved: paths that backups must never take, such as the files the operation writes.
+  /// paths: how the paths of the workspace are compared (the host's rules when null); when they
+  /// are case-insensitive, a backup never takes a name equal to an existing one.
   public WorkspaceTransaction(
-      IFileSystem fileSystem, string journalPath, IEnumerable<string>? reserved = null) {
+      IFileSystem fileSystem,
+      string journalPath,
+      IEnumerable<string>? reserved = null,
+      WorkspacePaths? paths = null) {
     _fs = fileSystem;
     _journalPath = journalPath;
     _root = JournalRoot(fileSystem, journalPath);
-    _reserved = new(reserved ?? [], WorkspaceLayout.PathComparer);
+    _paths = paths ?? WorkspacePaths.Host;
+    _reserved = new(reserved ?? [], _paths.Comparer);
     Interlocked.Increment(ref s_open);
   }
 
@@ -109,9 +116,15 @@ public sealed class WorkspaceTransaction : IDisposable {
   private string BackupPath(string path) {
     string directory = _fs.Path.GetDirectoryName(path)!;
     string name = $".{_fs.Path.GetFileName(path)}.bak";
+    // When paths are case-insensitive, a name equal to an existing one so is taken.
+    HashSet<string> names = _paths.IgnoresCase
+        ? new(_fs.Directory.EnumerateFileSystemEntries(directory).Select(_fs.Path.GetFileName)
+            .OfType<string>(), _paths.Comparer)
+        : [];
     string backup = _fs.Path.Join(directory, name);
     for (int i = 1;
-        _fs.File.Exists(backup) || _fs.Directory.Exists(backup) || _reserved.Contains(backup);
+        _fs.File.Exists(backup) || _fs.Directory.Exists(backup) || _reserved.Contains(backup)
+            || names.Contains(_fs.Path.GetFileName(backup));
         i++) {
       backup = _fs.Path.Join(directory, $"{name}{i}");
     }
@@ -529,12 +542,15 @@ public sealed class WorkspaceTransaction : IDisposable {
   /// Undoes the entries in reverse order; returns those that could not be undone, in order.
   /// Every undo checks the state first, so undoing an entry whose change was never made (the
   /// process was killed right after recording it) does nothing, and so does undoing an entry
-  /// undone before (a journal left by a process killed while undoing it).
+  /// undone before (a journal left by a process killed while undoing it). The recorded paths are
+  /// spelled as the file system has them, so they are compared by the rules of the host, whatever
+  /// the environment of the operation was.
   private static List<JournalEntry> Undo(
       IFileSystem fs, string root, List<JournalEntry> entries, out List<Exception> errors) {
     errors = [];
     List<JournalEntry> left = [];
-    Dictionary<string, int> firstBackup = new(WorkspaceLayout.PathComparer);
+    WorkspacePaths paths = WorkspacePaths.Host;
+    Dictionary<string, int> firstBackup = new(paths.Comparer);
     for (int i = 0; i < entries.Count; i++) {
       if (entries[i].Op == JournalOp.Backup) {
         firstBackup.TryAdd(entries[i].Path, i);
@@ -554,10 +570,9 @@ public sealed class WorkspaceTransaction : IDisposable {
       // A created directory still holding a change that could not be undone is kept for the
       // next attempt. (One holding other files, e.g. written by the server after lip was
       // killed, is left as it is.)
-      if (entry.Op == JournalOp.CreateDirectory && left.Any(e => e.Path.StartsWith(
-          fs.Path.TrimEndingDirectorySeparator(entry.Path) + fs.Path.DirectorySeparatorChar,
-          OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase
-              : StringComparison.Ordinal))) {
+      if (entry.Op == JournalOp.CreateDirectory && left.Any(e => paths.StartsWith(
+          e.Path,
+          fs.Path.TrimEndingDirectorySeparator(entry.Path) + fs.Path.DirectorySeparatorChar))) {
         left.Insert(0, entry);
         continue;
       }

@@ -39,21 +39,32 @@ git 引用把仓库固定到某个提交：
 
 从 git 引用安装的包，也能满足对其不带 git 引用的包 ID 和变体的依赖，只要其版本在依赖的范围内，且该仓库有 lip 可为该依赖安装的版本标签：要求 `github.com/LiteLDev/LeviLamina` `>=1.5.0` 的 mod，会接受从 `@branch:main` 安装且声明 `1.6.0` 的 LeviLamina；若其声明 `1.4.0`，或 LeviLamina 没有 `1.5.0` 及以上的版本标签，则失败。
 
+### 平台
+
+lip 安装的是运行端 `server` 和工作区[环境](../../concepts/lip_toml.md#环境)平台所对应的条目。平台为 `--platform`（若指定），否则为[状态文件](../../concepts/lockfiles.md)记录的平台，否则为 `win-x64`，**无论 lip 运行在什么系统上**：在 Linux 和 macOS 上，lip 默认同样安装 Windows 版服务器，并通过 Wine 运行它及其包的钩子（参见[运行服务器](../../guides/running_server.md)）。
+
+如需安装其他平台的包，例如 `github.com/LiteLDev/bds` 的 Linux 原生服务器，请在该工作区的第一条命令中指定平台：
+
+```shell
+lip install github.com/LiteLDev/bds --platform linux-x64
+```
+
+此后状态文件记录 `linux-x64`，该工作区中之后的命令无需 `--platform` 也会使用它。[`lip run`](run.md) 无法启动这样的 Linux 原生服务器，因为它只运行 `bedrock_server_mod.exe`；参见[运行服务器](../../guides/running_server.md#linux-原生包)。
+
 ## 选项
 
 | 选项 | 说明 |
 | --- | --- |
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
-| `--ignore-scripts` | 不执行包的 `hooks`，包括该操作移除或替换的包的卸载钩子。 |
-| `--no-dependencies` | 对每个参数只安装其第一个候选，替换已安装的同一身份的包；不安装依赖，也不卸载其他包。身份、版本和提交都相同的已安装包只会被标记为显式安装。这可能导致工作区损坏。 |
-| `--platform <RID>` | 工作区的平台，即 .NET RID，例如 `win-x64`。 |
+| `--platform <RID>` | 工作区[环境](../../concepts/lip_toml.md#环境)的平台，即 .NET RID，例如 `linux-x64`。不指定时为状态文件记录的平台，否则为 `win-x64`，无论 lip 运行在什么系统上。 |
 
 ## 示例
 
 ```shell
 lip install github.com/LiteLDev/LeviLamina
 lip install github.com/LiteLDev/LegacyScriptEngine#lua
-lip install github.com/user/repo@1.0.0 --platform win-x64
+lip install github.com/user/repo@1.0.0
+lip install github.com/LiteLDev/bds --platform linux-x64
 lip install github.com/LiteLDev/LeviLamina@branch:main
 lip install github.com/user/repo@tag:v1.0.0
 lip install https://example.com/package.zip

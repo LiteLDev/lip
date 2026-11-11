@@ -1,11 +1,11 @@
-# lip init
+# lip pkg init
 
 Initialize a new package by creating a `lip.toml` in the current directory.
 
 ## Synopsis
 
 ```shell
-lip init
+lip pkg init
 ```
 
 ## Description

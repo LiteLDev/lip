@@ -3,11 +3,16 @@ using Lip.Core.Infrastructure;
 namespace Lip.Core.RegressionTests.Infrastructure;
 
 public class CommandRunnerTests {
+  // A platform whose hook commands run without Wine wherever the test runs
+  // (protocol/lip-workspace.md, "Running programs").
+  private static readonly string _hostPlatform =
+      OperatingSystem.IsWindows() ? "win-x64" : "linux-x64";
+
   [Fact]
   public async Task Run_SuccessfulCommand_DoesNotThrow() {
     CommandRunner runner = new();
 
-    await runner.Run("echo hello", Path.GetTempPath());
+    await runner.Run("echo hello", Path.GetTempPath(), _hostPlatform);
   }
 
   [Fact]
@@ -16,7 +21,7 @@ public class CommandRunnerTests {
     string directory = Directory.CreateTempSubdirectory().FullName;
 
     try {
-      await runner.Run(OperatingSystem.IsWindows() ? "echo x> marker" : "echo x > marker", directory);
+      await runner.Run(OperatingSystem.IsWindows() ? "echo x> marker" : "echo x > marker", directory, _hostPlatform);
 
       Assert.True(File.Exists(Path.Join(directory, "marker")));
     }
@@ -35,7 +40,8 @@ public class CommandRunnerTests {
 
       await runner.Run(
           OperatingSystem.IsWindows() ? "copy \"a b.txt\" \"c d.txt\"" : "cp \"a b.txt\" \"c d.txt\"",
-          directory);
+          directory,
+          _hostPlatform);
 
       Assert.Equal("content", await File.ReadAllTextAsync(Path.Join(directory, "c d.txt"), TestContext.Current.CancellationToken));
     }
@@ -52,7 +58,8 @@ public class CommandRunnerTests {
     try {
       await runner.Run(
           OperatingSystem.IsWindows() ? "echo \"hello\"> out.txt" : "echo '\"hello\"' > out.txt",
-          directory);
+          directory,
+          _hostPlatform);
 
       Assert.Equal("\"hello\"", (await File.ReadAllTextAsync(Path.Join(directory, "out.txt"), TestContext.Current.CancellationToken)).Trim());
     }
@@ -72,7 +79,7 @@ public class CommandRunnerTests {
       string program = OperatingSystem.IsWindows()
           ? Path.Join(Environment.SystemDirectory, "findstr.exe") + "\" \"content"
           : "cat";
-      await runner.Run($"\"{program}\" \"a b.txt\"> \"c d.txt\"", directory);
+      await runner.Run($"\"{program}\" \"a b.txt\"> \"c d.txt\"", directory, _hostPlatform);
 
       Assert.Equal("content", (await File.ReadAllTextAsync(Path.Join(directory, "c d.txt"), TestContext.Current.CancellationToken)).Trim());
     }

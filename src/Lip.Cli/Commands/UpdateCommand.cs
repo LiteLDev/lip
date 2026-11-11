@@ -17,17 +17,12 @@ public class UpdateCommand(LipClient lipClient, IUserInteraction userInteraction
     [CommandOption("-n|--dry-run")]
     [Description("Run without making any changes")]
     public bool DryRun { get; init; }
-
-    [CommandOption("--ignore-scripts")]
-    [Description("Do not run the scripts of the packages installed or uninstalled")]
-    public bool IgnoreScripts { get; init; }
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     await _lipClient.Update(
         settings.Packages,
         settings.DryRun,
-        settings.IgnoreScripts,
         settings.Platform,
         cancellationToken);
     await _userInteraction.PrintSuccess("Packages updated successfully.");

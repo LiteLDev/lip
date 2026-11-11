@@ -87,7 +87,7 @@ The globs of `preserve` and `purge` are matched against paths relative to the wo
 
 ## SEE ALSO
 
-[lip-init(1)](lip-init.md), [lip-view(1)](lip-view.md), [lip-package(7)], [lip-workspace(7)](lip-workspace.md)
+[lip-pkg(1)](lip-pkg.md), [lip-package(7)], [lip-workspace(7)](lip-workspace.md)
 
 [lip-package(7)]: lip-package.md
 [Scriban]: https://github.com/scriban/scriban/blob/7.5.0/site/docs/language.md

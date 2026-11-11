@@ -71,6 +71,10 @@ public class ConfigServiceTests {
   [InlineData("format = 4\ngithub_proxy = [\"unclosed\"\n")]
   [InlineData("format = 4\nformat = 4\n")]
   [InlineData("[[format]]\n")]
+  // config.schema.toml: github_proxy has the format "uri".
+  [InlineData("format = 4\ngithub_proxy = \"\"\n")]
+  [InlineData("format = 4\ngithub_proxy = \"example.com/mirror\"\n")]
+  [InlineData("format = 4\ngithub_proxy = \"https://example.com/a b\"\n")]
   public async Task Get_InvalidFile_PrintsErrorAndReturnsDefault(string toml) {
     // Arrange
     (_, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
@@ -116,12 +120,35 @@ public class ConfigServiceTests {
     Assert.Equal("https://new.com", await service.Get("github_proxy"));
   }
 
+  /// config.schema.toml: github_proxy has the format "uri", so a value that is not a URI would
+  /// make config.toml invalid.
   [Theory]
   [InlineData("")]
   [InlineData("true")]
   [InlineData("1.0")]
-  [InlineData("null")]
-  public async Task Set_ValueThatLooksLikeAnotherType_ReadsBackAsTheString(string value) {
+  [InlineData("example.com/mirror")]
+  [InlineData("/home/user/mirror")]
+  [InlineData(@"C:\mirror")]
+  [InlineData("https://example.com/a b")]
+  [InlineData("https://example.com/\"x\"")]
+  public async Task Set_NotAUri_FailsAndChangesNothing(string value) {
+    // Arrange
+    string configPath = GetConfigPath();
+    const string original = "format = 4\ngithub_proxy = \"https://proxy.com\"\n";
+    (MockFileSystem fs, _, ConfigService service) = Create(new() {
+      [configPath] = new(original),
+    });
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArgumentException>(() => service.Set("github_proxy", value));
+    Assert.Equal(original, fs.File.ReadAllText(configPath));
+  }
+
+  [Theory]
+  [InlineData("https://example.com/")]
+  [InlineData("http://127.0.0.1:8080/github/")]
+  [InlineData("https://user:t0k%20en@example.com/a?b=c#d")]
+  public async Task Set_Uri_ReadsBackAsTheString(string value) {
     // Arrange
     (_, _, ConfigService service) = Create([]);
 
@@ -341,6 +368,49 @@ public class ConfigServiceTests {
     Assert.Equal(expected, result["github_proxy"]);
     Assert.Equal(_liprcJson, fs.File.ReadAllText(GetLiprcPath()));
     Assert.Equal(toml, fs.File.ReadAllText(GetConfigPath()));
+  }
+
+  /// A dry run reads liprc.json the same way, but writes no config.toml and keeps it.
+  [Theory]
+  [InlineData(_liprcJson, "https://proxy.com")]
+  [InlineData("""{ "github_proxy": "https://proxy.com" }""", "https://proxy.com")]
+  [InlineData("""{ "format_version": 3 }""", null)]
+  [InlineData("""{ "format_version": 2, "github_proxy": "https://proxy.com" }""", null)]
+  public async Task GetGithubProxy_DryRunWithLiprcJson_ReadsItAndChangesNothing(
+      string json, string? expected) {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = Create(new() {
+      [GetLiprcPath()] = new(json),
+    });
+
+    // Act
+    string? result = await service.GetGithubProxy(dryRun: true);
+
+    // Assert
+    Assert.Equal(expected, result);
+    Assert.Equal(json, fs.File.ReadAllText(GetLiprcPath()));
+    Assert.Equal([GetLiprcPath()], fs.Directory.GetFiles(Path.GetDirectoryName(GetLiprcPath())!));
+  }
+
+  [Fact]
+  public async Task GetGithubProxy_DryRunThenNot_MigratesOnlyTheSecondTime() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = Create(new() {
+      [GetLiprcPath()] = new(_liprcJson),
+    });
+
+    // Act
+    string? dryRun = await service.GetGithubProxy(dryRun: true);
+    bool keptByDryRun = fs.File.Exists(GetLiprcPath());
+    string? result = await service.GetGithubProxy();
+
+    // Assert
+    Assert.Equal("https://proxy.com", dryRun);
+    Assert.True(keptByDryRun);
+    Assert.Equal("https://proxy.com", result);
+    Assert.False(fs.File.Exists(GetLiprcPath()));
+    Assert.Equal(
+        "format = 4\ngithub_proxy = \"https://proxy.com\"\n", fs.File.ReadAllText(GetConfigPath()));
   }
 
   [Fact]

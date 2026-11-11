@@ -166,16 +166,15 @@ public static class ErrorReporter {
         yield return "The disk is full. Free some space, then try again.";
         break;
       case CommandFailedException:
-        yield return "A hook command of a package failed. To install or uninstall without"
-            + " running hook commands, pass --ignore-scripts (the package may then need manual"
-            + " setup).";
+        yield return "A hook command of a package failed. Check its output above, fix what it"
+            + " reports, then try again.";
         break;
       case CannotAskException:
         yield return "Run lip in an interactive terminal.";
         break;
       case DependencyResolutionException:
         yield return "If the reasons above are about versions that do not fit together, request"
-            + " other versions, or install with --no-dependencies to choose them yourself.";
+            + " other versions.";
         break;
       case WorkspaceBusyException:
         break;

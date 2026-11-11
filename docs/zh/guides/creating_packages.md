@@ -2,12 +2,12 @@
 
 本指南将带你使用 lip 创建新包。包是根部带有 `lip.toml` 的归档，通常是一个 git 仓库；各字段详见 [lip.toml](../concepts/lip_toml.md)。
 
-## 使用 `lip init`
+## 使用 `lip pkg init`
 
-开始新包最简单的方式是在仓库根目录中使用 `lip init`。
+开始新包最简单的方式是在仓库根目录中使用 `lip pkg init`。
 
 ```sh
-lip init
+lip pkg init
 ```
 
 lip 会询问包 ID，即 [Go 模块路径](https://go.dev/ref/mod#module-path)，例如 `github.com/user/MyTool`，直到回答合法为止。随后它在当前目录创建 `lip.toml`：
@@ -60,10 +60,10 @@ place = [{ src = "MyTool.exe", dest = "MyTool.exe" }]
 
 mod 是带有 `mcmod` 资源的条目：一个根部带有该 mod 的 LeviLamina `manifest.json` 的 ZIP 归档。lip 把整个归档写入 `mods/<name>/`，其中 `<name>` 是该 `manifest.json` 中的 `name`；lip 不读取 `manifest.json` 的其他内容，并原样安装它。
 
-用 [`lip pack`](../cli/commands/pack.md) 从构建输出目录（其中有 `manifest.json` 和 mod 的文件）构建该归档，并把它附加到 Release：
+用 [`lip pkg pack`](../cli/commands/pkg_pack.md) 从构建输出目录（其中有 `manifest.json` 和 mod 的文件）构建该归档，并把它附加到 Release：
 
 ```sh
-lip pack build/ -o MyMod-server-win-x64.zip
+lip pkg pack build/ -o MyMod-server-win-x64.zip
 ```
 
 然后在 `lip.toml` 中指向它：
@@ -115,7 +115,7 @@ platform = "win-arm64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-arm64.zip"] }]
 ```
 
-运行端和平台没有对应条目的工作区无法安装该包。
+运行端和平台没有对应条目的工作区无法安装该包。除非工作区通过 `--platform` 指定了其他平台，lip 都使用平台 `win-x64`，在 Linux 上也是如此（此时通过 Wine 运行服务器）；因此服务端 mod 需要 `win-x64` 的 `server` 条目，而 `linux-x64` 的条目只用于以 `--platform linux-x64` 创建的工作区。
 
 ## 变体
 
@@ -168,7 +168,7 @@ tags = ["management", "economy"]
 
 ```sh
 lip install ../MyTool
-lip pack ../MyTool -o MyTool.zip
+lip pkg pack ../MyTool -o MyTool.zip
 lip install ./MyTool.zip
 ```
 

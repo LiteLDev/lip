@@ -1,11 +1,11 @@
-# lip migrate
+# lip pkg migrate
 
 把当前目录中 lip v0.x 的 `tooth.json` 迁移为 `lip.toml`。
 
 ## 概要
 
 ```shell
-lip migrate
+lip pkg migrate
 ```
 
 ## 说明
@@ -20,6 +20,6 @@ lip migrate
 
 `lip.toml` 没有 RID 模式。当结果需要的某个值缺失或无效时，例如 `tooth.json` 中 `win-*` 这样的 `platform` 模式或 `windows/amd64` 这样不是 RID 的 `platform` 所代表的平台（RID），或没有 `platform` 的变体所适用的平台，lip 会在终端上询问，直到回答有效为止。若标准输入或标准错误不是终端，则会失败，指明本应询问的值，且不做任何修改。
 
-若 `lip.toml` 已存在，或 `tooth.json` 不存在或不是 lip 能读取的格式版本 1、2 或 3 的 `tooth.json`，`lip migrate` 会失败，且不做任何修改。
+若 `lip.toml` 已存在，或 `tooth.json` 不存在或不是 lip 能读取的格式版本 1、2 或 3 的 `tooth.json`，`lip pkg migrate` 会失败，且不做任何修改。
 
 所有被丢弃或以不同含义转换的内容都会以警告形式输出，并指明其来源字段（按格式 3 的形式）。警告不会导致命令失败。输出只是一个起点，并不保证正确：发布前请检查它，然后提交结果。细节与局限请参阅[迁移包](../../guides/migrating_packages.md)。

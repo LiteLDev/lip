@@ -15,6 +15,10 @@ namespace Lip.Core.Tests.Mcmod.Install;
 public class McmodInstallerRealFileSystemTests : IDisposable {
   private const string ModUrl = "https://example.com/LegacyMoney.mcmod";
 
+  // A platform whose hook commands run without Wine wherever the test runs
+  // (protocol/lip-workspace.md, "Running programs").
+  private static readonly string _hostPlatform = OperatingSystem.IsWindows() ? "win-x64" : "linux-x64";
+
   private readonly string _root =
       Path.Combine(Path.GetTempPath(), "lip-installer-test-" + Guid.NewGuid().ToString("N"));
 
@@ -44,7 +48,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     using JsonDocument entryJson = JsonDocument.Parse($$"""
         {
           "side": "server",
-          "platform": "win-x64",
+          "platform": "{{_hostPlatform}}",
           "assets": [ { "type": "mcmod", "urls": [ "{{ModUrl}}" ] } ],
           "purge": [ "mods/LegacyMoney/data/" ],
           "hooks": {
@@ -70,9 +74,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         new(fs, new McmodInstaller(fs, new CommandRunner(), new Mock<IUserInteraction>().Object));
     InstallContext context = new(
         _root,
-        new LipEnvironment(McmodSide.Server, "win-x64"),
-        new LockFile { Side = "server", Platform = "win-x64", Packages = [] },
-        false,
+        new LipEnvironment(McmodSide.Server, _hostPlatform),
+        new LockFile { Side = "server", Platform = _hostPlatform, Packages = [] },
         false);
     // Act: install
     IReadOnlyList<string> owned = await installer.Install(candidate, context);
@@ -208,7 +211,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     WorkspaceView view = new(fs);
     PackagePlan firstPlan = await installer.PlanInstall(first, Context(), view);
     PackagePlan secondPlan = await installer.PlanInstall(second, Context(), view);
-    FileOwners owners = installer.Owners(_root, []);
+    FileOwners owners = installer.Owners(_root, [], Context().Environment);
     using WorkspaceTransaction transaction = new(
         fs, new LockStore(fs).GetJournalPath(_root),
         [.. firstPlan.WrittenPaths, .. secondPlan.WrittenPaths]);
@@ -389,8 +392,9 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
   }
 
   [Fact]
-  public async Task Install_DestSpelledInAnotherCaseWhereCaseIsTold_IsAnotherFile() {
-    // Arrange: a file system that tells case apart has both files.
+  public async Task Install_DestSpelledInAnotherCaseForOtherPlatformWhereCaseIsTold_IsAnotherFile() {
+    // Arrange: a file system that tells case apart has both files, and the paths of a workspace
+    // for a platform other than a Windows platform tell case apart too.
     Assert.SkipWhen(IgnoresCase(), "The file system ignores case.");
     string directory = Path.Combine(_root, "mods", "foo");
     Directory.CreateDirectory(directory);
@@ -398,19 +402,238 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     Candidate other = SelfCandidate("example.com/other", "", "", []);
     LockFile lockFile = new() {
       Side = "server",
-      Platform = "win-x64",
+      Platform = "linux-x64",
       Packages = [Locked(other, ["mods/foo/a.dll"])],
     };
     Candidate candidate = SelfCandidate(
         "example.com/x", Place("a.dll", "Mods/foo/a.dll"), "", new() { ["a.dll"] = "mine" });
 
     // Act
-    IReadOnlyList<string> owned = await Installer().Install(candidate, Context(lockFile));
+    IReadOnlyList<string> owned =
+        await Installer().Install(candidate, Context(lockFile, "linux-x64"));
 
     // Assert
     Assert.Equal(["Mods/foo/a.dll"], owned);
     Assert.Equal("other", File.ReadAllText(Path.Combine(directory, "a.dll")));
     Assert.Equal("mine", File.ReadAllText(Path.Combine(_root, "Mods", "foo", "a.dll")));
+  }
+
+  // A workspace for a Windows platform where lip does not run on Windows: its paths are
+  // case-insensitive, as they are to the programs Wine runs, though the file system tells case
+  // apart (protocol/lip-workspace.md, "Environment and layout").
+
+  [Fact]
+  public async Task Install_WindowsPlatformDestInAnotherCaseOfExistingDirectories_WritesBelowThem() {
+    // Arrange
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "Mods", "foo"));
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.dll", "mods/Foo/a.dll"), "", new() { ["a.dll"] = "mine" });
+
+    // Act
+    IReadOnlyList<string> owned = await Installer().Install(candidate, Context());
+
+    // Assert
+    Assert.Equal(["Mods/foo/a.dll"], owned);
+    Assert.Equal("mine", File.ReadAllText(Path.Combine(_root, "Mods", "foo", "a.dll")));
+    Assert.False(Directory.Exists(Path.Combine(_root, "mods")));
+  }
+
+  [Fact]
+  public async Task Install_WindowsPlatformDestInAnotherCaseOfExistingFile_ReplacesIt() {
+    // Arrange
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "config"));
+    File.WriteAllText(Path.Combine(_root, "config", "Server.Properties"), "old");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.txt", "CONFIG/server.properties"), "",
+        new() { ["a.txt"] = "new" });
+
+    // Act
+    IReadOnlyList<string> owned = await Installer().Install(candidate, Context());
+
+    // Assert
+    Assert.Equal(["config/Server.Properties"], owned);
+    Assert.Equal(
+        ["Server.Properties"],
+        Directory.GetFileSystemEntries(Path.Combine(_root, "config")).Select(Path.GetFileName));
+    Assert.Equal("new", File.ReadAllText(Path.Combine(_root, "config", "Server.Properties")));
+  }
+
+  [Fact]
+  public async Task Install_WindowsPlatformDestOwnedByAnotherInAnotherCase_ThrowsWithoutWriting() {
+    // Arrange: the file does not exist, so only the comparison of the paths finds the owner.
+    SkipUnlessCaseInsensitiveByPlatform();
+    Candidate other = SelfCandidate("example.com/other", "", "", []);
+    LockFile lockFile = new() {
+      Side = "server",
+      Platform = "win-x64",
+      Packages = [Locked(other, ["mods/foo/a.dll"])],
+    };
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.dll", "Mods/Foo/A.dll"), "", new() { ["a.dll"] = "mine" });
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => Installer().Install(candidate, Context(lockFile)));
+
+    // Assert
+    Assert.Contains("(owned by example.com/other)", ex.Message);
+    Assert.Empty(Directory.GetFileSystemEntries(_root));
+  }
+
+  [Fact]
+  public async Task Install_WindowsPlatformDestInLipInAnotherCase_ThrowsWithoutWriting() {
+    // Arrange
+    SkipUnlessCaseInsensitiveByPlatform();
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("x.txt", ".LIP/state.json"), "", new() { ["x.txt"] = "x" });
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => Installer().Install(candidate, Context()));
+
+    // Assert
+    Assert.Contains("reserved", ex.Message);
+    Assert.False(Directory.Exists(Path.Combine(_root, ".LIP")));
+  }
+
+  [Fact]
+  public async Task Install_WindowsPlatformDestNamingTwoDirectories_ThrowsWithoutWriting() {
+    // Arrange: mods/ and Mods/ are the same directory to Wine.
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "mods"));
+    Directory.CreateDirectory(Path.Combine(_root, "Mods"));
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.dll", "mods/x/a.dll"), "", new() { ["a.dll"] = "mine" });
+
+    // Act
+    AmbiguousPathException ex = await Assert.ThrowsAsync<AmbiguousPathException>(
+        () => Installer().Install(candidate, Context()));
+
+    // Assert
+    Assert.Contains("'Mods', 'mods'", ex.Message);
+    Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(_root, "mods")));
+    Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(_root, "Mods")));
+  }
+
+  [Fact]
+  public async Task Install_WindowsPlatformPreserveInAnotherCase_KeepsExistingFile() {
+    // Arrange
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "Config"));
+    File.WriteAllText(Path.Combine(_root, "Config", "a.json"), "user");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.json", "config/A.json"), """ "preserve": [ "CONFIG/*.JSON" ] """,
+        new() { ["a.json"] = "default" });
+
+    // Act
+    IReadOnlyList<string> owned = await Installer().Install(candidate, Context());
+
+    // Assert
+    Assert.Empty(owned);
+    Assert.Equal("user", File.ReadAllText(Path.Combine(_root, "Config", "a.json")));
+    Assert.Single(Directory.GetFileSystemEntries(_root));
+  }
+
+  [Fact]
+  public async Task Uninstall_WindowsPlatformPurgeInAnotherCase_DeletesWhatItNames() {
+    // Arrange
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "Logs", "Old"));
+    File.WriteAllText(Path.Combine(_root, "Logs", "Old", "a.LOG"), "a");
+    File.WriteAllText(Path.Combine(_root, "Logs", "b.log"), "b");
+    File.WriteAllText(Path.Combine(_root, "keep.txt"), "keep");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", "", """ "purge": [ "logs/old/", "LOGS/[A-Z].log" ] """, []);
+
+    // Act
+    await Installer().Uninstall(Locked(candidate, []), Context());
+
+    // Assert
+    Assert.Equal(["keep.txt"], Directory.GetFileSystemEntries(_root).Select(Path.GetFileName));
+  }
+
+  [Fact]
+  public async Task Uninstall_WindowsPlatformPurgeWalkingTwoDirectoriesOfOnePath_ThrowsWithoutDeleting() {
+    // Arrange: config/Foo/ and config/foo/ are the same directory to Wine.
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "config", "Foo"));
+    Directory.CreateDirectory(Path.Combine(_root, "config", "foo"));
+    File.WriteAllText(Path.Combine(_root, "config", "Foo", "x"), "x");
+    File.WriteAllText(Path.Combine(_root, "config", "foo", "y"), "y");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", "", """ "purge": [ "config/" ] """, []);
+
+    // Act
+    AmbiguousPathException ex = await Assert.ThrowsAsync<AmbiguousPathException>(
+        () => Installer().Uninstall(Locked(candidate, []), Context()));
+
+    // Assert
+    Assert.Contains("'config/Foo'", ex.Message);
+    Assert.Contains("'Foo', 'foo'", ex.Message);
+    Assert.True(File.Exists(Path.Combine(_root, "config", "Foo", "x")));
+    Assert.True(File.Exists(Path.Combine(_root, "config", "foo", "y")));
+  }
+
+  [Fact]
+  public async Task Uninstall_WindowsPlatformOwnedFileRecordedInAnotherCase_DeletesIt() {
+    // Arrange
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "Plugins"));
+    File.WriteAllText(Path.Combine(_root, "Plugins", "A.dll"), "a");
+    Candidate candidate = SelfCandidate("example.com/x", "", "", []);
+
+    // Act
+    await Installer().Uninstall(Locked(candidate, ["plugins/a.dll"]), Context());
+
+    // Assert
+    Assert.Empty(Directory.GetFileSystemEntries(_root));
+  }
+
+  [Fact]
+  public async Task Uninstall_WindowsPlatformPurgeNamingModsInAnotherCase_KeepsMods() {
+    // Arrange
+    SkipUnlessCaseInsensitiveByPlatform();
+    Directory.CreateDirectory(Path.Combine(_root, "Mods", "Other"));
+    File.WriteAllText(Path.Combine(_root, "Mods", "Other", "other.dll"), "dll");
+    Directory.CreateDirectory(Path.Combine(_root, "Mods", "Mine"));
+    File.WriteAllText(Path.Combine(_root, "Mods", "Mine", "mine.dll"), "dll");
+    Candidate candidate = SelfCandidate(
+        "example.com/x", "", """ "purge": [ "MODS/", "mods/MINE/" ] """, []);
+
+    // Act
+    await Installer().Uninstall(Locked(candidate, []), Context());
+
+    // Assert
+    Assert.Equal("dll", File.ReadAllText(Path.Combine(_root, "Mods", "Other", "other.dll")));
+    Assert.False(Directory.Exists(Path.Combine(_root, "Mods", "Mine")));
+  }
+
+  [Theory]
+  [InlineData("trailing./a.txt")]
+  [InlineData("a.txt ")]
+  [InlineData("config/a:b.txt")]
+  public async Task Install_WindowsPlatformAliasingDest_ThrowsWithoutWriting(string dest) {
+    // Arrange: the Windows rules for names apply for a Windows platform wherever lip runs
+    // (protocol/lip-workspace.md, "Installing and uninstalling").
+    Candidate candidate = SelfCandidate(
+        "example.com/x", Place("a.txt", dest), "", new() { ["a.txt"] = "a" });
+
+    // Act
+    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+        () => Installer().Install(candidate, Context()));
+
+    // Assert
+    Assert.Contains("not a valid path on Windows", ex.Message);
+    Assert.Empty(Directory.GetFileSystemEntries(_root));
+  }
+
+  /// Skips the test where the paths of a workspace for a Windows platform are not made
+  /// case-insensitive by lip: on Windows, and on a file system that ignores case itself.
+  private void SkipUnlessCaseInsensitiveByPlatform() {
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "lip runs on Windows, which ignores case.");
+    Assert.SkipWhen(IgnoresCase(), "The file system ignores case.");
   }
 
   /// Whether the file system of the workspace ignores case.
@@ -429,11 +652,10 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
         fs, new McmodInstaller(fs, new CommandRunner(), new Mock<IUserInteraction>().Object));
   }
 
-  private InstallContext Context(LockFile? lockFile = null) => new(
+  private InstallContext Context(LockFile? lockFile = null, string platform = "win-x64") => new(
       _root,
-      new LipEnvironment(McmodSide.Server, "win-x64"),
-      lockFile ?? new LockFile { Side = "server", Platform = "win-x64", Packages = [] },
-      false,
+      new LipEnvironment(McmodSide.Server, platform),
+      lockFile ?? new LockFile { Side = "server", Platform = platform, Packages = [] },
       false);
 
   /// A package of id whose one asset of type "self" holds files, with the given members of the

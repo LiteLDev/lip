@@ -6,22 +6,12 @@ This guide will help you get started with `lip`, covering basic usage for managi
 
 Before proceeding, ensure that you have [installed lip](installation.md). lip does not require `git` to be installed.
 
-## Initializing a Project
-
-If you are creating a mod or another package, initialize its `lip.toml`. Run the following command in your project's root directory:
-
-```shell
-lip init
-```
-
-This command asks for the package id of your package, such as `github.com/user/MyMod`, and creates a `lip.toml` file in the current directory (it fails if one already exists). This file describes your package to lip. You do not need it just to install packages.
-
 ## Installing Packages
 
-Run lip in the root directory of your server (the workspace). To install a package, use the `install` command followed by the package id. You can specify a version using the `@` symbol.
+Run lip in the root directory of your server (the workspace). To install a package, use the `install` command followed by the package id. You can specify a version using the `@` symbol, e.g. `github.com/LiteLDev/LeviLamina@1.0.0`.
 
 ```shell
-lip install github.com/LiteLDev/LeviLamina@1.0.0
+lip install github.com/LiteLDev/LeviLamina
 ```
 
 `lip` supports installing from various sources, including Git repositories, URLs, and ZIP files and directories on your disk. When you install a package:
@@ -30,6 +20,18 @@ lip install github.com/LiteLDev/LeviLamina@1.0.0
 - It is recorded in the [state file](../concepts/lockfiles.md), `.lip/state.json` in the workspace. Your `lip.toml` is not modified.
 
 lip manages server workspaces only. Client mods are managed by launchers such as LeviLauncher.
+
+lip installs the packages of the platform `win-x64` by default, on every system. On Linux and macOS, it runs their hook commands and the server through Wine; for Linux-native packages, add `--platform linux-x64` to the first `lip install` of the workspace, and start the server yourself, as `lip run` cannot start a Linux-native one. See [Running a Server](../guides/running_server.md#linux-native-packages).
+
+## Running the Server
+
+Once LeviLamina is installed, start the server in the workspace:
+
+```shell
+lip run
+```
+
+Type server commands as usual. Press Ctrl+C to stop the server: lip sends it `stop` and exits when it has exited. You can install and update packages from another terminal while the server runs; they take effect when you start it again.
 
 ## Listing Installed Packages
 
@@ -43,18 +45,10 @@ This will display a list of packages along with their installed versions.
 
 ## Viewing Package Information
 
-You can retrieve detailed information about a package, such as its available versions or metadata, without installing it.
-
-**View package metadata:**
+You can retrieve the package file of a package and its available versions, as JSON, without installing it:
 
 ```shell
-lip view github.com/LiteLDev/LeviLamina
-```
-
-**List available versions:**
-
-```shell
-lip versions github.com/LiteLDev/LeviLamina
+lip pkg view github.com/LiteLDev/LeviLamina
 ```
 
 ## Updating Packages
@@ -90,6 +84,16 @@ lip config list
 ```shell
 lip config set github_proxy https://mirror.ghproxy.com/
 ```
+
+## Creating a Package
+
+If you are creating a mod or another package, initialize its `lip.toml`. Run the following command in your project's root directory:
+
+```shell
+lip pkg init
+```
+
+This command asks for the package id of your package, such as `github.com/user/MyMod`, and creates a `lip.toml` file in the current directory (it fails if one already exists). This file describes your package to lip. You do not need it just to install packages. See [Creating Packages](../guides/creating_packages.md).
 
 ## Next Steps
 

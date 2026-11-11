@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: "lip"
-  text: "A general package installer"
+  text: "Run a LeviLamina server and manage its packages"
   tagline: Install packages from public Git repositories
   image:
     src: /logo.webp
