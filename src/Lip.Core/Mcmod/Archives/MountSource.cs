@@ -3,7 +3,8 @@ using Lip.Core.Sources;
 namespace Lip.Core.Mcmod;
 
 /// Several sources as one: the files of each source are under its mount, a distinct directory
-/// name without '/'. Used for the assets of an entry (protocol/workspace.md §4 step 2).
+/// name without '/'. Used for the assets of an entry (protocol/lip-workspace.md, "Installing and
+/// uninstalling" step 2).
 public class MountSource(IReadOnlyList<(string Mount, ISource Source)> mounts) : ISource {
   private readonly IReadOnlyList<(string Mount, ISource Source)> _mounts = mounts;
 

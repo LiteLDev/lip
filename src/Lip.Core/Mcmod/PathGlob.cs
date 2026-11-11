@@ -73,7 +73,8 @@ public class PathGlob {
   public static bool HasMetacharacters(string path) => path.AsSpan().IndexOfAny("*?[") >= 0;
 
   /// The leading segments of a pattern that contain no metacharacter, each followed by '/'
-  /// (protocol/workspace.md §4 step 2): "" when the first segment is a pattern.
+  /// (protocol/lip-workspace.md, "Installing and uninstalling" step 2): "" when the first segment
+  /// is a pattern.
   public static string FixedPrefix(string pattern) {
     string[] segments = pattern.Split('/');
     StringBuilder prefix = new();

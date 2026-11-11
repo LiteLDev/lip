@@ -4,8 +4,8 @@ using Semver;
 
 namespace Lip.Core.Mcmod.Resolution;
 
-/// Finds the package set S of protocol/workspace.md §3 and returns it in the installation order
-/// of Section 5.
+/// Finds the package set S of protocol/lip-workspace.md, "Valid states" and returns it in the
+/// installation order of Section 5.
 ///
 /// The search is a depth-first backtracking search over the open requirements (the requests,
 /// then the dependencies of each member in the order members are added). For each open
@@ -31,8 +31,8 @@ public class GraphSolver(IResolver resolver) {
   /// Pinned candidates (installed packages to keep) are members of S as they are; their
   /// dependencies must be satisfied too. Each preferred candidate (an installed package that may
   /// change version) is tried first for a requirement it satisfies, before the requirement's own
-  /// candidates. Returns S in installation order (protocol/workspace.md §5), with which member
-  /// satisfies which dependency and request. Throws DependencyResolutionException.
+  /// candidates. Returns S in installation order (protocol/lip-workspace.md, "Operations"), with
+  /// which member satisfies which dependency and request. Throws DependencyResolutionException.
   public async Task<SolvedGraph> SolveGraph(
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyList<Candidate> pinned,
@@ -42,19 +42,19 @@ public class GraphSolver(IResolver resolver) {
     return await search.Run(requests, pinned);
   }
 
-  /// How a package satisfies a request (protocol/workspace.md §3 rule 1): the candidate of the
-  /// request with its identity, version and commit, or else the package itself when it stands in
-  /// for a candidate; null when it does neither.
+  /// How a package satisfies a request (protocol/lip-workspace.md, "Valid states" rule 1): the
+  /// candidate of the request with its identity, version and commit, or else the package itself
+  /// when it stands in for a candidate; null when it does neither.
   public async Task<Candidate?> RequestCandidate(
       PackageRequest request, Candidate package, LipEnvironment environment) {
     Search search = new(resolver, environment, []);
     return await search.RequestCandidate(request, package);
   }
 
-  /// Orders a package set for installation (protocol/workspace.md §5): every package comes after the packages
-  /// it depends on; packages in a dependency cycle are ordered by lowercase identity (ordinal);
-  /// remaining ties are broken by lowercase identity as well. Dependencies outside the set are
-  /// ignored. Reverse the result to get an uninstall order.
+  /// Orders a package set for installation (protocol/lip-workspace.md, "Operations"): every package
+  /// comes after the packages it depends on; packages in a dependency cycle are ordered by
+  /// lowercase identity (ordinal); remaining ties are broken by lowercase identity as well.
+  /// Dependencies outside the set are ignored. Reverse the result to get an uninstall order.
   public static IReadOnlyList<Candidate> InstallOrder(
       IReadOnlyCollection<Candidate> set,
       Func<Candidate, IEnumerable<Candidate>> dependenciesOf) {
@@ -212,8 +212,8 @@ public class GraphSolver(IResolver resolver) {
     return component;
   }
 
-  /// The "same package" identity of a candidate (protocol/workspace.md §5): its identity, version
-  /// and commit.
+  /// The "same package" identity of a candidate (protocol/lip-workspace.md, "Operations"): its
+  /// identity, version and commit.
   private readonly record struct PackageKey(string Identity, SemVersion Version, string Commit) {
     public static PackageKey Of(Candidate candidate) {
       return new(
@@ -671,9 +671,9 @@ public class GraphSolver(IResolver resolver) {
       return best;
     }
 
-    /// Returns the member that satisfies a requirement (protocol/workspace.md §3: a member that
-    /// is one of the requirement's candidates, or stands in for one), or null. See the class
-    /// remarks for how this avoids loading every candidate.
+    /// Returns the member that satisfies a requirement (protocol/lip-workspace.md, "Valid states":
+    /// a member that is one of the requirement's candidates, or stands in for one), or null. See
+    /// the class remarks for how this avoids loading every candidate.
     private async Task<Candidate?> SatisfyingMember(Requirement requirement, Choices choices) {
       if (_members.Count == 0) {
         return null;
@@ -784,11 +784,11 @@ public class GraphSolver(IResolver resolver) {
     }
 
     /// Whether a candidate resolved from a remote repository with a ref stands in for a
-    /// requirement without a ref (protocol/workspace.md §3): same repository (ignoring ASCII
-    /// case) and variant, a version in the requirement's range, and a candidate of the
-    /// requirement to stand in for, of which only the first is loaded. A package of a ref thus
-    /// stands in for the tag versions of its repository, while a requirement with a ref still
-    /// needs exactly its own candidates.
+    /// requirement without a ref (protocol/lip-workspace.md, "Valid states"): same repository
+    /// (ignoring ASCII case) and variant, a version in the requirement's range, and a candidate of
+    /// the requirement to stand in for, of which only the first is loaded. A package of a ref thus
+    /// stands in for the tag versions of its repository, while a requirement with a ref still needs
+    /// exactly its own candidates.
     private static async ValueTask<bool> IsPinnedSatisfier(
         Requirement requirement, Choices choices, Candidate candidate) {
       if (candidate.Source is not { Kind: RefKind.Spec, GitRef: not null } pinned

@@ -7,7 +7,7 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Parsing;
 
-/// Validation of package files (lip.schema.toml and protocol/package.md §3), which are TOML files
+/// Validation of package files (lip.schema.toml and protocol/lip.toml.md), which are TOML files
 /// (protocol/README.md); the tests build them as JSON values, written as TOML. A value TOML cannot
 /// hold (null, a root that is not a table) is validated as a JSON value.
 public class PackageFileParserTests {

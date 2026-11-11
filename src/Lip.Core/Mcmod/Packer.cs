@@ -4,7 +4,7 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod;
 
-/// lip pack (protocol/cli.md §5.11): writes a ZIP archive of a directory.
+/// lip pack (protocol/lip-pack.md): writes a ZIP archive of a directory.
 public static class Packer {
   /// Writes a ZIP archive to output, replacing it: every regular file below directory at its
   /// path relative to it, except output itself (whatever path reaches it) and everything below
@@ -60,7 +60,7 @@ public static class Packer {
         }
 
         // Outside Windows '\' is not a separator, so a name may contain it; a ZIP entry cannot
-        // (protocol/package.md §1), so the file cannot be packed at its own path.
+        // (protocol/lip-package.md, "Terms"), so the file cannot be packed at its own path.
         if (entry.Contains('\\')) {
           throw new InvalidOperationException(
               $"Cannot pack {root}: '{full}' has a '\\' in its path, which a ZIP archive cannot"

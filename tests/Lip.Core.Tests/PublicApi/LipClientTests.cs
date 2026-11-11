@@ -33,7 +33,7 @@ public class LipClientTests {
 
   #region Init
 
-  /// protocol/cli.md §5.7: asks until the answer is a Go module path, then writes exactly the
+  /// protocol/lip-init.md: asks until the answer is a Go module path, then writes exactly the
   /// members of the document it gives.
   [Fact]
   public async Task Init_AsksPackageIdUntilValid_WritesPackageFile() {
@@ -77,7 +77,7 @@ public class LipClientTests {
 
   [Fact]
   public async Task Init_OnlyToothJsonExists_WritesPackageFile() {
-    // Arrange: only lip.toml makes lip init fail (protocol/cli.md §5.7).
+    // Arrange: only lip.toml makes lip init fail (protocol/lip-init.md).
     _ws.AddFile("tooth.json", "{}");
     _ws.Ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync("github.com/owner/repo");
 
@@ -139,7 +139,7 @@ public class LipClientTests {
     // Act
     await _client.Migrate();
 
-    // Assert: protocol/compatibility.md §5, a valid package file.
+    // Assert: protocol/lip-compatibility.md, "lip migrate", a valid package file.
     byte[] bytes = _ws.Fs.File.ReadAllBytes(_ws.Path("lip.toml"));
     Assert.StartsWith("format = 4\n", System.Text.Encoding.UTF8.GetString(bytes));
     PackageFile packageFile = PackageFileParser.Parse(bytes);
@@ -265,8 +265,8 @@ public class LipClientTests {
 
   private static readonly string _liprcPath = Path.Join(LipDirectories.Config, "liprc.json");
 
-  /// The configuration is read, migrating liprc.json (protocol/compatibility.md §4), only by a
-  /// command that needs it, not when the client is created.
+  /// The configuration is read, migrating liprc.json (protocol/lip-compatibility.md, "liprc.json"),
+  /// only by a command that needs it, not when the client is created.
   [Fact]
   public async Task Create_CommandWithoutConfiguration_KeepsLiprc() {
     // Arrange
@@ -297,8 +297,9 @@ public class LipClientTests {
     Assert.Equal("https://proxy.com", await client.ConfigGet("github_proxy"));
   }
 
-  /// When config.toml cannot be written, the configuration cannot be read (protocol/
-  /// compatibility.md §4): a command reading it fails, and the others still work.
+  /// When config.toml cannot be written, the configuration cannot be read
+  /// (protocol/lip-compatibility.md, "liprc.json"): a command reading it fails, and the others
+  /// still work.
   [Fact]
   public async Task Create_MigrationWriteFails_FailsOnlyCommandsReadingConfiguration() {
     // Arrange

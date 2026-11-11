@@ -10,8 +10,9 @@ using Moq;
 namespace Lip.Core.Tests.Mcmod.Compat;
 
 /// Installing and uninstalling packages read from a tooth.json of format 3 with McmodInstaller:
-/// they are installed with the package file derived from it (protocol/compatibility.md §2), which
-/// the state file records (protocol/workspace.md §7.1), with nothing of format 3 left.
+/// they are installed with the package file derived from it (protocol/lip-compatibility.md,
+/// "tooth.json"), which the state file records (protocol/state.json.md), with nothing of format 3
+/// left.
 public class ToothInstallTests {
   private const string _uuid = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -84,7 +85,7 @@ public class ToothInstallTests {
   }
 
   /// The candidate of the variant of a tooth.json of format 3 for the environment, as the
-  /// resolver makes it: the entry derived from it (protocol/compatibility.md §2).
+  /// resolver makes it: the entry derived from it (protocol/lip-compatibility.md, "tooth.json").
   private Candidate CreateCandidateFrom(
       string json,
       Dictionary<string, string> selfFiles,
@@ -136,7 +137,7 @@ public class ToothInstallTests {
   private string Workspace(string relativePath) => _fileSystem.Path.Combine(
       _root, relativePath.Replace('/', Path.DirectorySeparatorChar));
 
-  /// The state file entry of an installed candidate (protocol/workspace.md §7.1).
+  /// The state file entry of an installed candidate (protocol/state.json.md).
   private static LockedPackage Lock(Candidate candidate, IReadOnlyList<string> files) => new() {
     Manifest = candidate.Package.Manifest,
     Variant = candidate.Package.Variant,

@@ -2,7 +2,7 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// Sources (protocol/package.md §2).
+/// Sources (protocol/lip-package.md, "Sources").
 public class RefTests {
   [Theory]
   [InlineData("https://example.com/x.zip", RefKind.Url, "https://example.com/x.zip", "")]
@@ -137,7 +137,7 @@ public class RefTests {
   [InlineData("a;b=c@d", "a;b=c@d")]
   public void FromFile_SpecialCharacters_PercentEncodesThemAndRoundTrips(
       string name, string encoded) {
-    // Arrange: a '%' in a path is no escape (protocol/workspace.md §7.1, RFC 8089).
+    // Arrange: a '%' in a path is no escape (protocol/state.json.md, RFC 8089).
     string path = OperatingSystem.IsWindows() ? $@"C:\ws\{name}\x" : $"/ws/{name}/x";
     string uri = OperatingSystem.IsWindows()
         ? $"file:///C:/ws/{encoded}/x"

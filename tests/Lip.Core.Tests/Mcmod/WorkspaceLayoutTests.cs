@@ -2,8 +2,8 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// The layout (protocol/workspace.md §2): mods in mods/, a directory. plugins/ is an ordinary
-/// path.
+/// The layout (protocol/lip-workspace.md, "Environment and layout"): mods in mods/, a directory.
+/// plugins/ is an ordinary path.
 public class WorkspaceLayoutTests {
   private const string Lib = "example.com/lib";
   private const string Demo = "example.com/demo";

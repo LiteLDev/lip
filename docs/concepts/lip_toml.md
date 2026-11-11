@@ -3,7 +3,7 @@
 A lip package is an archive with a **package file**, `lip.toml`, at its root. `lip.toml` names the
 package, gives its version, and describes, for each variant, side and platform, what lip
 installs: the dependencies, the files to place, the mod to install and the commands to run.
-The normative definition is the [package protocol](https://github.com/LiteLDev/lip/blob/main/protocol/package.md).
+The normative definition is the [lip.toml(5)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.toml.md) page of the protocol.
 
 `lip.toml` is a [TOML 1.0](https://toml.io/en/v1.0.0) file of format 4, described by the JSON Schema
 [`lip.schema.toml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.toml), written as TOML.

@@ -6,7 +6,7 @@ using Lip.Core.Mcmod.Compat;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// lip migrate on a package repository (protocol/compatibility.md §5).
+/// lip migrate on a package repository (protocol/lip-compatibility.md, "lip migrate").
 public class RepositoryMigratorTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -168,7 +168,8 @@ public class RepositoryMigratorTests {
 
   [Fact]
   public async Task Migrate_Placements_AreConvertedWhateverTheFilesOfTheRepository() {
-    // Arrange: as protocol/compatibility.md §2 converts them, whether they match files or not.
+    // Arrange: as protocol/lip-compatibility.md, "tooth.json" converts them, whether they match
+    // files or not.
     AddFile("tooth.json", $$"""
         {
           "format_version": 3,
@@ -235,7 +236,8 @@ public class RepositoryMigratorTests {
 
   [Fact]
   public async Task Migrate_OtherFiles_AreNotTouched() {
-    // Arrange: only lip.toml is written and tooth.json deleted (protocol/compatibility.md §5).
+    // Arrange: only lip.toml is written and tooth.json deleted (protocol/lip-compatibility.md, "lip
+    // migrate").
     AddFile("tooth.json", _packageTooth);
     AddFile(".tooth.json.tmp", "mine");
 

@@ -18,8 +18,8 @@ public interface ICausalResolver : IResolver {
       Action<ResolveDiagnostic> onDiagnostic);
 }
 
-/// Resolve(source, range, environment) (protocol/package.md §4), reading an archive without a
-/// package file as protocol/compatibility.md §2 does.
+/// Resolve(source, range, environment) (protocol/lip-package.md, "Resolution"), reading an archive
+/// without a package file as protocol/lip-compatibility.md, "tooth.json" does.
 ///
 /// One instance caches archives, version lists and package files by archive key, so a source
 /// reached on several paths (or resolved again by the graph solver) is fetched and read once.
@@ -48,7 +48,8 @@ public class Resolver(
   private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _commits = new();
 
   /// Makes a version ref resolve to the commit a workspace recorded for it, as updating it gives
-  /// the same commit even when its tag has moved since (protocol/workspace.md §5, "Updating").
+  /// the same commit even when its tag has moved since (protocol/lip-workspace.md, "Operations",
+  /// "Updating").
   public void PinCommit(Ref reference, string commit) {
     if (reference is { Kind: RefKind.Spec, GitRef: { Kind: GitRefKind.Version } gitRef }) {
       _commits.TryAdd(
@@ -145,8 +146,8 @@ public class Resolver(
     }
   }
 
-  /// Step 1 for a remote repository with a ref (protocol/package.md §2.1): the single archive of
-  /// the commit the ref selects. Only a version tag gives it a tag version.
+  /// Step 1 for a remote repository with a ref (protocol/lip-package.md, "Remote repositories"):
+  /// the single archive of the commit the ref selects. Only a version tag gives it a tag version.
   private async Task<Candidate?> ResolvePinned(Walk walk, GitRef gitRef) {
     Ref source = walk.Source;
     ArchiveHandle archive;
@@ -192,8 +193,8 @@ public class Resolver(
       return null;
     }
 
-    // protocol/package.md §2.1: the git archive of a remote repository is a package of its own
-    // package id, whose version is the tag version, if any.
+    // protocol/lip-package.md, "Remote repositories": the git archive of a remote repository is a
+    // package of its own package id, whose version is the tag version, if any.
     string fileName = document.IsLegacy ? Compat.ToothCompat.ToothFileName : PackageFormat.FileName;
     if (source.Kind == RefKind.Spec && !PackageNames.AreEqual(document.Id, source.Target)) {
       walk.Report(archive.Key,
@@ -211,8 +212,8 @@ public class Resolver(
         return null;
       }
 
-      // protocol/compatibility.md §2: the version of a package read from a tooth.json is its tag
-      // version.
+      // protocol/lip-compatibility.md, "tooth.json": the version of a package read from a
+      // tooth.json is its tag version.
       if (SemVersion.PrecedenceComparer.Compare(version, tagVersion) != 0
           && _warned.TryAdd(archive.Key, 0)) {
         _onWarning($"{archive.Key}: its tooth.json declares the version {version}, but it is"

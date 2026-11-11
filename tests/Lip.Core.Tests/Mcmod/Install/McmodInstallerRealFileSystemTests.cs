@@ -10,8 +10,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Install;
 
-/// Installing and uninstalling a mod on the real file system (protocol/workspace.md §2, §4), with
-/// the real command runner.
+/// Installing and uninstalling a mod on the real file system (protocol/lip-workspace.md,
+/// "Environment and layout" and "Installing and uninstalling"), with the real command runner.
 public class McmodInstallerRealFileSystemTests : IDisposable {
   private const string ModUrl = "https://example.com/LegacyMoney.mcmod";
 
@@ -108,7 +108,8 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
   }
 
   // 8.3 short names (Windows): a path through the short name of a directory names what the long
-  // name does, so the write rules and purge see it by its long name (protocol/workspace.md §4).
+  // name does, so the write rules and purge see it by its long name (protocol/lip-workspace.md,
+  // "Installing and uninstalling").
 
   [Fact]
   public async Task Install_DestThroughShortNameOfLip_ThrowsWithoutWriting() {
@@ -318,7 +319,7 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
 
   // A file system that ignores case (Windows, macOS by default): a path spelled in another case
   // names what the path does, so the write rules and purge see it as the file system spells it
-  // (protocol/workspace.md §4).
+  // (protocol/lip-workspace.md, "Installing and uninstalling").
 
   [Fact]
   public async Task Install_DestInLipSpelledInAnotherCase_ThrowsWithoutWriting() {

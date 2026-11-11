@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace Lip.Core.Mcmod;
 
-/// The forms of a source (protocol/package.md §2).
+/// The forms of a source (protocol/lip-package.md, "Sources").
 public enum RefKind {
   /// "https://..." naming a ZIP archive (a URL).
   Url,
@@ -15,7 +15,7 @@ public enum RefKind {
   Spec,
 
   /// "file:///..." naming a local ZIP file or a local directory (a local path). Requests have
-  /// local paths as the file: URI of their absolute path (protocol/cli.md §3).
+  /// local paths as the file: URI of their absolute path (protocol/lip.md, "Package arguments").
   File,
 }
 
@@ -27,8 +27,8 @@ public enum GitRefKind {
   Rev,
 }
 
-/// The ref of a remote repository (protocol/package.md §2.1): a version, "branch:" name,
-/// "tag:" name or "rev:" commit id.
+/// The ref of a remote repository (protocol/lip-package.md, "Remote repositories"): a version,
+/// "branch:" name, "tag:" name or "rev:" commit id.
 public sealed partial record GitRef {
   private GitRef(GitRefKind kind, string name) {
     Kind = kind;
@@ -123,8 +123,8 @@ public sealed partial record GitRef {
   private static partial Regex CommitIdRegex();
 }
 
-/// A source (protocol/package.md §2): target [ "#" variant ], where a remote repository may be
-/// followed by [ "@" ref ] after the variant.
+/// A source (protocol/lip-package.md, "Sources"): target [ "#" variant ], where a remote repository
+/// may be followed by [ "@" ref ] after the variant.
 public partial record Ref {
   private const string _fileScheme = "file:";
   private static readonly UTF8Encoding _strictUtf8 = new(false, true);

@@ -9,7 +9,7 @@ using Lip.Core.Tests.Infrastructure;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// lip pack (protocol/cli.md §5.11).
+/// lip pack (protocol/lip-pack.md).
 public class PackerTests {
   private static readonly string _root = OperatingSystem.IsWindows() ? @"C:\build" : "/build";
 
@@ -74,7 +74,7 @@ public class PackerTests {
 
   [Fact]
   public async Task WriteArchive_FileNamedLikeATemporaryOutput_IsPackedAndKept() {
-    // Arrange: only <FILE> itself is left out (protocol/cli.md §5.11).
+    // Arrange: only <FILE> itself is left out (protocol/lip-pack.md).
     MockFileSystem fs = new();
     string output = fs.Path.Join(_root, "out.mcmod");
     fs.AddFile(output + ".tmp", new MockFileData("mine"));
@@ -147,8 +147,8 @@ public class PackerTests {
   public async Task WriteArchive_NameWithBackslash_ThrowsWithoutWriting(string path) {
     Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows names cannot contain '\\'.");
 
-    // Arrange: a ZIP entry cannot contain '\' (protocol/package.md §1), so the file cannot be
-    // packed at its own path (protocol/cli.md §5.11).
+    // Arrange: a ZIP entry cannot contain '\' (protocol/lip-package.md, "Terms"), so the file
+    // cannot be packed at its own path (protocol/lip-pack.md).
     FileSystem fs = new();
     string root = UnixFileTypeTests.MakeTempRootPath();
     string full = Path.Join(root, path);
@@ -171,7 +171,7 @@ public class PackerTests {
 
   [Fact]
   public async Task WriteArchive_OutputThroughALinkToTheDirectory_IsLeftOut() {
-    // Arrange: <FILE> is never part of the archive (protocol/cli.md §5.11), whatever path
+    // Arrange: <FILE> is never part of the archive (protocol/lip-pack.md), whatever path
     // reaches it; here a symbolic link (a junction on Windows) to <DIR>.
     FileSystem fs = new();
     string temp = UnixFileTypeTests.MakeTempRootPath();

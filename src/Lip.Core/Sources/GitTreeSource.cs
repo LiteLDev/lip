@@ -13,7 +13,7 @@ namespace Lip.Core.Sources;
 /// downloaded it into this instance's memory. Blob content is verified against its object id.
 ///
 /// Keys are '/'-separated paths relative to the root tree. Only regular files (modes
-/// 100644/100755) are exposed, as in a git archive (protocol/package.md §1).
+/// 100644/100755) are exposed, as in a git archive (protocol/lip-package.md, "Terms").
 public class GitTreeSource(IGitRemoteClient gitRemoteClient, Url repoUrl, string commitish) : ISource {
   private readonly IGitRemoteClient _gitRemoteClient = gitRemoteClient;
   private readonly Url _repoUrl = repoUrl;
@@ -121,7 +121,8 @@ public class GitTreeSource(IGitRemoteClient gitRemoteClient, Url repoUrl, string
         .FirstOrDefault() ?? oid);
   }
 
-  // ListTree is called at most once per instance unless it fails, in which case the next access retries.
+  // ListTree is called at most once per instance unless it fails, in which case the next access
+  // retries.
   private Task<IReadOnlyDictionary<string, string>> GetEntries() {
     lock (_entriesLock) {
       if (_entries is null || _entries.IsFaulted || _entries.IsCanceled) {

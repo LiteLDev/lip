@@ -14,7 +14,7 @@ using Lip.Core.Services;
 
 namespace Lip.Core.PublicApi;
 
-/// The commands of lip (protocol/cli.md §5), other than pack, over the services that carry them
+/// The commands of lip (protocol/lip.md), other than pack, over the services that carry them
 /// out.
 public sealed class LipClient {
   private readonly IFileSystem _fileSystem;
@@ -54,8 +54,8 @@ public sealed class LipClient {
       Create(new FileSystem(), userInteraction);
 
   /// A client whose commands read the configuration, migrating liprc.json
-  /// (protocol/compatibility.md §4), only when they first need it: commands that do not, such as
-  /// init, work whatever the configuration directory holds.
+  /// (protocol/lip-compatibility.md, "liprc.json"), only when they first need it: commands that do
+  /// not, such as init, work whatever the configuration directory holds.
   public static LipClient Create(IFileSystem fileSystem, IUserInteraction userInteraction) {
     ConfigService configService = new(fileSystem, userInteraction);
     CacheService cacheService = new(fileSystem, userInteraction);
@@ -116,7 +116,7 @@ public sealed class LipClient {
     await _configService.Set(key, value);
   }
 
-  /// Writes a lip.toml with one entry for the server on win-x64 (protocol/cli.md §5.7), asking
+  /// Writes a lip.toml with one entry for the server on win-x64 (protocol/lip-init.md), asking
   /// the user for its package id. Fails when lip.toml exists, or when the user cannot be asked.
   public async Task Init() {
     string path = PackageFormat.FileName;
@@ -183,7 +183,7 @@ public sealed class LipClient {
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependency packages,
-  /// in installation order (protocol/cli.md §5.4).
+  /// in installation order (protocol/lip-list.md).
   public async Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List() {
     IReadOnlyList<InstalledPackage> packages = await (await GetMcmodService()).List();
 
@@ -193,8 +193,8 @@ public sealed class LipClient {
   }
 
   /// Migrates the tooth.json of format 1, 2 or 3 in the current directory to a lip.toml
-  /// (RepositoryMigrator, protocol/compatibility.md §5), asking the user for missing values.
-  /// Everything dropped or converted with another meaning is reported as a warning.
+  /// (RepositoryMigrator, protocol/lip-compatibility.md, "lip migrate"), asking the user for
+  /// missing values. Everything dropped or converted with another meaning is reported as a warning.
   public async Task Migrate() {
     IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(
         _fileSystem, _fileSystem.Directory.GetCurrentDirectory(), _userInteraction);

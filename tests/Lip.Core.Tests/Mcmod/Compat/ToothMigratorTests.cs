@@ -10,8 +10,9 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Converting tooth.json of format 1–3 to a package file (lip migrate, protocol/compatibility.md
-/// §5), agreeing with protocol/compatibility.md §2.
+/// Converting tooth.json of format 1–3 to a package file (lip migrate,
+/// protocol/lip-compatibility.md, "lip migrate"), agreeing with protocol/lip-compatibility.md,
+/// "tooth.json".
 public class ToothMigratorTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -67,7 +68,7 @@ public class ToothMigratorTests {
   [Fact]
   public async Task Migrate_EverySelectedEntry_AgreesWithDerive() {
     // Arrange: for every environment the migrated file has an entry for, it holds what
-    // protocol/compatibility.md §2 derives.
+    // protocol/lip-compatibility.md, "tooth.json" derives.
     PackageManifest tooth = Parse($$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid3}}",
@@ -356,7 +357,8 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    // Assert: as protocol/compatibility.md §2 reads it, the variant has no entry for win-x64.
+    // Assert: as protocol/lip-compatibility.md, "tooth.json" reads it, the variant has no entry for
+    // win-x64.
     Assert.StartsWith(
         "variants (label '', win-x64).assets[0]: lip.toml has no asset type \"tar\"",
         Assert.Single(result.Notes));
@@ -553,7 +555,7 @@ public class ToothMigratorTests {
     ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
 
     // Assert
-    // The info of T without its avatar_url (protocol/compatibility.md §2).
+    // The info of T without its avatar_url (protocol/lip-compatibility.md, "tooth.json").
     Assert.StartsWith("info.avatar_url:", Assert.Single(result.Notes));
     Assert.Equal("{}", result.Document["info"]!.ToJsonString());
   }

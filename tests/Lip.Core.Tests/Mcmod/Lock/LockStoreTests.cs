@@ -6,7 +6,7 @@ using Lip.Core.Mcmod.Lock;
 
 namespace Lip.Core.Tests.Mcmod.Lock;
 
-/// The state file (protocol/workspace.md §7.1, state.schema.json).
+/// The state file (protocol/state.json.md, state.schema.json).
 public class LockStoreTests {
   private static readonly string _root = OperatingSystem.IsWindows()
       ? @"C:\lip-workspace"
@@ -219,7 +219,8 @@ public class LockStoreTests {
 
   [Fact]
   public async Task CommitStaged_FirstWorkspaceFileBesideToothLock_DeletesToothLock() {
-    // Arrange: the state file was derived from tooth_lock.json (protocol/compatibility.md §3).
+    // Arrange: the state file was derived from tooth_lock.json (protocol/lip-compatibility.md,
+    // "tooth_lock.json").
     string toothLock = _fs.Path.Join(_root, "tooth_lock.json");
     _fs.AddFile(toothLock, new MockFileData(_toothLock));
     await _store.Stage(_root, Lock());
@@ -358,9 +359,9 @@ public class LockStoreTests {
     Assert.True(package.Explicit);
   }
 
-  /// protocol/workspace.md §7.1: a workspace without a state file has no installed packages,
+  /// protocol/state.json.md: a workspace without a state file has no installed packages,
   /// whatever other files it has; a tooth_lock.json is read by McmodService
-  /// (protocol/compatibility.md §3).
+  /// (protocol/lip-compatibility.md, "tooth_lock.json").
   [Theory]
   [InlineData(".lip/lock.json")]
   [InlineData(".lip/workspace.json")]

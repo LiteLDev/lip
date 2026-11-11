@@ -6,8 +6,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// The package file at the root of an archive (protocol/package.md §1, §3), or its tooth.json
-/// (protocol/compatibility.md §2).
+/// The package file at the root of an archive (protocol/lip-package.md, "Terms";
+/// protocol/lip.toml.md), or its tooth.json (protocol/lip-compatibility.md, "tooth.json").
 public class ArchiveReaderTests {
   private static readonly LipEnvironment _environment =
       new(McmodSide.Server, WorkspaceHarness.Platform);

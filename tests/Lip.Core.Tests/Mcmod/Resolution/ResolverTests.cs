@@ -4,8 +4,9 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Resolution;
 
-/// Resolve(source, range, environment) (protocol/package.md §4), with package files and with
-/// tooth.json files (protocol/compatibility.md §2), over in-memory archives.
+/// Resolve(source, range, environment) (protocol/lip-package.md, "Resolution"), with package files
+/// and with tooth.json files (protocol/lip-compatibility.md, "tooth.json"), over in-memory
+/// archives.
 public class ResolverTests {
   private const string Spec = "github.com/user/pkg";
   private const string Url = "https://example.com/pkg.zip";
@@ -70,7 +71,7 @@ public class ResolverTests {
   private static string MarkerOf(Candidate candidate) =>
       Assert.Single(candidate.Package.Entry.Dependencies).Source.Target["example.com/marker/".Length..];
 
-  // Entries (protocol/package.md §4 step 2)
+  // Entries (protocol/lip-package.md, "Resolution" step 2)
 
   [Fact]
   public async Task Resolve_Url_SelectsEntryOfExactSideAndPlatform() {
@@ -246,7 +247,7 @@ public class ResolverTests {
     Assert.Single(second.Candidates);
   }
 
-  // Remote repositories (protocol/package.md §2.1)
+  // Remote repositories (protocol/lip-package.md, "Remote repositories")
 
   [Fact]
   public async Task Resolve_RemoteRepository_TakesEveryVersionTagInPrecedenceOrder() {
@@ -368,7 +369,7 @@ public class ResolverTests {
     Assert.Empty(_warnings);
   }
 
-  // Ranges (protocol/package.md §1: SemVersionRange.Parse semantics)
+  // Ranges (protocol/lip-package.md, "Terms": SemVersionRange.Parse semantics)
 
   [Theory]
   [InlineData(">=1.0.0 <2.0.0", "1.5.0,1.0.0")]
@@ -454,7 +455,7 @@ public class ResolverTests {
     Assert.Equal(1, _archives.ListCount);
   }
 
-  // Refs (protocol/package.md §2.1)
+  // Refs (protocol/lip-package.md, "Remote repositories")
 
   [Fact]
   public async Task Resolve_VersionRef_OpensCommitOfTagByIdentity() {
@@ -592,7 +593,8 @@ public class ResolverTests {
 
   [Fact]
   public async Task PinCommit_VersionRef_ResolvesToRecordedCommitAfterTagMoved() {
-    // Arrange (protocol/workspace.md §5: @<version> gives the same commit when updating)
+    // Arrange (protocol/lip-workspace.md, "Operations": @<version> gives the same commit when
+    // updating)
     string recorded = _archives.AddTag(Spec, "v1.0.0", Simple4(Spec, "1.0.0"));
     _archives.AddTag(Spec, "v1.0.0", Simple4(Spec, "1.0.0"));
     Resolver resolver = CreateResolver();
@@ -611,7 +613,8 @@ public class ResolverTests {
   [InlineData("branch:main")]
   [InlineData("tag:v1.0.0")]
   public async Task PinCommit_BranchOrTagRef_IsIgnored(string gitRef) {
-    // Arrange (protocol/workspace.md §5: branch: and tag: give the commit they point to now)
+    // Arrange (protocol/lip-workspace.md, "Operations": branch: and tag: give the commit they point
+    // to now)
     string old = _archives.AddTag(Spec, "v1.0.0", Simple4(Spec, "1.0.0"));
     _archives.AddBranch(Spec, "main", Simple4(Spec, "1.0.0"));
     string now = _archives.AddTag(Spec, "v1.0.0", Simple4(Spec, "1.0.0"));
@@ -626,7 +629,7 @@ public class ResolverTests {
     Assert.Equal(now, Assert.Single(result.Candidates).Archive.Commit);
   }
 
-  // tooth.json (protocol/compatibility.md §2)
+  // tooth.json (protocol/lip-compatibility.md, "tooth.json")
 
   [Fact]
   public async Task Resolve_Format3_DerivesEntryForEnvironment() {

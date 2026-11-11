@@ -3,11 +3,11 @@ using Lip.Core.Sources;
 namespace Lip.Core.Mcmod.Install;
 
 /// What installing or uninstalling one package does to the workspace, planned and checked before
-/// anything changes (protocol/workspace.md §4). Name: the package name, for messages. Root: the absolute
-/// workspace root, where scripts run. OwnedFiles: for an install, the files the package owns
-/// afterwards (workspace-relative, '/'-separated) when the workspace is as planned; hook commands
-/// may change which files matching preserve are kept, and McmodInstaller.Apply returns the files
-/// it owns as it happened.
+/// anything changes (protocol/lip-workspace.md, "Installing and uninstalling"). Name: the package
+/// name, for messages. Root: the absolute workspace root, where scripts run. OwnedFiles: for an
+/// install, the files the package owns afterwards (workspace-relative, '/'-separated) when the
+/// workspace is as planned; hook commands may change which files matching preserve are kept, and
+/// McmodInstaller.Apply returns the files it owns as it happened.
 public sealed record PackagePlan(
     string Name,
     string Root,
@@ -20,11 +20,11 @@ public sealed record PackagePlan(
   /// Whether the plan runs a hook command.
   public bool RunsHooks => Steps.OfType<ScriptStep>().Any(s => s.Commands.Count > 0);
 
-  /// Whether the plan may change the workspace (protocol/workspace.md §1): it writes a file,
-  /// deletes a file or a directory, or, when hook commands of the operation run
-  /// (hooksRun), writes a file planned to be kept or deletes what they leave matching when it
-  /// runs (§6 rule 4); without them the workspace stays as planned. Hook commands alone are no
-  /// change.
+  /// Whether the plan may change the workspace (protocol/lip-workspace.md, "Terms"): it writes a
+  /// file, deletes a file or a directory, or, when hook commands of the operation run (hooksRun),
+  /// writes a file planned to be kept or deletes what they leave matching when it runs
+  /// (protocol/lip-workspace.md, "Atomicity" rule 4); without them the workspace stays as planned.
+  /// Hook commands alone are no change.
   public bool MayChange(bool hooksRun) => Steps.Any(s => s switch {
     WriteStep w => hooksRun || !w.PlannedKeep,
     DeleteFileStep or DeleteDirectoryStep => true,
@@ -58,8 +58,8 @@ public sealed record DeleteFileStep(string FullPath) : PlannedStep;
 public sealed record DeleteDirectoryStep(string FullPath) : PlannedStep;
 
 /// Deletes what uninstallation steps 2–4 match when it runs but the plan did not foresee, such as
-/// files that hook commands created (protocol/workspace.md §6 rule 4): the owned files not
-/// matching preserve, and the paths matching purge, except what another package owns then.
-/// Paths are relative.
+/// files that hook commands created (protocol/lip-workspace.md, "Atomicity" rule 4): the owned
+/// files not matching preserve, and the paths matching purge, except what another package owns
+/// then. Paths are relative.
 public sealed record DeleteMatchesStep(
     IReadOnlyList<string> OwnedFiles, IReadOnlyList<PathGlob> Purge) : PlannedStep;

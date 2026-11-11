@@ -1,9 +1,10 @@
 namespace Lip.Core.Mcmod.Install;
 
 /// Which package owns each file of the workspace while an operation is applied
-/// (protocol/workspace.md §4): the files of the installed packages, less those of the packages
-/// uninstalled so far, and the files written so far. Paths are workspace-relative, '/'-separated
-/// and by their long names (McmodInstaller.Owners); they are compared ignoring case on Windows.
+/// (protocol/lip-workspace.md, "Installing and uninstalling"): the files of the installed packages,
+/// less those of the packages uninstalled so far, and the files written so far. Paths are
+/// workspace-relative, '/'-separated and by their long names (McmodInstaller.Owners); they are
+/// compared ignoring case on Windows.
 public sealed class FileOwners {
   private readonly Dictionary<string, string> _owners = new(WorkspaceLayout.PathComparer);
 

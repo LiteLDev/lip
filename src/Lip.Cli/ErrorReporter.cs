@@ -15,7 +15,7 @@ using Spectre.Console.Cli;
 namespace Lip.Cli;
 
 /// Tells the user why a command failed, in plain words with what to do about it, and writes
-/// everything known about the failure to a failure report below .lip/logs (protocol/cli.md §2).
+/// everything known about the failure to a failure report below .lip/logs (protocol/lip.md).
 public static class ErrorReporter {
   private const string IssuesUrl = "https://github.com/LiteLDev/lip/issues";
   private const int KeptReports = 20;

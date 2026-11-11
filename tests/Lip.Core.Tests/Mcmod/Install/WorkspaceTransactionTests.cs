@@ -74,8 +74,8 @@ public class WorkspaceTransactionTests {
 
   [Fact]
   public async Task Rollback_BackupDeletedByOthers_KeepsTheFileCreatedInItsPlace() {
-    // Arrange: e.g. a hook command deleted the backup of replace.txt (protocol/workspace.md
-    // §7.5, "CreateFile").
+    // Arrange: e.g. a hook command deleted the backup of replace.txt (protocol/journal.md,
+    // "Recovery", "CreateFile").
     using WorkspaceTransaction transaction = new(_fs, _journal);
     using MemoryStream content = new("new"u8.ToArray());
     await transaction.WriteFile(
@@ -179,7 +179,7 @@ public class WorkspaceTransactionTests {
 
   [Fact]
   public void Journal_BackupOfNameStartingWithDot_IsNotHidden() {
-    // Arrange: "hidden" is the Windows hidden attribute (protocol/workspace.md §7.3), though off
+    // Arrange: "hidden" is the Windows hidden attribute (protocol/journal.md), though off
     // Windows .NET reports every name starting with '.' as hidden.
     string root = UnixFileTypeTests.MakeTempRootPath();
     string journalPath = Path.Join(root, ".lip", "journal");
@@ -212,7 +212,7 @@ public class WorkspaceTransactionTests {
     transaction.Commit();
     string journal = _fs.File.ReadAllText(_journal);
 
-    // Assert: protocol/workspace.md §7.3 gives "Commit" no members, "hidden" only to "Backup".
+    // Assert: protocol/journal.md gives "Commit" no members, "hidden" only to "Backup".
     Assert.EndsWith("""{"op":"Commit"}""" + "\n", journal);
     Assert.All(
         journal.Split('\n').Where(l => l.Contains("\"hidden\"", StringComparison.Ordinal)),
@@ -315,8 +315,9 @@ public class WorkspaceTransactionTests {
 
   [Fact]
   public void Rollback_AfterCommitOfOnlyHookCommands_DeletesTheJournal() {
-    // Arrange: an operation of only hook commands has a journal with no change (§7.4); then
-    // the state file cannot be renamed into place (step 9).
+    // Arrange: an operation of only hook commands has a journal with no change
+    // (protocol/lip-workspace.md, "Carrying out an operation"); then the state file cannot be
+    // renamed into place (step 9).
     using WorkspaceTransaction transaction = new(_fs, _journal);
     transaction.Begin();
     transaction.Commit();
@@ -324,7 +325,7 @@ public class WorkspaceTransactionTests {
     // Act
     IReadOnlyList<Exception> errors = transaction.Rollback(() => { });
 
-    // Assert: every record was undone, so the journal is deleted (§7.5).
+    // Assert: every record was undone, so the journal is deleted (protocol/journal.md, "Recovery").
     Assert.Empty(errors);
     Assert.False(_fs.File.Exists(_journal));
   }
@@ -333,8 +334,8 @@ public class WorkspaceTransactionTests {
   public void Recover_NameWithBackslashOffWindows_RestoresIt() {
     Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows names cannot contain '\\'.");
 
-    // Arrange: off Windows '\' is a character of a name, not a separator (protocol/workspace.md
-    // §7.3: the paths of the journal are '/'-separated).
+    // Arrange: off Windows '\' is a character of a name, not a separator (protocol/journal.md: the
+    // paths of the journal are '/'-separated).
     string root = UnixFileTypeTests.MakeTempRootPath();
     string journalPath = Path.Join(root, ".lip", "journal");
     Directory.CreateDirectory(Path.Join(root, "logs"));
@@ -417,7 +418,7 @@ public class WorkspaceTransactionTests {
         () => journalWhenDiscarding = _fs.File.ReadAllText(_journal));
 
     // Assert: the journal lost its "Commit" record before the staged state file was
-    // discarded (protocol/workspace.md §7.4).
+    // discarded (protocol/lip-workspace.md, "Carrying out an operation").
     Assert.Empty(errors);
     Assert.NotNull(journalWhenDiscarding);
     Assert.DoesNotContain("\"op\":\"Commit\"", journalWhenDiscarding, StringComparison.Ordinal);
@@ -439,7 +440,7 @@ public class WorkspaceTransactionTests {
     IReadOnlyList<Exception> errors = transaction.Rollback(() => discarded = true);
 
     // Assert: nothing is undone and the journal still commits, so that recovery completes the
-    // operation (protocol/workspace.md §7.4).
+    // operation (protocol/lip-workspace.md, "Carrying out an operation").
     Assert.Contains(errors, e => e.Message.Contains("journal"));
     Assert.False(discarded);
     Assert.Equal(committed, Snapshot());

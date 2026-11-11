@@ -10,15 +10,15 @@ namespace Lip.Core.Services;
 
 /// Reads and writes the user configuration, &lt;Config&gt;/config.toml: a TOML file
 /// (protocol/README.md) with "format" 4 and a mapping of the configuration keys to their values
-/// (protocol/userspace.md §2, config.schema.toml). The only configuration key is github_proxy; an
+/// (protocol/config.toml.md, config.schema.toml). The only configuration key is github_proxy; an
 /// absent key has its default value, none. A missing, unreadable or invalid config.toml means
 /// every key has its default.
 ///
 /// lip v0.x kept the configuration in &lt;Config&gt;/liprc.json. When config.toml is missing and
 /// liprc.json is a JSON object whose format_version, when present, is 3 (lip before February 2026
 /// wrote none), its configuration is written atomically as config.toml before it is read, and
-/// liprc.json is deleted (protocol/compatibility.md §4). Any other liprc.json is kept, and every
-/// key has its default.
+/// liprc.json is deleted (protocol/lip-compatibility.md, "liprc.json"). Any other liprc.json is
+/// kept, and every key has its default.
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
   private const string _githubProxyKey = "github_proxy";
 
@@ -134,9 +134,9 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     }
   }
 
-  /// Migrates liprc.json to config.toml (protocol/compatibility.md §4). Returns the github_proxy
-  /// it holds; null when it holds none, or when there is no liprc.json or it is not one that
-  /// Section 4 reads, which is kept.
+  /// Migrates liprc.json to config.toml (protocol/lip-compatibility.md, "liprc.json"). Returns the
+  /// github_proxy it holds; null when it holds none, or when there is no liprc.json or it is not
+  /// one that Section 4 reads, which is kept.
   private async Task<string?> MigrateLiprc() {
     if (!_fileSystem.File.Exists(_liprcPath)) {
       RunTrace.Write("config", $"{_liprcPath} does not exist either; using the defaults");
@@ -184,7 +184,7 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     return githubProxy;
   }
 
-  /// Writes config.toml atomically (protocol/userspace.md §2, protocol/README.md): with "format",
+  /// Writes config.toml atomically (protocol/config.toml.md, protocol/README.md): with "format",
   /// without the keys at their default; the whole content goes to a uniquely named .tmp file in
   /// the config directory, which is then renamed over config.toml.
   private async Task SaveConfig(string? githubProxy) {

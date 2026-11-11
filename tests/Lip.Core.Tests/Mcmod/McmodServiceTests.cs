@@ -8,8 +8,10 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// End-to-end tests of install, uninstall, update and list (protocol/cli.md §5.1–§5.4,
-/// protocol/workspace.md §3–§5 and §7.1) through the whole pipeline of WorkspaceHarness.
+/// End-to-end tests of install, uninstall, update and list (protocol/lip-install.md,
+/// protocol/lip-uninstall.md, protocol/lip-update.md, protocol/lip-list.md,
+/// protocol/lip-workspace.md, protocol/state.json.md) through the whole pipeline of
+/// WorkspaceHarness.
 public class McmodServiceTests {
   private const string Lib = "example.com/lib";
   private const string App = "example.com/app";
@@ -244,7 +246,7 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Install([Lib], _options);
 
-    // Assert: it only becomes explicitly installed (protocol/cli.md §5.1).
+    // Assert: it only becomes explicitly installed (protocol/lip-install.md).
     LockedPackage lib = (await _ws.Lock()).Packages.Single(p => p.Id == Lib);
     Assert.Equal((true, "1.0.0", Lib), (lib.Explicit, lib.Version, lib.Source));
     Assert.Equal("lib 1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
@@ -265,7 +267,7 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Install(["example.com/b"], _options);
 
-    // Assert: only e changes version (protocol/cli.md §5.1).
+    // Assert: only e changes version (protocol/lip-install.md).
     Assert.Equal(
         [("example.com/d", "1.0.0"), ("example.com/e", "2.0.0")],
         (await _ws.Service.List()).Where(p => !p.Explicit).Select(p => (p.Identity, p.Version)));
@@ -351,7 +353,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([$"{Lib}@1.1.0"], _options with { NoDependencies = true });
 
     // Assert: lib still satisfies the dependency of app, so it comes first
-    // (protocol/workspace.md §5, §7.1).
+    // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
     Assert.Equal([Lib, App], (await _ws.Lock()).Packages.Select(p => p.Identity));
   }
 
@@ -399,7 +401,7 @@ public class McmodServiceTests {
     await _ws.Service.Install([zeta, alpha], _options with { NoDependencies = true });
 
     // Assert: the three are a cycle, installed and recorded in ascending order of identities
-    // (protocol/workspace.md §5, §7.1).
+    // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
     Assert.Collection(
         installed,
         m => Assert.Contains($"'{alpha}'", m),
@@ -425,7 +427,7 @@ public class McmodServiceTests {
     await _ws.Service.Uninstall([b], _options with { NoDependencies = true });
 
     // Assert: without b, c satisfies the dependency of a and comes first
-    // (protocol/workspace.md §5, §7.1).
+    // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
     Assert.Equal([c, a], (await _ws.Lock()).Packages.Select(p => p.Identity));
   }
 
@@ -442,7 +444,7 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Install([Lib], _options with { NoDependencies = true, DryRun = true });
 
-    // Assert: protocol/cli.md §5.1, a dry run reports the packages it would mark as explicitly
+    // Assert: protocol/lip-install.md, a dry run reports the packages it would mark as explicitly
     // installed.
     Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{Lib}'"));
     Assert.False((await _ws.Lock()).Packages.Single(p => p.Id == Lib).Explicit);
@@ -697,7 +699,8 @@ public class McmodServiceTests {
 
   [Fact]
   public async Task Uninstall_SourceWithoutVariant_MatchesEveryVariant() {
-    // Arrange: the identities are lib#a and lib#b, so only rule 2 of protocol/cli.md §5.2 matches.
+    // Arrange: the identities are lib#a and lib#b, so only rule 2 of protocol/lip-uninstall.md
+    // matches.
     AddVariantsPackage();
     await _ws.Service.Install([$"{Lib}#a", $"{Lib}#b"], _options);
 
@@ -773,7 +776,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Uninstall_ByLocalPathInOtherCase_RemovesPackageInstalledFromIt() {
     // Elsewhere "./SRC" names no existing path, so it is an invalid package argument
-    // (protocol/cli.md §3).
+    // (protocol/lip.md, "Package arguments").
     Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows paths are case-insensitive.");
 
     // Arrange
@@ -791,7 +794,8 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_PreservedFileDeletedByPreInstall_RecordsItAsOwned() {
     // Arrange: the file matching preserve exists when the operation is planned, but pre_install
-    // deletes it, so it is written and owned (protocol/workspace.md §4).
+    // deletes it, so it is written and owned (protocol/lip-workspace.md, "Installing and
+    // uninstalling").
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
@@ -829,7 +833,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_PreInstallBeforeAnyChange_RunsWithTheJournal() {
     // Arrange: mods exists, so pre_install is the first thing the operation does; the journal
-    // exists before it runs (protocol/workspace.md §7.4 steps 5 and 6).
+    // exists before it runs (protocol/lip-workspace.md, "Carrying out an operation" steps 5 and 6).
     _ws.Fs.Directory.CreateDirectory(_ws.Path("mods"));
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
@@ -854,7 +858,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Uninstall_OnlyHookCommands_RunsThemWithTheJournal() {
     // Arrange: lib owns no file, so uninstalling it changes nothing but runs pre_uninstall
-    // (protocol/workspace.md §7.4 step 4 does not apply).
+    // (protocol/lip-workspace.md, "Carrying out an operation" step 4 does not apply).
     _ws.Fs.Directory.CreateDirectory(_ws.Path("mods"));
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
@@ -878,7 +882,8 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_PreservedFileWrittenAfterHookThenWrittenByAnother_FailsAndUndoes() {
     // Arrange: lib keeps cfg.ini as planned, but its pre_install deletes it, so lib writes and
-    // owns it; app, installed after lib, then writing it is a failure (protocol/workspace.md §4).
+    // owns it; app, installed after lib, then writing it is a failure (protocol/lip-workspace.md,
+    // "Installing and uninstalling").
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
@@ -910,8 +915,8 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_WriteOfFileWrittenByEarlierPackage_FailsAtTheWrite() {
     // Arrange: lib's pre_install deletes cfg.ini, which lib was to keep, so lib writes and owns
-    // it; app writing it then is the failure itself (protocol/workspace.md §4), so app's
-    // post_install never runs.
+    // it; app writing it then is the failure itself (protocol/lip-workspace.md, "Installing and
+    // uninstalling"), so app's post_install never runs.
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
@@ -946,8 +951,8 @@ public class McmodServiceTests {
   [Fact]
   public async Task Uninstall_PurgeMatchesFileThatEarlierHookRestored_DeletesIt() {
     // Arrange: app's post_uninstall restores server.exe, as LeviLamina restores
-    // bedrock_server.exe, before lib, uninstalled after it, purges it (protocol/workspace.md §6
-    // rule 4).
+    // bedrock_server.exe, before lib, uninstalled after it, purges it (protocol/lip-workspace.md,
+    // "Atomicity" rule 4).
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
           Lib, "1.0.0",
@@ -1013,7 +1018,8 @@ public class McmodServiceTests {
   [Fact]
   public async Task Uninstall_ByDeletedLocalPath_FailsWithoutChanges() {
     // Arrange: a local path that does not exist is an invalid package argument
-    // (protocol/cli.md §3), which names no installed package (§5.2).
+    // (protocol/lip.md, "Package arguments"), which names no installed package
+    // (protocol/lip-uninstall.md).
     string path = _ws.AddZip("x.zip", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
           "example.com/x", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
@@ -1031,8 +1037,8 @@ public class McmodServiceTests {
 
   [Fact]
   public async Task Uninstall_FileUriArgument_FailsWithoutChanges() {
-    // Arrange: an argument starting with "file://" is invalid (protocol/cli.md §3 rule 1), even
-    // when it is the recorded source.
+    // Arrange: an argument starting with "file://" is invalid (protocol/lip.md, "Package arguments"
+    // rule 1), even when it is the recorded source.
     AddLocalDirectory("src", "1.0.0", "x");
     await _ws.Service.Install(["./src"], _options);
     string source = Assert.Single((await _ws.Lock()).Packages).Source;
@@ -1220,7 +1226,7 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Update([], _options);
 
-    // Assert: same identity, version and commit (protocol/workspace.md §5).
+    // Assert: same identity, version and commit (protocol/lip-workspace.md, "Operations").
     Assert.Equal("1", _ws.Fs.File.ReadAllText(_ws.Path("d.txt")));
   }
 
@@ -1286,7 +1292,7 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Update([], _options);
 
-    // Assert: it differs in identity (protocol/workspace.md §5 "Updating").
+    // Assert: it differs in identity (protocol/lip-workspace.md, "Operations" "Updating").
     Assert.Equal(
         [("example.com/y", "1.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
@@ -1315,7 +1321,7 @@ public class McmodServiceTests {
     });
 
     // Act & Assert: both requests cannot be satisfied by one package of that identity
-    // (protocol/workspace.md §3).
+    // (protocol/lip-workspace.md, "Valid states").
     await Assert.ThrowsAsync<DependencyResolutionException>(
         () => _ws.Service.Update([], _options));
     Assert.Equal(
@@ -1346,7 +1352,7 @@ public class McmodServiceTests {
     await _ws.Service.Update([], _options);
 
     // Assert: one package satisfies both requests; b is not replaced, so it keeps its source
-    // (protocol/workspace.md §5).
+    // (protocol/lip-workspace.md, "Operations").
     Assert.Equal(
         [("example.com/b", "1.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
@@ -1375,8 +1381,8 @@ public class McmodServiceTests {
     });
     _ws.Fs.File.Delete(path);
 
-    // Act & Assert: b is kept as it is (protocol/cli.md §5.3), so a's request for b 2.0.0
-    // cannot be satisfied (protocol/workspace.md §3).
+    // Act & Assert: b is kept as it is (protocol/lip-update.md), so a's request for b 2.0.0
+    // cannot be satisfied (protocol/lip-workspace.md, "Valid states").
     await Assert.ThrowsAsync<DependencyResolutionException>(
         () => _ws.Service.Update([], _options));
     Assert.Equal(
@@ -1434,7 +1440,7 @@ public class McmodServiceTests {
     await _ws.Service.Update(withArgument ? [App] : [], _options);
 
     // Assert: a remote repository without a ref gives its highest version tag, and the dependency
-    // package gives way (protocol/workspace.md §5, protocol/cli.md §5.3).
+    // package gives way (protocol/lip-workspace.md, "Operations", protocol/lip-update.md).
     Assert.Equal(
         [(Lib, "1.1.0", false), (App, "2.0.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
@@ -1456,7 +1462,7 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Update(withArgument ? ["example.com/a"] : [], _options);
 
-    // Assert: d is updated only as far as Section 3 requires (protocol/cli.md §5.3).
+    // Assert: d is updated only as far as Section 3 requires (protocol/lip-update.md).
     Assert.Equal(
         [("example.com/d", "1.0.0", false), ("example.com/a", "1.1.0", true)],
         (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)));
@@ -1481,7 +1487,7 @@ public class McmodServiceTests {
     await _ws.Service.Update(withArgument ? ["./src"] : [], _options);
 
     // Assert: the package is not replaced, so its recorded package file, which needs lib, stays
-    // (protocol/workspace.md §3 rule 2 and §5).
+    // (protocol/lip-workspace.md, "Valid states" rule 2 and "Operations").
     LockFile after = await _ws.Lock();
     Assert.Equal(
         [(Lib, "1.0.0", false), ("example.com/local", "1.0.0", true)],
@@ -1497,7 +1503,8 @@ public class McmodServiceTests {
     AddLibAndApp();
     await _ws.Service.Install([Lib], _options);
 
-    // Act: lib 1.0.0 of lib@1.0.0 stands in for the request of lib (protocol/workspace.md §3).
+    // Act: lib 1.0.0 of lib@1.0.0 stands in for the request of lib (protocol/lip-workspace.md,
+    // "Valid states").
     await _ws.Service.Update([Lib, $"{Lib}@1.0.0"], _options);
 
     // Assert
@@ -1515,7 +1522,8 @@ public class McmodServiceTests {
     // Act
     await _ws.Service.Update([Lib, $"{Lib}@1.0.0"], _options);
 
-    // Assert: only its own candidates satisfy lib@1.0.0 (protocol/workspace.md §3).
+    // Assert: only its own candidates satisfy lib@1.0.0 (protocol/lip-workspace.md, "Valid
+    // states").
     LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal(("1.0.0", $"{Lib}@1.0.0"), (lib.Version, lib.Source));
   }
@@ -1526,7 +1534,8 @@ public class McmodServiceTests {
     AddLibAndApp();
     await _ws.Service.Install([Lib], _options);
 
-    // Act & Assert: no one package satisfies both requests (protocol/workspace.md §3).
+    // Act & Assert: no one package satisfies both requests (protocol/lip-workspace.md, "Valid
+    // states").
     await Assert.ThrowsAsync<DependencyResolutionException>(
         () => _ws.Service.Update([$"{Lib}@1.0.0", $"{Lib}@1.1.0"], _options));
     LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
@@ -1592,7 +1601,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_InstalledPackageWithoutEntryForThePlatform_FailsWithoutChanges() {
     // Arrange: lib has an entry for win-x64 only, so it is no candidate for linux-x64
-    // (protocol/workspace.md §3).
+    // (protocol/lip-workspace.md, "Valid states").
     AddLib("1.0.0");
     await _ws.Service.Install([Lib], _options);
     const string any = "example.com/any";
@@ -1641,13 +1650,13 @@ public class McmodServiceTests {
   [InlineData("https://example.com/lib.zip")]
   [InlineData("lib.zip")]
   public async Task Versions_NotARemoteRepositoryWithoutRef_Throws(string argument) {
-    // Act & Assert (protocol/cli.md §5.5)
+    // Act & Assert (protocol/lip-versions.md)
     await Assert.ThrowsAsync<ArgumentException>(() => _ws.Service.Versions(argument));
   }
 
   [Fact]
   public async Task Versions_ArgumentNamingAnExistingDirectory_IsALocalPathAndThrows() {
-    // Arrange: such an argument is a local path (protocol/cli.md §3 rule 2).
+    // Arrange: such an argument is a local path (protocol/lip.md, "Package arguments" rule 2).
     AddLib("1.0.0");
     _ws.Fs.AddDirectory(_ws.Path(Lib));
 
@@ -1684,7 +1693,8 @@ public class McmodServiceTests {
 
   [Fact]
   public async Task Install_PackageWritingNothing_CreatesNoMods() {
-    // Arrange: an install that writes no file makes no change (protocol/workspace.md §1 and §2).
+    // Arrange: an install that writes no file makes no change (protocol/lip-workspace.md, "Terms"
+    // and "Environment and layout").
     AddEmptyLib();
 
     // Act
@@ -1699,7 +1709,8 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_OnlyKeptPreservedFileModsIsALink_Succeeds() {
     // Arrange: the only file the package places exists and matches preserve, and no hook command
-    // runs, so it is kept and the operation makes no change (protocol/workspace.md §2, §4).
+    // runs, so it is kept and the operation makes no change (protocol/lip-workspace.md,
+    // "Environment and layout" and "Installing and uninstalling").
     _ws.AddFile("cfg.ini", "user");
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(
@@ -1735,7 +1746,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_OnlyHookCommands_RunsThemWithoutCreatingMods() {
     // Arrange: hook commands alone are no change, but they run with the journal
-    // (protocol/workspace.md §7.4).
+    // (protocol/lip-workspace.md, "Carrying out an operation").
     AddEmptyLib(""" "hooks": { "pre_install": [ "check" ] }""");
     bool? journalExisted = null;
     _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root))
@@ -1835,9 +1846,9 @@ public class McmodServiceTests {
 
   [Fact]
   public async Task Uninstall_PackageWithPurgeAndHooksModsIsALink_ThrowsWithoutChanges() {
-    // Arrange: purge matches when it runs (protocol/workspace.md §6 rule 4), after hook commands
-    // that may create what it matches, so it may change the workspace even when nothing matches
-    // now.
+    // Arrange: purge matches when it runs (protocol/lip-workspace.md, "Atomicity" rule 4), after
+    // hook commands that may create what it matches, so it may change the workspace even when
+    // nothing matches now.
     AddEmptyLib(""" "purge": [ "cache/" ], "hooks": { "pre_uninstall": [ "make-cache" ] }""");
     await _ws.Service.Install([Lib], _options);
     LinkMods();

@@ -5,10 +5,11 @@ using Lip.Core.Infrastructure;
 namespace Lip.Core.Mcmod.Compat;
 
 /// Migrates the tooth.json of a package repository, of format 1, 2 or 3, to a lip.toml (lip
-/// migrate, protocol/compatibility.md §5), by ToothMigrator.
+/// migrate, protocol/lip-compatibility.md, "lip migrate"), by ToothMigrator.
 ///
-/// - When lip.toml exists, or tooth.json is missing or is not one that protocol/compatibility.md
-///   §2 reads (PackageDocument.ParseToothJson), it is a failure, and nothing is changed.
+/// - When lip.toml exists, or tooth.json is missing or is not one that
+///   protocol/lip-compatibility.md, "tooth.json" reads (PackageDocument.ParseToothJson), it is a
+///   failure, and nothing is changed.
 /// - Questions are asked through IUserInteraction.Ask before anything is written, and a result
 ///   that is not a valid package file is a failure.
 /// - The templates of tooth.json are kept where they read back as migrated (ToothTemplates).

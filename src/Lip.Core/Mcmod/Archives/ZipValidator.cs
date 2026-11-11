@@ -3,9 +3,9 @@ using System.IO.Compression;
 
 namespace Lip.Core.Mcmod;
 
-/// Checks that a file is a valid ZIP archive in the sense of protocol/package.md §1: decided by content only,
-/// entry paths '/'-separated, not absolute, without '..' segments or '\', and only regular file
-/// and directory entries.
+/// Checks that a file is a valid ZIP archive in the sense of protocol/lip-package.md, "Terms":
+/// decided by content only, entry paths '/'-separated, not absolute, without '..' segments or '\',
+/// and only regular file and directory entries.
 public static class ZipValidator {
   private const int _unixFileTypeMask = 0xF000;
   private const int _unixRegularFile = 0x8000;

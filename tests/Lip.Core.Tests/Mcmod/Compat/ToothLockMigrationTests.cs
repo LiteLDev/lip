@@ -5,8 +5,8 @@ using Lip.Core.Mcmod.Compat;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// The tooth_lock.json of lip v0.x (protocol/compatibility.md §3), through the whole pipeline of
-/// WorkspaceHarness.
+/// The tooth_lock.json of lip v0.x (protocol/lip-compatibility.md, "tooth_lock.json"), through the
+/// whole pipeline of WorkspaceHarness.
 public class ToothLockMigrationTests {
   private const string Lib = "example.com/lib";
   private const string App = "example.com/app";

@@ -3,7 +3,7 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// Package arguments (protocol/cli.md §3).
+/// Package arguments (protocol/lip.md, "Package arguments").
 public class PackageArgumentsTests {
   private const string _commit = "0123456789abcdef0123456789abcdef01234567";
 

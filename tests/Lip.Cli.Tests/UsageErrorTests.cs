@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Lip.Cli.Tests;
 
-/// Invocation and usage errors (protocol/cli.md §1, §2), checked by running lip in an empty
+/// Invocation and usage errors (protocol/lip.md, "Terms"), checked by running lip in an empty
 /// directory: a usage error writes a message and exits with a non-zero code, without a failure
 /// report below .lip/logs.
 public sealed class UsageErrorTests : IDisposable {

@@ -2,7 +2,7 @@
 
 lip 包是根部带有**包文件** `lip.toml` 的归档。`lip.toml` 给出包的名称和版本，并针对每个变体、运行端和平台
 描述 lip 要安装的内容：依赖、要放置的文件、要安装的 mod 以及要运行的命令。
-规范性定义见[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md)。
+规范性定义见协议的 [lip.toml(5)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.toml.md) 页。
 
 `lip.toml` 是格式 4 的 [TOML 1.0](https://toml.io/cn/v1.0.0) 文件，由以 TOML 编写的 JSON Schema
 [`lip.schema.toml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.toml)

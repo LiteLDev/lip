@@ -11,7 +11,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Install;
 
-/// Installing and uninstalling packages of format 4 (protocol/workspace.md §4).
+/// Installing and uninstalling packages of format 4 (protocol/lip-workspace.md, "Installing and
+/// uninstalling").
 public class McmodInstallerTests {
   private const string Pack = "example.com/pack";
   private const string LegacyMoneyUrl = "https://example.com/LegacyMoney.mcmod";
@@ -199,7 +200,8 @@ public class McmodInstallerTests {
     Assert.Equal("nested", Read("resource_packs/pack/lip.toml"));
     Assert.Equal("a", Read("copy/assets/a.txt"));
     Assert.Equal("nested", Read("copy/assets/lip.toml"));
-    // The package file of the package is never written (protocol/workspace.md §4 step 2).
+    // The package file of the package is never written (protocol/lip-workspace.md, "Installing and
+    // uninstalling" step 2).
     Assert.False(Exists("copy/lip.toml"));
     Assert.Equal(6, owned.Count);
   }
@@ -300,8 +302,8 @@ public class McmodInstallerTests {
 
   [Fact]
   public async Task Install_ToothJsonOfArchiveWithoutPackageFile_IsNeverWritten() {
-    // Arrange: a package read from a tooth.json (protocol/compatibility.md §2) has it as its
-    // package file.
+    // Arrange: a package read from a tooth.json (protocol/lip-compatibility.md, "tooth.json") has
+    // it as its package file.
     Candidate candidate = Candidate(
         SelfPlacements(Placement("*.json", "cfg/")),
         new() { ["tooth.json"] = "{}", ["a.json"] = "a" });
@@ -557,7 +559,7 @@ public class McmodInstallerTests {
   public async Task Install_DestThroughNameWithTildeWhoseLongNameCannotBeRead_Throws() {
     // Arrange: "dir~1" exists, so it may be a short name, but the file system cannot give its
     // long name (the workspace exists only in memory); the write rules cannot be checked, so
-    // they fail (protocol/workspace.md §4).
+    // they fail (protocol/lip-workspace.md, "Installing and uninstalling").
     Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows has 8.3 short names.");
     _fs.AddDirectory(Full("dir~1"));
     Candidate candidate = Candidate(
@@ -859,7 +861,7 @@ public class McmodInstallerTests {
     IReadOnlyList<string> owned = await _installer.Install(candidate, Context(lockFile: lockFile));
 
     // Assert: a kept file is not written, so the package does not own it
-    // (protocol/workspace.md §4).
+    // (protocol/lip-workspace.md, "Installing and uninstalling").
     Assert.Equal(["mods/LegacyMoney/manifest.json"], owned);
     Assert.Equal("user", Read("mods/LegacyMoney/config/config.json"));
   }
@@ -884,7 +886,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PreservedFileDeletedByPreInstall_IsWrittenAndOwned() {
     // Arrange: whether the file exists is decided when it is written, after pre_install
-    // (protocol/workspace.md §4).
+    // (protocol/lip-workspace.md, "Installing and uninstalling").
     AddFile("cfg.ini", "user");
     Candidate candidate = Candidate(
         SelfPlacements(Placement("cfg.ini", "cfg.ini"))
@@ -924,7 +926,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Install_PreservedFileDeletedByPreInstall_FailureUndoesTheWrite() {
     // Arrange: the file written in place of the deleted one is undone; the deletion by the hook
-    // command is not (protocol/workspace.md §6 rule 3).
+    // command is not (protocol/lip-workspace.md, "Atomicity" rule 3).
     AddFile("cfg.ini", "user");
     Candidate candidate = Candidate(
         SelfPlacements(Placement("cfg.ini", "cfg.ini"))
@@ -1223,7 +1225,8 @@ public class McmodInstallerTests {
   public async Task Apply_PurgeMatchingFileAnEarlierPackageWrote_KeepsIt(string pattern) {
     // Arrange: a's preserved config/a.json exists when planned, but its pre_install deletes it,
     // so a writes and owns it; b, uninstalled later in the operation, purges config/. Whether
-    // another package owns a file is decided when it is deleted (protocol/workspace.md §4, §6).
+    // another package owns a file is decided when it is deleted (protocol/lip-workspace.md,
+    // "Installing and uninstalling" and "Atomicity").
     AddFile("config/a.json", "user");
     AddFile("config/b.json", "b");
     Candidate a = Candidate(
@@ -1325,8 +1328,8 @@ public class McmodInstallerTests {
   [InlineData("**/mods")]
   public async Task Uninstall_PurgeNamingLayoutDirectories_RemovesNothingThroughThem(
       string pattern) {
-    // Arrange: a path below mods does not match only because mods does (protocol/workspace.md
-    // §4).
+    // Arrange: a path below mods does not match only because mods does (protocol/lip-workspace.md,
+    // "Installing and uninstalling").
     Candidate candidate = Candidate($$""" "purge": [ "{{pattern}}" ] """);
     AddFile("mods/Other/other.dll", "dll");
     AddFile("mods/readme.txt", "text");
@@ -1343,7 +1346,7 @@ public class McmodInstallerTests {
   [Fact]
   public async Task Uninstall_PurgeOfEveryDirectory_RemovesBelowModsOnlyWhatMatchesItself() {
     // Arrange: "**/*/" matches mods/Other/ itself, but mods/readme.txt only through mods
-    // (protocol/workspace.md §4).
+    // (protocol/lip-workspace.md, "Installing and uninstalling").
     Candidate candidate = Candidate(""" "purge": [ "**/*/" ] """);
     AddFile("mods/Other/other.dll", "dll");
     AddFile("mods/readme.txt", "text");
@@ -1544,7 +1547,8 @@ public class McmodInstallerTests {
   }
 }
 
-/// Assets downloaded through the archive provider (protocol/workspace.md §4 step 2).
+/// Assets downloaded through the archive provider (protocol/lip-workspace.md, "Installing and
+/// uninstalling" step 2).
 public class McmodInstallerAssetDownloadTests {
   private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 

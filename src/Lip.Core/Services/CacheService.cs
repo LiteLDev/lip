@@ -13,8 +13,8 @@ public interface ICacheService {
   Task<IFileInfo?> TryGetFile(string key);
 }
 
-/// The lip cache (protocol/userspace.md §3). Failures of the file system are IOExceptions or
-/// UnauthorizedAccessExceptions naming the cache path; failures of a factory are passed on as
+/// The lip cache (protocol/lip-userspace.md, "Cache"). Failures of the file system are IOExceptions
+/// or UnauthorizedAccessExceptions naming the cache path; failures of a factory are passed on as
 /// they are.
 public class CacheService(IFileSystem fileSystem, IUserInteraction userInteraction) : ICacheService {
   private readonly IDirectoryInfo _cacheDirectory =
@@ -61,8 +61,8 @@ public class CacheService(IFileSystem fileSystem, IUserInteraction userInteracti
     }
   }
 
-  /// Writes a missing entry atomically (protocol/userspace.md §3): the factory writes a uniquely
-  /// named &lt;N&gt;.tmp file in the cache directory, which is then renamed to the entry.
+  /// Writes a missing entry atomically (protocol/lip-userspace.md, "Cache"): the factory writes a
+  /// uniquely named &lt;N&gt;.tmp file in the cache directory, which is then renamed to the entry.
   public async Task<IFileInfo> GetOrCreateFile(string key, Func<IFileInfo, Task> factory) {
     IFileInfo cacheFile = GetCacheFile(key);
 

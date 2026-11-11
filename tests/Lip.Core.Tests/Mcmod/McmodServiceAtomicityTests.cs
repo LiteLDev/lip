@@ -4,9 +4,9 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// Operations are all or nothing (protocol/workspace.md §6): an early failure changes nothing and
-/// runs no hook command; a later failure undoes every change of the workspace, the layout and the
-/// state file.
+/// Operations are all or nothing (protocol/lip-workspace.md, "Atomicity"): an early failure changes
+/// nothing and runs no hook command; a later failure undoes every change of the workspace, the
+/// layout and the state file.
 public class McmodServiceAtomicityTests {
   private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 

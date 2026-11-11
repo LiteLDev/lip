@@ -6,7 +6,7 @@ using Lip.Core.Tests.Infrastructure;
 
 namespace Lip.Core.Tests.SourceProviders;
 
-/// Directory archives (protocol/package.md §1) on the real file system.
+/// Directory archives (protocol/lip-package.md, "Terms") on the real file system.
 public class DirectorySourceTests : IDisposable {
   private readonly string _root = UnixFileTypeTests.MakeTempRootPath();
 
@@ -58,7 +58,7 @@ public class DirectorySourceTests : IDisposable {
   public void Keys_NameWithBackslash_Throws(string path) {
     Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows names cannot contain '\\'.");
 
-    // Arrange: such a directory is not an archive (protocol/package.md §1).
+    // Arrange: such a directory is not an archive (protocol/lip-package.md, "Terms").
     string full = Path.Join(_root, path);
     Directory.CreateDirectory(Path.GetDirectoryName(full)!);
     File.WriteAllText(full, "x");

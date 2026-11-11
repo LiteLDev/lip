@@ -2,7 +2,7 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli;
 
-/// An argument a command does not take is a usage error (protocol/cli.md §1, §2): an unknown
+/// An argument a command does not take is a usage error (protocol/lip.md, "Terms"): an unknown
 /// option, or "--" and any argument after it, which lip does not define. Spectre.Console.Cli
 /// parses in relaxed mode and leaves unknown options in the remaining arguments; this rejects them
 /// before the command runs. "--" is rejected before parsing, by FindSeparator.

@@ -6,10 +6,11 @@ using Semver;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// The tooth_lock.json of lip v0.x at the root of a workspace (protocol/compatibility.md §3).
-/// A workspace without a state file whose tooth_lock.json is one Section 3 reads (Read) has
-/// the state file Section 3 derives from it for its environment (Derive). A workspace
-/// operation writes that state file, then deletes tooth_lock.json (LockStore.CommitStaged).
+/// The tooth_lock.json of lip v0.x at the root of a workspace (protocol/lip-compatibility.md,
+/// "tooth_lock.json"). A workspace without a state file whose tooth_lock.json is one Section 3
+/// reads (Read) has the state file Section 3 derives from it for its environment (Derive). A
+/// workspace operation writes that state file, then deletes tooth_lock.json
+/// (LockStore.CommitStaged).
 public static class ToothLockMigration {
   public const string FileName = "tooth_lock.json";
 
@@ -73,14 +74,14 @@ public static class ToothLockMigration {
     return members;
   }
 
-  /// The state file protocol/compatibility.md §3 derives from the members of a
-  /// tooth_lock.json for an environment: for each member whose manifest protocol/compatibility.md
-  /// §2 reads, for the environment, with a variant "variant", in installation order, a package
-  /// with that manifest, its variant, "locked" as explicit, the source "&lt;tooth&gt;[#variant]",
-  /// the commit commitOf gives for the tooth path and the version (the commit of the tag
-  /// "v&lt;version&gt;"; it fails when that is null), and the files below the workspace,
-  /// workspace-relative and '/'-separated. Without commitOf (for reading only), no commit is
-  /// recorded.
+  /// The state file protocol/lip-compatibility.md, "tooth_lock.json" derives from the members of a
+  /// tooth_lock.json for an environment: for each member whose manifest
+  /// protocol/lip-compatibility.md, "tooth.json" reads, for the environment, with a variant
+  /// "variant", in installation order, a package with that manifest, its variant, "locked" as
+  /// explicit, the source "&lt;tooth&gt;[#variant]", the commit commitOf gives for the tooth path
+  /// and the version (the commit of the tag "v&lt;version&gt;"; it fails when that is null), and
+  /// the files below the workspace, workspace-relative and '/'-separated. Without commitOf (for
+  /// reading only), no commit is recorded.
   public static async Task<LockFile> Derive(
       IReadOnlyList<Member> members,
       IFileSystem fs,
@@ -136,8 +137,8 @@ public static class ToothLockMigration {
           packageFile.Version));
     }
 
-    // Installation order (protocol/workspace.md §5): a package after the packages that satisfy
-    // its dependencies.
+    // Installation order (protocol/lip-workspace.md, "Operations"): a package after the packages
+    // that satisfy its dependencies.
     packages = [
       .. packages
           .OrderBy(p => PackageNames.Fold(p.Locked.Identity), StringComparer.Ordinal)

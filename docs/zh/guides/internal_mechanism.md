@@ -14,7 +14,7 @@
 6. **执行**：当操作写入或删除文件时，若 `mods` 不存在则创建它（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的钩子与文件修改。匹配 `preserve` 的文件是否保留，取决于即将写入它时（在此之前的钩子命令运行之后）它是否存在；包只拥有它实际写入的文件。
 7. **状态文件**：所有步骤成功之后，保存一次状态文件。
 
-操作要么全部完成，要么全部不做（[工作区协议](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#6-atomicity) §6"原子性"）。第 6 步之前的任何失败都不会修改工作区。执行时某一步失败（文件无法写入、钩子命令以非零码退出，或按下 Ctrl+C），lip 会撤销该操作的全部修改，状态文件保持原样。钩子命令所做的事无法撤销：`post_install` 或 `pre_uninstall` 命令失败时，操作同样失败并撤销 lip 的文件修改，但已运行命令的效果不会被撤销。
+操作要么全部完成，要么全部不做（[lip-workspace(7)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-workspace.md#atomicity) "Atomicity"）。第 6 步之前的任何失败都不会修改工作区。执行时某一步失败（文件无法写入、钩子命令以非零码退出，或按下 Ctrl+C），lip 会撤销该操作的全部修改，状态文件保持原样。钩子命令所做的事无法撤销：`post_install` 或 `pre_uninstall` 命令失败时，操作同样失败并撤销 lip 的文件修改，但已运行命令的效果不会被撤销。
 
 ## 包解析
 
@@ -47,8 +47,8 @@ git 引用所给的分支、提交或名称不是 `v<SemVer>` 的标签没有标
 
 `lip.toml` 和 `config.toml` 分别由以 TOML 编写的 JSON Schema [`protocol/lip.schema.toml`](https://github.com/LiteLDev/lip/blob/main/protocol/lip.schema.toml) 和 [`protocol/config.schema.toml`](https://github.com/LiteLDev/lip/blob/main/protocol/config.schema.toml) 描述，状态文件由 JSON Schema [`protocol/state.schema.json`](https://github.com/LiteLDev/lip/blob/main/protocol/state.schema.json) 描述。lip v0.x 的文件曾由原 [`specs/schemas/`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas) 目录中的 JSON Schema 描述，`legacy/v<格式>/` 下：tooth.json 格式 1、2、3 为 `tooth.schema.yaml`，tooth_lock.json 为 `tooth_lock.schema.yaml`，liprc.json 为 `liprc.schema.yaml`（均为格式 3）。
 
-- **校验**：除 schema 之外，lip 还检查[包协议](https://github.com/LiteLDev/lip/blob/main/protocol/package.md#3-package-files)的要求：合法的包 ID、版本、依赖键和范围、运行端和平台，同一变体中没有两个条目对应相同的运行端和平台，每个条目至多一个 `mcmod` 资源，以及合法的 glob。`lip.toml` 无效的归档不是包，不产出候选，lip 会报告原因。
-- **lip v0.x 的文件**：没有 `lip.toml` 的归档从其格式 1、2 或 3 的 `tooth.json` 读取：格式 1 和 2 会在内存中转换为格式 3，格式 3 再针对环境完整地转换为包文件（[兼容性协议](https://github.com/LiteLDev/lip/blob/main/protocol/compatibility.md#2-toothjson) §2）；如需在包仓库中用 `lip.toml` 取代 `tooth.json`，请在仓库中运行 `lip migrate`（§5）。`tooth_lock.json` 会被自动迁移为 `.lip/state.json`（§3），`liprc.json` 会被自动迁移为 `config.toml`（§4）。
+- **校验**：除 schema 之外，lip 还检查 [lip.toml(5)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.toml.md) 的要求：合法的包 ID、版本、依赖键和范围、运行端和平台，同一变体中没有两个条目对应相同的运行端和平台，每个条目至多一个 `mcmod` 资源，以及合法的 glob。`lip.toml` 无效的归档不是包，不产出候选，lip 会报告原因。
+- **lip v0.x 的文件**：没有 `lip.toml` 的归档从其格式 1、2 或 3 的 `tooth.json` 读取：格式 1 和 2 会在内存中转换为格式 3，格式 3 再针对环境完整地转换为包文件（[lip-compatibility(7)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-compatibility.md#toothjson) "tooth.json"）；如需在包仓库中用 `lip.toml` 取代 `tooth.json`，请在仓库中运行 `lip migrate`（"lip migrate"）。`tooth_lock.json` 会被自动迁移为 `.lip/state.json`（"tooth_lock.json"），`liprc.json` 会被自动迁移为 `config.toml`（"liprc.json"）。
 
 ## 工作区状态
 
@@ -60,13 +60,13 @@ lip 在保存于工作区中 `.lip/state.json` 的状态文件里维护已安装
 
 为保证操作原子性而写入的文件都是隐藏文件，并位于目标旁边：状态文件先写入 `.lip/state.json.tmp`，再重命名覆盖 `.lip/state.json`；操作要覆盖或删除的文件先在同一目录中重命名为 `.<name>.bak`（若该名称已被占用，则为 `.<name>.bak1`、`.<name>.bak2`……）。状态文件保存后删除这些备份（无法删除的备份，例如被某个程序打开的，会保留并在警告中列出），操作失败时则改回原名。卸载后变空的目录也在此时删除。在 Windows 上，这些文件还会被设置隐藏属性。
 
-下面的日志和工作区锁与状态文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/workspace.md#7-the-lip-directory) 中，其他程序也可以参与。
+下面的日志和工作区锁与状态文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/journal.md`](https://github.com/LiteLDev/lip/blob/main/protocol/journal.md) 和 [`protocol/lip-workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/lip-workspace.md#workspace-lock) 中，其他程序也可以参与。
 
 - **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次对该工作区的 `lip install`、`uninstall` 或 `update` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存状态文件的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
 - **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。
 
 ## 关于规范的说明
 
-lip 只管理服务端工作区：它从不从工作区判断运行端，而是总是使用 `server`（[CLI 协议](https://github.com/LiteLDev/lip/blob/main/protocol/cli.md#4-environment-and-workspace-operations) §4）。客户端工作区交由实现同一协议的启动器（如 LeviLauncher）处理。
+lip 只管理服务端工作区：它从不从工作区判断运行端，而是总是使用 `server`（[lip(1)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.md#environment) "Environment"）。客户端工作区交由实现同一协议的启动器（如 LeviLauncher）处理。
 
 lip 实现 [lip 协议](https://github.com/LiteLDev/lip/blob/main/protocol/README.md)。

@@ -4,8 +4,8 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod;
 
-/// Turns package arguments into requests (protocol/cli.md §3): a source with a range matching
-/// every version.
+/// Turns package arguments into requests (protocol/lip.md, "Package arguments"): a source with a
+/// range matching every version.
 ///
 /// Accepted forms:
 /// - "https://..." [ "#" variant ]: a URL.
