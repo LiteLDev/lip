@@ -14,14 +14,17 @@ namespace Lip.Core.Mcmod;
 ///   is rooted, or has no '@' and ends with ".zip" or names an existing file or directory. It
 ///   becomes the file: URI of its absolute path, naming a local file or a local directory.
 /// - "repo" [ "#" variant ] [ "@" ref ]: a remote repository, with a ref (a version without a
-///   leading "v", "branch:" name, "tag:" name or "rev:" full commit id) or without.
+///   leading "v", "branch:" name, "tag:" name or "rev:" full commit id) or without. A repo
+///   without '/' (e.g. "LeviLamina") stands for "github.com/LiteLDev/" followed by it.
 public static partial class PackageArguments {
   private const string _zipExtension = ".zip";
+  private const string _liteLDevPrefix = "github.com/LiteLDev/";
 
   /// The accepted forms, for messages.
   public const string AcceptedForms = "A package is written as a remote repository such as"
       + " github.com/owner/repo (optionally followed by #<variant>, then by @<version>,"
-      + " @branch:<name>, @tag:<name> or @rev:<full commit id>), an https:// URL of a ZIP"
+      + " @branch:<name>, @tag:<name> or @rev:<full commit id>; a bare name such as LeviLamina"
+      + " stands for github.com/LiteLDev/LeviLamina), an https:// URL of a ZIP"
       + " archive, or the path of a local ZIP file or directory (e.g. ./my-package.zip).";
 
   /// Throws ArgumentException when the argument is none of the accepted forms, or names a local
@@ -60,7 +63,7 @@ public static partial class PackageArguments {
       throw Invalid(argument, SchemeReason("file"));
     }
 
-    Ref spec = ParseSpec(argument, argument);
+    Ref spec = ParseSpec(ExpandShorthand(argument), argument);
     RunTrace.Write("parse", $"Package argument '{argument}' is the remote repository"
         + $" {spec.Target}{(spec.Variant == "" ? "" : $" with variant '{spec.Variant}'")}"
         + $"{(spec.GitRef is null ? "" : $" at ref {spec.GitRef}")}.");
@@ -133,6 +136,19 @@ public static partial class PackageArguments {
         or PathTooLongException) {
       return false;
     }
+  }
+
+  /// A remote repository whose location contains no '/' is a repository of LiteLDev: the
+  /// argument prefixed with "github.com/LiteLDev/".
+  private static string ExpandShorthand(string argument) {
+    int end = argument.IndexOf('@');
+    string location = end < 0 ? argument : argument[..end];
+    int hash = location.IndexOf('#');
+    if (hash >= 0) {
+      location = location[..hash];
+    }
+
+    return location.Contains('/') ? argument : _liteLDevPrefix + argument;
   }
 
   private static Ref ParseSpec(string text, string argument) {
