@@ -6,8 +6,9 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Install;
 
-/// Changes to a workspace that can be undone (protocol/workspace.md §6, §7): an operation applies all of its file
-/// changes through one transaction, and either commits them or rolls all of them back.
+/// Changes to a workspace that can be undone (protocol/lip-workspace.md, "Atomicity" and "The .lip
+/// directory"): an operation applies all of its file changes through one transaction, and either
+/// commits them or rolls all of them back.
 ///
 /// - A created directory or file is recorded, and deleted again on rollback.
 /// - A file that is replaced or deleted is first renamed to a hidden backup next to it
@@ -16,7 +17,7 @@ namespace Lip.Core.Mcmod.Install;
 ///   also get the hidden attribute.
 /// - A directory that empties is deleted only at commit, since backups are still in it.
 ///
-/// Every change is appended to the journal (&lt;root&gt;/.lip/journal, protocol/workspace.md §7.3;
+/// Every change is appended to the journal (&lt;root&gt;/.lip/journal, protocol/journal.md;
 /// one JSON object per line, its paths relative to &lt;root&gt; and '/'-separated)
 /// and flushed to the operating system before it is made, so that a later process can undo the
 /// changes of a process that was killed (Recover). Commit appends a "Commit" line; from then on
@@ -90,7 +91,7 @@ public sealed class WorkspaceTransaction : IDisposable {
 
   private void Backup(string path) {
     string backup = BackupPath(path);
-    // "hidden" is the Windows hidden attribute (protocol/workspace.md §7.3); elsewhere .NET
+    // "hidden" is the Windows hidden attribute (protocol/journal.md); elsewhere .NET
     // reports every name starting with '.' as hidden.
     bool wasHidden = OperatingSystem.IsWindows()
         && _fs.File.GetAttributes(path).HasFlag(FileAttributes.Hidden);
@@ -151,12 +152,13 @@ public sealed class WorkspaceTransaction : IDisposable {
     return errors;
   }
 
-  /// Undoes the operation (protocol/workspace.md §7.5): discardLock throws its result away, then
-  /// every change is undone in reverse order. Best effort; returns what could not be undone, in
-  /// which case the journal keeps those changes so that the next operation tries again. Also
-  /// undoes a committed transaction whose result could not be made durable: the journal loses
-  /// its "Commit" record first (§7.4), so that recovery undoes it too; when it cannot, nothing is
-  /// undone and the journal is left for the next operation to complete.
+  /// Undoes the operation (protocol/journal.md, "Recovery"): discardLock throws its result away,
+  /// then every change is undone in reverse order. Best effort; returns what could not be undone,
+  /// in which case the journal keeps those changes so that the next operation tries again. Also
+  /// undoes a committed transaction whose result could not be made durable: the journal loses its
+  /// "Commit" record first (protocol/lip-workspace.md, "Carrying out an operation"), so that
+  /// recovery undoes it too; when it cannot, nothing is undone and the journal is left for the next
+  /// operation to complete.
   public IReadOnlyList<Exception> Rollback(Action discardLock) {
     RunTrace.Write("journal", $"Rolling back the operation ({_entries.Count} changes,"
         + $" {(_committed ? "committed" : "not committed")})");
@@ -212,7 +214,7 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   /// Creates the journal with its "Begin" record unless it exists: before the first change or
-  /// hook command of the operation (protocol/workspace.md §7.4 step 5).
+  /// hook command of the operation (protocol/lip-workspace.md, "Carrying out an operation" step 5).
   public void Begin() {
     if (_committed) {
       throw new InvalidOperationException(
@@ -356,8 +358,7 @@ public sealed class WorkspaceTransaction : IDisposable {
     };
   }
 
-  /// A record as a line of the journal, with only the members its op has (protocol/workspace.md
-  /// §7.3).
+  /// A record as a line of the journal, with only the members its op has (protocol/journal.md).
   private static string Serialize(JournalEntry entry) {
     JsonObject record = new() { ["op"] = entry.Op.ToString() };
     if (entry.Op != JournalOp.Commit) {
@@ -375,7 +376,7 @@ public sealed class WorkspaceTransaction : IDisposable {
     return record.ToJsonString();
   }
 
-  /// A line of the journal as a record, or null when it is none (protocol/workspace.md §7.3): a
+  /// A line of the journal as a record, or null when it is none (protocol/journal.md): a
   /// JSON object whose op is one of the table, with the members of that op of their types.
   private static JournalEntry? Parse(ReadOnlyMemory<byte> line) {
     try {
@@ -675,7 +676,8 @@ public sealed class WorkspaceTransaction : IDisposable {
     Commit,
   }
 
-  /// One record of the journal. To: the backup of a Backup, the start time of a Begin. Hidden: whether the file of a Backup was hidden.
+  /// One record of the journal. To: the backup of a Backup, the start time of a Begin. Hidden:
+  /// whether the file of a Backup was hidden.
   private sealed record JournalEntry(
       JournalOp Op, string Path, string? To = null, bool Hidden = false) {
     public string Describe(IFileSystem fs, string root) {

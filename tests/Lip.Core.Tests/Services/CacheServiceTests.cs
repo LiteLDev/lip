@@ -33,8 +33,8 @@ public class CacheServiceTests {
     Assert.NotNull(result);
   }
 
-  /// protocol/userspace.md §3: an entry is written atomically, through a &lt;N&gt;.tmp file in the
-  /// cache directory.
+  /// protocol/lip-userspace.md, "Cache": an entry is written atomically, through a &lt;N&gt;.tmp
+  /// file in the cache directory.
   [Fact]
   public async Task GetOrCreateFile_NonExistent_FactoryWritesTmpFileInCache() {
     // Arrange

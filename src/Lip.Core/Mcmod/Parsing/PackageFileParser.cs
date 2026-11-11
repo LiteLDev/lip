@@ -6,17 +6,17 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Thrown when a package file, or an entry of one, is not valid (protocol/package.md §3), or when
-/// a tooth.json cannot be read (protocol/compatibility.md §2).
+/// Thrown when a package file, or an entry of one, is not valid (protocol/lip.toml.md), or when
+/// a tooth.json cannot be read (protocol/lip-compatibility.md, "tooth.json").
 public class PackageFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
 /// The package file is of a format newer than this lip knows; updating lip helps.
 public sealed class NewerPackageFormatException(string message) : PackageFormatException(message);
 
-/// Parses and validates package files (lip.schema.toml and protocol/package.md §3), and entries,
-/// also those derived from a tooth.json (protocol/compatibility.md §2) that the state file
-/// records. Keys the schema does not describe are ignored.
+/// Parses and validates package files (lip.schema.toml and protocol/lip.toml.md), and entries,
+/// also those derived from a tooth.json (protocol/lip-compatibility.md, "tooth.json") that the
+/// state file records. Keys the schema does not describe are ignored.
 public static partial class PackageFileParser {
   private static readonly UTF8Encoding _strictUtf8 = new(
       encoderShouldEmitUTF8Identifier: false,
@@ -70,7 +70,7 @@ public static partial class PackageFileParser {
           : null;
 
   /// Reads lip.toml, a TOML file (protocol/README.md), with its templates rendered
-  /// (protocol/package.md §3). The caller disposes the result. Throws PackageFormatException when
+  /// (protocol/lip.toml.md). The caller disposes the result. Throws PackageFormatException when
   /// it is not one, or a template cannot be rendered.
   public static JsonDocument ParseToml(byte[] toml) {
     JsonDocument written;

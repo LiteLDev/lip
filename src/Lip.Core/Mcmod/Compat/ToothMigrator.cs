@@ -11,12 +11,11 @@ using Semver;
 namespace Lip.Core.Mcmod.Compat;
 
 /// Converts a tooth.json of format 1–3 (already read as format 3) into a package file (lip
-/// migrate, protocol/compatibility.md §5), agreeing with how protocol/compatibility.md §2 reads
-/// it for every environment it has an entry for. The notes list what is
-/// dropped or converted with another meaning, each naming the field of format 3 it comes from.
-/// Missing values, and
-/// dependency ranges that are not ranges of a package file, are asked for through
-/// IUserInteraction.Ask.
+/// migrate, protocol/lip-compatibility.md, "lip migrate"), agreeing with how
+/// protocol/lip-compatibility.md, "tooth.json" reads it for every environment it has an entry for.
+/// The notes list what is dropped or converted with another meaning, each naming the field of
+/// format 3 it comes from. Missing values, and dependency ranges that are not ranges of a package
+/// file, are asked for through IUserInteraction.Ask.
 ///
 /// - The platform of a tooth.json variant is a RID pattern, while that of an entry of a package
 ///   file is a RID. A package file has no RID patterns and no "any platform": the RIDs a platform
@@ -196,7 +195,8 @@ public static class ToothMigrator {
   private const string LeviLaminaPath = "github.com/LiteLDev/LeviLamina";
   private const string ClientVariant = "client";
 
-  /// The variants of a label merged for a RID, as protocol/compatibility.md §2 merges them.
+  /// The variants of a label merged for a RID, as protocol/lip-compatibility.md, "tooth.json"
+  /// merges them.
   private static PackageManifestVariant Merge(PackageManifest tooth, string label, string rid) {
     try {
       return tooth.GetVariant(label, rid);
@@ -212,10 +212,10 @@ public static class ToothMigrator {
     }
   }
 
-  /// The content of an entry for a merged variant, converted as protocol/compatibility.md §2
-  /// converts it (ToothCompat.ConvertEntry), without side and platform, with each dependency
-  /// range that is not a range of a package file asked for; null when the variant has no entry
-  /// for the RID.
+  /// The content of an entry for a merged variant, converted as protocol/lip-compatibility.md,
+  /// "tooth.json" converts it (ToothCompat.ConvertEntry), without side and platform, with each
+  /// dependency range that is not a range of a package file asked for; null when the variant has no
+  /// entry for the RID.
   private static async Task<JsonObject?> Content(
       Context context, PackageManifestVariant variant, string rid, string field) {
     List<string> notes = context.Notes;

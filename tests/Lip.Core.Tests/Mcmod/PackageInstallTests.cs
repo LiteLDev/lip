@@ -5,7 +5,8 @@ using Lip.Core.Mcmod.Install;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// End-to-end tests of installing packages with a package file (protocol/workspace.md §4).
+/// End-to-end tests of installing packages with a package file (protocol/lip-workspace.md,
+/// "Installing and uninstalling").
 public class PackageInstallTests {
   private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
 

@@ -5,7 +5,7 @@ using Spectre.Console.Cli;
 namespace Lip.Cli.Commands;
 
 /// The default command of a branch such as "lip config": a branch without a subcommand is a usage
-/// error, reported on standard error without a failure report (protocol/cli.md §2). A failed
+/// error, reported on standard error without a failure report (protocol/lip.md). A failed
 /// validation is reported as a usage error, so the command never runs.
 public class MissingSubcommandCommand : Command<MissingSubcommandCommand.Settings> {
   public class Settings : CommandSettings {

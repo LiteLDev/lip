@@ -4,10 +4,10 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Sources;
 
-/// A directory archive (protocol/package.md §1): the regular files below a directory of the local
-/// file system, keyed by their '/'-separated path relative to it, in ordinal order. Links are not
-/// followed and special files (FIFOs, sockets, device nodes) are left out; an inaccessible entry
-/// fails the listing rather than being left out.
+/// A directory archive (protocol/lip-package.md, "Terms"): the regular files below a directory of
+/// the local file system, keyed by their '/'-separated path relative to it, in ordinal order. Links
+/// are not followed and special files (FIFOs, sockets, device nodes) are left out; an inaccessible
+/// entry fails the listing rather than being left out.
 public class DirectorySource : ISource {
   private readonly IFileSystem _fs;
   private readonly string _root;
@@ -43,7 +43,7 @@ public class DirectorySource : ISource {
     };
     List<string> keys = [];
     // Outside Windows '\' is not a separator, so a name may contain it; such a directory is not
-    // a valid archive (protocol/package.md §1).
+    // a valid archive (protocol/lip-package.md, "Terms").
     void Check(string path) {
       if (_fs.Path.DirectorySeparatorChar != '\\' && _fs.Path.GetFileName(path).Contains('\\')) {
         throw new ArchiveUnavailableException(

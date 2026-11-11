@@ -2,8 +2,8 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// A range (protocol/package.md §1): a string that SemVersionRange.Parse of Semver 3.0.0 accepts
-/// with its default options, with the matching semantics of that range.
+/// A range (protocol/lip-package.md, "Terms"): a string that SemVersionRange.Parse of Semver 3.0.0
+/// accepts with its default options, with the matching semantics of that range.
 public class VersionRange : IVersionConstraint {
   private VersionRange(string text, SemVersionRange range) {
     Text = text;

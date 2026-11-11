@@ -11,7 +11,7 @@ namespace Lip.Core.Mcmod.Lock;
 public class LockFormatException(string message, Exception? inner = null)
     : FormatException(message, inner);
 
-/// Reads and writes the state file (protocol/workspace.md §7.1, state.schema.json), called the
+/// Reads and writes the state file (protocol/state.json.md, state.schema.json), called the
 /// lock in the code. It is a JSON file (protocol/README.md), read and written through JsonFile.
 ///
 /// The state file lives inside the workspace, in &lt;root&gt;/.lip/state.json, so that it
@@ -122,7 +122,7 @@ public partial class LockStore(IFileSystem fs) {
   ///
   /// The first state file of a workspace whose state file was derived from its
   /// tooth_lock.json replaces it: tooth_lock.json is deleted once the state file is in place
-  /// (protocol/compatibility.md §3).
+  /// (protocol/lip-compatibility.md, "tooth_lock.json").
   public void CommitStaged(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
     string path = LipPath(root, FileName);

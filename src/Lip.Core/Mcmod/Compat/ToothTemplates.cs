@@ -6,11 +6,11 @@ using Lip.Core.Infrastructure;
 namespace Lip.Core.Mcmod.Compat;
 
 /// Puts the templates of a tooth.json back into the package file migrated from it (lip migrate,
-/// protocol/compatibility.md §5). The migration converts the values of the tooth.json as rendered
-/// (protocol/compatibility.md §2); this finds, in each string of the result, the rendered values
-/// of the templates of the tooth.json, also after the conversions of paths, and writes the
-/// templates there instead (protocol/package.md §3), with the variable of the package id (tooth,
-/// or path for formats 1 and 2) renamed to id.
+/// protocol/lip-compatibility.md, "lip migrate"). The migration converts the values of the
+/// tooth.json as rendered (protocol/lip-compatibility.md, "tooth.json"); this finds, in each string
+/// of the result, the rendered values of the templates of the tooth.json, also after the
+/// conversions of paths, and writes the templates there instead (protocol/lip.toml.md), with the
+/// variable of the package id (tooth, or path for formats 1 and 2) renamed to id.
 ///
 /// A string is written as a template only when it renders, with the top-level members of the
 /// result as written as its variables, to the string the migration converted; any other string
@@ -132,8 +132,8 @@ public static partial class ToothTemplates {
     return candidate == value ? null : candidate;
   }
 
-  /// The conversions protocol/compatibility.md §2 applies to paths and globs, and the trailing
-  /// '*' of a directory placement that formats 1 and 2 drop.
+  /// The conversions protocol/lip-compatibility.md, "tooth.json" applies to paths and globs, and
+  /// the trailing '*' of a directory placement that formats 1 and 2 drop.
   private static readonly Func<string, string>[] _conversions = [
     s => s,
     s => s.Replace('\\', '/'),

@@ -1,55 +1,86 @@
 # lip Protocol
 
-The lip protocol is normative and consists of:
+The lip protocol is the manual below, with the schemas it names. It is normative.
 
-| Document | Defines |
+## Pages
+
+Commands (section 1):
+
+| Page | Describes |
 |---|---|
-| [PACKAGE] | Packages, sources and resolution; the package file by [`lip.schema.toml`](lip.schema.toml). |
-| [WORKSPACE] | Workspaces and operations on them; the state file by [`state.schema.json`](state.schema.json). |
-| [USERSPACE] | Per-user configuration and cache; the configuration file by [`config.schema.toml`](config.schema.toml). |
-| [CLI] | The command line interface of `lip`. |
-| [COMPATIBILITY] | Reading and migrating the files of formats 1 to 3, and the packages that `lip` MUST install. |
+| [lip(1)](lip.md) | Invoking `lip`: arguments, output, exit status, package arguments, workspace operations. |
+| [lip-install(1)](lip-install.md) | `lip install` |
+| [lip-uninstall(1)](lip-uninstall.md) | `lip uninstall` |
+| [lip-update(1)](lip-update.md) | `lip update` |
+| [lip-list(1)](lip-list.md) | `lip list` |
+| [lip-versions(1)](lip-versions.md) | `lip versions` |
+| [lip-view(1)](lip-view.md) | `lip view` |
+| [lip-init(1)](lip-init.md) | `lip init` |
+| [lip-migrate(1)](lip-migrate.md) | `lip migrate` |
+| [lip-cache(1)](lip-cache.md) | `lip cache clean` |
+| [lip-config(1)](lip-config.md) | `lip config get`, `set`, `list` and `delete` |
+| [lip-pack(1)](lip-pack.md) | `lip pack` |
+
+File formats (section 5):
+
+| Page | Describes | Schema |
+|---|---|---|
+| [lip.toml(5)](lip.toml.md) | The package file. | [`lip.schema.toml`](lip.schema.toml) |
+| [config.toml(5)](config.toml.md) | The configuration file. | [`config.schema.toml`](config.schema.toml) |
+| [state.json(5)](state.json.md) | The state file of a workspace. | [`state.schema.json`](state.schema.json) |
+| [journal(5)](journal.md) | The journal of a workspace, and recovery from it. | |
+
+Concepts (section 7):
+
+| Page | Describes |
+|---|---|
+| [lip-package(7)](lip-package.md) | Archives, packages, sources and resolution. |
+| [lip-workspace(7)](lip-workspace.md) | Workspaces and operations on them. |
+| [lip-userspace(7)](lip-userspace.md) | The per-user directories, and the cache. |
+| [lip-compatibility(7)](lip-compatibility.md) | Reading and migrating the files of formats 1 to 3, and the packages that `lip` must install. |
 
 ## Conventions
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all capitals, as shown here.
+### Pages
 
-A term is defined where it appears in bold, and has that meaning in every document that does not say otherwise.
+The pages are laid out as manual pages ([man-pages(7)]): NAME, SYNOPSIS, DESCRIPTION, OPTIONS, EXIT STATUS, FILES and SEE ALSO, in this order, without the sections that would be empty.
 
-A **TOML file** is a [TOML] document in UTF-8, read as the JSON [RFC8259] value it represents: a table is an object, an array is an array, a string is a string, an integer or a float is a number, and a boolean is a boolean. A TOML file holding a date-time, a date or a time, or the float `inf` or `nan`, is invalid. The TOML schemas (`*.schema.toml`) are JSON Schemas (draft-07) written as TOML files, and constrain that value.
+`name(N)` is the page `name` of section N. A heading in quotes, such as "Atomicity", is the section of that name: of the page named with it, or of the same page when none is.
 
-A **JSON file** is a JSON [RFC8259] text in UTF-8, with no two members of the same name in an object. The JSON schemas (`*.schema.json`) are JSON Schemas (draft-07) written as JSON files, and constrain its value.
+### Requirements
+
+Every statement of a page is a requirement, with two exceptions: "should" states a recommendation, and "may" states a permission.
+
+"Not defined here" means not defined by the page that says it.
+
+### Terms
+
+A term is defined where it appears in bold, and has that meaning in every page that does not say otherwise.
+
+### Synopses
+
+A synopsis is written as a utility synopsis ([POSIX Utility Conventions]):
+
+| Notation | Meaning |
+|---|---|
+| `word` | Written as it is. |
+| `<name>` | A placeholder, replaced by a value. |
+| `[x]` | `x` is optional. |
+| `x \| y` | Either `x` or `y`. |
+| `(x \| y)` | Groups alternatives. |
+| `x...` | `x`, one or more times. |
+
+The synopsis of a command states which operands and options the command has, and which of them are required.
+
+### Files
+
+A **TOML file** is a [TOML] document in UTF-8, read as the [JSON] value it represents: a table is an object, an array is an array, a string is a string, an integer or a float is a number, and a boolean is a boolean. A TOML file holding a date-time, a date or a time, or the float `inf` or `nan`, is invalid. The TOML schemas (`*.schema.toml`) are JSON Schemas (draft-07) written as TOML files, and constrain that value.
+
+A **JSON file** is a [JSON] text in UTF-8, with no two members of the same name in an object. The JSON schemas (`*.schema.json`) are JSON Schemas (draft-07) written as JSON files, and constrain its value.
 
 A file is **written atomically** by writing its whole content to another file in the same directory, whose name ends in `.tmp`, then renaming that file to its name.
 
-"Section N" refers to the same document; "Section N of [X]" to document X. "Not defined here" means not defined by the document that says it.
-
-Grammars use ABNF [RFC5234]; a rule written as `<...>` is defined by the prose inside the brackets.
-
-## References
-
-- [APPNOTE] PKWARE Inc., "APPNOTE.TXT - .ZIP File Format Specification", <https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT>.
-- [CLI] [`cli.md`](cli.md).
-- [COMPATIBILITY] [`compatibility.md`](compatibility.md).
-- [CREATEFILE] Microsoft, "CreateFileW function (fileapi.h)", <https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew>.
-- [FLOCK] "flock(2) - Linux manual page", <https://man7.org/linux/man-pages/man2/flock.2.html>.
-- [GIT-OBJECTS] Chacon, S. and B. Straub, "Pro Git, Section 10.2: Git Objects", <https://git-scm.com/book/en/v2/Git-Internals-Git-Objects>.
-- [GIT-REF] "git-check-ref-format", <https://git-scm.com/docs/git-check-ref-format>.
-- [GO-MODULE] "golang.org/x/mod/module: CheckPath", <https://pkg.go.dev/golang.org/x/mod/module#CheckPath>.
-- [PACKAGE] [`package.md`](package.md).
-- [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <https://www.rfc-editor.org/info/rfc2119>.
-- [RFC3339] Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, DOI 10.17487/RFC3339, July 2002, <https://www.rfc-editor.org/info/rfc3339>.
-- [RFC3986] Berners-Lee, T., Fielding, R., and L. Masinter, "Uniform Resource Identifier (URI): Generic Syntax", STD 66, RFC 3986, DOI 10.17487/RFC3986, January 2005, <https://www.rfc-editor.org/info/rfc3986>.
-- [RFC5234] Crocker, D., Ed. and P. Overell, "Augmented BNF for Syntax Specifications: ABNF", STD 68, RFC 5234, DOI 10.17487/RFC5234, January 2008, <https://www.rfc-editor.org/info/rfc5234>.
-- [RFC8089] Kerwin, M., "The "file" URI Scheme", RFC 8089, DOI 10.17487/RFC8089, February 2017, <https://www.rfc-editor.org/info/rfc8089>.
-- [RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017, <https://www.rfc-editor.org/info/rfc8174>.
-- [RFC8259] Bray, T., Ed., "The JavaScript Object Notation (JSON) Data Interchange Format", STD 90, RFC 8259, DOI 10.17487/RFC8259, December 2017, <https://www.rfc-editor.org/info/rfc8259>.
-- [RID] Microsoft, ".NET RID catalog", <https://learn.microsoft.com/dotnet/core/rid-catalog>.
-- [SCRIBAN] Mutel, A., "Scriban language", Scriban version 7.5.0, <https://github.com/scriban/scriban/blob/7.5.0/site/docs/language.md>.
-- [SEMVER-NET] Walker, J., "Semver for .NET", version 3.0.0, `SemVersionRange.Parse`, <https://github.com/WalkerCodeRanger/semver/tree/v3.0.0>.
-- [SEMVER] Preston-Werner, T., "Semantic Versioning 2.0.0", <https://semver.org/spec/v2.0.0.html>.
-- [TOML] Preston-Werner, T., "TOML: Tom's Obvious Minimal Language", version 1.0.0, <https://toml.io/en/v1.0.0>.
-- [TOOTH-V3] LiteLDev, "Package Manifest", lip v0.37.0, <https://github.com/LiteLDev/lip/blob/v0.37.0/docs/concepts/package_manifest.md>, and its JSON Schema, <https://github.com/LiteLDev/lip/blob/v0.37.0/schemas/manifest.schema.json>.
-- [USERSPACE] [`userspace.md`](userspace.md).
-- [WORKSPACE] [`workspace.md`](workspace.md).
-- [XDG] freedesktop.org, "XDG Base Directory Specification", <https://specifications.freedesktop.org/basedir-spec/latest/>.
+[man-pages(7)]: https://man7.org/linux/man-pages/man7/man-pages.7.html
+[POSIX Utility Conventions]: https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap12.html
+[TOML]: https://toml.io/en/v1.0.0
+[JSON]: https://www.rfc-editor.org/info/rfc8259

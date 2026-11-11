@@ -8,9 +8,9 @@ public interface IVersionConstraint {
   public bool IsSatisfiedBy(SemVersion version);
 }
 
-/// A package file (protocol/package.md §3), or the one protocol/compatibility.md §2 derives from
-/// a tooth.json for an environment. Json is the package file as read (for lip.toml) or the
-/// derived one.
+/// A package file (protocol/lip.toml.md), or the one protocol/lip-compatibility.md, "tooth.json"
+/// derives from a tooth.json for an environment. Json is the package file as read (for lip.toml) or
+/// the derived one.
 public record PackageFile {
   /// The package id.
   public required string Id { get; init; }
@@ -23,8 +23,8 @@ public record PackageFile {
   public required JsonElement Json { get; init; }
 
   /// The entry of a variant whose side and platform are those of the environment
-  /// (protocol/package.md §4 step 2), or null. No two entries of one variant have the same
-  /// side and platform, so there is at most one.
+  /// (protocol/lip-package.md, "Resolution" step 2), or null. No two entries of one variant have
+  /// the same side and platform, so there is at most one.
   public PackageEntry? SelectEntry(string variant, LipEnvironment environment) =>
       Variants.TryGetValue(variant, out IReadOnlyList<PackageEntry>? entries)
           ? entries.FirstOrDefault(e => e.Contains(environment))
@@ -32,7 +32,7 @@ public record PackageFile {
 }
 
 /// An entry of a package file (lip.schema.toml, the items of "variants"). Json is the entry as
-/// written, which the state file records (protocol/workspace.md §7.1).
+/// written, which the state file records (protocol/state.json.md).
 ///
 /// Dependencies, PreserveFiles and RemoveFiles are its "deps", "preserve" and "purge".
 public record PackageEntry {
@@ -69,7 +69,8 @@ public record PackageEntry {
   }
 }
 
-/// A dependency (protocol/package.md §4): the source of the key, and the range of the value.
+/// A dependency (protocol/lip-package.md, "Resolution"): the source of the key, and the range of
+/// the value.
 public record PackageDependency(Ref Source, VersionRange Range);
 
 public enum AssetType {

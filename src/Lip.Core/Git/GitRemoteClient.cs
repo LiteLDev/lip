@@ -675,7 +675,7 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     return entries;
   }
 
-  /// Rejects names a git archive cannot hold (protocol/package.md §1).
+  /// Rejects names a git archive cannot hold (protocol/lip-package.md, "Terms").
   private static bool IsSafeEntryName(string name) {
     return name is not ("" or "." or "..") && !name.Contains('/') && !name.Contains('\\');
   }
@@ -736,8 +736,8 @@ public class GitRemoteClient(Url? githubProxy) : IGitRemoteClient {
     throw exception;
   }
 
-  // A <N>.tmp file in the cache directory (protocol/userspace.md §3), since lip keeps nothing in
-  // the system temp directory.
+  // A <N>.tmp file in the cache directory (protocol/lip-userspace.md, "Cache"), since lip keeps
+  // nothing in the system temp directory.
   private static FileStream CreateTempFile() {
     Directory.CreateDirectory(LipDirectories.Cache);
     return new FileStream(

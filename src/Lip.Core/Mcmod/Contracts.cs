@@ -6,8 +6,8 @@ using Lip.Core.Sources;
 
 namespace Lip.Core.Mcmod;
 
-/// An asset of a candidate (protocol/workspace.md §4 step 2), opened on first use: the archive
-/// of the package for "self", otherwise downloaded.
+/// An asset of a candidate (protocol/lip-workspace.md, "Installing and uninstalling" step 2),
+/// opened on first use: the archive of the package for "self", otherwise downloaded.
 public sealed class AssetHandle {
   private readonly Lazy<Task<ISource>> _open;
 
@@ -30,8 +30,8 @@ public sealed class AssetHandle {
   public Task<ISource> Open() => _open.Value;
 }
 
-/// A candidate (protocol/package.md §4): a package with its selected entry, the archive it is
-/// in, the source it was resolved for, and the assets of its entry, in order.
+/// A candidate (protocol/lip-package.md, "Resolution"): a package with its selected entry, the
+/// archive it is in, the source it was resolved for, and the assets of its entry, in order.
 public record Candidate(
     Package Package,
     ArchiveHandle Archive,
@@ -39,10 +39,10 @@ public record Candidate(
     IReadOnlyList<AssetHandle> Assets) {
   private Task<ModManifest?>? _modManifest;
 
-  /// The mod manifest of a mod (protocol/package.md §4): the manifest.json at the root of the
-  /// archive of its asset of type "mcmod"; null for a package that is not a mod. Obtains that
-  /// asset. Throws McmodInstallException when the asset cannot be obtained or the mod manifest
-  /// is missing or invalid.
+  /// The mod manifest of a mod (protocol/lip-package.md, "Resolution"): the manifest.json at the
+  /// root of the archive of its asset of type "mcmod"; null for a package that is not a mod.
+  /// Obtains that asset. Throws McmodInstallException when the asset cannot be obtained or the mod
+  /// manifest is missing or invalid.
   public Task<ModManifest?> GetModManifest() => _modManifest ??= LoadModManifest();
 
   private async Task<ModManifest?> LoadModManifest() {
@@ -123,11 +123,11 @@ public record Candidate(
           ]);
 }
 
-/// The manifest.json at the root of the mcmod asset of a mod (protocol/package.md §4), of which
-/// lip reads only the mod name, its "name".
+/// The manifest.json at the root of the mcmod asset of a mod (protocol/lip-package.md,
+/// "Resolution"), of which lip reads only the mod name, its "name".
 public record ModManifest(string Name);
 
-/// Resolve(source, range, environment) (protocol/package.md §4).
+/// Resolve(source, range, environment) (protocol/lip-package.md, "Resolution").
 public interface IResolver {
   /// The candidate sequence, produced lazily: archives (e.g. older tags of a remote repository)
   /// are opened only when the caller asks for more candidates. Diagnostics, which explain every
@@ -139,10 +139,10 @@ public interface IResolver {
       Action<string>? onDiagnostic = null);
 }
 
-/// A request (protocol/workspace.md §1): a source and a range.
+/// A request (protocol/lip-workspace.md, "Terms"): a source and a range.
 public record PackageRequest(Ref Ref, IVersionConstraint? Range);
 
-/// Thrown when no package set satisfies the requests (protocol/workspace.md §3).
+/// Thrown when no package set satisfies the requests (protocol/lip-workspace.md, "Valid states").
 public class DependencyResolutionException(string message, Exception? innerException = null)
     : Exception(message, innerException);
 
@@ -160,7 +160,7 @@ public record InstallContext(
     bool DryRun,
     bool IgnoreScripts);
 
-/// The state file (protocol/workspace.md §7.1, state.schema.json).
+/// The state file (protocol/state.json.md, state.schema.json).
 public record LockFile {
   [JsonPropertyName(PackageFormat.FormatKey)]
   public int Format { get; init; } = PackageFormat.Format;
@@ -178,11 +178,12 @@ public record LockFile {
   public required List<LockedPackage> Packages { get; init; }
 }
 
-/// An installed package in the state file (protocol/workspace.md §7.1).
+/// An installed package in the state file (protocol/state.json.md).
 public record LockedPackage {
-  /// Its package file, as protocol/package.md §4 read it (for a package read from a tooth.json,
-  /// the one protocol/compatibility.md §2 derives from it for the environment of the workspace).
-  /// Its "id" is the package id and its "version" the version of the package.
+  /// Its package file, as protocol/lip-package.md, "Resolution" read it (for a package read from a
+  /// tooth.json, the one protocol/lip-compatibility.md, "tooth.json" derives from it for the
+  /// environment of the workspace). Its "id" is the package id and its "version" the version of the
+  /// package.
   [JsonPropertyName("manifest")]
   public required JsonElement Manifest { get; init; }
 
@@ -217,7 +218,7 @@ public record LockedPackage {
   [JsonIgnore]
   public string Version => StringMember("version");
 
-  /// The identity (protocol/package.md §4).
+  /// The identity (protocol/lip-package.md, "Resolution").
   [JsonIgnore]
   public string Identity => Package.GetIdentity(Id, Variant);
 

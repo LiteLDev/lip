@@ -63,7 +63,7 @@ public class GitTreeSourceTests {
     List<string> keys = [.. source.Keys];
 
     // Assert: the symlink (120000) and the group-writable file (100664) are not part of a git
-    // archive (protocol/package.md §1).
+    // archive (protocol/lip-package.md, "Terms").
     Assert.Equal(["lip.toml", "a.dll", "sub/b.txt", "sub/c.txt", "run.sh"], keys);
   }
 

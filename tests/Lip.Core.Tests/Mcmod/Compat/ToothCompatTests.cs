@@ -10,7 +10,7 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// Reading a tooth.json as a package file (protocol/compatibility.md §2).
+/// Reading a tooth.json as a package file (protocol/lip-compatibility.md, "tooth.json").
 public class ToothCompatTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 
@@ -304,7 +304,7 @@ public class ToothCompatTests {
 
   [Fact]
   public void Info_EmptyMembers_AreKept() {
-    // Arrange: the info of T, as it is (protocol/compatibility.md §2).
+    // Arrange: the info of T, as it is (protocol/lip-compatibility.md, "tooth.json").
     PackageManifestInfo info = new() {
       Name = "",
       Description = "",
@@ -573,8 +573,8 @@ public class ToothCompatTests {
 
   [Fact]
   public void Derive_PlacementsAndGlobsInvalidInFormat4_AreLeftOut() {
-    // Arrange: a file placement of the whole archive ("" is the directory form in a package file), a
-    // file placed at "" and globs that are no globs of a package file.
+    // Arrange: a file placement of the whole archive ("" is the directory form in a package file),
+    // a file placed at "" and globs that are no globs of a package file.
     PackageManifest manifest = Manifest($$"""
         {
           "format_version": 3, "format_uuid": "{{_uuid3}}",

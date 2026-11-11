@@ -6,7 +6,7 @@ namespace Lip.Core.Infrastructure;
 
 /// What lip did during this run, in order: network requests, hook commands and their output,
 /// messages shown to the user. It is kept in memory and written to the failure report when a
-/// command fails (protocol/cli.md §2), so that the report shows how lip got to the failure.
+/// command fails (protocol/lip.md), so that the report shows how lip got to the failure.
 public static class RunTrace {
   // Enough for the output of large hook commands; older lines are dropped first.
   private const int MaxChars = 8 * 1024 * 1024;

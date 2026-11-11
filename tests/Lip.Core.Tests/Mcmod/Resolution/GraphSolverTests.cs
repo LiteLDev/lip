@@ -10,7 +10,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod.Resolution;
 
-/// The package set S (protocol/workspace.md §3) and the installation order (§5).
+/// The package set S (protocol/lip-workspace.md, "Valid states") and the installation order
+/// (protocol/lip-workspace.md, "Operations").
 public class GraphSolverTests {
   private const string LeviLamina = "github.com/LiteLDev/LeviLamina";
 
@@ -69,7 +70,8 @@ public class GraphSolverTests {
     Assert.Equal(resolver.Calls.Count, resolver.Calls.Distinct().Count());
   }
 
-  // Identities (protocol/package.md §4, protocol/workspace.md §3 rule 3)
+  // Identities (protocol/lip-package.md, "Resolution", protocol/lip-workspace.md, "Valid states"
+  // rule 3)
 
   [Fact]
   public async Task Solve_DefaultVariantDependsOnItsVariants_SolvesThreeIdentities() {
@@ -154,7 +156,8 @@ public class GraphSolverTests {
     Assert.Equal(["github.com/a/a@1.0.0", "github.com/b/b@2.0.0"], Names(result));
   }
 
-  // Mod names (protocol/package.md §4, protocol/workspace.md §3 rule 3)
+  // Mod names (protocol/lip-package.md, "Resolution", protocol/lip-workspace.md, "Valid states"
+  // rule 3)
 
   [Fact]
   public async Task Solve_ModNameClash_BacktracksToOlderVersion() {
@@ -445,7 +448,7 @@ public class GraphSolverTests {
     Assert.Equal([$"{LeviLamina}@1.0.0", "github.com/a/a@1.0.0"], Names(result));
   }
 
-  // Refs: stand-in (protocol/workspace.md §3)
+  // Refs: stand-in (protocol/lip-workspace.md, "Valid states")
 
   [Fact]
   public async Task Solve_DependencyWithoutRefBeforeRef_PackageOfRefSatisfiesBoth() {
@@ -730,7 +733,7 @@ public class GraphSolverTests {
     Assert.Equal("github.com/c/c0@1.0.0", Names(result)[^1]);
   }
 
-  // Installation order (protocol/workspace.md §5)
+  // Installation order (protocol/lip-workspace.md, "Operations")
 
   [Fact]
   public async Task Solve_DependencyCycle_OrdersCycleByLowercaseIdentity() {

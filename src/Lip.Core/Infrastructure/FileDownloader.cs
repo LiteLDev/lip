@@ -10,7 +10,7 @@ public interface IFileDownloader {
 }
 
 /// Writes the body of a successful response to one HTTPS GET of a URL, following redirects, to a
-/// file (protocol/package.md §2.2, protocol/userspace.md §3).
+/// file (protocol/lip-package.md, "URLs", protocol/lip-userspace.md, "Cache").
 ///
 /// Failures of the network or of the server are HttpRequestExceptions naming the URL, with the
 /// HTTP status code when the server answered; failures of writing the file are IOExceptions or

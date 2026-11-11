@@ -15,10 +15,10 @@ using Semver;
 
 namespace Lip.Core.RegressionTests.Compatibility;
 
-/// Checks that tooth.json files of format 3 are read through protocol/compatibility.md §2 and
-/// installed like lip v3 did: ToothCompat.Derive must map the same merged variant
-/// PackageManifest.GetVariant picks, converted as Section 2 converts it, and McmodInstaller must write exactly the files it
-/// reports for the derived entry.
+/// Checks that tooth.json files of format 3 are read through protocol/lip-compatibility.md,
+/// "tooth.json" and installed like lip v3 did: ToothCompat.Derive must map the same merged variant
+/// PackageManifest.GetVariant picks, converted as Section 2 converts it, and McmodInstaller must
+/// write exactly the files it reports for the derived entry.
 public class ToothCompatCorpusTests {
   private static readonly LipEnvironment _environment = new(McmodSide.Server, "win-x64");
 

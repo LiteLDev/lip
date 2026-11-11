@@ -11,8 +11,8 @@ using Semver;
 namespace Lip.Core.Mcmod;
 
 /// Options shared by the workspace operations. Platform overrides the platform of the environment
-/// (protocol/cli.md §4). Cancelling the token stops an operation; one that has started changing
-/// the workspace undoes its changes first.
+/// (protocol/lip.md, "Environment"). Cancelling the token stops an operation; one that has started
+/// changing the workspace undoes its changes first.
 public record OperationOptions(
     bool DryRun = false,
     bool IgnoreScripts = false,
@@ -23,23 +23,23 @@ public record OperationOptions(
 /// One package of the state file, as listed to the user.
 public record InstalledPackage(string Identity, string Version, bool Explicit);
 
-/// The workspace operations: install, uninstall, update and list (protocol/workspace.md §3–§7,
-/// protocol/cli.md §5).
+/// The workspace operations: install, uninstall, update and list (protocol/lip-workspace.md,
+/// protocol/lip.md).
 ///
-/// Every operation loads the state file (or the one protocol/compatibility.md §3 derives from
-/// a tooth_lock.json), determines the environment, computes the new
-/// package set with the graph solver, then uninstalls what leaves the set (in reverse
-/// installation order) and installs what enters it (in installation order). Updating a package
-/// uninstalls the old package and installs the new one.
+/// Every operation loads the state file (or the one protocol/lip-compatibility.md,
+/// "tooth_lock.json" derives from a tooth_lock.json), determines the environment, computes the new
+/// package set with the graph solver, then uninstalls what leaves the set (in reverse installation
+/// order) and installs what enters it (in installation order). Updating a package uninstalls the
+/// old package and installs the new one.
 ///
-/// Operations are all or nothing (protocol/workspace.md §6). An operation first plans every
-/// uninstall and install against a view of the workspace as the earlier steps leave it, checking
-/// everything and fetching every archive and asset; a failure then changes nothing. It then
-/// applies the plans through one WorkspaceTransaction, journaled next to the state file in
-/// .lip, and writes the state file last; a failure (or cancellation) undoes every change and
-/// leaves the state file as it was. An operation other than a dry run holds the workspace's
-/// WorkspaceMutex throughout, and first finishes or undoes what an interrupted operation left in
-/// the journal (protocol/workspace.md §7.4).
+/// Operations are all or nothing (protocol/lip-workspace.md, "Atomicity"). An operation first plans
+/// every uninstall and install against a view of the workspace as the earlier steps leave it,
+/// checking everything and fetching every archive and asset; a failure then changes nothing. It
+/// then applies the plans through one WorkspaceTransaction, journaled next to the state file in
+/// .lip, and writes the state file last; a failure (or cancellation) undoes every change and leaves
+/// the state file as it was. An operation other than a dry run holds the workspace's WorkspaceMutex
+/// throughout, and first finishes or undoes what an interrupted operation left in the journal
+/// (protocol/lip-workspace.md, "Carrying out an operation").
 ///
 /// Installed packages are pinned: they enter the solver as they are, rebuilt from the workspace
 /// file (with the package file it records) without network access, and their archives (the commit
@@ -97,7 +97,7 @@ public class McmodService(
     }
 
     // A requested dependency package keeps its version when it satisfies its request
-    // (protocol/cli.md §5.1), recording the source of the request when it is one of the
+    // (protocol/lip-install.md), recording the source of the request when it is one of the
     // request's candidates; otherwise it is chosen again.
     Dictionary<string, Candidate> requested = new(StringComparer.Ordinal);
     List<string> unpinned = [];
@@ -160,8 +160,8 @@ public class McmodService(
                 .Where(targets.Contains)
                 .Select(p => new UninstallChange(p)),
           ],
-          // Without a package of a cycle, the others may need another order (protocol/workspace.md
-          // §5, §7.1).
+          // Without a package of a cycle, the others may need another order
+          // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
           remaining => Task.FromResult(InInstallationOrder(remaining, workspace.Environment))));
       return;
     }
@@ -190,7 +190,7 @@ public class McmodService(
 
     List<(string Argument, PackageRequest Request)> requests;
     // Without arguments, the identities of the packages kept as they are, which stay pinned even
-    // when another request gives a package of their identity (protocol/cli.md §5.3).
+    // when another request gives a package of their identity (protocol/lip-update.md).
     List<string> keptAsIs = [];
     if (packages.Count == 0) {
       // Every explicitly installed package, requested again by its source: a remote repository
@@ -214,7 +214,7 @@ public class McmodService(
       requests = ParseRequests(packages);
     }
 
-    // A URL is downloaded again (protocol/workspace.md §5 "Updating").
+    // A URL is downloaded again (protocol/lip-workspace.md, "Operations" "Updating").
     foreach ((_, PackageRequest request) in requests) {
       if (request.Ref.Kind == RefKind.Url) {
         await _archiveProvider.Forget(request.Ref.Target);
@@ -226,7 +226,7 @@ public class McmodService(
     List<string> identities = [];
     List<PackageRequest> requested = [];
     // Without arguments, the identities of the packages whose source now gives a package of
-    // another identity, which replaces them (protocol/workspace.md §5 "Updating").
+    // another identity, which replaces them (protocol/lip-workspace.md, "Operations" "Updating").
     List<string> replaced = [];
     for (int i = 0; i < candidates.Count; i++) {
       string identity = candidates[i].Package.Identity;
@@ -241,7 +241,7 @@ public class McmodService(
       }
 
       // Every request goes to the solver, which fails when no one package satisfies all the
-      // requests giving an identity (protocol/workspace.md §3).
+      // requests giving an identity (protocol/lip-workspace.md, "Valid states").
       if (!identities.Any(other => SameIdentity(other, identity))
           && !keptAsIs.Any(kept => SameIdentity(kept, identity))) {
         identities.Add(identity);
@@ -260,13 +260,14 @@ public class McmodService(
         ],
         // A requested package gets its earliest candidate that Section 3 allows, so the
         // installed dependency packages keep their versions only where they fit it
-        // (protocol/workspace.md §5 "Updating", protocol/cli.md §5.3).
+        // (protocol/lip-workspace.md, "Operations" "Updating", protocol/lip-update.md).
         preferDependencyPackages: true);
 
     // The source a requested package is recorded with: an installed package that its recorded
     // source gives again is not replaced, so it keeps that source even when another request
-    // gives the same package (protocol/workspace.md §5); but a request with a ref that gives it
-    // wins, since only its own candidates satisfy it (protocol/workspace.md §3).
+    // gives the same package (protocol/lip-workspace.md, "Operations"); but a request with a ref
+    // that gives it wins, since only its own candidates satisfy it (protocol/lip-workspace.md,
+    // "Valid states").
     List<Candidate> members = [.. plan.Members];
     foreach (bool byRecordedSource in new[] { true, false }) {
       for (int i = 0; i < candidates.Count; i++) {
@@ -293,7 +294,7 @@ public class McmodService(
         workspace, options, plan with { Members = members }));
   }
 
-  /// The packages of the state file (protocol/cli.md §5.4). The state file derived from a
+  /// The packages of the state file (protocol/lip-list.md). The state file derived from a
   /// tooth_lock.json is only read, for the environment a workspace operation would give it,
   /// without the commits it would record, which are not listed.
   public async Task<IReadOnlyList<InstalledPackage>> List() {
@@ -306,8 +307,8 @@ public class McmodService(
     ];
   }
 
-  /// The versions of the version tags of a remote repository, lowest first (protocol/cli.md
-  /// §5.5): the package argument must be a remote repository without a ref.
+  /// The versions of the version tags of a remote repository, lowest first
+  /// (protocol/lip-versions.md): the package argument must be a remote repository without a ref.
   public async Task<IReadOnlyList<string>> Versions(string package) {
     Ref reference = PackageArguments.Parse(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs).Ref;
@@ -328,11 +329,11 @@ public class McmodService(
     return [.. versions.Reverse().Select(v => v.Version.ToString()).Distinct()];
   }
 
-  /// The package file of the first archive a package argument names (protocol/cli.md §5.6), as
+  /// The package file of the first archive a package argument names (protocol/lip-view.md), as
   /// JSON: for a remote repository, its newest version tag, or the commit its ref selects;
   /// otherwise the archive of the URL or local path. For an archive without a package file, the
-  /// package file protocol/compatibility.md §2 derives from its tooth.json for the environment of
-  /// protocol/cli.md §4.
+  /// package file protocol/lip-compatibility.md, "tooth.json" derives from its tooth.json for the
+  /// environment of protocol/lip.md, "Environment".
   public async Task<string> View(string package) {
     PackageRequest request = PackageArguments.Parse(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
@@ -416,8 +417,8 @@ public class McmodService(
 
   /// The installed package with the identity, version and commit of a candidate, with the
   /// source of the candidate; otherwise the candidate. Such a package is not replaced
-  /// (protocol/workspace.md §5), so it is planned with the package file the state file
-  /// records, whatever the package file of the candidate says.
+  /// (protocol/lip-workspace.md, "Operations"), so it is planned with the package file the state
+  /// file records, whatever the package file of the candidate says.
   private Candidate AsInstalled(Workspace workspace, Candidate candidate) =>
       workspace.Lock.Packages.FirstOrDefault(p => IsSamePackage(p, candidate)) is { } installed
           ? PinnedCandidate(workspace, installed) with { Source = candidate.Source }
@@ -453,9 +454,9 @@ public class McmodService(
     }
   }
 
-  /// The state file protocol/compatibility.md §3 derives from the tooth_lock.json of a
-  /// workspace without a state file, for its environment; null when it has none that
-  /// Section 3 reads. With resolveCommits, the commit of each package is that of the tag
+  /// The state file protocol/lip-compatibility.md, "tooth_lock.json" derives from the
+  /// tooth_lock.json of a workspace without a state file, for its environment; null when it has
+  /// none that Section 3 reads. With resolveCommits, the commit of each package is that of the tag
   /// "v&lt;version&gt;" of its remote repository, and it fails when that cannot be obtained.
   private async Task<LockFile?> ReadToothLock(
       string root, LipEnvironment environment, bool resolveCommits) {
@@ -572,9 +573,9 @@ public class McmodService(
         + " before it.");
   }
 
-  /// The environment of the workspace (protocol/cli.md §4). lip manages server workspaces only,
-  /// so the side is always server. The platform is --platform, then the state file, then the
-  /// RID lip itself runs on.
+  /// The environment of the workspace (protocol/lip.md, "Environment"). lip manages server
+  /// workspaces only, so the side is always server. The platform is --platform, then the state
+  /// file, then the RID lip itself runs on.
   private static LipEnvironment DetermineEnvironment(
       LockFile? lockFile,
       string? explicitPlatform) {
@@ -602,7 +603,7 @@ public class McmodService(
 
   /// The first candidate of every request: the package the request names. Fails when a request
   /// has no candidate, or, unless allowSameIdentity, when two requests name the same package
-  /// (protocol/cli.md §5.1).
+  /// (protocol/lip-install.md).
   private async Task<List<Candidate>> RequestedCandidates(
       Workspace workspace,
       List<(string Argument, PackageRequest Request)> requests,
@@ -821,7 +822,7 @@ public class McmodService(
     await _ui.PrintWarning(
         "--no-dependencies is enabled. This operation may result in a broken workspace.");
 
-    // In installation order (protocol/workspace.md §5), as the state file afterwards
+    // In installation order (protocol/lip-workspace.md, "Operations"), as the state file afterwards
     // records it: the order of the requested packages among every package installed then, so
     // that a cycle through an installed package counts too.
     List<Candidate> requested = await RequestedCandidates(workspace, requests);
@@ -855,18 +856,18 @@ public class McmodService(
         changes, remaining => Task.FromResult(InInstallationOrder(remaining, workspace.Environment))));
   }
 
-  /// The installed packages in installation order (protocol/workspace.md §5, §7.1): a package
-  /// after the packages that satisfy its dependencies, and a cycle in ascending order of
-  /// identities with A-Z replaced by a-z. A package without an entry for the environment has no
-  /// dependencies here.
+  /// The installed packages in installation order (protocol/lip-workspace.md, "Operations";
+  /// protocol/state.json.md): a package after the packages that satisfy its dependencies, and a
+  /// cycle in ascending order of identities with A-Z replaced by a-z. A package without an entry
+  /// for the environment has no dependencies here.
   private static List<LockedPackage> InInstallationOrder(
       List<LockedPackage> packages, LipEnvironment environment) =>
       [.. InstallationOrder([.. packages.Select(p => OrderNode.Of(p, environment))])
           .Select(n => n.Locked!)];
 
-  /// Nodes in installation order (protocol/workspace.md §5): a package after the packages that
-  /// satisfy its dependencies, and a cycle in ascending order of identities with A-Z replaced by
-  /// a-z.
+  /// Nodes in installation order (protocol/lip-workspace.md, "Operations"): a package after the
+  /// packages that satisfy its dependencies, and a cycle in ascending order of identities with A-Z
+  /// replaced by a-z.
   private static IEnumerable<OrderNode> InstallationOrder(List<OrderNode> nodes) {
     List<OrderNode> sorted = [
       .. nodes.OrderBy(n => PackageNames.Fold(n.Identity), StringComparer.Ordinal),
@@ -910,11 +911,11 @@ public class McmodService(
   /// that every check and every fetch happens before anything changes; then applies the plans
   /// in one transaction and writes the state file last. A failure while applying (or
   /// cancellation) undoes every change and leaves the state file as it was
-  /// (protocol/workspace.md §6). In a dry run, reports the plans instead.
+  /// (protocol/lip-workspace.md, "Atomicity"). In a dry run, reports the plans instead.
   private async Task Execute(Workspace workspace, OperationOptions options, ChangeSet changeSet) {
     // The changes are planned against the layout an operation that changes the workspace makes
     // first; it is checked and made only when the operation may change the workspace
-    // (protocol/workspace.md §2).
+    // (protocol/lip-workspace.md, "Environment and layout").
     WorkspaceLayout.LayoutPlan layout = _layout.Plan(workspace.Root);
     WorkspaceView view = new(_fs, layout);
     List<LockedPackage> remaining = [.. workspace.Lock.Packages];
@@ -999,8 +1000,8 @@ public class McmodService(
       }
 
       // The files each package installed owns as its writes happened: hook commands may have
-      // changed which files matching preserve were kept (protocol/workspace.md §4). Each write
-      // is checked against the owners as they are then.
+      // changed which files matching preserve were kept (protocol/lip-workspace.md, "Installing and
+      // uninstalling"). Each write is checked against the owners as they are then.
       FileOwners owners = _installer.Owners(workspace.Root, workspace.Lock.Packages);
       Dictionary<string, IReadOnlyList<string>> owned = new(StringComparer.Ordinal);
       foreach ((string message, PackagePlan plan) in plans) {
@@ -1099,11 +1100,11 @@ public class McmodService(
 
   #region Installed packages
 
-  /// Rebuilds an installed package from the state file (protocol/workspace.md §5,
+  /// Rebuilds an installed package from the state file (protocol/lip-workspace.md, "Operations",
   /// "Reinstalling"): with the package file the state file records, and the archive of the
   /// commit it records for a remote repository, otherwise the archive its source names now,
   /// opened when first needed. Fails when it is no candidate in the environment, e.g. when its
-  /// package file has no entry for another --platform (protocol/workspace.md §3).
+  /// package file has no entry for another --platform (protocol/lip-workspace.md, "Valid states").
   private Candidate PinnedCandidate(Workspace workspace, LockedPackage package) {
     try {
       Package rebuilt = new(
@@ -1162,8 +1163,8 @@ public class McmodService(
     }
   }
 
-  /// Matches an uninstall argument (protocol/cli.md §5.2): an identity (ignoring ASCII case), or
-  /// else the source, with the locations compared ignoring ASCII case; an argument without a
+  /// Matches an uninstall argument (protocol/lip-uninstall.md): an identity (ignoring ASCII case),
+  /// or else the source, with the locations compared ignoring ASCII case; an argument without a
   /// variant matches every variant, and one without a ref every ref.
   private List<LockedPackage> MatchInstalled(Workspace workspace, string argument) {
     LockFile lockFile = workspace.Lock;
@@ -1191,8 +1192,8 @@ public class McmodService(
   private static List<string> ExplicitIdentities(LockFile lockFile) =>
       [.. lockFile.Packages.Where(p => p.Explicit).Select(p => p.Identity)];
 
-  /// Whether a candidate is the installed package (protocol/workspace.md §5): same identity,
-  /// version and commit.
+  /// Whether a candidate is the installed package (protocol/lip-workspace.md, "Operations"): same
+  /// identity, version and commit.
   private static bool IsSamePackage(LockedPackage package, Candidate candidate) =>
       SameIdentity(package.Identity, candidate.Package.Identity)
       && package.Version == candidate.Package.Version.ToString()

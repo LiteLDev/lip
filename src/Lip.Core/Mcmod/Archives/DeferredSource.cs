@@ -3,8 +3,9 @@ using Lip.Core.Sources;
 namespace Lip.Core.Mcmod;
 
 /// A source that is opened on first use. Installed packages are rebuilt from the lock without
-/// touching their archives; the archive is only opened (and its identity verified, protocol/workspace.md §5) when
-/// something reads it, e.g. a relative ref of an installed package's install edge.
+/// touching their archives; the archive is only opened (and its identity verified,
+/// protocol/lip-workspace.md, "Operations") when something reads it, e.g. a relative ref of an
+/// installed package's install edge.
 public class DeferredSource(Func<Task<ISource>> open) : ISource {
   private readonly Lazy<Task<ISource>> _source = new(open);
 

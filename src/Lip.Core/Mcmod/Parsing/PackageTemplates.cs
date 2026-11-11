@@ -6,7 +6,7 @@ using Scriban.Syntax;
 
 namespace Lip.Core.Mcmod;
 
-/// The templates of lip.toml (protocol/package.md §3): each string other than a key is Scriban
+/// The templates of lip.toml (protocol/lip.toml.md): each string other than a key is Scriban
 /// text, rendered with the members of the top-level object as written as its variables.
 public static class PackageTemplates {
   /// The value with each string rendered. Throws PackageFormatException, naming the string, when

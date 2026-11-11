@@ -4,7 +4,7 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Tests.Mcmod.Parsing;
 
-/// The templates of lip.toml (protocol/package.md §3).
+/// The templates of lip.toml (protocol/lip.toml.md).
 public class PackageTemplatesTests {
   private const string _head = """
       format = 4

@@ -13,12 +13,12 @@ using Lip.Core.Sources;
 
 namespace Lip.Core.Mcmod.Install;
 
-/// Thrown when installing or uninstalling a package fails (protocol/workspace.md §4). Failures
-/// detected while planning leave the workspace untouched.
+/// Thrown when installing or uninstalling a package fails (protocol/lip-workspace.md, "Installing
+/// and uninstalling"). Failures detected while planning leave the workspace untouched.
 public class McmodInstallException(string message, Exception? inner = null)
     : Exception(message, inner);
 
-/// Installs and uninstalls packages (protocol/workspace.md §4).
+/// Installs and uninstalls packages (protocol/lip-workspace.md, "Installing and uninstalling").
 ///
 /// Installing writes the files of the assets of the entry, in order (step 2): each asset is
 /// mounted at its index; "self" and "zip" assets carry out their placements, "mcmod" assets are
@@ -32,8 +32,8 @@ public class McmodInstallException(string message, Exception? inner = null)
 ///
 /// The write rules are checked twice: when planning, against the workspace as the earlier
 /// changes of the operation are planned to leave it, so that a failure changes nothing
-/// (protocol/workspace.md §6 rule 1); and at each write, against the workspace and the owners
-/// as they are then (FileOwners), which decides.
+/// (protocol/lip-workspace.md, "Atomicity" rule 1); and at each write, against the workspace and
+/// the owners as they are then (FileOwners), which decides.
 ///
 /// The mods directory is never deleted, and remove_files never matches it (so a directory
 /// pattern naming it removes nothing). .lip, where lip keeps the lock, is never written, deleted
@@ -94,7 +94,8 @@ public partial class McmodInstaller(
     }
 
     // Whether a file matching preserve is kept is decided when it is written, after the hook
-    // commands before it (protocol/workspace.md §4); the plan expects the workspace as it is.
+    // commands before it (protocol/lip-workspace.md, "Installing and uninstalling"); the plan
+    // expects the workspace as it is.
     RunTrace.Write("install", $"{name}: {plan.Count(w => !w.Keep)} files to write,"
         + $" {plan.Count(w => w.Keep)} existing files matching preserve to keep");
 
@@ -255,9 +256,9 @@ public partial class McmodInstaller(
   /// Runs the steps of a plan, making every file change through the transaction, and returns the
   /// files the package owns afterwards (workspace-relative, '/'-separated; none for an
   /// uninstall). Each write is checked against the write rules as the workspace and owners are
-  /// then (protocol/workspace.md §4), and adds the file it writes to owners; a file that another
-  /// package owns then is not deleted. Throws McmodInstallException when a step fails; the caller
-  /// rolls the transaction back.
+  /// then (protocol/lip-workspace.md, "Installing and uninstalling"), and adds the file it writes
+  /// to owners; a file that another package owns then is not deleted. Throws McmodInstallException
+  /// when a step fails; the caller rolls the transaction back.
   public async Task<IReadOnlyList<string>> Apply(
       PackagePlan plan,
       WorkspaceTransaction transaction,
@@ -271,7 +272,8 @@ public partial class McmodInstaller(
       switch (step) {
         case ScriptStep script:
           if (script.Commands.Count > 0) {
-            // A hook command runs only once the journal exists (protocol/workspace.md §7.4).
+            // A hook command runs only once the journal exists (protocol/lip-workspace.md,
+            // "Carrying out an operation").
             transaction.Begin();
           }
 
@@ -280,7 +282,8 @@ public partial class McmodInstaller(
         case WriteStep write: {
             // The write rules see the target by its long names as the workspace is now: a
             // directory that an earlier write or a hook command created can give a short name in
-            // it a meaning it did not have when the plan was made (protocol/workspace.md §4).
+            // it a meaning it did not have when the plan was made (protocol/lip-workspace.md,
+            // "Installing and uninstalling").
             string target = LongName(plan.Root, write.Target)
                 ?? throw new McmodInstallException(
                     $"Cannot install {plan.Name}: lip cannot tell which file '{write.Target}'"
@@ -368,9 +371,9 @@ public partial class McmodInstaller(
     return owned;
   }
 
-  /// Deletes what uninstallation steps 2–4 match in the workspace as it is now (protocol/workspace.md
-  /// §6 rule 4), beyond what the plan already deleted. A file that another package owns now is
-  /// kept, and so is a matched directory holding it.
+  /// Deletes what uninstallation steps 2–4 match in the workspace as it is now
+  /// (protocol/lip-workspace.md, "Atomicity" rule 4), beyond what the plan already deleted. A file
+  /// that another package owns now is kept, and so is a matched directory holding it.
   private void DeleteMatches(
       PackagePlan plan,
       DeleteMatchesStep step,
@@ -448,7 +451,7 @@ public partial class McmodInstaller(
   }
 
   /// Whether a package other than the one of the plan owns the file now, so that uninstalling
-  /// the package keeps it (protocol/workspace.md §4).
+  /// the package keeps it (protocol/lip-workspace.md, "Installing and uninstalling").
   private bool OwnedByAnother(PackagePlan plan, FileOwners owners, string full) {
     string relative = _fs.Path.GetRelativePath(plan.Root, full)
         .Replace(_fs.Path.DirectorySeparatorChar, '/');
@@ -460,8 +463,8 @@ public partial class McmodInstaller(
     return true;
   }
 
-  /// The owners of the files of the installed packages (protocol/workspace.md §4), by the long
-  /// names of the files; the first package recording a file owns it.
+  /// The owners of the files of the installed packages (protocol/lip-workspace.md, "Installing and
+  /// uninstalling"), by the long names of the files; the first package recording a file owns it.
   public FileOwners Owners(string root, IEnumerable<LockedPackage> packages) {
     string full = _fs.Path.GetFullPath(root);
     FileOwners owners = new();
@@ -474,7 +477,7 @@ public partial class McmodInstaller(
     return owners;
   }
 
-  /// The entry of an installed package (protocol/workspace.md §7.1): the entry of its variant in
+  /// The entry of an installed package (protocol/state.json.md): the entry of its variant in
   /// its recorded package file for the environment.
   public static PackageEntry LockedEntry(LockedPackage package, LipEnvironment environment) {
     PackageFile manifest;
@@ -520,7 +523,8 @@ public partial class McmodInstaller(
   /// Where asset i is mounted in the source of a package.
   private static string Mount(int i) => i.ToString(CultureInfo.InvariantCulture);
 
-  /// Plans the writes of step 2 of installing a package (protocol/workspace.md §4).
+  /// Plans the writes of step 2 of installing a package (protocol/lip-workspace.md, "Installing and
+  /// uninstalling").
   private async Task<List<PlannedWrite>> Plan(
       Candidate candidate,
       MountSource source,
@@ -588,8 +592,9 @@ public partial class McmodInstaller(
             .Select(k => (k[prefix.Length..], k)),
       ];
 
-      // The package file of the package is never written (protocol/workspace.md §4 step 2): its
-      // lip.toml, or, for an archive without one, the tooth.json it is read from.
+      // The package file of the package is never written (protocol/lip-workspace.md, "Installing
+      // and uninstalling" step 2): its lip.toml, or, for an archive without one, the tooth.json it
+      // is read from.
       if (asset.Type == AssetType.Self) {
         string packageFile = files.Any(f => f.Path == PackageFormat.FileName)
             ? PackageFormat.FileName
@@ -663,8 +668,9 @@ public partial class McmodInstaller(
     return plan;
   }
 
-  /// Plans the writes of one placement of a "self" or "zip" asset (protocol/workspace.md §4 step
-  /// 2). files are the (path in the asset, key) pairs of the asset.
+  /// Plans the writes of one placement of a "self" or "zip" asset (protocol/lip-workspace.md,
+  /// "Installing and uninstalling" step 2). files are the (path in the asset, key) pairs of the
+  /// asset.
   private static void PlanPlacement(
       string label,
       int asset,
@@ -811,7 +817,8 @@ public partial class McmodInstaller(
             ? start + path[longStart.Length..]
             : path;
         string suffix = info.IsDirectory ? "/" : "";
-        // A path below mods does not match only because mods does (protocol/workspace.md §4).
+        // A path below mods does not match only because mods does (protocol/lip-workspace.md,
+        // "Installing and uninstalling").
         int slash = path.IndexOf('/', StringComparison.Ordinal);
         bool belowMods = slash >= 0 && WorkspaceLayout.IsModsDirectory(path[..slash]);
         bool matched = all

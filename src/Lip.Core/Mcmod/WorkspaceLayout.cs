@@ -9,7 +9,8 @@ namespace Lip.Core.Mcmod;
 public class WorkspaceLayoutException(string message, Exception? inner = null)
     : InvalidOperationException(message, inner);
 
-/// The workspace layout (protocol/workspace.md §2): mods live in &lt;root&gt;/mods, a directory.
+/// The workspace layout (protocol/lip-workspace.md, "Environment and layout"): mods live in
+/// &lt;root&gt;/mods, a directory.
 public class WorkspaceLayout(IFileSystem fileSystem, IUserInteraction userInteraction) {
   public const string ModsDirectory = "mods";
 

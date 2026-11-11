@@ -10,8 +10,8 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Obtains archives of sources and assets (protocol/package.md §2, §4 step 1; protocol/workspace.md
-/// §4 step 2, §5).
+/// Obtains archives of sources and assets (protocol/lip-package.md, "Sources" and "Resolution" step
+/// 1; protocol/lip-workspace.md, "Installing and uninstalling" step 2 and "Operations").
 ///
 /// Downloaded ZIP archives and assets are cached under the key of their URL (CacheKeys.Http), so a
 /// URL is downloaded once until Forget, and read into memory when opened. Local ZIP files are
@@ -151,8 +151,8 @@ public class ArchiveProvider(
         + $" ({string.Join(", ", urls)}).",
         new AggregateException("Every URL of the asset failed.", failures));
   }
-  /// The git repository URL of a remote repository (protocol/package.md §2.1), without any
-  /// GitHub proxy applied.
+  /// The git repository URL of a remote repository (protocol/lip-package.md, "Remote
+  /// repositories"), without any GitHub proxy applied.
   public static string GetRepoUrl(string spec) => $"https://{spec}.git";
 
   private async Task<ArchiveHandle> OpenUrl(string url) {
@@ -161,8 +161,8 @@ public class ArchiveProvider(
   }
 
   /// The ZIP archive of a URL, from its cached download keyed by the URL without its fragment
-  /// (protocol/userspace.md §3). A cached copy that is not a valid ZIP archive (e.g. corrupted)
-  /// is downloaded again.
+  /// (protocol/lip-userspace.md, "Cache"). A cached copy that is not a valid ZIP archive (e.g.
+  /// corrupted) is downloaded again.
   ///
   /// The download is read into memory once and validated there, so that what is installed is
   /// exactly what was validated, even if another process deletes or replaces the cache entry
@@ -326,7 +326,8 @@ public class ArchiveProvider(
         .ThenByDescending(v => v.Version.Tag, StringComparer.Ordinal)];
   }
 
-  /// Parses a tag ref name into a version if the tag is a version tag (protocol/package.md §2.1).
+  /// Parses a tag ref name into a version if the tag is a version tag (protocol/lip-package.md,
+  /// "Remote repositories").
   public static SemVersion? ParseVersionTag(string refName) {
     if (!refName.StartsWith(_versionTagRefPrefix, StringComparison.Ordinal)) {
       return null;
@@ -340,8 +341,8 @@ public class ArchiveProvider(
 
   /// Downloads a URL into the cache under CacheKeys.Http(url), via the GitHub proxy first if one
   /// is configured, unless it is cached already. The download goes to a .tmp file in the
-  /// cache directory and is renamed into place once complete. A candidate whose response is not a valid
-  /// ZIP archive (e.g. a proxy error page) is skipped.
+  /// cache directory and is renamed into place once complete. A candidate whose response is not a
+  /// valid ZIP archive (e.g. a proxy error page) is skipped.
   private async Task<IFileInfo> Download(string url) {
     try {
       return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), async destination => {

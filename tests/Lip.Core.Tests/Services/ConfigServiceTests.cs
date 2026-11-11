@@ -5,8 +5,8 @@ using Moq;
 
 namespace Lip.Core.Tests.Services;
 
-/// The configuration (protocol/userspace.md §2, config.schema.toml) and the migration of
-/// liprc.json (protocol/compatibility.md §4).
+/// The configuration (protocol/config.toml.md, config.schema.toml) and the migration of
+/// liprc.json (protocol/lip-compatibility.md, "liprc.json").
 public class ConfigServiceTests {
   private static string GetConfigPath() =>
       Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "config.toml");
@@ -60,7 +60,7 @@ public class ConfigServiceTests {
     Assert.Equal("https://proxy.com", result);
   }
 
-  /// protocol/userspace.md §2: a config.toml that is not valid against config.schema.toml, which
+  /// protocol/config.toml.md: a config.toml that is not valid against config.schema.toml, which
   /// requires "format": 4, means every key has its default.
   [Theory]
   [InlineData("")]
@@ -148,7 +148,7 @@ public class ConfigServiceTests {
     Assert.Equal("", await service.Get("github_proxy"));
   }
 
-  /// protocol/userspace.md §2: the file is written atomically, through a .tmp file in the config
+  /// protocol/config.toml.md: the file is written atomically, through a .tmp file in the config
   /// directory that is renamed over it.
   [Fact]
   public async Task Set_ExistingFile_ReplacesItLeavingNoOtherFile() {
@@ -196,7 +196,7 @@ public class ConfigServiceTests {
     ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
 
-  /// protocol/userspace.md §2: keys that are not configuration keys are ignored, whatever their
+  /// protocol/config.toml.md: keys that are not configuration keys are ignored, whatever their
   /// value.
   [Theory]
   [InlineData("foo = { a = 1 }\n")]
@@ -235,7 +235,7 @@ public class ConfigServiceTests {
     Assert.False(fs.File.Exists(GetConfigPath()));
   }
 
-  // liprc.json (protocol/compatibility.md §4)
+  // liprc.json (protocol/lip-compatibility.md, "liprc.json")
 
   [Fact]
   public async Task List_LiprcJson_WritesConfigTomlAndDeletesIt() {

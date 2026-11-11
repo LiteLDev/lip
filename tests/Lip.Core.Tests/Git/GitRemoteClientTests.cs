@@ -115,7 +115,7 @@ public class GitRemoteClientTests {
     Assert.Equal("refs/tags/v1.0.0", Assert.Single(first).Name);
     Assert.Equal(first, second);
     // A request that fails through the proxy goes to GitHub directly; the next one tries the
-    // proxy again (protocol/userspace.md §2).
+    // proxy again (protocol/config.toml.md).
     httpTest.ShouldHaveCalled("https://proxy.example.com/*").Times(2);
     httpTest.ShouldHaveCalled("https://github.com/LiteLDev/LeviLamina.git/git-upload-pack").Times(2);
   }
@@ -264,8 +264,8 @@ public class GitRemoteClientTests {
   [InlineData(".git")]
   [InlineData("a b.")]
   public async Task ListTree_NameGitDoesNotCheckOut_IsListed(string name) {
-    // protocol/package.md §1 restricts the names in a git archive only by "", ".", "..", '/'
-    // and '\'.
+    // protocol/lip-package.md, "Terms" restricts the names in a git archive only by "", ".", "..",
+    // '/' and '\'.
     string blobId = new('a', 40);
     byte[] tree = PackBuilder.Tree(("100644", name, blobId));
     byte[] commit = PackBuilder.Commit(PackBuilder.ObjectId(GitObjectType.Tree, tree));

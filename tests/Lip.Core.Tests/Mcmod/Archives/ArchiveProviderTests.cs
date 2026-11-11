@@ -14,8 +14,8 @@ using Moq;
 
 namespace Lip.Core.Tests.Mcmod.Archives;
 
-/// Archives of sources (protocol/package.md §1, §2) and of assets (protocol/workspace.md §4 step
-/// 2).
+/// Archives of sources (protocol/lip-package.md, "Terms" and "Sources") and of assets
+/// (protocol/lip-workspace.md, "Installing and uninstalling" step 2).
 public class ArchiveProviderTests {
   private const string _spec = "example.com/owner/repo";
   private const string _repoUrl = "https://example.com/owner/repo.git";
@@ -111,7 +111,7 @@ public class ArchiveProviderTests {
   private string[] CachedFiles() =>
       [.. _fileSystem.Directory.GetFiles(LipDirectories.Cache).Select(Path.GetFileName)!];
 
-  // Local files and directories (protocol/package.md §2.3).
+  // Local files and directories (protocol/lip-package.md, "Local paths").
 
   [Fact]
   public async Task Open_LocalFile_ReturnsZipArchiveKeyedByFileUri() {
@@ -209,7 +209,7 @@ public class ArchiveProviderTests {
         () => CreateProvider().Open(Ref.Parse(_spec, allowFile: false)));
   }
 
-  // Remote repositories (protocol/package.md §2.1).
+  // Remote repositories (protocol/lip-package.md, "Remote repositories").
 
   [Theory]
   [InlineData("branch:main", "refs/heads/main")]
@@ -386,7 +386,7 @@ public class ArchiveProviderTests {
         () => CreateProvider().OpenCommit(_spec, _commit));
   }
 
-  // URLs (protocol/package.md §2.2) and ZIP validation (protocol/package.md §1).
+  // URLs (protocol/lip-package.md, "URLs") and ZIP validation (protocol/lip-package.md, "Terms").
 
   [Theory]
   [InlineData("../evil.txt", 0)]
@@ -427,7 +427,8 @@ public class ArchiveProviderTests {
 
   [Fact]
   public async Task Open_ZipWithDriveLetterEntry_Succeeds() {
-    // protocol/package.md §1 forbids only a leading '/', '..' segments and '\' in entry paths.
+    // protocol/lip-package.md, "Terms" forbids only a leading '/', '..' segments and '\' in entry
+    // paths.
     _downloads[_url] = Zip(("lip.toml", "{}", 0), ("C:x", "x", 0));
 
     ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
@@ -510,7 +511,8 @@ public class ArchiveProviderTests {
 
   [Fact]
   public async Task Open_CacheEntryDeletedAfterOpen_StillServesTheOpenedArchive() {
-    // Arrange: another process may delete cache entries at any time (protocol/userspace.md §3).
+    // Arrange: another process may delete cache entries at any time (protocol/lip-userspace.md,
+    // "Cache").
     _downloads[_url] = Zip(("lip.toml", "{}"));
     ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
 
@@ -614,7 +616,7 @@ public class ArchiveProviderTests {
     Assert.IsType<HttpRequestException>(ex.InnerException);
   }
 
-  // Assets (protocol/workspace.md §4 step 2).
+  // Assets (protocol/lip-workspace.md, "Installing and uninstalling" step 2).
 
   [Fact]
   public async Task OpenAsset_Zip_ReturnsItsFiles() {
@@ -794,7 +796,7 @@ public class ArchiveProviderTests {
 
   [Fact]
   public async Task OpenAsset_UrlWithFragment_CachesUnderUrlWithoutFragment() {
-    // Arrange: http-<H> hashes the URL without its fragment (protocol/userspace.md §3).
+    // Arrange: http-<H> hashes the URL without its fragment (protocol/lip-userspace.md, "Cache").
     _downloads[_url] = Zip(("a.txt", "a"));
 
     // Act

@@ -3,8 +3,8 @@ using Semver;
 
 namespace Lip.Core.Tests.Mcmod;
 
-/// Ranges (protocol/package.md §1): SemVersionRange.Parse of Semver 3.0.0 with its default
-/// options.
+/// Ranges (protocol/lip-package.md, "Terms"): SemVersionRange.Parse of Semver 3.0.0 with its
+/// default options.
 public class VersionRangeTests {
   [Theory]
   [InlineData(">=1.2.0 <2.0.0", "1.2.0", true)]

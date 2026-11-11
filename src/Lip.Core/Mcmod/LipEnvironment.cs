@@ -28,8 +28,8 @@ public static class McmodSideExtensions {
   }
 }
 
-/// The environment (side, platform) of a workspace (protocol/package.md §1). Platform is a
-/// .NET RID.
+/// The environment (side, platform) of a workspace (protocol/lip-package.md, "Terms"). Platform is
+/// a .NET RID.
 ///
 /// lip manages server workspaces only: its operations always use McmodSide.Server. Client
 /// workspaces are left to launchers implementing the same spec (LeviLauncher). The client
