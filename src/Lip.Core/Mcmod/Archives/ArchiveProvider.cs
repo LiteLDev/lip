@@ -40,6 +40,11 @@ public class ArchiveProvider(
   private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<TaggedVersion>>>>
       _tagCache = new();
 
+  // LeaveCacheUnchanged: the URLs forgotten since, and the downloads kept in memory.
+  private readonly ConcurrentDictionary<string, bool> _forgotten = new();
+  private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _memoryDownloads = new();
+  private bool _leaveCacheUnchanged;
+
   public async Task<ArchiveHandle> Open(Ref target) {
     return target.Kind switch {
       RefKind.Url => await OpenUrl(target.Target),
@@ -107,7 +112,19 @@ public class ArchiveProvider(
     return await OpenGit($"{spec}@{version.Version}", spec, tagged.Commit.ToLowerInvariant());
   }
 
+  public void LeaveCacheUnchanged() {
+    RunTrace.Write("cache", "Leaving the cache unchanged: downloads are kept in memory");
+    _leaveCacheUnchanged = true;
+  }
+
   public async Task Forget(string url) {
+    url = WithoutFragment(url);
+    if (_leaveCacheUnchanged) {
+      RunTrace.Write("cache", $"Not using the cached download of {url}, if any");
+      _forgotten[url] = true;
+      return;
+    }
+
     IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
     if (file is null) {
       RunTrace.Write("cache", $"{url} is not cached: nothing to forget");
@@ -161,15 +178,21 @@ public class ArchiveProvider(
   }
 
   /// The ZIP archive of a URL, from its cached download keyed by the URL without its fragment
-  /// (protocol/lip-userspace.md, "Cache"). A cached copy that is not a valid ZIP archive (e.g.
-  /// corrupted) is downloaded again.
+  /// (protocol/lip-userspace.md, "Cache"). A cached copy that is not a ZIP archive (e.g.
+  /// truncated) is deleted and downloaded again, once ("Repairing"): a download that is not a ZIP
+  /// archive either fails.
   ///
   /// The download is read into memory once and validated there, so that what is installed is
   /// exactly what was validated, even if another process deletes or replaces the cache entry
   /// meanwhile.
+  ///
+  /// After LeaveCacheUnchanged, a damaged cached download is not deleted, and a download that is
+  /// not cached, is damaged, or was forgotten since is downloaded into memory instead.
   private async Task<ZipSource> DownloadZip(string url) {
-    url = url.Split('#', 2)[0];
-    IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
+    url = WithoutFragment(url);
+    IFileInfo? file = _leaveCacheUnchanged && _forgotten.ContainsKey(url)
+        ? null
+        : await _cacheService.TryGetFile(CacheKeys.Http(url));
     if (file is not null) {
       try {
         byte[] content = _fileSystem.File.ReadAllBytes(file.FullName);
@@ -180,7 +203,9 @@ public class ArchiveProvider(
       catch (ArchiveUnavailableException ex) {
         RunTrace.Write("cache", $"The cached download of {url} is damaged, downloading it again:"
             + $" {ex.Message}");
-        DeleteCached(file, url);
+        if (!_leaveCacheUnchanged) {
+          DeleteCached(file, url);
+        }
       }
       catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) {
         RunTrace.Write("cache", $"The cached download of {url} was deleted meanwhile,"
@@ -196,6 +221,10 @@ public class ArchiveProvider(
       }
     } else {
       RunTrace.Write("cache", $"{url} is not cached yet");
+    }
+
+    if (_leaveCacheUnchanged) {
+      return new ZipSource(await DownloadIntoMemory(url), $"the download of {url}");
     }
 
     // Download validates what it downloads; the content read back is validated again, since
@@ -215,6 +244,8 @@ public class ArchiveProvider(
     ValidateZip(downloadedContent, $"The download of {url} ({downloaded.FullName})");
     return CachedZipSource(url, downloaded, downloadedContent);
   }
+
+  private static string WithoutFragment(string url) => url.Split('#', 2)[0];
 
   private static ZipSource CachedZipSource(string url, IFileInfo file, byte[] content) =>
       new(content, $"the download of {url} ({file.FullName})", cachedDownload: true);
@@ -345,55 +376,84 @@ public class ArchiveProvider(
   /// valid ZIP archive (e.g. a proxy error page) is skipped.
   private async Task<IFileInfo> Download(string url) {
     try {
-      return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), async destination => {
-        List<Url> downloadUrls = [.. GetDownloadUrls(url)];
-        List<Exception> exceptions = [];
-
-        for (int index = 0; index < downloadUrls.Count; index++) {
-          Url downloadUrl = downloadUrls[index];
-          // GetDownloadUrls puts the proxied URL, if any, first.
-          bool viaProxy = downloadUrls.Count > 1 && index == 0;
-          try {
+      return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), destination =>
+          FromFirstCandidate(url, async downloadUrl => {
             // Leftovers of a failed candidate must not be mistaken for this one's content.
             destination.Refresh();
             if (destination.Exists) {
               destination.Delete();
             }
 
-            RunTrace.Write("archive", viaProxy
-                ? $"Downloading {url} through the GitHub proxy: {downloadUrl}"
-                : $"Downloading {url}");
             await _fileDownloader.DownloadFile(downloadUrl, destination);
             destination.Refresh();
             ZipValidator.Validate(destination, $"The file downloaded from {downloadUrl}");
-            return;
-          }
-          catch (Exception ex) when (IsUnavailable(ex) || ex is ArchiveUnavailableException) {
-            RunTrace.Write("archive", $"Downloading from {downloadUrl} failed:"
-                + $" {ex.GetType().Name}: {ex.Message}");
-            // An invalid github_proxy value is accepted by the configuration and fails only here.
-            exceptions.Add(viaProxy && HasUriFormatCause(ex)
-                ? new ArchiveUnavailableException(
-                    $"The GitHub proxy set in github_proxy does not give a valid URL"
-                    + $" ({downloadUrl}). Set a valid URL with 'lip config set github_proxy <URL>',"
-                    + " or remove it with 'lip config delete github_proxy'.",
-                    ex)
-                : ex);
-          }
-        }
-
-        throw exceptions.Count == 1
-            ? new ArchiveUnavailableException($"Could not download {url}.", exceptions[0])
-            : new ArchiveUnavailableException(
-                $"Could not download {url}, neither through the GitHub proxy"
-                + $" ({string.Join(", ", downloadUrls.SkipLast(1))}) nor directly.",
-                new AggregateException("Every download address failed.", exceptions));
-      });
+            return true;
+          }));
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException(
           $"Could not store the download of {url} in the lip cache ({LipDirectories.Cache}).", ex);
     }
+  }
+
+  /// Downloads a URL into memory, as Download downloads it into the cache, once per
+  /// ArchiveProvider (LeaveCacheUnchanged).
+  private async Task<byte[]> DownloadIntoMemory(string url) {
+    Lazy<Task<byte[]>> lazy = _memoryDownloads.GetOrAdd(url, _ => new(() =>
+        FromFirstCandidate(url, async downloadUrl => {
+          using MemoryStream stream = new();
+          await _fileDownloader.Download(downloadUrl, stream);
+          byte[] content = stream.ToArray();
+          ValidateZip(content, $"The file downloaded from {downloadUrl}");
+          return content;
+        })));
+
+    try {
+      return await lazy.Value;
+    }
+    catch {
+      // Do not keep failures (e.g. network errors) so that later calls can retry.
+      _memoryDownloads.TryRemove(new(url, lazy));
+      throw;
+    }
+  }
+
+  /// The result of attempt for the first download URL of url (GetDownloadUrls) for which it
+  /// succeeds. Throws ArchiveUnavailableException when it succeeds for none.
+  private async Task<T> FromFirstCandidate<T>(string url, Func<Url, Task<T>> attempt) {
+    List<Url> downloadUrls = [.. GetDownloadUrls(url)];
+    List<Exception> exceptions = [];
+
+    for (int index = 0; index < downloadUrls.Count; index++) {
+      Url downloadUrl = downloadUrls[index];
+      // GetDownloadUrls puts the proxied URL, if any, first.
+      bool viaProxy = downloadUrls.Count > 1 && index == 0;
+      try {
+        RunTrace.Write("archive", viaProxy
+            ? $"Downloading {url} through the GitHub proxy: {downloadUrl}"
+            : $"Downloading {url}");
+        return await attempt(downloadUrl);
+      }
+      catch (Exception ex) when (IsUnavailable(ex) || ex is ArchiveUnavailableException) {
+        RunTrace.Write("archive", $"Downloading from {downloadUrl} failed:"
+            + $" {ex.GetType().Name}: {ex.Message}");
+        // A github_proxy that is a URI but not a usable URL prefix fails only here.
+        exceptions.Add(viaProxy && HasUriFormatCause(ex)
+            ? new ArchiveUnavailableException(
+                $"The GitHub proxy set in github_proxy does not give a valid URL"
+                + $" ({downloadUrl}). Set a valid URL with 'lip config set github_proxy <URL>',"
+                + " or remove it with 'lip config delete github_proxy'.",
+                ex)
+            : ex);
+      }
+    }
+
+    throw exceptions.Count == 1
+        ? new ArchiveUnavailableException($"Could not download {url}.", exceptions[0])
+        : new ArchiveUnavailableException(
+            $"Could not download {url}, neither through the GitHub proxy"
+            + $" ({string.Join(", ", downloadUrls.SkipLast(1))}) nor directly.",
+            new AggregateException("Every download address failed.", exceptions));
   }
 
   private IEnumerable<Url> GetDownloadUrls(string url) {

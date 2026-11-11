@@ -7,12 +7,14 @@ namespace Lip.Core.Mcmod.Install;
 /// name, for messages. Root: the absolute workspace root, where scripts run. OwnedFiles: for an
 /// install, the files the package owns afterwards (workspace-relative, '/'-separated) when the
 /// workspace is as planned; hook commands may change which files matching preserve are kept, and
-/// McmodInstaller.Apply returns the files it owns as it happened.
+/// McmodInstaller.Apply returns the files it owns as it happened. Paths: how the paths of the
+/// workspace are compared, for the environment of the operation.
 public sealed record PackagePlan(
     string Name,
     string Root,
     IReadOnlyList<string> OwnedFiles,
-    IReadOnlyList<PlannedStep> Steps) {
+    IReadOnlyList<PlannedStep> Steps,
+    WorkspacePaths Paths) {
   /// The absolute paths the plan writes.
   public IEnumerable<string> WrittenPaths =>
       Steps.OfType<WriteStep>().Select(s => s.FullPath);
@@ -36,8 +38,10 @@ public sealed record PackagePlan(
 /// One step of a package plan. Paths are absolute.
 public abstract record PlannedStep;
 
-/// Runs the commands of a script hook (e.g. "preInstall") in turn.
-public sealed record ScriptStep(string Stage, IReadOnlyList<string> Commands) : PlannedStep;
+/// Runs the hook commands of a member of hooks (e.g. "pre_install") in turn, for the platform of
+/// the environment (protocol/lip-workspace.md, "Terms").
+public sealed record ScriptStep(string Stage, IReadOnlyList<string> Commands, string Platform)
+    : PlannedStep;
 
 /// Writes the file of an archive, replacing what is there. Target is workspace-relative.
 /// Preserve: the globs of preserve of the package; a file there when the step runs that matches

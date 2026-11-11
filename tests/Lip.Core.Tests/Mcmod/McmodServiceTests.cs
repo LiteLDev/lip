@@ -4,6 +4,7 @@ using Lip.Core.Infrastructure;
 using Lip.Core.Json;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Install;
+using Lip.Core.Mcmod.Lock;
 using Moq;
 
 namespace Lip.Core.Tests.Mcmod;
@@ -46,6 +47,45 @@ public class McmodServiceTests {
     Assert.Equal(["lib/lib.dll"], package.Files);
     Assert.True(JsonNode.DeepEquals(
         Toml(LibPackageFile("1.0.0")), JsonNode.Parse(package.Manifest.GetRawText())));
+  }
+
+  [Fact]
+  public async Task Install_WithoutPlatform_UsesWinX64WhateverTheSystem() {
+    // Arrange: without --platform and a state file, the platform is win-x64 on every system
+    // (protocol/lip.md, "Environment").
+    AddLib("1.0.0");
+
+    // Act
+    await _ws.Service.Install([Lib], new OperationOptions());
+
+    // Assert
+    Assert.Equal("win-x64", (await _ws.Lock()).Platform);
+    Assert.True(_ws.Exists("lib/lib.dll"));
+  }
+
+  [Fact]
+  public async Task Install_WithoutPlatform_UsesThePlatformOfTheStateFile() {
+    // Arrange
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.Toml($$"""
+          {
+            "format": 4,
+            "id": "{{Lib}}",
+            "version": "1.0.0",
+            "variants": { "": [ { "side": "server", "platform": "linux-x64" } ] }
+          }
+          """),
+    });
+    _ws.AddFile(".lip/state.json", """
+        { "format": 4, "side": "server", "platform": "linux-x64", "packages": [] }
+        """);
+
+    // Act
+    await _ws.Service.Install([Lib], new OperationOptions());
+
+    // Assert
+    Assert.Equal("linux-x64", (await _ws.Lock()).Platform);
+    Assert.Single((await _ws.Lock()).Packages);
   }
 
   [Fact]
@@ -295,144 +335,7 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_NoDependencies_InstallsOnlyTheRequest() {
-    // Arrange
-    AddLibAndApp();
-
-    // Act
-    await _ws.Service.Install([App], _options with { NoDependencies = true });
-
-    // Assert
-    LockedPackage app = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((App, "2.0.0", true), (app.Id, app.Version, app.Explicit));
-    Assert.False(_ws.Exists("lib/lib.dll"));
-    Assert.True(_ws.Exists("app/app.dll"));
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesOfInstalledDependency_OnlyMarksIt() {
-    // Arrange
-    AddLibAndApp(hook: true);
-    await _ws.Service.Install([App], _options);
-    LockedPackage before = (await _ws.Lock()).Packages.Single(p => p.Id == Lib);
-
-    // Act
-    await _ws.Service.Install([Lib], _options with { NoDependencies = true });
-
-    // Assert: same identity, version and commit, so nothing is reinstalled.
-    LockedPackage after = (await _ws.Lock()).Packages.Single(p => p.Id == Lib);
-    Assert.True(after.Explicit);
-    Assert.Equal(before.Commit, after.Commit);
-    Assert.Equal(before.Files, after.Files);
-    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Once);
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesOtherVersion_ReplacesInstalledPackageOnly() {
-    // Arrange
-    AddLibAndApp();
-    await _ws.Service.Install([$"{App}@1.0.0", $"{Lib}@1.0.0"], _options);
-
-    // Act
-    await _ws.Service.Install([$"{Lib}@1.1.0"], _options with { NoDependencies = true });
-
-    // Assert
-    Assert.Equal(
-        [(App, "1.0.0", true), (Lib, "1.1.0", true)],
-        (await _ws.Service.List()).Select(p => (p.Identity, p.Version, p.Explicit)).Order());
-    Assert.Equal("lib 1.1.0", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesOtherVersion_KeepsInstallationOrder() {
-    // Arrange
-    AddLibAndApp();
-    await _ws.Service.Install([$"{App}@1.0.0", $"{Lib}@1.0.0"], _options);
-
-    // Act
-    await _ws.Service.Install([$"{Lib}@1.1.0"], _options with { NoDependencies = true });
-
-    // Assert: lib still satisfies the dependency of app, so it comes first
-    // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
-    Assert.Equal([Lib, App], (await _ws.Lock()).Packages.Select(p => p.Identity));
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesOfADependencyAndItsDependent_InstallsInInstallationOrder() {
-    // Arrange
-    AddLibAndApp();
-    List<string> installed = [];
-    _ws.Ui.Setup(u => u.PrintInfo(It.Is<string>(m => m.StartsWith("Installing"))))
-        .Callback((string message) => installed.Add(message))
-        .Returns(Task.CompletedTask);
-
-    // Act: app is named before lib, which satisfies its dependency.
-    await _ws.Service.Install(
-        [$"{App}@1.0.0", $"{Lib}@1.0.0"], _options with { NoDependencies = true });
-
-    // Assert
-    Assert.Equal([Lib, App], (await _ws.Lock()).Packages.Select(p => p.Identity));
-    Assert.Collection(
-        installed,
-        m => Assert.Contains($"'{Lib}'", m),
-        m => Assert.Contains($"'{App}'", m));
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesOfACycleThroughAnInstalledPackage_InstallsInInstallationOrder() {
-    // Arrange: zeta needs c, c needs alpha and alpha needs zeta; c is installed.
-    const string alpha = "example.com/cycle/alpha";
-    const string c = "example.com/cycle/c";
-    const string zeta = "example.com/cycle/zeta";
-    foreach ((string id, string dependency) in new[] { (zeta, c), (c, alpha), (alpha, zeta) }) {
-      _ws.AddTag(id, "1.0.0", new() {
-        ["lip.toml"] = WorkspaceHarness.LipToml(
-            id, "1.0.0", $$""" "deps": { "{{dependency}}": "1.0.0" }"""),
-      });
-    }
-
-    await _ws.Service.Install([c], _options with { NoDependencies = true });
-    List<string> installed = [];
-    _ws.Ui.Setup(u => u.PrintInfo(It.Is<string>(m => m.StartsWith("Installing"))))
-        .Callback((string message) => installed.Add(message))
-        .Returns(Task.CompletedTask);
-
-    // Act
-    await _ws.Service.Install([zeta, alpha], _options with { NoDependencies = true });
-
-    // Assert: the three are a cycle, installed and recorded in ascending order of identities
-    // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
-    Assert.Collection(
-        installed,
-        m => Assert.Contains($"'{alpha}'", m),
-        m => Assert.Contains($"'{zeta}'", m));
-    Assert.Equal([alpha, c, zeta], (await _ws.Lock()).Packages.Select(p => p.Identity));
-  }
-
-  [Fact]
-  public async Task Uninstall_NoDependenciesOfAMemberOfACycle_RecordsTheRestInInstallationOrder() {
-    // Arrange: a needs c, c needs b and b needs a, a cycle recorded as a, b, c.
-    const string a = "example.com/cycle/a", b = "example.com/cycle/b", c = "example.com/cycle/c";
-    foreach ((string id, string dependency) in new[] { (a, c), (c, b), (b, a) }) {
-      _ws.AddTag(id, "1.0.0", new() {
-        ["lip.toml"] = WorkspaceHarness.LipToml(
-            id, "1.0.0", $$""" "deps": { "{{dependency}}": "1.0.0" }"""),
-      });
-    }
-
-    await _ws.Service.Install([a], _options);
-    Assert.Equal([a, b, c], (await _ws.Lock()).Packages.Select(p => p.Identity));
-
-    // Act
-    await _ws.Service.Uninstall([b], _options with { NoDependencies = true });
-
-    // Assert: without b, c satisfies the dependency of a and comes first
-    // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
-    Assert.Equal([c, a], (await _ws.Lock()).Packages.Select(p => p.Identity));
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesDryRunOfInstalledDependency_ReportsMarkingIt() {
+  public async Task Install_DryRunOfInstalledDependency_ReportsMarkingIt() {
     // Arrange
     AddLibAndApp();
     await _ws.Service.Install([App], _options);
@@ -442,7 +345,7 @@ public class McmodServiceTests {
         .Returns(Task.CompletedTask);
 
     // Act
-    await _ws.Service.Install([Lib], _options with { NoDependencies = true, DryRun = true });
+    await _ws.Service.Install([Lib], _options with { DryRun = true });
 
     // Assert: protocol/lip-install.md, a dry run reports the packages it would mark as explicitly
     // installed.
@@ -463,22 +366,65 @@ public class McmodServiceTests {
     Assert.Equal(before, WorkspaceSnapshot());
     Assert.False(_ws.Fs.Directory.Exists(_ws.Path(".lip")));
     _ws.CommandRunner.Verify(
-        r => r.Run(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        r => r.Run(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
   }
 
+  /// protocol/lip.md, "Dry run": no file is created, replaced or deleted, in the cache either.
   [Fact]
-  public async Task Install_IgnoreScripts_RunsNoHook() {
+  public async Task Install_DryRunOfUrl_CreatesNoCacheFile() {
     // Arrange
-    AddLibAndApp(hook: true);
+    const string url = "https://example.com/pkg.zip";
+    _ws.AddDownload(url, WorkspaceHarness.Zip(new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          "example.com/pkg", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "x",
+    }));
+    ClearCache();
 
     // Act
-    await _ws.Service.Install([Lib], _options with { IgnoreScripts = true });
+    await _ws.Service.Install([url], _options with { DryRun = true });
 
     // Assert
-    Assert.True(_ws.Exists("lib/lib.dll"));
-    _ws.CommandRunner.Verify(
-        r => r.Run(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    Assert.False(_ws.Fs.Directory.Exists(LipDirectories.Cache));
+    Assert.False(_ws.Fs.File.Exists(_ws.Path("x.txt")));
   }
+
+  /// protocol/lip.md, "Dry run": the URL is downloaded again (protocol/lip-workspace.md,
+  /// "Operations"), without deleting or replacing its cached download.
+  [Fact]
+  public async Task Update_DryRunOfUrl_LeavesTheCacheAsItIs() {
+    // Arrange
+    const string url = "https://example.com/pkg.zip";
+    _ws.AddDownload(url, WorkspaceHarness.Zip(new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          "example.com/pkg", "1.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "1",
+    }));
+    await _ws.Service.Install([url], _options);
+    _ws.AddDownload(url, WorkspaceHarness.Zip(new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          "example.com/pkg", "2.0.0", WorkspaceHarness.SelfAsset("x.txt", "x.txt")),
+      ["x.txt"] = "2",
+    }));
+    _ws.Restart();
+    Dictionary<string, string> cacheBefore = CacheSnapshot();
+
+    // Act
+    await _ws.Service.Update([url], _options with { DryRun = true });
+
+    // Assert: the new version was read, but nothing changed.
+    Assert.NotEmpty(cacheBefore);
+    Assert.Equal(cacheBefore, CacheSnapshot());
+    Assert.Equal("1", _ws.Fs.File.ReadAllText(_ws.Path("x.txt")));
+    _ws.Ui.Verify(u => u.PrintInfo(It.Is<string>(m => m.Contains("2.0.0"))), Times.AtLeastOnce);
+  }
+
+  /// The files of the cache with their content in hex.
+  private Dictionary<string, string> CacheSnapshot() =>
+      _ws.Fs.Directory.Exists(LipDirectories.Cache)
+          ? _ws.Fs.Directory.GetFiles(LipDirectories.Cache, "*", SearchOption.AllDirectories)
+              .ToDictionary(f => f, f => Convert.ToHexString(_ws.Fs.File.ReadAllBytes(f)))
+          : [];
 
   [Fact]
   public async Task Install_VariantsTogether_RecordsVariantIdentities() {
@@ -610,6 +556,22 @@ public class McmodServiceTests {
     Assert.Equal("linux-x64", (await _ws.Lock()).Platform);
   }
 
+  [Fact]
+  public async Task Update_PlatformOptionWithoutChanges_ReplacesTheRecordedPlatform() {
+    // Arrange: protocol/lip.md, "Environment": a workspace operation records its environment,
+    // replacing the one recorded, even when it changes nothing.
+    _ws.AddFile(".lip/state.json", """
+        { "format": 4, "side": "server", "platform": "win-x64", "packages": [] }
+        """);
+
+    // Act
+    await _ws.Service.Update([], _options with { Platform = "linux-x64" });
+
+    // Assert
+    Assert.Equal("linux-x64", (await _ws.Lock()).Platform);
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+  }
+
   #endregion
 
   #region Uninstall
@@ -644,34 +606,16 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Uninstall_DependencyPackage_ThrowsUnlessNoDependencies() {
-    // Arrange
+  public async Task Uninstall_DependencyPackage_Throws() {
+    // Arrange: every named package must be explicitly installed (protocol/lip-uninstall.md).
     AddLibAndApp();
     await _ws.Service.Install([App], _options);
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
 
     // Act & Assert
     await Assert.ThrowsAsync<InvalidOperationException>(
         () => _ws.Service.Uninstall([Lib], _options));
-    await _ws.Service.Uninstall([Lib], _options with { NoDependencies = true });
-    Assert.Equal([App], (await _ws.Lock()).Packages.Select(p => p.Identity));
-    Assert.False(_ws.Exists("lib/lib.dll"));
-    Assert.True(_ws.Exists("app/app.dll"));
-  }
-
-  [Fact]
-  public async Task Uninstall_NoDependenciesOfExplicitPackage_KeepsItsDependencies() {
-    // Arrange
-    AddLibAndApp();
-    await _ws.Service.Install([App], _options);
-
-    // Act
-    await _ws.Service.Uninstall([App], _options with { NoDependencies = true });
-
-    // Assert
-    LockedPackage lib = Assert.Single((await _ws.Lock()).Packages);
-    Assert.Equal((Lib, false), (lib.Id, lib.Explicit));
-    Assert.True(_ws.Exists("lib/lib.dll"));
-    Assert.False(_ws.Exists("app/app.dll"));
+    Assert.Equal(before, WorkspaceSnapshot());
   }
 
   [Fact]
@@ -804,7 +748,7 @@ public class McmodServiceTests {
               + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }"""),
       ["cfg.ini"] = "default",
     });
-    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root, It.IsAny<string>()))
         .Callback(() => _ws.Fs.File.Delete(_ws.Path("cfg.ini")))
         .Returns(Task.CompletedTask);
 
@@ -843,7 +787,7 @@ public class McmodServiceTests {
       ["a.txt"] = "a",
     });
     bool? journalExisted = null;
-    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root, It.IsAny<string>()))
         .Callback(() => journalExisted = _ws.Fs.File.Exists(_ws.JournalPath))
         .Returns(Task.CompletedTask);
 
@@ -866,7 +810,7 @@ public class McmodServiceTests {
     });
     await _ws.Service.Install([Lib], _options);
     bool? journalExisted = null;
-    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root, It.IsAny<string>()))
         .Callback(() => journalExisted = _ws.Fs.File.Exists(_ws.JournalPath))
         .Returns(Task.CompletedTask);
 
@@ -899,7 +843,7 @@ public class McmodServiceTests {
               + WorkspaceHarness.SelfAsset("cfg.ini", "cfg.ini")),
       ["cfg.ini"] = "app",
     });
-    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root, It.IsAny<string>()))
         .Callback(() => _ws.Fs.File.Delete(_ws.Path("cfg.ini")))
         .Returns(Task.CompletedTask);
 
@@ -933,7 +877,7 @@ public class McmodServiceTests {
               + """, "hooks": { "post_install": [ "app-post" ] }"""),
       ["cfg.ini"] = "app",
     });
-    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("reset", _ws.Root, It.IsAny<string>()))
         .Callback(() => _ws.Fs.File.Delete(_ws.Path("cfg.ini")))
         .Returns(Task.CompletedTask);
 
@@ -943,7 +887,7 @@ public class McmodServiceTests {
 
     // Assert
     Assert.Contains($"'cfg.ini', which belongs to {Lib}", ex.Message);
-    _ws.CommandRunner.Verify(r => r.Run("app-post", It.IsAny<string>()), Times.Never);
+    _ws.CommandRunner.Verify(r => r.Run("app-post", It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
     Assert.False(_ws.Exists("cfg.ini"));
   }
@@ -968,7 +912,7 @@ public class McmodServiceTests {
       ["app.dll"] = "app",
     });
     await _ws.Service.Install([App], _options);
-    _ws.CommandRunner.Setup(r => r.Run("restore", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("restore", _ws.Root, It.IsAny<string>()))
         .Callback(() => _ws.AddFile("server.exe", "server"))
         .Returns(Task.CompletedTask);
 
@@ -976,7 +920,7 @@ public class McmodServiceTests {
     await _ws.Service.Uninstall([App], _options);
 
     // Assert
-    _ws.CommandRunner.Verify(r => r.Run("restore", _ws.Root), Times.Once);
+    _ws.CommandRunner.Verify(r => r.Run("restore", _ws.Root, It.IsAny<string>()), Times.Once);
     Assert.Empty((await _ws.Lock()).Packages);
     Assert.False(_ws.Exists("server.exe"));
     Assert.False(_ws.Fs.Directory.Exists(_ws.Path("lib")));
@@ -1002,10 +946,10 @@ public class McmodServiceTests {
       ["app.dll"] = "app",
     });
     await _ws.Service.Install([App], _options);
-    _ws.CommandRunner.Setup(r => r.Run("restore", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("restore", _ws.Root, It.IsAny<string>()))
         .Callback(() => _ws.AddFile("server.exe", "server"))
         .Returns(Task.CompletedTask);
-    _ws.CommandRunner.Setup(r => r.Run("fail", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("fail", _ws.Root, It.IsAny<string>()))
         .ThrowsAsync(new InvalidOperationException("hook failed"));
 
     // Act & Assert
@@ -1084,7 +1028,7 @@ public class McmodServiceTests {
     await _ws.Service.Update([Lib], _options);
 
     // Assert: the post_install hook ran only for the install.
-    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Once);
+    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root, It.IsAny<string>()), Times.Once);
     Assert.Equal("1.1.0", Assert.Single((await _ws.Lock()).Packages).Version);
   }
 
@@ -1121,28 +1065,8 @@ public class McmodServiceTests {
     await _ws.Service.Update([], _options);
 
     // Assert
-    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Once);
+    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root, It.IsAny<string>()), Times.Once);
     Assert.Equal(commit, Assert.Single((await _ws.Lock()).Packages).Commit);
-  }
-
-  [Fact]
-  public async Task Install_NoDependenciesOfSameVersionAtOtherCommit_ReplacesIt() {
-    // Arrange
-    AddLib("1.0.0", hook: true);
-    await _ws.Service.Install([Lib], _options);
-    string moved = _ws.Git.AddTag(Lib, "v1.0.0", new() {
-      ["lip.toml"] = LibPackageFile("1.0.0", hook: true),
-      ["lib.dll"] = "lib moved",
-    });
-    _ws.Restart();
-
-    // Act
-    await _ws.Service.Install([Lib], _options with { NoDependencies = true });
-
-    // Assert
-    Assert.Equal("lib moved", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
-    Assert.Equal(moved, Assert.Single((await _ws.Lock()).Packages).Commit);
-    _ws.CommandRunner.Verify(r => r.Run("lib-installed", _ws.Root), Times.Exactly(2));
   }
 
   [Fact]
@@ -1628,40 +1552,113 @@ public class McmodServiceTests {
 
   #endregion
 
-  #region Versions
+  #region View
 
   [Fact]
-  public async Task Versions_RemoteRepository_ListsVersionsLowestFirst() {
+  public async Task View_RemoteRepository_ShowsNewestPackageFileAndVersionsLowestFirst() {
     // Arrange
     AddLib("1.1.0");
     AddLib("1.0.0");
 
     // Act
-    IReadOnlyList<string> versions = await _ws.Service.Versions(Lib);
+    JsonNode result = JsonNode.Parse(await _ws.Service.View(Lib))!;
 
-    // Assert
-    Assert.Equal(["1.0.0", "1.1.0"], versions);
+    // Assert: protocol/lip-pkg.md, "lip pkg view".
+    Assert.Equal(["manifest", "versions"], result.AsObject().Select(m => m.Key));
+    Assert.Equal("1.1.0", (string?)result["manifest"]!["version"]);
+    Assert.Equal(["1.0.0", "1.1.0"], result["versions"]!.AsArray().Select(v => (string?)v));
   }
 
   [Theory]
-  [InlineData("example.com/lib@1.0.0")]
-  [InlineData("file:///lib")]
-  [InlineData("http://example.com/lib")]
-  [InlineData("https://example.com/lib.zip")]
-  [InlineData("lib.zip")]
-  public async Task Versions_NotARemoteRepositoryWithoutRef_Throws(string argument) {
-    // Act & Assert (protocol/lip-versions.md)
-    await Assert.ThrowsAsync<ArgumentException>(() => _ws.Service.Versions(argument));
+  [InlineData("example.com/lib@1.0.0", "1.0.0")]
+  [InlineData("example.com/lib#other@1.0.0", "1.0.0")]
+  [InlineData("example.com/lib@branch:main", "2.0.0-dev")]
+  public async Task View_RemoteRepositoryWithRef_ShowsItsPackageFileAndEveryVersion(
+      string argument, string version) {
+    // Arrange: the versions are those of every version tag, whatever the variant and the ref.
+    AddLib("1.1.0");
+    AddLib("1.0.0");
+    _ws.Git.AddBranch(Lib, "main", new() {
+      ["lip.toml"] = LibPackageFile("2.0.0-dev"),
+      ["lib.dll"] = "lib dev",
+    });
+
+    // Act
+    JsonNode result = JsonNode.Parse(await _ws.Service.View(argument))!;
+
+    // Assert
+    Assert.Equal(version, (string?)result["manifest"]!["version"]);
+    Assert.Equal(["1.0.0", "1.1.0"], result["versions"]!.AsArray().Select(v => (string?)v));
   }
 
   [Fact]
-  public async Task Versions_ArgumentNamingAnExistingDirectory_IsALocalPathAndThrows() {
-    // Arrange: such an argument is a local path (protocol/lip.md, "Package arguments" rule 2).
-    AddLib("1.0.0");
-    _ws.Fs.AddDirectory(_ws.Path(Lib));
+  public async Task View_LocalDirectory_ShowsItsPackageFileWithoutVersions() {
+    // Arrange
+    _ws.AddFile("pkg/lip.toml", LibPackageFile("1.2.3"));
+
+    // Act
+    JsonNode result = JsonNode.Parse(await _ws.Service.View("./pkg"))!;
+
+    // Assert
+    Assert.Equal(Lib, (string?)result["manifest"]!["id"]);
+    Assert.Empty(result["versions"]!.AsArray());
+  }
+
+  [Fact]
+  public async Task View_RemoteRepositoryWithoutVersionTags_Throws() {
+    // Arrange: without a ref, the first archive is that of the newest version tag.
+    _ws.Git.AddBranch(Lib, "main", new() { ["lip.toml"] = LibPackageFile("1.0.0") });
 
     // Act & Assert
-    await Assert.ThrowsAsync<ArgumentException>(() => _ws.Service.Versions(Lib));
+    await Assert.ThrowsAsync<InvalidOperationException>(() => _ws.Service.View(Lib));
+  }
+
+  [Theory]
+  [InlineData(null, "win-x64")]
+  [InlineData("linux-x64", "linux-x64")]
+  public async Task View_ToothJson_ReadsItForThePlatformOfTheStateFile(
+      string? recorded, string platform) {
+    // Arrange: protocol/lip-pkg.md, "lip pkg view": side server, and the platform the state
+    // file records, or win-x64 without one.
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
+      ["file.dll"] = "lib 1.0.0",
+    });
+    if (recorded is not null) {
+      _ws.AddFile(".lip/state.json", $$"""
+          { "format": 4, "side": "server", "platform": "{{recorded}}", "packages": [] }
+          """);
+    }
+
+    // Act
+    JsonNode result = JsonNode.Parse(await _ws.Service.View(Lib))!;
+
+    // Assert
+    JsonNode entry = result["manifest"]!["variants"]![""]!.AsArray().Single()!;
+    Assert.Equal("server", (string?)entry["side"]);
+    Assert.Equal(platform, (string?)entry["platform"]);
+  }
+
+  [Fact]
+  public async Task View_ToothJsonWithInvalidStateFile_Throws() {
+    // Arrange: the state file records no platform lip can read, as for a workspace operation.
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
+      ["file.dll"] = "lib 1.0.0",
+    });
+    _ws.AddFile(".lip/state.json", """{ "format_version": 3, "packages": [] }""");
+
+    // Act & Assert
+    await Assert.ThrowsAsync<LockFormatException>(() => _ws.Service.View(Lib));
+  }
+
+  [Fact]
+  public async Task View_ArchiveWithoutPackageFile_Throws() {
+    // Arrange
+    _ws.AddFile("pkg/readme.txt", "not a package");
+
+    // Act & Assert
+    await Assert.ThrowsAnyAsync<Exception>(() => _ws.Service.View("./pkg"));
   }
 
   #endregion
@@ -1730,26 +1727,12 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_OnlyHookCommandsIgnored_CreatesNoMods() {
-    // Arrange
-    AddEmptyLib(""" "hooks": { "pre_install": [ "check" ] }""");
-
-    // Act
-    await _ws.Service.Install([Lib], _options with { IgnoreScripts = true });
-
-    // Assert
-    Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
-    _ws.CommandRunner.Verify(r => r.Run(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-    Assert.Single((await _ws.Lock()).Packages);
-  }
-
-  [Fact]
   public async Task Install_OnlyHookCommands_RunsThemWithoutCreatingMods() {
     // Arrange: hook commands alone are no change, but they run with the journal
     // (protocol/lip-workspace.md, "Carrying out an operation").
     AddEmptyLib(""" "hooks": { "pre_install": [ "check" ] }""");
     bool? journalExisted = null;
-    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root))
+    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root, It.IsAny<string>()))
         .Callback(() => journalExisted = _ws.Fs.File.Exists(_ws.JournalPath))
         .Returns(Task.CompletedTask);
 

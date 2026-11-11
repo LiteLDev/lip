@@ -4,8 +4,8 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Migrates the tooth.json of a package repository, of format 1, 2 or 3, to a lip.toml (lip
-/// migrate, protocol/lip-compatibility.md, "lip migrate"), by ToothMigrator.
+/// Migrates the tooth.json of a package repository, of format 1, 2 or 3, to a lip.toml (lip pkg
+/// migrate, protocol/lip-compatibility.md, "lip pkg migrate"), by ToothMigrator.
 ///
 /// - When lip.toml exists, or tooth.json is missing or is not one that
 ///   protocol/lip-compatibility.md, "tooth.json" reads (PackageDocument.ParseToothJson), it is a
@@ -30,8 +30,8 @@ public static class RepositoryMigrator {
 
     if (!fs.File.Exists(toothPath)) {
       throw new InvalidOperationException(
-          $"There is no {ToothCompat.ToothFileName} in {directory}. Run 'lip migrate' in the root "
-          + "directory of the package repository, the one that holds "
+          $"There is no {ToothCompat.ToothFileName} in {directory}. Run 'lip pkg migrate' in the "
+          + "root directory of the package repository, the one that holds "
           + $"{ToothCompat.ToothFileName}.");
     }
 
@@ -42,7 +42,7 @@ public static class RepositoryMigrator {
     catch (PackageFormatException ex) {
       throw new InvalidOperationException(
           $"Cannot read {ToothCompat.ToothFileName} in {directory}, so it cannot be migrated; "
-          + "nothing was changed. Fix the problem below, then run 'lip migrate' again.", ex);
+          + "nothing was changed. Fix the problem below, then run 'lip pkg migrate' again.", ex);
     }
 
     RunTrace.Write("migrate", $"{toothPath} has {ToothCompat.FormatVersionKey} "
@@ -68,9 +68,9 @@ public static class RepositoryMigrator {
           + $"below is a path in the converted {PackageFormat.FileName}, not in your "
           + $"{ToothCompat.ToothFileName}: "
           + "find the value it was converted from among the variants and placements of your "
-          + "file, fix it, and run 'lip migrate' again. If that value looks right, this is likely "
-          + "a lip bug: please report it at https://github.com/LiteLDev/lip/issues with the file "
-          + "attached.",
+          + "file, fix it, and run 'lip pkg migrate' again. If that value looks right, this is "
+          + "likely a lip bug: please report it at https://github.com/LiteLDev/lip/issues with the "
+          + "file attached.",
           ex);
     }
 

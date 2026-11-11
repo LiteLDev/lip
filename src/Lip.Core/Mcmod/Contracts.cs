@@ -157,8 +157,7 @@ public record InstallContext(
     string WorkspaceRoot,
     LipEnvironment Environment,
     LockFile Lock,
-    bool DryRun,
-    bool IgnoreScripts);
+    bool DryRun);
 
 /// The state file (protocol/state.json.md, state.schema.json).
 public record LockFile {

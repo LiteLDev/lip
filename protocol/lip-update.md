@@ -7,7 +7,7 @@ lip-update - update installed packages
 ## SYNOPSIS
 
 ```
-lip update [<PACKAGES>...] [-n | --dry-run] [--ignore-scripts] [--platform <RID>] [-h | --help]
+lip update [<PACKAGES>...] [-n | --dry-run] [--platform <RID>] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -23,7 +23,6 @@ A package is replaced only as lip-workspace(7), "Operations" defines. Dependency
 ## OPTIONS
 
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would install, uninstall or mark explicitly installed.
-- `--ignore-scripts`: The operation runs no hook command. Nothing else changes.
 - `--platform <RID>`: The platform of the environment ([lip(1), "Environment"](lip.md#environment)) is `<RID>`.
 
 ## SEE ALSO

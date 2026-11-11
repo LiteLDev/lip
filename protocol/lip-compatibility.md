@@ -44,7 +44,7 @@ The version of such a package is the tag version of its git archive, when it has
 
 ### `tooth_lock.json`
 
-A workspace without a state file whose root holds a `tooth_lock.json` that is a JSON object with `format_version` 3 and an array `packages`, each member an object with `manifest` (a `tooth.json` of format 1 to 3), `variant` (a string), `locked` (a boolean) and `files` (an array of strings), has the state file ([state.json(5)](state.json.md)) that this section derives from it, for the environment (s, r) the workspace gets ([lip-workspace(7), "Environment and layout"](lip-workspace.md#environment-and-layout)).
+A workspace without a state file whose root holds a `tooth_lock.json` that is a JSON object with `format_version` 3 and an array `packages`, each member an object with `manifest` (a `tooth.json` of format 1 to 3), `variant` (a string), `locked` (a boolean) and `files` (an array of strings), has the state file ([state.json(5)](state.json.md)) that this section derives from it, for the environment (s, r) the workspace gets ([lip(1), "Environment"](lip.md#environment)).
 
 That state file has `format` 4, `side` s, `platform` r and, for each member M of `packages` whose `manifest` "tooth.json" reads, for (s, r), with a variant `variant`, in installation order ([lip-workspace(7), "Operations"](lip-workspace.md#operations)), a package with:
 
@@ -61,17 +61,17 @@ A workspace operation writes it as its state file ([lip-workspace(7), "Carrying 
 
 ### `liprc.json`
 
-When the config directory has no `config.toml` and has a `liprc.json` that is a JSON object whose `format_version`, when present, is 3, the configuration ([config.toml(5)](config.toml.md)) is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.toml`, then deletes `liprc.json`.
+When the config directory has no `config.toml` and has a `liprc.json` that is a JSON object whose `format_version`, when present, is 3, the configuration ([config.toml(5)](config.toml.md)) is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.toml`, then deletes `liprc.json`; a dry run ([lip(1), "Dry run"](lip.md#dry-run)) reads the configuration from `liprc.json` the same way, but writes no `config.toml` and keeps `liprc.json`.
 
-### `lip migrate`
+### `lip pkg migrate`
 
-`lip migrate` ([lip-migrate(1)](lip-migrate.md)) writes atomically, as `lip.toml` in the current directory, a package file migrated from the `tooth.json` there, then deletes `tooth.json`. When `lip.toml` exists, or `tooth.json` is missing or is not one that "tooth.json" reads, the command fails and changes nothing.
+`lip pkg migrate` ([lip-pkg(1)](lip-pkg.md)) writes atomically, as `lip.toml` in the current directory, a package file migrated from the `tooth.json` there, then deletes `tooth.json`. When `lip.toml` exists, or `tooth.json` is missing or is not one that "tooth.json" reads, the command fails and changes nothing.
 
 The mapping is not defined here; it should agree with "tooth.json" for every environment. A string of the result that is derived from a string of `tooth.json` holding a template (as [tooth.json v3] renders it) should be written as a template ([lip.toml(5), "Templates"](lip.toml.md#templates)) that keeps it, with the variable `tooth`, or `path` in formats 1 and 2, renamed to `id`, when that template renders to the same string; any other string is written so that it renders to itself. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
 
 ## SEE ALSO
 
-[lip-migrate(1)](lip-migrate.md), [lip.toml(5)](lip.toml.md), [state.json(5)](state.json.md), [config.toml(5)](config.toml.md), [lip-package(7)](lip-package.md)
+[lip-pkg(1)](lip-pkg.md), [lip.toml(5)](lip.toml.md), [state.json(5)](state.json.md), [config.toml(5)](config.toml.md), [lip-package(7)](lip-package.md)
 
 [JSON]: https://www.rfc-editor.org/info/rfc8259
 [tooth.json v3]: https://github.com/LiteLDev/lip/blob/v0.37.0/docs/concepts/package_manifest.md

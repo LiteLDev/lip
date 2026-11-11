@@ -7,7 +7,7 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class PackCommand(IUserInteraction userInteraction) : AsyncCommand<PackCommand.Settings> {
+public class PkgPackCommand(IUserInteraction userInteraction) : AsyncCommand<PkgPackCommand.Settings> {
   private readonly IUserInteraction _userInteraction = userInteraction;
 
   public class Settings : CommandSettings {
@@ -23,7 +23,7 @@ public class PackCommand(IUserInteraction userInteraction) : AsyncCommand<PackCo
         string.IsNullOrEmpty(Output)
             ? ValidationResult.Error(
                 "-o, --output <FILE> is required: name the ZIP archive to write, e.g. "
-                + "'lip pack -o package.zip'.")
+                + "'lip pkg pack -o package.zip'.")
             : ValidationResult.Success();
   }
 

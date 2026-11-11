@@ -4,8 +4,8 @@ using Lip.Core.Mcmod.Compat;
 
 namespace Lip.Core.Tests.Mcmod.Compat;
 
-/// lip migrate keeps the templates of tooth.json (protocol/lip-compatibility.md, "lip migrate"),
-/// and the lip.toml it writes reads back as the package file migrated.
+/// lip pkg migrate keeps the templates of tooth.json (protocol/lip-compatibility.md,
+/// "lip pkg migrate"), and the lip.toml it writes reads back as the package file migrated.
 public class ToothTemplatesTests {
   private const string _uuid3 = "289f771f-2c9a-4d73-9f3f-8492495a924d";
 

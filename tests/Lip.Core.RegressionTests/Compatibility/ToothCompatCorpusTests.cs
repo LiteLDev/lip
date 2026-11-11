@@ -120,7 +120,8 @@ public class ToothCompatCorpusTests {
     PackageDocument document = await new ArchiveReader().Read(archive);
     PackageEntry entry = document.ReadFor(_environment).SelectEntry("", _environment)!;
     FileSystem fs = new();
-    McmodInstaller installer = new(fs, new CommandRunner(), _userInteraction);
+    // Hook commands are not run: only the files the package places are checked.
+    McmodInstaller installer = new(fs, Mock.Of<ICommandRunner>(), _userInteraction);
 
     string root = Directory.CreateTempSubdirectory("lip-compat-").FullName;
     try {
@@ -137,8 +138,7 @@ public class ToothCompatCorpusTests {
               root,
               _environment,
               new LockFile { Side = "server", Platform = _environment.Platform, Packages = [] },
-              DryRun: false,
-              IgnoreScripts: true),
+              DryRun: false),
           new WorkspaceView(fs));
       using (WorkspaceTransaction transaction = new(
           fs, new LockStore(fs).GetJournalPath(root), plan.WrittenPaths)) {

@@ -17,7 +17,7 @@ The state file serves several purposes:
 1.  **State Tracking**: It is the single source of truth for what is installed in the workspace.
 2.  **Reproducibility**: It records the package file every installed package was installed with, and, for a package from a git repository, the commit it was at. When lip needs a package again, it installs it with that package file instead of resolving the package again.
 3.  **Uninstallation**: `lip` tracks every file written to disk by a package. This allows `lip uninstall` to cleanly delete all files associated with a package, preventing "file rot" in the workspace.
-4.  **Dependency Graph**: It distinguishes between packages explicitly installed by the user and those installed as dependencies. This allows `lip uninstall` to also remove dependencies that no explicitly installed package needs any more (unless `--no-dependencies` is given), and `lip list` to show the two groups separately.
+4.  **Dependency Graph**: It distinguishes between packages explicitly installed by the user and those installed as dependencies. This allows `lip uninstall` to also remove dependencies that no explicitly installed package needs any more, and `lip list` to show the two groups separately.
 5.  **Environment**: It records the side and platform of the workspace once they are known, so later commands use the same [environment](lip_toml.md#environment).
 
 The state file is replaced once, after every package of an operation has been installed or uninstalled. If the operation fails, lip undoes its changes to the workspace and the state file stays as it was, so the two always match (see [Internal Mechanism](../guides/internal_mechanism.md#pipeline)).

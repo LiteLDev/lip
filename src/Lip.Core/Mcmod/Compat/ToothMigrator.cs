@@ -10,8 +10,8 @@ using Semver;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Converts a tooth.json of format 1–3 (already read as format 3) into a package file (lip
-/// migrate, protocol/lip-compatibility.md, "lip migrate"), agreeing with how
+/// Converts a tooth.json of format 1–3 (already read as format 3) into a package file (lip pkg
+/// migrate, protocol/lip-compatibility.md, "lip pkg migrate"), agreeing with how
 /// protocol/lip-compatibility.md, "tooth.json" reads it for every environment it has an entry for.
 /// The notes list what is dropped or converted with another meaning, each naming the field of
 /// format 3 it comes from. Missing values, and dependency ranges that are not ranges of a package
@@ -208,7 +208,7 @@ public static class ToothMigrator {
           + $"{rid}, because {ToothCompat.MergeFailureReason(ex)}; lip v0.37.0 could not "
           + $"install them for {rid} either. Fix these variants in tooth.json so that each "
           + $"dependency is declared, and each kind of script is set, in only one of the variants "
-          + $"that apply to {rid}, then run 'lip migrate' again.", ex);
+          + $"that apply to {rid}, then run 'lip pkg migrate' again.", ex);
     }
   }
 

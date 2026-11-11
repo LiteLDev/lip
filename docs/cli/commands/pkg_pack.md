@@ -1,11 +1,11 @@
-# lip pack
+# lip pkg pack
 
 Pack a directory into a ZIP archive.
 
 ## Synopsis
 
 ```shell
-lip pack [DIR] -o <FILE>
+lip pkg pack [DIR] -o <FILE>
 ```
 
 ## Arguments
@@ -22,9 +22,9 @@ lip pack [DIR] -o <FILE>
 
 ## Description
 
-Writes to `<FILE>`, replacing any existing file, a ZIP archive holding every regular file below `DIR` at its path relative to `DIR`. `<FILE>` itself, and everything in `.git/` and `.lip/` at the root of `DIR`, are left out. The files are packed as they are: `lip pack` does not read or check `lip.toml` or `manifest.json`.
+Writes to `<FILE>`, replacing any existing file, a ZIP archive holding every regular file below `DIR` at its path relative to `DIR`. `<FILE>` itself, and everything in `.git/` and `.lip/` at the root of `DIR`, are left out. The files are packed as they are: `lip pkg pack` does not read or check `lip.toml` or `manifest.json`. If `DIR` is not an existing directory, the command fails and writes nothing.
 
-A ZIP archive cannot hold a `\` in a name, so on Linux and macOS `lip pack` fails, without writing `<FILE>`, if the name of a file to pack, or of a directory above it, contains `\`. Rename it first.
+A ZIP archive cannot hold a `\` in a name, so on Linux and macOS `lip pkg pack` fails, without writing `<FILE>`, if the name of a file to pack, or of a directory above it, contains `\`. Rename it first.
 
 Use it to build:
 
@@ -36,11 +36,11 @@ Use it to build:
 Pack the files of `build/` as the `mcmod` archive of a mod:
 
 ```shell
-lip pack build/ -o MyMod-server-win-x64.zip
+lip pkg pack build/ -o MyMod-server-win-x64.zip
 ```
 
 Pack the package in the current directory:
 
 ```shell
-lip pack -o MyTool.zip
+lip pkg pack -o MyTool.zip
 ```

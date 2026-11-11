@@ -7,29 +7,50 @@ public class CommandFailedException(string message, Exception? inner = null)
     : Exception(message, inner);
 
 public interface ICommandRunner {
-  /// Runs the command with the given working directory.
-  Task Run(string command, string workingDirectory);
+  /// Runs the hook command in the workspace whose root is workingDirectory, for the platform of
+  /// its environment (protocol/lip-workspace.md, "Terms" and "Running programs").
+  Task Run(string command, string workingDirectory, string platform);
 }
 
 public class CommandRunner : ICommandRunner {
-  public async Task Run(string command, string workingDirectory) {
+  public async Task Run(string command, string workingDirectory, string platform) {
     using Stream stdErrStream = Console.OpenStandardError();
     PipeTarget output = PipeTarget.Merge(
         PipeTarget.ToStream(stdErrStream),
         PipeTarget.ToDelegate(line => RunTrace.Write("hook", $"| {line}")));
 
-    string shell = OperatingSystem.IsWindows() ? "cmd.exe" : "sh";
-    RunTrace.Write("hook", $"Running '{command}' with {shell} in {workingDirectory}");
+    ProgramStartInfo start;
+    try {
+      start = WorkspaceProgram.HookCommand(
+          command, ProgramHost.Current(platform, workingDirectory));
+    }
+    catch (InvalidOperationException ex) {
+      RunTrace.Write("hook", $"'{command}' could not be started: {ex.Message}");
+      throw WithData(
+          new CommandFailedException(
+              $"Could not run the command in '{workingDirectory}' for the platform {platform}:"
+              + $" {ex.Message}",
+              ex),
+          command,
+          workingDirectory,
+          exitCode: null);
+    }
+
+    string program = start.FileName;
+    RunTrace.Write("hook", $"Running '{command}' for {platform} with {program}"
+        + $" {string.Join(' ', start.Arguments.Take(start.Arguments.Count - 1))}"
+        + $" in {workingDirectory}"
+        + string.Concat(start.EnvironmentOverrides.Select(v => $", {v.Key}={v.Value}")));
     CommandResult result;
     try {
-      Command cli = Cli.Wrap(shell);
-      // cmd.exe does not parse its command line with the MSVCRT rules CliWrap escapes with, so the
-      // command goes verbatim; /s makes cmd strip only the outer quotes added here.
-      cli = OperatingSystem.IsWindows()
-          ? cli.WithArguments($"/s /c \"{command}\"")
-          : cli.WithArguments(["-c", command]);
+      Command cli = Cli.Wrap(start.FileName);
+      cli = start.VerbatimArguments
+          ? cli.WithArguments(start.JoinedArguments)
+          : cli.WithArguments(start.Arguments);
       result = await cli
-          .WithWorkingDirectory(workingDirectory)
+          .WithWorkingDirectory(start.WorkingDirectory)
+          .WithEnvironmentVariables(start.EnvironmentOverrides.ToDictionary(
+              v => v.Key, string? (v) => v.Value))
           .WithStandardInputPipe(PipeSource.Null)
           .WithStandardOutputPipe(output)
           .WithStandardErrorPipe(output)
@@ -40,7 +61,7 @@ public class CommandRunner : ICommandRunner {
       RunTrace.Write("hook", $"'{command}' could not be started: {ex.GetType().Name}: {ex.Message}");
       throw WithData(
           new CommandFailedException(
-              $"Could not start {shell} in '{workingDirectory}' to run the command.", ex),
+              $"Could not start {program} in '{workingDirectory}' to run the command.", ex),
           command,
           workingDirectory,
           exitCode: null);

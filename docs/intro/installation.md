@@ -1,6 +1,6 @@
 # Installation
 
-`lip` is a general package installer. To get started, you need to install the `lip` executable on your system.
+`lip` runs a LeviLamina server and manages its packages. To get started, you need to install the `lip` executable on your system.
 
 ## Windows installer <Badge platform="windows" />
 

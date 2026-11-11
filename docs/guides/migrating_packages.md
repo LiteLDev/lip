@@ -1,14 +1,14 @@
 # Migrating Packages
 
-Packages for lip v0.37.0 and earlier have a `tooth.json` of format version 1, 2 or 3. Packages now have a `lip.toml` instead (see [lip.toml](../concepts/lip_toml.md)). lip still installs packages with such a `tooth.json`, but new versions of your package should use `lip.toml`. The `lip migrate` command helps you convert it.
+Packages for lip v0.37.0 and earlier have a `tooth.json` of format version 1, 2 or 3. Packages now have a `lip.toml` instead (see [lip.toml](../concepts/lip_toml.md)). lip still installs packages with such a `tooth.json`, but new versions of your package should use `lip.toml`. The `lip pkg migrate` command helps you convert it.
 
-## Using `lip migrate`
+## Using `lip pkg migrate`
 
-Run `lip migrate` without arguments in the root directory of your package repository, the one that contains `tooth.json`:
+Run `lip pkg migrate` without arguments in the root directory of your package repository, the one that contains `tooth.json`:
 
 ```sh
 cd MyTool
-lip migrate
+lip pkg migrate
 git add lip.toml tooth.json
 git commit -m "Migrate tooth.json to lip.toml"
 ```
@@ -23,7 +23,7 @@ It writes `lip.toml` converted from `tooth.json`, then deletes `tooth.json`. Whe
 -   the platforms (RIDs) a `platform` of `tooth.json` that is not a RID, such as `windows/amd64`, stands for, as a comma-separated list;
 -   the platforms (RIDs) that variants without a `platform` apply to, when there are such variants.
 
-When standard input or standard error is not a terminal (in CI, for example), `lip migrate` fails instead, naming the value it would ask for, and changes nothing.
+When standard input or standard error is not a terminal (in CI, for example), `lip pkg migrate` fails instead, naming the value it would ask for, and changes nothing.
 
 ### Warnings
 
@@ -44,7 +44,7 @@ Everything that is dropped, or converted with another meaning, is printed as a w
 
 ## Limitations
 
-`lip migrate` is a helper, not a guarantee. Always review its output.
+`lip pkg migrate` is a helper, not a guarantee. Always review its output.
 
 -   `lip.toml` must have the tag version as its `version` at a tag, and the path of the repository as its `id`. lip v0.37.0 installed a `tooth.json` that broke these rules; check yours before you publish.
 -   Placements are converted by the rules above, without looking at the files they place, and are then carried out as for `lip.toml`: a `file` placement whose `src` is a pattern keeps the subdirectories of the files it matches, where `tooth.json` placed them by file name only, and a placement of a missing file fails the installation, where `tooth.json` skipped it. Check such placements.

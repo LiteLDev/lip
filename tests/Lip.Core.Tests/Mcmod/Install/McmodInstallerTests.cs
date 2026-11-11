@@ -128,9 +128,8 @@ public class McmodInstallerTests {
   private static InstallContext Context(
       LipEnvironment? environment = null,
       LockFile? lockFile = null,
-      bool dryRun = false,
-      bool ignoreScripts = false) =>
-      new(_root, environment ?? _server, lockFile ?? Lock(), dryRun, ignoreScripts);
+      bool dryRun = false) =>
+      new(_root, environment ?? _server, lockFile ?? Lock(), dryRun);
 
   private SortedDictionary<string, string> Snapshot() {
     SortedDictionary<string, string> snapshot = new(StringComparer.Ordinal);
@@ -537,11 +536,8 @@ public class McmodInstallerTests {
   [InlineData(".lip")]
   [InlineData(".LIP/x.txt")]
   public async Task Install_DestInLipDirectory_Throws(string dest) {
-    // Arrange
-    Assert.SkipWhen(
-        dest.StartsWith(".LIP", StringComparison.Ordinal)
-            && !_fs.Directory.Exists(_root.ToUpperInvariant()),
-        "The file system tells case apart, so .LIP is not .lip.");
+    // Arrange: the paths of a workspace for a Windows platform ignore case wherever lip runs
+    // (protocol/lip-workspace.md, "Environment and layout"), so .LIP is .lip.
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", dest)), new() { ["a.txt"] = "a" });
     SortedDictionary<string, string> before = Snapshot();
@@ -579,10 +575,10 @@ public class McmodInstallerTests {
   [InlineData("trailing./a.txt")]
   [InlineData("a.txt ")]
   [InlineData("config/a:b.txt")]
-  public async Task Install_AliasingDestOnWindows_Throws(string dest) {
+  public async Task Install_AliasingDestForWindowsPlatform_Throws(string dest) {
     // Arrange: Windows drops trailing dots and spaces, and takes ':' for an alternate data
-    // stream, so the path would alias another one.
-    Assert.SkipUnless(OperatingSystem.IsWindows(), "Such names can be written elsewhere.");
+    // stream, so the path would alias another one; the rule applies for a Windows platform
+    // wherever lip runs (protocol/lip-workspace.md, "Installing and uninstalling").
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", dest)), new() { ["a.txt"] = "a" });
     SortedDictionary<string, string> before = Snapshot();
@@ -630,15 +626,16 @@ public class McmodInstallerTests {
   [InlineData("config/a:b.txt")]
   [InlineData("trailing./a.txt")]
   [InlineData("a.txt ")]
-  public async Task Install_SchemaValidDestOutsideWindows_Writes(string dest) {
+  public async Task Install_SchemaValidDestOutsideWindowsForOtherPlatform_Writes(string dest) {
     // Arrange: lip.schema.toml #/definitions/path allows ':' after the first segment and
-    // segments ending in '.' or ' '.
+    // segments ending in '.' or ' ', which a platform other than a Windows platform can write.
     Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows cannot write such names as they are.");
     Candidate candidate = Candidate(
         SelfPlacements(Placement("a.txt", dest)), new() { ["a.txt"] = "a" });
 
     // Act
-    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
+    IReadOnlyList<string> owned = await _installer.Install(
+        candidate, Context(new LipEnvironment(McmodSide.Server, "linux-x64")));
 
     // Assert
     Assert.Equal([dest], owned);
@@ -892,7 +889,7 @@ public class McmodInstallerTests {
         SelfPlacements(Placement("cfg.ini", "cfg.ini"))
             + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "reset" ] }""",
         new() { ["cfg.ini"] = "default" });
-    _commandRunner.Setup(r => r.Run("reset", _root))
+    _commandRunner.Setup(r => r.Run("reset", _root, It.IsAny<string>()))
         .Callback(() => _fs.File.Delete(Full("cfg.ini")))
         .Returns(Task.CompletedTask);
 
@@ -911,7 +908,7 @@ public class McmodInstallerTests {
         SelfPlacements(Placement("cfg.ini", "cfg.ini"), Placement("a.txt", "a.txt"))
             + """, "preserve": [ "cfg.ini" ], "hooks": { "pre_install": [ "init" ] }""",
         new() { ["cfg.ini"] = "default", ["a.txt"] = "a" });
-    _commandRunner.Setup(r => r.Run("init", _root))
+    _commandRunner.Setup(r => r.Run("init", _root, It.IsAny<string>()))
         .Callback(() => AddFile("cfg.ini", "hook"))
         .Returns(Task.CompletedTask);
 
@@ -933,10 +930,10 @@ public class McmodInstallerTests {
             + """, "preserve": [ "cfg.ini" ],"""
             + """ "hooks": { "pre_install": [ "reset" ], "post_install": [ "fail" ] }""",
         new() { ["cfg.ini"] = "default" });
-    _commandRunner.Setup(r => r.Run("reset", _root))
+    _commandRunner.Setup(r => r.Run("reset", _root, It.IsAny<string>()))
         .Callback(() => _fs.File.Delete(Full("cfg.ini")))
         .Returns(Task.CompletedTask);
-    _commandRunner.Setup(r => r.Run("fail", _root))
+    _commandRunner.Setup(r => r.Run("fail", _root, It.IsAny<string>()))
         .ThrowsAsync(new InvalidOperationException("Command failed with exit code 1"));
 
     // Act & Assert
@@ -978,8 +975,8 @@ public class McmodInstallerTests {
         """ "hooks": { "pre_install": [ "pre1", "pre2" ], "post_install": [ "post" ], "pre_uninstall": [ "x" ] } """);
     string dll = Full("mods/LegacyMoney/LegacyMoney.dll");
     List<(string Command, string Cwd, bool DllExists)> calls = [];
-    _commandRunner.Setup(r => r.Run(It.IsAny<string>(), It.IsAny<string>()))
-        .Callback((string c, string cwd) => calls.Add((c, cwd, _fs.File.Exists(dll))))
+    _commandRunner.Setup(r => r.Run(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+        .Callback((string c, string cwd, string _) => calls.Add((c, cwd, _fs.File.Exists(dll))))
         .Returns(Task.CompletedTask);
 
     // Act
@@ -991,24 +988,10 @@ public class McmodInstallerTests {
   }
 
   [Fact]
-  public async Task Install_IgnoreScripts_RunsNoHooks() {
-    // Arrange
-    Candidate candidate = LegacyMoney(
-        """ "hooks": { "pre_install": [ "pre" ], "post_install": [ "post" ] } """);
-
-    // Act
-    await _installer.Install(candidate, Context(ignoreScripts: true));
-
-    // Assert
-    _commandRunner.VerifyNoOtherCalls();
-    Assert.True(Exists("mods/LegacyMoney/LegacyMoney.dll"));
-  }
-
-  [Fact]
   public async Task Install_PreInstallFails_ThrowsWithoutWriting() {
     // Arrange
     Candidate candidate = LegacyMoney(""" "hooks": { "pre_install": [ "fail" ] } """);
-    _commandRunner.Setup(r => r.Run("fail", It.IsAny<string>()))
+    _commandRunner.Setup(r => r.Run("fail", It.IsAny<string>(), It.IsAny<string>()))
         .ThrowsAsync(new InvalidOperationException("Command failed with exit code 1"));
 
     // Act & Assert
@@ -1041,7 +1024,7 @@ public class McmodInstallerTests {
   public async Task Install_PostInstallFails_RollsBackWrittenFiles() {
     // Arrange
     Candidate candidate = LegacyMoney(""" "hooks": { "post_install": [ "fail" ] } """);
-    _commandRunner.Setup(r => r.Run("fail", It.IsAny<string>()))
+    _commandRunner.Setup(r => r.Run("fail", It.IsAny<string>(), It.IsAny<string>()))
         .ThrowsAsync(new InvalidOperationException("Command failed with exit code 1"));
     SortedDictionary<string, string> before = Snapshot();
 
@@ -1126,7 +1109,7 @@ public class McmodInstallerTests {
     Assert.False(Exists("a.txt"));
     Assert.True(Exists("keep.txt"));
     Assert.False(_fs.Directory.Exists(Full("logs")));
-    _commandRunner.Verify(r => r.Run("pre", _root), Times.Once);
+    _commandRunner.Verify(r => r.Run("pre", _root, It.IsAny<string>()), Times.Once);
     _provider.VerifyNoOtherCalls();
   }
 
@@ -1234,7 +1217,7 @@ public class McmodInstallerTests {
             + """, "preserve": [ "config/a.json" ], "hooks": { "pre_install": [ "reset" ] }""",
         new() { ["a.json"] = "default" },
         id: "example.com/a");
-    _commandRunner.Setup(r => r.Run("reset", _root))
+    _commandRunner.Setup(r => r.Run("reset", _root, It.IsAny<string>()))
         .Callback(() => _fs.File.Delete(Full("config/a.json")))
         .Returns(Task.CompletedTask);
     Candidate b = Candidate($$""" "purge": [ "{{pattern}}" ] """, id: "example.com/b");
@@ -1244,7 +1227,7 @@ public class McmodInstallerTests {
     PackagePlan install = await installer.PlanInstall(a, Context(lockFile: lockFile), view);
     PackagePlan uninstall =
         await installer.PlanUninstall(Locked(b, []), Context(lockFile: lockFile), view);
-    FileOwners owners = installer.Owners(_root, lockFile.Packages);
+    FileOwners owners = installer.Owners(_root, lockFile.Packages, _server);
     CancellationToken token = TestContext.Current.CancellationToken;
 
     // Act
@@ -1424,12 +1407,11 @@ public class McmodInstallerTests {
     // Arrange
     Candidate candidate = LegacyMoney(
         """ "hooks": { "pre_uninstall": [ "pre" ], "post_uninstall": [ "post" ], "post_install": [ "x" ] } """);
-    IReadOnlyList<string> owned =
-        await _installer.Install(candidate, Context(ignoreScripts: true));
+    IReadOnlyList<string> owned = await _installer.Install(candidate, Context());
     string dll = Full("mods/LegacyMoney/LegacyMoney.dll");
     List<(string Command, string Cwd, bool DllExists)> calls = [];
-    _commandRunner.Setup(r => r.Run(It.IsAny<string>(), It.IsAny<string>()))
-        .Callback((string c, string cwd) => calls.Add((c, cwd, _fs.File.Exists(dll))))
+    _commandRunner.Setup(r => r.Run(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+        .Callback((string c, string cwd, string _) => calls.Add((c, cwd, _fs.File.Exists(dll))))
         .Returns(Task.CompletedTask);
 
     // Act
@@ -1437,19 +1419,6 @@ public class McmodInstallerTests {
 
     // Assert
     Assert.Equal([("pre", _root, true), ("post", _root, false)], calls);
-  }
-
-  [Fact]
-  public async Task Uninstall_IgnoreScripts_RunsNoHooks() {
-    // Arrange
-    Candidate candidate = Candidate(
-        """ "hooks": { "pre_uninstall": [ "pre" ], "post_uninstall": [ "post" ] } """);
-
-    // Act
-    await _installer.Uninstall(Locked(candidate, []), Context(ignoreScripts: true));
-
-    // Assert
-    _commandRunner.VerifyNoOtherCalls();
   }
 
   [Fact]

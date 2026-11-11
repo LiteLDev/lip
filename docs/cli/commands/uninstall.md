@@ -18,7 +18,7 @@ The identities are shown by [`lip list`](list.md).
 
 ## Description
 
-Removes the files the packages own and runs their uninstall hooks. Only explicitly installed packages can be uninstalled, unless `--no-dependencies` is given.
+Removes the files the packages own and runs their uninstall hooks. Only explicitly installed packages can be uninstalled.
 
 Dependencies that no explicitly installed package needs any more are uninstalled too. A package that other packages still need is kept, as a dependency.
 
@@ -27,6 +27,4 @@ Dependencies that no explicitly installed package needs any more are uninstalled
 | Option | Description |
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
-| `--ignore-scripts` | Skip running `pre_uninstall` and `post_uninstall` hooks. |
-| `--no-dependencies` | Uninstall exactly the given packages, even dependencies, and do not remove other dependencies. This may leave the workspace broken. |
-| `--platform <RID>` | The platform of the workspace, a .NET RID such as `win-x64`. |
+| `--platform <RID>` | The platform of the workspace [environment](../../concepts/lip_toml.md#environment), a .NET RID such as `linux-x64`. Without it, the platform the state file records, or else `win-x64`, whatever system lip runs on. |

@@ -2,12 +2,12 @@
 
 This guide walks you through creating a new package with lip. A package is an archive, usually a git repository, with a `lip.toml` at its root; see [lip.toml](../concepts/lip_toml.md) for every field.
 
-## Using `lip init`
+## Using `lip pkg init`
 
-The easiest way to start a new package is using the `lip init` command in the root directory of your repository.
+The easiest way to start a new package is using the `lip pkg init` command in the root directory of your repository.
 
 ```sh
-lip init
+lip pkg init
 ```
 
 lip asks for the package id, a [Go module path](https://go.dev/ref/mod#module-path) such as `github.com/user/MyTool`, and asks again until the answer is valid. It then creates `lip.toml` in the current directory:
@@ -60,10 +60,10 @@ place = [{ src = "MyTool.exe", dest = "MyTool.exe" }]
 
 A mod is an entry with an `mcmod` asset: a ZIP archive with the LeviLamina `manifest.json` of the mod at its root. lip writes the whole archive into `mods/<name>/`, where `<name>` is the `name` in that `manifest.json`; lip reads nothing else of `manifest.json` and installs it unchanged.
 
-Build the archive from the output directory of your build, which holds `manifest.json` and the files of the mod, with [`lip pack`](../cli/commands/pack.md), and attach it to the release:
+Build the archive from the output directory of your build, which holds `manifest.json` and the files of the mod, with [`lip pkg pack`](../cli/commands/pkg_pack.md), and attach it to the release:
 
 ```sh
-lip pack build/ -o MyMod-server-win-x64.zip
+lip pkg pack build/ -o MyMod-server-win-x64.zip
 ```
 
 Then point to it from `lip.toml`:
@@ -115,7 +115,7 @@ platform = "win-arm64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-arm64.zip"] }]
 ```
 
-A workspace whose side and platform have no entry cannot install the package.
+A workspace whose side and platform have no entry cannot install the package. lip uses the platform `win-x64` unless a workspace was given another one with `--platform`, also on Linux, where it runs the server through Wine; so a server mod needs a `server` entry for `win-x64`, and an entry for `linux-x64` only serves workspaces created with `--platform linux-x64`.
 
 ## Variants
 
@@ -168,7 +168,7 @@ You can install a package from your disk before publishing it, from its director
 
 ```sh
 lip install ../MyTool
-lip pack ../MyTool -o MyTool.zip
+lip pkg pack ../MyTool -o MyTool.zip
 lip install ./MyTool.zip
 ```
 

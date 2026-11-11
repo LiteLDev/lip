@@ -17,8 +17,9 @@ namespace Lip.Core.Services;
 /// lip v0.x kept the configuration in &lt;Config&gt;/liprc.json. When config.toml is missing and
 /// liprc.json is a JSON object whose format_version, when present, is 3 (lip before February 2026
 /// wrote none), its configuration is written atomically as config.toml before it is read, and
-/// liprc.json is deleted (protocol/lip-compatibility.md, "liprc.json"). Any other liprc.json is
-/// kept, and every key has its default.
+/// liprc.json is deleted (protocol/lip-compatibility.md, "liprc.json"); a dry run reads it the same
+/// way but writes no config.toml and keeps it. Any other liprc.json is kept, and every key has its
+/// default.
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
   private const string _githubProxyKey = "github_proxy";
 
@@ -45,9 +46,10 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     return await LoadGithubProxy() ?? "";
   }
 
-  /// The value of github_proxy, or null when it has its default.
-  public async Task<string?> GetGithubProxy() {
-    return await LoadGithubProxy();
+  /// The value of github_proxy, or null when it has its default. A dry run (protocol/lip.md,
+  /// "Dry run") reads a liprc.json without migrating it.
+  public async Task<string?> GetGithubProxy(bool dryRun = false) {
+    return await LoadGithubProxy(dryRun);
   }
 
   /// A github_proxy value for the run trace: only its scheme and host, since its user info, path
@@ -63,13 +65,30 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     return new Dictionary<string, string> { [_githubProxyKey] = await LoadGithubProxy() ?? "" };
   }
 
+  /// Fails, changing nothing, when the value is not valid for the key: config.schema.toml requires
+  /// github_proxy to be a URI, and a file with any other value would be invalid.
   public async Task Set(string key, string value) {
     CheckKey(key);
+    if (!IsUri(value)) {
+      throw new ArgumentException(
+          $"The value is not a URI, so it cannot be the value of {_githubProxyKey}: set a URL"
+          + " prefix like https://example.com/, or run 'lip config delete"
+          + $" {_githubProxyKey}' to reach GitHub directly.");
+    }
+
     await LoadGithubProxy();
     // The value is not traced: a proxy URL may carry a token.
     RunTrace.Write("config", $"setting {key}");
     await SaveConfig(value);
   }
+
+  /// Whether a string is a URI (RFC 3986), as the format "uri" of config.schema.toml requires: a
+  /// scheme, then ":" and the rest, of the characters a URI may hold. A Windows or Unix path is
+  /// not one.
+  private static bool IsUri(string value) =>
+      System.Text.RegularExpressions.Regex.IsMatch(
+          value, @"^[A-Za-z][A-Za-z0-9+.-]*:[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]*$")
+      && Uri.TryCreate(value, UriKind.Absolute, out _);
 
   // An unknown key is a mistake of the user, not of lip: ArgumentException, not
   // KeyNotFoundException, which the CLI reports as a bug.
@@ -81,10 +100,10 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     }
   }
 
-  private async Task<string?> LoadGithubProxy() {
+  private async Task<string?> LoadGithubProxy(bool dryRun = false) {
     if (!_fileSystem.File.Exists(_configPath)) {
       RunTrace.Write("config", $"{_configPath} does not exist");
-      return await MigrateLiprc();
+      return await MigrateLiprc(dryRun);
     }
 
     try {
@@ -115,6 +134,12 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
           : throw new InvalidDataException(
               $"Its field {_githubProxyKey} is not a single text value; it must be a URL "
               + "prefix like https://example.com/.");
+      if (!IsUri(githubProxy!)) {
+        throw new InvalidDataException(
+            $"Its field {_githubProxyKey} is not a URI; it must be a URL prefix like "
+            + "https://example.com/.");
+      }
+
       RunTrace.Write("config", $"{_githubProxyKey} = {DescribeProxy(githubProxy)}");
       return githubProxy;
     }
@@ -136,8 +161,9 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   /// Migrates liprc.json to config.toml (protocol/lip-compatibility.md, "liprc.json"). Returns the
   /// github_proxy it holds; null when it holds none, or when there is no liprc.json or it is not
-  /// one that Section 4 reads, which is kept.
-  private async Task<string?> MigrateLiprc() {
+  /// one that Section 4 reads, which is kept. A dry run only reads it: it writes no config.toml
+  /// and keeps liprc.json.
+  private async Task<string?> MigrateLiprc(bool dryRun) {
     if (!_fileSystem.File.Exists(_liprcPath)) {
       RunTrace.Write("config", $"{_liprcPath} does not exist either; using the defaults");
       return null;
@@ -175,6 +201,11 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
     }
 
     RunTrace.Write("config", $"{_githubProxyKey} = {DescribeProxy(githubProxy)}");
+    if (dryRun) {
+      RunTrace.Write("config", $"dry run: keeping {_liprcPath} and writing no {_configPath}");
+      return githubProxy;
+    }
+
     await SaveConfig(githubProxy);
     RunTrace.Write("config", $"deleting {_liprcPath}");
     _fileSystem.File.Delete(_liprcPath);

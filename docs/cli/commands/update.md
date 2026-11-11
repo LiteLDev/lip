@@ -40,5 +40,4 @@ To move a package installed from a git ref back to released versions, update it 
 | Option | Description |
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
-| `--ignore-scripts` | Skip running install and uninstall hooks while updating packages. |
-| `--platform <RID>` | The platform of the workspace, a .NET RID such as `win-x64`. |
+| `--platform <RID>` | The platform of the workspace [environment](../../concepts/lip_toml.md#environment), a .NET RID such as `linux-x64`. Without it, the platform the state file records, or else `win-x64`, whatever system lip runs on. |

@@ -2,7 +2,7 @@
 
 <img src="docs/logo.png" alt="" width="128" align="right">
 
-A general package installer
+Run a LeviLamina server and manage its packages
 
 ## Usage
 

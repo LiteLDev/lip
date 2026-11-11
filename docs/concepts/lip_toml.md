@@ -210,8 +210,12 @@ does not match only because `mods` does: `mods/` and `*/` delete nothing below `
 | `pre_uninstall` | `string[]` | Commands to run before the files are deleted. |
 | `post_uninstall` | `string[]` | Commands to run after the files are deleted. |
 
-Commands run in the workspace root with `cmd /c` on Windows and `sh -c` elsewhere. A command
-that exits with a non-zero code fails the operation. If an operation fails, lip undoes its file
+Commands run in the workspace root, with the environment variables of lip, as
+`cmd /s /c "<command>"` when the platform of the workspace [environment](#environment) is a
+Windows platform, so that `cmd` runs the command as written, and as `sh -c <command>` otherwise,
+with `sh` found through `PATH`; on a system other than Windows, a Windows platform runs them
+through Wine (see [Running a Server](../guides/running_server.md#wine-prefix)), where a command
+containing `"` does not reach `cmd` as written. A command that exits with a non-zero code fails the operation. If an operation fails, lip undoes its file
 changes, but not what hook commands already did, so hook commands should be safe to run again.
 
 ## Templates
@@ -235,7 +239,7 @@ urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-{
 A template may use any Scriban expression, e.g. `{{version | string.replace "." "_"}}`. An undefined
 variable renders as nothing. A template that does not parse or fails to render, such as
 `{{ if }}`, makes the archive not a package. To write `{{` literally, write `{{ "{{" }}`.
-[`lip view`](../cli/commands/view.md) shows the package file with its templates rendered, and the
+[`lip pkg view`](../cli/commands/pkg_view.md) shows the package file with its templates rendered, and the
 [state file](lockfiles.md) records it so.
 
 ## Mods
@@ -277,7 +281,13 @@ The environment of a workspace is a pair `(side, platform)`:
   workspaces only, so it always uses `server`. Client workspaces are managed by launchers such as
   LeviLauncher; lip refuses a workspace whose [state file](lockfiles.md) records `client`.
 - **platform**: a [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog): `--platform`,
-  else the platform the state file records, else the platform lip itself runs on (e.g. `win-x64`).
+  else the platform the state file records, else `win-x64`, whatever system lip runs on. Linux-native
+  packages, such as the `linux-x64` entry of `github.com/LiteLDev/bds`, need `--platform linux-x64`
+  on the first command of the workspace. Every `install`, `uninstall` and `update` (except with
+  `--dry-run`, which writes no file) records the platform it used in the state file, so
+  `--platform` replaces the recorded platform for later commands. A platform starting with `win` is a **Windows platform**:
+  on other systems, lip runs the programs of such a workspace through Wine (see
+  [Running a Server](../guides/running_server.md)).
 
 ## Earlier Formats
 
@@ -289,7 +299,7 @@ keys of each entry, and keep everything else.
 
 Packages of lip v0.37.0 and earlier have, instead of `lip.toml`, a `tooth.json` of format
 version 1, 2 or 3. lip still installs them, but never writes them; convert yours to `lip.toml`
-with [`lip migrate`](../cli/commands/migrate.md). An archive with a `lip.toml` is read from it,
+with [`lip pkg migrate`](../cli/commands/pkg_migrate.md). An archive with a `lip.toml` is read from it,
 whatever `tooth.json` it also has, and a `tooth.json` of any other format is not read.
 
 Formats 1 and 2 are first read as format 3, as lip v0.37.0 did. A format 3 `tooth.json` is then

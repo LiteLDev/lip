@@ -384,8 +384,8 @@ public class GraphSolver(IResolver resolver) {
 
           throw Fail($"Installed packages {ShowSource(other.Candidate)} and {ShowSource(candidate)}"
               + " have the same identity, which the state file .lip/state.json must not"
-              + " record. Uninstall them with --no-dependencies and install the one you want"
-              + " again.");
+              + " record. Uninstall the explicitly installed packages that need them, then install"
+              + " the one you want again.");
         }
 
         if (await ModName(candidate) is string modName) {
@@ -394,8 +394,8 @@ public class GraphSolver(IResolver resolver) {
                 && PackageNames.AreEqual(modName, otherName)) {
               throw Fail($"Installed packages {ShowSource(member.Candidate)} and "
                   + $"{ShowSource(candidate)} are mods of the same mod name '{modName}', so they"
-                  + " would share one mod directory. Uninstall one of them with"
-                  + " --no-dependencies.");
+                  + " would share one mod directory. Uninstall the explicitly installed packages"
+                  + " that need one of them.");
             }
           }
         }

@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
-using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
@@ -15,8 +15,6 @@ namespace Lip.Core.Mcmod;
 /// changing the workspace undoes its changes first.
 public record OperationOptions(
     bool DryRun = false,
-    bool IgnoreScripts = false,
-    bool NoDependencies = false,
     string? Platform = null,
     CancellationToken CancellationToken = default);
 
@@ -79,11 +77,6 @@ public class McmodService(
     Workspace workspace = await OpenWorkspace(options);
     List<(string Argument, PackageRequest Request)> requests = ParseRequests(packages);
 
-    if (options.NoDependencies) {
-      await InstallWithoutDependencies(workspace, requests, options);
-      return;
-    }
-
     List<Candidate> candidates = await RequestedCandidates(workspace, requests);
     for (int i = 0; i < candidates.Count; i++) {
       string identity = candidates[i].Package.Identity;
@@ -140,30 +133,13 @@ public class McmodService(
 
       RunTrace.Write("workspace", $"'{package}' matches the installed packages "
           + string.Join(", ", matched.Select(p => $"{p.Identity}@{p.Version}")));
-      if (!options.NoDependencies && matched.FirstOrDefault(p => !p.Explicit) is { } dependency) {
+      if (matched.FirstOrDefault(p => !p.Explicit) is { } dependency) {
         throw new InvalidOperationException(
             $"Package '{dependency.Identity}' was installed as a dependency of other packages, not"
-            + " requested by you, so lip uninstalls it by itself once no package needs it. To"
-            + " uninstall it anyway, pass --no-dependencies (the packages that need it may then"
-            + " stop working).");
+            + " requested by you, so lip uninstalls it by itself once no package needs it.");
       }
 
       targets.AddRange(matched.Where(p => !targets.Contains(p)));
-    }
-
-    if (options.NoDependencies) {
-      await _ui.PrintWarning(
-          "--no-dependencies is enabled. This operation may result in a broken workspace.");
-      await Execute(workspace, options, new ChangeSet(
-          [
-            .. Enumerable.Reverse(workspace.Lock.Packages)
-                .Where(targets.Contains)
-                .Select(p => new UninstallChange(p)),
-          ],
-          // Without a package of a cycle, the others may need another order
-          // (protocol/lip-workspace.md, "Operations"; protocol/state.json.md).
-          remaining => Task.FromResult(InInstallationOrder(remaining, workspace.Environment))));
-      return;
     }
 
     HashSet<string> removed = [.. targets.Select(p => Fold(p.Identity))];
@@ -307,33 +283,61 @@ public class McmodService(
     ];
   }
 
-  /// The versions of the version tags of a remote repository, lowest first
-  /// (protocol/lip-versions.md): the package argument must be a remote repository without a ref.
-  public async Task<IReadOnlyList<string>> Versions(string package) {
-    Ref reference = PackageArguments.Parse(
-        package, _fs.Path.GetFullPath(_workspaceRoot()), _fs).Ref;
-    if (reference.Kind != RefKind.Spec || reference.GitRef is not null) {
-      string what = reference.Kind switch {
-        RefKind.Url => "a URL",
-        RefKind.File => "a local path",
-        _ => $"a remote repository with the ref '@{reference.GitRef}', which selects one commit",
-      };
-      // No parameter name: it would add "(Parameter 'package')" to the message the user sees.
-      throw new ArgumentException(
-          $"Cannot list the versions of '{package}': it is {what}. Only a remote repository"
-          + " without a ref, such as 'github.com/<owner>/<repo>', has versions to list.");
+  /// lip run (protocol/lip-run.md): takes the workspace lock, recovers an interrupted operation,
+  /// releases the lock, then runs the server, bedrock_server_mod.exe at the workspace root, for the
+  /// environment of protocol/lip.md, "Environment" (no --platform), and returns its exit code.
+  /// The server reads the bytes read from input, and the line "stop" when lip is first asked to
+  /// stop (listen); inputIsConsole when input is an interactive Windows console. Throws when a
+  /// step before the server starts fails.
+  public async Task<int> Run(
+      Stream input, bool inputIsConsole, StopListener listen, IProgramStarter starter) {
+    string root = _fs.Path.GetFullPath(_workspaceRoot());
+    LockFile? lockFile;
+    using (await BeginOperation(new OperationOptions())) {
+      // Read once a recovered operation is complete, so that it records the platform it gave.
+      lockFile = await _lockStore.Load(root);
     }
 
-    RunTrace.Write("resolve", $"Listing the versions of {reference.Target}");
-    IReadOnlyList<SpecVersion> versions = await _archiveProvider.ListVersions(reference.Target);
-    return [.. versions.Reverse().Select(v => v.Version.ToString()).Distinct()];
+    LipEnvironment environment = DetermineEnvironment(lockFile, null);
+    string server = _fs.Path.Join(root, WorkspaceProgram.ServerFileName);
+    if (!_fs.File.Exists(server)) {
+      throw new FileNotFoundException(
+          $"There is no server to run: '{server}' is not a file."
+          + (WorkspaceProgram.IsWindowsPlatform(environment.Platform)
+              ? " Install the server first, e.g. with 'lip install github.com/LiteLDev/LeviLamina'."
+              : $" Install a package that provides it for the platform {environment.Platform},"
+                + " or start the server of the workspace yourself."),
+          server);
+    }
+
+    ProgramHost host = ProgramHost.Current(environment.Platform, root);
+    bool throughWine = WorkspaceProgram.RunsThroughWine(host);
+    string program = throughWine ? "wine" : server;
+    try {
+      ProgramStartInfo start = WorkspaceProgram.Server(host);
+      return await ServerSession.Run(starter, start, input, inputIsConsole, listen);
+    }
+    catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+        or InvalidOperationException) {
+      throw new InvalidOperationException(
+          $"Could not start the server: lip could not run {program} in '{root}' for the"
+          + $" platform {environment.Platform}"
+          + (throughWine
+              ? ". Install Wine, so that 'wine' is found through PATH, or install the server for"
+                + " the platform lip runs on in a new workspace, with 'lip install"
+                + " <PACKAGES>... --platform <RID>'."
+              : "."),
+          ex);
+    }
   }
 
-  /// The package file of the first archive a package argument names (protocol/lip-view.md), as
-  /// JSON: for a remote repository, its newest version tag, or the commit its ref selects;
-  /// otherwise the archive of the URL or local path. For an archive without a package file, the
-  /// package file protocol/lip-compatibility.md, "tooth.json" derives from its tooth.json for the
-  /// environment of protocol/lip.md, "Environment".
+  /// The result of lip pkg view (protocol/lip-pkg.md, "lip pkg view"), as JSON: "manifest", the
+  /// package file of the first archive a package argument names (for a remote repository, its
+  /// newest version tag, or the commit its ref selects; otherwise the archive of the URL or local
+  /// path), and "versions", the versions of the version tags of a remote repository, lowest first,
+  /// whatever its variant and ref. For an archive without a package file, the package file
+  /// protocol/lip-compatibility.md, "tooth.json" derives from its tooth.json for the side server
+  /// and the platform the state file records, or win-x64 without a state file.
   public async Task<string> View(string package) {
     PackageRequest request = PackageArguments.Parse(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
@@ -341,6 +345,12 @@ public class McmodService(
     ArchiveHandle archive;
     // The tag version of the archive, the version of a package read from a tooth.json.
     SemVersion? tagVersion = null;
+    IReadOnlyList<SpecVersion> versions = [];
+    if (request.Ref.Kind == RefKind.Spec) {
+      RunTrace.Write("resolve", $"Listing the versions of {request.Ref.Target}");
+      versions = await _archiveProvider.ListVersions(request.Ref.Target);
+    }
+
     if (request.Ref is { Kind: RefKind.Spec, GitRef: GitRef gitRef }) {
       archive = await _archiveProvider.OpenCommit(
           request.Ref.Target, await _archiveProvider.ResolveGitRef(request.Ref.Target, gitRef));
@@ -350,8 +360,7 @@ public class McmodService(
         _ => null,
       };
     } else if (request.Ref.Kind == RefKind.Spec) {
-      SpecVersion version = (await _archiveProvider.ListVersions(request.Ref.Target))
-          .FirstOrDefault()
+      SpecVersion version = versions.FirstOrDefault()
           ?? throw new InvalidOperationException(
               $"Cannot show the package file of '{package}': the repository {request.Ref.Target}"
               + " has no version tags (tags named like 'v1.2.3'). Name a branch, tag or commit"
@@ -363,23 +372,31 @@ public class McmodService(
     }
 
     RunTrace.Write("resolve", $"Showing the package file of {archive.Key}");
+    JsonObject result = new() {
+      ["manifest"] = JsonSerializer.SerializeToNode(await ManifestJson(archive, tagVersion)),
+      // ListVersions gives the newest first.
+      ["versions"] = new JsonArray([
+        .. versions.Reverse().Select(v => v.Version.ToString()).Distinct()
+            .Select(v => (JsonNode?)JsonValue.Create(v)),
+      ]),
+    };
+    return result.ToJsonString(_indented);
+  }
+
+  /// The package file of an archive, as lip pkg view shows it: read for the side server and the
+  /// platform the state file records, or DefaultPlatform when there is no state file. Only a
+  /// package file derived from a tooth.json depends on them, so the state file is read only for
+  /// one; a state file that cannot be read fails the command, as it fails a workspace operation.
+  private async Task<JsonElement> ManifestJson(ArchiveHandle archive, SemVersion? tagVersion) {
     PackageDocument document = await _archiveReader.Read(archive);
     if (!document.IsLegacy) {
-      return JsonSerializer.Serialize(document.Json, _indented);
+      return document.Json;
     }
 
-    string? platform = null;
-    try {
-      platform = (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Platform;
-    }
-    catch (LockFormatException ex) {
-      // A state file lip cannot read records no environment it can use.
-      RunTrace.Write("workspace", $"Ignoring the unreadable state file: {ex.Message}");
-    }
-
-    LipEnvironment environment = new(
-        McmodSide.Server, platform ?? RuntimeInformation.RuntimeIdentifier);
-    return JsonSerializer.Serialize(document.ReadFor(environment, tagVersion).Json, _indented);
+    string? platform =
+        (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Platform;
+    LipEnvironment environment = new(McmodSide.Server, platform ?? DefaultPlatform);
+    return document.ReadFor(environment, tagVersion).Json;
   }
 
   #region Planning
@@ -493,6 +510,8 @@ public class McmodService(
   private async Task<WorkspaceMutex?> BeginOperation(OperationOptions options) {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     if (options.DryRun) {
+      // A dry run changes no file, the cache included (protocol/lip.md, "Dry run").
+      _archiveProvider.LeaveCacheUnchanged();
       await RecoverInterrupted(root, options);
       return null;
     }
@@ -573,9 +592,13 @@ public class McmodService(
         + " before it.");
   }
 
+  /// The platform of the environment when neither --platform nor the state file gives one,
+  /// whatever system lip runs on (protocol/lip.md, "Environment").
+  public const string DefaultPlatform = "win-x64";
+
   /// The environment of the workspace (protocol/lip.md, "Environment"). lip manages server
   /// workspaces only, so the side is always server. The platform is --platform, then the state
-  /// file, then the RID lip itself runs on.
+  /// file, then DefaultPlatform.
   private static LipEnvironment DetermineEnvironment(
       LockFile? lockFile,
       string? explicitPlatform) {
@@ -589,7 +612,7 @@ public class McmodService(
 
     return new LipEnvironment(
         McmodSide.Server,
-        explicitPlatform ?? lockFile?.Platform ?? RuntimeInformation.RuntimeIdentifier);
+        explicitPlatform ?? lockFile?.Platform ?? DefaultPlatform);
   }
 
   private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
@@ -753,8 +776,6 @@ public class McmodService(
 
   private sealed record InstallChange(Candidate Candidate, bool Explicit) : Change;
 
-  private sealed record MarkExplicitChange(LockedPackage Package) : Change;
-
   /// The changes from the installed packages to the planned package set: uninstalling what
   /// leaves or changes (in reverse installation order), then installing what enters (in
   /// installation order).
@@ -815,98 +836,6 @@ public class McmodService(
     return new ChangeSet(changes, Finish);
   }
 
-  private async Task InstallWithoutDependencies(
-      Workspace workspace,
-      List<(string Argument, PackageRequest Request)> requests,
-      OperationOptions options) {
-    await _ui.PrintWarning(
-        "--no-dependencies is enabled. This operation may result in a broken workspace.");
-
-    // In installation order (protocol/lip-workspace.md, "Operations"), as the state file afterwards
-    // records it: the order of the requested packages among every package installed then, so
-    // that a cycle through an installed package counts too.
-    List<Candidate> requested = await RequestedCandidates(workspace, requests);
-    List<OrderNode> nodes = [
-      .. workspace.Lock.Packages
-          .Where(p => !requested.Any(c => SameIdentity(c.Package.Identity, p.Identity)))
-          .Select(p => OrderNode.Of(p, workspace.Environment)),
-      .. requested.Select(c => new OrderNode(
-          c.Package.Identity, c.Package.Version, c.Package.Entry.Dependencies, c)),
-    ];
-    List<Candidate> candidates = [
-      .. InstallationOrder(nodes).Select(n => n.Candidate).OfType<Candidate>(),
-    ];
-    List<Change> changes = [];
-    foreach (Candidate candidate in candidates) {
-      LockedPackage? existing = workspace.Lock.Packages.FirstOrDefault(
-          p => SameIdentity(p.Identity, candidate.Package.Identity));
-      if (existing is not null && IsSamePackage(existing, candidate)) {
-        changes.Add(new MarkExplicitChange(existing));
-        continue;
-      }
-
-      if (existing is not null) {
-        changes.Add(new UninstallChange(existing));
-      }
-
-      changes.Add(new InstallChange(candidate, Explicit: true));
-    }
-
-    await Execute(workspace, options, new ChangeSet(
-        changes, remaining => Task.FromResult(InInstallationOrder(remaining, workspace.Environment))));
-  }
-
-  /// The installed packages in installation order (protocol/lip-workspace.md, "Operations";
-  /// protocol/state.json.md): a package after the packages that satisfy its dependencies, and a
-  /// cycle in ascending order of identities with A-Z replaced by a-z. A package without an entry
-  /// for the environment has no dependencies here.
-  private static List<LockedPackage> InInstallationOrder(
-      List<LockedPackage> packages, LipEnvironment environment) =>
-      [.. InstallationOrder([.. packages.Select(p => OrderNode.Of(p, environment))])
-          .Select(n => n.Locked!)];
-
-  /// Nodes in installation order (protocol/lip-workspace.md, "Operations"): a package after the
-  /// packages that satisfy its dependencies, and a cycle in ascending order of identities with A-Z
-  /// replaced by a-z.
-  private static IEnumerable<OrderNode> InstallationOrder(List<OrderNode> nodes) {
-    List<OrderNode> sorted = [
-      .. nodes.OrderBy(n => PackageNames.Fold(n.Identity), StringComparer.Ordinal),
-    ];
-    IReadOnlyList<int> order = GraphSolver.InstallOrder(sorted.Count, i =>
-        sorted[i].Dependencies.SelectMany(d => Enumerable.Range(0, sorted.Count).Where(
-            j => SameIdentity(
-                    sorted[j].Identity, Package.GetIdentity(d.Source.Target, d.Source.Variant))
-                && sorted[j].Version is SemVersion v && d.Range.IsSatisfiedBy(v))));
-    return order.Select(i => sorted[i]);
-  }
-
-  /// A package to put in installation order: installed (Locked) or to install (Candidate).
-  private sealed record OrderNode(
-      string Identity,
-      SemVersion? Version,
-      IReadOnlyList<PackageDependency> Dependencies,
-      Candidate? Candidate = null,
-      LockedPackage? Locked = null) {
-    /// An installed package; one without an entry for the environment has no dependencies here.
-    public static OrderNode Of(LockedPackage package, LipEnvironment environment) {
-      IReadOnlyList<PackageDependency> dependencies;
-      try {
-        dependencies = McmodInstaller.LockedEntry(package, environment).Dependencies;
-      }
-      catch (McmodInstallException) {
-        dependencies = [];
-      }
-
-      return new OrderNode(
-          package.Identity,
-          SemVersion.TryParse(package.Version, SemVersionStyles.Strict, out SemVersion? v)
-              ? v
-              : null,
-          dependencies,
-          Locked: package);
-    }
-  }
-
   /// Plans every change against a view of the workspace as the earlier changes leave it, so
   /// that every check and every fetch happens before anything changes; then applies the plans
   /// in one transaction and writes the state file last. A failure while applying (or
@@ -915,9 +844,11 @@ public class McmodService(
   private async Task Execute(Workspace workspace, OperationOptions options, ChangeSet changeSet) {
     // The changes are planned against the layout an operation that changes the workspace makes
     // first; it is checked and made only when the operation may change the workspace
-    // (protocol/lip-workspace.md, "Environment and layout").
-    WorkspaceLayout.LayoutPlan layout = _layout.Plan(workspace.Root);
-    WorkspaceView view = new(_fs, layout);
+    // (protocol/lip-workspace.md, "Environment and layout"). Paths are compared as the
+    // environment makes them.
+    WorkspacePaths paths = WorkspacePaths.For(workspace.Environment);
+    WorkspaceLayout.LayoutPlan layout = _layout.Plan(workspace.Root, paths);
+    WorkspaceView view = new(_fs, layout, paths);
     List<LockedPackage> remaining = [.. workspace.Lock.Packages];
     List<(string Message, PackagePlan Plan)> plans = [];
     HashSet<PackagePlan> installs = new(ReferenceEqualityComparer.Instance);
@@ -927,7 +858,6 @@ public class McmodService(
         UninstallChange(LockedPackage p) => $"to uninstall {p.Identity}@{p.Version}",
         InstallChange(Candidate c, bool e) => $"to install {c.Package.Identity}"
             + $"@{c.Package.Version} from {c.Archive.Key}{(e ? " (explicit)" : "")}",
-        MarkExplicitChange(LockedPackage p) => $"to mark {p.Identity}@{p.Version} explicit",
         _ => change.GetType().Name,
       });
       switch (change) {
@@ -956,15 +886,6 @@ public class McmodService(
             remaining.Add(Locked(candidate, isExplicit, plan.OwnedFiles));
             break;
           }
-        case MarkExplicitChange(LockedPackage package):
-          if (!package.Explicit) {
-            await _ui.PrintInfo((options.DryRun ? "Dry run: would mark" : "Marking")
-                + $" package '{package.Identity}' version {package.Version} as explicitly"
-                + " installed.");
-          }
-
-          remaining[remaining.IndexOf(package)] = package with { Explicit = true };
-          break;
         default:
           throw new ArgumentException(
               $"Internal error: lip planned an unknown kind of change ({change}). This is a bug"
@@ -993,7 +914,7 @@ public class McmodService(
     }
 
     using WorkspaceTransaction transaction = new(
-        _fs, JournalPath(workspace.Root), plans.SelectMany(p => p.Plan.WrittenPaths));
+        _fs, JournalPath(workspace.Root), plans.SelectMany(p => p.Plan.WrittenPaths), paths);
     try {
       if (changesWorkspace) {
         _layout.Apply(layout, transaction);
@@ -1002,7 +923,8 @@ public class McmodService(
       // The files each package installed owns as its writes happened: hook commands may have
       // changed which files matching preserve were kept (protocol/lip-workspace.md, "Installing and
       // uninstalling"). Each write is checked against the owners as they are then.
-      FileOwners owners = _installer.Owners(workspace.Root, workspace.Lock.Packages);
+      FileOwners owners = _installer.Owners(
+          workspace.Root, workspace.Lock.Packages, workspace.Environment);
       Dictionary<string, IReadOnlyList<string>> owned = new(StringComparer.Ordinal);
       foreach ((string message, PackagePlan plan) in plans) {
         await _ui.PrintInfo(message);
@@ -1083,8 +1005,7 @@ public class McmodService(
         workspace.Root,
         workspace.Environment,
         LockWith(workspace, remaining),
-        options.DryRun,
-        options.IgnoreScripts);
+        options.DryRun);
   }
 
   /// The state file with the given packages and the environment, once known.

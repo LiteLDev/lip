@@ -17,22 +17,12 @@ public class UninstallCommand(LipClient lipClient, IUserInteraction userInteract
     [CommandOption("-n|--dry-run")]
     [Description("Run without making any changes")]
     public bool DryRun { get; init; }
-
-    [CommandOption("--ignore-scripts")]
-    [Description("Do not run the scripts of the packages installed or uninstalled")]
-    public bool IgnoreScripts { get; init; }
-
-    [CommandOption("--no-dependencies")]
-    [Description("Skip removing dependencies")]
-    public bool NoDependencies { get; init; }
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
     await _lipClient.Uninstall(
         settings.Packages,
         settings.DryRun,
-        settings.IgnoreScripts,
-        settings.NoDependencies,
         settings.Platform, cancellationToken);
     await _userInteraction.PrintSuccess("Packages uninstalled successfully.");
     return 0;

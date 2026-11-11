@@ -121,7 +121,6 @@ public class ToothInstallTests {
 
   private InstallContext CreateContext(
       bool dryRun = false,
-      bool ignoreScripts = false,
       LipEnvironment? environment = null) =>
       new(
           _root,
@@ -131,8 +130,7 @@ public class ToothInstallTests {
             Platform = (environment ?? _serverWin).Platform,
             Packages = [],
           },
-          dryRun,
-          ignoreScripts);
+          dryRun);
 
   private string Workspace(string relativePath) => _fileSystem.Path.Combine(
       _root, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -192,8 +190,7 @@ public class ToothInstallTests {
         new() { ["bin/a.dll"] = "a", ["bin/b.dll"] = "b", ["bin/c.txt"] = "c" });
 
     // Act
-    IReadOnlyList<string> files = await _installer.Install(
-        candidate, CreateContext(ignoreScripts: true));
+    IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext());
 
     // Assert: the placements are carried out as format 4 carries out the members of place they
     // become; the tooth.json the package is read from is never written.
@@ -233,7 +230,7 @@ public class ToothInstallTests {
 
     // Act & Assert
     await Assert.ThrowsAsync<McmodInstallException>(
-        () => _installer.Install(candidate, CreateContext(ignoreScripts: true)));
+        () => _installer.Install(candidate, CreateContext()));
     Assert.False(_fileSystem.Directory.Exists(Workspace("mods")));
   }
 
@@ -258,8 +255,7 @@ public class ToothInstallTests {
     _fileSystem.AddFile(Workspace("plugins/repo/data/config.json"), new MockFileData("user"));
 
     // Act
-    IReadOnlyList<string> files = await _installer.Install(
-        candidate, CreateContext(ignoreScripts: true));
+    IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext());
 
     // Assert
     Assert.DoesNotContain("plugins/repo/data/config.json", files);
@@ -271,8 +267,8 @@ public class ToothInstallTests {
     // Arrange
     Candidate candidate = CreateCandidate();
     List<string> calls = [];
-    _commandRunner.Setup(c => c.Run(It.IsAny<string>(), It.IsAny<string>()))
-        .Callback((string command, string workingDirectory) => {
+    _commandRunner.Setup(c => c.Run(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+        .Callback((string command, string workingDirectory, string _) => {
           Assert.Equal(_root, workingDirectory);
           // Pre-install runs before files are placed, the others after.
           calls.Add($"{command}:{_fileSystem.File.Exists(Workspace("plugins/repo/a.dll"))}");
@@ -284,19 +280,6 @@ public class ToothInstallTests {
 
     // Assert
     Assert.Equal(["echo pre:False", "echo install:True", "echo post:True"], calls);
-  }
-
-  [Fact]
-  public async Task Install_IgnoreScripts_RunsNoScripts() {
-    // Arrange
-    Candidate candidate = CreateCandidate();
-
-    // Act
-    await _installer.Install(candidate, CreateContext(ignoreScripts: true));
-
-    // Assert
-    _commandRunner.VerifyNoOtherCalls();
-    Assert.True(_fileSystem.File.Exists(Workspace("tool.exe")));
   }
 
   [Fact]
@@ -332,13 +315,12 @@ public class ToothInstallTests {
   public async Task Uninstall_InstalledPackage_RemovesOwnedFilesExceptPreserved() {
     // Arrange
     Candidate candidate = CreateCandidate();
-    IReadOnlyList<string> files = await _installer.Install(
-        candidate, CreateContext(ignoreScripts: true));
+    IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext());
     _fileSystem.AddFile(Workspace("plugins/repo/logs/today.log"), new MockFileData("log"));
     _fileSystem.AddFile(Workspace("unrelated.txt"), new MockFileData("keep"));
     List<string> calls = [];
-    _commandRunner.Setup(c => c.Run(It.IsAny<string>(), _root))
-        .Callback((string command, string? _) => calls.Add(command))
+    _commandRunner.Setup(c => c.Run(It.IsAny<string>(), _root, It.IsAny<string>()))
+        .Callback((string command, string _, string _) => calls.Add(command))
         .Returns(Task.CompletedTask);
 
     // Act
@@ -371,8 +353,7 @@ public class ToothInstallTests {
         }
         """,
         new() { ["p/config.json"] = "{}", ["p/p.js"] = "js" });
-    IReadOnlyList<string> files = await _installer.Install(
-        candidate, CreateContext(ignoreScripts: true));
+    IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext());
 
     // Act
     await _installer.Uninstall(Lock(candidate, files), CreateContext());
@@ -438,9 +419,9 @@ public class ToothInstallTests {
     await _installer.Uninstall(Lock(candidate, []), CreateContext(environment: client));
 
     // Assert
-    _commandRunner.Verify(c => c.Run("echo preun", _root), Times.Once);
-    _commandRunner.Verify(c => c.Run("echo un", _root), Times.Once);
-    _commandRunner.Verify(c => c.Run("echo postun", _root), Times.Once);
+    _commandRunner.Verify(c => c.Run("echo preun", _root, It.IsAny<string>()), Times.Once);
+    _commandRunner.Verify(c => c.Run("echo un", _root, It.IsAny<string>()), Times.Once);
+    _commandRunner.Verify(c => c.Run("echo postun", _root, It.IsAny<string>()), Times.Once);
     _commandRunner.VerifyNoOtherCalls();
   }
 
@@ -454,7 +435,6 @@ public class ToothInstallTests {
     await Assert.ThrowsAsync<McmodInstallException>(() => _installer.Uninstall(
         Lock(candidate, ["tool.exe"]),
         CreateContext(
-            ignoreScripts: true,
             environment: new LipEnvironment(McmodSide.Server, "linux-x64"))));
     Assert.True(_fileSystem.File.Exists(Workspace("tool.exe")));
   }
@@ -468,7 +448,7 @@ public class ToothInstallTests {
     // Act
     await _installer.Uninstall(
         Lock(candidate, ["gone.txt", "tool.exe"]),
-        CreateContext(ignoreScripts: true));
+        CreateContext());
 
     // Assert
     Assert.False(_fileSystem.File.Exists(Workspace("tool.exe")));
@@ -478,8 +458,8 @@ public class ToothInstallTests {
   public async Task Uninstall_DryRun_TouchesNothing() {
     // Arrange
     Candidate candidate = CreateCandidate();
-    IReadOnlyList<string> files = await _installer.Install(
-        candidate, CreateContext(ignoreScripts: true));
+    IReadOnlyList<string> files = await _installer.Install(candidate, CreateContext());
+    _commandRunner.Invocations.Clear();
 
     // Act
     await _installer.Uninstall(Lock(candidate, files), CreateContext(dryRun: true));

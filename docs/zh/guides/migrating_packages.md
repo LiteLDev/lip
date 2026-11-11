@@ -1,14 +1,14 @@
 # 迁移包
 
-为 lip v0.37.0 及更早版本编写的包使用格式版本 1、2 或 3 的 `tooth.json`。现在的包改用 `lip.toml`（参见 [lip.toml](../concepts/lip_toml.md)）。lip 仍可安装带有这类 `tooth.json` 的包，但你的包的新版本应使用 `lip.toml`。`lip migrate` 命令可帮助你完成转换。
+为 lip v0.37.0 及更早版本编写的包使用格式版本 1、2 或 3 的 `tooth.json`。现在的包改用 `lip.toml`（参见 [lip.toml](../concepts/lip_toml.md)）。lip 仍可安装带有这类 `tooth.json` 的包，但你的包的新版本应使用 `lip.toml`。`lip pkg migrate` 命令可帮助你完成转换。
 
-## 使用 `lip migrate`
+## 使用 `lip pkg migrate`
 
-在包仓库的根目录（即包含 `tooth.json` 的目录）中不带参数运行 `lip migrate`：
+在包仓库的根目录（即包含 `tooth.json` 的目录）中不带参数运行 `lip pkg migrate`：
 
 ```sh
 cd MyTool
-lip migrate
+lip pkg migrate
 git add lip.toml tooth.json
 git commit -m "Migrate tooth.json to lip.toml"
 ```
@@ -23,7 +23,7 @@ git commit -m "Migrate tooth.json to lip.toml"
 - `tooth.json` 中 `windows/amd64` 这样不是 RID 的 `platform` 所代表的平台（RID），以逗号分隔；
 - 没有 `platform` 的变体所适用的平台（RID）（存在这类变体时）。
 
-若标准输入或标准错误不是终端（例如在 CI 中），`lip migrate` 会失败，指明本应询问的值，且不做任何修改。
+若标准输入或标准错误不是终端（例如在 CI 中），`lip pkg migrate` 会失败，指明本应询问的值，且不做任何修改。
 
 ### 警告
 
@@ -44,7 +44,7 @@ git commit -m "Migrate tooth.json to lip.toml"
 
 ## 局限
 
-`lip migrate` 只是辅助工具，不保证结果正确。请始终检查其输出。
+`lip pkg migrate` 只是辅助工具，不保证结果正确。请始终检查其输出。
 
 - `lip.toml` 要求标签处的 `version` 等于标签版本，且仓库的 `id` 等于其路径。lip v0.37.0 会安装违反这些规则的 `tooth.json`；发布前请检查你的文件。
 - 放置规则按上述规则转换，不查看它们放置的文件，随后按 `lip.toml` 的方式执行：`src` 为模式的 `file` 放置规则会保留其匹配文件的子目录，而 `tooth.json` 过去只按文件名放置它们；放置缺失文件的放置规则会使安装失败，而 `tooth.json` 过去会跳过它。请检查这类放置规则。

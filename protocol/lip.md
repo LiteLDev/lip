@@ -2,7 +2,7 @@
 
 ## NAME
 
-lip - manage the packages of a workspace
+lip - run a LeviLamina server and manage its packages
 
 ## SYNOPSIS
 
@@ -10,7 +10,7 @@ lip - manage the packages of a workspace
 lip
 lip (-h | --help)
 lip (-v | --version)
-lip (cache | config) (-h | --help)
+lip (cache | config | pkg) (-h | --help)
 lip <command> [<argument>...]
 ```
 
@@ -24,28 +24,26 @@ lip <command> [<argument>...]
 | `uninstall` | [lip-uninstall(1)] |
 | `update` | [lip-update(1)] |
 | `list` | [lip-list(1)] |
-| `versions` | [lip-versions(1)] |
-| `view` | [lip-view(1)] |
-| `init` | [lip-init(1)] |
-| `migrate` | [lip-migrate(1)] |
+| `run` | [lip-run(1)] |
 | `cache clean` | [lip-cache(1)] |
 | `config get`, `config set`, `config list`, `config delete` | [lip-config(1)] |
-| `pack` | [lip-pack(1)] |
+| `pkg init`, `pkg pack`, `pkg view`, `pkg migrate` | [lip-pkg(1)] |
+
+The commands of the command group `pkg` are for developing packages; every other command is for running a server.
 
 ### Terms
 
 - **argument**: One element of the argument list that `lip` is started with, the program name excluded.
 - **command**: An invocation of `lip` with a command name, such as `lip install` or `lip config get`; not a hook command.
-- **command group**: `cache` or `config`, the first word of a command name of two words.
+- **command group**: `cache`, `config` or `pkg`, the first word of a command name of two words.
 - **option**: An argument, or two consecutive arguments, that "Arguments" reads as an option name with or without a value.
 - **flag**: An option that takes no value.
 - **operand**: An argument of a command that is not part of an option.
 - **usage error**: A list of arguments that "Arguments" or OPTIONS rejects.
-- **result**: The data a command is asked for; only `list`, `versions`, `view`, `config get` and `config list` have one.
+- **result**: The data a command is asked for; only `list`, `pkg view`, `config get` and `config list` have one.
 - **message**: Any text other than a result or help (progress, information, warnings, errors, the final success line); its wording is not defined here.
 - **help**: Text describing how to invoke `lip` or a command; its wording is not defined here.
 - **workspace operation**: An operation ([lip-workspace(7)]) that `install`, `uninstall` or `update` carries out without `-n` or `--dry-run`.
-- **platform lip runs on**: The platform ([lip-package(7)]) of the process running `lip`.
 
 ### Arguments
 
@@ -91,7 +89,7 @@ The workspace of every command is the current working directory. A relative path
 
 - A result is written to standard output; a message is written to standard error.
 - When a command that has a `--json` option is given it, standard output receives only the result, as [JSON] of the shape the command defines, followed by a line break. When it is not given, the layout of the result is not defined here.
-- The result of `view` is always written as JSON, as [lip-view(1)] defines.
+- The result of `pkg view` is always written as JSON, as [lip-pkg(1)] defines.
 
 ### Package arguments
 
@@ -113,12 +111,12 @@ A package argument is made into the request (source, range) whose range matches 
 
 ### Environment
 
-`lip` manages only workspaces whose side is `"server"`. The environment of `install`, `uninstall` and `update` is:
+`lip` manages only workspaces whose side is `"server"`. The environment of `install`, `uninstall`, `update` and `run` is:
 
 - side: `"server"`. When the state file records another side, the command fails.
-- platform: the value of the `--platform` option of the command, when given; otherwise the platform the state file records; otherwise the platform lip runs on.
+- platform: the value of the `--platform` option of the command, when given; otherwise the platform the state file records; otherwise `"win-x64"`, whatever system `lip` runs on.
 
-A workspace without a recorded environment gets the environment above from its first workspace operation.
+A workspace operation has the environment above, and records it in the state file, replacing the one recorded.
 
 ### Workspace operations
 
@@ -138,13 +136,15 @@ With `-n` or `--dry-run`, the command carries out every step that changes nothin
 - `-h`, `--help` as the first argument: `lip` writes the help for `lip` to standard output, whatever arguments follow.
 - `-v`, `--version` as the first argument: `lip` writes its version ([SemVer]) followed by a line break to standard output, whatever arguments follow.
 - Any other first argument starting with `-`: the list is a usage error.
-- `lip cache -h`, `lip cache --help`, `lip config -h` and `lip config --help` write the help for the command group to standard output.
+- `lip cache`, `lip config` or `lip pkg`, followed by `-h` or `--help`: `lip` writes the help for the command group to standard output.
 
 Each of these exits with code 0, except the usage error.
 
 ## EXIT STATUS
 
 A command that succeeds exits with code 0. A command that fails, including on a usage error, writes a message describing the cause to standard error and exits with a non-zero code.
+
+`lip run` that ran the server exits as [lip-run(1), EXIT STATUS](lip-run.md#exit-status) defines instead.
 
 A command that fails other than on a usage error may write a **failure report**: a file below `.lip/logs/` of its workspace, whose content is not defined here. When it writes one, it names the file in a message.
 
@@ -161,13 +161,10 @@ A command that fails other than on a usage error may write a **failure report**:
 [lip-uninstall(1)]: lip-uninstall.md
 [lip-update(1)]: lip-update.md
 [lip-list(1)]: lip-list.md
-[lip-versions(1)]: lip-versions.md
-[lip-view(1)]: lip-view.md
-[lip-init(1)]: lip-init.md
-[lip-migrate(1)]: lip-migrate.md
+[lip-run(1)]: lip-run.md
 [lip-cache(1)]: lip-cache.md
 [lip-config(1)]: lip-config.md
-[lip-pack(1)]: lip-pack.md
+[lip-pkg(1)]: lip-pkg.md
 [lip-package(7)]: lip-package.md
 [lip-workspace(7)]: lip-workspace.md
 [lip-userspace(7)]: lip-userspace.md

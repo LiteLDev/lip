@@ -116,7 +116,7 @@ public static class ToothCompat {
             $"The {ToothFileName} of {manifest.Path} {version} cannot be read for "
             + $"{environment.Platform}: its variant '{variant.Name}' does not convert to a valid "
             + $"variant of {PackageFormat.FileName}. Ask the package author to move "
-            + $"{ToothFileName} to {PackageFormat.FileName} with 'lip migrate'.",
+            + $"{ToothFileName} to {PackageFormat.FileName} with 'lip pkg migrate'.",
             ex);
       }
 

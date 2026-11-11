@@ -10,6 +10,7 @@ interface Labels {
   installation: string;
   quickStart: string;
   howTo: string;
+  runningServer: string;
   creatingPackages: string;
   migratingPackages: string;
   installingDependencies: string;
@@ -33,6 +34,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
     installation: 'Installation',
     quickStart: 'Quick Start',
     howTo: 'How-to Guides',
+    runningServer: 'Running a Server',
     creatingPackages: 'Creating Packages',
     migratingPackages: 'Migrating Packages',
     installingDependencies: 'Installing Dependencies',
@@ -54,6 +56,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
     installation: '安装',
     quickStart: '快速开始',
     howTo: '实践指南',
+    runningServer: '运行服务器',
     creatingPackages: '创建包',
     migratingPackages: '迁移包',
     installingDependencies: '安装依赖',
@@ -71,7 +74,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
   },
 };
 
-const COMMANDS = ['cache_clean', 'config', 'init', 'install', 'list', 'migrate', 'pack', 'uninstall', 'update', 'versions', 'view'];
+const COMMANDS = ['cache_clean', 'config', 'install', 'list', 'pkg_init', 'pkg_migrate', 'pkg_pack', 'pkg_view', 'run', 'uninstall', 'update'];
 
 /** The sections of one locale (`p`: its URL prefix, '/' or '/zh/'); zh-Hant is converted from zh by the kit. */
 const nav = (p: string, t: Labels): NavEntry[] => [
@@ -88,6 +91,7 @@ const nav = (p: string, t: Labels): NavEntry[] => [
       {
         text: t.howTo,
         items: [
+          { text: t.runningServer, link: `${p}guides/running_server` },
           { text: t.creatingPackages, link: `${p}guides/creating_packages` },
           { text: t.migratingPackages, link: `${p}guides/migrating_packages` },
           { text: t.installingDependencies, link: `${p}guides/installing_dependencies` },
@@ -116,13 +120,18 @@ const nav = (p: string, t: Labels): NavEntry[] => [
   },
 ];
 
-// Pages removed or renamed since lip v1 (JSON-RPC, tooth.json → lip.toml): their old URLs, in every locale, open the closest page.
+// Pages removed or renamed since lip v1 (JSON-RPC, tooth.json → lip.toml, the command group pkg): their old URLs, in every locale, open the closest page.
 const MOVED: Record<string, string> = {
   'rpc/overview': 'cli/overview.html',
   'rpc/json_rpc_spec': 'cli/overview.html',
   'cli/commands/rpc': 'cli/overview.html',
   'concepts/tooth_json': 'concepts/lip_toml.html',
   'concepts/lip_yaml': 'concepts/lip_toml.html',
+  'cli/commands/init': 'cli/commands/pkg_init.html',
+  'cli/commands/pack': 'cli/commands/pkg_pack.html',
+  'cli/commands/view': 'cli/commands/pkg_view.html',
+  'cli/commands/versions': 'cli/commands/pkg_view.html',
+  'cli/commands/migrate': 'cli/commands/pkg_migrate.html',
 };
 const redirects = Object.fromEntries(
   ['', 'zh/', 'zh-Hant/'].flatMap((p) => Object.entries(MOVED).map(([from, to]) => [p + from, p + to])),

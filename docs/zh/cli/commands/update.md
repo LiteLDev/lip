@@ -40,5 +40,4 @@ lip update [PACKAGES] [options]
 | 选项 | 说明 |
 | --- | --- |
 | `-n, --dry-run` | 仅模拟执行，不做实际更改。 |
-| `--ignore-scripts` | 更新时跳过安装与卸载钩子。 |
-| `--platform <RID>` | 工作区的平台，即 .NET RID，例如 `win-x64`。 |
+| `--platform <RID>` | 工作区[环境](../../concepts/lip_toml.md#环境)的平台，即 .NET RID，例如 `linux-x64`。不指定时为状态文件记录的平台，否则为 `win-x64`，无论 lip 运行在什么系统上。 |

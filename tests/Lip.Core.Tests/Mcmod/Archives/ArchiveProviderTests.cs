@@ -56,6 +56,15 @@ public class ArchiveProviderTests {
           _fileSystem.File.WriteAllBytes(destination.FullName, content);
           return Task.CompletedTask;
         });
+    _downloader.Setup(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()))
+        .Returns((Url url, Stream destination) => {
+          if (!_downloads.TryGetValue(url.ToString(), out byte[]? content)) {
+            throw new HttpRequestException($"HTTP 404: {url}");
+          }
+
+          destination.Write(content);
+          return Task.CompletedTask;
+        });
   }
 
   private ArchiveProvider CreateProvider(Url? githubProxy = null) =>
@@ -492,6 +501,99 @@ public class ArchiveProviderTests {
     Assert.Empty(CachedFiles());
   }
 
+  // A dry run changes no file of the cache (protocol/lip.md, "Dry run").
+
+  [Fact]
+  public async Task LeaveCacheUnchanged_UrlNotCached_DownloadsIntoMemoryOnce() {
+    // Arrange
+    _downloads[_url] = Zip(("lip.toml", "{}"));
+    ArchiveProvider provider = CreateProvider();
+    provider.LeaveCacheUnchanged();
+
+    // Act
+    ArchiveHandle first = await provider.Open(Ref.Parse(_url, allowFile: false));
+    ArchiveHandle second = await provider.Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("{}", await Read(first, "lip.toml"));
+    Assert.Equal("{}", await Read(second, "lip.toml"));
+    Assert.False(_fileSystem.Directory.Exists(LipDirectories.Cache));
+    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task LeaveCacheUnchanged_Forget_KeepsTheEntryAndDownloadsAgainIntoMemory() {
+    // Arrange
+    byte[] cached = Zip(("lip.toml", "old"));
+    string entry = Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url));
+    _fileSystem.AddFile(entry, new MockFileData(cached));
+    _downloads[_url] = Zip(("lip.toml", "new"));
+    ArchiveProvider provider = CreateProvider();
+    provider.LeaveCacheUnchanged();
+
+    // Act
+    await provider.Forget(_url);
+    ArchiveHandle archive = await provider.Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("new", await Read(archive, "lip.toml"));
+    Assert.Equal(cached, _fileSystem.File.ReadAllBytes(entry));
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
+  }
+
+  [Fact]
+  public async Task LeaveCacheUnchanged_CachedUrl_IsReadFromTheCache() {
+    // Arrange
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)),
+        new MockFileData(Zip(("lip.toml", "cached"))));
+    ArchiveProvider provider = CreateProvider();
+    provider.LeaveCacheUnchanged();
+
+    // Act
+    ArchiveHandle archive = await provider.Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("cached", await Read(archive, "lip.toml"));
+    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task LeaveCacheUnchanged_CachedUrlCorrupted_KeepsItAndDownloadsIntoMemory() {
+    // Arrange
+    string entry = Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url));
+    _fileSystem.AddFile(entry, new MockFileData("corrupted"));
+    _downloads[_url] = Zip(("lip.toml", "{}"));
+    ArchiveProvider provider = CreateProvider();
+    provider.LeaveCacheUnchanged();
+
+    // Act
+    ArchiveHandle archive = await provider.Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("{}", await Read(archive, "lip.toml"));
+    Assert.Equal("corrupted", _fileSystem.File.ReadAllText(entry));
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
+  }
+
+  [Fact]
+  public async Task LeaveCacheUnchanged_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
+    // Arrange
+    const string url = "https://github.com/owner/repo/releases/download/v1/pkg.zip";
+    _downloads[url] = Zip(("lip.toml", "{}"));
+    ArchiveProvider provider = CreateProvider(Url.Parse("https://proxy.example.com"));
+    provider.LeaveCacheUnchanged();
+
+    // Act
+    ArchiveHandle archive = await provider.Open(Ref.Parse(url, allowFile: false));
+
+    // Assert
+    Assert.Equal("{}", await Read(archive, "lip.toml"));
+    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Exactly(2));
+    Assert.False(_fileSystem.Directory.Exists(LipDirectories.Cache));
+  }
+
   [Fact]
   public async Task Open_CachedUrlCorrupted_Redownloads() {
     // Arrange
@@ -507,6 +609,40 @@ public class ArchiveProviderTests {
     Assert.Equal("{}", await Read(archive, "lip.toml"));
     Assert.Equal(zip, _fileSystem.File.ReadAllBytes(
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
+  }
+
+  [Fact]
+  public async Task Open_CachedUrlTruncated_RedownloadsOnce() {
+    // Arrange: an entry that is not a ZIP archive is deleted and downloaded again, once
+    // (protocol/lip-userspace.md, "Cache", "Repairing").
+    byte[] zip = Zip(("lip.toml", "{}"));
+    _downloads[_url] = zip;
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData(zip[..^10]));
+
+    // Act
+    ArchiveHandle archive = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("{}", await Read(archive, "lip.toml"));
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
+    Assert.Equal(zip, _fileSystem.File.ReadAllBytes(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task Open_CachedUrlCorruptedAndDownloadNotAZip_FailsAfterOneDownload() {
+    // Arrange
+    _downloads[_url] = Encoding.UTF8.GetBytes("<html>not found</html>");
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().Open(Ref.Parse(_url, allowFile: false)));
+    Assert.Empty(CachedFiles());
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
   }
 
   [Fact]
@@ -792,6 +928,41 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal(["a.txt"], asset.Keys);
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task OpenAsset_CachedArchiveWithInvalidEntry_Redownloads() {
+    // Arrange: a ZIP file with an entry that a ZIP archive must not have is not a ZIP archive
+    // (protocol/lip-package.md, "Terms").
+    byte[] zip = Zip(("a.txt", "a"));
+    _downloads[_url] = zip;
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)),
+        new MockFileData(Zip(("../a.txt", "a", 0))));
+
+    // Act
+    ISource asset = await CreateProvider().OpenAsset([_url]);
+
+    // Assert
+    Assert.Equal(["a.txt"], asset.Keys);
+    Assert.Equal(zip, _fileSystem.File.ReadAllBytes(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task OpenAsset_CachedArchiveCorruptedAndDownloadNotAZip_FailsAfterOneDownload() {
+    // Arrange
+    _downloads[_url] = Encoding.UTF8.GetBytes("<html>gone</html>");
+    _fileSystem.AddFile(
+        Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url)), new MockFileData("corrupted"));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => CreateProvider().OpenAsset([_url]));
+    Assert.Empty(CachedFiles());
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
   }
 
   [Fact]

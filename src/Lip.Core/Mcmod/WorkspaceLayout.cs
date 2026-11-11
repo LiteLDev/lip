@@ -1,7 +1,6 @@
 using System.IO.Abstractions;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
-using Lip.Core.Mcmod.Lock;
 
 namespace Lip.Core.Mcmod;
 
@@ -14,35 +13,36 @@ public class WorkspaceLayoutException(string message, Exception? inner = null)
 public class WorkspaceLayout(IFileSystem fileSystem, IUserInteraction userInteraction) {
   public const string ModsDirectory = "mods";
 
-  /// How workspace paths are compared: ignoring case on Windows, ordinal elsewhere.
-  public static StringComparer PathComparer { get; } =
-      OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-
-  private static readonly StringComparison PathComparison =
-      OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-
   private readonly IFileSystem _fs = fileSystem;
   private readonly IUserInteraction _ui = userInteraction;
 
-  /// Whether a workspace-relative path is mods itself, which lip never deletes.
-  public static bool IsModsDirectory(string path) =>
-      string.Equals(path.TrimEnd('/'), ModsDirectory, PathComparison);
-
-  /// Whether a workspace-relative path is .lip or below it, where lip keeps its own files (the
-  /// lock): packages never write there, and remove never matches it.
-  public static bool IsLipPath(string path) =>
-      string.Equals(path.TrimEnd('/'), LockStore.LipDirectory, PathComparison)
-      || path.StartsWith(LockStore.LipDirectory + "/", PathComparison);
-
   /// What making the layout right takes (see Plan). Mods is absolute; LinkTarget is where mods
-  /// links to when it is a link.
-  public sealed record LayoutPlan(string Mods, bool CreateMods, string? LinkTarget);
+  /// links to when it is a link. Ambiguous: the names of the root that mods names when paths are
+  /// case-insensitive and it names more than one.
+  public sealed record LayoutPlan(
+      string Mods, bool CreateMods, string? LinkTarget, IReadOnlyList<string>? Ambiguous = null);
 
   /// Reads what making the layout right takes, without changing anything: mods is created when
-  /// missing. Whether the layout is right is checked (Check) only when the operation changes the
-  /// workspace.
-  public LayoutPlan Plan(string workspaceRoot) {
-    string mods = _fs.Path.Join(_fs.Path.GetFullPath(workspaceRoot), ModsDirectory);
+  /// missing. When paths are case-insensitive, mods is the entry of the root whose name equals
+  /// "mods" so, e.g. "Mods" or a link "MODS". Whether the layout is right is checked (Check) only
+  /// when the operation changes the workspace.
+  public LayoutPlan Plan(string workspaceRoot, WorkspacePaths paths) {
+    string root = _fs.Path.GetFullPath(workspaceRoot);
+    string mods = _fs.Path.Join(root, ModsDirectory);
+    if (paths.IgnoresCase && _fs.Directory.Exists(root)) {
+      List<string> names = [.. _fs.Directory.EnumerateFileSystemEntries(root)
+          .Select(p => _fs.Path.GetFileName(p))
+          .Where(n => paths.AreEqual(n, ModsDirectory))
+          .Order(StringComparer.Ordinal)];
+      if (names.Count > 1) {
+        RunTrace.Write("workspace", $"{mods} names {string.Join(", ", names)}");
+        return new LayoutPlan(mods, false, null, names);
+      }
+      if (names.Count == 1) {
+        mods = _fs.Path.Join(root, names[0]);
+      }
+    }
+
     string? target = _fs.DirectoryInfo.New(mods).LinkTarget;
     bool create = target is null && !_fs.Directory.Exists(mods);
     RunTrace.Write("workspace", target is not null
@@ -53,9 +53,17 @@ public class WorkspaceLayout(IFileSystem fileSystem, IUserInteraction userIntera
     return new LayoutPlan(mods, create, target);
   }
 
-  /// Checks the layout before an operation changes the workspace: a mods that is a link is an
-  /// error. Throws WorkspaceLayoutException.
+  /// Checks the layout before an operation changes the workspace: a mods that is a link, or that
+  /// names more than one entry when paths are case-insensitive, is an error. Throws
+  /// WorkspaceLayoutException.
   public void Check(LayoutPlan plan) {
+    if (plan.Ambiguous is { } names) {
+      throw new WorkspaceLayoutException(
+          $"The workspace has {string.Join(" and ", names.Select(n => $"'{n}'"))}, which are the"
+          + $" same {ModsDirectory} directory to the programs Wine runs for a Windows platform, as"
+          + " case is ignored there. Merge them into one, then try again.");
+    }
+
     // A mods link would let writes under mods/ land outside the workspace.
     if (plan.LinkTarget is { } target) {
       throw new WorkspaceLayoutException(

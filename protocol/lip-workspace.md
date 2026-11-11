@@ -18,15 +18,39 @@ lip-workspace - workspaces and operations on them
 - **request**: A pair (source, range) given to an operation.
 - **failure**: A condition that aborts the operation in progress.
 - **change**: Creating, replacing or deleting a file or a directory in the workspace, other than below `.lip`.
-- **hook command**: A string of `hooks`, run by the operating system shell (`cmd /c` on Windows, `sh -c` elsewhere) with the workspace as working directory; a non-zero exit code is a failure. Running a member of `hooks` runs its hook commands in order.
+- **Windows platform**: A platform that starts with `win`.
+- **hook command**: A string of `hooks`, run as a program ("Running programs") by the shell of the platform of the environment: for a Windows platform, `cmd` with the arguments `/s` and `/c` followed by the string, which on Windows is written on the command line in double quotes, so that `cmd` runs it as it is, and under Wine is passed as "Running programs" defines; for any other platform, `sh` with the arguments `-c` and the string. A non-zero exit code is a failure. Running a member of `hooks` runs its hook commands in order.
 
 ### Environment and layout
 
-A workspace has one environment, recorded in its state file ([state.json(5)]); every operation on it resolves sources for that environment. How a workspace without a recorded environment gets one is not defined here.
+Each operation has one environment: it resolves sources for it ("Valid states"), and the state file it writes records it ([state.json(5)]). How an operation gets its environment is not defined here.
 
 `.lip` at the workspace root is the directory of "The .lip directory".
 
 Mod directories are below `mods` at the workspace root, the game directory LeviLamina loads mods from. Before an operation changes the workspace, it creates `mods` as a directory when it is missing; when `mods` is a link, it is a failure.
+
+When the platform of the environment is a Windows platform and `lip` does not run on Windows, the paths of the workspace are **case-insensitive**, as they are to the programs that Wine runs ("Running programs"):
+
+- wherever this page compares a path in the workspace with another path, or matches it against a glob of `preserve` or `purge`, `A`–`Z` equal `a`–`z`;
+- a file is written in place of the existing file, and below the existing directories, that its path names so, not beside them; and
+- when a path names more than one existing file or directory so, it is a failure.
+
+### Running programs
+
+A **program** is a command line that `lip` runs in a workspace: a hook command, or the server ([lip-run(1)](lip-run.md)).
+
+A program runs with the workspace as working directory and with the environment variables of `lip`. A program that cannot be started is a failure.
+
+When the platform of the environment is a Windows platform and `lip` does not run on Windows, the program is run by [Wine]: `lip` runs `wine`, found through `PATH`, with these arguments: for a hook command, `cmd`, `/s`, `/c` and the string, as one argument; for the server, the absolute path of `bedrock_server_mod.exe`. Wine passes them to the Windows program as one command line, writing each `"` of an argument as `\"`, which `cmd` reads as it is; a hook command whose string contains `"` should therefore not be run by Wine. `lip` sets for `wine`:
+
+| Variable | Value |
+|---|---|
+| `WINEPREFIX` | When it is unset or empty for `lip`: the absolute path of `.lip/wine`. |
+| `WINEDEBUG` | When it is unset for `lip`: `-all`. |
+
+The **exit code** of a program is the status that the process `lip` started exits with, `wine` included, or 128 + n when signal n ([signal(7)]) ends it. Wine creates its prefix when it is missing; what the prefix holds is not defined here.
+
+In every other case `lip` runs the program itself, finding `sh` through `PATH`.
 
 ### Valid states
 
@@ -61,7 +85,7 @@ A package **owns** every file it writes to the workspace by the steps below. The
 When a file is written to the workspace:
 
 - When it is `.lip` or below it, or is owned by another installed package, it is a failure.
-- On Windows, when a segment of its path other than `.` contains `:` or ends in `.` or a space, it is a failure.
+- When `lip` runs on Windows or the platform of the environment is a Windows platform, and a segment of its path other than `.` contains `:` or ends in `.` or a space, it is a failure.
 - When it exists and matches a glob of the `preserve` of P, the existing file is kept.
 - Otherwise it is written, replacing an existing one.
 
@@ -115,12 +139,13 @@ An operation succeeds or fails as a whole.
 | `lock` | The file of the workspace lock ("Workspace lock"). |
 | `journal` | The journal ([journal(5)]). |
 | `logs` | The directory of failure reports ([lip(1), EXIT STATUS](lip.md#exit-status)). |
+| `wine` | The Wine prefix that "Running programs" names. |
 
 On Windows `.lip` should have the hidden attribute. Its other entries are not defined here, and an implementation must not read meaning into them.
 
 Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early ("Atomicity", rule 1) may leave them.
 
-Creating `.lip/logs` and writing or deleting below it is not a change, and any process may do so at any time.
+Creating `.lip/logs` and writing or deleting below it is not a change, and any process may do so at any time. Neither is anything that Wine does below `.lip/wine`.
 
 ### Workspace lock
 
@@ -149,10 +174,12 @@ When step 9 fails to rename the file, the implementation replaces the journal by
 
 ## SEE ALSO
 
-[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-uninstall(1)](lip-uninstall.md), [lip-update(1)](lip-update.md), [state.json(5)], [journal(5)], [lip-package(7)](lip-package.md)
+[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-uninstall(1)](lip-uninstall.md), [lip-update(1)](lip-update.md), [lip-run(1)](lip-run.md), [state.json(5)], [journal(5)], [lip-package(7)](lip-package.md)
 
 [lip.toml(5)]: lip.toml.md
 [state.json(5)]: state.json.md
 [journal(5)]: journal.md
 [CreateFileW]: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew
 [flock(2)]: https://man7.org/linux/man-pages/man2/flock.2.html
+[Wine]: https://www.winehq.org/
+[signal(7)]: https://man7.org/linux/man-pages/man7/signal.7.html

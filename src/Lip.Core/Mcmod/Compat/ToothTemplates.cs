@@ -5,8 +5,8 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod.Compat;
 
-/// Puts the templates of a tooth.json back into the package file migrated from it (lip migrate,
-/// protocol/lip-compatibility.md, "lip migrate"). The migration converts the values of the
+/// Puts the templates of a tooth.json back into the package file migrated from it (lip pkg migrate,
+/// protocol/lip-compatibility.md, "lip pkg migrate"). The migration converts the values of the
 /// tooth.json as rendered (protocol/lip-compatibility.md, "tooth.json"); this finds, in each string
 /// of the result, the rendered values of the templates of the tooth.json, also after the
 /// conversions of paths, and writes the templates there instead (protocol/lip.toml.md), with the

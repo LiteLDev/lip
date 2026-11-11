@@ -192,8 +192,10 @@ glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 | `pre_uninstall` | `string[]` | 删除文件之前运行的命令。 |
 | `post_uninstall` | `string[]` | 删除文件之后运行的命令。 |
 
-命令在工作区根目录中运行，Windows 上使用 `cmd /c`，其他系统上使用 `sh -c`。以非零退出码退出的命令会
-使操作失败。操作失败时，lip 会撤销其文件改动，但不会撤销钩子命令已经做过的事，因此钩子命令应当可以
+命令在工作区根目录中以 lip 的环境变量运行：工作区[环境](#环境)的平台为 Windows 平台时以
+`cmd /s /c "<命令>"` 运行，使 `cmd` 按原样运行该命令，否则以 `sh -c <命令>` 运行，`sh` 通过 `PATH` 查找；
+在 Windows 以外的系统上，Windows 平台的命令通过 Wine 运行（参见
+[运行服务器](../guides/running_server.md#wine-前缀)），此时含有 `"` 的命令无法按原样到达 `cmd`。以非零退出码退出的命令会使操作失败。操作失败时，lip 会撤销其文件改动，但不会撤销钩子命令已经做过的事，因此钩子命令应当可以
 安全地再次运行。
 
 ## 模板
@@ -214,7 +216,7 @@ urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-{
 
 模板中可以使用任何 Scriban 表达式，例如 `{{version | string.replace "." "_"}}`。未定义的变量渲染为空。
 无法解析或渲染失败的模板（例如 `{{ if }}`）会使该归档不是包。要原样写出 `{{`，请写成 `{{ "{{" }}`。
-[`lip view`](../cli/commands/view.md) 显示渲染后的包文件，[状态文件](lockfiles.md)中记录的也是渲染后的包文件。
+[`lip pkg view`](../cli/commands/pkg_view.md) 显示渲染后的包文件，[状态文件](lockfiles.md)中记录的也是渲染后的包文件。
 
 ## Mod
 
@@ -251,7 +253,11 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
   `server`。客户端工作区由 LeviLauncher 等启动器管理；若工作区的[状态文件](lockfiles.md)记录的是
   `client`，lip 会拒绝处理。
 - **平台**（platform）：一个 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)：`--platform`，
-  否则为状态文件记录的平台，否则为 lip 自身运行的平台（例如 `win-x64`）。
+  否则为状态文件记录的平台，否则为 `win-x64`，无论 lip 运行在什么系统上。Linux 原生包（例如
+  `github.com/LiteLDev/bds` 的 `linux-x64` 条目）需要在该工作区的第一条命令中指定 `--platform linux-x64`。
+  每次 `install`、`uninstall` 和 `update`（使用 `--dry-run` 时除外，它不写入任何文件）都会把所用的平台记录到状态文件中，因此 `--platform` 会替换已记录的平台，
+  供后续命令使用。以 `win` 开头的平台是 **Windows 平台**：在其他系统上，lip 通过 Wine 运行这类工作区的程序（参见
+  [运行服务器](../guides/running_server.md)）。
 
 ## 早期格式
 
@@ -261,7 +267,7 @@ lip v0.39 的 `lip.toml` 同样是格式 4，但把运行端写作 `platform`、
 `runtime` 改名为 `platform`。把每个条目的这两个键改名即可，其余内容保持不变。
 
 lip v0.37.0 及更早版本的包没有 `lip.toml`，而是有格式版本 1、2 或 3 的 `tooth.json`。lip 仍会安装它们，
-但从不写入它们；请使用 [`lip migrate`](../cli/commands/migrate.md) 把你的包转换为 `lip.toml`。带有
+但从不写入它们；请使用 [`lip pkg migrate`](../cli/commands/pkg_migrate.md) 把你的包转换为 `lip.toml`。带有
 `lip.toml` 的归档从 `lip.toml` 读取，不论它是否还有 `tooth.json`；其他格式的 `tooth.json` 不会被读取。
 
 格式 1 和 2 先像 lip v0.37.0 那样读取为格式 3。格式 3 的 `tooth.json` 随后针对工作区的环境被完整地

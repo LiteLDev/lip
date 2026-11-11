@@ -4,7 +4,7 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class InitCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<InitCommand.Settings> {
+public class PkgInitCommand(LipClient lipClient, IUserInteraction userInteraction) : AsyncCommand<PkgInitCommand.Settings> {
   private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 

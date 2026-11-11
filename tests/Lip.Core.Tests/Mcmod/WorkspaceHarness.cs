@@ -79,6 +79,16 @@ internal sealed class WorkspaceHarness {
           Fs.File.WriteAllBytes(destination.FullName, content);
           return Task.CompletedTask;
         });
+    Downloader
+        .Setup(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()))
+        .Returns((Url url, Stream destination) => {
+          if (!_downloads.TryGetValue(url.ToString(), out byte[]? content)) {
+            throw new HttpRequestException($"404 {url}");
+          }
+
+          destination.Write(content);
+          return Task.CompletedTask;
+        });
   }
 
   public MockFileSystem Fs { get; }
@@ -313,25 +323,28 @@ internal sealed class SoloInstaller(
     System.IO.Abstractions.IFileSystem fs, McmodInstaller installer) {
   /// Returns the files the package owns.
   public async Task<IReadOnlyList<string>> Install(Candidate candidate, InstallContext context) {
-    PackagePlan plan = await installer.PlanInstall(candidate, context, new WorkspaceView(fs));
+    PackagePlan plan = await installer.PlanInstall(candidate, context, View(context));
     return context.DryRun ? plan.OwnedFiles : await Apply(plan, context);
   }
 
   public async Task Uninstall(LockedPackage package, InstallContext context) {
-    PackagePlan plan = await installer.PlanUninstall(package, context, new WorkspaceView(fs));
+    PackagePlan plan = await installer.PlanUninstall(package, context, View(context));
     if (!context.DryRun) {
       await Apply(plan, context);
     }
   }
 
+  private WorkspaceView View(InstallContext context) =>
+      new(fs, paths: WorkspacePaths.For(context.Environment));
+
   private async Task<IReadOnlyList<string>> Apply(PackagePlan plan, InstallContext context) {
     string root = context.WorkspaceRoot;
-    FileOwners owners = installer.Owners(root, context.Lock.Packages);
+    FileOwners owners = installer.Owners(root, context.Lock.Packages, context.Environment);
     string lip = fs.Path.Join(fs.Path.GetFullPath(root), LockStore.LipDirectory);
     bool lipExisted = fs.Directory.Exists(lip);
     try {
       using WorkspaceTransaction transaction = new(
-          fs, new LockStore(fs).GetJournalPath(root), plan.WrittenPaths);
+          fs, new LockStore(fs).GetJournalPath(root), plan.WrittenPaths, plan.Paths);
       IReadOnlyList<string> owned;
       try {
         owned = await installer.Apply(plan, transaction, owners, CancellationToken.None);

@@ -53,7 +53,7 @@ public class LipClientTests {
 
     LipClient lipClient = LipClient.Create(userInteraction);
 
-    await lipClient.Install(packages, dryRun: false, ignoreScripts: false, noDependencies: false);
+    await lipClient.Install(packages, dryRun: false);
   }
 
   public static TheoryData<(List<WorkflowBaseStep> Steps, List<string> FinalExplicitPackages)> ComplexWorkflow_OnWinX64_DoesNotThrowData =>
@@ -109,15 +109,15 @@ public class LipClientTests {
     foreach (var step in testCase.Steps) {
       switch (step) {
         case WorkflowInstallStep installStep:
-          await lipClient.Install(installStep.Packages, dryRun: false, ignoreScripts: false, noDependencies: false);
+          await lipClient.Install(installStep.Packages, dryRun: false);
           break;
 
         case WorkflowUninstallStep uninstallStep:
-          await lipClient.Uninstall(uninstallStep.Packages, dryRun: false, ignoreScripts: false, noDependencies: false);
+          await lipClient.Uninstall(uninstallStep.Packages, dryRun: false);
           break;
 
         case WorkflowUpdateStep updateStep:
-          await lipClient.Update(updateStep.Packages, dryRun: false, ignoreScripts: false);
+          await lipClient.Update(updateStep.Packages, dryRun: false);
           break;
 
         default:

@@ -1,11 +1,11 @@
-# lip migrate
+# lip pkg migrate
 
 Migrate the `tooth.json` of lip v0.x in the current directory to `lip.toml`.
 
 ## Synopsis
 
 ```shell
-lip migrate
+lip pkg migrate
 ```
 
 ## Description
@@ -20,6 +20,6 @@ Run it in the root directory of your package repository. It writes a `lip.toml` 
 
 `lip.toml` has no RID patterns. When a value the result needs is missing or invalid, such as the platforms (RIDs) a `platform` pattern of `tooth.json` like `win-*` or a `platform` that is not a RID like `windows/amd64` stands for, or the platforms that variants without a `platform` apply to, lip asks for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, it fails instead, naming the value it would ask for, and changes nothing.
 
-If `lip.toml` already exists, or `tooth.json` does not exist or is not a `tooth.json` of format version 1, 2 or 3 that lip can read, `lip migrate` fails and changes nothing.
+If `lip.toml` already exists, or `tooth.json` does not exist or is not a `tooth.json` of format version 1, 2 or 3 that lip can read, `lip pkg migrate` fails and changes nothing.
 
 Everything that is dropped or converted with another meaning is printed as a warning naming the field it comes from (in its format 3 form). Warnings do not make the command fail. The output is a starting point, not a guarantee: review it before publishing, and commit the result. See [Migrating Packages](../../guides/migrating_packages.md) for the details and limitations.

@@ -4,7 +4,7 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Mcmod;
 
-/// lip pack (protocol/lip-pack.md): writes a ZIP archive of a directory.
+/// lip pkg pack (protocol/lip-pkg.md, "lip pkg pack"): writes a ZIP archive of a directory.
 public static class Packer {
   /// Writes a ZIP archive to output, replacing it: every regular file below directory at its
   /// path relative to it, except output itself (whatever path reaches it) and everything below
