@@ -103,7 +103,7 @@ A **package argument** is an operand that names a source ([lip-package(7), "Sour
    - the argument contains no `@`, and L ends with `.zip` (compared ASCII case-insensitively) or names an existing file or directory.
 
    Its source is the [`file:` URI] of the absolute path of L, followed by the rest of the argument. When L does not exist, the argument is invalid.
-3. Any other argument is the remote repository source of that string.
+3. Any other argument is a remote repository source. When its location ([lip-package(7), "Sources"](lip-package.md#sources)) contains no `/`, the source is `github.com/LiteLDev/` followed by the argument; for example, `LeviLamina@1.9.7` is the source `github.com/LiteLDev/LeviLamina@1.9.7`. Otherwise the source is the argument.
 
 An argument whose source is not valid is invalid. A command with an invalid package argument fails before anything changes.
 

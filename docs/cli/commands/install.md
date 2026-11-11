@@ -22,6 +22,8 @@ Each package argument takes one of the following forms:
 4. **URL** — an `https://` URL of a ZIP file (e.g. `https://example.com/package.zip`), optionally followed by `#<variant>`. Other schemes, such as `http://` and `file://`, are not accepted.
 5. **Local path** — a ZIP file or a directory on your disk, by an absolute path or a path relative to the current directory (e.g. `./package.zip`, `C:\Downloads\package.zip` or `../MyTool`), optionally followed by `#<variant>`. An argument is local when it starts with `./`, `../`, `.\` or `..\`, is `.` or `..`, is an absolute path, or contains no `@` and either ends with `.zip` (ignoring case) or names an existing file or directory. A local file must be a ZIP archive, whatever its name; a local directory is taken as the archive of its contents.
 
+A repository path without `/` is a repository of LiteLDev: `LeviLamina@26.60.6` is short for `github.com/LiteLDev/LeviLamina@26.60.6`, and `LegacyScriptEngine#lua` for `github.com/LiteLDev/LegacyScriptEngine#lua`.
+
 Every package must have a `lip.toml` at its root (see [lip.toml](../../concepts/lip_toml.md)) with an entry of the requested variant for the side and platform of the workspace.
 
 The dependencies of the packages are installed too. Installing a package that is already explicitly installed is an error; use [`lip update`](update.md) to change its version. Two arguments that name the same identity are an error too. A package that is installed as a dependency becomes explicitly installed, keeping its version when that version satisfies the argument.
@@ -63,6 +65,7 @@ The state file then records `linux-x64`, so later commands in the workspace use 
 ```shell
 lip install github.com/LiteLDev/LeviLamina
 lip install github.com/LiteLDev/LegacyScriptEngine#lua
+lip install LeviLamina@26.60.6
 lip install github.com/user/repo@1.0.0
 lip install github.com/LiteLDev/bds --platform linux-x64
 lip install github.com/LiteLDev/LeviLamina@branch:main

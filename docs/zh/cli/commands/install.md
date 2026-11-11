@@ -22,6 +22,8 @@ lip install <PACKAGES> [options]
 4. **URL** — ZIP 文件的 `https://` URL（例如 `https://example.com/package.zip`），后面可跟 `#<variant>`。不接受 `http://` 和 `file://` 等其他协议。
 5. **本地路径** — 磁盘上的 ZIP 文件或目录，使用绝对路径或相对于当前目录的路径（例如 `./package.zip`、`C:\Downloads\package.zip` 或 `../MyTool`），后面可跟 `#<variant>`。以 `./`、`../`、`.\` 或 `..\` 开头、为 `.` 或 `..`、为绝对路径，或不含 `@` 且以 `.zip` 结尾（不区分大小写）或指向已存在的文件或目录的参数，都按本地处理。本地文件必须是 ZIP 归档，与文件名无关；本地目录以其内容作为归档。
 
+不含 `/` 的仓库路径表示 LiteLDev 的仓库：`LeviLamina@26.60.6` 是 `github.com/LiteLDev/LeviLamina@26.60.6` 的简写，`LegacyScriptEngine#lua` 是 `github.com/LiteLDev/LegacyScriptEngine#lua` 的简写。
+
 每个包的根部都必须有 `lip.toml`（参见 [lip.toml](../../concepts/lip_toml.md)），且其所请求的变体有对应工作区运行端和平台的条目。
 
 包的依赖也会一并安装。安装一个已被显式安装的包会报错；如需改变其版本，请使用 [`lip update`](update.md)。两个参数指向同一身份同样会报错。作为依赖安装的包会变为显式安装；若其版本满足该参数，则保持该版本不变。
@@ -63,6 +65,7 @@ lip install github.com/LiteLDev/bds --platform linux-x64
 ```shell
 lip install github.com/LiteLDev/LeviLamina
 lip install github.com/LiteLDev/LegacyScriptEngine#lua
+lip install LeviLamina@26.60.6
 lip install github.com/user/repo@1.0.0
 lip install github.com/LiteLDev/bds --platform linux-x64
 lip install github.com/LiteLDev/LeviLamina@branch:main

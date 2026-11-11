@@ -45,6 +45,20 @@ public class PackageArgumentsTests {
     Assert.Equal(argument, request.Ref.ToString());
   }
 
+  [Theory]
+  [InlineData("LeviLamina", "github.com/LiteLDev/LeviLamina")]
+  [InlineData("LeviLamina@26.60.6", "github.com/LiteLDev/LeviLamina@26.60.6")]
+  [InlineData("LeviLamina#client@branch:feat/x", "github.com/LiteLDev/LeviLamina#client@branch:feat/x")]
+  [InlineData("LegacyScriptEngine#lua", "github.com/LiteLDev/LegacyScriptEngine#lua")]
+  public void Parse_NameWithoutSlash_IsALiteLDevRepository(string argument, string reference) {
+    // Act
+    PackageRequest request = Parse(argument);
+
+    // Assert
+    Assert.Equal(RefKind.Spec, request.Ref.Kind);
+    Assert.Equal(reference, request.Ref.ToString());
+  }
+
   [Fact]
   public void Parse_HttpsUrl_ReturnsUrlRef() {
     // Act
