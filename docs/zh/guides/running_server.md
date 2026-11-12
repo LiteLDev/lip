@@ -86,8 +86,10 @@ lip run
 lip 不为 arm64 的 Linux 发布，因为试过的办法都无法在那里可靠地运行 LeviLamina 服务器：
 
 - [Hangover](https://github.com/AndreRH/hangover) 能运行原版 Bedrock Dedicated Server，但 LeviLamina 修改过的服务器一启动就失败。
-- 由 [box64](https://github.com/ptitSeb/box64) 运行的 x64 Wine 无法运行 `bdsdown`，也就是安装包时下载服务器的程序。
-- 由 [FEX](https://fex-emu.com/) 运行的 x64 Wine 成功运行过两次 LeviLamina 服务器，但十次尝试中有九次 `bdsdown` 失败。
+- 由 [box64](https://github.com/ptitSeb/box64) 运行的 x64 Wine 会在 Windows 程序退出时将其杀死，退出码因此丢失。
+- 由 [FEX](https://fex-emu.com/) 运行的 x64 Wine 在六次尝试中有两次成功运行了 LeviLamina 服务器。有两次，安装 LeviLamina 时用来修改服务器的 `PeEditor.exe` 被杀死；另有两次，服务器启动成功，但在停止时失败。
+
+lip 自己下载服务器，不借助任何 Windows 程序，因此安装 `github.com/LiteLDev/bds` 不需要 Wine。
 
 ### Linux 原生包
 

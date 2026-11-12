@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Semver;
 
@@ -32,7 +33,8 @@ public interface ICausalResolver : IResolver {
 public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
-    Action<string>? onWarning = null) : ICausalResolver {
+    Action<string>? onWarning = null,
+    Func<Task<string>>? downloadServerBuilds = null) : ICausalResolver {
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
   private readonly Action<string> _onWarning = onWarning ?? (_ => { });
@@ -42,6 +44,11 @@ public class Resolver(
   private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<SpecVersion>>>>
       _versions = new();
   private readonly ConcurrentDictionary<string, Lazy<Task<PackageDocument>>> _documents = new();
+
+  /// The builds list of the server (protocol/lip-package.md, "The server"), downloaded once.
+  private readonly Func<Task<string>> _downloadServerBuilds =
+      downloadServerBuilds ?? BedrockServer.Download;
+  private readonly ConcurrentDictionary<string, Lazy<Task<BedrockServer>>> _server = new();
 
   /// Commits of refs ("spec@branch:name"), so that a branch resolves to one commit for the whole
   /// operation.
@@ -77,6 +84,14 @@ public class Resolver(
     Walk walk = new(source, range, environment, onDiagnostic);
     RunTrace.Write("resolve", $"Resolving {source} {range?.ToString() ?? "(any version)"}"
         + $" for ({environment.Side.ToSpecString()}, {environment.Platform})");
+
+    if (source.Kind == RefKind.Spec && BedrockServer.IsRepository(source.Target)) {
+      await foreach (Candidate candidate in ResolveServer(walk)) {
+        yield return candidate;
+      }
+
+      yield break;
+    }
 
     // Step 1: the archives the source names.
     if (source.Kind != RefKind.Spec) {
@@ -143,6 +158,68 @@ public class Resolver(
       if (await ResolveArchive(walk, archive, version.Version) is Candidate candidate) {
         yield return candidate;
       }
+    }
+  }
+
+  /// The builds list of the server. Throws ArchiveUnavailableException when it cannot be
+  /// obtained.
+  public Task<BedrockServer> Server() => Cached(
+      _server, "", async () => BedrockServer.Parse(await _downloadServerBuilds()));
+
+  /// The candidates of the server (protocol/lip-package.md, "The server"): the packages lip
+  /// defines for the versions of the builds list, from highest to lowest.
+  private async IAsyncEnumerable<Candidate> ResolveServer(Walk walk) {
+    Ref source = walk.Source;
+    if (source.GitRef is { Kind: not GitRefKind.Version }) {
+      walk.Report(source.ToString(),
+          $"lip installs {BedrockServer.Repository} by version only (e.g."
+          + $" '{BedrockServer.Repository}@1.21.0'), not by branch, tag or commit");
+      yield break;
+    }
+
+    BedrockServer server;
+    try {
+      server = await Server();
+    }
+    catch (ArchiveUnavailableException ex) {
+      walk.Report(source.ToString(), ex.Message, ex);
+      yield break;
+    }
+
+    SemVersion? only = source.GitRef is GitRef gitRef
+        ? SemVersion.Parse(gitRef.Name, SemVersionStyles.Strict)
+        : null;
+    List<SemVersion> matching = [
+      .. server.Versions.Where(v => (only is null || v.Equals(only))
+          && (walk.Range?.IsSatisfiedBy(v) ?? true)),
+    ];
+    if (matching.Count == 0) {
+      walk.Report(source.ToString(),
+          $"the server has no version {(only is null ? $"that satisfies {walk.Range}" : only)};"
+          + " it has the versions " + string.Join(", ", server.ReleaseVersions.Take(10))
+          + (server.ReleaseVersions.Count() > 10
+              ? $" and {server.ReleaseVersions.Count() - 10} older ones"
+              : "")
+          + " (newest first)");
+      yield break;
+    }
+
+    foreach (SemVersion version in matching) {
+      JsonElement json = server.PackageFile(version);
+      PackageFile packageFile = PackageFileParser.Parse(json);
+      ArchiveHandle archive = BedrockServer.Archive(version);
+      PackageEntry? entry = packageFile.SelectEntry(source.Variant, walk.Environment);
+      if (entry is null) {
+        ReportNoEntry(walk, archive, packageFile, "package file", source.Variant);
+        continue;
+      }
+
+      RunTrace.Write("resolve", $"Candidate {packageFile.Id}@{version}, defined by lip");
+      yield return Candidate.Create(
+          new Package(packageFile.Id, source.Variant, version, entry) { Manifest = json },
+          archive,
+          source,
+          _archiveProvider);
     }
   }
 
