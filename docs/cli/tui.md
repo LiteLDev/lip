@@ -28,23 +28,25 @@ Every change to the workspace is planned first: lip carries it out as a dry run 
 
 While the change is applied, `Ctrl+C` cancels it and undoes what was done so far. When a command fails, the interface shows the cause, what you can do about it, and the path of the failure report below `.lip/logs`, and goes on.
 
-In the install dialog, the packages are written as on the command line (see [`lip install`](./commands/install.md)), separated by spaces; the second field is `--platform`.
+In the install dialog of the Packages tab (`i`), the packages are written as on the command line (see [`lip install`](./commands/install.md)), separated by spaces; the second field is `--platform`.
 
 ## Browsing mods
 
-The Browse tab reads the mod catalogue of levimc.org (`https://levimc.org/api/v4/mods/`) when it is first opened; nothing of it is kept on disk, and `github_proxy` is not used for it. lip manages servers only, so the list starts with the mods that have a build for a server.
+The Browse tab reads the mod catalogue of levimc.org (`https://levimc.org/api/v4/mods/`) when it is first opened; nothing of it is kept on disk, and `github_proxy` is not used for it. lip manages servers only, so the list holds the mods that have a build for a server.
 
 | Key | Does |
 | --- | --- |
 | `/` | Searches by name, id, author, tag and description. |
 | `s` | Changes the order: relevance, stars, last update, newest. |
-| `f` | Changes the side: server, client, any. |
-| `t` | Changes the tag that the mods must carry. |
-| `Enter` | Installs the selected mod. |
-| `v` | Lists its versions; `Enter` installs the chosen one. |
+| `f` | Moves to the Filters pane; `Esc` moves back. |
+| `Enter` | Installs the selected mod: asks which version. |
 | `r` | Shows its README. |
 | `o` | Opens its page in the browser. |
 | `R` | Reads the catalogue again. |
+
+In the Filters pane, `Space` includes the selected game version or tag, and `x` excludes the selected tag; pressing the key again takes it back, and `c` clears every filter. The list then holds the mods that run on one of the included game versions, carry every included tag and carry none of the excluded ones. The tags are those of levimc.org/mods: its featured tags first, then the other tags.
+
+`Enter` on a mod lists what can be installed: the latest version, each version of the catalogue, and **Custom**, which asks for what follows the `@` of a package: a version, `branch:<name>`, `tag:<name>` or `rev:<commit>`. The plan of the installation is shown next, as for every change.
 
 ## Running the server
 

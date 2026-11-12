@@ -119,7 +119,7 @@ public sealed class TuiAppTests : IDisposable {
 
     _terminal.Type("2");
 
-    await WaitFor(app, "Mods — 2 for server");
+    await WaitFor(app, "Mods — 2 ·");
     Assert.Contains("Alpha · acme", app.ScreenText);
     Assert.Contains("Beta · acme", app.ScreenText);
     Assert.DoesNotContain("Shaders", app.ScreenText);
@@ -131,43 +131,85 @@ public sealed class TuiAppTests : IDisposable {
   }
 
   [Fact]
-  public async Task Browse_SearchSideAndSort_SelectTheMods() {
+  public async Task Browse_SearchAndSort_SelectTheMods() {
     TuiApp app = Start();
     _terminal.Type("2");
-    await WaitFor(app, "Mods — 2 for server");
+    await WaitFor(app, "Mods — 2 ·");
 
     _terminal.Type("/领地");
-    await WaitFor(app, "Mods — 1 for server");
+    await WaitFor(app, "Mods — 1 ·");
     Assert.Contains("Beta · acme", app.ScreenText);
 
     _terminal.Press(ConsoleKey.Escape);
-    _terminal.Type("ffs");
-    _terminal.Press(ConsoleKey.Home);
-    await WaitFor(app, "This mod has no build");
-    Assert.Contains("Mods — 3 · sort: Stars", app.ScreenText);
-    Assert.Contains("1 of 3", app.ScreenText);
+    _terminal.Type("s");
+    await WaitFor(app, "Mods — 2 · sort: Stars");
+    string[] rows = app.ScreenText.Split('\n');
+    Assert.True(
+        Array.FindIndex(rows, row => row.Contains("Beta · acme"))
+            < Array.FindIndex(rows, row => row.Contains("Alpha · acme")));
   }
 
   [Fact]
-  public async Task Browse_Versions_AskForTheInstallOfTheChosenVersion() {
+  public async Task Browse_Filters_IncludeAGameVersionAndExcludeATag() {
     TuiApp app = Start();
     _terminal.Type("2");
-    await WaitFor(app, "Mods — 2 for server");
+    await WaitFor(app, "Mods — 2 ·");
+    // Only what mods for a server have is offered: not the tag of the mod for clients.
+    Assert.Contains("Game version", app.ScreenText);
+    Assert.Contains("Server management", app.ScreenText);
+    Assert.Contains("Economy", app.ScreenText);
+    Assert.DoesNotContain("Visual & HUD", app.ScreenText);
 
-    _terminal.Type("v");
-    await WaitFor(app, "Alpha — versions");
+    // The first row is the game version of Alpha.
+    _terminal.Type("f ");
+    await WaitFor(app, "Mods — 1 · sort: Relevance · 1 filters");
+    Assert.Contains("[+] 1.26.60", app.ScreenText);
+    Assert.Contains("Alpha · acme", app.ScreenText);
+
+    _terminal.Type("c");
+    await WaitFor(app, "Mods — 2 · sort: Relevance");
+
+    // Down to "Economy", the tag of Alpha, and exclude it.
     _terminal.Press(ConsoleKey.DownArrow);
-    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Type("x");
+    await WaitFor(app, "Mods — 1 · sort: Relevance · 1 filters");
+    Assert.Contains("[-] Economy", app.ScreenText);
+    Assert.Contains("Beta · acme", app.ScreenText);
+    Assert.DoesNotContain("Alpha · acme", app.ScreenText);
 
-    await WaitFor(app, "Install packages");
-    Assert.Contains("github.com/acme/Alpha@1.1.0", app.ScreenText);
+    // Including it instead takes the exclusion back.
+    _terminal.Type(" ");
+    await WaitFor(app, "[+] Economy");
+    Assert.Contains("Alpha · acme", app.ScreenText);
+  }
+
+  [Fact]
+  public async Task Browse_Enter_AsksForTheVersionAndNeverForTheWholePackageArgument() {
+    TuiApp app = Start();
+    _terminal.Type("2");
+    await WaitFor(app, "Mods — 2 ·");
+
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Install Alpha — choose a version");
+    Assert.Contains("Latest                  1.2.0", app.ScreenText);
+    Assert.Contains("1.1.0", app.ScreenText);
+    Assert.Contains("Custom...", app.ScreenText);
+    Assert.DoesNotContain("Install packages", app.ScreenText);
+
+    // The last entry asks for what follows the @ only.
+    _terminal.Press(ConsoleKey.End);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Install Alpha — custom version");
+    Assert.Contains("rev:<commit>", app.ScreenText);
+    Assert.DoesNotContain("--platform", app.ScreenText);
   }
 
   [Fact]
   public async Task Browse_Readme_IsShown() {
     TuiApp app = Start();
     _terminal.Type("2");
-    await WaitFor(app, "Mods — 2 for server");
+    await WaitFor(app, "Mods — 2 ·");
 
     _terminal.Type("r");
 

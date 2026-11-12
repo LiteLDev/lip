@@ -221,6 +221,34 @@ public enum CatalogSort {
   Newest,
 }
 
+/// Which mods of the catalogue to select: those that have an entry for Side (when not null),
+/// carry every tag of IncludeTags and none of ExcludeTags (tags as CatalogQuery.DisplayTags gives
+/// them), and run on one of GameVersions (when there are any).
+public sealed record CatalogFilter(
+    string? Side,
+    IReadOnlyCollection<string> IncludeTags,
+    IReadOnlyCollection<string> ExcludeTags,
+    IReadOnlyCollection<string> GameVersions) {
+  public static CatalogFilter For(string? side) => new(side, [], [], []);
+
+  public bool Matches(CatalogMod mod) {
+    if (Side is not null && !mod.RunsOn(Side)) {
+      return false;
+    }
+
+    if (GameVersions.Count > 0 && !mod.GameVersions.Any(GameVersions.Contains)) {
+      return false;
+    }
+
+    if (IncludeTags.Count == 0 && ExcludeTags.Count == 0) {
+      return true;
+    }
+
+    IReadOnlyList<string> tags = CatalogQuery.DisplayTags(mod);
+    return IncludeTags.All(tags.Contains) && !ExcludeTags.Any(tags.Contains);
+  }
+}
+
 /// A tag that groups other tags, as levimc.org/mods lists them first.
 public sealed record FeaturedTag(string Id, string Label, IReadOnlyList<string> Aliases);
 
@@ -282,17 +310,18 @@ public static class CatalogQuery {
   public static string Label(string tag) =>
       _featured.TryGetValue(tag, out FeaturedTag? group) ? group.Label : tag;
 
-  /// The mods that have an entry for the side (every mod when side is null), carry the tag
-  /// (when not null) and match every word of the search, ordered by sort.
+  /// Whether a tag, as DisplayTags gives it, is a featured tag.
+  public static bool IsFeatured(string tag) => _featured.ContainsKey(tag);
+
+  /// The mods that the filter selects and that match every word of the search, ordered by sort.
   public static IReadOnlyList<CatalogMod> Select(
-      CatalogIndex index, string search, string? side, string? tag, CatalogSort sort) {
+      CatalogIndex index, string search, CatalogFilter filter, CatalogSort sort) {
     string[] words = search.Split(
         [' ', ',', '，', '、', '\t'], StringSplitOptions.RemoveEmptyEntries);
     List<(CatalogMod Mod, int Score, int Order)> matches = [];
     for (int order = 0; order < index.Mods.Count; order++) {
       CatalogMod mod = index.Mods[order];
-      if ((side is not null && !mod.RunsOn(side))
-          || (tag is not null && !DisplayTags(mod).Contains(tag))) {
+      if (!filter.Matches(mod)) {
         continue;
       }
 

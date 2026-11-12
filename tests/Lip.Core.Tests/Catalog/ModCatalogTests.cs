@@ -131,6 +131,35 @@ public class ModCatalogTests {
   }
 
   [Theory]
+  // Every included tag, none of the excluded ones, one of the game versions.
+  [InlineData("library,economy", "", "", "LegacyMoney")]
+  [InlineData("library,management", "", "", "")]
+  [InlineData("", "economy", "", "PLand,Arke")]
+  [InlineData("", "economy,visual", "", "PLand")]
+  [InlineData("library", "economy", "", "")]
+  [InlineData("", "", "1.26.51", "LegacyMoney")]
+  [InlineData("", "", "1.21.0,1.26.60", "LegacyMoney")]
+  [InlineData("", "", "1.21.0", "")]
+  [InlineData("", "pland", "1.26.60", "LegacyMoney")]
+  public async Task Select_TagsAndGameVersions_Filter(
+      string include, string exclude, string versions, string expected) {
+    CatalogIndex index = await ReadIndex();
+    static string[] Split(string list) => list.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+    IReadOnlyList<CatalogMod> mods = CatalogQuery.Select(
+        index, "", new CatalogFilter(null, Split(include), Split(exclude), Split(versions)),
+        CatalogSort.Relevance);
+
+    Assert.Equal(expected, string.Join(',', mods.Select(mod => mod.Name)));
+  }
+
+  [Fact]
+  public void IsFeatured_TellsTheFeaturedTagsFromTheOthers() {
+    Assert.True(CatalogQuery.IsFeatured("management"));
+    Assert.False(CatalogQuery.IsFeatured("pland"));
+  }
+
+  [Theory]
   [InlineData("", "server", null, CatalogSort.Relevance, "LegacyMoney,PLand")]
   [InlineData("", null, null, CatalogSort.Stars, "Arke,PLand,LegacyMoney")]
   [InlineData("", null, null, CatalogSort.Updated, "Arke,PLand,LegacyMoney")]
@@ -148,7 +177,8 @@ public class ModCatalogTests {
       string search, string? side, string? tag, CatalogSort sort, string expected) {
     CatalogIndex index = await ReadIndex();
 
-    IReadOnlyList<CatalogMod> mods = CatalogQuery.Select(index, search, side, tag, sort);
+    IReadOnlyList<CatalogMod> mods = CatalogQuery.Select(
+        index, search, new CatalogFilter(side, tag is null ? [] : [tag], [], []), sort);
 
     Assert.Equal(expected, string.Join(',', mods.Select(mod => mod.Name)));
   }

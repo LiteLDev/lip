@@ -4,33 +4,58 @@ using Lip.Core.Catalog;
 
 namespace Lip.Cli.Tui;
 
-/// The Browse tab: the mods of the catalogue (protocol/lip-tui.md, "Catalogue").
+/// The Browse tab: the mods of the catalogue (protocol/lip-tui.md, "Catalogue") that have a
+/// build for a server, the only side lip manages (protocol/lip.md, "Environment").
 public sealed partial class TuiApp {
-  private static readonly string?[] _sides = ["server", "client", null];
+  private const string Side = "server";
+
+  private enum FilterKind {
+    Heading,
+    GameVersion,
+    Tag,
+  }
+
+  /// A row of the Filters pane: a heading, or a game version or a tag that mods are filtered by,
+  /// with the number of mods that have it.
+  private sealed record FilterRow(FilterKind Kind, string Key, string Label, int Count);
 
   private readonly TextField _search = new();
   private readonly Dictionary<string, CatalogDetail> _details = new(StringComparer.Ordinal);
   private readonly HashSet<string> _detailsRequested = new(StringComparer.Ordinal);
+  private readonly HashSet<string> _includeTags = new(StringComparer.Ordinal);
+  private readonly HashSet<string> _excludeTags = new(StringComparer.Ordinal);
+  private readonly HashSet<string> _gameVersions = new(StringComparer.Ordinal);
   private CatalogIndex? _catalog;
   private string? _catalogError;
   private bool _catalogLoading;
   private bool _searching;
+  private bool _filtering;
   private CatalogSort _sort = CatalogSort.Relevance;
-  private int _side;
-  // The index of the featured tag that mods must carry, or -1.
-  private int _tag = -1;
+  private List<FilterRow> _filterRows = [];
+  private int _filterSelected;
+  private int _filterTop;
   private IReadOnlyList<CatalogMod> _mods = [];
   private int _modSelected;
   private int _modTop;
   private long _modSelectedAt;
 
-  private (string, string)[] BrowseHints() =>
-      _searching
-          ? [("Enter", "done"), ("Esc", "clear"), ("Ctrl+U", "erase")]
-          : [
-            ("/", "search"), ("Enter", "install"), ("v", "versions"), ("r", "readme"),
-            ("s", "sort"), ("f", "side"), ("t", "tag"), ("o", "open"), ("R", "reload"),
-          ];
+  private int FilterCount => _includeTags.Count + _excludeTags.Count + _gameVersions.Count;
+
+  private (string, string)[] BrowseHints() {
+    if (_searching) {
+      return [("Enter", "done"), ("Esc", "clear"), ("Ctrl+U", "erase")];
+    }
+
+    return _filtering
+        ? [
+          ("Space", "include"), ("x", "exclude"), ("c", "clear all"), ("↑/↓", "select"),
+          ("Esc", "back to the mods"),
+        ]
+        : [
+          ("/", "search"), ("f", "filters"), ("s", "sort"), ("Enter", "install"),
+          ("r", "readme"), ("o", "open"), ("R", "reload"),
+        ];
+  }
 
   private CatalogMod? SelectedMod => _modSelected < _mods.Count ? _mods[_modSelected] : null;
 
@@ -47,6 +72,7 @@ public sealed partial class TuiApp {
         Post(() => {
           _catalog = index;
           _catalogLoading = false;
+          BuildFilterRows(index);
           SelectMods();
         });
       }
@@ -59,6 +85,54 @@ public sealed partial class TuiApp {
     });
   }
 
+  /// The game versions, newest first, then the featured tags in the order of levimc.org/mods,
+  /// then the other tags, the most used first: each with the number of mods for a server that
+  /// have it, and only when there is one.
+  private void BuildFilterRows(CatalogIndex index) {
+    List<CatalogMod> mods = [.. index.Mods.Where(mod => mod.RunsOn(Side))];
+    Dictionary<string, int> versions = new(StringComparer.Ordinal);
+    Dictionary<string, int> tags = new(StringComparer.Ordinal);
+    foreach (CatalogMod mod in mods) {
+      foreach (string version in mod.GameVersions.Distinct(StringComparer.Ordinal)) {
+        versions[version] = versions.GetValueOrDefault(version) + 1;
+      }
+
+      foreach (string tag in CatalogQuery.DisplayTags(mod)) {
+        tags[tag] = tags.GetValueOrDefault(tag) + 1;
+      }
+    }
+
+    List<FilterRow> rows = [];
+    void Group(string heading, IEnumerable<FilterRow> items) {
+      List<FilterRow> group = [.. items];
+      if (group.Count > 0) {
+        rows.Add(new FilterRow(FilterKind.Heading, "", heading, 0));
+        rows.AddRange(group);
+      }
+    }
+
+    Group("Game version", versions
+        .OrderByDescending(v => VersionKey(v.Key), StringComparer.Ordinal)
+        .Select(v => new FilterRow(FilterKind.GameVersion, v.Key, v.Key, v.Value)));
+    Group("Tags", CatalogQuery.FeaturedTags
+        .Where(tag => tags.ContainsKey(tag.Id))
+        .Select(tag => new FilterRow(FilterKind.Tag, tag.Id, tag.Label, tags[tag.Id])));
+    Group("Other tags", tags
+        .Where(tag => !CatalogQuery.IsFeatured(tag.Key))
+        .OrderByDescending(tag => tag.Value).ThenBy(tag => tag.Key, StringComparer.Ordinal)
+        .Select(tag => new FilterRow(FilterKind.Tag, tag.Key, tag.Key, tag.Value)));
+    _filterRows = rows;
+    _filterSelected = Math.Min(1, Math.Max(0, rows.Count - 1));
+    _filterTop = 0;
+    _includeTags.IntersectWith(tags.Keys);
+    _excludeTags.IntersectWith(tags.Keys);
+    _gameVersions.IntersectWith(versions.Keys);
+  }
+
+  /// A version so that versions compare as their numbers do: each number padded.
+  private static string VersionKey(string version) =>
+      string.Join('.', version.Split('.').Select(part => part.PadLeft(6, '0')));
+
   private void SelectMods() {
     if (_catalog is null) {
       return;
@@ -66,8 +140,8 @@ public sealed partial class TuiApp {
 
     string? keep = SelectedMod?.Id;
     _mods = CatalogQuery.Select(
-        _catalog, _search.Value, _sides[_side],
-        _tag < 0 ? null : CatalogQuery.FeaturedTags[_tag].Id, _sort);
+        _catalog, _search.Value,
+        new CatalogFilter(Side, _includeTags, _excludeTags, _gameVersions), _sort);
     int kept = keep is null ? -1 : _mods.ToList().FindIndex(mod => mod.Id == keep);
     _modSelected = Math.Max(0, kept);
     _modSelectedAt = Environment.TickCount64;
@@ -81,8 +155,9 @@ public sealed partial class TuiApp {
     }
   }
 
-  /// Reads the file of a mod, once; then calls loaded, when given, also when it was read before.
-  private void LoadDetail(string id, Action<CatalogDetail>? loaded) {
+  /// Reads the file of a mod, once; then calls loaded, when given, also when it was read
+  /// before, or failed when it cannot be read.
+  private void LoadDetail(string id, Action<CatalogDetail>? loaded, Action? failed = null) {
     if (_details.TryGetValue(id, out CatalogDetail? known)) {
       loaded?.Invoke(known);
       return;
@@ -105,29 +180,30 @@ public sealed partial class TuiApp {
           if (loaded is not null) {
             _status = new StyledLine(ex.Message, Theme.Bad);
           }
+
+          failed?.Invoke();
         });
       }
     });
   }
 
   private void DrawBrowse(Rect body) {
-    int filtersWidth = body.Width >= 100 ? 30 : 0;
-    int detailsWidth = Math.Max(30, (body.Width - filtersWidth) * 2 / 5);
+    // A narrow terminal shows the filters only while they are used, in place of the details.
+    bool wide = body.Width >= 100;
+    int filtersWidth = wide || _filtering ? 30 : 0;
+    int detailsWidth = wide || !_filtering ? Math.Max(30, (body.Width - filtersWidth) * 2 / 5) : 0;
     int listWidth = body.Width - filtersWidth - detailsWidth;
     if (filtersWidth > 0) {
       DrawFilters(Panel(
-          _screen, new Rect(body.X, body.Y, filtersWidth, body.Height), "Filters"));
+          _screen, new Rect(body.X, body.Y, filtersWidth, body.Height),
+          FilterCount == 0 ? "Filters" : $"Filters ({FilterCount})", focused: _filtering));
     }
 
-    string side = _sides[_side] is { } s ? $" for {s}" : "";
+    string filters = FilterCount == 0 ? "" : $" · {FilterCount} filters";
     Rect list = Panel(
         _screen, new Rect(body.X + filtersWidth, body.Y, listWidth, body.Height),
-        _catalog is null ? "Mods" : $"Mods — {_mods.Count}{side} · sort: {_sort}",
-        focused: true);
-    Rect details = Panel(
-        _screen,
-        new Rect(body.X + filtersWidth + listWidth, body.Y, detailsWidth, body.Height),
-        SelectedMod?.Name ?? "Details");
+        _catalog is null ? "Mods" : $"Mods — {_mods.Count} · sort: {_sort}{filters}",
+        focused: !_filtering);
 
     int x = _screen.Write(list.X, list.Y, "Search ", Theme.Muted);
     _search.Draw(
@@ -174,51 +250,51 @@ public sealed partial class TuiApp {
         ? "No mod matches."
         : $"{_modSelected + 1} of {_mods.Count} · ✓ installed";
     _screen.WriteFit(list.X, list.Bottom - 1, list.Width, position, Theme.Muted);
-    if (SelectedMod is { } selected) {
-      DrawModDetails(details, selected);
+    if (detailsWidth > 0) {
+      Rect details = Panel(
+          _screen,
+          new Rect(body.X + filtersWidth + listWidth, body.Y, detailsWidth, body.Height),
+          SelectedMod?.Name ?? "Details");
+      if (SelectedMod is { } selected) {
+        DrawModDetails(details, selected);
+      }
     }
   }
 
   private void DrawFilters(Rect area) {
-    int y = area.Y;
-    void Heading(string text, string key) {
-      _screen.Write(area.X, y, text, Theme.Muted);
-      _screen.Write(area.Right - key.Length, y++, key, Theme.Muted);
+    if (_filterRows.Count == 0) {
+      _screen.WriteFit(area.X, area.Y, area.Width, "Nothing to filter by.", Theme.Muted);
+      return;
     }
 
-    void Option(string text, bool chosen, int? count = null) {
-      if (y >= area.Bottom) {
-        return;
+    _filterTop = ScrollTo(_filterSelected, _filterTop, area.Height);
+    // The heading of the first row stays in view.
+    if (_filterSelected == 1) {
+      _filterTop = 0;
+    }
+
+    for (int i = 0; i < area.Height && _filterTop + i < _filterRows.Count; i++) {
+      FilterRow row = _filterRows[_filterTop + i];
+      int y = area.Y + i;
+      if (row.Kind == FilterKind.Heading) {
+        _screen.WriteFit(area.X, y, area.Width, row.Label, Theme.Muted);
+        continue;
       }
 
-      _screen.Write(area.X, y, chosen ? "(●)" : "( )", chosen ? Theme.Accent : default);
-      _screen.WriteFit(area.X + 4, y, area.Width - 9, text, chosen ? Theme.Strong : default);
-      if (count is int n) {
-        string number = n.ToString(CultureInfo.InvariantCulture);
-        _screen.Write(area.Right - number.Length, y, number, Theme.Muted);
+      (string mark, Style style) = row.Kind == FilterKind.GameVersion
+          ? _gameVersions.Contains(row.Key) ? ("[+]", Theme.Good) : ("[ ]", default(Style))
+          : _includeTags.Contains(row.Key) ? ("[+]", Theme.Good)
+          : _excludeTags.Contains(row.Key) ? ("[-]", Theme.Bad)
+          : ("[ ]", default);
+      string count = row.Count.ToString(CultureInfo.InvariantCulture);
+      _screen.Write(area.X, y, mark, style);
+      _screen.WriteFit(
+          area.X + 4, y, area.Width - 5 - count.Length, row.Label,
+          mark == "[ ]" ? default : style);
+      _screen.Write(area.Right - count.Length, y, count, Theme.Muted);
+      if (_filtering && _filterTop + i == _filterSelected) {
+        _screen.Restyle(area.X - 1, y, area.Width + 2, Theme.Selected);
       }
-
-      y++;
-    }
-
-    Heading("Side", "f");
-    Option("Server", _side == 0, _catalog?.Mods.Count(m => m.RunsOn("server")));
-    Option("Client", _side == 1, _catalog?.Mods.Count(m => m.RunsOn("client")));
-    Option("Any", _side == 2, _catalog?.Mods.Count);
-    y++;
-    Heading("Sort", "s");
-    foreach (CatalogSort sort in Enum.GetValues<CatalogSort>()) {
-      Option(sort.ToString(), _sort == sort);
-    }
-
-    y++;
-    Heading("Tag", "t");
-    Option("Any", _tag < 0);
-    for (int i = 0; i < CatalogQuery.FeaturedTags.Count; i++) {
-      FeaturedTag tag = CatalogQuery.FeaturedTags[i];
-      Option(tag.Label, _tag == i, _catalog?.Mods.Count(m =>
-          (_sides[_side] is not { } side || m.RunsOn(side))
-              && CatalogQuery.DisplayTags(m).Contains(tag.Id)));
     }
   }
 
@@ -256,7 +332,10 @@ public sealed partial class TuiApp {
               + (detail.LatestVariant is { Length: > 0 } variant ? $" #{variant}" : ""));
     }
 
-    Field("Runs on", $"{string.Join(", ", mod.Sides)} · {string.Join(", ", mod.Platforms)}");
+    if (mod.Platforms.Count > 0) {
+      Field("Platform", string.Join(", ", mod.Platforms));
+    }
+
     if (mod.GameVersions.Count > 0) {
       Field(
           "Game",
@@ -284,14 +363,6 @@ public sealed partial class TuiApp {
       y++;
       Line(new StyledLine("Reading the details...", Theme.Muted));
     }
-
-    if (!mod.RunsOn("server")) {
-      y++;
-      foreach (string line in TextWidth.Wrap(
-          "This mod has no build for a server; lip manages servers only.", area.Width)) {
-        Line(new StyledLine(line, Theme.Warning));
-      }
-    }
   }
 
   private static string Date(DateTimeOffset? time) =>
@@ -317,6 +388,11 @@ public sealed partial class TuiApp {
       return;
     }
 
+    if (_filtering) {
+      FilterKey(key);
+      return;
+    }
+
     int before = _modSelected;
     if (MoveSelection(key, ref _modSelected, _mods.Count, 10)) {
       if (before != _modSelected) {
@@ -328,7 +404,7 @@ public sealed partial class TuiApp {
 
     if (key.Key == ConsoleKey.Enter) {
       if (SelectedMod is { } mod) {
-        PromptInstall(mod.Id);
+        LoadDetail(mod.Id, detail => ChooseVersion(mod, detail), () => ChooseVersion(mod, null));
       }
 
       return;
@@ -338,16 +414,11 @@ public sealed partial class TuiApp {
       case '/':
         _searching = true;
         break;
+      case 'f' when _catalog is not null:
+        _filtering = true;
+        break;
       case 's':
         _sort = (CatalogSort)(((int)_sort + 1) % Enum.GetValues<CatalogSort>().Length);
-        SelectMods();
-        break;
-      case 'f':
-        _side = (_side + 1) % _sides.Length;
-        SelectMods();
-        break;
-      case 't':
-        _tag = _tag + 1 >= CatalogQuery.FeaturedTags.Count ? -1 : _tag + 1;
         SelectMods();
         break;
       case 'R':
@@ -355,9 +426,6 @@ public sealed partial class TuiApp {
         _details.Clear();
         _detailsRequested.Clear();
         LoadCatalog();
-        break;
-      case 'v' when SelectedMod is { } mod:
-        LoadDetail(mod.Id, detail => ShowVersions(mod, detail));
         break;
       case 'r' when SelectedMod is { } mod:
         LoadDetail(mod.Id, detail => Push(new MessageDialog(
@@ -372,22 +440,104 @@ public sealed partial class TuiApp {
     }
   }
 
-  private void ShowVersions(CatalogMod mod, CatalogDetail detail) {
-    if (detail.Versions.Count == 0) {
-      _status = new StyledLine($"The catalogue lists no version of {mod.Name}.", Theme.Warning);
+  /// The keys of the Filters pane: Space includes a game version or a tag, x excludes a tag,
+  /// and either takes it back when pressed again.
+  private void FilterKey(ConsoleKeyInfo key) {
+    if (key.Key is ConsoleKey.Escape or ConsoleKey.RightArrow or ConsoleKey.Enter
+        || key.KeyChar == 'f') {
+      _filtering = false;
       return;
     }
 
-    Push(new ListDialog(
-        this, $"{mod.Name} — versions (Enter installs)",
-        [
-          .. detail.Versions.Select(version => new StyledLine()
-              .Add(version.Version.PadRight(24))
-              .Add(Date(version.Released), Theme.Muted)
-              .Add(version.Prerelease ? "  prerelease" : "", Theme.Warning)),
-        ],
-        chosen => PromptInstall($"{mod.Id}@{detail.Versions[chosen].Version}")));
+    int selected = _filterSelected;
+    if (MoveSelection(key, ref selected, _filterRows.Count, 10)) {
+      // Headings are passed over, in the direction of the move.
+      int step = selected >= _filterSelected ? 1 : -1;
+      while (selected >= 0 && selected < _filterRows.Count
+          && _filterRows[selected].Kind == FilterKind.Heading) {
+        selected += step;
+      }
+
+      if (selected >= 0 && selected < _filterRows.Count) {
+        _filterSelected = selected;
+      }
+
+      return;
+    }
+
+    if (key.KeyChar == 'c') {
+      _includeTags.Clear();
+      _excludeTags.Clear();
+      _gameVersions.Clear();
+      SelectMods();
+      return;
+    }
+
+    if (_filterSelected >= _filterRows.Count) {
+      return;
+    }
+
+    FilterRow row = _filterRows[_filterSelected];
+    bool include = key.Key == ConsoleKey.Spacebar || key.KeyChar is ' ' or '+';
+    bool exclude = key.KeyChar is 'x' or '-';
+    if (row.Kind == FilterKind.GameVersion && include) {
+      if (!_gameVersions.Remove(row.Key)) {
+        _gameVersions.Add(row.Key);
+      }
+    } else if (row.Kind == FilterKind.Tag && (include || exclude)) {
+      HashSet<string> chosen = include ? _includeTags : _excludeTags;
+      HashSet<string> other = include ? _excludeTags : _includeTags;
+      other.Remove(row.Key);
+      if (!chosen.Remove(row.Key)) {
+        chosen.Add(row.Key);
+      }
+    } else {
+      return;
+    }
+
+    SelectMods();
   }
+
+  /// Asks which version of a mod to install: the latest, one that the catalogue lists (none
+  /// when its file could not be read), or one that the user writes, such as a commit.
+  private void ChooseVersion(CatalogMod mod, CatalogDetail? detail) {
+    IReadOnlyList<CatalogVersion> versions = detail?.Versions ?? [];
+    List<StyledLine> items = [
+      new StyledLine().Add("Latest".PadRight(24), Theme.Strong)
+          .Add(detail?.LatestVersion ?? "", Theme.Muted),
+      .. versions.Select(version => new StyledLine()
+          .Add(version.Version.PadRight(24))
+          .Add(Date(version.Released), Theme.Muted)
+          .Add(version.Prerelease ? "  prerelease" : "", Theme.Warning)),
+      new StyledLine().Add("Custom...".PadRight(24), Theme.Accent)
+          .Add("a version, branch, tag or commit", Theme.Muted),
+    ];
+    Push(new ListDialog(this, $"Install {mod.Name} — choose a version", items, chosen => {
+      if (chosen == 0) {
+        InstallMod(mod.Id);
+      } else if (chosen <= versions.Count) {
+        InstallMod($"{mod.Id}@{versions[chosen - 1].Version}");
+      } else {
+        Push(new PromptDialog(
+            this, $"Install {mod.Name} — custom version",
+            [
+              new PromptField(
+                  "What follows the @ of the package: a version, branch:<name>, tag:<name> or"
+                      + " rev:<commit>",
+                  "", "1.2.3   branch:main   tag:v1.2.3   rev:0123abc"),
+            ],
+            values => {
+              if (values[0].Length > 0) {
+                InstallMod($"{mod.Id}@{values[0].TrimStart('@')}");
+              }
+            }));
+      }
+    }));
+  }
+
+  private void InstallMod(string package) =>
+      PlanAndRun($"Install {package}", (dryRun, token) =>
+          _client.Install([package], dryRun, null, token));
 
   private void OpenInBrowser(string url) {
     try {
