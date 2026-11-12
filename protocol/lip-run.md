@@ -40,7 +40,7 @@ When step 5 started the server, `lip run` exits with the exit code of the server
 
 ## SEE ALSO
 
-[lip(1)](lip.md), [lip-install(1)](lip-install.md), [journal(5)](journal.md), [lip-workspace(7)](lip-workspace.md)
+[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-tui(1)](lip-tui.md), [journal(5)](journal.md), [lip-workspace(7)](lip-workspace.md)
 
 [signal(7)]: https://man7.org/linux/man-pages/man7/signal.7.html
 [HandlerRoutine]: https://learn.microsoft.com/windows/console/handlerroutine

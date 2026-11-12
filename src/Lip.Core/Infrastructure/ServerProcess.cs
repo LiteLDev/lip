@@ -59,6 +59,83 @@ public sealed class ProcessProgramStarter : IProgramStarter {
   }
 }
 
+/// Starts a process whose standard output and standard error lip reads, for the interface
+/// (protocol/lip-tui.md, "Server"): every chunk read from either goes to output, one at a time.
+/// On Windows the process gets a console of its own, without a window, so that nothing it does
+/// to its console reaches the terminal of lip.
+public sealed class PipedProgramStarter(Action<byte[]> output) : IProgramStarter {
+  public IStartedProgram Start(ProgramStartInfo start) {
+    ProcessStartInfo info = new(start.FileName) {
+      UseShellExecute = false,
+      CreateNoWindow = true,
+      WorkingDirectory = start.WorkingDirectory,
+      RedirectStandardInput = true,
+      RedirectStandardOutput = true,
+      RedirectStandardError = true,
+    };
+    if (start.VerbatimArguments) {
+      info.Arguments = start.JoinedArguments;
+    } else {
+      foreach (string argument in start.Arguments) {
+        info.ArgumentList.Add(argument);
+      }
+    }
+
+    foreach ((string name, string value) in start.EnvironmentOverrides) {
+      info.Environment[name] = value;
+    }
+
+    Process process = Process.Start(info)
+        ?? throw new InvalidOperationException($"Could not start {start.FileName}.");
+    return new StartedProcess(process, output);
+  }
+
+  private sealed class StartedProcess : IStartedProgram {
+    private readonly Process _process;
+    private readonly Action<byte[]> _output;
+    private readonly object _gate = new();
+    private readonly Task _pumps;
+
+    public StartedProcess(Process process, Action<byte[]> output) {
+      _process = process;
+      _output = output;
+      _pumps = Task.WhenAll(
+          Task.Run(() => Pump(process.StandardOutput.BaseStream)),
+          Task.Run(() => Pump(process.StandardError.BaseStream)));
+    }
+
+    public Stream StandardInput => _process.StandardInput.BaseStream;
+
+    public async Task<int> WaitForExit() {
+      await _process.WaitForExitAsync();
+      // What the server wrote last is shown before its exit is.
+      await _pumps;
+      return _process.ExitCode;
+    }
+
+    public void Dispose() => _process.Dispose();
+
+    private async Task Pump(Stream stream) {
+      byte[] buffer = new byte[4096];
+      try {
+        while (true) {
+          int read = await stream.ReadAsync(buffer);
+          if (read == 0) {
+            return;
+          }
+
+          lock (_gate) {
+            _output(buffer[..read]);
+          }
+        }
+      }
+      catch (Exception ex) when (ex is IOException or ObjectDisposedException) {
+        RunTrace.Write("run", $"Cannot read the output of the server: {ex.Message}");
+      }
+    }
+  }
+}
+
 /// Listens for lip being asked to stop (protocol/lip-run.md, "Stopping"): calls stop each time,
 /// until the returned registration is disposed.
 public delegate IDisposable StopListener(Action stop);

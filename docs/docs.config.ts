@@ -23,6 +23,7 @@ interface Labels {
   internalMechanism: string;
   cli: string;
   overview: string;
+  tui: string;
   configuration: string;
   commands: string;
 }
@@ -47,6 +48,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
     internalMechanism: 'Internal Mechanism',
     cli: 'CLI Reference',
     overview: 'Overview',
+    tui: 'Interactive Interface',
     configuration: 'Configuration',
     commands: 'Commands',
   },
@@ -69,6 +71,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
     internalMechanism: '内部机制',
     cli: 'CLI 参考',
     overview: '概览',
+    tui: '交互界面',
     configuration: '配置',
     commands: '命令',
   },
@@ -114,6 +117,7 @@ const nav = (p: string, t: Labels): NavEntry[] => [
     text: t.cli,
     items: [
       { text: t.overview, link: `${p}cli/overview` },
+      { text: t.tui, link: `${p}cli/tui` },
       { text: t.configuration, link: `${p}cli/configuration` },
       { text: t.commands, items: COMMANDS.map((c) => ({ text: c.replace('_', ' '), link: `${p}cli/commands/${c}` })) },
     ],

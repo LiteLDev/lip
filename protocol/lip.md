@@ -132,13 +132,13 @@ With `-n` or `--dry-run`, the command carries out every step that changes nothin
 
 ## OPTIONS
 
-- No argument: `lip` writes the help for `lip` to standard output.
+- No argument: when the standard input and the standard output of `lip` are both terminals, `lip` runs the interface ([lip-tui(1)]); otherwise `lip` writes the help for `lip` to standard output.
 - `-h`, `--help` as the first argument: `lip` writes the help for `lip` to standard output, whatever arguments follow.
 - `-v`, `--version` as the first argument: `lip` writes its version ([SemVer]) followed by a line break to standard output, whatever arguments follow.
 - Any other first argument starting with `-`: the list is a usage error.
 - `lip cache`, `lip config` or `lip pkg`, followed by `-h` or `--help`: `lip` writes the help for the command group to standard output.
 
-Each of these exits with code 0, except the usage error.
+Each of these exits with code 0, except the usage error, and the interface, which exits as [lip-tui(1), EXIT STATUS](lip-tui.md#exit-status) defines.
 
 ## EXIT STATUS
 
@@ -155,7 +155,7 @@ A command that fails other than on a usage error may write a **failure report**:
 
 ## SEE ALSO
 
-[lip-package(7)], [lip-workspace(7)], [lip-userspace(7)], [lip-compatibility(7)]
+[lip-tui(1)], [lip-package(7)], [lip-workspace(7)], [lip-userspace(7)], [lip-compatibility(7)]
 
 [lip-install(1)]: lip-install.md
 [lip-uninstall(1)]: lip-uninstall.md
@@ -165,6 +165,7 @@ A command that fails other than on a usage error may write a **failure report**:
 [lip-cache(1)]: lip-cache.md
 [lip-config(1)]: lip-config.md
 [lip-pkg(1)]: lip-pkg.md
+[lip-tui(1)]: lip-tui.md
 [lip-package(7)]: lip-package.md
 [lip-workspace(7)]: lip-workspace.md
 [lip-userspace(7)]: lip-userspace.md

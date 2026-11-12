@@ -58,7 +58,13 @@ public sealed class LipClient {
   /// (protocol/lip-compatibility.md, "liprc.json"), only when they need it: commands that do not,
   /// such as lip pkg init, work whatever the configuration directory holds. A dry run reads
   /// liprc.json without migrating it.
-  public static LipClient Create(IFileSystem fileSystem, IUserInteraction userInteraction) {
+  public static LipClient Create(IFileSystem fileSystem, IUserInteraction userInteraction) =>
+      Create(fileSystem, userInteraction, hookOutput: null);
+
+  /// As above; hook commands write their output to the stream that hookOutput opens for each,
+  /// instead of the standard error of lip.
+  public static LipClient Create(
+      IFileSystem fileSystem, IUserInteraction userInteraction, Func<Stream>? hookOutput) {
     ConfigService configService = new(fileSystem, userInteraction);
     CacheService cacheService = new(fileSystem, userInteraction);
     return new(
@@ -67,7 +73,7 @@ public sealed class LipClient {
         cacheService,
         configService,
         dryRun => CreateMcmodService(
-            fileSystem, userInteraction, cacheService, configService, dryRun));
+            fileSystem, userInteraction, cacheService, configService, dryRun, hookOutput));
   }
 
   /// The service of the commands that may reach GitHub, which reads github_proxy; for a dry run,
@@ -77,7 +83,8 @@ public sealed class LipClient {
       IUserInteraction userInteraction,
       CacheService cacheService,
       ConfigService configService,
-      bool dryRun) {
+      bool dryRun,
+      Func<Stream>? hookOutput) {
     FileDownloader fileDownloader = new(userInteraction);
     string? githubProxyValue = await configService.GetGithubProxy(dryRun);
     Url? githubProxy = githubProxyValue is null ? null : Url.Parse(githubProxyValue);
@@ -86,7 +93,7 @@ public sealed class LipClient {
         : $"GitHub is reached through github_proxy {ConfigService.DescribeProxy(githubProxyValue)}");
     GitRemoteClient gitRemoteClient = new(githubProxy);
 
-    CommandRunner commandRunner = new();
+    CommandRunner commandRunner = new(hookOutput);
     ArchiveProvider archiveProvider = new(
         gitRemoteClient, cacheService, fileSystem, fileDownloader, githubProxy);
 
@@ -200,6 +207,10 @@ public sealed class LipClient {
         packages.Where(p => !p.Explicit).Select(p => $"{p.Identity}@{p.Version}").Distinct());
   }
 
+  /// The installed packages, in installation order (protocol/lip-list.md).
+  public async Task<IReadOnlyList<InstalledPackage>> ListPackages() =>
+      await (await GetMcmodService()).List();
+
   /// Migrates the tooth.json of format 1, 2 or 3 in the current directory to a lip.toml
   /// (RepositoryMigrator, protocol/lip-compatibility.md, "lip pkg migrate"), asking the user for
   /// missing values. Everything dropped or converted with another meaning is reported as a warning.
@@ -219,6 +230,12 @@ public sealed class LipClient {
   public async Task<int> Run(Stream input, bool inputIsConsole) {
     return await (await GetMcmodService()).Run(
         input, inputIsConsole, ServerSession.ListenForSignals, new ProcessProgramStarter());
+  }
+
+  /// Runs the server as Run does, started by starter and asked to stop through listen: for the
+  /// interface (protocol/lip-tui.md, "Server"), which reads the output of the server itself.
+  public async Task<int> Run(Stream input, StopListener listen, IProgramStarter starter) {
+    return await (await GetMcmodService()).Run(input, inputIsConsole: false, listen, starter);
   }
 
   public async Task Uninstall(

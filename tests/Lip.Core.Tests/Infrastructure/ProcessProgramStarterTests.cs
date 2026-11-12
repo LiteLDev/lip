@@ -65,6 +65,51 @@ public class ProcessProgramStarterTests : IDisposable {
         await File.ReadAllLinesAsync(Path.Join(_root, "lines.txt"), TestContext.Current.CancellationToken));
   }
 
+  /// The server of the interface (protocol/lip-tui.md, "Server"): lip reads what it writes to
+  /// its standard output and its standard error.
+  [Fact]
+  public async Task Run_PipedServer_GivesItsOutputAndErrorToLip() {
+    // Arrange
+    ProgramStartInfo start = OperatingSystem.IsWindows()
+        ? new(
+            "powershell.exe",
+            [
+              "-NoProfile", "-NonInteractive", "-Command",
+              "while ($null -ne ($l = [Console]::In.ReadLine())) {"
+                  + " if ($l -eq 'stop') { [Console]::Error.WriteLine('bye'); exit 5 }"
+                  + " [Console]::Out.WriteLine('got ' + $l) }",
+            ],
+            VerbatimArguments: false, _root, new Dictionary<string, string>())
+        : new(
+            "sh",
+            [
+              "-c",
+              "while IFS= read -r l; do if [ \"$l\" = stop ]; then echo bye >&2; exit 5; fi;"
+                  + " echo \"got $l\"; done",
+            ],
+            VerbatimArguments: false, _root, new Dictionary<string, string>());
+    EndingInput input = new("say hello\n");
+    MemoryStream output = new();
+    Action? stop = null;
+
+    // Act
+    Task<int> run = ServerSession.Run(
+        new PipedProgramStarter(bytes => output.Write(bytes)), start, input,
+        inputIsConsole: false, s => {
+          stop = s;
+          return new MemoryStream();
+        });
+    await input.Ended.Task.WaitAsync(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken);
+    stop!();
+    int code = await run.WaitAsync(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(5, code);
+    string text = Encoding.UTF8.GetString(output.ToArray());
+    Assert.Contains("got say hello", text);
+    Assert.Contains("bye", text);
+  }
+
   /// Gives the text, then ends.
   private sealed class EndingInput(string text) : Stream {
     private readonly Channel<byte[]> _chunks = CreateChunks(text);

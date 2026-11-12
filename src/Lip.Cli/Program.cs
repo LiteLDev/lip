@@ -1,6 +1,8 @@
 using System.Reflection;
 using Lip.Cli;
 using Lip.Cli.Commands;
+using Lip.Cli.Tui;
+using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.PublicApi;
@@ -8,6 +10,28 @@ using Semver;
 using Spectre.Console.Cli;
 
 RunTrace.TraceHttp();
+
+// Without an argument, on a terminal, lip runs the interface (protocol/lip-tui.md); otherwise
+// it writes its help, as below.
+if (args.Length == 0 && !Console.IsInputRedirected && !Console.IsOutputRedirected) {
+  string version = SemVersion.Parse(Assembly
+      .GetEntryAssembly()?
+      .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+      .InformationalVersion!).ToString();
+  try {
+    using ConsoleTerminal terminal = new();
+    return new TuiApp(
+        terminal,
+        (interaction, hookOutput) => LipClient.Create(
+            new System.IO.Abstractions.FileSystem(), interaction, hookOutput),
+        new ModCatalogClient(),
+        version,
+        Environment.CurrentDirectory).Run();
+  }
+  catch (Exception ex) {
+    return ErrorReporter.Report(ex, args, cancelled: false);
+  }
+}
 
 ConsoleUserInteraction userInteraction = new();
 
