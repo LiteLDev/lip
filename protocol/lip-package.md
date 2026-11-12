@@ -14,7 +14,7 @@ lip-package - archives, packages, sources and resolution
   - **directory archive**: a directory, taken as the archive of its contents. The name of each file and directory below it must not contain `\`.
   - **git archive**: the tree of a git commit ([Git objects]), with only its regular files (modes `100644` and `100755`) and trees. The name of each entry of each of its trees must not be empty, `.` or `..`, or contain `/` or `\`.
 - **package file**: The TOML file `lip.toml` at the root of an archive, read with its templates rendered ([lip.toml(5)]).
-- **package**: An archive whose package file is valid ([lip.toml(5)]), or one that [lip-compatibility(7), "tooth.json"](lip-compatibility.md#toothjson) reads as such; in the remote repository of "The server", only what that section defines.
+- **package**: An archive whose package file is valid ([lip.toml(5)]), or one that [lip-compatibility(7), "tooth.json"](lip-compatibility.md#toothjson) reads as such, or one that "The server" defines.
 - **package id**: The `id` of a package, a [Go module path], compared ASCII case-insensitively.
 - **version**: A [SemVer] version, without a leading `v`.
 - **version of a package**: The `version` of its package file.
@@ -76,13 +76,13 @@ The git archive of each selected commit must be a package whose package id equal
 
 ### The server
 
-The remote repository `github.com/LiteLDev/bds` names the Bedrock Dedicated Server of Minecraft. `lip` defines its packages itself, and reads no file of the git archive of a commit selected in it.
+The source `github.com/LiteLDev/bds`, compared ASCII case-insensitively, names the Bedrock Dedicated Server of Minecraft. It names no git repository: `lip` defines its packages itself, from the builds list, and they are in no archive.
 
-The **builds file** is `versions.txt` at the root of the git archive of the commit that `refs/heads/main` of that repository points to. A **build** is a line of it, without the white space around it, that is four decimal numbers separated by `.`. The build of a version is the last build whose first three numbers equal the major, minor and patch numbers of that version.
+The **builds list** is the response body of an HTTPS GET of `https://levimc.org/api/v4/mc/versions/`, following redirects: a [JSON] object. Its members `server/win-x64` and `server/linux-x64`, when they are arrays, hold the builds of those platforms. A **build** is a string that is four decimal numbers separated by `.`. A build a.b.c.d is a build of two versions, written here without the leading zeros of its numbers: a.b.c, and a.b.c-patch.d, which no other build of the platform is a build of. Anything else in the builds list is ignored. A builds list that cannot be obtained, or is not a JSON object, names no package.
 
-The git archive of a selected commit is a package only when the commit has a tag version V and V has a build B. Its package file then has `format` 4, the `id` `github.com/LiteLDev/bds`, the `version` V, an `info` that is not defined here, and, as `variants[""]`, these two entries:
+For each version V that a build is a build of, the source names one package, without a tag version and without a commit. Its package file has `format` 4, the `id` `github.com/LiteLDev/bds`, the `version` V, an `info` that is not defined here, and, as `variants[""]`, the entries below of the platforms that have a build of V, B being the first such build in the array of the platform:
 
-| Key | First entry | Second entry |
+| Key | Entry of `win-x64` | Entry of `linux-x64` |
 |---|---|---|
 | `side` | `"server"` | `"server"` |
 | `platform` | `"win-x64"` | `"linux-x64"` |
@@ -90,6 +90,8 @@ The git archive of a selected commit is a package only when the commit has a tag
 | `preserve` | `["server.properties", "allowlist.json", "permissions.json"]` | The same. |
 | `purge` | `["bedrock_server.exe.bak", "packet-statistics.txt", "valid_known_packs.json", "behavior_packs/", "config/", "definitions/", "development_behavior_packs/", "development_resource_packs/", "development_skin_packs/", "resource_packs/", "world_templates/"]` | The same, without `"bedrock_server.exe.bak"`. |
 | `hooks` | None. | `post_install`: `["chmod +x bedrock_server"]`. |
+
+Without a ref, the source names these packages from the highest version to the lowest; with the ref `<version>`, the package of that version; with any other ref, none. Where a page names the archive of such a package, it is an archive without files.
 
 ### URLs
 

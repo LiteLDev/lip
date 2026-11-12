@@ -33,7 +33,7 @@ A member of `packages`:
 | `variant` | required | A string: the variant of the source of the package. |
 | `explicit` | required | A boolean: whether a request named the package. Such a package is **explicitly installed**; any other is a **dependency package**. |
 | `ref` | required | A string: the source of the package, a local path recorded as the [`file:` URI] of its absolute path. |
-| `commit` | for a remote repository | A string of 40 lowercase hexadecimal digits: the commit the archive of the package was at. |
+| `commit` | for a remote repository | A string of 40 lowercase hexadecimal digits: the commit the archive of the package was at. A package of [lip-package(7), "The server"](lip-package.md#the-server) has none. |
 | `files` | required | An array of strings: the paths of the files the package owns. |
 
 A state file whose top-level object has the key `runtime`, or whose `platform` is `"server"` or `"client"`, is invalid: these are the keys of lip before v0.40.

@@ -729,55 +729,56 @@ public class ResolverTests {
 
   private const string Server = "github.com/LiteLDev/bds";
 
-  /// The repository of the server: version tags whose archives are no packages, and the builds
-  /// file on the branch main, whose lines are given separated by ';'.
-  private void AddServer(string builds, params string[] tags) {
-    foreach (string tag in tags) {
-      _archives.AddTag(Server, tag, "not a package file");
-    }
+  /// A resolver whose builds list of the server is this JSON text.
+  private Resolver ServerResolver(string builds) =>
+      new(_archives, _reader, _warnings.Add, () => Task.FromResult(builds));
 
-    _archives.AddBranch(Server, "main", builds.Replace(';', (char)10));
-  }
+  private const string Builds = """
+      {
+        "server/win-x64": ["1.21.10.1", "1.21.1.3", "1.21.1.02", "1.21.0.03", "not a build"],
+        "server/linux-x64": ["1.21.1.02", "1.21.0.03"],
+        "client/win-x64": ["9.9.9.9"]
+      }
+      """;
 
   [Theory]
-  [InlineData("win-x64", "bin-win")]
-  [InlineData("linux-x64", "bin-linux")]
-  public async Task Resolve_Server_DefinesThePackageOfEachVersionTagItself(
-      string platform, string directory) {
-    // Arrange
-    AddServer("1.21.0.03;1.21.1.02;1.21.1.3;1.21.10.1;", "v1.21.0", "v1.21.1");
-
+  [InlineData("win-x64", "bin-win", "1.21.1.3")]
+  [InlineData("linux-x64", "bin-linux", "1.21.1.02")]
+  public async Task Resolve_Server_DefinesThePackagesItself(
+      string platform, string directory, string build) {
     // Act
-    ResolveResult result = await CreateResolver().Resolve(
-        Source(Server), null, new LipEnvironment(McmodSide.Server, platform));
+    ResolveResult result = await ServerResolver(Builds).Resolve(
+        Source(Server), VersionRange.Parse("<1.21.10"),
+        new LipEnvironment(McmodSide.Server, platform));
 
-    // Assert: the last build of each version, and no file of the tags is read.
+    // Assert: the first build of each version for the platform; no repository is read.
     Assert.Equal(["1.21.1", "1.21.0"], result.Candidates.Select(c => c.Package.Version.ToString()));
     Assert.Equal(
         [
-          $"https://www.minecraft.net/bedrockdedicatedserver/{directory}/bedrock-server-1.21.1.3.zip",
+          $"https://www.minecraft.net/bedrockdedicatedserver/{directory}/bedrock-server-{build}.zip",
           $"https://www.minecraft.net/bedrockdedicatedserver/{directory}/bedrock-server-1.21.0.03.zip",
         ],
         result.Candidates.Select(c => Assert.Single(Assert.Single(c.Package.Entry.Assets).Urls)));
-    PackageEntry entry = result.Candidates[0].Package.Entry;
+    Candidate candidate = result.Candidates[0];
+    PackageEntry entry = candidate.Package.Entry;
     Assert.Empty(entry.Dependencies);
     Assert.Equal(
         platform == "linux-x64" ? ["chmod +x bedrock_server"] : [], entry.Hooks.PostInstall);
     Assert.Equal(new EntryPlacement("", ""), Assert.Single(entry.Assets[0].Placements));
     Assert.Contains(entry.PreserveFiles, glob => glob.Pattern == "server.properties");
-    Assert.Equal(Server, result.Candidates[0].Package.Identity);
-    Assert.NotNull(result.Candidates[0].Archive.Commit);
+    Assert.Equal(Server, candidate.Package.Identity);
+    Assert.Null(candidate.Archive.Commit);
+    Assert.Empty(candidate.Archive.Source.Keys);
     Assert.Empty(_reader.Counts);
+    Assert.Empty(_archives.Opened);
+    Assert.Equal(0, _archives.ListCount);
     Assert.Empty(result.Diagnostics);
   }
 
   [Fact]
   public async Task Resolve_Server_ByVersion_IsThatVersion() {
-    // Arrange
-    AddServer("1.21.0.03;1.21.1.02;", "v1.21.0", "v1.21.1");
-
     // Act
-    ResolveResult result = await CreateResolver().Resolve(
+    ResolveResult result = await ServerResolver(Builds).Resolve(
         Source($"{Server}@1.21.0"), null, s_server);
 
     // Assert
@@ -785,43 +786,66 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_Server_VersionWithoutBuild_NoCandidate() {
-    // Arrange
-    AddServer("1.21.0.03;", "v1.21.0", "v1.21.1");
-
-    // Act
-    ResolveResult result = await CreateResolver().Resolve(Source(Server), null, s_server);
+  public async Task Resolve_Server_ByPatchVersion_IsThatBuild() {
+    // Act: 1.21.1 alone is the first build, 1.21.1.3.
+    ResolveResult result = await ServerResolver(Builds).Resolve(
+        Source(Server), VersionRange.Parse("1.21.1-patch.2"), s_server);
 
     // Assert
-    Assert.Equal("1.21.0", Assert.Single(result.Candidates).Package.Version.ToString());
-    Assert.Contains("names no build", Assert.Single(result.Diagnostics));
+    Candidate candidate = Assert.Single(result.Candidates);
+    Assert.Equal("1.21.1-patch.2", candidate.Package.Version.ToString());
+    Assert.EndsWith(
+        "/bin-win/bedrock-server-1.21.1.02.zip",
+        Assert.Single(Assert.Single(candidate.Package.Entry.Assets).Urls));
   }
 
   [Fact]
-  public async Task Resolve_Server_ByBranch_NoCandidate() {
-    // Arrange
-    AddServer("1.21.0.03;", "v1.21.0");
-
-    // Act
-    ResolveResult result = await CreateResolver().Resolve(
-        Source($"{Server}@branch:main"), null, s_server);
+  public async Task Resolve_Server_VersionWithoutBuildForThePlatform_NoCandidate() {
+    // Act: 1.21.10 has a build for win-x64 only.
+    ResolveResult result = await ServerResolver(Builds).Resolve(
+        Source($"{Server}@1.21.10"), null, new LipEnvironment(McmodSide.Server, "linux-x64"));
 
     // Assert
     Assert.Empty(result.Candidates);
-    Assert.Contains("by version only", Assert.Single(result.Diagnostics));
+    Assert.Contains("no entry", Assert.Single(result.Diagnostics));
+  }
+
+  [Theory]
+  [InlineData("@9.9.9")]
+  [InlineData("@branch:main")]
+  [InlineData("@rev:0123456789012345678901234567890123456789")]
+  public async Task Resolve_Server_NoSuchVersionOrNotByVersion_NoCandidate(string gitRef) {
+    // Act
+    ResolveResult result = await ServerResolver(Builds).Resolve(
+        Source(Server + gitRef), null, s_server);
+
+    // Assert
+    Assert.Empty(result.Candidates);
+    Assert.Single(result.Diagnostics);
   }
 
   [Fact]
-  public async Task Resolve_Server_NoEntryForOtherPlatforms() {
+  public async Task Resolve_Server_BuildsListUnavailable_NoCandidate() {
     // Arrange
-    AddServer("1.21.0.03;", "v1.21.0");
+    Resolver resolver = new(_archives, _reader, _warnings.Add,
+        () => throw new ArchiveUnavailableException("timeout"));
 
     // Act
-    ResolveResult result = await CreateResolver().Resolve(
-        Source(Server), null, new LipEnvironment(McmodSide.Server, "osx-arm64"));
+    ResolveResult result = await resolver.Resolve(Source(Server), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
+    Assert.Contains("timeout", Assert.Single(result.Diagnostics));
+  }
+
+  [Fact]
+  public async Task Resolve_Server_BuildsListNotAnObject_NoCandidate() {
+    // Act
+    ResolveResult result = await ServerResolver("[]").Resolve(Source(Server), null, s_server);
+
+    // Assert
+    Assert.Empty(result.Candidates);
+    Assert.Single(result.Diagnostics);
   }
 
   #endregion
@@ -838,8 +862,7 @@ public class ResolverTests {
   }
 
   /// In-memory archives: URLs and local paths, and remote repositories with tags, branches and
-  /// commits. Each archive holds its lip.toml or tooth.json, or the builds file of the server,
-  /// only (FileName).
+  /// commits. Each archive holds its lip.toml or tooth.json only (FileName).
   private sealed class FakeArchives : IArchiveProvider {
     private readonly Dictionary<string, string?> _urls = [];
     private readonly Dictionary<string, Repository> _repositories = [];
@@ -951,9 +974,7 @@ public class ResolverTests {
     /// The name of the file holding content: tooth.json for a tooth.json (with "format_version"),
     /// lip.toml otherwise.
     private static string FileName(string content) =>
-        content.Contains("\"format_version\"", StringComparison.Ordinal) ? "tooth.json"
-        : char.IsAsciiDigit(content[0]) ? BedrockServer.BuildsFileName
-        : "lip.toml";
+        content.Contains("\"format_version\"", StringComparison.Ordinal) ? "tooth.json" : "lip.toml";
 
     private static ArchiveHandle Handle(string key, string? content, string? commit) =>
         new(key,

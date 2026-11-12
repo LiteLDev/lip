@@ -33,7 +33,8 @@ public interface ICausalResolver : IResolver {
 public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
-    Action<string>? onWarning = null) : ICausalResolver {
+    Action<string>? onWarning = null,
+    Func<Task<string>>? downloadServerBuilds = null) : ICausalResolver {
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
   private readonly Action<string> _onWarning = onWarning ?? (_ => { });
@@ -44,8 +45,10 @@ public class Resolver(
       _versions = new();
   private readonly ConcurrentDictionary<string, Lazy<Task<PackageDocument>>> _documents = new();
 
-  /// The builds file of the repository of the server, read once.
-  private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _serverBuilds = new();
+  /// The builds list of the server (protocol/lip-package.md, "The server"), downloaded once.
+  private readonly Func<Task<string>> _downloadServerBuilds =
+      downloadServerBuilds ?? BedrockServer.Download;
+  private readonly ConcurrentDictionary<string, Lazy<Task<BedrockServer>>> _server = new();
 
   /// Commits of refs ("spec@branch:name"), so that a branch resolves to one commit for the whole
   /// operation.
@@ -81,6 +84,14 @@ public class Resolver(
     Walk walk = new(source, range, environment, onDiagnostic);
     RunTrace.Write("resolve", $"Resolving {source} {range?.ToString() ?? "(any version)"}"
         + $" for ({environment.Side.ToSpecString()}, {environment.Platform})");
+
+    if (source.Kind == RefKind.Spec && BedrockServer.IsRepository(source.Target)) {
+      await foreach (Candidate candidate in ResolveServer(walk)) {
+        yield return candidate;
+      }
+
+      yield break;
+    }
 
     // Step 1: the archives the source names.
     if (source.Kind != RefKind.Spec) {
@@ -150,6 +161,68 @@ public class Resolver(
     }
   }
 
+  /// The builds list of the server. Throws ArchiveUnavailableException when it cannot be
+  /// obtained.
+  public Task<BedrockServer> Server() => Cached(
+      _server, "", async () => BedrockServer.Parse(await _downloadServerBuilds()));
+
+  /// The candidates of the server (protocol/lip-package.md, "The server"): the packages lip
+  /// defines for the versions of the builds list, from highest to lowest.
+  private async IAsyncEnumerable<Candidate> ResolveServer(Walk walk) {
+    Ref source = walk.Source;
+    if (source.GitRef is { Kind: not GitRefKind.Version }) {
+      walk.Report(source.ToString(),
+          $"lip installs {BedrockServer.Repository} by version only (e.g."
+          + $" '{BedrockServer.Repository}@1.21.0'), not by branch, tag or commit");
+      yield break;
+    }
+
+    BedrockServer server;
+    try {
+      server = await Server();
+    }
+    catch (ArchiveUnavailableException ex) {
+      walk.Report(source.ToString(), ex.Message, ex);
+      yield break;
+    }
+
+    SemVersion? only = source.GitRef is GitRef gitRef
+        ? SemVersion.Parse(gitRef.Name, SemVersionStyles.Strict)
+        : null;
+    List<SemVersion> matching = [
+      .. server.Versions.Where(v => (only is null || v.Equals(only))
+          && (walk.Range?.IsSatisfiedBy(v) ?? true)),
+    ];
+    if (matching.Count == 0) {
+      walk.Report(source.ToString(),
+          $"the server has no version {(only is null ? $"that satisfies {walk.Range}" : only)};"
+          + " it has the versions " + string.Join(", ", server.ReleaseVersions.Take(10))
+          + (server.ReleaseVersions.Count() > 10
+              ? $" and {server.ReleaseVersions.Count() - 10} older ones"
+              : "")
+          + " (newest first)");
+      yield break;
+    }
+
+    foreach (SemVersion version in matching) {
+      JsonElement json = server.PackageFile(version);
+      PackageFile packageFile = PackageFileParser.Parse(json);
+      ArchiveHandle archive = BedrockServer.Archive(version);
+      PackageEntry? entry = packageFile.SelectEntry(source.Variant, walk.Environment);
+      if (entry is null) {
+        ReportNoEntry(walk, archive, packageFile, "package file", source.Variant);
+        continue;
+      }
+
+      RunTrace.Write("resolve", $"Candidate {packageFile.Id}@{version}, defined by lip");
+      yield return Candidate.Create(
+          new Package(packageFile.Id, source.Variant, version, entry) { Manifest = json },
+          archive,
+          source,
+          _archiveProvider);
+    }
+  }
+
   /// Step 1 for a remote repository with a ref (protocol/lip-package.md, "Remote repositories"):
   /// the single archive of the commit the ref selects. Only a version tag gives it a tag version.
   private async Task<Candidate?> ResolvePinned(Walk walk, GitRef gitRef) {
@@ -190,9 +263,7 @@ public class Resolver(
     Ref source = walk.Source;
     PackageDocument document;
     try {
-      document = source.Kind == RefKind.Spec && BedrockServer.IsRepository(source.Target)
-          ? await ServerDocument(source.Target, tagVersion)
-          : await Cached(_documents, archive.Key, () => _archiveReader.Read(archive));
+      document = await Cached(_documents, archive.Key, () => _archiveReader.Read(archive));
     }
     catch (ArchiveUnavailableException ex) {
       walk.Report(archive.Key, ex.Message, ex);
@@ -257,42 +328,6 @@ public class Resolver(
         archive,
         source,
         _archiveProvider);
-  }
-
-  /// The package that lip defines for a version of the server (protocol/lip-package.md, "The
-  /// server"), whose build the builds file of the repository names. Throws
-  /// ArchiveUnavailableException when the commit has no tag version, or the builds file cannot
-  /// be read or names no build of the version.
-  public async Task<PackageDocument> ServerDocument(string repository, SemVersion? tagVersion) {
-    if (tagVersion is null) {
-      throw new ArchiveUnavailableException(
-          $"lip installs {BedrockServer.Repository} by version only (e.g."
-          + $" '{BedrockServer.Repository}@1.21.0'), not by branch, tag or commit.");
-    }
-
-    string builds = await Cached(_serverBuilds, PackageNames.Fold(repository), async () => {
-      GitRef branch = GitRef.Parse($"branch:{BedrockServer.BuildsBranch}");
-      ArchiveHandle archive = await _archiveProvider.OpenCommit(
-          repository, await _archiveProvider.ResolveGitRef(repository, branch));
-      try {
-        await using Stream stream = await archive.Source.OpenRead(BedrockServer.BuildsFileName);
-        using StreamReader reader = new(stream);
-        return await reader.ReadToEndAsync();
-      }
-      catch (Exception ex) when (ex is not ArchiveUnavailableException
-          and not OperationCanceledException) {
-        throw new ArchiveUnavailableException(
-            $"Could not read {BedrockServer.BuildsFileName} of {archive.Key}, which lists the"
-            + " builds of the server.", ex);
-      }
-    });
-    string build = BedrockServer.Build(builds, tagVersion)
-        ?? throw new ArchiveUnavailableException(
-            $"{BedrockServer.BuildsFileName} of {repository} names no build of the version"
-            + $" {tagVersion} of the server.");
-    RunTrace.Write("resolve", $"The server {tagVersion} is the build {build}");
-    JsonElement json = BedrockServer.PackageFile(tagVersion, build);
-    return new PackageDocument(PackageFileParser.Parse(json), null, json);
   }
 
   /// Reports that a package file (named fileName) has no entry of a variant for the environment,

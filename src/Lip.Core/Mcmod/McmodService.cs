@@ -342,6 +342,10 @@ public class McmodService(
     PackageRequest request = PackageArguments.Parse(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
 
+    if (request.Ref.Kind == RefKind.Spec && BedrockServer.IsRepository(request.Ref.Target)) {
+      return await ViewServer(package, request.Ref);
+    }
+
     ArchiveHandle archive;
     // The tag version of the archive, the version of a package read from a tooth.json.
     SemVersion? tagVersion = null;
@@ -373,16 +377,38 @@ public class McmodService(
 
     RunTrace.Write("resolve", $"Showing the package file of {archive.Key}");
     JsonObject result = new() {
-      ["manifest"] = JsonSerializer.SerializeToNode(
-          request.Ref.Kind == RefKind.Spec && BedrockServer.IsRepository(request.Ref.Target)
-              // lip defines the packages of the server itself.
-              ? (await new Resolver(_archiveProvider, _archiveReader)
-                  .ServerDocument(request.Ref.Target, tagVersion)).Json
-              : await ManifestJson(archive, tagVersion)),
+      ["manifest"] = JsonSerializer.SerializeToNode(await ManifestJson(archive, tagVersion)),
       // ListVersions gives the newest first.
       ["versions"] = new JsonArray([
         .. versions.Reverse().Select(v => v.Version.ToString()).Distinct()
             .Select(v => (JsonNode?)JsonValue.Create(v)),
+      ]),
+    };
+    return result.ToJsonString(_indented);
+  }
+
+  /// lip pkg view of the server, whose packages lip defines itself (protocol/lip-package.md,
+  /// "The server"): the package file of the version named, or of the highest one.
+  private async Task<string> ViewServer(string package, Ref source) {
+    BedrockServer server = await new Resolver(_archiveProvider, _archiveReader).Server();
+    SemVersion? version = source.GitRef switch {
+      null => server.ReleaseVersions.FirstOrDefault(),
+      { Kind: GitRefKind.Version } gitRef => server.Versions.FirstOrDefault(
+          v => v.Equals(SemVersion.Parse(gitRef.Name, SemVersionStyles.Strict))),
+      _ => null,
+    };
+    if (version is null) {
+      throw new InvalidOperationException(
+          $"Cannot show the package file of '{package}': {BedrockServer.Repository} has no such"
+          + " version. lip installs it by version only, e.g."
+          + $" '{BedrockServer.Repository}@{server.ReleaseVersions.FirstOrDefault()}'.");
+    }
+
+    JsonObject result = new() {
+      ["manifest"] = JsonSerializer.SerializeToNode(server.PackageFile(version)),
+      ["versions"] = new JsonArray([
+        .. server.ReleaseVersions.Reverse()
+            .Select(v => (JsonNode?)JsonValue.Create(v.ToString())),
       ]),
     };
     return result.ToJsonString(_indented);
@@ -1041,7 +1067,9 @@ public class McmodService(
         Manifest = package.Manifest,
       };
       Ref source = ParseRecordedSource(package);
-      if (source.Kind == RefKind.Spec && package.Commit is null) {
+      // The packages of the server are in no archive, and have no commit.
+      bool server = source.Kind == RefKind.Spec && BedrockServer.IsRepository(source.Target);
+      if (source.Kind == RefKind.Spec && package.Commit is null && !server) {
         throw new LockFormatException(
             $"The entry of '{package.Identity}' has no \"commit\" field, which every package"
             + $" from a remote repository ({source}) must have.");
@@ -1050,10 +1078,11 @@ public class McmodService(
       string key = $"{package.Source} (installed)";
       ArchiveHandle archive = new(
           key,
-          new DeferredSource(async () => (source.Kind == RefKind.Spec
+          server ? BedrockServer.Archive(rebuilt.Version).Source
+          : new DeferredSource(async () => (source.Kind == RefKind.Spec
               ? await _archiveProvider.OpenCommit(source.Target, package.Commit!)
               : await _archiveProvider.Open(source.WithVariant(""))).Source),
-          source.Kind == RefKind.Spec ? package.Commit : null);
+          source.Kind == RefKind.Spec && !server ? package.Commit : null);
       return Candidate.Create(rebuilt, archive, source, _archiveProvider);
     }
     catch (Exception ex) when (ex is McmodInstallException or FormatException
