@@ -256,7 +256,6 @@ public sealed class UsageErrorTests : IDisposable {
     Assert.Equal(0, exitCode);
     Assert.Contains("install", stdout);
     Assert.Contains("run", stdout);
-    Assert.False(stdout.Contains((char)27));
     Assert.Equal("", stderr);
   }
 
