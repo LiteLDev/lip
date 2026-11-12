@@ -36,9 +36,9 @@ The Browse tab reads the mod catalogue of levimc.org (`https://levimc.org/api/v4
 
 | Key | Does |
 | --- | --- |
-| `/` | Searches by name, id, author, tag and description. |
+| `/` | Searches by name, id, author, tag and description. `↑` and `↓` go on to the mods found; `Esc` clears the search. |
 | `s` | Changes the order: relevance, stars, last update, newest. |
-| `f` | Moves to the Filters pane; `Esc` moves back. |
+| `←` | Moves to the Filters pane; `→` or `Esc` moves back. |
 | `Enter` | Installs the selected mod: asks which variant and version. |
 | `r` | Shows its README. |
 | `o` | Opens its page in the browser. |
@@ -48,15 +48,29 @@ The Filters pane has a section for each kind of filter: game version, tags, othe
 
 | Key | Does |
 | --- | --- |
-| `Enter` | On a heading: shows or hides the rows of the section. |
-| `Space` | Includes the selected row. |
+| `Enter`, `Space` | On a heading: shows or hides the rows of the section. On a row: includes it. |
+| `←` | On a row: goes to the heading of its section and hides its rows. |
 | `x` | Excludes the selected row, when it is a tag or a dependency. |
 | `c` | Clears every filter. |
-| `Esc` | Moves back to the mods. |
+| `→`, `Esc` | Moves back to the mods. |
 
 The list then holds the mods that run on one of the included game versions, carry every included tag and none of the excluded ones, are under one of the included license families, and depend on every included package and on no excluded one. The tags and the license families are those of levimc.org/mods.
 
 `Enter` on a mod opens one dialog for the variant and the version to install. `←` and `→` change the variant, among those with a build for a server. Below it are the latest version and each version of the catalogue that has the variant. `c` asks for a custom version instead: what follows the `@` of a package, that is a version, `branch:<name>`, `tag:<name>` or `rev:<commit>`. The plan of the installation is shown next, as for every change.
+
+## Keys
+
+The same keys do the same everywhere:
+
+| Key | Does |
+| --- | --- |
+| `↑`, `↓` | Select a row. |
+| `←`, `→` | Move between the panes of a tab, the buttons of a dialog, or the variants of a mod. |
+| `Enter`, `Space` | Act on what is selected: open the actions of a package, install a mod, edit a setting, run an action, choose a button. |
+| `Esc` | Goes back: closes a dialog, leaves a pane, clears a search. |
+| `Del` | Uninstalls the selected package, or resets the selected setting. |
+
+In the Packages tab, `Enter` on a package lists what can be done with it. In the Settings tab, `→` moves to the cache, where `Enter` cleans it. In the Server tab, `↑` and `↓` scroll while the server does not run, and `Esc` erases the line being typed while it does.
 
 Every list goes around: `↑` on its first row moves to the last, and `↓` on the last to the first.
 

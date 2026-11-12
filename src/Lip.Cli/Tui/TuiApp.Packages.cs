@@ -6,8 +6,8 @@ namespace Lip.Cli.Tui;
 /// The Packages tab: lip list, install, update and uninstall.
 public sealed partial class TuiApp {
   private static readonly (string, string)[] PackagesHints = [
-    ("i", "install"), ("u", "update"), ("U", "update all"), ("d", "uninstall"), ("r", "reload"),
-    ("Tab", "next tab"), ("q", "quit"),
+    ("Enter", "actions"), ("i", "install"), ("u", "update"), ("U", "update all"),
+    ("d/Del", "uninstall"), ("r", "reload"), ("Tab", "next tab"), ("q", "quit"),
   ];
 
   // Explicitly installed packages first, as lip list groups them.
@@ -116,6 +116,19 @@ public sealed partial class TuiApp {
 
     InstalledPackage? selected =
         _packageSelected < _installed.Count ? _installed[_packageSelected] : null;
+    switch (key.Key) {
+      case ConsoleKey.Enter or ConsoleKey.Spacebar:
+        if (selected is null) {
+          PromptInstall("");
+        } else {
+          PackageActions(selected);
+        }
+        return;
+      case ConsoleKey.Delete when selected is not null:
+        UninstallPackage(selected);
+        return;
+    }
+
     switch (key.KeyChar) {
       case 'i':
         PromptInstall("");
@@ -128,14 +141,34 @@ public sealed partial class TuiApp {
             _client.Update([], dryRun, null, token));
         break;
       case 'u' when selected is not null:
-        PlanAndRun($"Update {selected.Identity}", (dryRun, token) =>
-            _client.Update([selected.Identity], dryRun, null, token));
+        UpdatePackage(selected);
         break;
       case 'd' when selected is not null:
-        PlanAndRun($"Uninstall {selected.Identity}", (dryRun, token) =>
-            _client.Uninstall([selected.Identity], dryRun, null, token));
+        UninstallPackage(selected);
         break;
     }
+  }
+
+  private void UpdatePackage(InstalledPackage package) =>
+      PlanAndRun($"Update {package.Identity}", (dryRun, token) =>
+          _client.Update([package.Identity], dryRun, null, token));
+
+  private void UninstallPackage(InstalledPackage package) =>
+      PlanAndRun($"Uninstall {package.Identity}", (dryRun, token) =>
+          _client.Uninstall([package.Identity], dryRun, null, token));
+
+  /// What can be done with an installed package; only an explicitly installed one can be
+  /// uninstalled (protocol/lip-uninstall.md).
+  private void PackageActions(InstalledPackage package) {
+    List<(string Label, Action Run)> actions = [("Update", () => UpdatePackage(package))];
+    if (package.Explicit) {
+      actions.Add(("Uninstall", () => UninstallPackage(package)));
+    }
+
+    actions.Add(("Install another package...", () => PromptInstall("")));
+    Push(new ListDialog(
+        this, package.Identity, [.. actions.Select(action => new StyledLine(action.Label))],
+        chosen => actions[chosen].Run()));
   }
 
   /// Asks for the package arguments and the platform of lip install, then installs.

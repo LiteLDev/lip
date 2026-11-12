@@ -22,10 +22,10 @@ public sealed partial class TuiApp {
   private (string, string)[] ServerHints() =>
       _serverRunning
           ? [
-            ("Enter", "send to the server"), ("Ctrl+C", "stop the server"),
-            ("PgUp/PgDn", "scroll"), ("Tab", "next tab"),
+            ("Enter", "send to the server"), ("↑/↓", "earlier lines"), ("Esc", "erase"),
+            ("Ctrl+C", "stop the server"), ("PgUp/PgDn", "scroll"), ("Tab", "next tab"),
           ]
-          : [("Enter", "start the server"), ("PgUp/PgDn", "scroll"), ("Tab", "next tab")];
+          : [("Enter", "start the server"), ("↑/↓", "scroll"), ("Tab", "next tab"), ("q", "quit")];
 
   private void StartServer() {
     if (_serverRunning) {
@@ -174,11 +174,34 @@ public sealed partial class TuiApp {
       case ConsoleKey.PageDown:
         _serverScroll = Math.Max(0, _serverScroll - page);
         return;
+      case ConsoleKey.Escape when _serverScroll > 0:
+        // Back to what the server wrote last.
+        _serverScroll = 0;
+        return;
     }
 
     if (!_serverRunning) {
-      if (key.Key == ConsoleKey.Enter || key.KeyChar == 's') {
-        StartServer();
+      switch (key.Key) {
+        case ConsoleKey.Enter or ConsoleKey.Spacebar:
+          StartServer();
+          break;
+        case ConsoleKey.UpArrow:
+          _serverScroll++;
+          break;
+        case ConsoleKey.DownArrow:
+          _serverScroll = Math.Max(0, _serverScroll - 1);
+          break;
+        case ConsoleKey.Home:
+          _serverScroll = int.MaxValue / 2;
+          break;
+        case ConsoleKey.End:
+          _serverScroll = 0;
+          break;
+        default:
+          if (key.KeyChar == 's') {
+            StartServer();
+          }
+          break;
       }
 
       return;
@@ -190,6 +213,10 @@ public sealed partial class TuiApp {
     }
 
     switch (key.Key) {
+      case ConsoleKey.Escape:
+        _serverLine.Set("");
+        _serverHistoryAt = _serverHistory.Count;
+        return;
       case ConsoleKey.Enter:
         string line = _serverLine.Value;
         _serverInput?.Send(line + "\n");

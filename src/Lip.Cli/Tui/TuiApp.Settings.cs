@@ -7,10 +7,13 @@ namespace Lip.Cli.Tui;
 
 /// The Settings tab (lip config and lip cache clean) and the Develop tab (lip pkg).
 public sealed partial class TuiApp {
-  private static readonly (string, string)[] SettingsHints = [
-    ("Enter", "edit"), ("Del", "reset to default"), ("c", "clean the cache"),
-    ("Tab", "next tab"), ("q", "quit"),
-  ];
+  private (string, string)[] SettingsHints =>
+      _cacheFocused
+          ? [("Enter", "clean the cache"), ("←", "configuration"), ("Tab", "next tab"), ("q", "quit")]
+          : [
+            ("Enter", "edit"), ("Del", "reset to default"), ("→", "cache"),
+            ("c", "clean the cache"), ("Tab", "next tab"), ("q", "quit"),
+          ];
 
   private static readonly (string, string)[] DevelopHints = [
     ("Enter", "run"), ("↑/↓", "select"), ("Tab", "next tab"), ("q", "quit"),
@@ -35,6 +38,8 @@ public sealed partial class TuiApp {
   private List<KeyValuePair<string, string>> _config = [];
   private string? _configError;
   private int _configSelected;
+  // Whether the keys of the Settings tab go to its Cache pane.
+  private bool _cacheFocused;
   private int _developSelected;
 
   private void LoadConfig() {
@@ -57,10 +62,10 @@ public sealed partial class TuiApp {
     int configWidth = Math.Max(30, body.Width * 3 / 5);
     Rect config = Panel(
         _screen, new Rect(body.X, body.Y, configWidth, body.Height), "Configuration",
-        focused: true);
+        focused: !_cacheFocused);
     Rect cache = Panel(
         _screen, new Rect(body.X + configWidth, body.Y, body.Width - configWidth, body.Height),
-        "Cache");
+        "Cache", focused: _cacheFocused);
 
     int keyWidth = Math.Min(24, config.Width / 2);
     _screen.Write(config.X, config.Y, "Key", Theme.Muted);
@@ -72,7 +77,7 @@ public sealed partial class TuiApp {
           config.X + keyWidth, y, config.Width - keyWidth,
           _config[i].Value.Length == 0 ? "(not set)" : _config[i].Value,
           _config[i].Value.Length == 0 ? Theme.Muted : default);
-      if (i == _configSelected) {
+      if (i == _configSelected && !_cacheFocused) {
         _screen.Restyle(config.X - 1, y, config.Width + 2, Theme.Selected);
       }
     }
@@ -101,25 +106,36 @@ public sealed partial class TuiApp {
       _screen.Write(cache.X, row++, line, Theme.Muted, cache.Right);
     }
 
-    _screen.Write(cache.X, row + 1, "[ c  Clean the cache ]", Theme.Strong, cache.Right);
+    _screen.Write(
+        cache.X, row + 1, "[ Clean the cache ]", _cacheFocused ? Theme.Selected : Theme.Strong,
+        cache.Right);
   }
 
   private void SettingsKey(ConsoleKeyInfo key) {
-    if (MoveSelection(key, ref _configSelected, _config.Count, 10, wrap: true)) {
+    if (key.KeyChar == 'c') {
+      CleanCache();
       return;
     }
 
-    if (key.KeyChar == 'c') {
-      Push(new MessageDialog(
-          this, "Clean the cache",
-          [new StyledLine($"Delete {LipDirectories.Cache} and everything in it?")],
-          ["Clean", "Cancel"],
-          choice => {
-            if (choice == 0) {
-              Start("Clean the cache", _ => _client.CacheClean(), done =>
-                  ShowResult("Clean the cache", done, "The cache is clean."));
-            }
-          }));
+    if (_cacheFocused) {
+      switch (key.Key) {
+        case ConsoleKey.Enter or ConsoleKey.Spacebar:
+          CleanCache();
+          break;
+        case ConsoleKey.LeftArrow or ConsoleKey.Escape:
+          _cacheFocused = false;
+          break;
+      }
+
+      return;
+    }
+
+    if (key.Key == ConsoleKey.RightArrow) {
+      _cacheFocused = true;
+      return;
+    }
+
+    if (MoveSelection(key, ref _configSelected, _config.Count, 10, wrap: true)) {
       return;
     }
 
@@ -132,7 +148,7 @@ public sealed partial class TuiApp {
       case ConsoleKey.Delete:
         Start($"Reset {name}", _ => _client.ConfigDelete(name), _ => LoadConfig());
         break;
-      case ConsoleKey.Enter:
+      case ConsoleKey.Enter or ConsoleKey.Spacebar:
         Push(new PromptDialog(
             this, $"Set {name}",
             [new PromptField($"The value of {name}; empty resets it to its default", value)],
@@ -144,6 +160,19 @@ public sealed partial class TuiApp {
                 _ => LoadConfig())));
         break;
     }
+  }
+
+  private void CleanCache() {
+    Push(new MessageDialog(
+        this, "Clean the cache",
+        [new StyledLine($"Delete {LipDirectories.Cache} and everything in it?")],
+        ["Clean", "Cancel"],
+        choice => {
+          if (choice == 0) {
+            Start("Clean the cache", _ => _client.CacheClean(), done =>
+                ShowResult("Clean the cache", done, "The cache is clean."));
+          }
+        }));
   }
 
   private void DrawDevelop(Rect body) {
@@ -182,7 +211,7 @@ public sealed partial class TuiApp {
 
   private void DevelopKey(ConsoleKeyInfo key) {
     if (MoveSelection(key, ref _developSelected, _developActions.Length, 10, wrap: true)
-        || key.Key != ConsoleKey.Enter) {
+        || key.Key is not (ConsoleKey.Enter or ConsoleKey.Spacebar)) {
       return;
     }
 

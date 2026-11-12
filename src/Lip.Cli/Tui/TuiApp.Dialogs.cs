@@ -209,7 +209,7 @@ public sealed partial class TuiApp {
           app.Close(this);
           chosen?.Invoke(buttons.Length - 1);
           return;
-        case ConsoleKey.Enter:
+        case ConsoleKey.Enter or ConsoleKey.Spacebar:
           app.Close(this);
           chosen?.Invoke(_button);
           return;
@@ -252,7 +252,7 @@ public sealed partial class TuiApp {
         case ConsoleKey.Escape:
           app.Close(this);
           return;
-        case ConsoleKey.Enter:
+        case ConsoleKey.Enter or ConsoleKey.Spacebar:
           app.Close(this);
           if (items.Count > 0) {
             chosen(_selected);

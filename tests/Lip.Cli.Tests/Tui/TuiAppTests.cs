@@ -234,6 +234,80 @@ public sealed class TuiAppTests : IDisposable {
   }
 
   [Fact]
+  public async Task Browse_Arrows_MoveBetweenTheFiltersAndTheMods() {
+    TuiApp app = Start();
+    _terminal.Type("2");
+    await WaitFor(app, "Mods — 2 ·");
+
+    // ← goes to the filters, on the left; → and Esc come back.
+    _terminal.Press(ConsoleKey.LeftArrow);
+    await WaitFor(app, "back to the mods");
+    _terminal.Press(ConsoleKey.RightArrow);
+    await WaitFor(app, "Enter install");
+    _terminal.Press(ConsoleKey.LeftArrow);
+    await WaitFor(app, "back to the mods");
+
+    // Enter on a heading shows its rows, and on a row includes it.
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "[+] 1.26.60");
+    Assert.Contains("Mods — 1 ·", app.ScreenText);
+
+    // ← on a row goes to its heading, and hides the rows.
+    _terminal.Press(ConsoleKey.LeftArrow);
+    await WaitFor(app, "▸ Game version");
+    _terminal.Press(ConsoleKey.Escape);
+    await WaitFor(app, "Enter install");
+  }
+
+  [Fact]
+  public async Task Browse_Search_ArrowsGoOnToTheModsAndEscClearsIt() {
+    TuiApp app = Start();
+    _terminal.Type("2");
+    await WaitFor(app, "Mods — 2 ·");
+
+    // ↓ leaves the search for the mods it found, keeping it.
+    _terminal.Type("/acme");
+    _terminal.Press(ConsoleKey.DownArrow);
+    await WaitFor(app, "2 of 2 ·");
+    Assert.Contains("Search acme", app.ScreenText);
+    Assert.Contains("Enter install", app.ScreenText);
+
+    // Esc among the mods clears the search.
+    _terminal.Press(ConsoleKey.Escape);
+    await WaitFor(app, screen => !screen.Contains("Search acme", StringComparison.Ordinal));
+    Assert.Contains("Mods — 2 ·", app.ScreenText);
+  }
+
+  [Fact]
+  public async Task Packages_Enter_WithoutAPackage_AsksWhatToInstall() {
+    TuiApp app = Start();
+    await WaitFor(app, "No package is installed");
+
+    _terminal.Press(ConsoleKey.Enter);
+
+    await WaitFor(app, "Install packages");
+  }
+
+  [Fact]
+  public async Task Settings_Arrows_MoveToTheCacheWhereEnterCleansIt() {
+    TuiApp app = Start();
+    _terminal.Type("4");
+    await WaitFor(app, "github_proxy");
+
+    _terminal.Press(ConsoleKey.RightArrow);
+    await WaitFor(app, "Enter clean the cache");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "and everything in it?");
+
+    // Esc cancels; ← goes back to the configuration.
+    _terminal.Press(ConsoleKey.Escape);
+    _terminal.Press(ConsoleKey.LeftArrow);
+    await WaitFor(app, "Enter edit");
+  }
+
+  [Fact]
   public async Task Browse_Lists_GoAroundAtTheirEnds() {
     TuiApp app = Start();
     _terminal.Type("2");

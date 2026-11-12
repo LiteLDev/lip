@@ -81,16 +81,16 @@ public sealed partial class TuiApp {
 
   private (string, string)[] BrowseHints() {
     if (_searching) {
-      return [("Enter", "done"), ("Esc", "clear"), ("Ctrl+U", "erase")];
+      return [("Enter", "done"), ("↑/↓", "to the mods"), ("Esc", "clear"), ("Ctrl+U", "erase")];
     }
 
     return _filtering
         ? [
-          ("Enter", "expand or collapse"), ("Space", "include"), ("x", "exclude"),
-          ("c", "clear all"), ("Esc", "back to the mods"),
+          ("Enter/Space", "include, or expand"), ("x", "exclude"), ("c", "clear all"),
+          ("←", "collapse"), ("→/Esc", "back to the mods"),
         ]
         : [
-          ("/", "search"), ("f", "filters"), ("s", "sort"), ("Enter", "install"),
+          ("/", "search"), ("←", "filters"), ("s", "sort"), ("Enter", "install"),
           ("r", "readme"), ("o", "open"), ("R", "reload"),
         ];
   }
@@ -437,8 +437,15 @@ public sealed partial class TuiApp {
   private void BrowseKey(ConsoleKeyInfo key) {
     if (_searching) {
       switch (key.Key) {
-        case ConsoleKey.Enter or ConsoleKey.DownArrow:
+        case ConsoleKey.Enter:
           _searching = false;
+          return;
+        case ConsoleKey.UpArrow or ConsoleKey.DownArrow or ConsoleKey.PageUp
+            or ConsoleKey.PageDown:
+          // On to the mods that the search found.
+          _searching = false;
+          MoveSelection(key, ref _modSelected, _mods.Count, 10, wrap: true);
+          _modSelectedAt = Environment.TickCount64;
           return;
         case ConsoleKey.Escape:
           _searching = false;
@@ -468,7 +475,17 @@ public sealed partial class TuiApp {
       return;
     }
 
-    if (key.Key == ConsoleKey.Enter) {
+    switch (key.Key) {
+      case ConsoleKey.LeftArrow when _catalog is not null:
+        _filtering = true;
+        return;
+      case ConsoleKey.Escape when _search.Value.Length > 0:
+        _search.Set("");
+        SelectMods();
+        return;
+    }
+
+    if (key.Key is ConsoleKey.Enter or ConsoleKey.Spacebar) {
       if (SelectedMod is { } mod) {
         LoadDetail(
             mod.Id, detail => Push(new VersionDialog(this, mod, detail)),
@@ -508,11 +525,12 @@ public sealed partial class TuiApp {
     }
   }
 
-  /// The keys of the Filters pane. On the heading of a section, Enter, Space, → and ← show or
-  /// hide its rows. On a row, Space includes it and x excludes it when it is a tag or a
-  /// dependency; either takes it back when pressed again.
+  /// The keys of the Filters pane, to the left of the mods: → goes back to the mods, as Esc
+  /// does. On the heading of a section, Enter and Space show or hide its rows, and ← hides
+  /// them. On a row, Enter and Space include it, x excludes it when it is a tag or a dependency
+  /// (either takes it back when pressed again), and ← goes to its heading.
   private void FilterKey(ConsoleKeyInfo key) {
-    if (key.Key == ConsoleKey.Escape || key.KeyChar == 'f') {
+    if (key.Key is ConsoleKey.Escape or ConsoleKey.RightArrow || key.KeyChar == 'f') {
       _filtering = false;
       return;
     }
@@ -543,7 +561,6 @@ public sealed partial class TuiApp {
     if (row.Kind == FilterKind.Heading) {
       bool expanded = _expanded.Contains(row.Section);
       if (key.Key == ConsoleKey.Enter || include
-          || (key.Key == ConsoleKey.RightArrow && !expanded)
           || (key.Key == ConsoleKey.LeftArrow && expanded)) {
         if (!_expanded.Remove(row.Section)) {
           _expanded.Add(row.Section);
@@ -552,6 +569,8 @@ public sealed partial class TuiApp {
 
       return;
     }
+
+    include |= key.Key == ConsoleKey.Enter;
 
     if (key.Key == ConsoleKey.LeftArrow) {
       // Back to the heading of the section, which hides its rows.
@@ -682,7 +701,7 @@ public sealed partial class TuiApp {
         case ConsoleKey.Escape:
           _app.Close(this);
           return;
-        case ConsoleKey.Enter:
+        case ConsoleKey.Enter or ConsoleKey.Spacebar:
           _app.Close(this);
           _app.InstallMod(Package(_selected == 0 ? null : versions[_selected - 1].Version));
           return;

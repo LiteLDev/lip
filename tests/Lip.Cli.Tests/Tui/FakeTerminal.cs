@@ -26,8 +26,8 @@ public sealed class FakeTerminal(int width = 120, int height = 36) : ITerminal, 
   /// Presses the keys of the characters of a text.
   public void Type(string text) {
     foreach (char c in text) {
-      ConsoleKey key = char.IsAsciiLetter(c)
-          ? ConsoleKey.A + (char.ToUpperInvariant(c) - 'A')
+      ConsoleKey key = char.IsAsciiLetter(c) ? ConsoleKey.A + (char.ToUpperInvariant(c) - 'A')
+          : c == ' ' ? ConsoleKey.Spacebar
           : 0;
       _keys.Add(new ConsoleKeyInfo(c, key, shift: char.IsUpper(c), alt: false, control: false));
     }
