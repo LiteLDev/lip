@@ -9,14 +9,13 @@ permissions:
   contents: read
 
 jobs:
+  # Not for Linux on arm64, where a LeviLamina server does not run (see build.yml).
   build:
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runtime: linux-arm64
-            runs-on: ubuntu-24.04-arm
           - runtime: linux-x64
             runs-on: ubuntu-latest
           - runtime: osx-arm64

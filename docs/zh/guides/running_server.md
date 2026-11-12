@@ -69,6 +69,26 @@ lip install github.com/LiteLDev/LeviLamina
 lip run
 ```
 
+### macOS 与 arm64
+
+服务器是 x64 的 Windows 程序。lip 在它发布的每个系统上都用真实的 LeviLamina 服务器测试过，配置如下：
+
+| 系统 | 由什么运行服务器 |
+| --- | --- |
+| x64 上的 Windows | Windows。 |
+| arm64 上的 Windows | Windows，由它模拟 x64。 |
+| x64 上的 Linux | Wine。 |
+| x64 上的 macOS | Wine。 |
+| arm64 上的 macOS | x64 的 Wine，由 Rosetta 2 运行（`softwareupdate --install-rosetta`）。 |
+
+在 x64 的 macOS 上，Wine 11.0 无法创建前缀，Wine 11.21 可以。macOS 的 Wine 构建见 [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds)。
+
+lip 不为 arm64 的 Linux 发布，因为试过的办法都无法在那里可靠地运行 LeviLamina 服务器：
+
+- [Hangover](https://github.com/AndreRH/hangover) 能运行原版 Bedrock Dedicated Server，但 LeviLamina 修改过的服务器一启动就失败。
+- 由 [box64](https://github.com/ptitSeb/box64) 运行的 x64 Wine 无法运行 `bdsdown`，也就是安装包时下载服务器的程序。
+- 由 [FEX](https://fex-emu.com/) 运行的 x64 Wine 成功运行过两次 LeviLamina 服务器，但十次尝试中有九次 `bdsdown` 失败。
+
 ### Linux 原生包
 
 如需改为安装其他平台的包，例如 `github.com/LiteLDev/bds` 的 Linux 原生服务器，请在新工作区的第一条命令中指定平台：

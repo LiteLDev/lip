@@ -22,4 +22,4 @@
 
 ## 便携压缩包
 
-每个 [Release](https://github.com/LiteLDev/lip/releases/latest) 还为各平台提供便携压缩包：Linux 为 `lip-<version>-<platform>.tar.xz`，macOS 与 Windows 为 `lip-<version>-<platform>.zip`，其中 `<platform>` 为 `linux-x64`、`linux-arm64`、`osx-x64`、`osx-arm64`、`win-x64` 或 `win-arm64`。请先安装 [.NET 10 运行时](https://dotnet.microsoft.com/download/dotnet/10.0)，再将压缩包解压到任意目录，并把该目录加入 `PATH`。
+每个 [Release](https://github.com/LiteLDev/lip/releases/latest) 还为各平台提供便携压缩包：Linux 为 `lip-<version>-<platform>.tar.xz`，macOS 与 Windows 为 `lip-<version>-<platform>.zip`，其中 `<platform>` 为 `linux-x64`、`osx-x64`、`osx-arm64`、`win-x64` 或 `win-arm64`。请先安装 [.NET 10 运行时](https://dotnet.microsoft.com/download/dotnet/10.0)，再将压缩包解压到任意目录，并把该目录加入 `PATH`。ARM64 的 Linux 没有压缩包，因为 LeviLamina 服务器无法在那里运行（见[运行服务器](../guides/running_server.md#macos-与-arm64)）。

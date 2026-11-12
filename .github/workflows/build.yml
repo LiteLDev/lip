@@ -1,6 +1,7 @@
 on:
   pull_request:
     paths: &paths
+      - .github/scripts/**
       - .github/workflows/build.yml
       - 'src/**'
       - 'tests/**'
@@ -15,14 +16,14 @@ permissions:
   contents: read
 
 jobs:
+  # lip is not built for Linux on arm64: no Wine there runs a LeviLamina server (see the
+  # job server).
   build:
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runtime: linux-arm64
-            runs-on: ubuntu-24.04-arm
           - runtime: linux-x64
             runs-on: ubuntu-latest
           - runtime: osx-arm64
@@ -60,6 +61,67 @@ jobs:
 
       # Code style and the .NET analyzers at build time, with every warning failing the build.
       - run: dotnet build -warnaserror -p:EnforceCodeStyleInBuild=true
+
+  # Installs LeviLamina and runs the real server with the lip that was built, on every system
+  # lip is released for. Where the system is not Windows, Wine runs the server.
+  #
+  # Linux on arm64 is not among them. There, Hangover runs the server of Minecraft, but not the
+  # one LeviLamina has modified; under box64, and nine times in ten under FEX, the Wine for
+  # x64 fails to run bdsdown, which downloads the server.
+  server:
+    needs: build
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: linux-x64
+            runs-on: ubuntu-latest
+          - runtime: osx-arm64
+            runs-on: macos-latest
+          - runtime: osx-x64
+            runs-on: macos-15-intel
+          - runtime: win-arm64
+            runs-on: windows-11-arm
+          - runtime: win-x64
+            runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: lip-${{ github.sha }}-${{ matrix.runtime }}
+          path: bin
+
+      - if: matrix.runtime == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wine
+
+      # Wine for macOS is built for x64 only: Rosetta runs it.
+      - if: matrix.runtime == 'osx-arm64'
+        run: softwareupdate --install-rosetta --agree-to-license
+
+      # Wine 11.0 does not make its prefix on macOS for x64.
+      - if: runner.os == 'macOS'
+        run: |
+          curl -fsSL -o wine.tar.xz https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.21/wine-devel-11.21-osx64.tar.xz
+          mkdir "$HOME/wine"
+          tar -xf wine.tar.xz -C "$HOME/wine"
+          dirname "$(find "$HOME/wine" -type f -name wine -path '*/bin/*' | head -n 1)" >> "$GITHUB_PATH"
+
+      - if: runner.os != 'Windows'
+        run: wine --version
+
+      - shell: bash
+        run: |
+          chmod +x bin/lip* || true
+          bash .github/scripts/real-server.sh "$PWD/bin/lip"
 
   test:
     runs-on: ${{ matrix.runs-on }}

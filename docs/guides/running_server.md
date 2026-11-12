@@ -69,6 +69,26 @@ lip install github.com/LiteLDev/LeviLamina
 lip run
 ```
 
+### macOS and arm64
+
+The server is a Windows program for x64. lip is tested with a real LeviLamina server on each system it is released for, set up as follows:
+
+| System | What runs the server |
+| --- | --- |
+| Windows on x64 | Windows. |
+| Windows on arm64 | Windows, which emulates x64. |
+| Linux on x64 | Wine. |
+| macOS on x64 | Wine. |
+| macOS on arm64 | Wine for x64, run by Rosetta 2 (`softwareupdate --install-rosetta`). |
+
+On macOS on x64, Wine 11.0 does not create its prefix; Wine 11.21 does. Builds of Wine for macOS are at [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds).
+
+lip is not released for Linux on arm64, where nothing that was tried runs a LeviLamina server reliably:
+
+- [Hangover](https://github.com/AndreRH/hangover) runs the Bedrock Dedicated Server, but not the one LeviLamina has modified, which fails as it starts.
+- Wine for x64 run by [box64](https://github.com/ptitSeb/box64) fails to run `bdsdown`, which downloads the server while packages are installed.
+- Wine for x64 run by [FEX](https://fex-emu.com/) ran a LeviLamina server twice, but `bdsdown` failed in nine of ten attempts.
+
 ### Linux-Native Packages
 
 To install the packages of another platform instead, such as the Linux-native server of `github.com/LiteLDev/bds`, give the platform on the first command of a new workspace:
