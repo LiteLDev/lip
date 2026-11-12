@@ -17,12 +17,17 @@ public class ModCatalogTests {
             "gameVersions": ["1.26.60", "1.26.51"],
             "deps": {"github.com/LiteLDev/LeviLamina": "26.60.*"},
             "stars": 12, "updated": "2026-11-03T13:14:02Z", "created": "2023-12-29T13:10:56Z",
+            "license": "MIT",
             "url": "https://levimc.org/mods/github.com/LiteLDev/LegacyMoney/", "requiredBy": 3
           },
           {
             "id": "github.com/IceBlcokMC/PLand", "name": "PLand", "owner": "IceBlcokMC",
             "description": "基于 LeviLamina 的领地系统", "tags": ["land", "pland", "Server"],
-            "side": ["server"], "platform": ["win-x64"], "stars": 35,
+            "side": ["server"], "platform": ["win-x64"], "stars": 35, "license": "LGPL-3.0",
+            "deps": {
+              "github.com/LiteLDev/LeviLamina": "26.60.*",
+              "github.com/LiteLDev/LegacyMoney#lib": "0.23.*"
+            },
             "updated": "2026-11-04T00:00:00Z", "created": "2024-06-01T00:00:00Z"
           },
           {
@@ -79,7 +84,14 @@ public class ModCatalogTests {
               {"file": "README.md", "lang": "en", "text": "English"}
             ],
             "versions": [
-              {"version": "0.23.1", "prerelease": false, "released": "2026-11-03T13:14:02Z"},
+              {
+                "version": "0.23.1", "prerelease": false, "released": "2026-11-03T13:14:02Z",
+                "variants": {
+                  "lua": [{"side": "server", "platform": "win-x64"}],
+                  "client": [{"side": "client", "platform": "win-x64"}],
+                  "": [{"side": "client"}, {"side": "server"}]
+                }
+              },
               {"version": "0.23.0-rc.1", "prerelease": true}
             ]
           }
@@ -96,6 +108,10 @@ public class ModCatalogTests {
     Assert.Equal("English", detail.Readme);
     Assert.Equal(["0.23.1", "0.23.0-rc.1"], detail.Versions.Select(v => v.Version));
     Assert.True(detail.Versions[1].Prerelease);
+    // The variants with a build for a server, the default one first; the default one alone
+    // for a version that does not say.
+    Assert.Equal(["", "lua"], detail.Versions[0].Variants);
+    Assert.Equal([""], detail.Versions[1].Variants);
   }
 
   [Theory]
@@ -151,6 +167,55 @@ public class ModCatalogTests {
         CatalogSort.Relevance);
 
     Assert.Equal(expected, string.Join(',', mods.Select(mod => mod.Name)));
+  }
+
+  [Theory]
+  // Under one of the license families.
+  [InlineData("permissive", "", "", "LegacyMoney")]
+  [InlineData("permissive,weak-copyleft", "", "", "LegacyMoney,PLand")]
+  [InlineData("none", "", "", "Arke")]
+  [InlineData("copyleft", "", "", "")]
+  // Depending on every included package, in any case and variant, and on no excluded one.
+  [InlineData("", "github.com/liteldev/levilamina", "", "LegacyMoney,PLand")]
+  [InlineData("", "github.com/liteldev/levilamina,github.com/liteldev/legacymoney", "", "PLand")]
+  [InlineData("", "", "github.com/liteldev/legacymoney", "LegacyMoney,Arke")]
+  [InlineData("", "github.com/liteldev/levilamina", "github.com/liteldev/legacymoney", "LegacyMoney")]
+  [InlineData("weak-copyleft", "github.com/liteldev/levilamina", "", "PLand")]
+  public async Task Select_LicensesAndDependencies_Filter(
+      string licenses, string include, string exclude, string expected) {
+    CatalogIndex index = await ReadIndex();
+    static string[] Split(string list) => list.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+    IReadOnlyList<CatalogMod> mods = CatalogQuery.Select(
+        index, "",
+        new CatalogFilter(null, [], [], []) {
+          Licenses = Split(licenses),
+          IncludeDependencies = Split(include),
+          ExcludeDependencies = Split(exclude),
+        },
+        CatalogSort.Relevance);
+
+    Assert.Equal(expected, string.Join(',', mods.Select(mod => mod.Name)));
+  }
+
+  [Theory]
+  [InlineData("github.com/a/b", "MIT", "MIT", "permissive")]
+  [InlineData("github.com/a/b", "BSD-3-Clause", "BSD-3-Clause", "permissive")]
+  [InlineData("github.com/a/b", "LGPL-3.0", "LGPL-3.0", "weak-copyleft")]
+  [InlineData("github.com/a/b", "gpl-3.0", "gpl-3.0", "copyleft")]
+  [InlineData("github.com/a/b", "AGPL-3.0", "AGPL-3.0", "copyleft")]
+  [InlineData("github.com/a/b", "NOASSERTION", "NOASSERTION", "other")]
+  [InlineData("github.com/a/b", null, null, "none")]
+  [InlineData("github.com/a/b", "", null, "none")]
+  // A license that GitHub cannot tell and levimc.org/mods overrides.
+  [InlineData("github.com/Ieckseyr/HologramLib", "NOASSERTION", "MIT", "permissive")]
+  public void LicenseFamily_SortsTheLicenseOfAModIntoAFamily(
+      string id, string? license, string? shown, string family) {
+    CatalogMod mod = new(id, "x", "", "", [], [], [], [], new Dictionary<string, string>(), 0,
+        null, null, 0, "", license);
+
+    Assert.Equal(shown, CatalogQuery.LicenseOf(mod));
+    Assert.Equal(family, CatalogQuery.LicenseFamily(mod));
   }
 
   [Fact]

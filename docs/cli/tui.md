@@ -39,14 +39,26 @@ The Browse tab reads the mod catalogue of levimc.org (`https://levimc.org/api/v4
 | `/` | Searches by name, id, author, tag and description. |
 | `s` | Changes the order: relevance, stars, last update, newest. |
 | `f` | Moves to the Filters pane; `Esc` moves back. |
-| `Enter` | Installs the selected mod: asks which version. |
+| `Enter` | Installs the selected mod: asks which variant and version. |
 | `r` | Shows its README. |
 | `o` | Opens its page in the browser. |
 | `R` | Reads the catalogue again. |
 
-In the Filters pane, `Space` includes the selected game version or tag, and `x` excludes the selected tag; pressing the key again takes it back, and `c` clears every filter. The list then holds the mods that run on one of the included game versions, carry every included tag and carry none of the excluded ones. The tags are those of levimc.org/mods: its featured tags first, then the other tags.
+The Filters pane has a section for each kind of filter: game version, tags, other tags, license and dependencies. A section shows its heading only until you press `Enter` on it; a heading says how many of its rows are chosen.
 
-`Enter` on a mod lists what can be installed: the latest version, each version of the catalogue, and **Custom**, which asks for what follows the `@` of a package: a version, `branch:<name>`, `tag:<name>` or `rev:<commit>`. The plan of the installation is shown next, as for every change.
+| Key | Does |
+| --- | --- |
+| `Enter` | On a heading: shows or hides the rows of the section. |
+| `Space` | Includes the selected row. |
+| `x` | Excludes the selected row, when it is a tag or a dependency. |
+| `c` | Clears every filter. |
+| `Esc` | Moves back to the mods. |
+
+The list then holds the mods that run on one of the included game versions, carry every included tag and none of the excluded ones, are under one of the included license families, and depend on every included package and on no excluded one. The tags and the license families are those of levimc.org/mods.
+
+`Enter` on a mod opens one dialog for the variant and the version to install. `←` and `→` change the variant, among those with a build for a server. Below it are the latest version and each version of the catalogue that has the variant. `c` asks for a custom version instead: what follows the `@` of a package, that is a version, `branch:<name>`, `tag:<name>` or `rev:<commit>`. The plan of the installation is shown next, as for every change.
+
+Every list goes around: `↑` on its first row moves to the last, and `↓` on the last to the first.
 
 ## Running the server
 

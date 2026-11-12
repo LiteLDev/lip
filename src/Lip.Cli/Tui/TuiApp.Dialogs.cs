@@ -260,7 +260,7 @@ public sealed partial class TuiApp {
           return;
       }
 
-      MoveSelection(key, ref _selected, items.Count, _rows);
+      MoveSelection(key, ref _selected, items.Count, _rows, wrap: true);
     }
   }
 

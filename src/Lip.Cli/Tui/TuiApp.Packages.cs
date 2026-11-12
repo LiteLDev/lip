@@ -110,7 +110,7 @@ public sealed partial class TuiApp {
   }
 
   private void PackagesKey(ConsoleKeyInfo key) {
-    if (MoveSelection(key, ref _packageSelected, _installed.Count, 10)) {
+    if (MoveSelection(key, ref _packageSelected, _installed.Count, 10, wrap: true)) {
       return;
     }
 

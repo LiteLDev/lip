@@ -330,8 +330,10 @@ public sealed partial class TuiApp {
     return selected >= top + rows ? selected - rows + 1 : Math.Max(0, top);
   }
 
-  /// Moves a selection by a key; false when the key does not move it.
-  private static bool MoveSelection(ConsoleKeyInfo key, ref int selected, int count, int page) {
+  /// Moves a selection by a key; false when the key does not move it. With wrap, the arrow
+  /// keys go from the first item up to the last, and from the last down to the first.
+  private static bool MoveSelection(
+      ConsoleKeyInfo key, ref int selected, int count, int page, bool wrap = false) {
     int moved = key.Key switch {
       ConsoleKey.UpArrow => selected - 1,
       ConsoleKey.DownArrow => selected + 1,
@@ -345,7 +347,9 @@ public sealed partial class TuiApp {
       return false;
     }
 
-    selected = Math.Clamp(moved, 0, Math.Max(0, count - 1));
+    selected = wrap && count > 0 && key.Key is ConsoleKey.UpArrow or ConsoleKey.DownArrow
+        ? ((moved % count) + count) % count
+        : Math.Clamp(moved, 0, Math.Max(0, count - 1));
     return true;
   }
 

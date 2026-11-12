@@ -21,7 +21,7 @@ public sealed class TuiAppTests : IDisposable {
             "id": "github.com/acme/Alpha", "name": "Alpha", "owner": "acme",
             "description": "An economy core", "tags": ["type:mod", "money"],
             "side": ["server"], "platform": ["win-x64"], "gameVersions": ["1.26.60"],
-            "deps": {"github.com/LiteLDev/LeviLamina": "26.60.*"}, "stars": 7,
+            "deps": {"github.com/LiteLDev/LeviLamina": "26.60.*"}, "stars": 7, "license": "MIT",
             "updated": "2026-11-01T00:00:00Z", "created": "2025-01-01T00:00:00Z",
             "url": "https://levimc.org/mods/github.com/acme/Alpha/", "requiredBy": 2
           },
@@ -45,8 +45,13 @@ public sealed class TuiAppTests : IDisposable {
         "id": "github.com/acme/Alpha", "license": "MIT",
         "latest": {"variant": "", "version": "1.2.0"},
         "versions": [
-          {"version": "1.2.0", "prerelease": false, "released": "2026-11-01T00:00:00Z"},
-          {"version": "1.1.0", "prerelease": false}
+          {
+            "version": "1.2.0", "prerelease": false, "released": "2026-11-01T00:00:00Z",
+            "variants": {
+              "": [{"side": "server"}], "lua": [{"side": "server"}], "client": [{"side": "client"}]
+            }
+          },
+          {"version": "1.1.0", "prerelease": false, "variants": {"": [{"side": "server"}]}}
         ],
         "readmes": [{"lang": "en", "text": "# Alpha\nThe readme of Alpha."}]
       }
@@ -126,8 +131,8 @@ public sealed class TuiAppTests : IDisposable {
     Assert.Contains("github.com/acme/Alpha", app.ScreenText);
     Assert.Contains("LeviLamina 26.60.*", app.ScreenText);
     // The file of the selected mod is read once the selection rests.
-    await WaitFor(app, "License  MIT");
-    Assert.Contains("Latest   1.2.0", app.ScreenText);
+    await WaitFor(app, "Latest   1.2.0");
+    Assert.Contains("License  MIT", app.ScreenText);
   }
 
   [Fact]
@@ -150,59 +155,124 @@ public sealed class TuiAppTests : IDisposable {
   }
 
   [Fact]
-  public async Task Browse_Filters_IncludeAGameVersionAndExcludeATag() {
+  public async Task Browse_Filters_AreCollapsedSectionsOfWhatServerModsHave() {
     TuiApp app = Start();
     _terminal.Type("2");
     await WaitFor(app, "Mods — 2 ·");
-    // Only what mods for a server have is offered: not the tag of the mod for clients.
-    Assert.Contains("Game version", app.ScreenText);
-    Assert.Contains("Server management", app.ScreenText);
-    Assert.Contains("Economy", app.ScreenText);
-    Assert.DoesNotContain("Visual & HUD", app.ScreenText);
 
-    // The first row is the game version of Alpha.
-    _terminal.Type("f ");
+    // Every section shows its heading only, with the number of its rows.
+    Assert.Contains("▸ Game version", app.ScreenText);
+    Assert.Contains("▸ Tags", app.ScreenText);
+    Assert.Contains("▸ License", app.ScreenText);
+    Assert.Contains("▸ Depends on", app.ScreenText);
+    Assert.DoesNotContain("[ ]", app.ScreenText);
+
+    // Enter on the heading of the tags shows them: not the tag of the mod for clients.
+    _terminal.Type("f");
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "▾ Tags");
+    Assert.Contains("[ ] Server management", app.ScreenText);
+    Assert.Contains("[ ] Economy", app.ScreenText);
+    Assert.DoesNotContain("Visual & HUD", app.ScreenText);
+    Assert.DoesNotContain("[ ] 1.26.60", app.ScreenText);
+
+    // Enter again hides them.
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "▸ Tags");
+    Assert.DoesNotContain("[ ]", app.ScreenText);
+  }
+
+  [Fact]
+  public async Task Browse_Filters_IncludeAndExcludeSeveralKinds() {
+    TuiApp app = Start();
+    _terminal.Type("2");
+    await WaitFor(app, "Mods — 2 ·");
+
+    // The game version of Alpha.
+    _terminal.Type("f");
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Type(" ");
     await WaitFor(app, "Mods — 1 · sort: Relevance · 1 filters");
     Assert.Contains("[+] 1.26.60", app.ScreenText);
     Assert.Contains("Alpha · acme", app.ScreenText);
 
+    // Collapsed, the section says that one of its rows is chosen.
+    _terminal.Press(ConsoleKey.LeftArrow);
+    await WaitFor(app, "▸ Game version");
+    Assert.Contains("1 chosen", app.ScreenText);
+
     _terminal.Type("c");
     await WaitFor(app, "Mods — 2 · sort: Relevance");
 
-    // Down to "Economy", the tag of Alpha, and exclude it.
-    _terminal.Press(ConsoleKey.DownArrow);
+    // Up from the first row goes around to the last: the dependencies. Excluding the one of
+    // Alpha leaves Beta.
+    _terminal.Press(ConsoleKey.UpArrow);
+    _terminal.Press(ConsoleKey.Enter);
     _terminal.Press(ConsoleKey.DownArrow);
     _terminal.Type("x");
     await WaitFor(app, "Mods — 1 · sort: Relevance · 1 filters");
-    Assert.Contains("[-] Economy", app.ScreenText);
+    Assert.Contains("[-] LeviLamina", app.ScreenText);
     Assert.Contains("Beta · acme", app.ScreenText);
     Assert.DoesNotContain("Alpha · acme", app.ScreenText);
 
     // Including it instead takes the exclusion back.
     _terminal.Type(" ");
-    await WaitFor(app, "[+] Economy");
+    await WaitFor(app, "[+] LeviLamina");
     Assert.Contains("Alpha · acme", app.ScreenText);
+
+    // And the license family of Alpha, with the dependency: still Alpha alone.
+    _terminal.Press(ConsoleKey.UpArrow);
+    _terminal.Press(ConsoleKey.UpArrow);
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Type(" ");
+    await WaitFor(app, "Mods — 1 · sort: Relevance · 2 filters");
+    Assert.Contains("[+] Permissive", app.ScreenText);
+    Assert.Contains("[ ] No license", app.ScreenText);
   }
 
   [Fact]
-  public async Task Browse_Enter_AsksForTheVersionAndNeverForTheWholePackageArgument() {
+  public async Task Browse_Lists_GoAroundAtTheirEnds() {
+    TuiApp app = Start();
+    _terminal.Type("2");
+    await WaitFor(app, "1 of 2 ·");
+
+    _terminal.Press(ConsoleKey.UpArrow);
+    await WaitFor(app, "2 of 2 ·");
+    _terminal.Press(ConsoleKey.DownArrow);
+    await WaitFor(app, "1 of 2 ·");
+  }
+
+  [Fact]
+  public async Task Browse_Enter_AsksForTheVariantAndTheVersionInOneDialog() {
     TuiApp app = Start();
     _terminal.Type("2");
     await WaitFor(app, "Mods — 2 ·");
 
     _terminal.Press(ConsoleKey.Enter);
-    await WaitFor(app, "Install Alpha — choose a version");
+    await WaitFor(app, "Install Alpha");
+    Assert.Contains("Variant  ◀ (default) ▶  1 of 2", app.ScreenText);
     Assert.Contains("Latest                  1.2.0", app.ScreenText);
     Assert.Contains("1.1.0", app.ScreenText);
-    Assert.Contains("Custom...", app.ScreenText);
     Assert.DoesNotContain("Install packages", app.ScreenText);
 
-    // The last entry asks for what follows the @ only.
-    _terminal.Press(ConsoleKey.End);
-    _terminal.Press(ConsoleKey.Enter);
-    await WaitFor(app, "Install Alpha — custom version");
+    // The variant "lua" has a build for a server in 1.2.0 only; "client" has none at all.
+    _terminal.Press(ConsoleKey.RightArrow);
+    await WaitFor(app, "Variant  ◀ lua ▶  2 of 2");
+    Assert.Contains("github.com/acme/Alpha#lua", app.ScreenText);
+    Assert.DoesNotContain("1.1.0", app.ScreenText);
+
+    // c asks for what follows the @ only, for the chosen variant.
+    _terminal.Type("c");
+    await WaitFor(app, "Install github.com/acme/Alpha#lua");
     Assert.Contains("rev:<commit>", app.ScreenText);
     Assert.DoesNotContain("--platform", app.ScreenText);
+
+    // Cancelling comes back to the versions.
+    _terminal.Press(ConsoleKey.Escape);
+    await WaitFor(app, "Variant  ◀ lua ▶  2 of 2");
   }
 
   [Fact]

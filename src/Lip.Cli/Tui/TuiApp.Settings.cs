@@ -105,7 +105,7 @@ public sealed partial class TuiApp {
   }
 
   private void SettingsKey(ConsoleKeyInfo key) {
-    if (MoveSelection(key, ref _configSelected, _config.Count, 10)) {
+    if (MoveSelection(key, ref _configSelected, _config.Count, 10, wrap: true)) {
       return;
     }
 
@@ -181,7 +181,7 @@ public sealed partial class TuiApp {
   }
 
   private void DevelopKey(ConsoleKeyInfo key) {
-    if (MoveSelection(key, ref _developSelected, _developActions.Length, 10)
+    if (MoveSelection(key, ref _developSelected, _developActions.Length, 10, wrap: true)
         || key.Key != ConsoleKey.Enter) {
       return;
     }

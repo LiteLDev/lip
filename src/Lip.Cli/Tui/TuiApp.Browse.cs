@@ -13,11 +13,15 @@ public sealed partial class TuiApp {
     Heading,
     GameVersion,
     Tag,
+    License,
+    Dependency,
   }
 
-  /// A row of the Filters pane: a heading, or a game version or a tag that mods are filtered by,
-  /// with the number of mods that have it.
-  private sealed record FilterRow(FilterKind Kind, string Key, string Label, int Count);
+  /// A row of the Filters pane: the heading of a section, or a game version, a tag, a license
+  /// family or a dependency that mods are filtered by, with the number of mods that have it.
+  /// Section is the label of the heading the row is below, or of the heading itself.
+  private sealed record FilterRow(
+      FilterKind Kind, string Section, string Key, string Label, int Count);
 
   private readonly TextField _search = new();
   private readonly Dictionary<string, CatalogDetail> _details = new(StringComparer.Ordinal);
@@ -25,6 +29,11 @@ public sealed partial class TuiApp {
   private readonly HashSet<string> _includeTags = new(StringComparer.Ordinal);
   private readonly HashSet<string> _excludeTags = new(StringComparer.Ordinal);
   private readonly HashSet<string> _gameVersions = new(StringComparer.Ordinal);
+  private readonly HashSet<string> _licenses = new(StringComparer.Ordinal);
+  private readonly HashSet<string> _includeDependencies = new(StringComparer.Ordinal);
+  private readonly HashSet<string> _excludeDependencies = new(StringComparer.Ordinal);
+  // The sections of the Filters pane that show their rows; the others show their heading only.
+  private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
   private CatalogIndex? _catalog;
   private string? _catalogError;
   private bool _catalogLoading;
@@ -39,7 +48,36 @@ public sealed partial class TuiApp {
   private int _modTop;
   private long _modSelectedAt;
 
-  private int FilterCount => _includeTags.Count + _excludeTags.Count + _gameVersions.Count;
+  private int FilterCount =>
+      _includeTags.Count + _excludeTags.Count + _gameVersions.Count + _licenses.Count
+          + _includeDependencies.Count + _excludeDependencies.Count;
+
+  /// The chosen values of a kind of filter that mods must have.
+  private HashSet<string> Included(FilterKind kind) => kind switch {
+    FilterKind.GameVersion => _gameVersions,
+    FilterKind.License => _licenses,
+    FilterKind.Dependency => _includeDependencies,
+    _ => _includeTags,
+  };
+
+  /// The chosen values of a kind of filter that mods must not have; null for a kind that
+  /// cannot be excluded.
+  private HashSet<string>? Excluded(FilterKind kind) => kind switch {
+    FilterKind.Tag => _excludeTags,
+    FilterKind.Dependency => _excludeDependencies,
+    _ => null,
+  };
+
+  private bool IsChosen(FilterRow row) =>
+      row.Kind != FilterKind.Heading
+          && (Included(row.Kind).Contains(row.Key)
+              || Excluded(row.Kind)?.Contains(row.Key) == true);
+
+  /// The rows of the Filters pane that are shown: every heading, and the rows of the
+  /// expanded sections.
+  private List<FilterRow> VisibleFilterRows =>
+      [.. _filterRows.Where(row =>
+          row.Kind == FilterKind.Heading || _expanded.Contains(row.Section))];
 
   private (string, string)[] BrowseHints() {
     if (_searching) {
@@ -48,8 +86,8 @@ public sealed partial class TuiApp {
 
     return _filtering
         ? [
-          ("Space", "include"), ("x", "exclude"), ("c", "clear all"), ("↑/↓", "select"),
-          ("Esc", "back to the mods"),
+          ("Enter", "expand or collapse"), ("Space", "include"), ("x", "exclude"),
+          ("c", "clear all"), ("Esc", "back to the mods"),
         ]
         : [
           ("/", "search"), ("f", "filters"), ("s", "sort"), ("Enter", "install"),
@@ -85,13 +123,16 @@ public sealed partial class TuiApp {
     });
   }
 
-  /// The game versions, newest first, then the featured tags in the order of levimc.org/mods,
-  /// then the other tags, the most used first: each with the number of mods for a server that
-  /// have it, and only when there is one.
+  /// The game versions, newest first; the featured tags in the order of levimc.org/mods; the
+  /// other tags, the license families and the dependencies, the most used first: each with the
+  /// number of mods for a server that have it, and only when there is one.
   private void BuildFilterRows(CatalogIndex index) {
     List<CatalogMod> mods = [.. index.Mods.Where(mod => mod.RunsOn(Side))];
     Dictionary<string, int> versions = new(StringComparer.Ordinal);
     Dictionary<string, int> tags = new(StringComparer.Ordinal);
+    Dictionary<string, int> licenses = new(StringComparer.Ordinal);
+    Dictionary<string, int> dependencies = new(StringComparer.Ordinal);
+    Dictionary<string, string> dependencyNames = new(StringComparer.Ordinal);
     foreach (CatalogMod mod in mods) {
       foreach (string version in mod.GameVersions.Distinct(StringComparer.Ordinal)) {
         versions[version] = versions.GetValueOrDefault(version) + 1;
@@ -100,33 +141,53 @@ public sealed partial class TuiApp {
       foreach (string tag in CatalogQuery.DisplayTags(mod)) {
         tags[tag] = tags.GetValueOrDefault(tag) + 1;
       }
-    }
 
-    List<FilterRow> rows = [];
-    void Group(string heading, IEnumerable<FilterRow> items) {
-      List<FilterRow> group = [.. items];
-      if (group.Count > 0) {
-        rows.Add(new FilterRow(FilterKind.Heading, "", heading, 0));
-        rows.AddRange(group);
+      string family = CatalogQuery.LicenseFamily(mod);
+      licenses[family] = licenses.GetValueOrDefault(family) + 1;
+      foreach (string id in mod.Dependencies.Keys) {
+        string dependency = CatalogQuery.DependencyKey(id);
+        string bare = id.Split('#')[0];
+        dependencies[dependency] = dependencies.GetValueOrDefault(dependency) + 1;
+        dependencyNames.TryAdd(dependency, bare[(bare.LastIndexOf('/') + 1)..]);
       }
     }
 
-    Group("Game version", versions
+    List<FilterRow> rows = [];
+    void Section(string heading, FilterKind kind, IEnumerable<(string Key, string Label, int Count)> items) {
+      List<FilterRow> section = [
+        .. items.Select(item => new FilterRow(kind, heading, item.Key, item.Label, item.Count)),
+      ];
+      if (section.Count > 0) {
+        rows.Add(new FilterRow(FilterKind.Heading, heading, heading, heading, section.Count));
+        rows.AddRange(section);
+      }
+    }
+
+    Section("Game version", FilterKind.GameVersion, versions
         .OrderByDescending(v => VersionKey(v.Key), StringComparer.Ordinal)
-        .Select(v => new FilterRow(FilterKind.GameVersion, v.Key, v.Key, v.Value)));
-    Group("Tags", CatalogQuery.FeaturedTags
+        .Select(v => (v.Key, v.Key, v.Value)));
+    Section("Tags", FilterKind.Tag, CatalogQuery.FeaturedTags
         .Where(tag => tags.ContainsKey(tag.Id))
-        .Select(tag => new FilterRow(FilterKind.Tag, tag.Id, tag.Label, tags[tag.Id])));
-    Group("Other tags", tags
+        .Select(tag => (tag.Id, tag.Label, tags[tag.Id])));
+    Section("Other tags", FilterKind.Tag, tags
         .Where(tag => !CatalogQuery.IsFeatured(tag.Key))
         .OrderByDescending(tag => tag.Value).ThenBy(tag => tag.Key, StringComparer.Ordinal)
-        .Select(tag => new FilterRow(FilterKind.Tag, tag.Key, tag.Key, tag.Value)));
+        .Select(tag => (tag.Key, tag.Key, tag.Value)));
+    Section("License", FilterKind.License, CatalogQuery.LicenseFamilies
+        .Where(family => licenses.ContainsKey(family.Id))
+        .Select(family => (family.Id, family.Label, licenses[family.Id])));
+    Section("Depends on", FilterKind.Dependency, dependencies
+        .OrderByDescending(d => d.Value).ThenBy(d => d.Key, StringComparer.Ordinal)
+        .Select(d => (d.Key, dependencyNames[d.Key], d.Value)));
     _filterRows = rows;
-    _filterSelected = Math.Min(1, Math.Max(0, rows.Count - 1));
+    _filterSelected = 0;
     _filterTop = 0;
     _includeTags.IntersectWith(tags.Keys);
     _excludeTags.IntersectWith(tags.Keys);
     _gameVersions.IntersectWith(versions.Keys);
+    _licenses.IntersectWith(licenses.Keys);
+    _includeDependencies.IntersectWith(dependencies.Keys);
+    _excludeDependencies.IntersectWith(dependencies.Keys);
   }
 
   /// A version so that versions compare as their numbers do: each number padded.
@@ -141,7 +202,12 @@ public sealed partial class TuiApp {
     string? keep = SelectedMod?.Id;
     _mods = CatalogQuery.Select(
         _catalog, _search.Value,
-        new CatalogFilter(Side, _includeTags, _excludeTags, _gameVersions), _sort);
+        new CatalogFilter(Side, _includeTags, _excludeTags, _gameVersions) {
+          Licenses = _licenses,
+          IncludeDependencies = _includeDependencies,
+          ExcludeDependencies = _excludeDependencies,
+        },
+        _sort);
     int kept = keep is null ? -1 : _mods.ToList().FindIndex(mod => mod.Id == keep);
     _modSelected = Math.Max(0, kept);
     _modSelectedAt = Environment.TickCount64;
@@ -262,36 +328,39 @@ public sealed partial class TuiApp {
   }
 
   private void DrawFilters(Rect area) {
-    if (_filterRows.Count == 0) {
+    List<FilterRow> rows = VisibleFilterRows;
+    if (rows.Count == 0) {
       _screen.WriteFit(area.X, area.Y, area.Width, "Nothing to filter by.", Theme.Muted);
       return;
     }
 
+    _filterSelected = Math.Clamp(_filterSelected, 0, rows.Count - 1);
     _filterTop = ScrollTo(_filterSelected, _filterTop, area.Height);
-    // The heading of the first row stays in view.
-    if (_filterSelected == 1) {
-      _filterTop = 0;
-    }
-
-    for (int i = 0; i < area.Height && _filterTop + i < _filterRows.Count; i++) {
-      FilterRow row = _filterRows[_filterTop + i];
+    for (int i = 0; i < area.Height && _filterTop + i < rows.Count; i++) {
+      FilterRow row = rows[_filterTop + i];
       int y = area.Y + i;
       if (row.Kind == FilterKind.Heading) {
-        _screen.WriteFit(area.X, y, area.Width, row.Label, Theme.Muted);
-        continue;
+        // A collapsed section still says how many of its rows are chosen.
+        int chosen = _filterRows.Count(r => r.Section == row.Section && IsChosen(r));
+        string note = chosen > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{chosen} chosen")
+            : row.Count.ToString(CultureInfo.InvariantCulture);
+        _screen.Write(area.X, y, _expanded.Contains(row.Section) ? "▾" : "▸", Theme.Accent);
+        _screen.WriteFit(area.X + 2, y, area.Width - 3 - note.Length, row.Label, Theme.Strong);
+        _screen.Write(
+            area.Right - note.Length, y, note, chosen > 0 ? Theme.Good : Theme.Muted);
+      } else {
+        (string mark, Style style) = Included(row.Kind).Contains(row.Key) ? ("[+]", Theme.Good)
+            : Excluded(row.Kind)?.Contains(row.Key) == true ? ("[-]", Theme.Bad)
+            : ("[ ]", default(Style));
+        string count = row.Count.ToString(CultureInfo.InvariantCulture);
+        _screen.Write(area.X + 2, y, mark, style);
+        _screen.WriteFit(
+            area.X + 6, y, area.Width - 7 - count.Length, row.Label,
+            mark == "[ ]" ? default : style);
+        _screen.Write(area.Right - count.Length, y, count, Theme.Muted);
       }
 
-      (string mark, Style style) = row.Kind == FilterKind.GameVersion
-          ? _gameVersions.Contains(row.Key) ? ("[+]", Theme.Good) : ("[ ]", default(Style))
-          : _includeTags.Contains(row.Key) ? ("[+]", Theme.Good)
-          : _excludeTags.Contains(row.Key) ? ("[-]", Theme.Bad)
-          : ("[ ]", default);
-      string count = row.Count.ToString(CultureInfo.InvariantCulture);
-      _screen.Write(area.X, y, mark, style);
-      _screen.WriteFit(
-          area.X + 4, y, area.Width - 5 - count.Length, row.Label,
-          mark == "[ ]" ? default : style);
-      _screen.Write(area.Right - count.Length, y, count, Theme.Muted);
       if (_filtering && _filterTop + i == _filterSelected) {
         _screen.Restyle(area.X - 1, y, area.Width + 2, Theme.Selected);
       }
@@ -347,10 +416,7 @@ public sealed partial class TuiApp {
       Field("Tags", string.Join(", ", tags.Select(CatalogQuery.Label)), Theme.Tag);
     }
 
-    if (detail is not null) {
-      Field("License", detail.License ?? "none declared");
-    }
-
+    Field("License", CatalogQuery.LicenseOf(mod) ?? "none declared");
     foreach ((string id, string range) in mod.Dependencies) {
       Field("Depends", $"{id[(id.LastIndexOf('/') + 1)..]} {range}");
     }
@@ -394,7 +460,7 @@ public sealed partial class TuiApp {
     }
 
     int before = _modSelected;
-    if (MoveSelection(key, ref _modSelected, _mods.Count, 10)) {
+    if (MoveSelection(key, ref _modSelected, _mods.Count, 10, wrap: true)) {
       if (before != _modSelected) {
         _modSelectedAt = Environment.TickCount64;
       }
@@ -404,7 +470,9 @@ public sealed partial class TuiApp {
 
     if (key.Key == ConsoleKey.Enter) {
       if (SelectedMod is { } mod) {
-        LoadDetail(mod.Id, detail => ChooseVersion(mod, detail), () => ChooseVersion(mod, null));
+        LoadDetail(
+            mod.Id, detail => Push(new VersionDialog(this, mod, detail)),
+            () => Push(new VersionDialog(this, mod, null)));
       }
 
       return;
@@ -440,28 +508,17 @@ public sealed partial class TuiApp {
     }
   }
 
-  /// The keys of the Filters pane: Space includes a game version or a tag, x excludes a tag,
-  /// and either takes it back when pressed again.
+  /// The keys of the Filters pane. On the heading of a section, Enter, Space, → and ← show or
+  /// hide its rows. On a row, Space includes it and x excludes it when it is a tag or a
+  /// dependency; either takes it back when pressed again.
   private void FilterKey(ConsoleKeyInfo key) {
-    if (key.Key is ConsoleKey.Escape or ConsoleKey.RightArrow or ConsoleKey.Enter
-        || key.KeyChar == 'f') {
+    if (key.Key == ConsoleKey.Escape || key.KeyChar == 'f') {
       _filtering = false;
       return;
     }
 
-    int selected = _filterSelected;
-    if (MoveSelection(key, ref selected, _filterRows.Count, 10)) {
-      // Headings are passed over, in the direction of the move.
-      int step = selected >= _filterSelected ? 1 : -1;
-      while (selected >= 0 && selected < _filterRows.Count
-          && _filterRows[selected].Kind == FilterKind.Heading) {
-        selected += step;
-      }
-
-      if (selected >= 0 && selected < _filterRows.Count) {
-        _filterSelected = selected;
-      }
-
+    List<FilterRow> rows = VisibleFilterRows;
+    if (MoveSelection(key, ref _filterSelected, rows.Count, 10, wrap: true)) {
       return;
     }
 
@@ -469,70 +526,54 @@ public sealed partial class TuiApp {
       _includeTags.Clear();
       _excludeTags.Clear();
       _gameVersions.Clear();
+      _licenses.Clear();
+      _includeDependencies.Clear();
+      _excludeDependencies.Clear();
       SelectMods();
       return;
     }
 
-    if (_filterSelected >= _filterRows.Count) {
+    if (_filterSelected >= rows.Count) {
       return;
     }
 
-    FilterRow row = _filterRows[_filterSelected];
+    FilterRow row = rows[_filterSelected];
     bool include = key.Key == ConsoleKey.Spacebar || key.KeyChar is ' ' or '+';
     bool exclude = key.KeyChar is 'x' or '-';
-    if (row.Kind == FilterKind.GameVersion && include) {
-      if (!_gameVersions.Remove(row.Key)) {
-        _gameVersions.Add(row.Key);
+    if (row.Kind == FilterKind.Heading) {
+      bool expanded = _expanded.Contains(row.Section);
+      if (key.Key == ConsoleKey.Enter || include
+          || (key.Key == ConsoleKey.RightArrow && !expanded)
+          || (key.Key == ConsoleKey.LeftArrow && expanded)) {
+        if (!_expanded.Remove(row.Section)) {
+          _expanded.Add(row.Section);
+        }
       }
-    } else if (row.Kind == FilterKind.Tag && (include || exclude)) {
-      HashSet<string> chosen = include ? _includeTags : _excludeTags;
-      HashSet<string> other = include ? _excludeTags : _includeTags;
-      other.Remove(row.Key);
-      if (!chosen.Remove(row.Key)) {
-        chosen.Add(row.Key);
-      }
-    } else {
+
       return;
+    }
+
+    if (key.Key == ConsoleKey.LeftArrow) {
+      // Back to the heading of the section, which hides its rows.
+      _expanded.Remove(row.Section);
+      _filterSelected = VisibleFilterRows.FindIndex(r =>
+          r.Kind == FilterKind.Heading && r.Section == row.Section);
+      return;
+    }
+
+    HashSet<string> included = Included(row.Kind);
+    HashSet<string>? excluded = Excluded(row.Kind);
+    if (!(include || (exclude && excluded is not null))) {
+      return;
+    }
+
+    HashSet<string> chosen = include ? included : excluded!;
+    (include ? excluded : included)?.Remove(row.Key);
+    if (!chosen.Remove(row.Key)) {
+      chosen.Add(row.Key);
     }
 
     SelectMods();
-  }
-
-  /// Asks which version of a mod to install: the latest, one that the catalogue lists (none
-  /// when its file could not be read), or one that the user writes, such as a commit.
-  private void ChooseVersion(CatalogMod mod, CatalogDetail? detail) {
-    IReadOnlyList<CatalogVersion> versions = detail?.Versions ?? [];
-    List<StyledLine> items = [
-      new StyledLine().Add("Latest".PadRight(24), Theme.Strong)
-          .Add(detail?.LatestVersion ?? "", Theme.Muted),
-      .. versions.Select(version => new StyledLine()
-          .Add(version.Version.PadRight(24))
-          .Add(Date(version.Released), Theme.Muted)
-          .Add(version.Prerelease ? "  prerelease" : "", Theme.Warning)),
-      new StyledLine().Add("Custom...".PadRight(24), Theme.Accent)
-          .Add("a version, branch, tag or commit", Theme.Muted),
-    ];
-    Push(new ListDialog(this, $"Install {mod.Name} — choose a version", items, chosen => {
-      if (chosen == 0) {
-        InstallMod(mod.Id);
-      } else if (chosen <= versions.Count) {
-        InstallMod($"{mod.Id}@{versions[chosen - 1].Version}");
-      } else {
-        Push(new PromptDialog(
-            this, $"Install {mod.Name} — custom version",
-            [
-              new PromptField(
-                  "What follows the @ of the package: a version, branch:<name>, tag:<name> or"
-                      + " rev:<commit>",
-                  "", "1.2.3   branch:main   tag:v1.2.3   rev:0123abc"),
-            ],
-            values => {
-              if (values[0].Length > 0) {
-                InstallMod($"{mod.Id}@{values[0].TrimStart('@')}");
-              }
-            }));
-      }
-    }));
   }
 
   private void InstallMod(string package) =>
@@ -547,6 +588,139 @@ public sealed partial class TuiApp {
     catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
         or InvalidOperationException or PlatformNotSupportedException) {
       _status = new StyledLine($"Could not open {url}: {ex.Message}", Theme.Bad);
+    }
+  }
+
+  /// Asks which variant and which version of a mod to install: the latest version, one that
+  /// the catalogue lists for the variant, or one that the user writes, such as a commit. The
+  /// catalogue lists none when the file of the mod could not be read.
+  private sealed class VersionDialog : Dialog {
+    private readonly TuiApp _app;
+    private readonly CatalogMod _mod;
+    private readonly IReadOnlyList<CatalogVersion> _all;
+    private readonly List<string> _variants;
+    private int _variant;
+    private int _selected;
+    private int _top;
+    private int _rows = 1;
+
+    public VersionDialog(TuiApp app, CatalogMod mod, CatalogDetail? detail) {
+      _app = app;
+      _mod = mod;
+      _all = detail?.Versions ?? [];
+      // The variants as the versions list them, newest version first, the default one first.
+      _variants = [
+        .. _all.SelectMany(version => version.Variants).Distinct()
+            .OrderBy(variant => variant.Length == 0 ? 0 : 1),
+      ];
+      if (_variants.Count == 0) {
+        _variants.Add("");
+      }
+
+      _variant = Math.Max(0, _variants.IndexOf(detail?.LatestVariant ?? ""));
+    }
+
+    public override (string, string)[] Hints =>
+        _variants.Count > 1
+            ? [("Enter", "install"), ("←/→", "variant"), ("c", "custom version"), ("Esc", "cancel")]
+            : [("Enter", "install"), ("c", "custom version"), ("Esc", "cancel")];
+
+    private string Variant => _variants[_variant];
+
+    private List<CatalogVersion> Versions =>
+        [.. _all.Where(version => version.Variants.Contains(Variant))];
+
+    /// The package argument of the mod in the chosen variant, at a version when given.
+    private string Package(string? version) =>
+        _mod.Id + (Variant.Length == 0 ? "" : "#" + Variant)
+            + (version is null ? "" : "@" + version);
+
+    public override void Draw(ScreenBuffer screen) {
+      List<CatalogVersion> versions = Versions;
+      Rect inner = Frame(
+          screen, $"Install {_mod.Name}", Math.Min(screen.Width - 4, 72), versions.Count + 8);
+      int x = screen.Write(inner.X, inner.Y, "Variant  ", Theme.Muted);
+      x = screen.Write(x, inner.Y, _variants.Count > 1 ? "◀ " : "", Theme.Accent);
+      x = screen.Write(x, inner.Y, Variant.Length == 0 ? "(default)" : Variant, Theme.Strong);
+      x = screen.Write(x, inner.Y, _variants.Count > 1 ? " ▶" : "", Theme.Accent);
+      if (_variants.Count > 1) {
+        screen.Write(x + 2, inner.Y, $"{_variant + 1} of {_variants.Count}", Theme.Muted);
+      }
+
+      screen.WriteFit(inner.X, inner.Y + 1, inner.Width, Package(null), Theme.Muted);
+      _rows = Math.Max(1, inner.Height - 5);
+      _selected = Math.Clamp(_selected, 0, versions.Count);
+      _top = ScrollTo(_selected, _top, _rows);
+      for (int i = 0; i < _rows && _top + i <= versions.Count; i++) {
+        int y = inner.Y + 3 + i;
+        if (_top + i == 0) {
+          string latest = versions.FirstOrDefault(v => !v.Prerelease)?.Version
+              ?? versions.FirstOrDefault()?.Version ?? "";
+          screen.Write(inner.X, y, "Latest", Theme.Strong);
+          screen.Write(inner.X + 24, y, latest, Theme.Muted);
+        } else {
+          CatalogVersion version = versions[_top + i - 1];
+          screen.WriteFit(inner.X, y, 23, version.Version);
+          int end = screen.Write(inner.X + 24, y, Date(version.Released), Theme.Muted);
+          screen.Write(end + 2, y, version.Prerelease ? "prerelease" : "", Theme.Warning);
+        }
+
+        if (_top + i == _selected) {
+          screen.Restyle(inner.X - 1, y, inner.Width + 2, Theme.Selected);
+        }
+      }
+
+      int hint = screen.Write(inner.X, inner.Bottom - 1, "c", Theme.Strong);
+      screen.WriteFit(
+          hint + 1, inner.Bottom - 1, inner.Right - hint - 1,
+          "custom: another version, a branch, a tag or a commit", Theme.Muted);
+    }
+
+    public override void OnKey(ConsoleKeyInfo key) {
+      List<CatalogVersion> versions = Versions;
+      switch (key.Key) {
+        case ConsoleKey.Escape:
+          _app.Close(this);
+          return;
+        case ConsoleKey.Enter:
+          _app.Close(this);
+          _app.InstallMod(Package(_selected == 0 ? null : versions[_selected - 1].Version));
+          return;
+        case ConsoleKey.LeftArrow or ConsoleKey.RightArrow or ConsoleKey.Tab:
+          bool back = key.Key == ConsoleKey.LeftArrow
+              || key.Modifiers.HasFlag(ConsoleModifiers.Shift);
+          _variant = (_variant + (back ? _variants.Count - 1 : 1)) % _variants.Count;
+          _selected = 0;
+          _top = 0;
+          return;
+      }
+
+      if (key.KeyChar == 'c') {
+        Custom();
+        return;
+      }
+
+      MoveSelection(key, ref _selected, versions.Count + 1, _rows, wrap: true);
+    }
+
+    /// Asks for what follows the @ of the package; cancelling comes back to this dialog.
+    private void Custom() {
+      _app.Close(this);
+      string package = Package(null);
+      _app.Push(new PromptDialog(
+          _app, $"Install {package}",
+          [
+            new PromptField(
+                "What follows the @ of the package: a version, branch:<name>, tag:<name> or"
+                    + " rev:<commit>",
+                "", "1.2.3   branch:main   tag:v1.2.3   rev:0123abc"),
+          ],
+          values => {
+            if (values[0].Length > 0) {
+              _app.InstallMod($"{package}@{values[0].TrimStart('@')}");
+            }
+          },
+          () => _app.Push(this)));
     }
   }
 }

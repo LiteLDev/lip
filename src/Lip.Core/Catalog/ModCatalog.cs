@@ -20,13 +20,16 @@ public sealed record CatalogMod(
     DateTimeOffset? Updated,
     DateTimeOffset? Created,
     int RequiredBy,
-    string Url) {
+    string Url,
+    string? License = null) {
   /// Whether the latest version of the mod has an entry for the side.
   public bool RunsOn(string side) => Sides.Contains(side, StringComparer.OrdinalIgnoreCase);
 }
 
-/// One version of a mod, as its file of the catalogue lists it.
-public sealed record CatalogVersion(string Version, bool Prerelease, DateTimeOffset? Released);
+/// One version of a mod, as its file of the catalogue lists it. Variants are the variants of
+/// the version that have an entry for a server; "" is the default variant.
+public sealed record CatalogVersion(
+    string Version, bool Prerelease, DateTimeOffset? Released, IReadOnlyList<string> Variants);
 
 /// What the file of a mod adds to its entry in index.json.
 public sealed record CatalogDetail(
@@ -84,7 +87,8 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
             Time(mod, "updated"),
             Time(mod, "created"),
             Number(mod, "requiredBy"),
-            String(mod, "url") ?? ""));
+            String(mod, "url") ?? "",
+            String(mod, "license")));
       }
     }
 
@@ -108,7 +112,8 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
               name,
               version.TryGetProperty("prerelease", out JsonElement prerelease)
                   && prerelease.ValueKind == JsonValueKind.True,
-              Time(version, "released")));
+              Time(version, "released"),
+              ServerVariants(version)));
         }
       }
     }
@@ -122,6 +127,25 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
         latest.ValueKind == JsonValueKind.Object ? String(latest, "variant") : null,
         versions,
         Readme(root));
+  }
+
+  /// The variants of a version with an entry whose side is "server", the default variant
+  /// first; the default variant alone when the version does not say.
+  private static List<string> ServerVariants(JsonElement version) {
+    if (!version.TryGetProperty("variants", out JsonElement variants)
+        || variants.ValueKind != JsonValueKind.Object) {
+      return [""];
+    }
+
+    List<string> names = [];
+    foreach (JsonProperty variant in variants.EnumerateObject()) {
+      if (variant.Value.ValueKind == JsonValueKind.Array
+          && variant.Value.EnumerateArray().Any(entry => String(entry, "side") == "server")) {
+        names.Add(variant.Name);
+      }
+    }
+
+    return [.. names.OrderBy(name => name.Length == 0 ? 0 : 1)];
   }
 
   /// The README in English when there is one, otherwise the first.
@@ -229,6 +253,16 @@ public sealed record CatalogFilter(
     IReadOnlyCollection<string> IncludeTags,
     IReadOnlyCollection<string> ExcludeTags,
     IReadOnlyCollection<string> GameVersions) {
+  /// The license families (CatalogQuery.LicenseFamily) a mod must be under one of, when any.
+  public IReadOnlyCollection<string> Licenses { get; init; } = [];
+
+  /// The ids (CatalogQuery.DependencyKey) of the packages that the latest version of a mod must
+  /// depend on, every one of them.
+  public IReadOnlyCollection<string> IncludeDependencies { get; init; } = [];
+
+  /// The ids of the packages that the latest version of a mod must not depend on.
+  public IReadOnlyCollection<string> ExcludeDependencies { get; init; } = [];
+
   public static CatalogFilter For(string? side) => new(side, [], [], []);
 
   public bool Matches(CatalogMod mod) {
@@ -238,6 +272,18 @@ public sealed record CatalogFilter(
 
     if (GameVersions.Count > 0 && !mod.GameVersions.Any(GameVersions.Contains)) {
       return false;
+    }
+
+    if (Licenses.Count > 0 && !Licenses.Contains(CatalogQuery.LicenseFamily(mod))) {
+      return false;
+    }
+
+    if (IncludeDependencies.Count > 0 || ExcludeDependencies.Count > 0) {
+      HashSet<string> dependencies = [.. mod.Dependencies.Keys.Select(CatalogQuery.DependencyKey)];
+      if (!IncludeDependencies.All(dependencies.Contains)
+          || ExcludeDependencies.Any(dependencies.Contains)) {
+        return false;
+      }
     }
 
     if (IncludeTags.Count == 0 && ExcludeTags.Count == 0) {
@@ -309,6 +355,56 @@ public static class CatalogQuery {
   /// The label of a tag as DisplayTags gives it.
   public static string Label(string tag) =>
       _featured.TryGetValue(tag, out FeaturedTag? group) ? group.Label : tag;
+
+  /// The license families of levimc.org/mods, in its order, with their labels.
+  public static IReadOnlyList<(string Id, string Label)> LicenseFamilies { get; } = [
+    ("permissive", "Permissive"),
+    ("weak-copyleft", "Weak copyleft"),
+    ("copyleft", "Copyleft"),
+    ("other", "Other"),
+    ("none", "No license"),
+  ];
+
+  // Licenses GitHub cannot tell, read from the license files of the repositories, by
+  // lower-case owner/repo, as levimc.org/mods overrides them.
+  private static readonly Dictionary<string, string> _licenseOverrides = new(StringComparer.Ordinal) {
+    ["copper-lamp/bschat"] = "AGPL-3.0",
+    ["ieckseyr/hologramlib"] = "MIT",
+  };
+
+  /// The SPDX id of the license of a mod as levimc.org/mods shows it, or null without one.
+  public static string? LicenseOf(CatalogMod mod) {
+    string[] parts = mod.Id.ToLowerInvariant().Split('/');
+    return parts.Length >= 2
+        && _licenseOverrides.TryGetValue($"{parts[^2]}/{parts[^1]}", out string? license)
+        ? license
+        : mod.License is { Length: > 0 } ? mod.License : null;
+  }
+
+  /// The id of the license family of a mod (LicenseFamilies).
+  public static string LicenseFamily(CatalogMod mod) {
+    if (LicenseOf(mod) is not { } license) {
+      return "none";
+    }
+
+    string id = license.ToUpperInvariant();
+    if (id is "MIT" or "APACHE-2.0" or "ISC" or "ZLIB" or "CC0-1.0" or "UNLICENSE" or "0BSD"
+        || id.StartsWith("BSD-", StringComparison.Ordinal)) {
+      return "permissive";
+    }
+
+    if (id is "MPL-2.0" or "EPL-2.0" || id.StartsWith("LGPL-", StringComparison.Ordinal)) {
+      return "weak-copyleft";
+    }
+
+    return id.StartsWith("GPL-", StringComparison.Ordinal)
+        || id.StartsWith("AGPL-", StringComparison.Ordinal)
+        ? "copyleft"
+        : "other";
+  }
+
+  /// What dependencies are compared by: the id of the package, in lower case, without a variant.
+  public static string DependencyKey(string id) => id.Split('#')[0].ToLowerInvariant();
 
   /// Whether a tag, as DisplayTags gives it, is a featured tag.
   public static bool IsFeatured(string tag) => _featured.ContainsKey(tag);
