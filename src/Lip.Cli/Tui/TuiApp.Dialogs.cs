@@ -164,16 +164,18 @@ public sealed partial class TuiApp {
     }
   }
 
-  /// Shows lines, which scroll, above buttons. Esc chooses the last button.
+  /// Shows lines, which scroll, above buttons: from the last line when fromEnd, as for a log
+  /// whose end says how it went. Esc chooses the last button.
   private sealed class MessageDialog(
       TuiApp app,
       string title,
       IReadOnlyList<StyledLine> lines,
       string[] buttons,
       Action<int>? chosen = null,
-      Style? border = null) : Dialog {
+      Style? border = null,
+      bool fromEnd = false) : Dialog {
     private int _button;
-    private int _top;
+    private int _top = fromEnd ? int.MaxValue : 0;
     private int _rows = 1;
     private int _total;
 

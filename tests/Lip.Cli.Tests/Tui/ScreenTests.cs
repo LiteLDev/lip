@@ -103,12 +103,22 @@ public class ScreenTests {
   [Fact]
   public void LineSinkStream_PassesOnEachLineAndTheRestWhenDisposed() {
     List<string> lines = [];
-    using (LineSinkStream stream = new(lines.Add)) {
+    using (LineSinkStream stream = new((line, _) => lines.Add(line))) {
       stream.Write(Encoding.UTF8.GetBytes("one\r\ntw"));
       stream.Write(Encoding.UTF8.GetBytes("o\nrest"));
     }
 
     Assert.Equal(["one", "two", "rest"], lines);
+  }
+
+  [Fact]
+  public void LineSinkStream_LineEndedByACarriageReturnAlone_IsTransient() {
+    List<(string, bool)> lines = [];
+    using (LineSinkStream stream = new((line, transient) => lines.Add((line, transient)))) {
+      stream.Write(Encoding.UTF8.GetBytes("10%\r50%\r100%\r\ndone\n"));
+    }
+
+    Assert.Equal([("10%", true), ("50%", true), ("100%", false), ("done", false)], lines);
   }
 
   [Fact]

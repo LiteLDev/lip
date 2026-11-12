@@ -50,8 +50,8 @@ public sealed partial class TuiApp {
     _workspace = workspace;
     _client = createClient(
         new Interaction(this),
-        () => new LineSinkStream(line =>
-            Post(() => AddLog(new StyledLine("│ " + line, Theme.Muted)))));
+        () => new LineSinkStream((line, transient) =>
+            Post(() => AddHookLine(new StyledLine("│ " + line, Theme.Muted), transient))));
   }
 
   /// What the screen shows, as plain text.
@@ -302,6 +302,23 @@ public sealed partial class TuiApp {
     } else {
       _status = line;
     }
+  }
+
+  /// A line that a hook command wrote. A transient one, such as a progress display, gives way
+  /// to the line after it.
+  private void AddHookLine(StyledLine line, bool transient) {
+    if (_operation is not { } operation) {
+      return;
+    }
+
+    if (operation.TransientLine is { } last && operation.Log.Count > 0
+        && ReferenceEquals(operation.Log[^1], last)) {
+      operation.Log[^1] = line;
+    } else {
+      operation.Log.Add(line);
+    }
+
+    operation.TransientLine = transient ? line : null;
   }
 
   /// The first row of a list to show so that the selected row is among the rows shown.

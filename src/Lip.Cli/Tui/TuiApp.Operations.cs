@@ -16,6 +16,9 @@ public sealed partial class TuiApp {
     public List<ProgressItem> Progress { get; } = [];
     public CancellationTokenSource Cancel { get; } = new();
     public bool Warned { get; set; }
+
+    // The last line of the log, when a hook command wrote it as transient.
+    public StyledLine? TransientLine { get; set; }
   }
 
   private Operation? _operation;
@@ -85,13 +88,14 @@ public sealed partial class TuiApp {
           : new StyledLine($"Could not write a failure report: {failure.ReportError}", Theme.Muted));
     }
 
-    Push(new MessageDialog(this, $"{title} failed", lines, ["Close"], border: Theme.Bad));
+    Push(new MessageDialog(
+        this, $"{title} failed", lines, ["Close"], border: Theme.Bad, fromEnd: true));
   }
 
   /// Shows what a command told the user, once it succeeded.
   private void ShowResult(string title, Operation operation, string done) {
     List<StyledLine> lines = [.. operation.Log, new StyledLine("✓ " + done, Theme.Good)];
-    Push(new MessageDialog(this, title, lines, ["OK"]));
+    Push(new MessageDialog(this, title, lines, ["OK"], fromEnd: true));
   }
 
   /// A workspace operation: first as a dry run, whose messages are the plan the user confirms,

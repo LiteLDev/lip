@@ -218,10 +218,12 @@ public sealed class AnsiLog(int maxLines = 5000) {
 }
 
 /// A stream that passes each line written to it, in UTF-8, to a delegate: what hook commands
-/// write in the interface.
-public sealed class LineSinkStream(Action<string> line) : Stream {
+/// write in the interface. A line that a carriage return ends without a line feed, as a
+/// progress display writes it, is passed on as transient: the line after it stands in its place.
+public sealed class LineSinkStream(Action<string, bool> line) : Stream {
   private readonly Decoder _decoder = new UTF8Encoding(false).GetDecoder();
   private readonly StringBuilder _pending = new();
+  private bool _returned;
 
   public override bool CanRead => false;
   public override bool CanSeek => false;
@@ -238,8 +240,14 @@ public sealed class LineSinkStream(Action<string> line) : Stream {
     int read = _decoder.GetChars(buffer, offset, count, chars, 0, flush: false);
     foreach (char c in chars.AsSpan(0, read)) {
       if (c == '\n') {
-        Emit();
-      } else if (c != '\r') {
+        Emit(transient: false);
+      } else if (c == '\r') {
+        _returned = true;
+      } else {
+        if (_returned) {
+          Emit(transient: true);
+        }
+
         _pending.Append(c);
       }
     }
@@ -250,7 +258,7 @@ public sealed class LineSinkStream(Action<string> line) : Stream {
 
   protected override void Dispose(bool disposing) {
     if (disposing && _pending.Length > 0) {
-      Emit();
+      Emit(transient: false);
     }
 
     base.Dispose(disposing);
@@ -263,8 +271,12 @@ public sealed class LineSinkStream(Action<string> line) : Stream {
 
   public override void SetLength(long value) => throw new NotSupportedException();
 
-  private void Emit() {
-    line(_pending.ToString());
+  private void Emit(bool transient) {
+    _returned = false;
+    if (_pending.Length > 0 || !transient) {
+      line(_pending.ToString(), transient);
+    }
+
     _pending.Clear();
   }
 }
