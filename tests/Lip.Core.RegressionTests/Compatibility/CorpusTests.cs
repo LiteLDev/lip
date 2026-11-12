@@ -297,7 +297,8 @@ public class CorpusTests {
     private readonly ConcurrentBag<string> _fetched = [];
     private readonly ConcurrentDictionary<string, byte> _rootDocuments = new();
 
-    /// Blobs downloaded that are not a root tooth.json.
+    /// Blobs downloaded that are neither a root tooth.json nor the builds file of the server
+    /// (protocol/lip-package.md, "The server").
     public List<string> UnexpectedBlobs() => [.. _fetched.Where(id => !_rootDocuments.ContainsKey(id))];
 
     public Task<IReadOnlyList<GitRemoteRef>> ListRefs(Url repoUrl, IEnumerable<string> refPrefixes) =>
@@ -305,7 +306,8 @@ public class CorpusTests {
 
     public async Task<IReadOnlyList<GitTreeEntry>> ListTree(Url repoUrl, string commitish) {
       IReadOnlyList<GitTreeEntry> tree = await inner.ListTree(repoUrl, commitish);
-      foreach (GitTreeEntry entry in tree.Where(e => e.Path is "tooth.json")) {
+      foreach (GitTreeEntry entry in tree.Where(
+          e => e.Path is "tooth.json" or BedrockServer.BuildsFileName)) {
         _rootDocuments[entry.ObjectId] = 0;
       }
 

@@ -373,7 +373,12 @@ public class McmodService(
 
     RunTrace.Write("resolve", $"Showing the package file of {archive.Key}");
     JsonObject result = new() {
-      ["manifest"] = JsonSerializer.SerializeToNode(await ManifestJson(archive, tagVersion)),
+      ["manifest"] = JsonSerializer.SerializeToNode(
+          request.Ref.Kind == RefKind.Spec && BedrockServer.IsRepository(request.Ref.Target)
+              // lip defines the packages of the server itself.
+              ? (await new Resolver(_archiveProvider, _archiveReader)
+                  .ServerDocument(request.Ref.Target, tagVersion)).Json
+              : await ManifestJson(archive, tagVersion)),
       // ListVersions gives the newest first.
       ["versions"] = new JsonArray([
         .. versions.Reverse().Select(v => v.Version.ToString()).Distinct()
