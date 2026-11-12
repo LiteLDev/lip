@@ -17,6 +17,7 @@ Commands (section 1):
 | [lip-cache(1)](lip-cache.md) | `lip cache clean` |
 | [lip-config(1)](lip-config.md) | `lip config get`, `set`, `list` and `delete` |
 | [lip-pkg(1)](lip-pkg.md) | `lip pkg init`, `pack`, `view` and `migrate` |
+| [lip-tui(1)](lip-tui.md) | The interactive interface that `lip` runs without arguments. |
 
 File formats (section 5):
 

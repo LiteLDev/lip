@@ -248,6 +248,18 @@ public sealed class UsageErrorTests : IDisposable {
   private Task<(int ExitCode, string Stdout, string Stderr)> Run(params string[] args) =>
       Run(args, "");
 
+  // The interface needs terminals (protocol/lip-tui.md); the standard streams here are pipes.
+  [Fact]
+  public async Task NoArgument_NotOnATerminal_WritesHelp() {
+    (int exitCode, string stdout, string stderr) = await Run([]);
+
+    Assert.Equal(0, exitCode);
+    Assert.Contains("install", stdout);
+    Assert.Contains("run", stdout);
+    Assert.False(stdout.Contains((char)27));
+    Assert.Equal("", stderr);
+  }
+
   private async Task<(int ExitCode, string Stdout, string Stderr)> Run(string[] args, string input) {
     ProcessStartInfo startInfo = new(
         Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet") {

@@ -12,9 +12,13 @@ public interface ICommandRunner {
   Task Run(string command, string workingDirectory, string platform);
 }
 
-public class CommandRunner : ICommandRunner {
+/// Runs hook commands, writing their standard output and standard error to the stream that
+/// openOutput opens for each command: the standard error of lip when it is not given.
+public class CommandRunner(Func<Stream>? openOutput = null) : ICommandRunner {
+  private readonly Func<Stream> _openOutput = openOutput ?? Console.OpenStandardError;
+
   public async Task Run(string command, string workingDirectory, string platform) {
-    using Stream stdErrStream = Console.OpenStandardError();
+    using Stream stdErrStream = _openOutput();
     PipeTarget output = PipeTarget.Merge(
         PipeTarget.ToStream(stdErrStream),
         PipeTarget.ToDelegate(line => RunTrace.Write("hook", $"| {line}")));

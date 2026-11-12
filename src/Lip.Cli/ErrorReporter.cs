@@ -14,6 +14,17 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli;
 
+/// Why a command failed: a summary, what the user can do about it, and the failure report
+/// (protocol/lip.md) or why it could not be written. Cancelled: the user cancelled the command,
+/// and nothing else is known or written.
+public sealed record Failure(
+    string Summary,
+    IReadOnlyList<string> Hints,
+    string? ReportPath,
+    string? ReportError,
+    string Details,
+    bool Cancelled);
+
 /// Tells the user why a command failed, in plain words with what to do about it, and writes
 /// everything known about the failure to a failure report below .lip/logs (protocol/lip.md).
 public static class ErrorReporter {
@@ -37,11 +48,40 @@ public static class ErrorReporter {
       return 1;
     }
 
+    Failure failure = Describe(exception, args, cancelled);
+    if (failure.Cancelled) {
+      _console.MarkupLine("[bold red]Cancelled.[/] Any changes to the workspace were undone.");
+      return 1;
+    }
+
+    // Written without the console's line wrapping, which would break URLs and paths apart.
+    _console.Markup("[bold red]error:[/] ");
+    Console.Error.WriteLine(failure.Summary);
+    foreach (string hint in failure.Hints) {
+      _console.Markup("[yellow]hint:[/] ");
+      Console.Error.WriteLine(hint);
+    }
+
+    if (failure.ReportPath is { } path) {
+      _console.WriteLine();
+      _console.MarkupLine($"Full report: [blue]{Markup.Escape(path)}[/]");
+    } else {
+      // The report is lost; show its most important part instead.
+      Console.Error.WriteLine();
+      Console.Error.WriteLine($"Could not write a failure report ({failure.ReportError}). Details:");
+      Console.Error.WriteLine(failure.Details);
+    }
+
+    return 1;
+  }
+
+  /// Works out why a command failed, and writes the failure report, without telling the user:
+  /// for Report, and for the interface (protocol/lip-tui.md), which shows it itself.
+  public static Failure Describe(Exception exception, string[] args, bool cancelled) {
     IReadOnlyList<Exception> failures = Unwrap(exception);
 
     if (cancelled && failures.All(f => Chain(f).Any(e => e is OperationCanceledException))) {
-      _console.MarkupLine("[bold red]Cancelled.[/] Any changes to the workspace were undone.");
-      return 1;
+      return new Failure("Cancelled.", [], null, null, "", Cancelled: true);
     }
 
     string summary = Redact(Summarize(failures));
@@ -52,27 +92,16 @@ public static class ErrorReporter {
           + " full report.");
     }
 
-    // Written without the console's line wrapping, which would break URLs and paths apart.
-    _console.Markup("[bold red]error:[/] ");
-    Console.Error.WriteLine(summary);
-    foreach (string hint in hints) {
-      _console.Markup("[yellow]hint:[/] ");
-      Console.Error.WriteLine(hint);
-    }
-
+    string details = Redact(exception.ToString());
     try {
-      string path = WriteReport(exception, args, summary, hints);
-      _console.WriteLine();
-      _console.MarkupLine($"Full report: [blue]{Markup.Escape(path)}[/]");
+      return new Failure(
+          summary, hints, WriteReport(exception, args, summary, hints), null, details,
+          Cancelled: false);
     }
     catch (Exception reportException) {
-      // The report is lost; show its most important part instead.
-      Console.Error.WriteLine();
-      Console.Error.WriteLine($"Could not write a failure report ({reportException.Message}). Details:");
-      Console.Error.WriteLine(Redact(exception.ToString()));
+      return new Failure(
+          summary, hints, null, reportException.Message, details, Cancelled: false);
     }
-
-    return 1;
   }
 
   /// The failures of the command: the exceptions inside aggregate and reflection wrappers.
