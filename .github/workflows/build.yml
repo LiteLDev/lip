@@ -66,8 +66,9 @@ jobs:
   # lip is released for. Where the system is not Windows, Wine runs the server.
   #
   # Linux on arm64 is not among them. There, Hangover runs the server of Minecraft, but not the
-  # one LeviLamina has modified; under box64, and nine times in ten under FEX, the Wine for
-  # x64 fails to run bdsdown, which downloads the server.
+  # one LeviLamina has modified; the Wine for x64 loses the exit codes of Windows programs under
+  # box64, and under FEX ran a LeviLamina server in two of six attempts: PeEditor.exe was killed
+  # in two, and the server failed as it stopped in two.
   server:
     needs: build
     runs-on: ${{ matrix.runs-on }}

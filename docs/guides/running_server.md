@@ -86,8 +86,10 @@ On macOS on x64, Wine 11.0 does not create its prefix; Wine 11.21 does. Builds o
 lip is not released for Linux on arm64, where nothing that was tried runs a LeviLamina server reliably:
 
 - [Hangover](https://github.com/AndreRH/hangover) runs the Bedrock Dedicated Server, but not the one LeviLamina has modified, which fails as it starts.
-- Wine for x64 run by [box64](https://github.com/ptitSeb/box64) fails to run `bdsdown`, which downloads the server while packages are installed.
-- Wine for x64 run by [FEX](https://fex-emu.com/) ran a LeviLamina server twice, but `bdsdown` failed in nine of ten attempts.
+- Wine for x64 run by [box64](https://github.com/ptitSeb/box64) kills Windows programs as they exit, so their exit codes are lost.
+- Wine for x64 run by [FEX](https://fex-emu.com/) ran a LeviLamina server in two of six attempts. In two, `PeEditor.exe`, which modifies the server while LeviLamina is installed, was killed; in two, the server started but failed as it stopped.
+
+lip downloads the server itself, without a Windows program, so installing `github.com/LiteLDev/bds` needs no Wine.
 
 ### Linux-Native Packages
 
