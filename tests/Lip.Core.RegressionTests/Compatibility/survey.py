@@ -613,14 +613,14 @@ def main() -> int:
         tag = pkg.tags.get(f"v{version}")
         # (b) tooth.json at tag
         tooth = ManifestInfo()
-        if tag is not None and pkg.path.startswith("github.com/"):
+        if tag is not None and pkg.path.split("/")[0] == "github.com":
             rr = http.request(f"{RAW}/{repo}/refs/tags/{urllib.parse.quote('v' + version)}/tooth.json")
             tooth = analyse_manifest(rr.status, rr.body)
         # (c)/(d) goproxy
         esc = go_escape(pkg.path)
         gv = go_escape(go_version(version))
         zip_head = http.request(f"{GOPROXY}/{esc}/@v/{gv}.zip", method="HEAD") \
-            if pkg.goproxy_list_status == 200 or pkg.path.startswith("github.com/") else Resp(None, None, "")
+            if pkg.goproxy_list_status == 200 or pkg.path.split("/")[0] == "github.com" else Resp(None, None, "")
         info_hash = None
         if zip_head.status == 200:
             ir = http.request(f"{GOPROXY}/{esc}/@v/{gv}.info")
