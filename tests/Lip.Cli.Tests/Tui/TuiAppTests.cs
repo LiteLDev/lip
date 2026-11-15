@@ -105,7 +105,7 @@ public sealed class TuiAppTests : IDisposable {
     await WaitFor(app, "No package is installed in this workspace.");
 
     Assert.Contains("lip 1.2.3", app.ScreenText);
-    Assert.Contains("1 Packages  2 Browse  3 Server  4 Settings  5 Develop", app.ScreenText);
+    Assert.Contains("1 Packages  2 Browse  3 Server  4 Config  5 Settings  6 Develop", app.ScreenText);
     Assert.Contains(_root, app.ScreenText);
   }
 
@@ -293,7 +293,7 @@ public sealed class TuiAppTests : IDisposable {
   [Fact]
   public async Task Settings_Arrows_MoveToTheCacheWhereEnterCleansIt() {
     TuiApp app = Start();
-    _terminal.Type("4");
+    _terminal.Type("5");
     await WaitFor(app, "github_proxy");
 
     _terminal.Press(ConsoleKey.RightArrow);
@@ -378,7 +378,7 @@ public sealed class TuiAppTests : IDisposable {
   [Fact]
   public async Task Settings_Edit_SetsTheConfigurationValue() {
     TuiApp app = Start();
-    _terminal.Type("4");
+    _terminal.Type("5");
     await WaitFor(app, "github_proxy");
     Assert.Contains("(not set)", app.ScreenText);
 
@@ -401,7 +401,7 @@ public sealed class TuiAppTests : IDisposable {
   public async Task Settings_EditToEmpty_SetsAnEmptyGithubProxyAndDelRemovesIt() {
     string configPath = _fs.Path.Join(LipDirectories.Config, "config.toml");
     TuiApp app = Start();
-    _terminal.Type("4");
+    _terminal.Type("5");
     await WaitFor(app, "(not set)");
 
     _terminal.Press(ConsoleKey.Enter);
@@ -420,7 +420,7 @@ public sealed class TuiAppTests : IDisposable {
   [Fact]
   public async Task Settings_Workspace_RestartIsChosenAndWritten() {
     TuiApp app = Start();
-    _terminal.Type("4");
+    _terminal.Type("5");
     await WaitFor(app, "Workspace ·");
     Assert.Contains("never", app.ScreenText);
 
@@ -441,7 +441,7 @@ public sealed class TuiAppTests : IDisposable {
   [Fact]
   public async Task Develop_CreateLipToml_AsksForTheIdInTheInterface() {
     TuiApp app = Start();
-    _terminal.Type("5");
+    _terminal.Type("6");
     await WaitFor(app, "lip pkg init");
 
     _terminal.Press(ConsoleKey.Enter);
@@ -457,7 +457,7 @@ public sealed class TuiAppTests : IDisposable {
   [Fact]
   public async Task Develop_QuestionNotAnswered_CancelsTheCommand() {
     TuiApp app = Start();
-    _terminal.Type("5");
+    _terminal.Type("6");
     await WaitFor(app, "lip pkg init");
 
     _terminal.Press(ConsoleKey.Enter);
@@ -528,5 +528,145 @@ public sealed class TuiAppTests : IDisposable {
         // The server still runs: the test failed before it stopped it.
       }
     }
+  }
+
+  [Fact]
+  public async Task Config_ServerProperties_EditsAndSavesOnlyTheChangedLines() {
+    string original = File
+        .ReadAllText(Path.Join(AppContext.BaseDirectory, "Tui", "server.properties"))
+        .Replace("\r\n", "\n").Replace("\n", "\r\n");
+    string path = _fs.Path.Join(_root, "server.properties");
+    _fs.File.WriteAllText(path, original);
+    TuiApp app = Start();
+    _terminal.Type("4");
+    await WaitFor(app, "Dedicated Server");
+
+    // gamemode, the second property: a choice.
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.DownArrow);
+    await WaitFor(app, "Sets the game mode for new players.");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "adventure");
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "(changed)");
+
+    // max-players, three rows below: an integer, which must be one.
+    for (int i = 0; i < 4; i++) {
+      _terminal.Press(ConsoleKey.DownArrow);
+    }
+
+    await WaitFor(app, "The maximum number of players");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Set max-players");
+    _terminal.Press(ConsoleKey.U, ConsoleModifiers.Control);
+    _terminal.Type("many");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "max-players is not set: The value is an integer.");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Set max-players");
+    _terminal.Press(ConsoleKey.U, ConsoleModifiers.Control);
+    _terminal.Type("20");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "s save");
+    Assert.Equal(original, _fs.File.ReadAllText(path));
+
+    _terminal.Type("s");
+    await WaitFor(app, "Saved server.properties.");
+
+    string[] before = original.Split("\r\n");
+    string[] after = _fs.File.ReadAllText(path).Split("\r\n");
+    Assert.Equal(before.Length, after.Length);
+    Assert.Equal(
+        [("gamemode=survival", "gamemode=creative"), ("max-players=10", "max-players=20")],
+        before.Zip(after).Where(pair => pair.First != pair.Second));
+    Assert.False(_fs.File.Exists(path + ".tmp"));
+  }
+
+  [Fact]
+  public async Task Config_ModJson_IsEditedAsATreeKeepingItsVersion() {
+    await new LockStore(_fs).Save(_root, new LockFile {
+      Side = "server",
+      Platform = "win-x64",
+      Packages = [
+        new LockedPackage {
+          Manifest = System.Text.Json.JsonDocument.Parse("""
+              {
+                "format": 4, "id": "github.com/acme/Alpha", "version": "1.0.0",
+                "variants": {"": [{"side": "server", "platform": "win-x64",
+                  "assets": [{"type": "mcmod", "urls": ["https://example.com/a.zip"]}]}]}
+              }
+              """).RootElement,
+          Variant = "",
+          Explicit = true,
+          Source = "github.com/acme/Alpha",
+          Files = ["mods/Alpha/manifest.json", "mods/Alpha/Alpha.dll"],
+        },
+      ],
+    });
+    string path = _fs.Path.Join(_root, "mods", "Alpha", "config", "config.json");
+    _fs.AddFile(path, new MockFileData("""
+        {
+            "version": 2, // kept by the mod
+            "enabled": false,
+            "limits": {"max": 5, "name": "x"}
+        }
+        """));
+    TuiApp app = Start();
+    _terminal.Type("4");
+    await WaitFor(app, "Alpha · config/config.json");
+    Assert.Contains("it is generated when the server", app.ScreenText);
+    Assert.Contains("allowlist.json", app.ScreenText);
+
+    _terminal.Press(ConsoleKey.End);
+    await WaitFor(app, "{…} 2 members");
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "is the version of the file");
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "config.json › limits");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Set max");
+    _terminal.Press(ConsoleKey.U, ConsoleModifiers.Control);
+    _terminal.Type("9");
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Press(ConsoleKey.Escape);
+    await WaitFor(app, "s save");
+
+    // Leaving with changes asks what to do with them.
+    _terminal.Type("5");
+    await WaitFor(app, "has changes that are not saved");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "github_proxy");
+
+    Assert.Equal(
+        "{\n    \"version\": 2,\n    \"enabled\": true,\n    \"limits\": {\n        \"max\": 9,\n"
+            + "        \"name\": \"x\"\n    }\n}\n",
+        _fs.File.ReadAllText(path));
+  }
+
+  [Fact]
+  public async Task Config_Allowlist_AddsAPlayerToAFileThatDidNotExist() {
+    TuiApp app = Start();
+    _terminal.Type("4");
+    await WaitFor(app, "it is generated when the server");
+
+    _terminal.Press(ConsoleKey.DownArrow);
+    await WaitFor(app, "No player is on the allowlist.");
+    _terminal.Press(ConsoleKey.Enter);
+    _terminal.Type("a");
+    await WaitFor(app, "Add a player to the allowlist");
+    _terminal.Type("Steve");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "(changed)");
+    Assert.False(_fs.File.Exists(_fs.Path.Join(_root, "allowlist.json")));
+    _terminal.Type("s");
+    await WaitFor(app, "Saved allowlist.json.");
+
+    Assert.Contains(
+        "\"name\": \"Steve\"", _fs.File.ReadAllText(_fs.Path.Join(_root, "allowlist.json")));
   }
 }

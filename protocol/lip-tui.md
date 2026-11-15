@@ -37,6 +37,23 @@ The interface runs the server as [lip-run(1)] defines, with these differences:
 
 The interface runs at most one server at a time.
 
+### Configuration
+
+The interface shows the **configuration files** of the workspace, and lets the user edit them:
+
+- `server.properties`, `allowlist.json` and `permissions.json` at the workspace root, the files of the server; and
+- the configuration files of each installed mod ([lip-workspace(7), "Terms"](lip-workspace.md#terms)), found in its mod directory `mods/<mod name>/`: every regular file below `config/` in it; when there is none, the regular files directly in it, other than `manifest.json`, whose names end in `.json`, `.ini`, `.toml`, `.yml` or `.yaml`, and `data/config.json` in it.
+
+A configuration file that does not exist is not created, except `allowlist.json` and `permissions.json`, which `lip` reads as the empty array `[]` when they do not exist. The server and the mods should create their files when the server first starts.
+
+`lip` writes a configuration file only when the user saves the changes they made to it, and writes it atomically ([README, "Files"](README.md#files)). It writes nothing else to the workspace for it. A change takes effect when the server is next started.
+
+A **property** of `server.properties` is a line of it that does not start with `#` and contains `=`: its key is the text before the first `=`, without the spaces around it, and its value the text after that `=`. Saving `server.properties` replaces the value of each property that the user changed, and changes no other character of the file.
+
+`allowlist.json`, `permissions.json`, and a configuration file of a mod whose name ends in `.json`, are read as [JSON] texts in UTF-8 that may contain comments (`//` to the end of the line, and `/*` to `*/`) and a comma after the last member of an object or the last element of an array. Saving one writes it as a JSON file ([README, "Files"](README.md#files)) holding the value read with the user's changes, the members of each object in the order they were read in and the members the user added after them. The whitespace of the file written is not defined here; it holds no comments.
+
+A configuration file that `lip` cannot read as this section defines is shown, and is not written. The editing of other configuration files, and what the interface shows of each, are not defined here.
+
 ### Catalogue
 
 The **catalogue** is the set of JSON files below `https://levimc.org/api/v4/mods/`:
@@ -61,3 +78,4 @@ A file of the catalogue that cannot be read is not a failure of a command.
 [lip(1)]: lip.md
 [lip-run(1)]: lip-run.md
 [config.toml(5)]: config.toml.md
+[JSON]: https://www.rfc-editor.org/info/rfc8259

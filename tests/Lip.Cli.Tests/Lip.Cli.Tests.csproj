@@ -27,6 +27,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\Lip.Core.Tests\Config\server.properties" Link="Tui\server.properties"
+        CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Lip.Cli\Lip.Cli.csproj" />
   </ItemGroup>
 

@@ -13,10 +13,13 @@ public sealed partial class TuiApp {
   private const int PackagesTab = 0;
   private const int BrowseTab = 1;
   private const int ServerTab = 2;
-  private const int SettingsTab = 3;
-  private const int DevelopTab = 4;
+  private const int ConfigTab = 3;
+  private const int SettingsTab = 4;
+  private const int DevelopTab = 5;
 
-  private static readonly string[] _tabs = ["Packages", "Browse", "Server", "Settings", "Develop"];
+  private static readonly string[] _tabs = [
+    "Packages", "Browse", "Server", "Config", "Settings", "Develop",
+  ];
 
   private readonly ITerminal _terminal;
   private readonly LipClient _client;
@@ -175,6 +178,7 @@ public sealed partial class TuiApp {
     PackagesTab => PackagesHints,
     BrowseTab => BrowseHints(),
     ServerTab => ServerHints(),
+    ConfigTab => ConfigHints(),
     SettingsTab => SettingsHints,
     _ => DevelopHints,
   };
@@ -189,6 +193,9 @@ public sealed partial class TuiApp {
         break;
       case ServerTab:
         DrawServer(Body);
+        break;
+      case ConfigTab:
+        DrawConfig(Body);
         break;
       case SettingsTab:
         DrawSettings(Body);
@@ -221,7 +228,7 @@ public sealed partial class TuiApp {
     // Keys that a text being typed does not take.
     bool typing = (_tab == BrowseTab && _searching) || (_tab == ServerTab && _serverRunning);
     if (!typing && !control) {
-      if (key.KeyChar is >= '1' and <= '5') {
+      if (key.KeyChar >= '1' && key.KeyChar < '1' + _tabs.Length) {
         SwitchTab(key.KeyChar - '1');
         return;
       }
@@ -247,6 +254,9 @@ public sealed partial class TuiApp {
       case ServerTab:
         ServerKey(key);
         break;
+      case ConfigTab:
+        ConfigKey(key);
+        break;
       case SettingsTab:
         SettingsKey(key);
         break;
@@ -257,6 +267,11 @@ public sealed partial class TuiApp {
   }
 
   private void SwitchTab(int tab) {
+    if (_tab == ConfigTab && tab != ConfigTab && ConfigDirty) {
+      LeaveConfigFile(() => SwitchTab(tab));
+      return;
+    }
+
     _tab = tab;
     _searching = false;
     switch (tab) {
@@ -268,6 +283,9 @@ public sealed partial class TuiApp {
           LoadCatalog();
         }
         break;
+      case ConfigTab:
+        LoadConfigFiles();
+        break;
       case SettingsTab:
         LoadConfig();
         break;
@@ -275,6 +293,12 @@ public sealed partial class TuiApp {
   }
 
   private void RequestQuit() {
+    if (ConfigDirty) {
+      _tab = ConfigTab;
+      LeaveConfigFile(RequestQuit);
+      return;
+    }
+
     if (!_serverRunning) {
       _quit = true;
       return;

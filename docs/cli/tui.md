@@ -17,8 +17,9 @@ Switch tabs with `Tab` and `Shift+Tab`, or with the number of the tab. The botto
 | **1 Packages** | Lists the installed packages; installs, updates and uninstalls them. | [`lip list`](./commands/list.md), [`lip install`](./commands/install.md), [`lip update`](./commands/update.md), [`lip uninstall`](./commands/uninstall.md) |
 | **2 Browse** | Searches, filters and sorts the mods of levimc.org, shows their details, versions and README, and installs them. | [`lip install`](./commands/install.md) |
 | **3 Server** | Runs the server of the workspace in a window, shows what it writes, and sends it the lines you type. | [`lip run`](./commands/run.md) |
-| **4 Settings** | Shows and changes the user configuration and the configuration of the workspace; cleans the cache. | [`lip config`](./commands/config.md), [`lip cache clean`](./commands/cache_clean.md) |
-| **5 Develop** | Creates a `lip.toml`, migrates a `tooth.json`, packs a ZIP archive, views a package. | [`lip pkg init`](./commands/pkg_init.md), [`lip pkg migrate`](./commands/pkg_migrate.md), [`lip pkg pack`](./commands/pkg_pack.md), [`lip pkg view`](./commands/pkg_view.md) |
+| **4 Config** | Shows and edits `server.properties`, `allowlist.json`, `permissions.json` and the configuration files of the installed mods. | |
+| **5 Settings** | Shows and changes the user configuration and the configuration of the workspace; cleans the cache. | [`lip config`](./commands/config.md), [`lip cache clean`](./commands/cache_clean.md) |
+| **6 Develop** | Creates a `lip.toml`, migrates a `tooth.json`, packs a ZIP archive, views a package. | [`lip pkg init`](./commands/pkg_init.md), [`lip pkg migrate`](./commands/pkg_migrate.md), [`lip pkg pack`](./commands/pkg_pack.md), [`lip pkg view`](./commands/pkg_view.md) |
 
 Quit with `q` or `Ctrl+Q`.
 
@@ -68,11 +69,29 @@ The same keys do the same everywhere:
 | `←`, `→` | Move between the panes of a tab, the buttons of a dialog, or the variants of a mod. |
 | `Enter`, `Space` | Act on what is selected: open the actions of a package, install a mod, edit a setting, run an action, choose a button. |
 | `Esc` | Goes back: closes a dialog, leaves a pane, clears a search. |
-| `Del` | Uninstalls the selected package, or resets the selected setting. |
+| `Del` | Uninstalls the selected package, resets the selected setting, removes the selected player, or undoes the change of the selected property. |
 
 In the Packages tab, `Enter` on a package lists what can be done with it. In the Settings tab, `Enter` on `github_proxy` with an empty value makes lip connect to GitHub directly, while `Del` removes the key; `→` moves to the cache, where `Enter` cleans it. In the Server tab, `↑` and `↓` scroll while the server does not run, and `Esc` erases the line being typed while it does.
 
 Every list goes around: `↑` on its first row moves to the last, and `↓` on the last to the first.
+
+## Configuring the server and the mods
+
+The Config tab lists the configuration files of the workspace on the left, and shows the entries of the selected one on the right. `Enter` or `→` moves to the entries; `Esc` or `←` moves back.
+
+| File | Is edited as |
+| --- | --- |
+| `server.properties` | Its properties, with the comment of the selected one below. `Enter` toggles a `true`/`false` property, lists the allowed values of a property that has a few, and asks for any other value; an integer is checked. `Del` undoes the change. |
+| `allowlist.json` | The players allowed on the server. `a` adds one by name and, optionally, xuid; `Enter` sets whether the player may join a full server; `Del` removes the player. |
+| `permissions.json` | The permission of each player, by xuid. `a` adds a player; `Enter` chooses `operator`, `member` or `visitor`; `Del` removes the player. |
+| A `.json` file of a mod | A tree: `Enter` opens an object or an array and edits a value (a `true`/`false` value toggles), `Esc` goes back up. In an array, `a` adds a value and `Del` removes one. The top-level `version` of a mod's file is not edited: the mod keeps it up to date. |
+| Any other file of a mod | Shown as it is; edit it with a text editor. |
+
+The configuration files of a mod are the files in `mods/<mod>/config/`; for a mod without one, the `.json`, `.ini`, `.toml`, `.yml` and `.yaml` files directly in `mods/<mod>/` (but `manifest.json`), and `mods/<mod>/data/config.json`.
+
+Nothing is written until you press `s`, which saves the selected file. lip changes only what you changed: in `server.properties`, the lines of the properties you changed, keeping every comment; in a JSON file, the values you changed, keeping the order of its members (comments in a JSON file are not kept). Leaving the file, the tab or lip with unsaved changes asks whether to save them. `r` reads the files again.
+
+The server and most mods create their configuration files when the server first starts, so a new workspace may not have them yet; `allowlist.json` and `permissions.json` are created when you save them. Changes take effect when the server is started again: when it runs, restart it in the Server tab.
 
 ## Running the server
 

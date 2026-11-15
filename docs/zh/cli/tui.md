@@ -17,8 +17,9 @@ lip
 | **1 Packages** | 列出已安装的包；安装、更新、卸载。 | [`lip list`](./commands/list.md)、[`lip install`](./commands/install.md)、[`lip update`](./commands/update.md)、[`lip uninstall`](./commands/uninstall.md) |
 | **2 Browse** | 搜索、筛选、排序 levimc.org 上的模组，查看详情、版本和 README，并安装。 | [`lip install`](./commands/install.md) |
 | **3 Server** | 在窗口里运行工作区的服务器，显示它的输出，并把你输入的行发给它。 | [`lip run`](./commands/run.md) |
-| **4 Settings** | 查看和修改用户配置与工作区配置；清理缓存。 | [`lip config`](./commands/config.md)、[`lip cache clean`](./commands/cache_clean.md) |
-| **5 Develop** | 创建 `lip.toml`、迁移 `tooth.json`、打包 ZIP、查看包。 | [`lip pkg init`](./commands/pkg_init.md)、[`lip pkg migrate`](./commands/pkg_migrate.md)、[`lip pkg pack`](./commands/pkg_pack.md)、[`lip pkg view`](./commands/pkg_view.md) |
+| **4 Config** | 查看和编辑 `server.properties`、`allowlist.json`、`permissions.json` 以及已安装模组的配置文件。 | |
+| **5 Settings** | 查看和修改用户配置与工作区配置；清理缓存。 | [`lip config`](./commands/config.md)、[`lip cache clean`](./commands/cache_clean.md) |
+| **6 Develop** | 创建 `lip.toml`、迁移 `tooth.json`、打包 ZIP、查看包。 | [`lip pkg init`](./commands/pkg_init.md)、[`lip pkg migrate`](./commands/pkg_migrate.md)、[`lip pkg pack`](./commands/pkg_pack.md)、[`lip pkg view`](./commands/pkg_view.md) |
 
 按 `q` 或 `Ctrl+Q` 退出。
 
@@ -68,11 +69,29 @@ Browse 标签页在第一次打开时读取 levimc.org 的模组目录（`https:
 | `←`、`→` | 在标签页的各栏之间、对话框的按钮之间、模组的变体之间移动。 |
 | `Enter`、`Space` | 对选中的内容执行操作：打开包的操作菜单、安装模组、编辑设置、运行动作、选择按钮。 |
 | `Esc` | 返回：关闭对话框、离开当前栏、清除搜索。 |
-| `Del` | 卸载选中的包，或重置选中的设置。 |
+| `Del` | 卸载选中的包、重置选中的设置、移除选中的玩家，或撤销选中属性的修改。 |
 
 在 Packages 标签页，对包按 `Enter` 会列出可以对它做的操作。在 Settings 标签页，对 `github_proxy` 按 `Enter` 并留空，会让 lip 直接连接 GitHub，而 `Del` 会移除该键；`→` 移到缓存栏，在那里按 `Enter` 清理缓存。在 Server 标签页，服务器未运行时 `↑` 和 `↓` 滚动日志，运行时 `Esc` 清空正在输入的行。
 
 所有列表都是循环的：在第一行按 `↑` 跳到最后一行，在最后一行按 `↓` 跳到第一行。
+
+## 配置服务器和模组
+
+Config 标签页左侧列出工作区的配置文件，右侧显示选中文件的条目。`Enter` 或 `→` 进入条目；`Esc` 或 `←` 返回。
+
+| 文件 | 编辑方式 |
+| --- | --- |
+| `server.properties` | 逐项列出属性，下方显示选中属性的注释。`Enter` 切换 `true`/`false` 属性，列出只有几个可选值的属性的可选值，其他属性则输入新值；整数会被检查。`Del` 撤销修改。 |
+| `allowlist.json` | 允许进入服务器的玩家。`a` 按名称（可选填 xuid）添加；`Enter` 设置该玩家能否在服务器满员时加入；`Del` 移除该玩家。 |
+| `permissions.json` | 每个玩家（按 xuid）的权限。`a` 添加玩家；`Enter` 选择 `operator`、`member` 或 `visitor`；`Del` 移除该玩家。 |
+| 模组的 `.json` 文件 | 树形编辑：`Enter` 打开对象或数组、编辑值（`true`/`false` 直接切换），`Esc` 返回上一层。在数组中，`a` 添加值，`Del` 移除值。模组文件顶层的 `version` 不可编辑：它由模组自己维护。 |
+| 模组的其他文件 | 原样显示；请用文本编辑器修改。 |
+
+模组的配置文件是 `mods/<模组>/config/` 中的文件；没有这样的文件时，是 `mods/<模组>/` 下直接存放的 `.json`、`.ini`、`.toml`、`.yml` 和 `.yaml` 文件（`manifest.json` 除外），以及 `mods/<模组>/data/config.json`。
+
+按 `s` 保存选中的文件之前，什么都不会写入。lip 只改动你修改过的内容：在 `server.properties` 中，只改动你修改过的属性所在的行，所有注释都保留；在 JSON 文件中，只改动你修改过的值，并保持成员的顺序（JSON 文件中的注释不会保留）。带着未保存的修改离开文件、标签页或 lip 时，会询问是否保存。`r` 重新读取文件。
+
+服务器和大多数模组会在服务器第一次启动时生成配置文件，所以新的工作区里可能还没有这些文件；`allowlist.json` 和 `permissions.json` 会在你保存时创建。修改在服务器再次启动时生效：服务器正在运行时，请在 Server 标签页重启它。
 
 ## 运行服务器
 

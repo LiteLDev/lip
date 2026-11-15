@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Flurl;
+using Lip.Core.Config;
 using Lip.Core.Git;
 using Lip.Core.Infrastructure;
 using Lip.Core.Json;
@@ -216,6 +217,56 @@ public sealed class LipClient {
   /// The installed packages, in installation order (protocol/lip-list.md).
   public async Task<IReadOnlyList<InstalledPackage>> ListPackages() =>
       await (await GetMcmodService()).List();
+
+  /// The installed mods and their configuration files (protocol/lip-tui.md, "Configuration").
+  public async Task<IReadOnlyList<ModConfig>> ListModConfigs() {
+    string root = _fileSystem.Directory.GetCurrentDirectory();
+    LockFile? lockFile = await new LockStore(_fileSystem).Load(root);
+    return ModConfigs.Find(_fileSystem, root, lockFile);
+  }
+
+  /// The text of a configuration file of the workspace, at a '/'-separated path relative to it,
+  /// or null when it does not exist (protocol/lip-tui.md, "Configuration").
+  public async Task<string?> ReadConfigFile(string path) {
+    string full = ConfigFilePath(path);
+    if (!_fileSystem.File.Exists(full)) {
+      return null;
+    }
+
+    // Decoded as it is, a byte order mark included, so that writing it back keeps it; a file
+    // that is not UTF-8 cannot be read, rather than be written back with its bytes replaced.
+    return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+        .GetString(await _fileSystem.File.ReadAllBytesAsync(full));
+  }
+
+  /// Writes a configuration file of the workspace atomically (protocol/README.md, "Files").
+  public async Task WriteConfigFile(string path, string text) {
+    string full = ConfigFilePath(path);
+    string temporary = full + ".tmp";
+    await _fileSystem.File.WriteAllBytesAsync(temporary, Encoding.UTF8.GetBytes(text));
+    try {
+      _fileSystem.File.Move(temporary, full, overwrite: true);
+    }
+    catch {
+      try {
+        _fileSystem.File.Delete(temporary);
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        // The renaming failed already; that is what the user hears of.
+      }
+
+      throw;
+    }
+  }
+
+  private string ConfigFilePath(string path) {
+    if (path.Length == 0 || path.StartsWith('/') || path.Contains('\\') || path.Contains(':')
+        || path.Split('/').Any(segment => segment is "" or "." or "..")) {
+      throw new ArgumentException($"'{path}' is not a path in the workspace.", nameof(path));
+    }
+
+    return _fileSystem.Path.Join(_fileSystem.Directory.GetCurrentDirectory(), path);
+  }
 
   /// Migrates the tooth.json of format 1, 2 or 3 in the current directory to a lip.toml
   /// (RepositoryMigrator, protocol/lip-compatibility.md, "lip pkg migrate"), asking the user for
