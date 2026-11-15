@@ -30,7 +30,7 @@ lip 运行 Linux 版服务器时，若环境变量 `LD_LIBRARY_PATH` 未设置�
 4. 若工作区没有游戏（此时提示使用 `lip setup`）、服务器是 Linux 版服务器而 lip 不在 x64 的 Linux 上运行，或服务器不是文件，则失败；
 5. 对 Windows 版服务器 `bedrock_server_mod.exe` 和 `bedrock_server.exe`，安装服务器需要而系统缺少的组件：Linux 和 macOS 上的 Wine，以及 Microsoft Visual C++ 可再发行组件包（参见[系统依赖](../../guides/internal_mechanism.md#系统依赖)）。Linux 版服务器两者都不需要。
 
-服务器运行期间工作区不会被锁定：你可以在另一个终端中对同一工作区运行 `lip install`、`lip uninstall` 和 `lip update`。它们的改动在服务器下次启动时生效。
+服务器运行期间工作区不会被锁定：你可以在另一个终端中对同一工作区运行 `lip install`、`lip uninstall` 和 `lip update`。它们的改动在服务器下次启动时生效。[交互界面](../tui.md#服务器运行期间)在此期间不会执行它们：它也能看到由 `lip run` 启动的服务器，并会请你先停止它。
 
 ### Wine
 

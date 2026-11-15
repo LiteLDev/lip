@@ -8,7 +8,7 @@ Before proceeding, ensure that you have [installed lip](installation.md). lip do
 
 ## Setting Up the Server in the Interface
 
-The simplest way: open a terminal and run `lip`. The Home page of the interface lists three steps: create the server, install mods, start the server. Select a step with the arrow keys and press `Enter`. For the first, lip asks for the directory of the server, the game version, the build and the loader, shows what it will install, and asks you to accept the Minecraft EULA. See [Interactive Interface](../cli/tui.md#your-first-server-in-three-steps).
+The simplest way: open a terminal and run `lip`. The Home page of the interface lists three steps: create the server, install mods, start the server. Select a step with the arrow keys and press `Enter`. For the first, you choose the folder of the server in a folder browser, then the game version, which shows whether LeviLamina supports it, and the loader; lip shows what it will install, and asks you to accept the Minecraft EULA. See [Interactive Interface](../cli/tui.md#your-first-server-in-three-steps).
 
 If GitHub cannot be reached from your network, the interface also asks whether to set a GitHub proxy, connect directly anyway, or decide later. See [GitHub proxy](../cli/tui.md#github-proxy).
 
@@ -55,7 +55,7 @@ Once the server is set up, start it in the workspace:
 lip run
 ```
 
-Type server commands as usual. Press Ctrl+C to stop the server: lip sends it `stop` and exits when it has exited. You can install and update packages from another terminal while the server runs; they take effect when you start it again.
+Type server commands as usual. Press Ctrl+C to stop the server: lip sends it `stop` and exits when it has exited. You can install and update packages from another terminal while the server runs; they take effect when you start it again. The interface does not change the packages of a workspace whose server runs: stop the server first (see [While the server runs](../cli/tui.md#while-the-server-runs)).
 
 ## Listing Installed Packages
 
