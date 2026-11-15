@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="488" viewBox="0 0 944 488" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="410" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="409" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="31" y="88" width="144" height="20" fill="#4a5364"/>
+<rect x="328" y="228" width="72" height="20" fill="#2563c9"/>
+<rect x="202" y="268" width="702" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M256 78H918.13M25.88 378H180.13M187.88 378H918.13M26.5 77.38V378.63M179.5 77.38V378.63M188.5 77.38V378.63M917.5 77.38V378.63"/>
+<path stroke="#56c8d8" d="M313.88 178H328M418 178H630.13M313.88 258H630.13M314.5 177.38V258.63M629.5 177.38V258.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="211" y="82.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">Home</text>
+<text x="40" y="102.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Home</text>
+<text x="202" y="102.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Workspace</text>
+<text x="301" y="102.5" textLength="171" lengthAdjust="spacingAndGlyphs">D:\servers\survival</text>
+<text x="40" y="122.5" textLength="54" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="202" y="122.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Game</text>
+<text x="301" y="122.5" textLength="63" lengthAdjust="spacingAndGlyphs">1.26.60</text>
+<text x="40" y="142.5" textLength="36" lengthAdjust="spacingAndGlyphs">Mods</text>
+<text x="202" y="142.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Loader</text>
+<text x="301" y="142.5" textLength="162" lengthAdjust="spacingAndGlyphs">LeviLamina 26.60.3</text>
+<text x="40" y="162.5" textLength="72" lengthAdjust="spacingAndGlyphs">Get mods</text>
+<text x="202" y="162.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Mods</text>
+<text x="301" y="162.5" textLength="9" lengthAdjust="spacingAndGlyphs">4</text>
+<text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
+<text x="202" y="182.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Server</text>
+<text x="301" y="182.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">S</text>
+<text x="337" y="182.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Quit lip</text>
+<text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="328" y="202.5" textLength="81" lengthAdjust="spacingAndGlyphs">Quit lip?</text>
+<text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="202" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">Next steps</text>
+<text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="206.5" y="242.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="220" y="242.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="247" y="242.5" textLength="54" lengthAdjust="spacingAndGlyphs">Create</text>
+<text x="328" y="242.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Quit ]</text>
+<text x="409" y="242.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ Cancel ]</text>
+<text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="206.5" y="262.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="220" y="262.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">2</text>
+<text x="247" y="262.5" textLength="63" lengthAdjust="spacingAndGlyphs">Install</text>
+<text x="220" y="282.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">3</text>
+<text x="247" y="282.5" textLength="144" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Start the server</text>
+<text x="202" y="322.5" textLength="342" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Start the server and open its console.</text>
+<text x="35.5" y="402.5" text-anchor="middle" font-weight="700">←</text>
+<text x="44.5" y="402.5" text-anchor="middle" font-weight="700">→</text>
+<text x="49" y="402.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">/Tab</text>
+<text x="94" y="402.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Switch</text>
+<text x="166" y="402.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="220" y="402.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Select</text>
+<text x="292" y="402.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="328" y="402.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Cancel</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V414H16zM307 165H637V271H307z"/>
+<rect x="10.5" y="430.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<text x="24" y="458.5" textLength="85.8" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#9aa3b5">Opened with</text>
+<rect x="122.3" y="442.5" width="61.8" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="129.8" y="458.5" textLength="46.8" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Ctrl+C</text>
+</svg>

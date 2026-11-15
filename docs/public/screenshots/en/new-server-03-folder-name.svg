@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="688" viewBox="0 0 944 688" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="610" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="609" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="58" y="128" width="828" height="20" fill="#4a5364"/>
+<rect x="31" y="208" width="9" height="20" fill="#4a5364"/>
+<rect x="238" y="328" width="9" height="20" fill="#d8dee9"/>
+<rect x="265" y="548" width="135" height="20" fill="#2563c9"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H40M904 78H918.13M58 118H886M25.88 578H40M904 578H918.13M26.5 77.38V578.63M917.5 77.38V578.63"/>
+<path stroke="#56c8d8" d="M43.88 78H58M166 78H900.13M133.88 298H148M256 298H810.13M133.88 358H810.13M43.88 578H900.13M44.5 77.38V578.63M134.5 297.38V358.63M809.5 297.38V358.63M899.5 77.38V578.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers</text>
+<text x="67" y="82.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">New server</text>
+<text x="58" y="102.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Folder</text>
+<text x="130" y="102.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">D:\servers</text>
+<text x="58" y="142.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#ffffff">..</text>
+<text x="58" y="162.5" textLength="72" lengthAdjust="spacingAndGlyphs">backups\</text>
+<text x="58" y="182.5" textLength="81" lengthAdjust="spacingAndGlyphs">creative\</text>
+<text x="157" y="302.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">New folder</text>
+<text x="148" y="322.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">Name</text>
+<text x="148" y="342.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">&gt;</text>
+<text x="166" y="342.5" textLength="72" lengthAdjust="spacingAndGlyphs">survival</text>
+<text x="58" y="562.5" textLength="198" lengthAdjust="spacingAndGlyphs">[ Select this folder ]</text>
+<text x="265" y="562.5" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ New folder</text>
+<text x="377.5" y="562.5" text-anchor="middle" fill="#ffffff">…</text>
+<text x="391" y="562.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">]</text>
+<text x="409" y="562.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ Cancel ]</text>
+<text x="31" y="602.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="85" y="602.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Confirm</text>
+<text x="166" y="602.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="202" y="602.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Cancel</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V614H16zM127 285H817V371H127z"/>
+<rect x="10.5" y="630.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<rect x="24.5" y="642.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="658.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>
