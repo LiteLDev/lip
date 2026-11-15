@@ -49,11 +49,6 @@ public static class ModsText {
   // What a package is, in the details area.
   public static string ExplicitDetail =>
       L.T("Installed by you.", "由你安装。", "由你安裝。");
-  public static string AtVersionDetail =>
-      L.T(
-          "Installed by you at this version, where Update keeps it.",
-          "由你安装并固定在此版本，“更新”不会改变它。",
-          "由你安裝並固定在此版本，「更新」不會變更它。");
   public static string DependencyDetail =>
       L.T(
           "Installed because another mod needs it.",

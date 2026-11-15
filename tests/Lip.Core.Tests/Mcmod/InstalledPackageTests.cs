@@ -171,15 +171,100 @@ public class InstalledPackageTests {
     Assert.Equal("1.0.0", (string?)result["manifest"]!["version"]);
   }
 
+  /// A mod that was installed at one version is updated to the highest version tag, by its
+  /// own update and by the update of all, which lip update without operands does not do.
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Update_OfAModInstalledAtOneVersion_MovesItToTheHighestVersion(bool all) {
+    // Arrange
+    _ws.AddTag(Lib, "1.0.0", LibFiles("1.0.0", "1"));
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+    _ws.AddTag(Lib, "1.5.0", LibFiles("1.5.0", "1.5"));
+    _ws.AddTag(Lib, "2.0.0", LibFiles("2.0.0", "2"));
+    _ws.Restart();
+    InstalledPackage package = await Listed();
+
+    // Act: without operands nothing changes; then as the interface updates.
+    OperationResult kept = await _ws.Service.Update([], _options with { DryRun = true });
+    OperationResult plan = all
+        ? await _ws.Service.UpdateMods(_options with { DryRun = true })
+        : await _ws.Service.Update([package.UpdateArgument], _options with { DryRun = true });
+    _ws.Restart();
+    OperationResult result = all
+        ? await _ws.Service.UpdateMods(_options)
+        : await _ws.Service.Update([package.UpdateArgument], _options);
+
+    // Assert
+    Assert.Equal(($"{Lib}@1.0.0", Lib), (package.Source, package.UpdateArgument));
+    Assert.Equal(OperationResult.Unchanged, kept);
+    Assert.Equal((OperationResult.Changed, OperationResult.Changed), (plan, result));
+    InstalledPackage updated = await Listed();
+    Assert.Equal(("2.0.0", Lib, true), (updated.Version, updated.Source, updated.Explicit));
+    Assert.Equal("2", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
+  }
+
+  [Fact]
+  public async Task UpdateMods_KeepsAModWhoseLocalPathIsGone_AndUpdatesTheOthers() {
+    // Arrange: a mod of a local path, one of a branch and one of a URL.
+    string path = _ws.AddZip("packages/pkg.zip", PkgFiles("1.0.0"));
+    await _ws.Service.Install([path], _options);
+    _ws.Git.AddBranch(Lib, "main", LibFiles("1.2.0", "head 1"));
+    await _ws.Service.Install([$"{Lib}@branch:main"], _options);
+    const string other = "example.com/other";
+    Dictionary<string, string> Other(string version) => new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          other, version, WorkspaceHarness.SelfAsset("o.txt", "o.txt")),
+      ["o.txt"] = version,
+    };
+    _ws.AddDownload(Url, WorkspaceHarness.Zip(Other("1.0.0")));
+    await _ws.Service.Install([Url], _options);
+    _ws.Fs.File.Delete(path);
+    _ws.AddTag(Lib, "9.0.0", LibFiles("9.0.0", "tag"));
+    string head = _ws.Git.AddBranch(Lib, "main", LibFiles("1.2.0", "head 2"));
+    _ws.AddDownload(Url, WorkspaceHarness.Zip(Other("2.0.0")));
+    _ws.Restart();
+    _ws.Warnings.Clear();
+
+    // Act
+    await _ws.Service.UpdateMods(_options);
+
+    // Assert
+    Dictionary<string, InstalledPackage> packages =
+        (await _ws.Service.List()).ToDictionary(p => p.Identity);
+    Assert.Equal("1.0.0", packages[Pkg].Version);
+    Assert.Equal("1.0.0", _ws.Fs.File.ReadAllText(_ws.Path("x.txt")));
+    Assert.Contains(_ws.Warnings, w => w.Contains(Pkg, StringComparison.Ordinal)
+        && w.Contains("does not exist any more", StringComparison.Ordinal));
+    Assert.Equal(
+        ($"{Lib}@branch:main", head), (packages[Lib].Source, packages[Lib].Commit));
+    Assert.Equal(("2.0.0", Url), (packages[other].Version, packages[other].Source));
+  }
+
+  [Fact]
+  public async Task UpdateMods_WithoutModsToUpdate_ChangesNothing() {
+    // Arrange: the game alone, which is no operand of lip update.
+    _ws.AddGame();
+    string before = _ws.Fs.File.ReadAllText(_ws.LockPath);
+
+    // Act
+    OperationResult result = await _ws.Service.UpdateMods(_options);
+
+    // Assert
+    Assert.Equal(OperationResult.Unchanged, result);
+    Assert.Equal(before, _ws.Fs.File.ReadAllText(_ws.LockPath));
+  }
+
   /// What is made of a recorded source, whatever the system: a local path is tested above.
   [Theory]
   // The version tags of a repository, with a variant.
   [InlineData(
       "example.com/lib#cuda", Commit, "example.com/lib#cuda", "example.com/lib#cuda@1.2.0",
       "example.com/lib#cuda", null)]
-  // A version: it is asked for again, and nothing tells it from the repository.
+  // A version: the update leaves it for the version tags, and nothing tells it from the
+  // repository.
   [InlineData(
-      "example.com/lib@1.2.0", Commit, "example.com/lib@1.2.0", "example.com/lib@1.2.0",
+      "example.com/lib@1.2.0", Commit, "example.com/lib", "example.com/lib@1.2.0",
       "example.com/lib", null)]
   [InlineData(
       "example.com/lib#cuda@branch:main", Commit, "example.com/lib#cuda@branch:main",
@@ -218,9 +303,8 @@ public class InstalledPackageTests {
 
     // Act & Assert
     Assert.Equal(
-        (update, view, repository, note, source == "example.com/lib@1.2.0"),
-        (package.UpdateArgument, package.ViewArgument, package.Repository, package.SourceNote,
-            package.AtVersion));
+        (update, view, repository, note),
+        (package.UpdateArgument, package.ViewArgument, package.Repository, package.SourceNote));
   }
 
   [Fact]

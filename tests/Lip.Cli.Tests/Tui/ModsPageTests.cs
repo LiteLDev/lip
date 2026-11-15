@@ -581,18 +581,95 @@ public sealed class ModsPageTests {
     Assert.Equal([_local], OpenedPaths().Distinct());
     Assert.DoesNotContain($"ListVersions({Gamma})", Asked());
 
-    // One version: the details area says that Update keeps it, and it is asked for again.
+    // One version, as Get mods installs: the update asks for the version tags of the
+    // repository, of which the highest that fits is installed, not for that version again.
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(Delta + "  3.0.0");
-    // The sentence is wrapped where the page is narrow.
-    Assert.Contains(
-        ModsText.AtVersionDetail[..Math.Min(20, ModsText.AtVersionDetail.Length)], tui.Screen);
+    Assert.Contains(ModsText.ExplicitDetail, tui.Screen);
     Assert.DoesNotContain(ModsText.Source + "  ", tui.Screen);
     tui.Snapshot("mods-source-version");
     await UpdateAndClose(tui);
-    Assert.Contains(
-        Asked(), call => call.StartsWith($"OpenCommit({Delta},", StringComparison.Ordinal));
-    Assert.DoesNotContain($"ListVersions({Delta})", Asked());
+    Assert.Contains($"ListVersions({Delta})", Asked());
+    Assert.DoesNotContain($"ResolveGitRef({Delta}, 3.0.0)", Asked());
+  }
+
+  /// The checked mods are updated as each is by itself: one installed at a version leaves it
+  /// for the version tags.
+  [Fact]
+  public async Task Checked_UpdateOfModsInstalledAtOneVersion_AsksForTheirVersionTags() {
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true), Package(Alpha, "1.2.0", true, $"{Alpha}@1.2.0"),
+            Package(Beta, "0.3.1", true, $"{Beta}@0.3.1")),
+        Language.ZhHant);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModsText.Checked(2));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateChecked(2));
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains($"ListVersions({Alpha})", Asked());
+    Assert.DoesNotContain(
+        Asked(), call => call.StartsWith("ResolveGitRef(", StringComparison.Ordinal));
+  }
+
+  /// Update all updates each mod as Update does, and keeps a mod whose local path is gone,
+  /// which the plan says.
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task UpdateAll_KeepsAModWhoseLocalPathIsGone_AndSaysSo(
+      Language language, int width, int height) {
+    string gone = OperatingSystem.IsWindows() ? @"C:\gone" : "/gone";
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true),
+            Package(Gamma, "0.1.0", true, Ref.FromFile(gone).ToString())),
+        language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Gamma);
+
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(StartOf(ModsText.UpdateAllDetail));
+    tui.Press(ConsoleKey.Enter);
+
+    // Nothing would change, so the plan can only be closed.
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    await tui.WaitFor("Keeping package");
+    tui.Snapshot("mods-update-all-gone");
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+    Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+    Assert.Empty(OpenedPaths());
+    Assert.DoesNotContain(
+        Asked(), call => call.StartsWith("ListVersions(", StringComparison.Ordinal));
+  }
+
+  /// Update all asks for the version tags of a mod that was installed at one version, which
+  /// lip update without operands would keep there, and for the branch of a mod of a branch.
+  [Fact]
+  public async Task UpdateAll_UpdatesAModInstalledAtOneVersion_AndNeverTheGame() {
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true, $"{Delta}@3.0.0")),
+        Language.ZhHans);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Delta);
+
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(ModsText.UpdateAllDetail);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains($"ListVersions({Delta})", Asked());
+    Assert.DoesNotContain(Asked(), call => call.Contains(Game, StringComparison.Ordinal));
   }
 
   [Fact]

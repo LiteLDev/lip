@@ -28,17 +28,19 @@ public record InstalledPackage(string Identity, string Version, bool Explicit) {
   /// Whether the package is the loader.
   public bool IsLoader => GameSetup.IsLoaderRepository(Location);
 
-  /// Whether the source names one version of a repository. lip update asks for that version
-  /// again, so the package stays at it until another version is asked for.
-  public bool AtVersion => Origin is { GitRef.Kind: GitRefKind.Version };
-
-  /// The package argument that names the recorded source (protocol/lip.md, "Package
-  /// arguments"). lip update with it makes the request of the package again, as lip update
-  /// without operands does for it (protocol/lip-update.md): a package of a branch, a tag or a
-  /// commit stays there, a URL is downloaded again and a local path is read again. The
-  /// identity when the source cannot be read.
+  /// The package argument (protocol/lip.md, "Package arguments") with which lip update
+  /// updates the package as the interface means it. A remote repository without a ref or at
+  /// a version is named without the ref, which moves the package to the highest version tag
+  /// that fits the workspace (protocol/lip-update.md). Any other source is named as it is
+  /// recorded: a package of a branch, a tag or a commit stays there, a URL is downloaded again
+  /// and a local path is read again. The identity when the source cannot be read.
   public string UpdateArgument =>
-      Origin is { } source ? PackageArguments.Of(source) : Identity;
+      Origin switch {
+        { Kind: RefKind.Spec, GitRef: null or { Kind: GitRefKind.Version } } source =>
+            WithVariant(source),
+        { } source => PackageArguments.Of(source),
+        null => Identity,
+      };
 
   /// The repository of the package as a package argument without a ref, to which '@' and a
   /// version, a branch, a tag or a commit can be added: the location of its source with the

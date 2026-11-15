@@ -368,10 +368,8 @@ public sealed class ModsPage : Page {
   private static string Detail(InstalledPackage package) =>
       package.IsGame ? ModsText.GameDetail
           : package.IsLoader ? ModsText.LoaderDetail
-          : !package.Explicit ? ModsText.DependencyDetail
-          // lip update asks for the same version again (protocol/lip-workspace.md, "Operations").
-          : package.AtVersion ? ModsText.AtVersionDetail
-          : ModsText.ExplicitDetail;
+          : package.Explicit ? ModsText.ExplicitDetail
+          : ModsText.DependencyDetail;
 
   /// A row of the list: the identity and the version in columns, muted for a dependency. An
   /// identity that is too long is cut in its middle, so that its name stays.
@@ -491,7 +489,7 @@ public sealed class ModsPage : Page {
         PromptInstall();
         break;
       case ModAction.UpdateAll:
-        Update([], ModsText.UpdateAll);
+        UpdateAll();
         break;
       case ModAction.GetMods:
         Context.Navigate(PageId.GetMods);
@@ -552,11 +550,12 @@ public sealed class ModsPage : Page {
         // lip update refuses the game and the loader: lip setup changes them.
         items.Add(Item(ModsText.GoToWorkspaces, () => Context.Navigate(PageId.Workspaces)));
       } else {
-        // The request of the package is made again, by the source that the state file records:
-        // the identity would name the version tags of a repository, which a package of a URL
-        // or of a local path has none of, and which a package of a branch, a tag or a commit
-        // would be moved back to (protocol/lip-update.md). Updating a dependency makes it
-        // explicitly installed, which the plan says.
+        // By the source that the state file records, not by the identity, which would name the
+        // version tags of a repository: a package of a URL or of a local path has none, and a
+        // package of a branch, a tag or a commit would be moved back to them
+        // (protocol/lip-update.md). A package of the version tags, or of one version, moves
+        // to the highest version that fits. Updating a dependency makes it explicitly
+        // installed, which the plan says.
         items.Add(Change(
             ModsText.Update,
             () => Update([package.UpdateArgument], ModsText.UpdateOperation(identity))));
@@ -727,6 +726,15 @@ public sealed class ModsPage : Page {
     }
 
     return GitRef.TryParse(value, out GitRef? gitRef, out _) ? gitRef.ToString() : null;
+  }
+
+  /// Updates every mod that the user installed as Update updates one, which lip update
+  /// without operands does not: it keeps a mod that was installed at one version there.
+  private void UpdateAll() {
+    LipClient client = Context.Client;
+    Context.PlanAndRun(
+        ModsText.UpdateAll, run => client.UpdateMods(run.DryRun, run.Token, run.Session),
+        _list.Checked.Clear);
   }
 
   private void Update(IReadOnlyList<string> arguments, string title) {
