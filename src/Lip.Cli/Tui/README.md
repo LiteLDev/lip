@@ -82,9 +82,12 @@ These hold on every page. Tests enforce some of them; reviewers check the rest.
   - Two keys that do the same are one hint: `Enter/Space Toggle`, `↑↓/Tab Move`,
     `←→/Tab Switch`. Not listed apart: Space where it presses what Enter presses (a button, a
     row of a menu), and ← or Tab where they leave the page as `Esc Back` does.
-  - Order them by how much they matter. The bar shows a hint whole or not at all; where they
-    do not all fit, it keeps the last one, Esc, and leaves the others out from the end. So the
-    keys that page (`ListView.PageHints`, `PgUp/PgDn Page`, `Home/End Ends`) go last.
+  - Order them by how much they matter. The bar shows a hint whole or not at all, in your
+    order; where they do not all fit, it keeps the last one, Esc, then the keys that act
+    (`Enter`, `Space`, `Ctrl+C`), and leaves the others out from the end. So the keys that page
+    (`ListView.PageHints`, `PgUp/PgDn Page`, `Home/End Ends`) go last. A toast has at most
+    half of the bar, and is cut further, to as little as ten columns, before Esc or a key
+    that acts is left out.
 - Every workspace operation goes through `Context.PlanAndRun`: preview (dry run) →
   `[Apply] [Cancel]` → the license when needed → progress → result. Cancel is "preview only".
   A plan that would change nothing has only `[Close]`.
@@ -241,7 +244,7 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 | Member | |
 |---|---|
 | `Version` | The version of lip. |
-| `Catalog` | `ModCatalogClient` for levimc.org. |
+| `Catalog` | `ModCatalogClient` for levimc.org. It keeps what it read in memory, for every page: `GetIndex()` gives the same `CatalogIndex` for ten minutes, `GetDetail(id)` the file of a mod as long. So ask it each time you need the catalogue, and keep no copy with a staleness rule of your own. Pass a `CancellationToken` where the user can stop waiting: the request is abandoned once nothing waits for it. |
 | `GithubProbe` | The reachability check, or null when the interface makes none. |
 | `ServerSetup` | `IServerSetup`: `GameVersions(client, session?)`, `LoaderVersions(client, game, token, session?)`, `Setup(client, request, run)`. Use it instead of `LipClient.Setup` so that tests can fake it. |
 | `SelfUpdate(client, checkOnly)` | `lip self-update [--check]` with a client that you read from `Client` before the operation started. For any thread. |
@@ -255,7 +258,8 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 | `Servers` | The `ServerSessions` of the process: the servers that this process runs. |
 | `Server` | The `WorkspaceServer` of the selected workspace that this process runs (null when none ever ran): `Running`, `Restarting`, `Stopping`, `ExitCode`, `StartedAt`, `LastLines(n)`, `Send(line)`, `Stop()`. |
 | `ServerRunning` | Whether the server of the selected workspace runs: `Server` runs, **or another lip runs it** (a plain `lip run`, another daemon), which holds `.lip/server.lock`. |
-| `IsServerRunning(workspace)` | The same for any workspace of the workspace list. |
+| `ServerRunsElsewhere` | Whether another lip runs the server of the selected workspace: `ServerRunning` without a `Server` that runs. The Server page then says so, and offers neither to start it nor its output. |
+| `IsServerRunning(workspace)` | The same as `ServerRunning` for any workspace of the workspace list. |
 | `RefuseWhileServerRuns(title)` | When the server of the selected workspace runs: shows "Stop the server first." in a dialog with the title, and returns true. |
 | `ServerRunsNow(workspace)` | As `IsServerRunning`, but it looks at the lock itself. **Not for the thread of the interface**: for the work of `Background` or `RunOperation`, right before it writes. |
 | `StartServer(title)` | Starts it as the protocol defines; a failure before it starts is shown in a dialog titled `title`. |
@@ -431,7 +435,7 @@ Dialogs (`Context.Show(new …)`); each takes every key until it closes:
 |---|---|
 | `ConfirmDialog(title, lines, buttons, chosen?, border?, fromEnd?)` | Lines that scroll above buttons. Enter presses the chosen button; **Esc presses the last one**, so put the button that changes nothing last. |
 | `PromptDialog(title, fields, submit, cancel?, validate?)` | One or more text fields. A long label, such as a question of a command, is wrapped. `validate` returns a localized error to keep the dialog open. |
-| `ChoiceDialog(title, items, chosen, cancel?, selected?)` | Choose one of a list; `ChoiceItem.Detail` is the one-sentence explanation in the details area. |
+| `ChoiceDialog(title, items, chosen, cancel?, selected?, note?)` | Choose one of a list; `ChoiceItem.Detail` is the one-sentence explanation in the details area. `note` is one sentence above the list that the user must know before they choose. |
 | `Menu(title, items)` | The action menu of a row (`Context.ShowMenu`). An item with `Enabled: false` is shown muted and skipped; with a `Reason` too, ↑ and ↓ stop at it, the menu shows the reason below the actions, and Enter does nothing. |
 | `ViewerDialog(title, text or lines)` | A large scrolling text: a README, a JSON text. |
 | `PathPicker.Folder` / `.OpenFile` / `.SaveFile` | A path, from a small file browser: see "Asking for a path". **Never ask for a path with a `PromptDialog`.** |
@@ -513,7 +517,7 @@ possible, in the bar, but is never the only way.
 | Factory | Chooses | Buttons |
 |---|---|---|
 | `PathPicker.Folder(title, start, chosen, cancel?, validate?)` | A folder that exists. | `[ Select this folder ] [ New folder… ] [ Cancel ]`; New folder… asks for a name, creates the folder and shows it. |
-| `PathPicker.Folder(…, mayNotExist: true)` | A folder that exists, or one that lip creates later: nothing is created. | The same; New folder… chooses the folder of that name in the one shown, and a path typed in the bar that does not exist is chosen as it is, unless a name in it is none or a file is in its way. |
+| `PathPicker.Folder(…, mayNotExist: true)` | A folder that exists, or one that lip creates later: nothing is created. | The same; New folder… chooses the folder of that name in the one shown, and a path typed in the bar that does not exist is chosen as it is, unless a name in it is none or a file is in its way. When `start` does not exist, the bar has the focus and holds it: reopen the picker with the folder that was chosen and it is not lost. |
 | `PathPicker.OpenFile(title, start, extensions, chosen, cancel?, validate?)` | A file that exists and ends with one of `extensions` (`[".zip"]`, any case; `[]` for every file): Enter on it. | `[ Cancel ]` |
 | `PathPicker.OpenFile(…, orFolder: true)` | Such a file, or the folder shown. | `[ Select this folder ] [ Cancel ]` |
 | `PathPicker.SaveFile(title, start, fileName, extension, chosen, cancel?, validate?)` | The folder shown and the name typed in the field below the list, which starts with `fileName`; `extension` (`".zip"`, `""` for none) is added to a name without it. The file may exist: ask before you overwrite it. | `[ Save ] [ New folder… ] [ Cancel ]` |
@@ -543,7 +547,7 @@ possible, in the bar, but is never the only way.
 ```csharp
 // New server: the folder may not exist yet, lip setup creates it.
 Context.Show(PathPicker.Folder(
-    WorkspacesText.NewServerFolder, Context.Workspace, folder => AskGame(folder),
+    WorkspacesText.NewServerTitle, Context.Workspace, folder => ReadGames(folder),
     mayNotExist: true));
 
 // Add an existing folder to the workspace list.
@@ -597,8 +601,8 @@ public static class ModsText {
 - Reuse `CommonText` for buttons (`Ok`, `Cancel`, `Apply`, `Save`, `Discard`, …), hints and
   common words, so that they read the same everywhere. What two pages name is there too:
   `NewServer`, `GetMods`, `AutoRestart`, `ConnectDirectly`, `NoMods`, `Saved`,
-  `SavedWhileRunning`, `DiscardTitle`, `DiscardQuestion`, `StopServerFirst` (why something
-  is disabled while the server runs). When your page needs a text that
+  `ChangedOnDisk`, `Overwrite`, `DiscardTitle`, `DiscardQuestion`, `StopServerFirst` (why
+  something is disabled while the server runs). When your page needs a text that
   another page has, move it to `CommonText` instead of writing it again.
 - One word for one thing: a directory is a folder (文件夹, 資料夾), and a URL is 网址 (網址).
 - Use the real Traditional Chinese terms (伺服器, 設定, 檔案, 模組, 工作區), not a character by
@@ -655,7 +659,8 @@ What `TuiHarnessOptions` replaces:
 | `Language`, `Width`, `Height` | The client language (null: none) and the terminal size. |
 | `FileSystem` | The `MockFileSystem` of the workspaces and the configuration; fill it before `Start` (for example a `.lip/state.json`: `TuiHarness.StateWithGame`). |
 | `CreateClient` | The `LipClient` of a workspace. Wrap `LipClient.Create(fs, interaction, hookOutput, workspace)` or build a client with mocked services to fake or record commands; `InteractionOf(client)` is how a fake command talks to the user. |
-| `Catalog` | The JSON text of a catalogue URL (`ModCatalogClient.BaseUrl + "index.json"`, `ModCatalogClient.DetailUrl(id)`). |
+| `Catalog` | The JSON text of a catalogue URL (`ModCatalogClient.BaseUrl + "index.json"`, `ModCatalogClient.DetailUrl(id)`). The interface asks for each URL once: its catalogue client keeps what it read. |
+| `CatalogRequest` | The same as a task, with the token that is cancelled when the request is abandoned. |
 | `GithubProbe` | `new GithubProbe((url, token) => Task.FromResult(200))`. |
 | `ServerSetup` | `harness => new FakeServerSetup(harness)`: two games, two loaders, a setup that records its calls (`Calls`) and their sessions (`Sessions`), asks for the license, and returns `Result` (`OperationResult.Changed` unless you set it). |
 | `SelfUpdate`, `DaemonStatus` | `lip self-update` and `lip daemon status`. |

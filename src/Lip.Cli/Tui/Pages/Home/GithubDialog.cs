@@ -12,7 +12,9 @@ public enum GithubAnswer {
 
 /// Asks how lip reaches GitHub once the reachability check failed: why it failed, the three
 /// answers, and one sentence about the selected one. ↑ and ↓ move, Enter answers, and Esc
-/// answers "later", which changes nothing and is the answer selected at first.
+/// answers "later", which changes nothing. "A proxy" is the answer selected at first, since it
+/// is what a user who does not reach GitHub needs: it changes nothing either until the user
+/// has entered a proxy.
 public sealed class GithubDialog : Dialog {
   private readonly string _failure;
   private readonly Action<GithubAnswer> _answered;
@@ -27,9 +29,6 @@ public sealed class GithubDialog : Dialog {
       Wrap = true,
       Items = [GithubAnswer.Proxy, GithubAnswer.Direct, GithubAnswer.Later],
     };
-    // The question comes unasked, perhaps while the user presses Enter for something else:
-    // the answer that changes nothing is the selected one.
-    _answers.Selected = _answers.Items.Count - 1;
   }
 
   public override IReadOnlyList<Hint> Hints =>

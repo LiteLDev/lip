@@ -18,7 +18,7 @@ public static class ModConfigText {
           "變更可能需重新啟動伺服器才生效。");
   public static string SavedWhileRunning =>
       L.T(
-          "Saved. Restart may be needed.",
+          "Saved. May need a restart.",
           "已保存，可能需要重启服务器。",
           "已儲存，可能需重新啟動伺服器。");
 
@@ -76,7 +76,14 @@ public static class ModConfigText {
           "请输入文本、数字、true、false 或 null。",
           "請輸入文字、數字、true、false 或 null。");
 
-  // Saving.
+  // Saving. A file that the server or a mod wrote since it was read is not overwritten
+  // unasked: the user overwrites it, reads it again, which drops their changes, or cancels.
+  public static string Reload => L.T("Reload", "重新读取", "重新讀取");
+  public static string ReloadDetail =>
+      L.T(
+          "Reload drops your changes.",
+          "重新读取会放弃你的更改。",
+          "重新讀取會捨棄你的變更。");
   public static string SaveTitle(string file) =>
       L.T($"Save {file}", $"保存 {file}", $"儲存 {file}");
 }

@@ -130,6 +130,13 @@ public sealed class AppContext {
   /// As ServerRunning, for any workspace of the workspace list.
   public bool IsServerRunning(string workspace) => _app.IsServerRunning(workspace);
 
+  /// Whether another lip runs the server of the selected workspace: a plain lip run, or
+  /// another daemon, which holds the server lock of the workspace, while this process has no
+  /// server that runs for it. As old as ServerRunning. The interface knows that such a server
+  /// runs and no more: Server is null or stopped for it, and it is stopped where it was
+  /// started.
+  public bool ServerRunsElsewhere => _app.ServerRunsElsewhere(Workspace);
+
   /// Whether the server of a workspace runs right now: as IsServerRunning, but looking at the
   /// server lock itself. Not for the thread of the interface: for the work of Background or
   /// RunOperation, right before it does what must not be done while the server runs.

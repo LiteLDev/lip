@@ -98,17 +98,115 @@ public class CatalogUnavailableException(string message, Exception? inner = null
 
 /// Reads the catalogue (protocol/lip-tui.md, "Catalogue") with HTTPS GETs, whatever github_proxy
 /// is, and keeps nothing on disk.
-public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string>>? get = null) {
+///
+/// What was read is kept in memory, so that everything that shows the catalogue shares it:
+/// index.json for ten minutes (StaleAfter), and the file of a mod as long, or until
+/// index.json is read again. What could not be read is not kept: the next call reads again.
+/// Calls that ask for a file while it is read share the one request. A call that is
+/// cancelled stops waiting, and the request is abandoned once no call waits for it.
+///
+/// get reads the text at a URL: an HTTPS GET when not given. clock tells the time in
+/// milliseconds: that of the system when not given.
+public sealed class ModCatalogClient(
+    Func<string, CancellationToken, Task<string>>? get = null, Func<long>? clock = null) {
   public const string BaseUrl = "https://levimc.org/api/v4/mods/";
+
+  /// How long a file of the catalogue that was read is taken to be what the catalogue holds.
+  public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(10);
 
   private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(20);
 
+  /// A file of the catalogue that is read, or was: the one request for it, what abandons the
+  /// request, how many calls wait for it, and when it was read, null until then.
+  private sealed class Entry<T>(CancellationTokenSource cancel) {
+    public Task<T> Task { get; set; } = null!;
+    public CancellationTokenSource Cancel { get; } = cancel;
+    public int Waiters { get; set; }
+    public long? ReadAt { get; set; }
+  }
+
   private readonly Func<string, CancellationToken, Task<string>> _get = get ?? Get;
+  private readonly Func<long> _clock = clock ?? (() => Environment.TickCount64);
+  private readonly Lock _gate = new();
+  private readonly Dictionary<string, Entry<CatalogDetail>> _details =
+      new(StringComparer.OrdinalIgnoreCase);
+  private Entry<CatalogIndex>? _index;
 
   /// The URL of the file of a mod.
   public static string DetailUrl(string id) => $"{BaseUrl}{id.Trim('/')}/index.json";
 
-  public async Task<CatalogIndex> GetIndex(CancellationToken cancellationToken = default) {
+  /// The mods of the catalogue: what was read less than ten minutes ago, otherwise index.json
+  /// as it is now. The same object is returned until index.json is read again.
+  public Task<CatalogIndex> GetIndex(CancellationToken cancellationToken = default) =>
+      Shared(
+          () => _index,
+          entry => _index = entry,
+          async token => {
+            CatalogIndex index = await ReadIndex(token);
+            lock (_gate) {
+              // The files of the mods are those of the index that names them: once it is
+              // read again, they are too. An index that cannot be read drops nothing.
+              _details.Clear();
+            }
+
+            return index;
+          },
+          cancellationToken);
+
+  /// Whether a file that was read, or is being read, answers a call now.
+  private bool Usable<T>(Entry<T> entry) =>
+      !entry.Cancel.IsCancellationRequested
+      && (!entry.Task.IsCompleted
+          || (entry.Task.IsCompletedSuccessfully && entry.ReadAt is { } at
+              && _clock() - at <= StaleAfter.TotalMilliseconds));
+
+  /// What find gives when it answers a call now, otherwise what read reads, which store then
+  /// keeps; store gets null to drop what it kept. find and store are called under the lock.
+  private async Task<T> Shared<T>(
+      Func<Entry<T>?> find,
+      Action<Entry<T>?> store,
+      Func<CancellationToken, Task<T>> read,
+      CancellationToken cancellationToken) {
+    Entry<T> entry;
+    lock (_gate) {
+      if (find() is { } kept && Usable(kept)) {
+        entry = kept;
+      } else {
+        Entry<T> started = new(new CancellationTokenSource());
+        started.Task = Task.Run(async () => {
+          T value = await read(started.Cancel.Token);
+          started.ReadAt = _clock();
+          return value;
+        });
+        store(started);
+        entry = started;
+      }
+
+      entry.Waiters++;
+    }
+
+    try {
+      return await entry.Task.WaitAsync(cancellationToken);
+    }
+    finally {
+      lock (_gate) {
+        entry.Waiters--;
+        if (!entry.Task.IsCompletedSuccessfully) {
+          if (entry.Waiters == 0 && !entry.Task.IsCompleted) {
+            // No call waits for the request any more: it is abandoned.
+            entry.Cancel.Cancel();
+          }
+
+          // What was not read, or is abandoned, answers no later call.
+          if ((entry.Task.IsCompleted || entry.Waiters == 0) && ReferenceEquals(find(), entry)) {
+            store(null);
+          }
+        }
+      }
+    }
+  }
+
+  private async Task<CatalogIndex> ReadIndex(CancellationToken cancellationToken) {
     using JsonDocument document = await Read(BaseUrl + "index.json", cancellationToken);
     List<CatalogMod> mods = [];
     HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
@@ -153,8 +251,29 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
       CancellationToken cancellationToken = default) =>
       new(await GetDetail(GameSetup.LoaderRepository, cancellationToken));
 
-  public async Task<CatalogDetail> GetDetail(
-      string id, CancellationToken cancellationToken = default) {
+  /// The file of a mod: what was read less than ten minutes ago, and since index.json was
+  /// last read, otherwise the file as it is now.
+  public Task<CatalogDetail> GetDetail(string id, CancellationToken cancellationToken = default) {
+    string key = id.Trim('/');
+    return Shared(
+        () => _details.GetValueOrDefault(key),
+        entry => {
+          if (entry is null) {
+            _details.Remove(key);
+          } else {
+            // What is too old to answer a call is not kept for nothing.
+            foreach (string stale in _details.Where(pair => !Usable(pair.Value))
+                .Select(pair => pair.Key).ToList()) {
+              _details.Remove(stale);
+            }
+
+            _details[key] = entry;
+          }
+        },
+        token => ReadDetail(id, token), cancellationToken);
+  }
+
+  private async Task<CatalogDetail> ReadDetail(string id, CancellationToken cancellationToken) {
     using JsonDocument document = await Read(DetailUrl(id), cancellationToken);
     JsonElement root = document.RootElement;
     if (root.ValueKind != JsonValueKind.Object) {
@@ -558,6 +677,11 @@ public sealed record CatalogFilter(
 /// A tag that groups other tags, as levimc.org/mods lists them first.
 public sealed record FeaturedTag(string Id, string Label, IReadOnlyList<string> Aliases);
 
+/// The names that an interface shows in its language in place of the English ones of
+/// CatalogQuery: of a tag, as CatalogQuery.DisplayTags gives it, and of a license family, by its
+/// id. A search matches them as well as the English names.
+public sealed record CatalogNames(Func<string, string> Tag, Func<string, string> LicenseFamily);
+
 /// Searching, filtering and ordering the mods of the catalogue, as levimc.org/mods does.
 public static class CatalogQuery {
   /// The featured tags of levimc.org/mods, in its order, with the tags that count as each.
@@ -669,9 +793,26 @@ public static class CatalogQuery {
   /// Whether a tag, as DisplayTags gives it, is a featured tag.
   public static bool IsFeatured(string tag) => _featured.ContainsKey(tag);
 
+  /// The label of a license family, by its id; the id for what is none.
+  public static string LicenseFamilyLabel(string family) {
+    foreach ((string id, string label) in LicenseFamilies) {
+      if (id == family) {
+        return label;
+      }
+    }
+
+    return family;
+  }
+
   /// The mods that the filter selects and that match every word of the search, ordered by sort.
+  /// names gives the names of the tags and of the license families as the user sees them, when
+  /// that is not in English: a word matches those too.
   public static IReadOnlyList<CatalogMod> Select(
-      CatalogIndex index, string search, CatalogFilter filter, CatalogSort sort) {
+      CatalogIndex index,
+      string search,
+      CatalogFilter filter,
+      CatalogSort sort,
+      CatalogNames? names = null) {
     string[] words = search.Split(
         [' ', ',', '，', '、', '\t'], StringSplitOptions.RemoveEmptyEntries);
     List<(CatalogMod Mod, int Score, int Order)> matches = [];
@@ -684,7 +825,7 @@ public static class CatalogQuery {
       int score = 0;
       bool all = true;
       foreach (string word in words) {
-        int quality = Match(mod, word);
+        int quality = Match(mod, word, search.Trim(), names);
         all &= quality > 0;
         score += quality;
       }
@@ -710,9 +851,10 @@ public static class CatalogQuery {
     ];
   }
 
-  /// How well a mod matches a word: its name before its id and owner, before its tags, before
-  /// its description; 0 when it does not.
-  private static int Match(CatalogMod mod, string word) {
+  /// How well a mod matches a word of the search, which is phrase as a whole: its name before
+  /// its id and owner, before its tags, before its description, before its license; 0 when
+  /// it does not. A tag matches by its id, its English name and the name that the user sees.
+  private static int Match(CatalogMod mod, string word, string phrase, CatalogNames? names) {
     const StringComparison ignoreCase = StringComparison.OrdinalIgnoreCase;
     if (mod.Name.Equals(word, ignoreCase)) {
       return 100;
@@ -731,10 +873,39 @@ public static class CatalogQuery {
     }
 
     if (DisplayTags(mod).Any(tag =>
-        tag.Contains(word, ignoreCase) || Label(tag).Contains(word, ignoreCase))) {
+        tag.Contains(word, ignoreCase) || Label(tag).Contains(word, ignoreCase)
+        || names?.Tag(tag).Contains(word, ignoreCase) == true)) {
       return 20;
     }
 
-    return mod.Description.Contains(word, ignoreCase) ? 10 : 0;
+    if (mod.Description.Contains(word, ignoreCase)) {
+      return 10;
+    }
+
+    return NamesLicense(mod, word, phrase, names) ? 5 : 0;
+  }
+
+  /// Whether a word of a search, or the search as a whole, names the license of a mod. Nearly
+  /// every mod is of one of a few license families, so a part of a word names none: the
+  /// search is the id, the English name or the name that the user sees of the family, or the
+  /// word is one of the words of such a name, of three characters or more, or two when they
+  /// are Chinese; or the word is the SPDX id of the license, or its first three characters or
+  /// more.
+  private static bool NamesLicense(
+      CatalogMod mod, string word, string phrase, CatalogNames? names) {
+    const StringComparison ignoreCase = StringComparison.OrdinalIgnoreCase;
+    string family = LicenseFamily(mod);
+    bool whole = word.Length >= 3 || (word.Length == 2 && word.Any(c => c >= 0x2E80));
+    foreach (string? name in (string?[])[
+        family, LicenseFamilyLabel(family), names?.LicenseFamily(family)]) {
+      if (name is not null && (name.Equals(phrase, ignoreCase)
+          || (whole && name.Split(' ').Any(part => part.Equals(word, ignoreCase))))) {
+        return true;
+      }
+    }
+
+    return LicenseOf(mod) is { } license
+        && (license.Equals(word, ignoreCase)
+            || (word.Length >= 3 && license.StartsWith(word, ignoreCase)));
   }
 }

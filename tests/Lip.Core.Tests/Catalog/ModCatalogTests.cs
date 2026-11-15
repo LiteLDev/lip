@@ -528,4 +528,65 @@ public class ModCatalogTests {
     Assert.True(support.Supports("1.26.60"));
     Assert.False(support.Supports("1.26.61"));
   }
+
+  /// The names of an interface in Chinese, for the tags and the license families that the
+  /// tests search for.
+  private static readonly CatalogNames _chinese = new(
+      tag => tag switch {
+        "economy" => "经济",
+        "visual" => "视觉与 HUD",
+        _ => CatalogQuery.Label(tag),
+      },
+      family => family switch {
+        "permissive" => "宽松许可",
+        "weak-copyleft" => "弱 Copyleft",
+        "none" => "无许可证",
+        _ => family,
+      });
+
+  [Theory]
+  // The name of a featured tag as the interface shows it, and its English name all the same.
+  [InlineData("经济", "LegacyMoney")]
+  [InlineData("视觉", "Arke")]
+  [InlineData("Economy", "LegacyMoney")]
+  // A license family, by the name shown, by its English name and by its id, and a license
+  // by its SPDX id or the start of it.
+  [InlineData("宽松许可", "LegacyMoney")]
+  [InlineData("弱 Copyleft", "PLand")]
+  [InlineData("无许可证", "Arke")]
+  [InlineData("Permissive", "LegacyMoney")]
+  [InlineData("weak copyleft", "PLand")]
+  [InlineData("weak-copyleft", "PLand")]
+  [InlineData("No license", "Arke")]
+  [InlineData("lgpl", "PLand")]
+  [InlineData("MIT", "LegacyMoney")]
+  // A part of a name of a license family names none: nearly every mod is of one of them.
+  [InlineData("permis", "")]
+  [InlineData("per", "")]
+  [InlineData("许可", "")]
+  [InlineData("弱", "")]
+  // Every word must match, whatever it matches.
+  [InlineData("经济 宽松许可", "LegacyMoney")]
+  [InlineData("经济 弱", "")]
+  public async Task Select_MatchesTheNamesThatTheUserSees_AsWellAsTheEnglishOnes(
+      string search, string expected) {
+    CatalogIndex index = await ReadIndex();
+
+    IReadOnlyList<CatalogMod> mods = CatalogQuery.Select(
+        index, search, CatalogFilter.For(null), CatalogSort.Relevance, _chinese);
+
+    Assert.Equal(expected, string.Join(",", mods.Select(mod => mod.Name)));
+  }
+
+  [Fact]
+  public async Task Select_WithoutNames_MatchesTheEnglishNamesOnly() {
+    CatalogIndex index = await ReadIndex();
+
+    Assert.Empty(CatalogQuery.Select(
+        index, "经济", CatalogFilter.For(null), CatalogSort.Relevance));
+    Assert.Equal(
+        ["LegacyMoney"],
+        CatalogQuery.Select(index, "permissive", CatalogFilter.For(null), CatalogSort.Relevance)
+            .Select(mod => mod.Name));
+  }
 }

@@ -43,12 +43,6 @@ public static class GameConfigText {
           "服务器运行期间无法保存更改。",
           "伺服器執行期間無法儲存變更。");
   public static string SaveTitle => L.T("Save game config", "保存游戏配置", "儲存遊戲設定");
-  public static string ChangedOnDisk =>
-      L.T(
-          "Changed on disk since it was read. Overwrite?",
-          "读取之后，磁盘上的文件已被修改。要覆盖吗？",
-          "讀取之後，磁碟上的檔案已被修改。要覆寫嗎？");
-  public static string Overwrite => L.T("Overwrite", "覆盖", "覆寫");
 
   // A property.
   public static string Edit => L.T("Edit…", "编辑…", "編輯…");

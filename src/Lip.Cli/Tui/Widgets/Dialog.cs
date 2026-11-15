@@ -203,19 +203,24 @@ public sealed class ChoiceDialog : Dialog {
   private readonly IReadOnlyList<ChoiceItem> _items;
   private readonly Action<int> _chosen;
   private readonly Action? _cancel;
+  private readonly string? _note;
   private readonly ListView<int> _list;
 
-  /// chosen gets the index of the option, once the dialog is closed.
+  /// chosen gets the index of the option, once the dialog is closed. note is one sentence
+  /// that the user must know before they choose, whatever is selected: it is shown above the
+  /// options.
   public ChoiceDialog(
       string title,
       IReadOnlyList<ChoiceItem> items,
       Action<int> chosen,
       Action? cancel = null,
-      int selected = 0) {
+      int selected = 0,
+      string? note = null) {
     _title = title;
     _items = items;
     _chosen = chosen;
     _cancel = cancel;
+    _note = note;
     _list = new ListView<int>(i => items[i].Label) {
       Wrap = true,
       Empty = () => CommonText.Empty,
@@ -234,14 +239,28 @@ public sealed class ChoiceDialog : Dialog {
         TextWidth.Of(_title) + 4,
         _items.Count == 0 ? 0 : _items.Max(i => TextWidth.Of(i.Label.PlainText)));
     if (!details) {
-      width = Math.Min(width, Math.Max(36, widest + 4));
+      width = Math.Min(
+          width, Math.Max(36, Math.Max(widest, TextWidth.Of(_note ?? "")) + 4));
     }
 
     List<string> detail = !details || !_list.HasCurrent ? []
         : TextWidth.Wrap(_items[_list.Current].Detail ?? "", width - 4);
+    List<string> note = _note is null ? [] : TextWidth.Wrap(_note, width - 4);
     int below = details ? Math.Max(2, detail.Count) + 1 : 0;
-    Rect inner = Ui.DialogFrame(screen, _title, width, Math.Max(1, _items.Count) + 2 + below);
-    _list.Draw(screen, inner.Shrink(bottom: below), true);
+    // The note and the line below it.
+    int above = note.Count == 0 ? 0 : note.Count + 1;
+    Rect inner = Ui.DialogFrame(
+        screen, _title, width, Math.Max(1, _items.Count) + 2 + above + below);
+    // On a small screen the note is cut before the options are, and says that it was.
+    above = Math.Min(above, Math.Max(0, inner.Height - below - Math.Min(_items.Count, 3)));
+    for (int i = 0; i < above - 1; i++) {
+      bool cut = i == above - 2 && above - 1 < note.Count;
+      screen.Write(
+          inner.X, inner.Y + i, cut ? TextWidth.Fit(note[i] + " …", inner.Width) : note[i],
+          Theme.Warning, inner.Right);
+    }
+
+    _list.Draw(screen, inner.Shrink(top: above, bottom: below), true);
     if (details) {
       int y = inner.Bottom - below;
       screen.Write(inner.X, y, new string('─', inner.Width), Theme.Border);

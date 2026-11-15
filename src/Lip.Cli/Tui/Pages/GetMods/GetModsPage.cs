@@ -44,9 +44,6 @@ public sealed class GetModsPage : Page {
   // How long the selection rests on a mod before its file is read, in milliseconds.
   private const int Rest = 300;
 
-  // After how long the catalogue is read again when the page is shown, in milliseconds.
-  private const int Stale = 10 * 60 * 1000;
-
   private readonly CatalogFilters _filters = new();
   private readonly TextRow _search;
   private readonly ChoiceRow _sort;
@@ -55,8 +52,7 @@ public sealed class GetModsPage : Page {
   // The files of the mods: those read, those being read, and those that could not be read
   // since the selection last moved.
   private readonly Dictionary<string, CatalogDetail> _files = new(StringComparer.Ordinal);
-  private readonly Dictionary<string, Task<CatalogDetail>> _detailReads =
-      new(StringComparer.Ordinal);
+  private readonly HashSet<string> _detailReads = new(StringComparer.Ordinal);
   private readonly HashSet<string> _detailsFailed = new(StringComparer.Ordinal);
   private HashSet<string> _installed = new(StringComparer.OrdinalIgnoreCase);
   // The game and the LeviLamina of the selected workspace; null until they are read, and
@@ -69,7 +65,8 @@ public sealed class GetModsPage : Page {
   private int _generation;
   private string? _error;
   private bool _loading;
-  private long _loadedAt;
+  // The language that the mods were last searched in: the search matches the names shown.
+  private Language _searchedIn;
   private Area _area = Area.List;
   private long _restedSince;
   private int _rowWidth = 1;
@@ -117,8 +114,11 @@ public sealed class GetModsPage : Page {
   private bool DetailsScroll => _view.Scrollable;
 
   public override void OnShown() {
-    if (_catalog is null || Environment.TickCount64 - _loadedAt > Stale) {
-      Load();
+    // The catalogue is asked for each time: Context.Catalog keeps what it read for ten
+    // minutes, shared with whatever else shows the catalogue, and reads it again after that.
+    Load();
+    if (_catalog is not null && _searchedIn != Context.Language) {
+      SelectMods(keep: true);
     }
 
     LoadInstalled();
@@ -171,8 +171,12 @@ public sealed class GetModsPage : Page {
         () => catalog.GetIndex(),
         index => {
           _loading = false;
+          if (ReferenceEquals(index, _catalog)) {
+            // What is shown is what the catalogue still holds.
+            return;
+          }
+
           _catalog = index;
-          _loadedAt = Environment.TickCount64;
           _generation++;
           _files.Clear();
           _detailReads.Clear();
@@ -218,16 +222,14 @@ public sealed class GetModsPage : Page {
   }
 
   /// Reads the file of a mod of the catalogue that is shown, unless it is being read; the page
-  /// keeps it once it is read. The task is for an action that waits for the file.
-  private Task<CatalogDetail> ReadDetail(string id) {
-    if (_detailReads.TryGetValue(id, out Task<CatalogDetail>? reading)) {
-      return reading;
+  /// keeps it once it is read.
+  private void ReadDetail(string id) {
+    if (!_detailReads.Add(id)) {
+      return;
     }
 
     ModCatalogClient catalog = Context.Catalog;
     int generation = _generation;
-    Task<CatalogDetail> read = Task.Run(() => catalog.GetDetail(id));
-    _detailReads[id] = read;
     void Read(CatalogDetail? detail) {
       if (generation != _generation) {
         return;
@@ -242,25 +244,27 @@ public sealed class GetModsPage : Page {
       }
     }
 
-    Context.Background(() => read, Read, _ => Read(null), anyWorkspace: true);
-    return read;
+    Context.Background(() => catalog.GetDetail(id), Read, _ => Read(null), anyWorkspace: true);
   }
 
   /// Carries out an action of the user that needs the file of a mod: at once when the file was
   /// read, otherwise once it is, behind a dialog that Esc cancels. then gets the file, or
-  /// null and why when it cannot be read.
+  /// null and why when it cannot be read. Esc abandons the request for the file too, unless
+  /// the details of the mod wait for the same file.
   private void WithDetail(CatalogMod mod, Action<CatalogDetail?, string?> then) {
     if (_files.TryGetValue(mod.Id, out CatalogDetail? known)) {
       then(known, null);
       return;
     }
 
-    Task<CatalogDetail> read = ReadDetail(mod.Id);
+    ModCatalogClient catalog = Context.Catalog;
+    string id = mod.Id;
+    int generation = _generation;
     Context.RunOperation(
         mod.Name,
         async token => {
           try {
-            return new DetailRead(await read.WaitAsync(token), null);
+            return new DetailRead(await catalog.GetDetail(id, token), null);
           }
           catch (OperationCanceledException) when (token.IsCancellationRequested) {
             return new DetailRead(null, null);
@@ -270,6 +274,11 @@ public sealed class GetModsPage : Page {
           }
         },
         result => {
+          if (result.Detail is { } detail && generation == _generation) {
+            _files[id] = detail;
+            _detailsFailed.Remove(id);
+          }
+
           if (result.Detail is not null || result.Error is not null) {
             then(result.Detail, result.Error);
           }
@@ -285,8 +294,14 @@ public sealed class GetModsPage : Page {
     }
 
     string? before = _list.HasCurrent ? _list.Current.Id : null;
+    // The search matches the names of the tags and of the license families as they are
+    // shown in the language of the interface, as well as the English ones.
+    _searchedIn = Context.Language;
     _list.Items = CatalogQuery.Select(
-        _catalog, _search.Value, _filters.ToFilter(), (CatalogSort)_sort.Selected);
+        _catalog, _search.Value, _filters.ToFilter(), (CatalogSort)_sort.Selected,
+        new CatalogNames(
+            tag => ModDetailsText.Tag(tag, CatalogQuery.Label(tag)),
+            family => GetModsText.LicenseFamily(family, family)));
     if (!keep || before is null || !_list.Select(mod => mod.Id == before)) {
       _list.Selected = 0;
     }
@@ -544,18 +559,22 @@ public sealed class GetModsPage : Page {
 
   #region Actions
 
-  /// The actions of a mod. It cannot be installed while the server of the workspace runs:
-  /// the action says so.
-  private void ShowActions(CatalogMod mod) =>
-      Context.ShowMenu(
-          mod.Name,
-          Context.ServerRunning
-              ? new MenuItem(GetModsText.InstallWhileRunning, () => { }, Enabled: false)
-              : new MenuItem(GetModsText.Install, () => ChooseVersion(mod)),
-          new MenuItem(ModDetailsText.Readme, () => ShowReadme(mod)),
-          new MenuItem(
-              ModDetailsText.OpenInBrowser, () => Context.OpenUrl(mod.Url),
-              Enabled: mod.Url.Length > 0));
+  /// The actions of a mod. It cannot be installed while the server of the workspace runs, and
+  /// a mod without a page has none to open: the action is there, and says why it cannot be
+  /// chosen.
+  private void ShowActions(CatalogMod mod) {
+    bool running = Context.ServerRunning;
+    bool page = mod.Url.Length > 0;
+    Context.ShowMenu(
+        mod.Name,
+        new MenuItem(
+            GetModsText.Install, () => ChooseVersion(mod), Enabled: !running,
+            Reason: running ? CommonText.StopServerFirst : null),
+        new MenuItem(ModDetailsText.Readme, () => ShowReadme(mod)),
+        new MenuItem(
+            ModDetailsText.OpenInBrowser, () => Context.OpenUrl(mod.Url), Enabled: page,
+            Reason: page ? null : ModDetailsText.NoPage));
+  }
 
   /// Asks for the variant and the version, among those that fit the game and the LeviLamina
   /// that the workspace has now. A workspace without a game is offered a server instead.

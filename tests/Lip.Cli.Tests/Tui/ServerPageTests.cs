@@ -248,7 +248,7 @@ public sealed class ServerPageTests {
       Assert.False(tui.Run.IsCompleted);
     }
     finally {
-      await End(servers, root);
+      TestClients.Remove(root, servers);
     }
   }
 
@@ -299,7 +299,7 @@ public sealed class ServerPageTests {
       await tui.WaitFor("○ Exited with code 0");
     }
     finally {
-      await End(servers, root);
+      TestClients.Remove(root, servers);
     }
   }
 
@@ -383,7 +383,151 @@ public sealed class ServerPageTests {
       await tui.WaitFor("○ " + ServerText.ExitedWith(0));
     }
     finally {
-      await End(servers, root);
+      TestClients.Remove(root, servers);
+    }
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Server_ThatAnotherLipRuns_IsShownAsRunningElsewhere_AndIsNotStartedHere(
+      Language language, int width, int height) {
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      FileSystem = WithGame(),
+      Language = language,
+      Width = width,
+      Height = height,
+    });
+    await tui.GoTo(PageId.Server);
+    await tui.WaitFor("○ " + CommonText.ServerStopped);
+    await tui.WaitFor($"[ ] {CommonText.AutoRestart}");
+
+    // Another lip run starts the server: it holds the server lock of the workspace.
+    await tui.SetServerRunning(true);
+
+    // The page says that it runs, and where it is stopped, and offers neither its output nor
+    // an input line; the top bar agrees.
+    await tui.WaitFor("● " + ServerText.RunningElsewhere);
+    tui.Snapshot("server-elsewhere");
+    Assert.Contains(ServerText.RunningElsewhereDetail, tui.Screen);
+    Assert.Contains($"[ {ServerText.Start} ]", tui.Screen);
+    Assert.DoesNotContain(ServerText.NoOutput, tui.Screen);
+    Assert.DoesNotContain($" {ServerText.Output} ", tui.Screen);
+    Assert.DoesNotContain("> ", tui.Screen);
+    Assert.DoesNotContain(CommonText.ServerStopped, tui.Screen);
+    Assert.EndsWith("● " + CommonText.ServerRunning, tui.Screen.Split('\n')[0]);
+
+    // The button is disabled: the bar names no Enter, and Enter starts nothing.
+    Assert.Equal(" " + Bar(CommonText.HintSwitch, CommonText.HintBack), LastRow(tui));
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.Settle();
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+    Assert.DoesNotContain(tui.Text(() => ServerText.StartTitle), tui.Screen);
+    Assert.Null(tui.Servers.Find(tui.Root));
+
+    // Asking to start it from another page, as the Home page does, starts nothing either.
+    await tui.Invoke(() => tui.Context.Navigate(PageId.Server, PageRequest.StartServer));
+    await tui.Settle();
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+    Assert.Null(tui.Servers.Find(tui.Root));
+
+    // The toggle still works, and says so; ↓ and Tab have no output to go to: Tab leaves.
+    tui.Press(ConsoleKey.RightArrow);
+    await tui.WaitFor(_ => LastRow(tui).Contains(
+        Bar(CommonText.HintSwitch, CommonText.HintToggleEither, CommonText.HintBack)),
+        "the toggle");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.Settle();
+    Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+
+    // The sidebar marks the server as running.
+    Assert.Matches($@"{Regex.Escape(ServerText.Title)}\s+●", tui.Screen);
+
+    // Once the other lip has stopped it, it can be started here again.
+    await tui.SetServerRunning(false);
+    await tui.WaitFor("○ " + CommonText.ServerStopped);
+    await tui.WaitFor(ServerText.NoOutput);
+    Assert.DoesNotContain(ServerText.RunningElsewhere, tui.Screen);
+  }
+
+  [Fact]
+  public async Task Server_OfThisInterface_WhichHoldsTheLockToo_IsNotTakenForOneOfAnotherLip() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "The server of the test is cmd.exe.");
+    string root = TestClients.CmdWorkspace();
+    ServerSessions servers = new();
+    try {
+      System.IO.Abstractions.FileSystem fs = new();
+      using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+        CreateClient = (interaction, hookOutput, _) =>
+            TestClients.CmdClient(fs, interaction, hookOutput, root),
+        Servers = servers,
+      });
+      await tui.GoTo(PageId.Server);
+      await tui.WaitFor($"[ {ServerText.Start} ]");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor($"[ {ServerText.Stop} ]");
+
+      // The server lock of the workspace is held, as lip run holds it for the server of this
+      // interface too. The interface looks at it about once a second: more than once here.
+      tui.SetServerLockHeld(true, tui.Root);
+      await Task.Delay(2500, TestContext.Current.CancellationToken);
+      Assert.True(await tui.Invoke(() => tui.Context.ServerRunning));
+      Assert.False(await tui.Invoke(() => tui.Context.ServerRunsElsewhere));
+      Assert.DoesNotContain(ServerText.RunningElsewhere, tui.Screen);
+      Assert.Contains($"[ {ServerText.Stop} ]", tui.Screen);
+
+      // It exits, and lets go of the lock: the page says how it ended, with its output.
+      tui.SetServerLockHeld(false, tui.Root);
+      tui.Type("exit 3");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor("○ " + ServerText.ExitedWith(3));
+      Assert.DoesNotContain(ServerText.RunningElsewhere, tui.Screen);
+      Assert.Contains("> exit 3", tui.Screen);
+      Assert.False(await tui.Invoke(() => tui.Context.ServerRunsElsewhere));
+    }
+    finally {
+      TestClients.Remove(root, servers);
+    }
+  }
+
+  [Fact]
+  public async Task Harness_DisposedWhileItsServerRuns_EndsIt_AndItsWorkspaceIsRemoved() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "The server of the test is cmd.exe.");
+    string root = TestClients.CmdWorkspace();
+    try {
+      System.IO.Abstractions.FileSystem fs = new();
+      using (TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+        CreateClient = (interaction, hookOutput, _) =>
+            TestClients.CmdClient(fs, interaction, hookOutput, root),
+      })) {
+        await tui.GoTo(PageId.Server);
+        await tui.WaitFor($"[ {ServerText.Start} ]");
+        tui.Press(ConsoleKey.Enter);
+        await tui.WaitFor($"[ {ServerText.Stop} ]");
+
+        // The test ends here, as one that failed does: its server still runs.
+      }
+    }
+    finally {
+      TestClients.Remove(root);
+    }
+
+    Assert.False(Directory.Exists(root));
+  }
+
+  [Fact]
+  public void Remove_OfADirectoryThatCmdWorkspaceDidNotMake_DeletesNothing() {
+    string other = Directory.CreateTempSubdirectory("lip-tui-other-").FullName;
+    try {
+      Assert.Throws<ArgumentException>(() => TestClients.Remove(other));
+      Assert.True(Directory.Exists(other));
+    }
+    finally {
+      Directory.Delete(other, recursive: true);
     }
   }
 
@@ -402,21 +546,4 @@ public sealed class ServerPageTests {
 
   /// The bottom bar.
   private static string LastRow(TuiHarness tui) => tui.Screen.Split('\n')[^1];
-
-  /// Ends the server of a test that failed before it did, and deletes its workspace.
-  private static async Task End(ServerSessions servers, string root) {
-    foreach (WorkspaceServer server in servers.Running()) {
-      server.Send("exit");
-      for (int i = 0; i < 200 && server.Running; i++) {
-        await Task.Delay(25, TestContext.Current.CancellationToken);
-      }
-    }
-
-    try {
-      Directory.Delete(root, recursive: true);
-    }
-    catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) {
-      // The server still runs.
-    }
-  }
 }
