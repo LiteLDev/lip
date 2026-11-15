@@ -6,7 +6,7 @@ Run a LeviLamina server and manage its packages
 
 ## Usage
 
-Check out [the documentation](https://docs.levimc.org/lip/) for more information.
+Check out [the documentation](https://levimc.org/lip/) for more information.
 
 ## Contributing
 
