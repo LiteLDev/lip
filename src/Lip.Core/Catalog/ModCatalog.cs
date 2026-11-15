@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
 using Flurl.Http;
+using Lip.Core.Mcmod;
+using Semver;
 
 namespace Lip.Core.Catalog;
 
@@ -22,14 +24,41 @@ public sealed record CatalogMod(
     int RequiredBy,
     string Url,
     string? License = null) {
+  /// How many times the mod was downloaded; null when index.json does not say, which is not
+  /// the same as never.
+  public long? Downloads { get; init; }
+
+  /// How popular the mod is among the mods of the catalogue, as levimc.org/mods orders them
+  /// (CatalogPopularity); 0 for a mod that was not read from index.json.
+  public double Popularity { get; init; }
+
   /// Whether the latest version of the mod has an entry for the side.
   public bool RunsOn(string side) => Sides.Contains(side, StringComparer.OrdinalIgnoreCase);
 }
 
-/// One version of a mod, as its file of the catalogue lists it. Variants are the variants of
-/// the version that have an entry for a server; "" is the default variant.
+/// One entry of a variant of a version of a mod: what the variant is built for, and the
+/// packages that it depends on, by their ids, with the range of each. Variant is "" for the
+/// default variant.
+public sealed record CatalogBuild(
+    string Variant, string Side, string Platform, IReadOnlyDictionary<string, string> Dependencies);
+
+/// One version of a mod, as its file of the catalogue lists it, with the entries of all of its
+/// variants; there is none when the file does not say which variants the version has.
 public sealed record CatalogVersion(
-    string Version, bool Prerelease, DateTimeOffset? Released, IReadOnlyList<string> Variants);
+    string Version, bool Prerelease, DateTimeOffset? Released, IReadOnlyList<CatalogBuild> Builds) {
+  /// The variants of the version that have an entry for a server, the default variant ("")
+  /// first; the default variant alone when the file does not say.
+  public IReadOnlyList<string> Variants => Builds.Count == 0
+      ? [""]
+      : [
+        .. Builds.Where(build => build.Side == "server").Select(build => build.Variant)
+            .Distinct(StringComparer.Ordinal).OrderBy(variant => variant.Length == 0 ? 0 : 1),
+      ];
+
+  /// The entries of a variant for a server.
+  public IEnumerable<CatalogBuild> ServerBuilds(string variant) =>
+      Builds.Where(build => build.Side == "server" && build.Variant == variant);
+}
 
 /// What the file of a mod adds to its entry in index.json.
 public sealed record CatalogDetail(
@@ -39,10 +68,29 @@ public sealed record CatalogDetail(
     string? LatestVersion,
     string? LatestVariant,
     IReadOnlyList<CatalogVersion> Versions,
-    string? Readme);
+    string? Readme) {
+  /// Every variant that a version of the mod has an entry for a server in, the default variant
+  /// ("") first, the others as the file first names them; the default variant alone when the
+  /// file lists no version.
+  public IReadOnlyList<string> ServerVariants() {
+    List<string> variants = [
+      .. Versions.SelectMany(version => version.Variants).Distinct(StringComparer.Ordinal)
+          .OrderBy(variant => variant.Length == 0 ? 0 : 1),
+    ];
+    return variants.Count == 0 ? [""] : variants;
+  }
+}
 
 /// The catalogue as index.json lists it, in its order.
-public sealed record CatalogIndex(IReadOnlyList<CatalogMod> Mods);
+public sealed record CatalogIndex(IReadOnlyList<CatalogMod> Mods) {
+  /// The mod of the catalogue that an installed package is of: the one whose id is the
+  /// identity of the package without its variant (what follows #), whatever the case of the
+  /// ASCII letters; null when the catalogue has no such mod.
+  public CatalogMod? Find(string identity) {
+    string id = identity.Split('#')[0];
+    return Mods.FirstOrDefault(mod => PackageNames.AreEqual(mod.Id, id));
+  }
+}
 
 /// Thrown when a file of the catalogue cannot be read.
 public class CatalogUnavailableException(string message, Exception? inner = null)
@@ -88,12 +136,22 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
             Time(mod, "created"),
             Number(mod, "requiredBy"),
             String(mod, "url") ?? "",
-            String(mod, "license")));
+            String(mod, "license")) {
+          Downloads = Count(mod, "downloads"),
+        });
       }
     }
 
-    return new CatalogIndex(mods);
+    IReadOnlyList<double> popularity = CatalogPopularity.Scores(mods);
+    return new CatalogIndex(
+        [.. mods.Select((mod, i) => mod with { Popularity = popularity[i] })]);
   }
+
+  /// Which versions of the game have a version of LeviLamina, as the file of LeviLamina in the
+  /// catalogue tells: one request.
+  public async Task<LoaderSupport> GetLoaderSupport(
+      CancellationToken cancellationToken = default) =>
+      new(await GetDetail(GameSetup.LoaderRepository, cancellationToken));
 
   public async Task<CatalogDetail> GetDetail(
       string id, CancellationToken cancellationToken = default) {
@@ -113,7 +171,7 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
               version.TryGetProperty("prerelease", out JsonElement prerelease)
                   && prerelease.ValueKind == JsonValueKind.True,
               Time(version, "released"),
-              ServerVariants(version)));
+              Builds(version)));
         }
       }
     }
@@ -129,23 +187,29 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
         Readme(root));
   }
 
-  /// The variants of a version with an entry whose side is "server", the default variant
-  /// first; the default variant alone when the version does not say.
-  private static List<string> ServerVariants(JsonElement version) {
+  /// The entries of the variants of a version, in the order of the file.
+  private static List<CatalogBuild> Builds(JsonElement version) {
+    List<CatalogBuild> builds = [];
     if (!version.TryGetProperty("variants", out JsonElement variants)
         || variants.ValueKind != JsonValueKind.Object) {
-      return [""];
+      return builds;
     }
 
-    List<string> names = [];
     foreach (JsonProperty variant in variants.EnumerateObject()) {
-      if (variant.Value.ValueKind == JsonValueKind.Array
-          && variant.Value.EnumerateArray().Any(entry => String(entry, "side") == "server")) {
-        names.Add(variant.Name);
+      if (variant.Value.ValueKind != JsonValueKind.Array) {
+        continue;
+      }
+
+      foreach (JsonElement entry in variant.Value.EnumerateArray()) {
+        if (entry.ValueKind == JsonValueKind.Object) {
+          builds.Add(new CatalogBuild(
+              variant.Name, String(entry, "side") ?? "", String(entry, "platform") ?? "",
+              StringMap(entry, "deps")));
+        }
       }
     }
 
-    return [.. names.OrderBy(name => name.Length == 0 ? 0 : 1)];
+    return builds;
   }
 
   /// The README in English when there is one, otherwise the first.
@@ -199,6 +263,15 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
           ? (int)number
           : 0;
 
+  /// A count that the file may leave out: null then, and for what is not a count.
+  private static long? Count(JsonElement element, string name) =>
+      element.TryGetProperty(name, out JsonElement value)
+          && value.ValueKind == JsonValueKind.Number
+          && value.TryGetDouble(out double number)
+          && number >= 0
+          ? (long)number
+          : null;
+
   private static DateTimeOffset? Time(JsonElement element, string name) =>
       DateTimeOffset.TryParse(
           String(element, name), CultureInfo.InvariantCulture,
@@ -236,13 +309,200 @@ public sealed class ModCatalogClient(Func<string, CancellationToken, Task<string
   }
 }
 
-/// How the mods of the catalogue are ordered.
+/// How the mods of the catalogue are ordered: the orders of levimc.org/mods, in its order.
 public enum CatalogSort {
   /// The order of index.json; with a search, the best match first.
   Relevance,
-  Stars,
+
+  /// The most popular first (CatalogPopularity), then the most stars, then the last updated.
+  Popularity,
+
+  /// The last updated first, then the most popular.
   Updated,
+
+  /// The last created first, then the most popular.
   Newest,
+}
+
+/// How popular the mods of the catalogue are, as levimc.org/mods computes it from index.json.
+public static class CatalogPopularity {
+  /// The mean and the population standard deviation of ln(1 + value) over values.
+  private sealed class Fit {
+    private readonly double _mean;
+    private readonly double _deviation;
+
+    public Fit(IReadOnlyCollection<long> values) {
+      if (values.Count == 0) {
+        return;
+      }
+
+      double mean = values.Average(value => Math.Log(1 + value));
+      _mean = mean;
+      _deviation = Math.Sqrt(
+          values.Sum(value => Math.Pow(Math.Log(1 + value) - mean, 2)) / values.Count);
+    }
+
+    /// How many deviations ln(1 + value) is above the mean; 0 when the values do not differ.
+    public double Z(long value) =>
+        _deviation > 0 ? (Math.Log(1 + value) - _mean) / _deviation : 0;
+  }
+
+  /// The popularity of each of the mods, in their order. With z(x) = (ln(1 + x) - mean) / sd,
+  /// where the mean and the population standard deviation are those of ln(1 + x) over the
+  /// mods (z is 0 when sd is 0): the mean of z of the stars, fitted on the stars of every mod,
+  /// and z of the downloads, fitted on the downloads of the mods that have a count; a mod
+  /// without a count of downloads takes z of its stars for both. Rounded to three decimals.
+  public static IReadOnlyList<double> Scores(IReadOnlyList<CatalogMod> mods) {
+    Fit stars = new([.. mods.Select(mod => (long)mod.Stars)]);
+    Fit downloads = new([
+      .. mods.Where(mod => mod.Downloads is not null).Select(mod => mod.Downloads!.Value),
+    ]);
+    return [
+      .. mods.Select(mod => {
+        double ofStars = stars.Z(mod.Stars);
+        double ofDownloads = mod.Downloads is { } count ? downloads.Z(count) : ofStars;
+        // Half up, as levimc.org/mods rounds.
+        return Math.Floor(((ofStars + ofDownloads) / 2 * 1000) + 0.5) / 1000;
+      }),
+    ];
+  }
+}
+
+/// The versions of the game and of LeviLamina that a workspace has; null for what it lacks.
+public sealed record CatalogWorkspace(string? Game, string? Loader) {
+  /// What the installed packages of a workspace (LipClient.ListPackages) say.
+  public static CatalogWorkspace Of(IEnumerable<InstalledPackage> packages) {
+    string? game = null;
+    string? loader = null;
+    foreach (InstalledPackage package in packages) {
+      string id = package.Identity.Split('#')[0];
+      if (BedrockServer.IsRepository(id)) {
+        game ??= package.Version;
+      } else if (GameSetup.IsLoaderRepository(id)) {
+        loader ??= package.Version;
+      }
+    }
+
+    return new CatalogWorkspace(game, loader);
+  }
+}
+
+/// Whether the versions of a mod of the catalogue fit a workspace. This is what the catalogue
+/// tells before anything is installed; lip install decides.
+public static class CatalogCompatibility {
+  /// The platform of every environment (protocol/lip.md, "Environment"): an entry for another
+  /// platform is never installed. An entry that names no platform is taken to be for it.
+  public const string Platform = "win-x64";
+
+  /// Whether an entry is one that lip can install for a server.
+  internal static bool IsForServer(CatalogBuild build) =>
+      build.Side == "server" && (build.Platform.Length == 0 || build.Platform == Platform);
+
+  /// Whether a variant of a version of a mod fits the game and the LeviLamina of a workspace.
+  /// The version must have an entry of the variant for a server, and in one such entry, of
+  /// the platform of lip, every range of a dependency on LeviLamina or on the game must
+  /// contain the installed version of it. So a variant that depends on neither fits any
+  /// workspace, and one that depends on LeviLamina fits no workspace without LeviLamina. A
+  /// version whose variants the file does not list fits, and a range that lip cannot read
+  /// rules nothing out.
+  public static bool IsCompatible(
+      CatalogVersion version, string variant, CatalogWorkspace workspace) {
+    if (!version.Variants.Contains(variant)) {
+      return false;
+    }
+
+    if (version.Builds.Count == 0) {
+      return true;
+    }
+
+    return version.ServerBuilds(variant).Where(IsForServer).Any(
+        build => build.Dependencies.All(dependency => {
+          string id = dependency.Key.Split('#')[0];
+          return GameSetup.IsLoaderRepository(id) ? Contains(dependency.Value, workspace.Loader)
+              : !BedrockServer.IsRepository(id) || Contains(dependency.Value, workspace.Game);
+        }));
+  }
+
+  /// Whether an entry for a server of a variant of a version of the mod depends on
+  /// LeviLamina: what to tell the user when no version fits.
+  public static bool NeedsLoader(CatalogDetail detail, string variant) =>
+      detail.Versions.Any(version => version.ServerBuilds(variant).Any(
+          build => build.Dependencies.Keys.Any(
+              id => GameSetup.IsLoaderRepository(id.Split('#')[0]))));
+
+  /// The versions of a mod that fit a workspace in a variant, in the order of the file, which
+  /// lists the newest first.
+  public static IReadOnlyList<CatalogVersion> Versions(
+      CatalogDetail detail, string variant, CatalogWorkspace workspace) =>
+      [.. detail.Versions.Where(version => IsCompatible(version, variant, workspace))];
+
+  /// Whether a range contains an installed version; false for nothing installed.
+  private static bool Contains(string range, string? installed) {
+    if (installed is null) {
+      return false;
+    }
+
+    return !VersionRange.TryParse(range, out VersionRange? parsed)
+        || !SemVersion.TryParse(installed, SemVersionStyles.Any, out SemVersion? version)
+        || parsed!.IsSatisfiedBy(version);
+  }
+}
+
+/// Which versions of the game have a version of LeviLamina, as the file of LeviLamina in the
+/// catalogue tells: a version of LeviLamina is for the versions of the game that the range of
+/// its dependency on the game contains, in an entry for a server of the platform of lip.
+public sealed class LoaderSupport {
+  // The versions of LeviLamina in the order of the file, the newest first, each with the
+  // ranges of the game that it is for.
+  private readonly List<(string Version, bool Prerelease, List<VersionRange> Games)> _versions =
+      [];
+
+  /// loader is the file of LeviLamina (GameSetup.LoaderRepository) in the catalogue.
+  public LoaderSupport(CatalogDetail loader) {
+    foreach (CatalogVersion version in loader.Versions) {
+      List<VersionRange> games = [];
+      foreach (CatalogBuild build in version.Builds.Where(CatalogCompatibility.IsForServer)) {
+        foreach (KeyValuePair<string, string> dependency in build.Dependencies) {
+          if (BedrockServer.IsRepository(dependency.Key.Split('#')[0])
+              && VersionRange.TryParse(dependency.Value, out VersionRange? range)) {
+            games.Add(range!);
+          }
+        }
+      }
+
+      if (games.Count > 0) {
+        _versions.Add((version.Version, version.Prerelease, games));
+      }
+    }
+  }
+
+  /// The newest version of LeviLamina for a version of the game, or null when there is none.
+  /// Prereleases of LeviLamina do not count, unless no other version is for the game: then the
+  /// newest prerelease is the answer.
+  public string? VersionFor(SemVersion game) =>
+      Newest(game, prerelease: false) ?? Newest(game, prerelease: true);
+
+  /// The same for a version of the game as text; null for what is not a version.
+  public string? VersionFor(string game) =>
+      SemVersion.TryParse(game, SemVersionStyles.Any, out SemVersion? version)
+          ? VersionFor(version)
+          : null;
+
+  /// Whether a version of the game has a version of LeviLamina.
+  public bool Supports(SemVersion game) => VersionFor(game) is not null;
+
+  /// The same for a version of the game as text.
+  public bool Supports(string game) => VersionFor(game) is not null;
+
+  private string? Newest(SemVersion game, bool prerelease) {
+    foreach ((string version, bool pre, List<VersionRange> games) in _versions) {
+      if (pre == prerelease && games.Any(range => range.IsSatisfiedBy(game))) {
+        return version;
+      }
+    }
+
+    return null;
+  }
 }
 
 /// Which mods of the catalogue to select: those that have an entry for Side (when not null),
@@ -434,13 +694,20 @@ public static class CatalogQuery {
       }
     }
 
+    // The orders of levimc.org/mods; what they leave equal is ordered by the id in lower case.
     IOrderedEnumerable<(CatalogMod Mod, int Score, int Order)> ordered = sort switch {
-      CatalogSort.Stars => matches.OrderByDescending(m => m.Mod.Stars),
-      CatalogSort.Updated => matches.OrderByDescending(m => m.Mod.Updated),
-      CatalogSort.Newest => matches.OrderByDescending(m => m.Mod.Created),
-      _ => matches.OrderByDescending(m => m.Score),
+      CatalogSort.Popularity => matches.OrderByDescending(m => m.Mod.Popularity)
+          .ThenByDescending(m => m.Mod.Stars).ThenByDescending(m => m.Mod.Updated),
+      CatalogSort.Updated => matches.OrderByDescending(m => m.Mod.Updated)
+          .ThenByDescending(m => m.Mod.Popularity),
+      CatalogSort.Newest => matches.OrderByDescending(m => m.Mod.Created)
+          .ThenByDescending(m => m.Mod.Popularity),
+      _ => matches.OrderByDescending(m => m.Score).ThenBy(m => m.Order),
     };
-    return [.. ordered.ThenBy(m => m.Order).Select(m => m.Mod)];
+    return [
+      .. ordered.ThenBy(m => m.Mod.Id.ToLowerInvariant(), StringComparer.Ordinal)
+          .Select(m => m.Mod),
+    ];
   }
 
   /// How well a mod matches a word: its name before its id and owner, before its tags, before

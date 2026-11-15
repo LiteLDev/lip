@@ -352,6 +352,41 @@ Dialogs (`Context.Show(new …)`); each takes every key until it closes:
 To write your own dialog, derive from `Dialog`: `Hints`, `Draw(screen)` (use
 `Ui.DialogFrame`), `OnKey(key)`, `Close()`, and `Context`.
 
+### The details of a mod
+
+`ModDetails` shows a mod of the catalogue as the Get mods page does: its description, then
+Author, Downloads, Stars, ID, Latest, Platform, Game, Tags, License, Depends, Updated. Use it
+wherever a mod is shown, so that it reads the same everywhere.
+
+- In a pane of a page: keep one `ModDetails`; in `Draw` call
+  `Show(mod, detail, failed)` (the `CatalogDetail` once you read it, `failed` when it cannot
+  be read, neither while it is on its way) and `Draw(screen, rect)`. While the pane has the
+  focus pass it the keys (`OnKey` scrolls, and returns false when nothing scrolls) and list
+  its `Hints` and, last, its `PageHints`. Give the pane the focus only while `Scrollable`.
+- In a dialog: `Context.Show(new ModDetailsDialog(mod))` shows the same details above
+  `[ README ] [ Open in browser ] [ Close ]`. It reads the file of the mod itself; pass the
+  `CatalogDetail` as the second argument when you have it.
+- For an installed package, find its mod with `CatalogIndex.Find(package.Identity)`; null
+  means that the catalogue has no such mod.
+
+```csharp
+ModCatalogClient catalog = Context.Catalog;
+string identity = _list.Current.Identity;
+Context.Background(
+    () => catalog.GetIndex(),
+    index => {
+      if (index.Find(identity) is { } mod) {
+        Context.Show(new ModDetailsDialog(mod));
+      } else {
+        Context.Toast(ModsText.NotInCatalogue);   // a text of your page
+      }
+    },
+    anyWorkspace: true);
+```
+
+`Cells` has what such rows are written with: `Pad`, `PadLeft`, `Date`, `BareName`, and
+`Compact` (55.9k) and `Count` (55,912) for numbers.
+
 A page with two areas:
 
 ```csharp
