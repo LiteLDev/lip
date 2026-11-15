@@ -8,7 +8,8 @@ namespace Lip.Cli.Tui.Pages.GameConfig;
 /// The Game config page: server.properties, allowlist.json and permissions.json of the selected
 /// workspace (protocol/lip-tui.md, "Configuration"), as three sections picked from a list at
 /// the left. The files are read when the page is shown, changed in memory, and written only
-/// when the user saves.
+/// when the user saves. While the server of the workspace runs the page only shows them:
+/// nothing is changed, and nothing is saved.
 public sealed partial class GameConfigPage : Page {
   /// The areas of the page that take the focus.
   private enum Area {
@@ -36,6 +37,12 @@ public sealed partial class GameConfigPage : Page {
   // The area that the focus came to the buttons from.
   private Area _from;
   private GameFile? _viewed;
+  // Whether the server ran since the files were read: it may have written them. Once it has
+  // stopped they are read again, which _reloading says is under way.
+  private bool _ranSince;
+  private bool _reloading;
+  // Whether the files were only shown when the focus was last settled.
+  private bool _wasReadOnly;
   private int _nameWidth;
   private int _entryWidth;
 
@@ -49,7 +56,7 @@ public sealed partial class GameConfigPage : Page {
       new ListView<int>(index => RenderPlayer(PermissionsSection, index)),
     ];
     _buttons = new ButtonRow(
-        new Button(() => CommonText.Save, () => Save()) { Enabled = () => Dirty },
+        new Button(() => CommonText.Save, () => Save()) { Enabled = () => Dirty && !ReadOnly },
         new Button(() => CommonText.Discard, AskToDiscard) { Enabled = () => Dirty });
   }
 
@@ -74,14 +81,22 @@ public sealed partial class GameConfigPage : Page {
               CommonText.HintEnds,
             ],
         Area.Entries => [CommonText.HintNext],
-        // ↑ goes back to where the focus came from.
-        _ => [.. _buttons.Hints, CommonText.HintNext, CommonText.HintMove],
+        // ↑ goes back to where the focus came from. While the server runs only Discard can
+        // be chosen.
+        _ => [
+          .. ReadOnly ? (Hint[])[CommonText.HintSelect] : _buttons.Hints, CommonText.HintNext,
+          CommonText.HintMove,
+        ],
       };
     }
   }
 
   /// Whether a file has changes that are not saved.
   private bool Dirty => _files?.Any(file => file.Editable && file.Dirty) == true;
+
+  /// Whether the files are only shown: the server of the workspace runs, and its files are
+  /// not saved meanwhile (protocol/lip-tui.md, "Configuration").
+  private bool ReadOnly => Context.ServerRunning;
 
   private int Section => _sections.Selected;
 
@@ -114,6 +129,33 @@ public sealed partial class GameConfigPage : Page {
     }
   }
 
+  /// Once the server has stopped, the files are read again unless they have changes: the
+  /// server may have written them while it ran.
+  public override void OnTick() {
+    if (_files is null) {
+      return;
+    }
+
+    if (ReadOnly) {
+      _ranSince = true;
+      return;
+    }
+
+    // A dialog may hold the files that are shown: they are read once it has closed.
+    if (!_ranSince || _reloading || !Context.Idle) {
+      return;
+    }
+
+    if (Dirty || Context.CurrentPage != PageId.GameConfig) {
+      // Saving asks before it overwrites what the server wrote.
+      _ranSince = false;
+      return;
+    }
+
+    _reloading = true;
+    Load(keep: true);
+  }
+
   /// Tab from the sidebar goes to the sections, and Shift+Tab to the last area that takes
   /// keys: the buttons while there are changes, otherwise the right side when it has rows.
   public override void OnTabIn(bool backward) {
@@ -124,14 +166,36 @@ public sealed partial class GameConfigPage : Page {
   }
 
   public override void ConfirmLeave(Action leave) {
-    List<StyledLine> lines = [
-      new StyledLine(CommonText.UnsavedQuestion),
-      .. (_files ?? [])
-          .Where(file => file.Editable && file.Dirty)
-          .Select(file => new StyledLine(file.Name, Theme.Muted)),
-    ];
+    IEnumerable<StyledLine> names = (_files ?? [])
+        .Where(file => file.Editable && file.Dirty)
+        .Select(file => new StyledLine(file.Name, Theme.Muted));
+    void DiscardAndLeave() {
+      Drop();
+      int dropped = _generation;
+      leave();
+      // Still shown, as when the user then does not quit, and nothing read the files again,
+      // as another workspace does.
+      if (Context.CurrentPage == PageId.GameConfig && dropped == _generation) {
+        Load();
+      }
+    }
+
+    if (ReadOnly) {
+      // The changes cannot be saved now: they are discarded, or the user stays.
+      Context.Show(new ConfirmDialog(
+          CommonText.UnsavedTitle,
+          [new StyledLine(GameConfigText.CannotSaveNow, Theme.Warning), .. names],
+          [CommonText.Discard, CommonText.Cancel],
+          choice => {
+            if (choice == 0) {
+              DiscardAndLeave();
+            }
+          }) { Selected = 1 });
+      return;
+    }
+
     Context.Show(new ConfirmDialog(
-        CommonText.UnsavedTitle, lines,
+        CommonText.UnsavedTitle, [new StyledLine(CommonText.UnsavedQuestion), .. names],
         [CommonText.Save, CommonText.Discard, CommonText.Cancel],
         choice => {
           switch (choice) {
@@ -139,15 +203,7 @@ public sealed partial class GameConfigPage : Page {
               Save(leave);
               break;
             case 1:
-              Drop();
-              int dropped = _generation;
-              leave();
-              // Still shown, as when the user then does not quit, and nothing read the files
-              // again, as another workspace does.
-              if (Context.CurrentPage == PageId.GameConfig && dropped == _generation) {
-                Load();
-              }
-
+              DiscardAndLeave();
               break;
           }
         }));
@@ -160,14 +216,25 @@ public sealed partial class GameConfigPage : Page {
   private void Drop() {
     _files = null;
     _viewed = null;
+    _ranSince = false;
+    _reloading = false;
     _generation++;
   }
 
   /// Forgets the files and reads the three of them again in the background; until then the
-  /// page shows none, so that nothing is edited that is not what the files hold.
-  private void Load() {
-    Drop();
+  /// page shows none, so that nothing is edited that is not what the files hold. With keep,
+  /// the files stay as they are shown until they are read, and what was read is dropped when
+  /// the user changed them, or opened a dialog about them, meanwhile.
+  private void Load(bool keep = false) {
+    if (keep) {
+      _generation++;
+    } else {
+      Drop();
+    }
+
     int generation = _generation;
+    // The server may write the files after they are read here, until it has stopped.
+    bool ran = ReadOnly;
     LipClient client = Context.Client;
     string workspace = Context.Workspace;
     Context.Background(
@@ -181,9 +248,17 @@ public sealed partial class GameConfigPage : Page {
             return;
           }
 
+          if (keep) {
+            _reloading = false;
+            if (Dirty || !Context.Idle) {
+              return;
+            }
+          }
+
           _files = files;
           _workspace = workspace;
           _viewed = null;
+          _ranSince = ran;
           RefreshEntries();
         });
   }
@@ -208,7 +283,8 @@ public sealed partial class GameConfigPage : Page {
 
   /// Writes the files that have changes, then calls then. A file that was written is saved
   /// even when one after it fails. When a file is no longer what was read, nothing is written
-  /// unless overwrite is set: the user is asked first.
+  /// unless overwrite is set: the user is asked first. While the server runs nothing is
+  /// written, and the changes stay.
   private void Save(Action? then = null, bool overwrite = false) {
     List<(GameFile File, string Text)> changed = [
       .. (_files ?? [])
@@ -227,12 +303,22 @@ public sealed partial class GameConfigPage : Page {
     }
 
     LipClient client = Context.Client;
+    AppContext context = Context;
+    string workspace = Context.Workspace;
     List<(GameFile File, string Text)> written = [];
     List<string> conflicts = [];
+    bool runs = false;
     Context.RunOperation(
         GameConfigText.SaveTitle,
         async _ => {
           try {
+            // The server may have started since the interface last looked: it is looked for
+            // again here, off the thread of the interface, before anything is written.
+            runs = context.ServerRunsNow(workspace);
+            if (runs) {
+              return;
+            }
+
             foreach (GameFile file in overwrite ? [] : changed.Select(change => change.File)) {
               if (await ReadNow(client, file.Name) != (true, file.Source)) {
                 conflicts.Add(file.Name);
@@ -244,6 +330,11 @@ public sealed partial class GameConfigPage : Page {
             }
 
             foreach ((GameFile file, string text) in changed) {
+              runs = context.ServerRunsNow(workspace);
+              if (runs) {
+                return;
+              }
+
               await client.WriteConfigFile(file.Name, text);
               written.Add((file, text));
             }
@@ -259,6 +350,11 @@ public sealed partial class GameConfigPage : Page {
           }
         },
         _ => {
+          if (runs) {
+            Context.Message(GameConfigText.SaveTitle, CommonText.StopServerFirst, Theme.Warning);
+            return;
+          }
+
           if (conflicts.Count > 0) {
             Context.Show(new ConfirmDialog(
                 GameConfigText.SaveTitle,
@@ -275,9 +371,7 @@ public sealed partial class GameConfigPage : Page {
             return;
           }
 
-          Context.Toast(
-              Context.ServerRunning ? CommonText.SavedWhileRunning : CommonText.Saved,
-              ToastKind.Good);
+          Context.Toast(CommonText.Saved, ToastKind.Good);
           then?.Invoke();
         });
   }
@@ -294,7 +388,7 @@ public sealed partial class GameConfigPage : Page {
 
   private void AskToDiscard() =>
       Context.Confirm(
-          CommonText.DiscardTitle, CommonText.DiscardQuestion, CommonText.Discard, Load);
+          CommonText.DiscardTitle, CommonText.DiscardQuestion, CommonText.Discard, () => Load());
 
   /// The rows of the sections are those of the files as they are now.
   private void RefreshEntries() {
@@ -378,6 +472,14 @@ public sealed partial class GameConfigPage : Page {
   /// The focus is on an area that can have it: the buttons only while there are changes, the
   /// right side only while it has rows.
   private void Settle() {
+    // Once the server has stopped Save is chosen again, which could not be while it ran;
+    // not under the hands of the user, while the buttons have the focus.
+    bool readOnly = ReadOnly;
+    if (_wasReadOnly && !readOnly && _area != Area.Buttons) {
+      _buttons.Selected = 0;
+    }
+
+    _wasReadOnly = readOnly;
     if (_area == Area.Buttons && !Dirty) {
       _area = _from;
     }
@@ -450,8 +552,10 @@ public sealed partial class GameConfigPage : Page {
 
     int row = area.Bottom - 1;
     int x = _buttons.Draw(screen, area.X, row, focused && _area == Area.Buttons, area.Right);
-    string note = GameConfigText.AppliesOnStart;
-    Style style = Context.ServerRunning ? Theme.Warning : Theme.Muted;
+    // While the server runs the note says why nothing can be changed, or saved.
+    (string note, Style style) = !ReadOnly ? (GameConfigText.AppliesOnStart, Theme.Muted)
+        : Dirty ? (GameConfigText.StopToSave, Theme.Warning)
+        : (GameConfigText.StopToEdit, Theme.Warning);
     if (area.Right - x - 1 >= TextWidth.Of(note)) {
       screen.Write(area.Right - TextWidth.Of(note), row, note, style);
     } else {

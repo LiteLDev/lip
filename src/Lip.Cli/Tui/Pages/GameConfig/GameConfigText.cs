@@ -27,6 +27,21 @@ public static class GameConfigText {
   // The bottom of the page.
   public static string AppliesOnStart =>
       L.T("Applies on next server start.", "下次启动服务器时生效。", "下次啟動伺服器時生效。");
+  public static string StopToEdit =>
+      L.T(
+          "Server runs: stop it to edit.",
+          "服务器运行中，停止后才能修改。",
+          "伺服器執行中，停止後才能修改。");
+  public static string StopToSave =>
+      L.T(
+          "Server runs: stop it to save.",
+          "服务器运行中，停止后才能保存。",
+          "伺服器執行中，停止後才能儲存。");
+  public static string CannotSaveNow =>
+      L.T(
+          "Changes cannot be saved while the server runs.",
+          "服务器运行期间无法保存更改。",
+          "伺服器執行期間無法儲存變更。");
   public static string SaveTitle => L.T("Save game config", "保存游戏配置", "儲存遊戲設定");
   public static string ChangedOnDisk =>
       L.T(
