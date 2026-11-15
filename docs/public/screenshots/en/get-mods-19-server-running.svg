@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="949" height="560" viewBox="0 0 949 560" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="60" width="924" height="490" rx="10" fill="#1a1d24"/>
+<path d="M10 90V70a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V90z" fill="#272b35"/>
+<circle cx="28" cy="75" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="75" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="75" r="5.5" fill="#28c840"/>
+<text x="472" y="79.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="60.5" width="923" height="489" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="31" y="198" width="144" height="20" fill="#4a5364"/>
+<rect x="355" y="258" width="234" height="20" fill="#4a5364"/>
+<rect x="202" y="298" width="144" height="20" fill="#4a5364"/>
+<rect x="598" y="298" width="306" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 128H180.13M187.88 128H202M292 128H918.13M202 208H211M409 208H904M364 328H580M202 368H211M274 368H346M598 368H904M25.88 508H180.13M187.88 508H918.13M26.5 127.38V508.63M179.5 127.38V508.63M188.5 127.38V508.63M917.5 127.38V508.63"/>
+<path stroke="#56c8d8" d="M349.88 248H364M427 248H594.13M349.88 368H594.13M350.5 247.38V368.63M593.5 247.38V368.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="112.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="112.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="112.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="836.5" y="112.5" text-anchor="middle" fill="#9ad17b">●</text>
+<text x="850" y="112.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">Running</text>
+<text x="211" y="132.5" textLength="72" lengthAdjust="spacingAndGlyphs" font-weight="700">Get mods</text>
+<text x="40" y="152.5" textLength="36" lengthAdjust="spacingAndGlyphs">Home</text>
+<text x="220" y="152.5" textLength="54" lengthAdjust="spacingAndGlyphs">Search</text>
+<text x="301" y="152.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">economy</text>
+<text x="40" y="172.5" textLength="54" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="161.5" y="172.5" text-anchor="middle" fill="#9ad17b">●</text>
+<text x="220" y="172.5" textLength="36" lengthAdjust="spacingAndGlyphs">Sort</text>
+<text x="305.5" y="172.5" text-anchor="middle">‹</text>
+<text x="319" y="172.5" textLength="81" lengthAdjust="spacingAndGlyphs">Relevance</text>
+<text x="413.5" y="172.5" text-anchor="middle">›</text>
+<text x="40" y="192.5" textLength="36" lengthAdjust="spacingAndGlyphs">Mods</text>
+<text x="220" y="192.5" textLength="63" lengthAdjust="spacingAndGlyphs">Filters</text>
+<text x="301" y="192.5" textLength="36" lengthAdjust="spacingAndGlyphs">None</text>
+<text x="40" y="212.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Get mods</text>
+<text x="220" y="212.5" textLength="54" lengthAdjust="spacingAndGlyphs" font-weight="700">8 mods</text>
+<text x="287.5" y="212.5" text-anchor="middle" font-weight="700">·</text>
+<text x="305.5" y="212.5" text-anchor="middle" font-weight="700">✓</text>
+<text x="319" y="212.5" textLength="81" lengthAdjust="spacingAndGlyphs" font-weight="700">Installed</text>
+<text x="40" y="232.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
+<text x="206.5" y="232.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="220" y="232.5" textLength="162" lengthAdjust="spacingAndGlyphs">LegacyScriptEngine</text>
+<text x="395.5" y="232.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="409" y="232.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLDev</text>
+<text x="665.5" y="232.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="679" y="232.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">186k</text>
+<text x="746.5" y="232.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="232.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">412</text>
+<text x="805" y="232.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-08</text>
+<text x="40" y="252.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="206.5" y="252.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="220" y="252.5" textLength="108" lengthAdjust="spacingAndGlyphs">LeviOptimize</text>
+<text x="341.5" y="252.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="373" y="252.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">PLand</text>
+<text x="665.5" y="252.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="679" y="252.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">143k</text>
+<text x="746.5" y="252.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="252.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">286</text>
+<text x="805" y="252.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-02</text>
+<text x="40" y="272.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="206.5" y="272.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="220" y="272.5" textLength="45" lengthAdjust="spacingAndGlyphs">GMLIB</text>
+<text x="278.5" y="272.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="292" y="272.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">GroupM</text>
+<text x="364" y="272.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Install</text>
+<text x="431.5" y="272.5" text-anchor="middle" fill="#ffffff">…</text>
+<text x="656.5" y="272.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="670" y="272.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">97.3k</text>
+<text x="746.5" y="272.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="272.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">231</text>
+<text x="805" y="272.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-27</text>
+<text x="40" y="292.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="206.5" y="292.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="220" y="292.5" textLength="99" lengthAdjust="spacingAndGlyphs">LegacyMoney</text>
+<text x="332.5" y="292.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="364" y="292.5" textLength="54" lengthAdjust="spacingAndGlyphs">README</text>
+<text x="656.5" y="292.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="670" y="292.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">81.4k</text>
+<text x="746.5" y="292.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="292.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">164</text>
+<text x="805" y="292.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-19</text>
+<text x="40" y="312.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="220" y="312.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#ffffff">PLand</text>
+<text x="278.5" y="312.5" text-anchor="middle" fill="#ffffff">·</text>
+<text x="292" y="312.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">engsr6</text>
+<text x="364" y="312.5" textLength="135" lengthAdjust="spacingAndGlyphs">Open in browser</text>
+<text x="656.5" y="312.5" text-anchor="middle" fill="#ffffff">↓</text>
+<text x="670" y="312.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#ffffff">63.9k</text>
+<text x="746.5" y="312.5" text-anchor="middle" fill="#ffffff">★</text>
+<text x="760" y="312.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">152</text>
+<text x="805" y="312.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">2026-11-05</text>
+<text x="220" y="332.5" textLength="117" lengthAdjust="spacingAndGlyphs">LeviAntiCheat</text>
+<text x="656.5" y="332.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="670" y="332.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">44.2k</text>
+<text x="746.5" y="332.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="332.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">118</text>
+<text x="805" y="332.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-09-30</text>
+<text x="220" y="352.5" textLength="126" lengthAdjust="spacingAndGlyphs">MoreDimensions</text>
+<text x="364" y="352.5" textLength="198" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">Stop the server first.</text>
+<text x="656.5" y="352.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="670" y="352.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">29.7k</text>
+<text x="755.5" y="352.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="769" y="352.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">97</text>
+<text x="805" y="352.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-11</text>
+<text x="899.5" y="352.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="220" y="372.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">PLand</text>
+<text x="211 229 247 265 283 301 319 337 355" y="392.5" text-anchor="middle">功能强大的领地系统</text>
+<text x="202" y="412.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Author</text>
+<text x="301" y="412.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">engsr6982</text>
+<text x="202" y="432.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Downloads</text>
+<text x="301" y="432.5" textLength="54" lengthAdjust="spacingAndGlyphs">63,908</text>
+<text x="202" y="452.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Stars</text>
+<text x="301" y="452.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">152</text>
+<text x="202" y="472.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
+<text x="301" y="472.5" textLength="234" lengthAdjust="spacingAndGlyphs">github.com/engsr6982/PLand</text>
+<text x="202" y="492.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Latest</text>
+<text x="301" y="492.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.19.0</text>
+<text x="899.5" y="492.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="35.5" y="532.5" text-anchor="middle" font-weight="700">↑</text>
+<text x="44.5" y="532.5" text-anchor="middle" font-weight="700">↓</text>
+<text x="58" y="532.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Move</text>
+<text x="112" y="532.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="148" y="532.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Close</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 92H928V544H16zM343 235H601V381H343z"/>
+<rect x="351" y="336" width="242" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<path d="M872.5 32L872.5 87" fill="none" stroke="#1a1d24" stroke-width="4" stroke-opacity="0.6" stroke-linecap="round"/>
+<path d="M872.5 32L872.5 87" fill="none" stroke="#ffa94d" stroke-width="2" stroke-linecap="round"/>
+<path d="M872.5 94L868 84L877 84z" fill="#ffa94d" stroke="#1a1d24" stroke-width="1" stroke-linejoin="round"/>
+<rect x="806" y="10" width="133" height="22" rx="6" fill="#ffa94d"/>
+<text x="814" y="25.5" textLength="117" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#1a1d24">The server runs</text>
+</svg>
