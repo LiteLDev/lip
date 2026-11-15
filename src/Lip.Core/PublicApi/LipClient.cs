@@ -248,6 +248,21 @@ public sealed class LipClient {
         request, new OperationOptions(dryRun, cancellationToken, acceptEula, confirmed));
   }
 
+  /// The versions of the game that the interface offers for a new server (protocol/lip-tui.md,
+  /// "New server").
+  public async Task<IReadOnlyList<GameVersion>> GameVersions() =>
+      await (await GetMcmodService(dryRun: true)).GameVersions();
+
+  /// The versions of LeviLamina that fit a game version, from highest to lowest
+  /// (protocol/lip-tui.md, "New server").
+  public async Task<IReadOnlyList<Semver.SemVersion>> LoaderVersions(
+      Semver.SemVersion game, CancellationToken cancellationToken = default) =>
+      await (await GetMcmodService(dryRun: true)).LoaderVersions(game, cancellationToken);
+
+  /// The value of github_proxy: a URI, "" (GitHub is reached directly), or null when it is not
+  /// configured (protocol/config.toml.md, "User configuration"), read without writing a file.
+  public async Task<string?> GithubProxy() => await _configService.GetGithubProxy(dryRun: true);
+
   /// Installed packages as "identity@version": explicitly installed ones and dependency packages,
   /// in installation order (protocol/lip-list.md).
   public async Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List() {

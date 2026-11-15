@@ -1,6 +1,7 @@
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
+using Lip.Core.Mcmod.Resolution;
 using Semver;
 
 namespace Lip.Core.Mcmod;
@@ -16,6 +17,13 @@ public enum GameBuild {
 /// highest version that fits the game.
 public sealed record SetupRequest(
     SemVersion Game, GameBuild Build, bool Loader, SemVersion? LoaderVersion = null);
+
+/// A version of the game that the builds list names, and whether it has a build for each build
+/// of the game (protocol/lip-tui.md, "New server").
+public sealed record GameVersion(SemVersion Version, bool Windows, bool Linux) {
+  /// Whether the version has a build of the game of the build.
+  public bool Has(GameBuild build) => build == GameBuild.Linux ? Linux : Windows;
+}
 
 /// The game and the loader of a workspace (protocol/lip-setup.md, "Terms").
 public static class GameSetup {
@@ -95,6 +103,52 @@ public partial class McmodService {
     Workspace workspace = await OpenWorkspace(options);
     await SetUp(workspace, request, [], options);
   }
+
+  /// The versions of the game that the builds list names, as the interface offers them for a new
+  /// server (protocol/lip-tui.md, "New server"): the versions that are not of one build only,
+  /// from highest to lowest, then the others, from highest to lowest. Throws
+  /// ArchiveUnavailableException when the builds list cannot be obtained.
+  public async Task<IReadOnlyList<GameVersion>> GameVersions() {
+    BedrockServer server = await CreateResolver().Server();
+    return [
+      .. server.ReleaseVersions.Concat(server.Versions.Where(v => v.IsPrerelease))
+          .Select(v => new GameVersion(
+              v, server.HasBuild(GameBuild.Windows, v), server.HasBuild(GameBuild.Linux, v))),
+    ];
+  }
+
+  /// The versions of LeviLamina that fit a game version, from highest to lowest
+  /// (protocol/lip-tui.md, "New server"): the candidates of the loader source that fit it, searched
+  /// from the first, as a setup searches for its loader (protocol/lip-setup.md, "The loader"),
+  /// stopping at a LeviLamina for older games only, and at the first one that does not fit after
+  /// one that does.
+  public async Task<IReadOnlyList<SemVersion>> LoaderVersions(
+      SemVersion game, CancellationToken cancellationToken = default) {
+    Resolver resolver = CreateResolver();
+    BedrockServer server = await resolver.Server();
+    List<SemVersion> fitting = [];
+    await foreach (Candidate candidate in resolver.ResolveLazy(
+        GameSetup.LoaderSource(null), null, DetermineEnvironment(null))) {
+      cancellationToken.ThrowIfCancellationRequested();
+      VersionRange? range = GameSetup.GameRange(candidate);
+      if (range is not null && range.IsSatisfiedBy(game)) {
+        fitting.Add(candidate.Package.Version);
+      } else if (fitting.Count > 0 || ForOlderGamesOnly(server, range, game)) {
+        break;
+      }
+    }
+
+    return fitting;
+  }
+
+  /// Whether a LeviLamina whose dependency on the server source has the range is for games older
+  /// than the game only: some version of the server lower than the game satisfies the range, and
+  /// none at least as high.
+  private static bool ForOlderGamesOnly(
+      BedrockServer server, VersionRange? range, SemVersion game) =>
+      range is not null
+      && server.Versions.Any(v => v.ComparePrecedenceTo(game) < 0 && range.IsSatisfiedBy(v))
+      && !server.Versions.Any(v => v.ComparePrecedenceTo(game) >= 0 && range.IsSatisfiedBy(v));
 
   /// The setup that lip install with arguments naming the server or the loader is carried out as
   /// (protocol/lip-install.md, "Setting up").
@@ -327,10 +381,7 @@ public partial class McmodService {
 
       tried.Add((candidate.Package.Version, range));
       // The LeviLamina versions from here on are for older games.
-      if (range is not null
-          && server.Versions.Any(v => v.ComparePrecedenceTo(game) < 0 && range.IsSatisfiedBy(v))
-          && !server.Versions.Any(
-              v => v.ComparePrecedenceTo(game) >= 0 && range.IsSatisfiedBy(v))) {
+      if (ForOlderGamesOnly(server, range, game)) {
         break;
       }
     }

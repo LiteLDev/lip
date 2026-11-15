@@ -46,7 +46,8 @@ public static class LipApp {
         DaemonProcess.Version,
         workingDirectory,
         workspaces: WorkspaceList.InStateDirectory(fileSystem),
-        servers: ServerSessions.Shared).Run();
+        servers: ServerSessions.Shared,
+        githubProbe: new GithubProbe()).Run();
   }
 
   /// Carries out the command for the current invocation and returns its exit code.

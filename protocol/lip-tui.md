@@ -26,6 +26,38 @@ The interface has one **selected workspace** at a time. When it starts, `lip` ad
 
 Adding and removing read the workspace list again before they write it. The interfaces that one process runs at the same time make their changes one at a time, and all of them are kept.
 
+### New server
+
+The user may ask the interface for a **new server**. The user then names a directory, and chooses, in this order:
+
+1. a game version G: a version that the builds list ([lip-package(7), "The server"](lip-package.md#the-server)) names, offered with the versions that are not prereleases first, then the others, each from highest to lowest;
+2. a build B ([lip-setup(1), "Terms"](lip-setup.md#terms)): `windows` when the builds list has a build of G for `win-x64`, and `linux` when it has one for `linux-x64`; and
+3. when B is `windows`, the loader: a version V of the loader source ([lip-setup(1), "Terms"](lip-setup.md#terms)) among the versions that fit G, or no loader. When B is `linux`, the setup has no loader, and the user is not asked.
+
+The **versions that fit** G are those of the candidates of Resolve(`github.com/LiteLDev/LeviLamina`, any version, environment) ([lip-package(7), "Resolution"](lip-package.md#resolution)) that fit G, from the first; the search may stop as [lip-setup(1), "The loader"](lip-setup.md#the-loader) defines, and at a candidate that does not fit G after one that does. `lip` reads the builds list and resolves these candidates as a setup does.
+
+A directory named by a relative path is relative to the selected workspace. When the user has made these choices, `lip`, in order:
+
+1. creates the directory, and its missing parents, when it does not exist;
+2. adds the directory to the workspace list, unless the list names it, and selects it ("Workspaces"); and
+3. carries out `lip setup --game G --build B` with `--loader levilamina@V` or `--no-loader`, as "Commands" defines: it asks the user in the interface whether they accept the license ([lip-setup(1), "The license"](lip-setup.md#the-license)).
+
+When the user cancels before the last choice, or when a step fails, the steps after it are not carried out. The directory is not removed when the setup fails.
+
+### GitHub reachability
+
+When the interface starts and `github_proxy` is not configured ([config.toml(5), "User configuration"](config.toml.md#user-configuration)), `lip` checks whether it reaches GitHub, while the interface goes on. Reading the configuration for this writes no file, as in a dry run ([lip(1), "Dry run"](lip.md#dry-run)).
+
+The **reachability check** is an HTTPS GET of `https://github.com/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack`, following redirects. It succeeds when the headers of a response whose status is 2xx arrive within 10 seconds of the start of the request; otherwise it fails. `lip` writes nothing that it reads from the response to a file. The check is made at most once per start of the interface, and only when `github_proxy` is not configured.
+
+When the check fails, the interface asks the user how `lip` reaches GitHub, offering:
+
+- **a proxy**: the user enters a URI. `lip` makes the check through it, as for a `github_proxy` of that value: the request is sent to the URL that the proxy makes of it, and is not sent to GitHub directly when it fails. When that check succeeds, or when it fails and the user then asks to keep the proxy, `lip` sets `github_proxy` to the URI, as `lip config set github_proxy <URI>` does ([lip-config(1)](lip-config.md)).
+- **direct**: `lip` sets `github_proxy` to the empty string, as `lip config set github_proxy ""` does; `github_proxy` is then configured, and the interface does not ask again.
+- **later**: `lip` changes nothing, and asks again the next time the interface starts and the check fails.
+
+The interface asks once no other question is open in it; the question changes nothing until the user answers it.
+
 ### Commands
 
 In the interface, the user asks for the commands of [lip(1)]. `lip` carries out each of them as the page of the command defines for the arguments the user gives, with the selected workspace as its working directory, with these differences:
@@ -87,10 +119,11 @@ A file of the catalogue that cannot be read is not a failure of a command.
 ## FILES
 
 - `workspaces.json` in the state directory: the workspace list ("Workspaces").
+- `config.toml` in the config directory: the user configuration, which "GitHub reachability" may write ([config.toml(5)]).
 
 ## SEE ALSO
 
-[lip(1)], [lip-daemon(1)], [lip-run(1)], [config.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)]
+[lip(1)], [lip-config(1)](lip-config.md), [lip-daemon(1)], [lip-run(1)], [lip-setup(1)](lip-setup.md), [config.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)]
 
 [lip(1)]: lip.md
 [lip-daemon(1)]: lip-daemon.md

@@ -127,6 +127,17 @@ public sealed partial class BedrockServer {
     return server;
   }
 
+  /// Whether the builds list has a build of the version for the platform of a build of the
+  /// game: win-x64 for windows, linux-x64 for linux.
+  public bool HasBuild(GameBuild build, SemVersion version) =>
+      Build(build == GameBuild.Linux ? "linux-x64" : "win-x64", version) is not null;
+
+  /// The build of a platform that a version names: the first one in the builds list, or the one
+  /// a version major.minor.patch-patch.N names; null when there is none.
+  private string? Build(string platform, SemVersion version) =>
+      _builds.GetValueOrDefault(platform)?.FirstOrDefault(
+          b => (version.IsPrerelease ? PatchVersionOf(b) : VersionOf(b)).Equals(version));
+
   /// The package file of a version of the server: the variants "" and "windows" of the Windows
   /// server and "linux" of the Linux server, each with one entry for the platform win-x64 when
   /// the platform of its builds has a build of the version, the first one in the builds list, or
@@ -157,9 +168,7 @@ public sealed partial class BedrockServer {
   /// a version, or null when the platform has no build of the version. Every entry is for the platform win-x64: the Linux
   /// server is placed by lip, which sets the mode of bedrock_server itself, and has no hooks.
   private JsonObject? Entry(string platform, string directory, SemVersion version) {
-    if (_builds.GetValueOrDefault(platform)?.FirstOrDefault(
-            b => (version.IsPrerelease ? PatchVersionOf(b) : VersionOf(b)).Equals(version))
-        is not string build) {
+    if (Build(platform, version) is not string build) {
       return null;
     }
 

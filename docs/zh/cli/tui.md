@@ -20,10 +20,38 @@ lip 把你用过的工作区记在一个列表里，即其状态目录中的 `wo
 | --- | --- |
 | `↑`、`↓`、`Enter` | 选择一个工作区。 |
 | `a` | 添加一个目录（绝对路径，或相对于所选工作区的路径）并选中它。该目录必须存在。 |
+| `n` | 设置一个新服务器（见[新服务器](#新服务器)）。 |
 | `d`、`Del` | 把选中的工作区从列表中移除。其中的文件都不会改变。当前所选的工作区不能移除。 |
 | `Esc` | 关闭列表。 |
 
 列表在 lip 的多次运行之间保留，并由同时打开的各个界面共享。已不存在的工作区会被标记为缺失。
+
+## 新服务器
+
+不离开界面，就能从零设置一个服务器。在没有游戏的工作区中，Packages 标签页会提示这一点：在那里，或在工作区列表（`w`）中按 `n`。lip 随后依次用对话框询问：
+
+1. **服务器的目录**：绝对路径，或相对于所选工作区的路径。在没有游戏的工作区中，会预填该工作区。不存在的目录会被创建。
+2. **游戏版本**：读自服务器的构建列表，先是正式版本（从新到旧），然后是只对应单个构建的版本（`1.21.50-patch.2`）。
+3. **构建**：`windows`，即 LeviLamina 及其 mod 运行于其上的服务器（在 Windows 以外通过 Wine 运行）；或 `linux`，即不带加载器的 Linux 版服务器。只提供该版本具有的构建。
+4. **加载器**（仅 `windows` 构建）：支持该游戏的 LeviLamina 版本（从新到旧），或不使用加载器。lip 按 [`lip setup`](./commands/setup.md#加载器) 的方式查找它们，可能需要一点时间。
+
+选好之后，lip 创建该目录，把它加入工作区列表并选中它，再按你的选择执行 [`lip setup`](./commands/setup.md)，例如 `lip setup --game 1.21.50 --loader levilamina@1.1.0`：先显示计划，在你选择 **Apply** 之后，询问你是否接受 Minecraft EULA。在最后一个选择之前的任一对话框中按 `Esc` 即停止，不会创建任何东西。
+
+服务器设置好之后，在 **3 Server** 标签页中启动它，并在 **2 Browse** 中安装 mod。
+
+## GitHub 连通性
+
+lip 从 GitHub 下载 LeviLamina 和大多数 mod。界面打开时，如果没有设置 `github_proxy`（连空值都没有，见[配置](./configuration.md)），lip 会在后台检查能否连上 GitHub，期间你可以照常使用界面：它请求 `https://github.com/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack`，并最多等待 10 秒的应答。
+
+GitHub 没有应答时，界面会询问如何连接它：
+
+| 选项 | 作用 |
+| --- | --- |
+| **Set a proxy** | 询问 GitHub 代理的 URL 前缀，通过它发送同样的请求来测试，可用时把它保存为 `github_proxy`。不可用时，你可以换一个，或者仍然保存。 |
+| **Connect directly** | 把 `github_proxy` 设为空值：lip 直接连接 GitHub，不再检查或询问。 |
+| **Later** | 什么也不改变；下次打开界面时，lip 会再次检查。 |
+
+lip 自身不推荐任何代理。你随时可以在 **5 Settings** 标签页中，或用 [`lip config`](./commands/config.md) 修改 `github_proxy`；设置之后，就不再进行检查。
 
 ## 标签页
 

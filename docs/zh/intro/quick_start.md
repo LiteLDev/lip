@@ -6,9 +6,15 @@
 
 开始前请确保你已[安装 lip](installation.md)。lip 不需要安装 `git`。
 
+## 在界面中设置服务器
+
+最简单的方式：打开终端，运行 `lip`，然后按 `n`。lip 会询问服务器的目录、游戏版本、构建和加载器，显示将要安装的内容，并请你接受 Minecraft EULA。完成后，在 **3 Server** 标签页中启动服务器，在 **2 Browse** 标签页中安装 mod。参见[交互界面](../cli/tui.md#新服务器)。
+
+如果你的网络连不上 GitHub，界面还会询问是设置 GitHub 代理、仍然直接连接，还是稍后再决定。参见 [GitHub 连通性](../cli/tui.md#github-连通性)。
+
 ## 设置服务器
 
-在服务端的根目录（即工作区，例如一个新的空目录）中运行 lip。首先设置服务器：某个游戏版本的 Bedrock Dedicated Server，以 LeviLamina 为加载器：
+如果要改用命令行设置，在服务端的根目录（即工作区，例如一个新的空目录）中运行 lip。首先设置服务器：某个游戏版本的 Bedrock Dedicated Server，以 LeviLamina 为加载器：
 
 ```shell
 lip setup --game 1.21.0

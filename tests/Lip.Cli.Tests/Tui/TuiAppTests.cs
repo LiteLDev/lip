@@ -9,6 +9,7 @@ using Lip.Core.Mcmod.Lock;
 using Lip.Core.PublicApi;
 using Lip.Core.Services;
 using Moq;
+using Semver;
 
 namespace Lip.Cli.Tests.Tui;
 
@@ -74,7 +75,9 @@ public sealed class TuiAppTests : IDisposable {
   private TuiApp Start(
       Func<IUserInteraction, Func<Stream>, string, LipClient>? createClient = null,
       FakeTerminal? terminal = null,
-      string? workingDirectory = null) {
+      string? workingDirectory = null,
+      GithubProbe? githubProbe = null,
+      IServerSetup? serverSetup = null) {
     TuiApp app = new(
         terminal ?? _terminal,
         createClient ?? ((interaction, hookOutput, workspace) =>
@@ -86,7 +89,9 @@ public sealed class TuiAppTests : IDisposable {
         (exception, _, cancelled) =>
             new Failure(exception.Message, ["a hint"], "report.log", null, "", cancelled),
         new WorkspaceList(_fs, _workspaceList),
-        _servers);
+        _servers,
+        githubProbe,
+        serverSetup);
     _runs.Add(Task.Run(app.Run));
     return app;
   }
@@ -794,4 +799,322 @@ public sealed class TuiAppTests : IDisposable {
     Assert.Contains(
         "\"name\": \"Steve\"", _fs.File.ReadAllText(_fs.Path.Join(_root, "allowlist.json")));
   }
+
+  #region New server
+
+  /// The server setup of the tests: two games, the newest of them for Linux too, and two
+  /// LeviLamina versions for it; setup records its calls, and its dry run says that it would ask
+  /// for the license, as lip setup does.
+  private sealed class FakeServerSetup(Func<LipClient, IUserInteraction> interactionOf)
+      : IServerSetup {
+    public List<string> Calls { get; } = [];
+    public int LoaderLists { get; private set; }
+
+    public Task<IReadOnlyList<GameVersion>> GameVersions(LipClient client) =>
+        Task.FromResult<IReadOnlyList<GameVersion>>([
+          new GameVersion(SemVersion.Parse("1.21.50"), Windows: true, Linux: true),
+          new GameVersion(SemVersion.Parse("1.21.40"), Windows: true, Linux: false),
+        ]);
+
+    public Task<IReadOnlyList<SemVersion>> LoaderVersions(
+        LipClient client, SemVersion game, CancellationToken cancellationToken) {
+      LoaderLists++;
+      return Task.FromResult<IReadOnlyList<SemVersion>>(
+          [SemVersion.Parse("1.1.0"), SemVersion.Parse("1.0.0")]);
+    }
+
+    public async Task Setup(
+        LipClient client,
+        SetupRequest request,
+        bool dryRun,
+        bool acceptEula,
+        CancellationToken cancellationToken) {
+      lock (Calls) {
+        Calls.Add($"{request.Game} {request.Build} {request.Loader} {request.LoaderVersion}"
+            + $" dryRun={dryRun} acceptEula={acceptEula}");
+      }
+
+      if (dryRun) {
+        await interactionOf(client).PrintInfo(GameSetup.EulaDryRunMessage + ".");
+      }
+    }
+  }
+
+  /// Starts the interface with a FakeServerSetup, whose clients are recorded with their
+  /// workspaces.
+  private (TuiApp App, FakeServerSetup Setup, Dictionary<LipClient, string> Workspaces)
+      StartWithSetup() {
+    Dictionary<LipClient, string> workspaces = [];
+    Dictionary<LipClient, IUserInteraction> interactions = [];
+    FakeServerSetup setup = new(client => {
+      lock (interactions) {
+        return interactions[client];
+      }
+    });
+    TuiApp app = Start(
+        (interaction, hookOutput, workspace) => {
+          LipClient client = LipClient.Create(_fs, interaction, hookOutput, workspace);
+          lock (interactions) {
+            interactions[client] = interaction;
+            workspaces[client] = workspace;
+          }
+
+          return client;
+        },
+        serverSetup: setup);
+    return (app, setup, workspaces);
+  }
+
+  [Fact]
+  public async Task NewServer_Windows_SetsUpTheChosenGameAndLoaderInANewDirectory() {
+    // Arrange
+    (TuiApp app, FakeServerSetup setup, _) = StartWithSetup();
+    string directory = Path.Join(_root, "srv");
+    await WaitFor(app, "Press n to set up a new server");
+
+    // Act: a directory relative to the selected workspace, which has no game and is offered.
+    _terminal.Type("n");
+    await WaitFor(app, "> " + _root);
+    _terminal.Press(ConsoleKey.U, ConsoleModifiers.Control);
+    _terminal.Type("srv");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Game version");
+    Assert.Contains("1.21.50", app.ScreenText);
+    Assert.Contains("windows, linux", app.ScreenText);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Build of the game 1.21.50");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Loader for the game 1.21.50");
+    Assert.Contains("No loader", app.ScreenText);
+    // Nothing is created before the last choice.
+    Assert.False(_fs.Directory.Exists(directory));
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+
+    // Assert: the plan, then the license, then the setup.
+    await WaitFor(app, "[ Apply ]");
+    Assert.True(_fs.Directory.Exists(directory));
+    Assert.Equal([_root, directory], new WorkspaceList(_fs, _workspaceList).Read());
+    Assert.Contains("w  " + directory, app.ScreenText);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, GameSetup.EulaUrl);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Done.");
+    lock (setup.Calls) {
+      Assert.Equal(
+          [
+            "1.21.50 Windows True 1.0.0 dryRun=True acceptEula=False",
+            "1.21.50 Windows True 1.0.0 dryRun=False acceptEula=True",
+          ],
+          setup.Calls);
+    }
+  }
+
+  [Fact]
+  public async Task NewServer_Linux_HasNoLoader() {
+    // Arrange
+    (TuiApp app, FakeServerSetup setup, Dictionary<LipClient, string> workspaces) =
+        StartWithSetup();
+    string directory = Path.Join(_root, "linux");
+    await WaitFor(app, "Press n to set up a new server");
+
+    // Act: an absolute path, from the workspace list.
+    _terminal.Type("w");
+    await WaitFor(app, "Workspaces");
+    _terminal.Type("n");
+    await WaitFor(app, "New server");
+    _terminal.Press(ConsoleKey.U, ConsoleModifiers.Control);
+    _terminal.Type(directory);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Game version");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Build of the game 1.21.50");
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+
+    // Assert: no loader is offered.
+    await WaitFor(app, "[ Apply ]");
+    _terminal.Press(ConsoleKey.Escape);
+    await WaitFor(app, "w  " + directory);
+    Assert.Equal(0, setup.LoaderLists);
+    lock (setup.Calls) {
+      Assert.Equal(["1.21.50 Linux False  dryRun=True acceptEula=False"], setup.Calls);
+    }
+
+    lock (workspaces) {
+      Assert.Contains(directory, workspaces.Values);
+    }
+  }
+
+  [Fact]
+  public async Task NewServer_CancelledBeforeTheLastChoice_CreatesNothing() {
+    (TuiApp app, FakeServerSetup setup, _) = StartWithSetup();
+    await WaitFor(app, "Press n to set up a new server");
+
+    _terminal.Type("n");
+    await WaitFor(app, "New server");
+    _terminal.Press(ConsoleKey.U, ConsoleModifiers.Control);
+    _terminal.Type("srv");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Game version");
+    _terminal.Press(ConsoleKey.Escape);
+    await WaitFor(app, screen => !screen.Contains("Game version", StringComparison.Ordinal));
+
+    Assert.False(_fs.Directory.Exists(Path.Join(_root, "srv")));
+    Assert.Equal([_root], new WorkspaceList(_fs, _workspaceList).Read());
+    lock (setup.Calls) {
+      Assert.Empty(setup.Calls);
+    }
+  }
+
+  #endregion
+
+  #region GitHub reachability
+
+  private static GithubProbe Probe(Func<Flurl.Url, CancellationToken, Task<int>> send) =>
+      new(send);
+
+  private Task<string?> GithubProxy() =>
+      new ConfigService(_fs, Mock.Of<IUserInteraction>()).GetGithubProxy();
+
+  [Fact]
+  public async Task Github_NotConfiguredAndUnreachable_AsksAndDirectWritesAnEmptyProxy() {
+    // Arrange
+    int checks = 0;
+    TuiApp app = Start(githubProbe: Probe((_, _) => {
+      Interlocked.Increment(ref checks);
+      throw new HttpRequestException("connection refused");
+    }));
+
+    // Act
+    await WaitFor(app, "GitHub is not reachable");
+    Assert.Contains("connection refused", app.ScreenText);
+    _terminal.Press(ConsoleKey.RightArrow);
+    _terminal.Press(ConsoleKey.Enter);
+
+    // Assert
+    await WaitFor(app, "lip connects to GitHub directly.");
+    Assert.Equal("", await GithubProxy());
+    Assert.Equal(1, checks);
+  }
+
+  [Fact]
+  public async Task Github_Later_ChangesNothing() {
+    TuiApp app = Start(githubProbe: Probe((_, _) => Task.FromResult(503)));
+
+    await WaitFor(app, "GitHub is not reachable");
+    _terminal.Press(ConsoleKey.Escape);
+    await WaitFor(app, screen =>
+        !screen.Contains("GitHub is not reachable", StringComparison.Ordinal));
+
+    Assert.Null(await GithubProxy());
+    Assert.False(_fs.File.Exists(Path.Join(LipDirectories.Config, "config.toml")));
+  }
+
+  [Fact]
+  public async Task Github_AProxyThatWorks_IsTestedThenSaved() {
+    // Arrange: GitHub is not reached directly, but through the proxy.
+    List<string> sent = [];
+    TuiApp app = Start(githubProbe: Probe((url, _) => {
+      lock (sent) {
+        sent.Add(url.ToString());
+      }
+
+      return Task.FromResult(url.Host == "github.com" ? 403 : 200);
+    }));
+
+    // Act
+    await WaitFor(app, "GitHub is not reachable");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "The URL prefix of the proxy");
+    _terminal.Type("https://proxy.example/");
+    _terminal.Press(ConsoleKey.Enter);
+
+    // Assert
+    await WaitFor(app, "lip reaches GitHub through the proxy.");
+    Assert.Equal("https://proxy.example/", await GithubProxy());
+    lock (sent) {
+      Assert.Equal(
+          [
+            GithubProbe.ProbeUrl,
+            "https://proxy.example/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack",
+          ],
+          sent);
+    }
+  }
+
+  [Fact]
+  public async Task Github_AProxyThatFails_IsSavedOnlyWhenTheUserKeepsIt() {
+    TuiApp app = Start(githubProbe: Probe((_, _) => Task.FromResult(502)));
+
+    await WaitFor(app, "GitHub is not reachable");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "The URL prefix of the proxy");
+    _terminal.Type("https://proxy.example/");
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "The proxy did not reach GitHub");
+    Assert.Null(await GithubProxy());
+    _terminal.Press(ConsoleKey.RightArrow);
+    _terminal.Press(ConsoleKey.Enter);
+
+    await WaitFor(app, "lip reaches GitHub through the proxy.");
+    Assert.Equal("https://proxy.example/", await GithubProxy());
+  }
+
+  [Fact]
+  public async Task Github_Configured_IsNotChecked() {
+    // Arrange: an empty proxy is configured too.
+    await new ConfigService(_fs, Mock.Of<IUserInteraction>()).Set(
+        ConfigService.GithubProxyKey, "");
+    int checks = 0;
+
+    // Act
+    TuiApp app = Start(githubProbe: Probe((_, _) => {
+      Interlocked.Increment(ref checks);
+      return Task.FromResult(503);
+    }));
+    await WaitFor(app, "No package is installed in this workspace.");
+    await Task.Delay(300, TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(0, Volatile.Read(ref checks));
+    Assert.DoesNotContain("GitHub is not reachable", app.ScreenText);
+  }
+
+  [Fact]
+  public async Task Github_Reachable_AsksNothing() {
+    int checks = 0;
+    TuiApp app = Start(githubProbe: Probe((_, _) => {
+      Interlocked.Increment(ref checks);
+      return Task.FromResult(200);
+    }));
+
+    await WaitFor(app, "No package is installed in this workspace.");
+    for (int i = 0; i < 100 && Volatile.Read(ref checks) == 0; i++) {
+      await Task.Delay(20, TestContext.Current.CancellationToken);
+    }
+
+    await Task.Delay(200, TestContext.Current.CancellationToken);
+    Assert.Equal(1, Volatile.Read(ref checks));
+    Assert.DoesNotContain("GitHub is not reachable", app.ScreenText);
+    Assert.Null(await GithubProxy());
+  }
+
+  [Fact]
+  public async Task Github_TheCheck_DoesNotHoldUpTheInterface() {
+    // Arrange: GitHub answers only once the test lets it.
+    TaskCompletionSource<int> answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TuiApp app = Start(githubProbe: Probe((_, _) => answer.Task));
+
+    // Act: the interface works meanwhile.
+    await WaitFor(app, "No package is installed in this workspace.");
+    _terminal.Type("5");
+    await WaitFor(app, "github_proxy");
+    answer.SetResult(500);
+
+    // Assert
+    await WaitFor(app, "GitHub is not reachable");
+  }
+
+  #endregion
 }

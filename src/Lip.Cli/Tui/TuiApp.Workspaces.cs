@@ -58,10 +58,8 @@ public sealed partial class TuiApp {
   /// Adds the directory at path, absolute or relative to the selected workspace, to the list,
   /// and selects it. False, with why, when it is not a directory.
   private bool AddWorkspace(string path, out string? error) {
-    System.IO.Abstractions.IFileSystem fileSystem = _workspaces.FileSystem;
-    string full = _workspaces.Normalize(
-        fileSystem.Path.IsPathFullyQualified(path) ? path : fileSystem.Path.Join(_workspace, path));
-    if (!fileSystem.Directory.Exists(full)) {
+    string full = FullPath(path);
+    if (!_workspaces.FileSystem.Directory.Exists(full)) {
       error = $"{full} is not a directory.";
       return false;
     }
@@ -75,6 +73,13 @@ public sealed partial class TuiApp {
       error = $"Could not write the workspace list: {ex.Message}";
       return false;
     }
+  }
+
+  /// The canonical form of a path, absolute or relative to the selected workspace.
+  private string FullPath(string path) {
+    System.IO.Abstractions.IFileSystem fileSystem = _workspaces.FileSystem;
+    return _workspaces.Normalize(
+        fileSystem.Path.IsPathFullyQualified(path) ? path : fileSystem.Path.Join(_workspace, path));
   }
 
   /// The workspace list: Enter selects a workspace, a adds one, d removes one from the list,
@@ -95,7 +100,7 @@ public sealed partial class TuiApp {
 
     public override (string, string)[] Hints =>
         [
-          ("Enter", "select"), ("a", "add"), ("d/Del", "remove from the list"), ("↑/↓", "move"),
+          ("Enter", "select"), ("a", "add"), ("n", "new server"), ("d/Del", "remove from the list"), ("↑/↓", "move"),
           ("Esc", "close"),
         ];
 
@@ -168,6 +173,10 @@ public sealed partial class TuiApp {
           return;
         case 'd':
           Remove();
+          return;
+        case 'n':
+          _app.Close(this);
+          _app.NewServer();
           return;
       }
 

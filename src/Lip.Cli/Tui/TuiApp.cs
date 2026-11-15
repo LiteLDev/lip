@@ -30,6 +30,8 @@ public sealed partial class TuiApp {
   private readonly WorkspaceList _workspaces;
   private readonly ServerSessions _servers;
   private readonly StopListener _listenForStop;
+  private readonly GithubProbe? _githubProbe;
+  private readonly IServerSetup _serverSetup;
   // The client of the selected workspace.
   private LipClient _client;
   // The selected workspace (protocol/lip-tui.md, "Workspaces").
@@ -49,7 +51,10 @@ public sealed partial class TuiApp {
   /// workingDirectory, the working directory of lip, is added to the workspace list, which is
   /// kept in memory when not given, and selected. servers are the servers of the process:
   /// ServerSessions.Shared when not given. describeFailure works out why a command failed and
-  /// writes the failure report: ErrorReporter.Describe when not given.
+  /// writes the failure report: ErrorReporter.Describe when not given. githubProbe checks that
+  /// GitHub is reached when the interface starts (protocol/lip-tui.md, "GitHub reachability"):
+  /// not checked when not given. serverSetup sets up a new server: through LipClient when not
+  /// given.
   ///
   /// The servers that the interface starts are asked to stop when lip is (protocol/lip-run.md,
   /// "Stopping"): through the current invocation (Invocation) when the daemon carries out the
@@ -62,7 +67,11 @@ public sealed partial class TuiApp {
       string workingDirectory,
       Func<Exception, string[], bool, Failure>? describeFailure = null,
       WorkspaceList? workspaces = null,
-      ServerSessions? servers = null) {
+      ServerSessions? servers = null,
+      GithubProbe? githubProbe = null,
+      IServerSetup? serverSetup = null) {
+    _githubProbe = githubProbe;
+    _serverSetup = serverSetup ?? ClientServerSetup.Instance;
     _describeFailure = describeFailure ?? ErrorReporter.Describe;
     _terminal = terminal;
     _createClient = createClient;
@@ -109,6 +118,7 @@ public sealed partial class TuiApp {
     _servers.Changed += Changed;
     try {
       LoadPackages();
+      CheckGithub();
       Render();
       while (!_quit) {
         Action? next = _events.Take();
@@ -117,6 +127,7 @@ public sealed partial class TuiApp {
         } while (!_quit && _events.TryTake(out next));
 
         if (!_quit) {
+          AskAboutGithubWhenIdle();
           Render();
         }
       }

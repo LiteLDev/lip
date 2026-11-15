@@ -77,9 +77,14 @@ public sealed partial class TuiApp {
           _installedLoaded ? "No package is installed in this workspace." : "Reading...",
           Theme.Muted);
       if (_installedLoaded) {
+        // A workspace without a game needs one before any mod (protocol/lip-tui.md, "New
+        // server").
         _screen.WriteFit(
-            list.X, list.Y + 2, list.Width,
-            "Press i to install one, or 2 to browse the mods of levimc.org.", Theme.Muted);
+            list.X, list.Y + 2, list.Width, "Press n to set up a new server: its directory,"
+                + " the version of the game and the loader.", Theme.Accent);
+        _screen.WriteFit(
+            list.X, list.Y + 3, list.Width,
+            "Then press i to install mods, or 2 to browse the mods of levimc.org.", Theme.Muted);
       }
 
       return;
@@ -143,6 +148,9 @@ public sealed partial class TuiApp {
     switch (key.KeyChar) {
       case 'i':
         PromptInstall("");
+        break;
+      case 'n':
+        NewServer();
         break;
       case 'r':
         LoadPackages();

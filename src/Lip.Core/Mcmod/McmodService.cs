@@ -561,13 +561,7 @@ public partial class McmodService(
       Platform = environment.Platform,
       Packages = [],
     };
-    // What the resolver notes about how it reads a package (such as a tooth.json whose version
-    // differs from its tag) is for the run trace, not for the user.
-    Resolver resolver = new(
-        _archiveProvider,
-        _archiveReader,
-        message => RunTrace.Write("resolve", message),
-        _downloadServerBuilds);
+    Resolver resolver = CreateResolver();
     foreach (LockedPackage package in lockFile.Packages) {
       if (package.Commit is string commit
           && Ref.TryParse(package.Source, out Ref? source, out _)) {
@@ -580,6 +574,14 @@ public partial class McmodService(
         new InstalledPackageResolver(resolver, c => AsInstalled(workspace!, c))));
     return workspace;
   }
+
+  /// A resolver whose notes about how it reads a package (such as a tooth.json whose version
+  /// differs from its tag) go to the run trace, not to the user.
+  private Resolver CreateResolver() => new(
+      _archiveProvider,
+      _archiveReader,
+      message => RunTrace.Write("resolve", message),
+      _downloadServerBuilds);
 
   /// The installed package with the identity, version and commit of a candidate, with the
   /// source of the candidate; otherwise the candidate. Such a package is not replaced

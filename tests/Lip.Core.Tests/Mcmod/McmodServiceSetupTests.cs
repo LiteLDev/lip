@@ -94,6 +94,43 @@ public class McmodServiceSetupTests {
               It.IsAny<System.IO.Abstractions.IFileInfo>()),
           Times.Never);
 
+  #region New server
+
+  [Fact]
+  public async Task GameVersions_ReleasesFirstThenPatches_WithTheirBuilds() {
+    // Act
+    IReadOnlyList<GameVersion> versions = await _ws.Service.GameVersions();
+
+    // Assert: protocol/lip-tui.md, "New server".
+    Assert.Equal(
+        [
+          "1.21.0 True True", "1.20.0 True False", "1.19.0 True False",
+          "1.21.0-patch.3 True True", "1.20.0-patch.1 True False", "1.19.0-patch.5 True False",
+        ],
+        versions.Select(v => $"{v.Version} {v.Windows} {v.Linux}"));
+  }
+
+  [Fact]
+  public async Task LoaderVersions_AreThoseThatFitTheGame_HighestFirst() {
+    // Arrange: one more for the new game, and one for a game the server does not have yet.
+    AddLoader("2.1.0", "1.21.0");
+    AddLoader("3.0.0", "1.22.0");
+
+    CancellationToken token = TestContext.Current.CancellationToken;
+
+    // Act & Assert
+    Assert.Equal(
+        ["2.1.0", "2.0.0"],
+        (await _ws.Service.LoaderVersions(_new, token)).Select(v => v.ToString()));
+    Assert.Equal(
+        ["1.0.0"], (await _ws.Service.LoaderVersions(_old, token)).Select(v => v.ToString()));
+    Assert.Empty(await _ws.Service.LoaderVersions(SemVersion.Parse("1.19.0"), token));
+    // Listing changes no file of the workspace.
+    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
+  }
+
+  #endregion
+
   #region lip setup
 
   [Fact]

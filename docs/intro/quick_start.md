@@ -6,9 +6,15 @@ This guide will help you get started with `lip`, covering basic usage for managi
 
 Before proceeding, ensure that you have [installed lip](installation.md). lip does not require `git` to be installed.
 
+## Setting Up the Server in the Interface
+
+The simplest way: open a terminal, run `lip`, and press `n`. lip asks for the directory of the server, the game version, the build and the loader, shows what it will install, and asks you to accept the Minecraft EULA. When it is done, start the server in the **3 Server** tab and install mods from the **2 Browse** tab. See [Interactive Interface](../cli/tui.md#new-server).
+
+If GitHub cannot be reached from your network, the interface also asks whether to set a GitHub proxy, connect directly anyway, or decide later. See [GitHub reachability](../cli/tui.md#github-reachability).
+
 ## Setting Up the Server
 
-Run lip in the root directory of your server (the workspace), e.g. a new empty directory. First set up the server: the Bedrock Dedicated Server of a game version, with LeviLamina as its loader:
+To set it up on the command line instead, run lip in the root directory of your server (the workspace), e.g. a new empty directory. First set up the server: the Bedrock Dedicated Server of a game version, with LeviLamina as its loader:
 
 ```shell
 lip setup --game 1.21.0

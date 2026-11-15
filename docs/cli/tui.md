@@ -20,10 +20,38 @@ lip remembers the workspaces you used in a list, `workspaces.json` in its state 
 | --- | --- |
 | `↑`, `↓`, `Enter` | Select a workspace. |
 | `a` | Adds a directory, absolute or relative to the selected workspace, and selects it. The directory must exist. |
+| `n` | Sets up a new server (see [New server](#new-server)). |
 | `d`, `Del` | Removes the selected workspace from the list. No file in it changes. The workspace that is selected cannot be removed. |
 | `Esc` | Closes the list. |
 
 The list is kept between runs of lip, and shared by the interfaces open at the same time. A workspace that no longer exists is marked as missing.
+
+## New server
+
+You can set up a server from nothing without leaving the interface. In a workspace without a game, the Packages tab says so: press `n` there, or in the list of workspaces (`w`). lip then asks, one dialog after the other:
+
+1. **The directory of the server**, absolute or relative to the selected workspace. In a workspace without a game, that workspace is offered. A directory that does not exist is created.
+2. **The game version**, read from the builds list of the server: the release versions, newest first, then the versions of a single build (`1.21.50-patch.2`).
+3. **The build**: `windows`, the server that LeviLamina and its mods run on (through Wine off Windows), or `linux`, the Linux server without a loader. Only the builds that the version has are offered.
+4. **The loader**, for the `windows` build: the versions of LeviLamina that support the game, newest first, or no loader. lip finds them as [`lip setup`](./commands/setup.md#the-loader) does, which may take a moment.
+
+Once you have chosen, lip creates the directory, adds it to the workspace list, selects it, and carries out [`lip setup`](./commands/setup.md) with your choices, e.g. `lip setup --game 1.21.50 --loader levilamina@1.1.0`: it shows the plan, and, once you choose **Apply**, asks whether you accept the Minecraft EULA. `Esc` in any of the dialogs before the last choice stops, creating nothing.
+
+When the server is set up, start it in the **3 Server** tab, and install mods from **2 Browse**.
+
+## GitHub reachability
+
+lip downloads LeviLamina and most mods from GitHub. When the interface opens and `github_proxy` is not set (not even to an empty value, see [Configuration](./configuration.md)), lip checks in the background whether it reaches GitHub, while you use the interface: it requests `https://github.com/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack` and waits up to 10 seconds for an answer.
+
+When GitHub does not answer, the interface asks how to reach it:
+
+| Choice | Does |
+| --- | --- |
+| **Set a proxy** | Asks for the URL prefix of a GitHub proxy, tests it with the same request through it, and saves it as `github_proxy` when it works. When it does not, you can enter another one or save it anyway. |
+| **Connect directly** | Sets `github_proxy` to an empty value: lip connects to GitHub directly, and does not check or ask again. |
+| **Later** | Changes nothing; lip checks again when the interface next opens. |
+
+lip does not suggest any proxy itself. You can change `github_proxy` at any time in the **5 Settings** tab or with [`lip config`](./commands/config.md); once it is set, the check does not happen.
 
 ## Tabs
 
