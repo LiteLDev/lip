@@ -2,6 +2,8 @@ using System.IO.Abstractions.TestingHelpers;
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Mods;
+using Lip.Cli.Tui.Widgets;
+using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Install;
@@ -24,7 +26,39 @@ public sealed class ModsPageTests {
   private const string CommitField =
       "\"commit\": \"0123456789abcdef0123456789abcdef01234567\", ";
 
+  // The catalogue has Alpha, under an id in other letters, and Lib; it has neither Beta nor
+  // the game.
+  private const string Catalogue = """
+      {
+        "mods": [
+          {
+            "id": "github.com/Acme/alpha", "name": "Alpha", "owner": "acme",
+            "description": "An economy core", "tags": ["type:mod", "economy"],
+            "side": ["server"], "platform": ["win-x64"], "gameVersions": ["1.26.60"],
+            "deps": {"github.com/LiteLDev/LeviLamina": "26.60.*"}, "stars": 7, "license": "MIT",
+            "downloads": 55912,
+            "updated": "2026-11-01T00:00:00Z", "created": "2025-01-01T00:00:00Z",
+            "url": "https://levimc.org/mods/github.com/acme/Alpha/"
+          },
+          {
+            "id": "github.com/acme/Lib", "name": "Lib", "owner": "acme",
+            "description": "一个依赖库", "tags": ["library"],
+            "side": ["server"], "platform": ["win-x64"], "stars": 3
+          }
+        ]
+      }
+      """;
+
+  private const string AlphaFile = """
+      { "id": "github.com/Acme/alpha", "latest": {"variant": "", "version": "1.3.0"},
+        "versions": [ {"version": "1.3.0"} ],
+        "readmes": [{"lang": "en", "text": "The readme of Alpha."}] }
+      """;
+
   private readonly Mock<IArchiveProvider> _archives = new();
+  // What a URL of the catalogue holds; a test replaces it to fail, or to wait.
+  private Func<string, string> _catalogue = url =>
+      url == ModCatalogClient.BaseUrl + "index.json" ? Catalogue : AlphaFile;
 
   public ModsPageTests() {
     ArchiveUnavailableException nothing = new("The archives of the test have nothing.");
@@ -73,6 +107,7 @@ public sealed class ModsPageTests {
       Width = width,
       Height = height,
       FileSystem = fs,
+      Catalog = url => _catalogue(url),
       CreateClient = (interaction, hookOutput, workspace) => new LipClient(
           fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
           new McmodService(
@@ -91,6 +126,18 @@ public sealed class ModsPageTests {
       ];
     }
   }
+
+  /// The local paths that the archives were asked to open.
+  private List<string> OpenedPaths() {
+    lock (_archives.Invocations) {
+      return [
+        .. _archives.Invocations.SelectMany(i => i.Arguments.OfType<Ref>())
+            .Where(r => r.Kind == RefKind.File).Select(r => r.LocalPath),
+      ];
+    }
+  }
+
+  private static string HintOf(Hint hint) => $"{hint.Key} {hint.Text}";
 
   private static string Installed(TuiHarness tui) => tui.Fs.File.ReadAllText(StatePath(tui.Root));
 
@@ -252,7 +299,7 @@ public sealed class ModsPageTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.UpdateTo);
     tui.Snapshot("mods-menu");
-    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.DownArrow, 3);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Apply} ]");
     tui.Snapshot("mods-uninstall-plan");
@@ -276,7 +323,7 @@ public sealed class ModsPageTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.Uninstall);
     tui.Snapshot("mods-menu");
-    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.DownArrow, 3);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Apply} ]");
     tui.Snapshot("mods-uninstall-plan");
@@ -321,8 +368,10 @@ public sealed class ModsPageTests {
     tui.Press(ConsoleKey.End);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.GoToWorkspaces);
+    Assert.Contains(ModsText.Details, tui.Screen);
     Assert.DoesNotContain(ModsText.UpdateTo, tui.Screen);
     Assert.DoesNotContain(ModsText.Uninstall, tui.Screen);
+    tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
 
     await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
@@ -397,6 +446,7 @@ public sealed class ModsPageTests {
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
 
     // The archives have no version of it, which is why the dry run fails.
@@ -415,7 +465,7 @@ public sealed class ModsPageTests {
 
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.UpdateTo);
-    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(Alpha + "@");
     Assert.Contains(ModsText.RefPlaceholder, tui.Screen);
@@ -467,6 +517,15 @@ public sealed class ModsPageTests {
     tui.Press(ConsoleKey.Home);
     await tui.WaitFor(CommonText.HintNext.Text);
     tui.Press(ConsoleKey.Enter);
+
+    // Two ways to name what to install; the second is to type it.
+    await tui.WaitFor(ModsText.TypeSource);
+    tui.Snapshot("mods-install-choice");
+    Assert.Contains($"─ {ModsText.InstallTitle} ─", tui.Screen);
+    Assert.Contains(StartOf(ModsText.BrowseDetail), tui.Screen);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(StartOf(ModsText.TypeSourceDetail));
+    tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.SourcePlaceholder);
     tui.Snapshot("mods-install-prompt");
 
@@ -484,18 +543,430 @@ public sealed class ModsPageTests {
   }
 
   [Fact]
-  public async Task Request_InstallFromSource_OpensThePrompt_AndEscClosesIt() {
+  public async Task Request_InstallFromSource_AsksHow_AndEscGoesBackOneLevel() {
     using TuiHarness tui = Start(state: null);
     await tui.Settle();
 
     await tui.Invoke(() => tui.Context.Navigate(PageId.Mods, PageRequest.InstallFromSource));
-    await tui.WaitFor(ModsText.SourcePlaceholder);
+    await tui.WaitFor(ModsText.TypeSource);
     Assert.Contains($"─ {ModsText.InstallTitle} ─", tui.Screen);
 
+    // Esc in the prompt goes back to the choice, with the way just left highlighted.
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.SourcePlaceholder);
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone(ModsText.SourcePlaceholder);
+    await tui.WaitFor(StartOf(ModsText.TypeSourceDetail));
+
+    // And so does Esc in the file browser.
+    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {ModsText.InstallLocal} ─");
+    await tui.WaitUntilGone(PathPickerText.Reading);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone($"─ {ModsText.InstallLocal} ─");
+    await tui.WaitFor(StartOf(ModsText.BrowseDetail));
+
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ModsText.TypeSource);
     Assert.Empty(Asked());
     Assert.Equal(PageId.Mods, tui.Context.CurrentPage);
+  }
+
+  /// Goes from the list of the page to the file browser of "Install from source…".
+  private static async Task Browse(TuiHarness tui) {
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    tui.Press(ConsoleKey.Home);
+    await tui.WaitFor(StartOf(ModsText.InstallFromSourceDetail));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.TypeSource);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {PathPickerText.SelectFolder} ] [ {CommonText.Cancel} ]");
+    await tui.WaitUntilGone(PathPickerText.Reading);
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task InstallFromSource_Browse_InstallsTheZipFileChosen_AsOneArgument(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    // A path with a space and Chinese characters.
+    string folder = Path.Join(tui.Root, "my mods");
+    string zip = Path.Join(folder, "领地 系统.zip");
+    tui.Fs.AddFile(zip, new MockFileData("zip"));
+    tui.Fs.AddFile(Path.Join(folder, "notes.txt"), new MockFileData("text"));
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    // The browser starts at the workspace, and shows folders and .zip files.
+    await Browse(tui);
+    await tui.WaitFor($"my mods{Path.DirectorySeparatorChar}");
+    tui.Snapshot("mods-install-browse");
+    Assert.Contains($"─ {ModsText.InstallLocal} ─", tui.Screen);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("领地 系统.zip");
+    tui.Snapshot("mods-install-browse-folder");
+    Assert.DoesNotContain("notes.txt", tui.Screen);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    // The archives of the test have nothing, which is why the dry run fails; the title names
+    // the file.
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    tui.Snapshot("mods-install-browse-failed");
+    Assert.Contains($"{CommonText.Preview} · {ModsText.InstallOperation("领地 系统.zip")}", tui.Screen);
+    Assert.Equal([zip], OpenedPaths());
+  }
+
+  [Fact]
+  public async Task InstallFromSource_Browse_InstallsTheFolderShown() {
+    using TuiHarness tui = Start(Server, Language.ZhHant);
+    string folder = Path.Join(tui.Root, "我的 模組", "領地 系統");
+    tui.Fs.AddFile(Path.Join(folder, "manifest.json"), new MockFileData("{}"));
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    await Browse(tui);
+    await tui.WaitFor($"我的 模組{Path.DirectorySeparatorChar}");
+
+    // The workspace, which the browser starts at, is no package.
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.IsWorkspace);
+    tui.Snapshot("mods-install-browse-workspace");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"領地 系統{Path.DirectorySeparatorChar}");
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"{PathPickerText.Folder}  {folder}");
+    await tui.WaitUntilGone(PathPickerText.Reading);
+
+    // The folder shown is chosen with its button.
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains($"{CommonText.Preview} · {ModsText.InstallOperation("領地 系統")}", tui.Screen);
+    Assert.Equal([folder], OpenedPaths());
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Details_ShowWhatTheCatalogueSaysOfTheMod(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    // Details is the first action of the menu.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    Assert.True(
+        tui.Screen.IndexOf(ModsText.Details, StringComparison.Ordinal)
+            < tui.Screen.IndexOf(ModsText.UpdateTo, StringComparison.Ordinal),
+        tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+
+    // The same details as on the Get mods page, with the file of the mod once it is read.
+    await tui.WaitFor("An economy core");
+    await tui.WaitFor("1.3.0");
+    tui.Snapshot("mods-details");
+    string screen = tui.Screen;
+    Assert.Contains("─ Alpha ─", screen);
+    Assert.Contains(ModDetailsText.Author, screen);
+    Assert.Contains("55,912", screen);
+    Assert.Contains($"[ {ModDetailsText.Readme} ]", screen);
+    Assert.Contains($"[ {CommonText.Close} ]", screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("The readme of Alpha.");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("The readme of Alpha.");
+
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("An economy core");
+    Assert.Contains("[ ] " + Alpha, tui.Screen);
+    Assert.Empty(Asked());
+  }
+
+  [Fact]
+  public async Task Details_OfADependency_AreShownToo() {
+    using TuiHarness tui = Start(Server, Language.ZhHans);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ModsText.DependencyDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("一个依赖库");
+    Assert.Contains("─ Lib ─", tui.Screen);
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Details_OfWhatTheCatalogueDoesNotHave_SayThat(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    // Beta, which the catalogue does not have.
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.NotInCatalogue);
+    tui.Snapshot("mods-details-missing");
+    Assert.Contains($"─ {ModsText.Details} ─", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(ModsText.NotInCatalogue);
+
+    // The game, whose menu has Details too.
+    tui.Press(ConsoleKey.End);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.GoToWorkspaces);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.NotInCatalogue);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ModsText.NotInCatalogue);
+    Assert.Equal(PageId.Mods, tui.Context.CurrentPage);
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Details_WhenTheCatalogueCannotBeRead_SayThat_AndReadItAgainWhenAsked(
+      Language language, int width, int height) {
+    int reads = 0;
+    bool broken = true;
+    _catalogue = url => {
+      if (url != ModCatalogClient.BaseUrl + "index.json") {
+        return AlphaFile;
+      }
+
+      Interlocked.Increment(ref reads);
+      return Volatile.Read(ref broken)
+          ? throw new CatalogUnavailableException("The catalogue of the test is away.")
+          : Catalogue;
+    };
+    using TuiHarness tui = Start(Server, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.CatalogueUnreadable);
+    tui.Snapshot("mods-details-unreadable");
+    Assert.DoesNotContain(ModsText.NotInCatalogue, tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(ModsText.CatalogueUnreadable);
+    Assert.Contains("[ ] " + Alpha, tui.Screen);
+
+    // Asked again, the catalogue is read again; once read, it is kept.
+    Volatile.Write(ref broken, false);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("An economy core");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("An economy core");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("An economy core");
+    Assert.Equal(2, Volatile.Read(ref reads));
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Details_WaitForTheCatalogue_AndEscGivesUp(
+      Language language, int width, int height) {
+    using ManualResetEventSlim arrives = new();
+    int reads = 0;
+    _catalogue = url => {
+      if (url == ModCatalogClient.BaseUrl + "index.json") {
+        Interlocked.Increment(ref reads);
+        arrives.Wait(TimeSpan.FromSeconds(30));
+        return Catalogue;
+      }
+
+      return AlphaFile;
+    };
+    using TuiHarness tui = Start(Server, language, width, height);
+    try {
+      await tui.GoTo(PageId.Mods);
+      await tui.WaitFor(Alpha);
+
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(ModsText.UpdateTo);
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(ModsText.ReadingCatalogue);
+      tui.Snapshot("mods-details-wait");
+      Assert.Contains($" {HintOf(CommonText.HintCancel)}", tui.Screen);
+      Assert.DoesNotContain(CommonText.HintSelect.Text, tui.Screen);
+
+      // Esc gives up: nothing is shown when the catalogue arrives.
+      tui.Press(ConsoleKey.Escape);
+      await tui.WaitUntilGone(ModsText.ReadingCatalogue);
+
+      // Asked again meanwhile, the same read answers.
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(ModsText.UpdateTo);
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(ModsText.ReadingCatalogue);
+      tui.Press(ConsoleKey.Escape);
+      await tui.WaitUntilGone(ModsText.ReadingCatalogue);
+      arrives.Set();
+      await tui.WaitUntil(() => Volatile.Read(ref reads) == 1, "the catalogue");
+      await tui.Settle();
+      Assert.DoesNotContain("An economy core", tui.Screen);
+      Assert.Contains("[ ] " + Alpha, tui.Screen);
+
+      // What arrived is kept for the next time.
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(ModsText.UpdateTo);
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor("An economy core");
+      Assert.Equal(1, Volatile.Read(ref reads));
+    }
+    finally {
+      arrives.Set();
+    }
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task WhileTheServerRuns_NothingChangesTheWorkspace_UntilItStops(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    string select = HintOf(CommonText.HintSelect);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+    Assert.DoesNotContain(ModsText.ServerRuns, tui.Screen);
+
+    // The page follows the server: a line says that it runs.
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(ModsText.ServerRuns);
+    tui.Snapshot("mods-running");
+
+    // The menu of a mod: Details can be chosen, the rest says why it cannot.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    Assert.Contains(select, tui.Screen);
+    Assert.DoesNotContain(CommonText.StopServerFirst, tui.Screen);
+    for (int i = 0; i < 3; i++) {
+      tui.Press(ConsoleKey.DownArrow);
+      await tui.Settle();
+      Assert.Contains(CommonText.StopServerFirst, tui.Screen);
+      Assert.DoesNotContain(select, tui.Screen);
+      tui.Press(ConsoleKey.Enter);
+      await tui.Settle();
+      Assert.Contains(ModsText.UpdateTo, tui.Screen);
+    }
+
+    tui.Snapshot("mods-running-menu");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("An economy core");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("An economy core");
+
+    // The action rows: Update all, then Install from source.
+    // The details area says why each does nothing; the title of the second has no "…".
+    foreach (string shown in (string[])[CommonText.StopServerFirst, ModsText.InstallTitle + "  "]) {
+      tui.Press(ConsoleKey.UpArrow);
+      await tui.WaitFor(shown);
+      Assert.Contains(CommonText.StopServerFirst, tui.Screen);
+      Assert.DoesNotContain(select, tui.Screen);
+      tui.Press(ConsoleKey.Enter);
+      await tui.Settle();
+      Assert.DoesNotContain(ModsText.TypeSource, tui.Screen);
+      Assert.DoesNotContain(CommonText.Preview, tui.Screen);
+    }
+
+    tui.Snapshot("mods-running-actions");
+
+    // Checked mods: only the checks can be taken off.
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("[x] " + Alpha);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UncheckAll);
+    tui.Snapshot("mods-running-checked");
+    Assert.Contains(select, tui.Screen);
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(CommonText.StopServerFirst);
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("[x]");
+    Assert.Empty(Asked());
+    Assert.Contains(Alpha, Installed(tui));
+
+    // Once the server stopped, everything can be chosen again.
+    await tui.SetServerRunning(false);
+    await tui.WaitUntilGone(ModsText.ServerRuns);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    Assert.DoesNotContain(CommonText.StopServerFirst, tui.Screen);
+    tui.Press(ConsoleKey.DownArrow, 3);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Apply} ]");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone($"[ {CommonText.Apply} ]");
+    tui.Press(ConsoleKey.UpArrow, 2);
+    await tui.WaitFor(StartOf(ModsText.InstallFromSourceDetail));
+    Assert.Contains(select, tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.TypeSource);
+  }
+
+  [Fact]
+  public async Task Request_InstallFromSource_WhileTheServerRuns_SaysToStopIt() {
+    using TuiHarness tui = Start(Server);
+    await tui.Settle();
+    await tui.SetServerRunning(true);
+
+    await tui.Invoke(() => tui.Context.Navigate(PageId.Mods, PageRequest.InstallFromSource));
+    await tui.WaitFor(CommonText.StopServerFirst);
+
+    Assert.Contains($"─ {ModsText.InstallTitle} ─", tui.Screen);
+    Assert.DoesNotContain(ModsText.TypeSource, tui.Screen);
   }
 
   [Fact]
