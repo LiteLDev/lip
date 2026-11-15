@@ -139,3 +139,6 @@ vite.config.ts.timestamp-*
 
 # levimc-kit, fetched from levimc.org by the package install (scripts/fetch-kit.mjs)
 /kit/
+
+# The Traditional Chinese pages, written from zh/ by scripts/zh-hant.mjs before every build
+/zh-Hant/
