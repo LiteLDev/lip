@@ -9,7 +9,7 @@
 | `-h, --help` | 显示 `lip` 或某个命令的帮助（例如 `lip install --help`）。 |
 | `-v, --version` | 输出 `lip` 的版本号。 |
 
-不带参数运行 `lip` 时输出帮助。
+在终端里不带参数运行 `lip` 会打开[交互界面](tui.md)；否则（在脚本或管道中）输出帮助。
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`daemon status`](commands/daemon.md) 和 [`list`](commands/list.md)。[`pkg view`](commands/pkg_view.md) 始终输出 JSON。
 

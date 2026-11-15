@@ -33,12 +33,14 @@ lip config set <KEY> <VALUE>
 ### Common Settings
 
 -   `github_proxy` (user): A URL to use as a proxy for GitHub requests, or an empty string to connect to GitHub directly.
+-   `language` (user): `en`, `zh-Hans` or `zh-Hant`, the language of the [interactive interface](../cli/tui.md#languages). Without it, the interface follows the language of your system.
 -   `restart` (workspace): `never` or `on-failure`, whether [`lip run`](../cli/commands/run.md#restarting) restarts the server of the workspace when it exits with a non-zero exit code.
 
 Examples:
 ```sh
 lip config set github_proxy https://mirror.ghproxy.com/
 lip config set github_proxy ""
+lip config set language zh-Hans
 lip config set restart on-failure --workspace
 ```
 

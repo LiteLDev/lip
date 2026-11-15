@@ -8,9 +8,9 @@ Before proceeding, ensure that you have [installed lip](installation.md). lip do
 
 ## Setting Up the Server in the Interface
 
-The simplest way: open a terminal, run `lip`, and press `n`. lip asks for the directory of the server, the game version, the build and the loader, shows what it will install, and asks you to accept the Minecraft EULA. When it is done, start the server in the **3 Server** tab and install mods from the **2 Browse** tab. See [Interactive Interface](../cli/tui.md#new-server).
+The simplest way: open a terminal and run `lip`. The Home page of the interface lists three steps: create the server, install mods, start the server. Select a step with the arrow keys and press `Enter`. For the first, lip asks for the directory of the server, the game version, the build and the loader, shows what it will install, and asks you to accept the Minecraft EULA. See [Interactive Interface](../cli/tui.md#your-first-server-in-three-steps).
 
-If GitHub cannot be reached from your network, the interface also asks whether to set a GitHub proxy, connect directly anyway, or decide later. See [GitHub reachability](../cli/tui.md#github-reachability).
+If GitHub cannot be reached from your network, the interface also asks whether to set a GitHub proxy, connect directly anyway, or decide later. See [GitHub proxy](../cli/tui.md#github-proxy).
 
 ## Setting Up the Server
 

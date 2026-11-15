@@ -62,7 +62,7 @@ With `--managed`, the server is a **managed server**: the [daemon of lip](daemon
 - `lip run --managed` starts the managed server of the workspace, or finds it running, and attaches to it: you see what it writes, and what you type goes to it. When the server was already running, you first see some of what it wrote lately.
 - `lip run --managed --detach` starts it, or finds it running, and exits with 0 at once.
 - While attached, Ctrl+C (`SIGINT`, or Ctrl+Break on Windows) asks the server to stop, as above, and you stay attached until it exits. Closing the terminal (`SIGHUP`, or closing the console window on Windows), `SIGTERM`, or killing `lip`, detaches: the server keeps running, and `lip run --managed` attaches to it again.
-- The [interface](../tui.md) shows the managed servers and attaches to them too: a server started in its Server tab is a managed server.
+- The [interface](../tui.md) shows the managed servers and attaches to them too: a server started on its [Server](../tui.md#server) page is a managed server.
 
 A managed server runs with the environment variables of the `lip` that started it. Its restarts are as above. `lip run --managed` fails when lip carries out the command itself, without its daemon (for example when the daemon cannot be started), as only the daemon runs managed servers. `--detach` without `--managed` is a usage error.
 
