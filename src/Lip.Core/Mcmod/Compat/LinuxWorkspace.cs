@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Lip.Core.Json;
 using Lip.Core.Mcmod.Lock;
 
 namespace Lip.Core.Mcmod.Compat;
@@ -28,7 +29,7 @@ public static class LinuxWorkspace {
     if (!Ref.TryParse(package.Source, out Ref? source, out _)
         || !BedrockServer.IsServer(source)
         || source.Variant != ""
-        || JsonSerializer.SerializeToNode(package.Manifest) is not JsonObject manifest
+        || JsonSerializer.SerializeToNode(package.Manifest, LipJsonContext.Default.JsonElement) is not JsonObject manifest
         || manifest["variants"]?[""] is not JsonArray entries
         || entries.OfType<JsonObject>().FirstOrDefault(e =>
             e["side"]?.GetValueKind() == JsonValueKind.String
@@ -47,7 +48,7 @@ public static class LinuxWorkspace {
     return package with {
       Variant = BedrockServer.LinuxVariant,
       Source = source.WithVariant(BedrockServer.LinuxVariant).ToString(),
-      Manifest = JsonSerializer.SerializeToElement(manifest),
+      Manifest = JsonSerializer.SerializeToElement(manifest, LipJsonContext.Default.JsonNode),
     };
   }
 

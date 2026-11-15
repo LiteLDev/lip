@@ -3,6 +3,7 @@ using System.IO.Abstractions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
@@ -561,7 +562,8 @@ public partial class McmodService(
 
     RunTrace.Write("resolve", $"Showing the package file of {archive.Key}");
     JsonObject result = new() {
-      ["manifest"] = JsonSerializer.SerializeToNode(await ManifestJson(archive, tagVersion)),
+      ["manifest"] = JsonSerializer.SerializeToNode(
+          await ManifestJson(archive, tagVersion), LipJsonContext.Default.JsonElement),
       // ListVersions gives the newest first.
       ["versions"] = new JsonArray([
         .. versions.Reverse().Select(v => v.Version.ToString()).Distinct()
@@ -590,7 +592,8 @@ public partial class McmodService(
     }
 
     JsonObject result = new() {
-      ["manifest"] = JsonSerializer.SerializeToNode(server.PackageFile(version)),
+      ["manifest"] = JsonSerializer.SerializeToNode(
+          server.PackageFile(version), LipJsonContext.Default.JsonElement),
       ["versions"] = new JsonArray([
         .. server.ReleaseVersions.Reverse()
             .Select(v => (JsonNode?)JsonValue.Create(v.ToString())),

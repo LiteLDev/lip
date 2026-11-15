@@ -1,0 +1,141 @@
+<!--
+  Trim warnings of libraries that do not apply to lip, each with the reason.
+
+  Spectre.Console.Cli reads by reflection the commands and settings of lip, which the trimmed
+  lip keeps whole (TrimmerRootAssembly lip), and its own types, which it keeps whole too
+  (TrimmerRootAssembly Spectre.Console.Cli). The options of lip are of types whose converters
+  TypeDescriptor knows without reflection: string, string[] and bool; none is a flag value
+  (FlagValue) or a dictionary (pair deconstruction), which Spectre.Console.Cli creates by
+  reflection.
+
+  Scriban awaits the values of functions by reflection when it renders a template
+  asynchronously; lip renders templates synchronously (Template.Render).
+
+  Flurl reads the properties of an object given for query parameters, headers or cookies, and
+  Flurl.Http serializes an object given as JSON, by reflection. lip gives them strings only and
+  sends or receives no JSON through them.
+-->
+<linker>
+  <assembly fullname="Spectre.Console.Cli">
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2072</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandConstructorBinder</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2067</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandPropertyBinder</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2072</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandValueBinder</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2026</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandValueResolver</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2072</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandValueResolver</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2075</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandValueResolver.SmartConverter</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2070</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandBinder</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2070</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.ReflectionActivator</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2070</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.ConfigurationHelper</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2026</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.DefaultPairDeconstructor</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2067</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.DefaultPairDeconstructor</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2075</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandModelBuilder</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2075</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandParameter</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2072</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.CommandParameter</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2067</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Spectre.Console.Cli.TypeResolverAdapter</property>
+    </attribute>
+  </assembly>
+  <assembly fullname="Scriban">
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2075</argument>
+      <property name="Scope">member</property>
+      <property name="Target">M:Scriban.TemplateContext.AwaitIfNeededAsync(System.Object)</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2026</argument>
+      <property name="Scope">member</property>
+      <property name="Target">M:Scriban.Runtime.DynamicCustomFunction.ConfigureAwait(System.Object)</property>
+    </attribute>
+  </assembly>
+  <assembly fullname="Flurl">
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2075</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Flurl.Util.CommonExtensions</property>
+    </attribute>
+  </assembly>
+  <assembly fullname="Flurl.Http">
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument>
+      <argument>IL2026</argument>
+      <property name="Scope">type</property>
+      <property name="Target">T:Flurl.Http.Configuration.DefaultJsonSerializer</property>
+    </attribute>
+  </assembly>
+</linker>

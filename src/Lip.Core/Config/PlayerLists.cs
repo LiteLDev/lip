@@ -30,7 +30,7 @@ public static class PlayerLists {
       player["xuid"] = xuid;
     }
 
-    allowlist.Add(player);
+    allowlist.Add((JsonNode)player);
   }
 
   /// Gives a player a permission: changes the entry with the xuid, or adds one.
@@ -46,7 +46,7 @@ public static class PlayerLists {
       }
     }
 
-    permissions.Add(new JsonObject { ["permission"] = permission, ["xuid"] = xuid });
+    permissions.Add((JsonNode)new JsonObject { ["permission"] = permission, ["xuid"] = xuid });
   }
 
   /// The string member of an entry, "" when it has none.

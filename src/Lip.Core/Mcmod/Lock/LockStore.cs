@@ -101,7 +101,7 @@ public partial class LockStore(IFileSystem fs) {
     CreateLipDirectory(root);
     string tempPath = LipPath(root, StagedFileName);
 
-    byte[] bytes = JsonFile.SerializeToUtf8Bytes(JsonSerializer.SerializeToElement(lockFile));
+    byte[] bytes = JsonFile.SerializeToUtf8Bytes(ReflectionJson.SerializeToElement(lockFile));
     try {
       await _fs.File.WriteAllBytesAsync(tempPath, bytes);
       RunTrace.Write("workspace", $"Wrote the new state file {tempPath}"
@@ -257,7 +257,7 @@ public partial class LockStore(IFileSystem fs) {
         }
       }
 
-      LockFile lockFile = root.Deserialize<LockFile>(_readOptions)
+      LockFile lockFile = ReflectionJson.Deserialize<LockFile>(root, _readOptions)
           ?? throw new LockFormatException(
               "The file is null instead of a JSON object.");
       Validate(lockFile);

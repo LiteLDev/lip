@@ -4,7 +4,7 @@ using Flurl;
 namespace Lip.Core.Entities;
 
 public record PackageManifestAsset {
-  [JsonConverter(typeof(JsonStringEnumConverter))]
+  [JsonConverter(typeof(JsonStringEnumConverter<AssetType>))]
   public enum AssetType {
     [JsonStringEnumMemberName("self")]
     Self,

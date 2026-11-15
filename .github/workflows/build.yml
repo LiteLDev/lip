@@ -44,6 +44,13 @@ jobs:
       # Self-contained: lip needs no .NET runtime where it runs.
       - run: dotnet publish src/Lip.Cli -o bin -r ${{ matrix.runtime }} --self-contained -p:DebugType=embedded
 
+      # The tests that run lip as a program, with the lip published above: trimmed, as released.
+      - shell: bash
+        run: |
+          dir=$(cd bin && { pwd -W 2>/dev/null || pwd; })
+          LIP_TEST_EXECUTABLE="$dir/$(ls bin | grep -E '^lip(\.exe)?$')" \
+            dotnet test tests/Lip.Cli.Tests --filter FullyQualifiedName~UsageErrorTests
+
       - uses: actions/upload-artifact@v7
         with:
           name: lip-${{ github.sha }}-${{ matrix.runtime }}
@@ -91,10 +98,6 @@ jobs:
             runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10
 
       - uses: actions/download-artifact@v8
         with:

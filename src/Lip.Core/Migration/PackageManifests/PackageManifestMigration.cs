@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using DotNet.Globbing;
 using Lip.Core.Entities;
 using Lip.Core.Infrastructure;
+using Lip.Core.Json;
 using Semver;
 
 namespace Lip.Core.Migration.PackageManifests;
@@ -27,7 +28,7 @@ public static partial class PackageManifestMigration {
   /// that is missing or of the wrong type.
   private static T Deserialize<T>(JsonDocument jsonDocument) {
     try {
-      return JsonSerializer.Deserialize<T>(jsonDocument)!;
+      return ReflectionJson.Deserialize<T>(jsonDocument)!;
     }
     catch (JsonException ex) {
       throw FieldError(ex);
@@ -169,11 +170,8 @@ public static partial class PackageManifestMigration {
   }
 
   private static PackageManifest MigrateV2ToV3(PackageManifestV2 manifestV2) {
-    Dictionary<string, object> model = new()
-    {
-      { "version", manifestV2.Version },
-      { "path", manifestV2.Tooth }
-    };
+    ScribanModel model = ScribanModel.From(
+        ("version", manifestV2.Version), ("path", manifestV2.Tooth));
 
     string RenderTemplate(string? template) {
       if (template is null) return "";
@@ -312,14 +310,14 @@ public static partial class PackageManifestMigration {
   }
 
   private static PackageManifest ParseV3(JsonDocument jsonDocument) {
-    Dictionary<string, object> model = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonDocument) ?? [];
+    ScribanModel model = ScribanModel.From(jsonDocument.RootElement);
 
     JsonNode? node = JsonNode.Parse(jsonDocument.RootElement.GetRawText());
 
     ProcessNode(node);
 
     try {
-      return node.Deserialize<PackageManifest>()!;
+      return ReflectionJson.Deserialize<PackageManifest>(node)!;
     }
     catch (JsonException ex) {
       throw FieldError(ex);
@@ -333,7 +331,16 @@ public static partial class PackageManifestMigration {
         case JsonValue value when value.TryGetValue(out string? s): {
             string newValue = Render(s, s, model);
 
-            value.ReplaceWith(newValue);
+            // As value.ReplaceWith(newValue), which the trimmed lip cannot call.
+            JsonNode replacement = JsonValue.Create(newValue);
+            switch (value.Parent) {
+              case JsonObject parent:
+                parent[value.GetPropertyName()] = replacement;
+                break;
+              case JsonArray parent:
+                parent[value.GetElementIndex()] = replacement;
+                break;
+            }
 
             return;
           }
@@ -357,9 +364,9 @@ public static partial class PackageManifestMigration {
 
   /// Renders a Scriban template made from the value of tooth.json written. Throws
   /// InvalidOperationException naming the value when it is not a valid template.
-  private static string Render(string template, string written, object model) {
+  private static string Render(string template, string written, ScribanModel model) {
     try {
-      return Scriban.Template.Parse(template).Render(model);
+      return model.Render(Scriban.Template.Parse(template));
     }
     catch (Exception ex) when (ex is InvalidOperationException
         or Scriban.Syntax.ScriptRuntimeException) {

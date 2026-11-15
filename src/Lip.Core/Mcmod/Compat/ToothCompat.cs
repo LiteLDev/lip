@@ -104,7 +104,7 @@ public static class ToothCompat {
 
     document["variants"] = variants;
 
-    JsonElement json = JsonSerializer.SerializeToElement(document);
+    JsonElement json = JsonSerializer.SerializeToElement(document, LipJsonContext.Default.JsonNode);
     Dictionary<string, IReadOnlyList<PackageEntry>> entries = new(StringComparer.Ordinal);
     foreach (JsonProperty variant in json.GetProperty("variants").EnumerateObject()) {
       PackageEntry entry;
@@ -171,8 +171,9 @@ public static class ToothCompat {
       PackageManifestAsset asset = merged.Assets[i];
       if (asset.Type is not (PackageManifestAsset.AssetType.Self
           or PackageManifestAsset.AssetType.Zip)) {
+        string type = JsonSerializer.Serialize(asset.Type, LipJsonContext.Default.AssetType);
         notes?.Add($"{field}.assets[{i}]: {PackageFormat.FileName} has no asset type "
-            + $"\"{JsonSerializer.Serialize(asset.Type).Trim('"')}\", so the variant has no entry "
+            + $"\"{type.Trim('"')}\", so the variant has no entry "
             + "here. Publish its files as a ZIP archive and use an asset of type \"zip\".");
         return null;
       }
@@ -188,7 +189,7 @@ public static class ToothCompat {
       foreach (PackageManifestAssetPlacement placement in asset.Placements) {
         (string src, string dest) = ConvertPlacement(placement);
         if (PackageFileParser.IsValidPlacement(src, dest)) {
-          place.Add(new JsonObject { ["src"] = src, ["dest"] = dest });
+          place.Add((JsonNode)new JsonObject { ["src"] = src, ["dest"] = dest });
         } else {
           notes?.Add($"{field}.assets[{i}]: the placement '{placement.Src}' -> '{placement.Dst}' "
               + $"becomes '{src}' -> '{dest}', which is not valid in {PackageFormat.FileName}; it "
@@ -200,7 +201,7 @@ public static class ToothCompat {
         converted["place"] = place;
       }
 
-      assets.Add(converted);
+      assets.Add((JsonNode)converted);
     }
 
     if (assets.Count > 0) {
@@ -257,7 +258,7 @@ public static class ToothCompat {
         continue;
       }
 
-      array.Add(glob);
+      array.Add((JsonNode)glob);
     }
 
     if (array.Count > 0) {

@@ -81,12 +81,10 @@ public static partial class ToothTemplates {
   /// $(variable) read as {{variable}}, and the variables version and path.
   private static List<Source> Sources(JsonElement tooth) {
     bool v3 = ToothCompat.FormatVersion(tooth) == 3;
-    Dictionary<string, object> model = v3
-        ? JsonSerializer.Deserialize<Dictionary<string, object>>(tooth) ?? []
-        : new() {
-          ["version"] = String(tooth, "version") ?? "",
-          ["path"] = String(tooth, "tooth") ?? "",
-        };
+    ScribanModel model = v3
+        ? ScribanModel.From(tooth)
+        : ScribanModel.From(
+            ("version", String(tooth, "version") ?? ""), ("path", String(tooth, "tooth") ?? ""));
 
     List<string> texts = [];
     CollectStrings(tooth, texts);
@@ -99,7 +97,7 @@ public static partial class ToothTemplates {
 
       string value;
       try {
-        value = Scriban.Template.Parse(template).Render(model);
+        value = model.Render(Scriban.Template.Parse(template));
       }
       catch (Exception ex) when (ex is InvalidOperationException
           or Scriban.Syntax.ScriptRuntimeException) {

@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
@@ -32,10 +33,12 @@ public sealed partial class TuiApp {
         "Shows the package file and the versions of a package, as JSON."),
   ];
 
-  private static readonly JsonSerializerOptions _indented = new() {
-    WriteIndented = true,
-    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-  };
+  private static readonly JsonTypeInfo<JsonElement> _indented =
+      (JsonTypeInfo<JsonElement>)new JsonSerializerOptions {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = CliJsonContext.Default,
+      }.GetTypeInfo(typeof(JsonElement));
 
   // The keys of the user configuration, then those of the workspace configuration
   // (protocol/config.toml.md), with their values: null when a key has none.

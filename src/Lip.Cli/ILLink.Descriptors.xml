@@ -1,0 +1,16 @@
+<!--
+  Types the trimmed lip keeps whole although no code of lip names their members: Scriban reads
+  the members of the .NET values its functions return (date.now.year, for instance) by
+  reflection.
+-->
+<linker>
+  <assembly fullname="System.Private.CoreLib">
+    <type fullname="System.DateTime" preserve="all" />
+    <type fullname="System.DateTimeOffset" preserve="all" />
+    <type fullname="System.TimeSpan" preserve="all" />
+    <type fullname="System.Collections.Generic.KeyValuePair`2" preserve="all" />
+  </assembly>
+  <assembly fullname="System.Runtime.Numerics">
+    <type fullname="System.Numerics.BigInteger" preserve="all" />
+  </assembly>
+</linker>

@@ -59,7 +59,7 @@ public static partial class TomlJson {
     try {
       // Validated first: deserializing alone lets a later key replace an earlier one.
       _ = SyntaxParser.ParseStrict(toml, "", validate: true);
-      table = TomlSerializer.Deserialize<TomlTable>(toml)
+      table = TomlSerializer.Deserialize<TomlTable>(toml, LipTomlContext.Default)
           ?? throw new TomlFormatException("The file is not a valid TOML document.");
     }
     catch (TomlException ex) {

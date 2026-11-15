@@ -135,7 +135,7 @@ public static class ToothMigrator {
         variants[variant] = entries;
       }
 
-      entries.Add(entry);
+      entries.Add((JsonNode)entry);
     }
 
     foreach (string label in tooth.Variants.Select(v => v.Label).Distinct()) {

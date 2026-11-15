@@ -9,7 +9,55 @@
     <AssemblyName>lip</AssemblyName>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <PublishSingleFile>true</PublishSingleFile>
+
+    <!--
+      lip is published with the .NET runtime, trimmed to what lip uses. Every trim warning fails
+      the publish: what the trimmer cannot see lip use, it removes.
+    -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <ILLinkTreatWarningsAsErrors>true</ILLinkTreatWarningsAsErrors>
+    <!--
+      The trimmer does not fold the results of methods such as OperatingSystem.IsWindows into the
+      methods that call them: removing the branches that become dead, ILLink 10.0 dropped the
+      finally that exits a lock (DaemonHost.Carry), and the daemon hung. It costs some 5 KB.
+    -->
+    <_ExtraTrimmerArgs>$(_ExtraTrimmerArgs) --disable-opt ipconstprop</_ExtraTrimmerArgs>
+    <!--
+      Scriban (object.to_json) and the types of Lip.Core (ReflectionJson) use System.Text.Json by
+      reflection.
+    -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- For RespectNullableAnnotations, which reading state.json uses. -->
+    <NullabilityInfoContextSupport>true</NullabilityInfoContextSupport>
+    <!-- Only for tools that trace or debug .NET programs, which lip does not use itself. -->
+    <EventSourceSupport>false</EventSourceSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <!--
+      DebuggerSupport stays: without it the trimmer drops the names of parameters, by which
+      System.Text.Json matches constructors (ReflectionJson), and the symbols that give failure
+      reports their line numbers.
+    -->
   </PropertyGroup>
+
+  <!-- Only a self-contained lip can be compressed: not the one built by PublishTrimmed=false. -->
+  <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Read by reflection: the commands by Spectre.Console.Cli, the types of Lip.Core by
+      ReflectionJson, and the builtin functions of Scriban (date.parse, for instance), any of which
+      a template of a package may call, by Scriban.
+    -->
+    <TrimmerRootAssembly Include="lip" />
+    <TrimmerRootAssembly Include="Lip.Core" />
+    <TrimmerRootAssembly Include="Spectre.Console.Cli" />
+    <TrimmerRootAssembly Include="Scriban" />
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+    <_ILLinkSuppressions Include="ILLink.Suppressions.xml" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.57.2" />

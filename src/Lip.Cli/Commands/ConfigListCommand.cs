@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Lip.Core.PublicApi;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -12,7 +13,8 @@ public class ConfigListCommand(LipClient lipClient, CommandOutput output)
     : AsyncCommand<ConfigListCommand.Settings> {
   private readonly CommandOutput _output = output;
   private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
-    WriteIndented = true
+    WriteIndented = true,
+    TypeInfoResolver = CliJsonContext.Default,
   };
 
   private readonly LipClient _lipClient = lipClient;
@@ -39,7 +41,10 @@ public class ConfigListCommand(LipClient lipClient, CommandOutput output)
     IDictionary<string, string?> config = await _lipClient.ConfigList(settings.Workspace);
 
     if (settings.Json) {
-      _output.Out.WriteLine(JsonSerializer.Serialize(config, _jsonSerializerOptions));
+      _output.Out.WriteLine(JsonSerializer.Serialize(
+          config,
+          (JsonTypeInfo<IDictionary<string, string?>>)_jsonSerializerOptions.GetTypeInfo(
+              typeof(IDictionary<string, string?>))));
     } else {
       Table table = new();
       table.AddColumn("Key");

@@ -27,8 +27,12 @@ public sealed class LipProcess : IDisposable {
       IEnumerable<string> args,
       string workingDirectory,
       IReadOnlyDictionary<string, string>? environment = null) {
+    // LIP_TEST_EXECUTABLE runs the tests with a published lip instead of the one built here. A
+    // Release build ignores LIP_DAEMON_ENDPOINT and uses the daemon of the user, which the fixture
+    // stops: it is for CI, where the user has no daemon of their own.
+    string? executable = Environment.GetEnvironmentVariable("LIP_TEST_EXECUTABLE");
     ProcessStartInfo startInfo = new(
-        Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet") {
+        executable ?? Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet") {
       WorkingDirectory = workingDirectory,
       RedirectStandardInput = true,
       RedirectStandardOutput = true,
@@ -39,7 +43,9 @@ public sealed class LipProcess : IDisposable {
       startInfo.Environment[name] = value;
     }
 
-    startInfo.ArgumentList.Add(Path.Join(AppContext.BaseDirectory, "lip.dll"));
+    if (executable is null) {
+      startInfo.ArgumentList.Add(Path.Join(AppContext.BaseDirectory, "lip.dll"));
+    }
     foreach (string arg in args) {
       startInfo.ArgumentList.Add(arg);
     }

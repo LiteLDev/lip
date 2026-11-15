@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Lip.Core.Entities;
 
 public record PackageManifestAssetPlacement {
-  [JsonConverter(typeof(JsonStringEnumConverter))]
+  [JsonConverter(typeof(JsonStringEnumConverter<PlacementType>))]
   public enum PlacementType {
     [JsonStringEnumMemberName("file")]
     File,

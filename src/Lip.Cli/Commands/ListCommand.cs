@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Lip.Core.PublicApi;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -10,10 +11,15 @@ public class ListCommand(LipClient lipClient, CommandOutput output)
     : AsyncCommand<ListCommand.Settings> {
   private readonly CommandOutput _output = output;
   private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
-    WriteIndented = true
+    WriteIndented = true,
+    TypeInfoResolver = CliJsonContext.Default,
   };
 
   private readonly LipClient _lipClient = lipClient;
+
+  /// The packages written by --json.
+  internal sealed record Installed(
+      IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled);
 
   public class Settings : CommandSettings {
     [CommandOption("--json")]
@@ -28,11 +34,8 @@ public class ListCommand(LipClient lipClient, CommandOutput output)
       // A value tuple has no properties to serialize, so name the two groups explicitly. JSON is
       // written as is: Spectre.Console would wrap long lines, breaking strings apart.
       _output.Out.WriteLine(JsonSerializer.Serialize(
-          new {
-            ExplicitInstalled = packages.ExplicitInstalled,
-            ImplicitInstalled = packages.ImplicitInstalled,
-          },
-          _jsonSerializerOptions));
+          new Installed(packages.ExplicitInstalled, packages.ImplicitInstalled),
+          (JsonTypeInfo<Installed>)_jsonSerializerOptions.GetTypeInfo(typeof(Installed))));
     } else {
       Tree explicitTree = new("User-Requested");
       foreach (string package in packages.ExplicitInstalled) {

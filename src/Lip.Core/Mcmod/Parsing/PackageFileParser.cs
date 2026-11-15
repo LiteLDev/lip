@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Lip.Core.Json;
 using Semver;
@@ -158,7 +159,8 @@ public static partial class PackageFileParser {
 
   /// Whether a member of place is valid (lip.schema.toml "place").
   public static bool IsValidPlacement(string src, string dest) {
-    using JsonDocument json = JsonDocument.Parse(JsonSerializer.Serialize(new { src, dest }));
+    using JsonDocument json = JsonDocument.Parse(
+        new JsonObject { ["src"] = src, ["dest"] = dest }.ToJsonString());
     try {
       _ = ReadPlacement(json.RootElement, "$");
       return true;
