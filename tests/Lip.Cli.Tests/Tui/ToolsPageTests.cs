@@ -3,6 +3,16 @@ using System.IO.Compression;
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Tools;
+using Lip.Cli.Tui.Widgets;
+using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod;
+using Lip.Core.Mcmod.Install;
+using Lip.Core.Mcmod.Lock;
+using Lip.Core.PublicApi;
+using Lip.Core.Services;
+using Lip.Core.Sources;
+using Moq;
+using Semver;
 
 namespace Lip.Cli.Tests.Tui;
 
@@ -26,7 +36,57 @@ public sealed class ToolsPageTests {
   private static readonly string _package =
       OperatingSystem.IsWindows() ? @"C:\packages\tool" : "/packages/tool";
 
+  /// The package file of a package.
+  private const string LipToml = """
+      format = 4
+      id = "github.com/test/tool"
+      version = "1.2.3"
+
+      [[variants.""]]
+      side = "server"
+      platform = "win-x64"
+      """;
+
+  private const string Alpha = "github.com/acme/Alpha";
+  private const string Game = "github.com/LiteLDev/bds";
+  private const string Commit = "0123456789abcdef0123456789abcdef01234567";
+
   private static string InRoot(string name) => Path.Join(TuiHarness.DefaultRoot, name);
+
+  /// The title of a dialog, as its frame shows it.
+  private static string Titled(string title) => $"─ {title} ─";
+
+  /// The path bar of a path picker that shows the folder.
+  private static string Bar(string folder) => $"{PathPickerText.Folder}  {folder}";
+
+  /// The row of a folder in the list of a path picker.
+  private static string Folder(string name) => name + Path.DirectorySeparatorChar;
+
+  /// Waits for the path picker with the title, and until it has read its first folder.
+  private static async Task Picker(TuiHarness tui, string title) {
+    await tui.WaitFor(Titled(title));
+    await tui.WaitFor($"[ {CommonText.Cancel} ]");
+    await tui.WaitUntilGone(PathPickerText.Reading);
+  }
+
+  /// An installed package without files.
+  private static string Package(string id, string variant, string version, bool isExplicit) => $$"""
+      { "manifest": { "format": 4, "id": "{{id}}", "version": "{{version}}",
+          "variants": { "{{variant}}": [ { "side": "server", "platform": "win-x64" } ] } },
+        "variant": "{{variant}}", "explicit": {{(isExplicit ? "true" : "false")}},
+        "ref": "{{id}}@{{version}}", "files": [] }
+      """;
+
+  /// The bytes of a ZIP archive that holds a package file.
+  private static byte[] Zip() {
+    using MemoryStream stream = new();
+    using (ZipArchive zip = new(stream, ZipArchiveMode.Create, leaveOpen: true)) {
+      using StreamWriter writer = new(zip.CreateEntry("lip.toml").Open());
+      writer.Write(LipToml);
+    }
+
+    return stream.ToArray();
+  }
 
   [Theory]
   [InlineData(Language.En, "Tools")]
@@ -79,17 +139,27 @@ public sealed class ToolsPageTests {
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(ToolsText.InitAbout);
 
-    // The dialogs of the two actions that ask first.
+    // What the two actions that ask first show.
     tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Output);
-    await Frames(tui, "tools-pack");
+    await Picker(tui, ToolsText.PackFolder);
+    await Frames(tui, "tools-pack-folder");
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(ToolsText.Output);
+    await tui.WaitUntilGone(Titled(ToolsText.PackFolder));
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("github.com/owner/repo@1.0.0");
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    Assert.Contains(ToolsText.ViewInstalled, tui.Screen);
+    Assert.Contains(ToolsText.ViewTyped, tui.Screen);
+    Assert.Contains(ToolsText.ViewBrowse, tui.Screen);
     await Frames(tui, "tools-view");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(ToolsText.ViewTypedAbout);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(ToolsText.ViewBrowseAbout);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ToolsText.ViewBrowseAbout);
+    Assert.Contains(ToolsText.ViewAbout, tui.Screen);
   }
 
   [Fact]
@@ -214,8 +284,12 @@ public sealed class ToolsPageTests {
     Assert.False(tui.Fs.File.Exists(InRoot("lip.toml")));
   }
 
-  [Fact]
-  public async Task Pack_ResolvesBothPathsAgainstTheSelectedWorkspace() {
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task Pack_BrowsesToTheFolder_ThenToTheOutput_FromTheSelectedWorkspace(
+      Language language) {
     // The current directory of the file system is not the selected workspace, as in the
     // daemon, whose working directory is not that of the client.
     MockFileSystem fs = new(new Dictionary<string, MockFileData>(), TuiHarness.DefaultRoot);
@@ -223,18 +297,39 @@ public sealed class ToolsPageTests {
     fs.AddFile(Path.Join(_package, "mod", "bin", "tool.exe"), new MockFileData("exe"));
     fs.AddFile(Path.Join(_package, "other.txt"), new MockFileData("other"));
     fs.AddDirectory(Path.Join(_package, "dist"));
-    using TuiHarness tui = TuiHarness.Start(
-        new TuiHarnessOptions { FileSystem = fs, WorkingDirectory = _package });
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      Language = language,
+      FileSystem = fs,
+      WorkingDirectory = _package,
+    });
     await tui.GoTo(PageId.Tools);
 
+    // The folder: the browser starts in the workspace, which holds dist and mod.
     tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Output);
-    // The directory, which starts as ".", then the archive.
-    tui.Press(ConsoleKey.Backspace);
-    tui.Type("mod");
+    await Picker(tui, ToolsText.PackFolder);
+    await tui.WaitFor(Bar(_package));
+    await tui.WaitFor(Folder("mod"));
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Bar(Path.Join(_package, "mod")));
+    await tui.WaitFor(Folder("bin"));
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+
+    // The archive: the browser starts in the workspace again, with a name to start from.
+    await Picker(tui, ToolsText.PackOutput);
+    await tui.WaitFor(Bar(_package));
+    await tui.WaitFor(Folder("dist"));
+    Assert.Contains("package.zip", tui.Screen);
+    await Frames(tui, "tools-pack-output");
     tui.Press(ConsoleKey.DownArrow);
-    tui.Type(Path.Join("dist", "tool.zip"));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Bar(Path.Join(_package, "dist")));
+    await tui.WaitUntilGone(Folder("mod"));
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Backspace, "package.zip".Length);
+    tui.Type("tool");
     tui.Press(ConsoleKey.Enter);
 
     string archive = Path.Join(_package, "dist", "tool.zip");
@@ -245,22 +340,22 @@ public sealed class ToolsPageTests {
   }
 
   [Fact]
-  public async Task Pack_DefaultDirectory_IsTheSelectedWorkspace() {
+  public async Task Pack_TheWorkspaceIntoItself_LeavesTheArchiveOutOfTheArchive() {
     MockFileSystem fs = new(new Dictionary<string, MockFileData>(), TuiHarness.DefaultRoot);
     fs.AddFile(InRoot("stray.txt"), new MockFileData("not packed"));
     fs.AddFile(Path.Join(_package, "lip.toml"), new MockFileData("format = 4"));
-    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
-      Language = Language.ZhHans,
-      FileSystem = fs,
-      WorkingDirectory = _package,
-    });
+    using TuiHarness tui = TuiHarness.Start(
+        new TuiHarnessOptions { FileSystem = fs, WorkingDirectory = _package });
     await tui.GoTo(PageId.Tools);
 
+    // The folder shown first is the workspace, and so is the folder of the archive.
     tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Output);
+    await Picker(tui, ToolsText.PackFolder);
     tui.Press(ConsoleKey.Tab);
-    tui.Type("package.zip");
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.PackOutput);
+    tui.Press(ConsoleKey.Tab);
     tui.Press(ConsoleKey.Enter);
 
     string archive = Path.Join(_package, "package.zip");
@@ -269,63 +364,228 @@ public sealed class ToolsPageTests {
     Assert.False(fs.File.Exists(InRoot("package.zip")));
   }
 
-  [Fact]
-  public async Task Pack_WithoutAnOutputFile_KeepsAsking() {
-    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { Language = Language.ZhHant });
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task Pack_OutputThatExists_IsReplacedOnlyWhenTheUserSaysSo(Language language) {
+    MockFileSystem fs = new();
+    fs.AddFile(InRoot("lip.toml"), new MockFileData("format = 4"));
+    fs.AddFile(InRoot("package.zip"), new MockFileData("old"));
+    using TuiHarness tui = TuiHarness.Start(
+        new TuiHarnessOptions { Language = language, FileSystem = fs });
     await tui.GoTo(PageId.Tools);
+    string question = tui.Text(() => ToolsText.ReplaceQuestion("package.zip"));
 
     tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Output);
+    await Picker(tui, ToolsText.PackFolder);
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.PackOutput);
+    tui.Press(ConsoleKey.Tab);
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor(ToolsText.OutputRequired);
-    await Frames(tui, "tools-pack-required");
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(ToolsText.Output);
-    Assert.Empty(tui.Fs.Directory.GetFiles(TuiHarness.DefaultRoot));
+    // Enter alone keeps the file, and leads back to where the archive is chosen.
+    await tui.WaitFor(question);
+    Assert.Contains($"[ {ToolsText.Replace} ] [ {CommonText.Cancel} ]", tui.Screen);
+    await Frames(tui, "tools-pack-replace");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(question);
+    await Picker(tui, ToolsText.PackOutput);
+    await tui.WaitFor(Bar(TuiHarness.DefaultRoot));
+    Assert.Equal("old", fs.File.ReadAllText(InRoot("package.zip")));
+
+    // The other button replaces it; the archive that was there is not packed into the new.
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(question);
+    tui.Press(ConsoleKey.LeftArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor(tui.Text(() => ToolsText.Packed(InRoot("package.zip"))));
+    Assert.Equal(["lip.toml"], Entries(fs, InRoot("package.zip")));
   }
 
   [Fact]
-  public async Task Pack_DirectoryThatIsMissing_ShowsTheFailure() {
-    using TuiHarness tui = TuiHarness.Start();
+  public async Task Pack_FolderThatIsGoneByThen_ShowsTheFailure_AndWritesNothing() {
+    MockFileSystem fs = new();
+    fs.AddDirectory(InRoot("mod"));
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { FileSystem = fs });
     await tui.GoTo(PageId.Tools);
 
     tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Output);
-    tui.Press(ConsoleKey.Backspace);
-    tui.Type("missing");
+    await Picker(tui, ToolsText.PackFolder);
+    await tui.WaitFor(Folder("mod"));
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Bar(InRoot("mod")));
+    await tui.WaitUntilGone(Folder("mod"));
     tui.Press(ConsoleKey.Tab);
-    tui.Type("package.zip");
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.PackOutput);
+    // Another program removes the folder while the archive is chosen.
+    fs.Directory.Delete(InRoot("mod"));
+    tui.Press(ConsoleKey.Tab);
     tui.Press(ConsoleKey.Enter);
 
     await tui.WaitFor("there is no such directory");
-    Assert.Contains(InRoot("missing"), tui.Screen);
-    Assert.False(tui.Fs.File.Exists(InRoot("package.zip")));
+    Assert.Contains(InRoot("mod"), tui.Screen);
+    Assert.False(fs.File.Exists(InRoot("package.zip")));
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("there is no such directory");
+    Assert.Contains(ToolsText.PackAbout, tui.Screen);
+  }
+
+  [Theory]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task Pack_Esc_GoesBackOneStep_AndWritesNothing(Language language) {
+    MockFileSystem fs = new();
+    fs.AddDirectory(InRoot("mod"));
+    using TuiHarness tui = TuiHarness.Start(
+        new TuiHarnessOptions { Language = language, FileSystem = fs });
+    await tui.GoTo(PageId.Tools);
+
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.PackFolder);
+    await tui.WaitFor(Folder("mod"));
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Bar(InRoot("mod")));
+    await tui.WaitUntilGone(Folder("mod"));
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.PackOutput);
+
+    // From the archive back to the folder, which is the one that was chosen.
+    tui.Press(ConsoleKey.Escape);
+    await Picker(tui, ToolsText.PackFolder);
+    await tui.WaitFor(Bar(InRoot("mod")));
+    Assert.DoesNotContain(Titled(ToolsText.PackOutput), tui.Screen);
+
+    // From the folder back to the page.
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(Titled(ToolsText.PackFolder));
+    Assert.Contains(ToolsText.Pack, tui.Screen);
+    Assert.Empty(fs.Directory.GetFiles(TuiHarness.DefaultRoot, "*", SearchOption.AllDirectories));
+  }
+
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task View_InstalledMod_ShowsItsInstalledVersion(Language language) {
+    // A dependency, the game and two mods, one of a variant, in an order that is not that of
+    // the list.
+    MockFileSystem fs = new();
+    fs.AddFile(
+        InRoot(Path.Join(".lip", "state.json")),
+        new MockFileData($$"""
+            { "format": 4, "side": "server", "platform": "win-x64", "packages": [
+              {{Package("github.com/acme/Lib", "", "2.0.0", false)}},
+              {{Package(Game, "", "1.21.0", true)}},
+              {{Package(Alpha, "cuda", "1.2.0", true)}},
+              {{Package("github.com/acme/Beta", "", "0.3.1", true)}} ] }
+            """));
+    string source = Path.Join(_package, "alpha");
+    fs.AddFile(Path.Join(source, "lip.toml"), new MockFileData(LipToml));
+    // The archives of the test: the repository has a newer version than the installed one.
+    Mock<IArchiveProvider> archives = new(MockBehavior.Strict);
+    archives.Setup(a => a.ListVersions(Alpha)).ReturnsAsync([
+      new SpecVersion(new SemVersion(1, 3, 0), "v1.3.0"),
+      new SpecVersion(new SemVersion(1, 2, 0), "v1.2.0"),
+    ]);
+    archives.Setup(a => a.ResolveGitRef(Alpha, It.Is<GitRef>(r => r.Name == "1.2.0")))
+        .ReturnsAsync(Commit);
+    archives.Setup(a => a.OpenCommit(Alpha, Commit))
+        .ReturnsAsync(new ArchiveHandle("alpha", new DirectorySource(fs, source)));
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      Language = language,
+      FileSystem = fs,
+      CreateClient = (interaction, hookOutput, workspace) => new LipClient(
+          fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
+          new McmodService(
+              fs, interaction, new LockStore(fs), archives.Object, new ArchiveReader(),
+              new McmodInstaller(fs, new CommandRunner(hookOutput), interaction),
+              workspaceRoot: () => workspace)),
+    });
+    await tui.GoTo(PageId.Tools);
+
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(ToolsText.ViewAbout);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.Enter);
+
+    // The mods of the user, then the dependency, then the game, each with its version.
+    await tui.WaitFor(Titled(ToolsText.ViewInstalledTitle));
+    await tui.WaitFor(Game);
+    string screen = tui.Screen;
+    int[] rows = [
+      .. new[] { $"{Alpha}#cuda", "github.com/acme/Beta", "github.com/acme/Lib", Game }
+          .Select(identity => screen.IndexOf(identity + "  ", StringComparison.Ordinal)),
+    ];
+    Assert.DoesNotContain(-1, rows);
+    Assert.Equal(rows.Order(), rows);
+    Assert.Matches(@"Alpha#cuda\s+1\.2\.0", screen);
+    Assert.Matches(@"bds\s+1\.21\.0", screen);
+    Assert.Contains($"↑↓ {CommonText.HintMove.Text}", screen);
+    Assert.Contains($"Enter {CommonText.HintSelect.Text}", screen);
+    await Frames(tui, "tools-view-installed");
+
+    // Enter shows the version that is installed, not the newest one.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("\"id\": \"github.com/test/tool\"");
+    Assert.Contains(Titled($"{Alpha}#cuda@1.2.0"), tui.Screen);
+    Assert.Contains("\"1.3.0\"", tui.Screen);
+    await Frames(tui, "tools-view-installed-result");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("\"manifest\"");
+    Assert.Contains(ToolsText.ViewAbout, tui.Screen);
+  }
+
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task View_InstalledMod_InAWorkspaceWithoutPackages_SaysSo(Language language) {
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { Language = language });
+    await tui.GoTo(PageId.Tools);
+
+    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor(ToolsText.NothingInstalled);
+    Assert.Contains($"[ {CommonText.Close} ]", tui.Screen);
+    await Frames(tui, "tools-view-installed-none");
+    // Closing it leads back to the choice of what to show.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(ToolsText.NothingInstalled);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ToolsText.ViewInstalledAbout);
   }
 
   [Fact]
-  public async Task View_ShowsThePackageFileAsJson() {
+  public async Task View_TypedPackage_ShowsThePackageFileAsJson() {
     MockFileSystem fs = new();
-    fs.AddFile(
-        InRoot(Path.Join("mod", "lip.toml")),
-        new MockFileData("""
-            format = 4
-            id = "github.com/test/tool"
-            version = "1.2.3"
-
-            [[variants.""]]
-            side = "server"
-            platform = "win-x64"
-            """));
+    fs.AddFile(InRoot(Path.Join("mod", "lip.toml")), new MockFileData(LipToml));
     using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { FileSystem = fs });
     await tui.GoTo(PageId.Tools);
 
     tui.Press(ConsoleKey.UpArrow);
     await tui.WaitFor(ToolsText.ViewAbout);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Package);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("github.com/owner/repo@1.0.0");
+    await Frames(tui, "tools-view-typed");
     tui.Type("./mod");
     tui.Press(ConsoleKey.Enter);
 
@@ -342,13 +602,21 @@ public sealed class ToolsPageTests {
   }
 
   [Fact]
-  public async Task View_PackageThatIsNotThere_ShowsTheFailure() {
+  public async Task View_TypedPackageThatIsNotThere_ShowsTheFailure() {
     using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { Language = Language.ZhHans });
     await tui.GoTo(PageId.Tools);
 
     tui.Press(ConsoleKey.DownArrow, 3);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Package);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("github.com/owner/repo@1.0.0");
+    // Esc leads back to the choice, with the row that led here selected.
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor(ToolsText.ViewTypedAbout);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("github.com/owner/repo@1.0.0");
     // Without a package the dialog stays.
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ToolsText.PackageRequired);
@@ -357,6 +625,74 @@ public sealed class ToolsPageTests {
 
     await tui.WaitFor(CommonText.Failed);
     Assert.Contains("missing.zip", tui.Screen);
+  }
+
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task View_BrowsedZipOrFolder_ShowsThePackageFileAsJson(Language language) {
+    MockFileSystem fs = new();
+    fs.AddFile(InRoot(Path.Join("mod", "lip.toml")), new MockFileData(LipToml));
+    fs.AddFile(InRoot(Path.Join("dist", "tool.zip")), new MockFileData(Zip()));
+    fs.AddFile(InRoot(Path.Join("dist", "notes.txt")), new MockFileData("no package"));
+    using TuiHarness tui = TuiHarness.Start(
+        new TuiHarnessOptions { Language = language, FileSystem = fs });
+    await tui.GoTo(PageId.Tools);
+
+    // A folder: the browser starts in the workspace, which holds dist and mod.
+    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.ViewLocal);
+    await tui.WaitFor(Bar(TuiHarness.DefaultRoot));
+    await tui.WaitFor(Folder("mod"));
+    Assert.Contains($"[ {PathPickerText.SelectFolder} ] [ {CommonText.Cancel} ]", tui.Screen);
+    await Frames(tui, "tools-view-browse");
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Bar(InRoot("mod")));
+    await tui.WaitUntilGone(Folder("dist"));
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("\"id\": \"github.com/test/tool\"");
+    Assert.Contains(Titled("mod"), tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("\"manifest\"");
+
+    // A ZIP archive, which the list shows, unlike the other files.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.ViewLocal);
+    await tui.WaitFor(Folder("dist"));
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Bar(InRoot("dist")));
+    await tui.WaitFor("tool.zip");
+    Assert.DoesNotContain("notes.txt", tui.Screen);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("\"id\": \"github.com/test/tool\"");
+    Assert.Contains(Titled("tool.zip"), tui.Screen);
+    await Frames(tui, "tools-view-browse-result");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("\"manifest\"");
+
+    // Esc in the browser leads back to the choice, with the row that led here selected.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await Picker(tui, ToolsText.ViewLocal);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor(ToolsText.ViewBrowseAbout);
+    Assert.DoesNotContain(Titled(ToolsText.ViewLocal), tui.Screen);
   }
 
   [Fact]
