@@ -120,4 +120,21 @@ public static class WorkspacesText {
           "没有支持此游戏版本的 LeviLamina。",
           "沒有支援此遊戲版本的 LeviLamina。");
   public static string SetUpTitle => L.T("Set up server", "安装服务器", "安裝伺服器");
+
+  /// The title of the plan of a setup that changes the build of the workspace, which names
+  /// the build that it sets up.
+  public static string SetUpBuildTitle(string build) =>
+      L.T($"Switch to {build}", $"改用 {build} 构建", $"改用 {build} 組建");
+
+  /// Said in the game version step for a workspace of the build linux on a system where lip
+  /// does not run it.
+  public static string LinuxNotHere =>
+      L.T(
+          "This workspace has the linux build, which does not run on this system. The setup"
+              + " replaces it with the windows build.",
+          "此工作区使用 linux 构建，它无法在本系统上运行。安装时会改用 windows 构建。",
+          "此工作區使用 linux 組建，它無法在本系統上執行。安裝時會改用 windows 組建。");
+  public static string Back => L.T("Back", "返回", "返回");
+  public static string BackDetail =>
+      L.T("Go back and choose again.", "返回重新选择。", "返回重新選擇。");
 }

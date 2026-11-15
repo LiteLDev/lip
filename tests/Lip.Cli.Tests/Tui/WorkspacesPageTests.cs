@@ -95,6 +95,15 @@ public sealed class WorkspacesPageTests {
     await tui.WaitUntilGone(PathPickerText.Reading);
   }
 
+  /// In the folder browser that the wizard is back at, whose bar has the focus and holds the
+  /// folder chosen before, which does not exist: Esc, to the list of the folder shown.
+  private static async Task LeaveBar(TuiHarness tui) {
+    await Browser(tui);
+    await tui.WaitFor($"Enter {PathPickerText.HintGo.Text}");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone($"Enter {PathPickerText.HintGo.Text}");
+  }
+
   /// What the path bar of the folder browser shows for a folder.
   private static string Bar(string path) => $"{PathPickerText.Folder}  {path}";
 
@@ -262,12 +271,7 @@ public sealed class WorkspacesPageTests {
       await tui.WaitUntilGone("server running");
     }
     finally {
-      try {
-        Directory.Delete(root, recursive: true);
-      }
-      catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) {
-        // The server still runs: the test failed before it stopped it.
-      }
+      TestClients.Remove(root);
     }
   }
 
@@ -683,6 +687,7 @@ public sealed class WorkspacesPageTests {
       await tui.WaitFor("─ Game version ─");
       tui.Press(ConsoleKey.Escape);
       await tui.WaitUntilGone("─ Game version ─");
+      await LeaveBar(tui);
       await NewFolder(tui, "survival");
       await tui.WaitFor("─ Game version ─");
       await tui.WaitFor("1.21.50  LeviLamina ✓   newest");
@@ -712,6 +717,7 @@ public sealed class WorkspacesPageTests {
     // the same session, and the catalogue is not.
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone("─ Game version ─");
+    await LeaveBar(tui);
     await NewFolder(tui, "second");
     await tui.WaitFor("─ Game version ─");
     Assert.Contains("LeviLamina ✓", tui.Screen);
@@ -751,7 +757,14 @@ public sealed class WorkspacesPageTests {
     tui.Press(ConsoleKey.Escape);
     await tui.WaitFor("─ New server ─");
     await Browser(tui);
-    Assert.Contains(Bar(Root), tui.Screen);
+
+    // The folder that does not exist yet is not lost: the bar holds it, with the focus, and
+    // the list shows the nearest folder that exists. Esc leaves the bar, then the browser.
+    await tui.WaitFor(Bar(Path.Join(Root, "survival")));
+    await tui.WaitFor($"Enter {PathPickerText.HintGo.Text}");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor(screen => screen.Contains(Bar(Root))
+        && !screen.Contains(Bar(Path.Join(Root, "survival"))), "the folder shown");
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone("─ New server ─");
     await tui.Settle();
@@ -760,6 +773,115 @@ public sealed class WorkspacesPageTests {
     Assert.Equal([Root], tui.Workspaces.Read());
     Assert.Empty(Calls(setup()));
     Assert.Equal(Root, await tui.Invoke(() => tui.Context.Workspace));
+  }
+
+  [Fact]
+  public async Task NewServer_BackToTheFolder_KeepsThePathOfAFolderNotYetCreated_InChinese() {
+    using TuiHarness tui = Start(out Func<FakeServerSetup> setup, language: Language.ZhHans);
+    string directory = Path.Join(Root, "worlds", "survival");
+    await tui.GoTo(PageId.Workspaces);
+    tui.Press(ConsoleKey.Enter);
+
+    // A path typed in the bar, two folders deep, none of which exists.
+    await GoToPath(tui, Root, directory);
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    Assert.False(tui.Fs.Directory.Exists(Path.Join(Root, "worlds")));
+
+    // Back to the folder: the bar holds the path that was typed, and Enter takes it again.
+    tui.Press(ConsoleKey.Escape);
+    await Browser(tui);
+    await tui.WaitFor(Bar(directory));
+    await tui.WaitFor($"Enter {PathPickerText.HintGo.Text}");
+    tui.Snapshot("wizard-folder-back");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+    Assert.True(tui.Fs.Directory.Exists(directory));
+    Assert.Equal(directory, await tui.Invoke(() => tui.Context.Workspace));
+    Assert.Equal(["1.21.50 Windows True 1.1.0 dryRun=True acceptEula=False"], Calls(setup()));
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task NewServer_WhenTheLoaderStepDisagreesWithTheList_SaysSo_AndIsNoDeadEnd(
+      Language language, int width, int height) {
+    // The catalogue marks 1.21.50 as having a LeviLamina and 1.21.40 as having none; what a
+    // setup finds is the other way round.
+    using TuiHarness tui = Start(
+        out Func<FakeServerSetup> setup, language: language, width: width, height: height,
+        wrap: fake => new OtherLoaders(fake));
+    await tui.GoTo(PageId.Workspaces);
+    tui.Press(ConsoleKey.Enter);
+    await NewFolder(tui, "survival");
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    await tui.WaitFor("1.21.50  LeviLamina ✓");
+
+    // A row marked ✓ for which no LeviLamina fits: the step says so, and offers to go on
+    // without a loader, or back.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    tui.Snapshot("wizard-no-loader-fits");
+    Assert.Contains(Flat(WorkspacesText.NoLoaderFits), Flat(tui.Screen));
+    Assert.Contains(WorkspacesText.NoLoader, tui.Screen);
+    Assert.Contains(WorkspacesText.NoLoaderDetail, tui.Screen);
+    Assert.DoesNotContain("LeviLamina 1.", tui.Screen);
+
+    // "Back" is a row of its own, and leads to the game versions, on the row that was chosen.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(WorkspacesText.BackDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    await tui.WaitFor(WorkspacesText.HasLoaderDetail);
+
+    // The reverse: a row marked as having none, for which a LeviLamina fits, offers it.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(WorkspacesText.HasNoLoaderDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("LeviLamina 1.0.0");
+    Assert.DoesNotContain(Flat(WorkspacesText.NoLoaderFits), Flat(tui.Screen));
+    Assert.DoesNotContain(WorkspacesText.BackDetail, tui.Screen);
+
+    // Esc goes back too; then the first game again, without a loader.
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(WorkspacesText.HasLoaderDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(WorkspacesText.NoLoaderDetail);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+    Assert.Equal(["1.21.50 Windows False  dryRun=True acceptEula=False"], Calls(setup()));
+  }
+
+  /// The text without the line breaks, the borders and the spaces that wrapping it in a
+  /// dialog puts into it.
+  private static string Flat(string text) =>
+      Regex.Replace(text, @"[\s│]+", "");
+
+  /// A server setup whose loader step finds no LeviLamina for the newest game, and one for
+  /// the game before it: the opposite of what the catalogue of the tests tells.
+  private sealed class OtherLoaders(FakeServerSetup setup) : IServerSetup {
+    public Task<IReadOnlyList<GameVersion>> GameVersions(
+        LipClient client, OperationSession? session = null) =>
+        setup.GameVersions(client, session);
+
+    public Task<IReadOnlyList<SemVersion>> LoaderVersions(
+        LipClient client,
+        SemVersion game,
+        CancellationToken cancellationToken,
+        OperationSession? session = null) =>
+        Task.FromResult<IReadOnlyList<SemVersion>>(
+            game.ToString() == "1.21.50" ? [] : [SemVersion.Parse("1.0.0")]);
+
+    public Task<OperationResult> Setup(LipClient client, SetupRequest request, OperationRun run) =>
+        setup.Setup(client, request, run);
   }
 
   [Fact]
@@ -798,6 +920,7 @@ public sealed class WorkspacesPageTests {
     Assert.Contains("─ New server ─", tui.Screen);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone("That is a file");
+    await LeaveBar(tui);
 
     // The path of a file typed in the bar: the browser says so itself.
     await GoToPath(tui, Root, Path.Join(Root, "notes.txt"));
@@ -1142,12 +1265,52 @@ public sealed class WorkspacesPageTests {
     Assert.Equal([$"{request} dryRun=True acceptEula=False"], Calls(setup()));
   }
 
-  [Fact]
-  public async Task ChangeVersions_NotOnLinux_OfAWorkspaceOfTheLinuxBuild_OffersWindowsOnly() {
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task ChangeVersions_NotOnLinux_OfAWorkspaceOfTheLinuxBuild_SaysThatWindowsReplacesIt(
+      Language language, int width, int height) {
     MockFileSystem fs = Files(false, Alpha);
     fs.AddFile(
         Path.Join(Alpha, ".lip", "state.json"), new MockFileData(State("1.21.50", "linux", null)));
-    using TuiHarness tui = Start(out Func<FakeServerSetup> setup, fs);
+    using TuiHarness tui = Start(out Func<FakeServerSetup> setup, fs, language, width, height);
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(tui.Fs.Path.GetFileName(Alpha));
+    ToRow(tui, 1);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(WorkspacesText.ChangeVersions);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    // The build linux is not offered here, and the step says what happens to it before
+    // anything is chosen; the game versions are all there below it.
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    tui.Snapshot("change-linux-game");
+    Assert.Contains(Flat(WorkspacesText.LinuxNotHere), Flat(tui.Screen));
+    Assert.Contains("1.21.50", tui.Screen);
+    Assert.Contains("1.21.40", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    Assert.DoesNotContain(Flat(WorkspacesText.LinuxNotHere), Flat(tui.Screen));
+    tui.Press(ConsoleKey.Enter);
+
+    // The plan names the build that it sets up.
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+    tui.Snapshot("change-linux-plan");
+    Assert.Contains($"─ {WorkspacesText.SetUpBuildTitle("windows")} ─", tui.Screen);
+    Assert.Equal(["1.21.50 Windows True 1.1.0 dryRun=True acceptEula=False"], Calls(setup()));
+  }
+
+  [Fact]
+  public async Task ChangeVersions_ThatKeepsTheBuild_NamesNoBuild_AndSaysNothingOfLinux() {
+    MockFileSystem fs = Files(false, Alpha);
+    fs.AddFile(
+        Path.Join(Alpha, ".lip", "state.json"), new MockFileData(State("1.21.50", "", null)));
+    using TuiHarness tui = Start(out _, fs);
     await tui.GoTo(PageId.Workspaces);
     await tui.WaitFor(Alpha);
     ToRow(tui, 1);
@@ -1156,14 +1319,14 @@ public sealed class WorkspacesPageTests {
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor("─ Game version ─");
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
     Assert.DoesNotContain("linux", tui.Screen);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("─ Loader ─");
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
     tui.Press(ConsoleKey.Enter);
 
     await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
-    Assert.Equal(["1.21.50 Windows True 1.1.0 dryRun=True acceptEula=False"], Calls(setup()));
+    Assert.Contains($"─ {WorkspacesText.SetUpTitle} ─", tui.Screen);
   }
 
   [Theory]

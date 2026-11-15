@@ -177,6 +177,83 @@ public sealed class ShellTests {
   }
 
   [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task BottomBar_WithAToast_KeepsTheKeysThatAct_AndCutsTheToastFirst(
+      Language language) {
+    using TuiHarness tui = Start(
+        new TuiHarnessOptions { Width = 60, Height = 16, Language = language });
+    await tui.WaitFor("body of Alpha");
+    _pages[PageId.Home].OwnHints = [
+      CommonText.HintMove, CommonText.HintActions, CommonText.HintCheck, CommonText.HintNext,
+      CommonText.HintPage, CommonText.HintEnds,
+    ];
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[focused]");
+    string enter = $"Enter {CommonText.HintActions.Text}  Space {CommonText.HintCheck.Text}";
+    string esc = $"Esc {CommonText.HintBack.Text}";
+
+    // A toast as long as the bar: Enter, Space and Esc stay, in their order, the keys that
+    // only move go, and the toast is cut to what is left.
+    string toast = string.Concat(Enumerable.Repeat("已儲存 saved ", 8));
+    await tui.Invoke(() => tui.Context.Toast(toast, ToastKind.Good));
+    await tui.WaitFor("已儲存");
+    string bar = tui.Screen.Split('\n')[^1];
+    Assert.StartsWith($" {enter}  {esc}  已儲存", bar);
+    Assert.EndsWith("…", bar);
+    Assert.Equal(59, TextWidth.Of(bar));
+    Assert.DoesNotContain(CommonText.HintNext.Text, bar);
+
+    // A short toast leaves room for the keys that move, from the first.
+    await tui.Invoke(() => tui.Context.Toast("OK", ToastKind.Good));
+    await tui.WaitFor(screen => screen.Split('\n')[^1].EndsWith("  OK", StringComparison.Ordinal),
+        "the short toast");
+    bar = tui.Screen.Split('\n')[^1];
+    Assert.StartsWith($" ↑↓ {CommonText.HintMove.Text}  {enter}  ", bar);
+    Assert.Contains($"  {esc}  ", bar);
+  }
+
+  [Fact]
+  public async Task BottomBar_WithManyKeysThatAct_StillShowsTheToast_InTenColumnsAtLeast() {
+    using TuiHarness tui = Start(new TuiHarnessOptions { Width = 60, Height = 16 });
+    await tui.WaitFor("body of Alpha");
+    _pages[PageId.Home].OwnHints = [
+      new Hint("Enter", "Carry out the action"), new Hint("Space", "Check the row"),
+      new Hint("Ctrl+C", "Stop it"),
+    ];
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[focused]");
+
+    // Without a toast the three keys that act and Esc fill the bar.
+    await tui.WaitFor("Enter Carry out the action  Space Check the row  Esc Back");
+
+    // A toast is never left out for them: the last of them go, and the toast has ten
+    // columns or more.
+    await tui.Invoke(() => tui.Context.Toast("The file was not saved: it is locked."));
+    await tui.WaitFor("The file was");
+    string bar = tui.Screen.Split('\n')[^1];
+    Assert.Equal(" Enter Carry out the action  Esc Back  The file was not sa…", bar);
+  }
+
+  [Fact]
+  public async Task BottomBar_ThatIsTooNarrow_KeepsEnterAndEsc_BeforeTheKeysThatMove() {
+    using TuiHarness tui = Start(new TuiHarnessOptions { Width = 60, Height = 16 });
+    await tui.WaitFor("body of Alpha");
+    _pages[PageId.Home].OwnHints = [
+      new Hint("↑↓/Tab", "Move between fields"), new Hint("←→", "Change the value"),
+      new Hint("PgUp/PgDn", "Page"), new Hint("Enter/Space", "Toggle"),
+    ];
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[focused]");
+    await tui.Settle();
+
+    string bar = tui.Screen.Split('\n')[^1];
+    Assert.Equal(
+        " ↑↓/Tab Move between fields  Enter/Space Toggle  Esc Back", bar.TrimEnd());
+  }
+
+  [Theory]
   [InlineData(Language.En, 60, 16, 4)]
   [InlineData(Language.ZhHans, 60, 16, 4)]
   [InlineData(Language.ZhHant, 60, 16, 4)]
@@ -1277,7 +1354,7 @@ public sealed class ShellTests {
       Assert.False(server.Running);
     }
     finally {
-      Delete(root);
+      TestClients.Remove(root);
     }
   }
 
@@ -1317,9 +1394,7 @@ public sealed class ShellTests {
       Assert.Equal(4, server.ExitCode);
     }
     finally {
-      servers.Find(TuiHarness.DefaultRoot)?.Send("exit");
-      await Task.Delay(200, TestContext.Current.CancellationToken);
-      Delete(root);
+      TestClients.Remove(root, servers);
     }
   }
 
@@ -1332,14 +1407,5 @@ public sealed class ShellTests {
 
     await tui.WaitFor("Start server · Failed");
     Assert.Contains("There is no server to run", tui.Screen);
-  }
-
-  private static void Delete(string directory) {
-    try {
-      Directory.Delete(directory, recursive: true);
-    }
-    catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) {
-      // The server still runs: the test failed before it stopped it.
-    }
   }
 }

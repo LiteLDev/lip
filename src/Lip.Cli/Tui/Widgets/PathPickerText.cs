@@ -17,6 +17,10 @@ public static class PathPickerText {
   public static string Computer => L.T("Computer", "此电脑", "本機");
 
   // The line above the buttons.
+
+  /// At the roots, where no folder is shown to select or to make a folder in.
+  public static string AtRoots =>
+      L.T("Open one of these first.", "请先打开其中一项。", "請先開啟其中一項。");
   public static string Reading => L.T("Reading…", "读取中…", "讀取中…");
   public static string Unreadable =>
       L.T("Cannot read this folder.", "无法读取此文件夹。", "無法讀取此資料夾。");

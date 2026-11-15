@@ -158,7 +158,11 @@ public sealed partial class App {
         return false;
       }
 
-      _serverLocksHeld.Add(workspace);
+      if (_servers.Find(workspace)?.Running != true) {
+        // Another lip runs it: the interface knows before it next looks.
+        _serverLocksHeld.Add(workspace);
+      }
+
       ShowServerRuns(title);
       return true;
     }

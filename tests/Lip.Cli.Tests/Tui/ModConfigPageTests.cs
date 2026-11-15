@@ -491,6 +491,132 @@ public sealed class ModConfigPageTests {
     Assert.Contains($"{{…}} {tui.Text(() => ModConfigText.Items(2))}", tui.Screen);
   }
 
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Save_OfAFileThatChangedOnDisk_AsksToOverwriteReloadOrCancel(
+      Language language, int width, int height) {
+    MockFileSystem fs = Workspace();
+    using TuiHarness tui = Start(fs, language, width, height);
+    // On a narrow terminal the page shows the files, or the file that has the focus.
+    await tui.GoTo(PageId.ModConfig);
+    await tui.WaitFor("Alpha · config/config.json");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("limits");
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModConfigText.Unsaved);
+    string buttons =
+        $"[ {CommonText.Overwrite} ] [ {ModConfigText.Reload} ] [ {CommonText.Cancel} ]";
+
+    // The mod writes its file while the user edits it.
+    string rewritten = AlphaConfig.Replace("\"max\": 5", "\"max\": 9");
+    fs.File.WriteAllText(AlphaPath, rewritten);
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor($"Enter {CommonText.HintSelect.Text}");
+    tui.Press(ConsoleKey.Enter);
+
+    // The question, with the button that changes nothing chosen: Enter cancels.
+    await tui.WaitFor(buttons);
+    tui.Snapshot("modconfig-changed-on-disk");
+    Assert.Contains(Flat(CommonText.ChangedOnDisk), Flat(tui.Screen));
+    Assert.Contains(Flat(ModConfigText.ReloadDetail), Flat(tui.Screen));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(buttons);
+    Assert.Equal(rewritten, fs.File.ReadAllText(AlphaPath));
+    Assert.Contains(ModConfigText.Unsaved, tui.Screen);
+    Assert.Contains("[x] true", tui.Screen);
+
+    // Esc cancels too.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(buttons);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(buttons);
+    Assert.Equal(rewritten, fs.File.ReadAllText(AlphaPath));
+    Assert.Contains(ModConfigText.Unsaved, tui.Screen);
+
+    // Reload reads the file as the mod wrote it, and drops the change.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(buttons);
+    tui.Press(ConsoleKey.LeftArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(ModConfigText.Unsaved);
+    await tui.WaitFor("[ ] false");
+    Assert.Equal(rewritten, fs.File.ReadAllText(AlphaPath));
+
+    // Changed again, and written again by the mod: Overwrite saves what the user has, which
+    // is what was read at the reload with their change.
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModConfigText.Unsaved);
+    fs.File.WriteAllText(AlphaPath, AlphaConfig.Replace("\"max\": 5", "\"max\": 7"));
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor($"Enter {CommonText.HintSelect.Text}");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(buttons);
+    tui.Press(ConsoleKey.LeftArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(ModConfigText.Unsaved);
+    await tui.WaitFor(CommonText.Saved);
+    string saved = fs.File.ReadAllText(AlphaPath);
+    Assert.Contains("\"enabled\": true", saved);
+    Assert.Contains("\"max\": 9", saved);
+
+    // A file that holds what was read of it is saved without a question.
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModConfigText.Unsaved);
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor($"Enter {CommonText.HintSelect.Text}");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(ModConfigText.Unsaved);
+    Assert.DoesNotContain(buttons, tui.Screen);
+    Assert.Contains("\"enabled\": false", fs.File.ReadAllText(AlphaPath));
+  }
+
+  [Fact]
+  public async Task LeavingThePage_WithAFileThatChangedOnDisk_AsksBeforeItOverwrites() {
+    MockFileSystem fs = Workspace();
+    using TuiHarness tui = Start(fs);
+    await Change(tui);
+    string rewritten = AlphaConfig.Replace("\"max\": 5", "\"max\": 9");
+    fs.File.WriteAllText(AlphaPath, rewritten);
+
+    // Leaving, and saving: the question comes before anything is written, and cancelling it
+    // keeps the user on the page with the changes.
+    tui.Press(ConsoleKey.Escape, 2);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Save the changes?");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[ Overwrite ] [ Reload ] [ Cancel ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("[ Overwrite ] [ Reload ] [ Cancel ]");
+    await tui.Settle();
+
+    Assert.Equal(PageId.ModConfig, await tui.Invoke(() => tui.Context.CurrentPage));
+    Assert.Equal(rewritten, fs.File.ReadAllText(AlphaPath));
+    Assert.Contains("Unsaved", tui.Screen);
+
+    // Reload drops the changes, as Discard does, and the user goes where they were going.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Save the changes?");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[ Overwrite ] [ Reload ] [ Cancel ]");
+    tui.Press(ConsoleKey.LeftArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntil(() => tui.Context.CurrentPage != PageId.ModConfig, "another page");
+    Assert.Equal(rewritten, fs.File.ReadAllText(AlphaPath));
+    await tui.GoTo(PageId.ModConfig);
+    await tui.WaitFor("limits");
+    Assert.DoesNotContain("Unsaved", tui.Screen);
+    Assert.Contains("[ ] false", tui.Screen);
+  }
+
+  /// The text without the line breaks, the borders and the spaces that wrapping it in a
+  /// dialog puts into it.
+  private static string Flat(string text) =>
+      System.Text.RegularExpressions.Regex.Replace(text, @"[\s│]+", "");
+
   #region The empty page, and while the server runs
 
   [Theory]
@@ -557,10 +683,9 @@ public sealed class ModConfigPageTests {
     tui.Press(ConsoleKey.Tab);
     await tui.WaitFor("←→ Switch  Enter Select");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("Saved. Restart may be needed.");
+    await tui.WaitFor("Saved. May need a restart.");
     await tui.WaitUntilGone("Unsaved");
     Assert.Contains("\"enabled\": true", fs.File.ReadAllText(AlphaPath));
-    Assert.DoesNotContain(CommonText.SavedWhileRunning, tui.Screen);
     Assert.Contains("Changes may need a server restart.", tui.Screen);
 
     // Once the server has stopped the line is gone, and a save is just a save.
@@ -574,7 +699,7 @@ public sealed class ModConfigPageTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone("Unsaved");
     await tui.WaitFor(screen => screen.Contains("Saved.")
-        && !screen.Contains("Saved. Restart may be needed."));
+        && !screen.Contains("Saved. May need a restart."));
     Assert.Contains("\"enabled\": false", fs.File.ReadAllText(AlphaPath));
   }
 
