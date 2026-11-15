@@ -25,9 +25,9 @@ public static class ToolsText {
           "將工作區中的 tooth.json 轉換為 lip.toml。");
   public static string PackAbout =>
       L.T(
-          "Packs a folder into the ZIP archive of a package.",
-          "将文件夹打包为包的 ZIP 压缩包。",
-          "將資料夾封裝成套件的 ZIP 壓縮檔。");
+          "Packs a folder into a package ZIP, saved in the workspace unless you choose elsewhere.",
+          "将文件夹打包为包的 ZIP，默认保存在工作区中。",
+          "將資料夾封裝成套件的 ZIP，預設儲存在工作區中。");
   public static string ViewAbout =>
       L.T(
           "Shows the package file and the versions of a package.",
@@ -36,14 +36,45 @@ public static class ToolsText {
 
   // The titles of the dialogs.
   public static string PackTitle => L.T("Pack ZIP", "打包 ZIP", "封裝 ZIP");
+  public static string PackFolder => L.T("Folder to pack", "要打包的文件夹", "要封裝的資料夾");
+  public static string PackOutput => L.T("Save ZIP", "保存 ZIP", "儲存 ZIP");
   public static string ViewTitle => L.T("View package", "查看包信息", "檢視套件資訊");
+  public static string ViewInstalledTitle =>
+      L.T("Installed mods", "已安装的模组", "已安裝的模組");
+  public static string ViewLocal => L.T("Choose package", "选择包", "選擇套件");
 
-  // The fields.
-  public static string Directory => L.T("Folder", "文件夹", "資料夾");
-  public static string Output => L.T("Output file", "输出文件", "輸出檔案");
+  // Pack ZIP: the question about an archive that exists.
+  public static string ReplaceQuestion(string file) =>
+      L.T(
+          $"{file} already exists. Replace it?",
+          $"{file} 已存在。要替换它吗？",
+          $"{file} 已存在。要取代它嗎？");
+  public static string Replace => L.T("Replace", "替换", "取代");
+
+  // View package: where the package comes from, and one sentence about each.
+  public static string ViewInstalled => L.T("Installed mod…", "已安装的模组…", "已安裝的模組…");
+  public static string ViewTyped => L.T("Type a package…", "输入包…", "輸入套件…");
+  public static string ViewBrowse => L.T("Browse…", "浏览…", "瀏覽…");
+  public static string ViewInstalledAbout =>
+      L.T(
+          "Shows the installed version of a package of the workspace.",
+          "显示工作区中某个包的已安装版本。",
+          "顯示工作區中某個套件的已安裝版本。");
+  public static string ViewTypedAbout =>
+      L.T(
+          "Shows a repository, a URL or a path that you type.",
+          "显示你输入的仓库、网址或路径。",
+          "顯示你輸入的儲存庫、網址或路徑。");
+  public static string ViewBrowseAbout =>
+      L.T(
+          "Shows a local ZIP file or the folder of a package.",
+          "显示本地的 ZIP 文件或包的文件夹。",
+          "顯示本機的 ZIP 檔案或套件的資料夾。");
+  public static string NothingInstalled =>
+      L.T("Nothing is installed here.", "这里还没有安装任何包。", "這裡尚未安裝任何套件。");
+
+  // The field of a package that is typed.
   public static string Package => L.T("Package", "包", "套件");
-  public static string OutputRequired =>
-      L.T("Enter the output file.", "请填写输出文件。", "請填寫輸出檔案。");
   public static string PackageRequired => L.T("Enter a package.", "请填写包。", "請填寫套件。");
 
   // The results.
