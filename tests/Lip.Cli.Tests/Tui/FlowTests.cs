@@ -159,11 +159,11 @@ public sealed class FlowTests {
     await tui.WaitFor("Alpha · acme");
     await tui.WaitFor(_ => LastRow(tui).Contains("Enter Actions"), "the mods");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(GetModsText.InstallLatest);
+    await tui.WaitFor(GetModsText.Install);
     tui.Snapshot("flow-home-get-mods");
     Assert.Contains("─ Alpha ─", tui.Screen);
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(GetModsText.InstallLatest);
+    await tui.WaitUntilGone(GetModsText.Install);
 
     // Esc goes back to the sidebar, on the entry of the Get mods page.
     tui.Press(ConsoleKey.Escape);
