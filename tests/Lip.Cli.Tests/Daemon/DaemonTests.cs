@@ -156,7 +156,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Act
     Task<ClientOutcome> run = client.Run(Start([]), streams.Client);
     await changing.Task;
-    Assert.True(client.Signal(PosixSignal.SIGINT));
+    await Signal(client, PosixSignal.SIGINT);
     ClientOutcome outcome = await run;
 
     // Assert
@@ -187,7 +187,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Act
     Task<ClientOutcome> run = client.Run(Start([]), streams.Client);
     await running.Task;
-    client.Signal(PosixSignal.SIGINT);
+    await Signal(client, PosixSignal.SIGINT);
     ClientOutcome outcome = await run;
 
     // Assert
@@ -215,7 +215,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Act
     Task<ClientOutcome> run = client.Run(Start([]), streams.Client);
     await listening.Task;
-    client.Signal(PosixSignal.SIGTERM);
+    await Signal(client, PosixSignal.SIGTERM);
 
     // Assert
     Assert.Equal(new ClientOutcome(3, null, null), await run);
@@ -392,7 +392,10 @@ public sealed class DaemonTests : IAsyncDisposable {
         Client().Run(Start(["list", "--bogus"], b), usage.Client));
 
     // Assert
-    Assert.Equal([0, 0, 1], outcomes.Select(o => o.ExitCode));
+    Assert.Equal(
+        [new ClientOutcome(0, null, null), new ClientOutcome(0, null, null),
+          new ClientOutcome(1, null, null)],
+        outcomes);
     Assert.Equal("\"on-failure\"", first.OutputText.ToString().Trim());
     Assert.Equal("\"never\"", second.OutputText.ToString().Trim());
     Assert.Contains("Unknown option '--bogus'", usage.ErrorText.ToString());
@@ -584,7 +587,7 @@ public sealed class DaemonTests : IAsyncDisposable {
           Start(["run", "--managed"], root), Streams.Of("echo first-line\n", firstOutput));
       // cmd.exe writes the line it reads, then what it runs writes.
       await WaitUntil(() => firstOutput.Text.Split("first-line").Length > 2);
-      first.Signal(PosixSignal.SIGHUP);
+      await Signal(first, PosixSignal.SIGHUP);
       ClientOutcome detached = await firstRun;
       WorkspaceServer server = servers.Find(root)!;
       bool runningAfterDetach = server.Running;
@@ -667,7 +670,25 @@ public sealed class DaemonTests : IAsyncDisposable {
     }
   }
 
-  private DaemonClient Client() => new(_endpoint, Version, Executable, () => "not started");
+  /// A client of the daemon of the test, which runs already. Where every instance of the named
+  /// pipe is taken for a moment, as when several clients connect at once, the client finds no
+  /// daemon; it then waits for the one of the test as it would for one that it started.
+  private DaemonClient Client() => new(_endpoint, Version, Executable, () => null);
+
+  /// Has the client pass a signal on to its command. The daemon may run the command a moment
+  /// before the client is ready to pass signals on, until when the client would end by the
+  /// signal instead; the signal is given once, when the client passes it on.
+  private static async Task Signal(DaemonClient client, PosixSignal signal) {
+    for (int i = 0; i < 400; i++) {
+      if (client.Signal(signal)) {
+        return;
+      }
+
+      await Task.Delay(25, TestContext.Current.CancellationToken);
+    }
+
+    Assert.Fail("The client did not pass the signal on.");
+  }
 
   private Task Host(
       CarryOutCommand run,
