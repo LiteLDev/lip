@@ -18,6 +18,18 @@ public class McmodServiceRunTests : IDisposable {
   // x64, otherwise the Windows server with a loader (protocol/lip-run.md).
   private static readonly bool _linux = WorkspaceProgram.RunsLinuxServer;
 
+  // The wine program that runs the server of the test, the Windows server where lip does not
+  // run on Windows: null where the server of the test is the Linux server, on Windows, and on a
+  // system that has no Wine of lip (protocol/lip-workspace.md, "Running programs" and "System
+  // dependencies").
+  private static readonly string? _wine =
+      _linux ? null : ManagedWine.Executable(LipDirectories.Data, SystemInfo.Current);
+
+  // Whether lip can start the server of the test here: its own server, or the Windows server
+  // on Windows or through Wine.
+  private static readonly bool _serverStarts =
+      _linux || OperatingSystem.IsWindows() || _wine is not null;
+
   private readonly string _root =
       Path.Combine(Path.GetTempPath(), "lip-run-test-" + Guid.NewGuid().ToString("N"));
 
@@ -56,6 +68,9 @@ public class McmodServiceRunTests : IDisposable {
 
   private string ServerPath =>
       Path.Join(_root, _linux ? "bedrock_server" : "bedrock_server_mod.exe");
+
+  private static void SkipWhereTheServerCannotStart() => Assert.SkipUnless(
+      _serverStarts, "This system has no Wine of lip, which runs the Windows server here.");
 
   private async Task<int> Run() {
     Mock<IProgramStarter> starter = new();
@@ -101,6 +116,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_Server_RunsItInTheWorkspaceAndReturnsItsExitCode() {
+    SkipWhereTheServerCannotStart();
     // Arrange
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -111,9 +127,29 @@ public class McmodServiceRunTests : IDisposable {
     // Assert
     Assert.Equal(3, code);
     ProgramStartInfo start = Assert.Single(_started);
-    Assert.Equal(ServerPath, start.FileName);
-    Assert.Empty(start.Arguments);
+    if (_wine is null) {
+      Assert.Equal(ServerPath, start.FileName);
+      Assert.Empty(start.Arguments);
+    } else {
+      // Wine runs the Windows server, with the absolute path of its file as the only argument.
+      Assert.Equal(_wine, start.FileName);
+      Assert.Equal([ServerPath], start.Arguments);
+    }
+
     Assert.Equal(_root, start.WorkingDirectory);
+  }
+
+  [Fact]
+  public async Task Run_WindowsServerWhereTheSystemHasNoWine_FailsWithoutStarting() {
+    Assert.SkipWhen(_serverStarts, "lip can start the server of the test here.");
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+
+    // Act & Assert
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(Run);
+    Assert.Contains("lip has no Wine for this system", ex.Message);
+    Assert.Empty(_started);
   }
 
   [Theory]
@@ -180,6 +216,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_WindowsServer_PreparesTheSystemFirst() {
+    SkipWhereTheServerCannotStart();
     Assert.SkipWhen(_linux, "The server of the test is the Linux server here.");
     // Arrange (protocol/lip-run.md, step 5).
     await SaveState();
@@ -227,6 +264,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_LockNotHeldWhileTheServerRuns() {
+    SkipWhereTheServerCannotStart();
     // Arrange: the platform lip runs on, so that the server is started without Wine.
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -273,6 +311,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_InterruptedOperation_UndoesItBeforeStarting() {
+    SkipWhereTheServerCannotStart();
     // Arrange: an operation killed after writing a file.
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -311,6 +350,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_ServerLockHeldWhileTheServerRuns_AndReleasedAfter() {
+    SkipWhereTheServerCannotStart();
     // Arrange
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -331,6 +371,7 @@ public class McmodServiceRunTests : IDisposable {
   [InlineData(null)]
   [InlineData("never")]
   public async Task Run_RestartNotOnFailure_DoesNotRestart(string? restart) {
+    SkipWhereTheServerCannotStart();
     // Arrange
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -348,6 +389,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_OnFailure_RestartsAFailedServerUntilItExitsWithZero() {
+    SkipWhereTheServerCannotStart();
     // Arrange
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -365,6 +407,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_OnFailure_GivesUpAfterFiveRestartsWithinTenMinutes() {
+    SkipWhereTheServerCannotStart();
     // Arrange
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -381,6 +424,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_OnFailure_RestartsOlderThanTheWindowDoNotCount() {
+    SkipWhereTheServerCannotStart();
     // Arrange
     await SaveState();
     File.WriteAllText(ServerPath, "");
@@ -398,6 +442,7 @@ public class McmodServiceRunTests : IDisposable {
 
   [Fact]
   public async Task Run_OnFailure_AskedToStop_DoesNotRestart() {
+    SkipWhereTheServerCannotStart();
     // Arrange
     await SaveState();
     File.WriteAllText(ServerPath, "");
