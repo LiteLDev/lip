@@ -34,6 +34,12 @@ public static class ToolsText {
           "显示包的包文件和可用版本。",
           "顯示套件的套件檔和可用版本。");
 
+  // Why an action cannot be done in the selected workspace.
+  public static string Exists(string file) =>
+      L.T($"{file} already exists here.", $"这里已有 {file}。", $"這裡已有 {file}。");
+  public static string NoFile(string file) =>
+      L.T($"There is no {file} here.", $"这里没有 {file}。", $"這裡沒有 {file}。");
+
   // The titles of the dialogs.
   public static string PackTitle => L.T("Pack ZIP", "打包 ZIP", "封裝 ZIP");
   public static string PackFolder => L.T("Folder to pack", "要打包的文件夹", "要封裝的資料夾");

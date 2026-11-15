@@ -9,7 +9,9 @@ namespace Lip.Cli.Tui.Pages.Tools;
 
 /// The Tools page: the commands for developing packages (protocol/lip-pkg.md), each a row that
 /// Enter carries out, with one sentence about the selected one, and whether the selected
-/// workspace has a lip.toml and a tooth.json.
+/// workspace has a lip.toml and a tooth.json. An action that those files make fail (lip pkg
+/// init when lip.toml exists; lip pkg migrate when it exists or there is no tooth.json) is
+/// shown as disabled, with the reason below its sentence, until the files change.
 public sealed class ToolsPage : Page {
   // How many ticks pass between two looks at the files of the workspace: two seconds.
   private const int RefreshTicks = 8;
@@ -33,12 +35,14 @@ public sealed class ToolsPage : Page {
 
   public ToolsPage(AppContext context) : base(context) {
     _actions = [
-      new ToolAction(() => ToolsText.Init, () => ToolsText.InitAbout, Init),
-      new ToolAction(() => ToolsText.Migrate, () => ToolsText.MigrateAbout, Migrate),
-      new ToolAction(() => ToolsText.Pack, () => ToolsText.PackAbout, Pack),
-      new ToolAction(() => ToolsText.View, () => ToolsText.ViewAbout, () => View(0)),
+      new ToolAction(() => ToolsText.Init, () => ToolsText.InitAbout, Init, InitReason),
+      new ToolAction(
+          () => ToolsText.Migrate, () => ToolsText.MigrateAbout, Migrate, MigrateReason),
+      new ToolAction(() => ToolsText.Pack, () => ToolsText.PackAbout, Pack, () => null),
+      new ToolAction(() => ToolsText.View, () => ToolsText.ViewAbout, () => View(0), () => null),
     ];
-    _list = new ListView<ToolAction>(action => new StyledLine(action.Label())) {
+    _list = new ListView<ToolAction>(action => new StyledLine(
+        action.Label(), action.Reason() is null ? default : Theme.Muted)) {
       Wrap = true,
       Items = _actions,
     };
@@ -46,7 +50,8 @@ public sealed class ToolsPage : Page {
 
   public override string Title => ToolsText.Title;
 
-  public override IReadOnlyList<Hint> Hints => [.. _list.Hints, CommonText.HintSelect];
+  public override IReadOnlyList<Hint> Hints =>
+      _list.Current.Reason() is null ? [.. _list.Hints, CommonText.HintSelect] : _list.Hints;
 
   public override void OnShown() => LoadStatus();
 
@@ -79,6 +84,14 @@ public sealed class ToolsPage : Page {
       }
     }
 
+    if (_list.Current.Reason() is { } reason) {
+      foreach (string line in TextWidth.Wrap(reason, area.Width)) {
+        if (y < area.Bottom) {
+          screen.Write(area.X, y++, line, Theme.Warning, area.Right);
+        }
+      }
+    }
+
     y++;
     string[] labels = [CommonText.WorkspaceSelected, PackageFormat.FileName, ToothCompat.ToothFileName];
     int labelWidth = labels.Max(TextWidth.Of) + 2;
@@ -105,7 +118,14 @@ public sealed class ToolsPage : Page {
 
   public override bool OnKey(ConsoleKeyInfo key) {
     if (key.Key == ConsoleKey.Enter) {
-      _list.Current.Run();
+      // A disabled action is not carried out: its reason is on the page. The files are looked
+      // at again, should they have changed a moment ago.
+      if (_list.Current.Reason() is null) {
+        _list.Current.Run();
+      } else {
+        LoadStatus();
+      }
+
       return true;
     }
 
@@ -133,6 +153,20 @@ public sealed class ToolsPage : Page {
           }
         });
   }
+
+  /// Why lip pkg init fails in the selected workspace, or null: it writes no lip.toml where
+  /// one exists (protocol/lip-pkg.md). Null while the files are not read yet.
+  private string? InitReason() =>
+      _status is { LipToml: true } ? ToolsText.Exists(PackageFormat.FileName) : null;
+
+  /// Why lip pkg migrate fails in the selected workspace, or null: it needs a tooth.json and
+  /// no lip.toml (protocol/lip-compatibility.md, "lip pkg migrate").
+  private string? MigrateReason() =>
+      _status switch {
+        { LipToml: true } => ToolsText.Exists(PackageFormat.FileName),
+        { ToothJson: false } => ToolsText.NoFile(ToothCompat.ToothFileName),
+        _ => null,
+      };
 
   /// lip pkg init: the command asks for the package id through the interface.
   private void Init() {
@@ -334,8 +368,9 @@ public sealed class ToolsPage : Page {
       package.SourceNote is { } source ? $"{Named(package)} · {source}" : Named(package);
 
   /// An action of the page: its label and one sentence about it, in the language of the
-  /// interface when they are read, and what Enter does.
-  private sealed record ToolAction(Func<string> Label, Func<string> About, Action Run);
+  /// interface when they are read, what Enter does, and why it cannot be done now, or null.
+  private sealed record ToolAction(
+      Func<string> Label, Func<string> About, Action Run, Func<string?> Reason);
 
   /// Whether the selected workspace has a lip.toml and a tooth.json.
   private readonly record struct FileStatus(bool LipToml, bool ToothJson);
