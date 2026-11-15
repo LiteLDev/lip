@@ -24,7 +24,8 @@ namespace Lip.Core.Services;
 /// way but writes no config.toml and keeps it. Any other liprc.json is kept, and every key has its
 /// default.
 public class ConfigService(
-    IFileSystem fileSystem, IUserInteraction userInteraction, Func<string>? workspaceRoot = null) {
+    IFileSystem fileSystem, IUserInteraction userInteraction, Func<string>? workspaceRoot = null,
+    string? configDirectory = null) {
   public const string GithubProxyKey = "github_proxy";
 
   public const string LanguageKey = "language";
@@ -42,10 +43,13 @@ public class ConfigService(
 
   private const string _liprcFormatVersionKey = "format_version";
 
-  // The config directory of the invocation that the service is created for.
-  private readonly string _configPath = Path.Join(LipDirectories.Config, "config.toml");
+  // The config directory of the invocation that the service is created for, unless one is given:
+  // a test on the real file system gives its own, so that it does not read that of the user.
+  private readonly string _configPath =
+      Path.Join(configDirectory ?? LipDirectories.Config, "config.toml");
 
-  private readonly string _liprcPath = Path.Join(LipDirectories.Config, _liprcFileName);
+  private readonly string _liprcPath =
+      Path.Join(configDirectory ?? LipDirectories.Config, _liprcFileName);
 
   private static readonly Key _githubProxy = new(
       GithubProxyKey, null, value => value.Length == 0 || IsUri(value),
