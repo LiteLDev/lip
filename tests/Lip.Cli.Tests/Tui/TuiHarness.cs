@@ -419,11 +419,14 @@ public static class TestClients {
     return root;
   }
 
-  /// The client of the workspace at root, which prepares no system.
+  /// The client of the workspace at root, which prepares no system. Its user configuration is
+  /// a directory of the test, not that of the user who runs the tests.
   public static LipClient CmdClient(
       FileSystem fs, IUserInteraction interaction, Func<Stream> hookOutput, string root) =>
       new(
-          fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
+          fs, interaction, new CacheService(fs, interaction),
+          new ConfigService(
+              fs, interaction, () => root, Path.Join(root, ".lip", "test-user-config")),
           new McmodService(
               fs, interaction, new LockStore(fs), Mock.Of<IArchiveProvider>(),
               new ArchiveReader(),
