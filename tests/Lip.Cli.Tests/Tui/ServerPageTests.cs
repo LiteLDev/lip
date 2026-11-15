@@ -444,8 +444,10 @@ public sealed class ServerPageTests {
     tui.Press(ConsoleKey.Tab);
     await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
 
-    // The sidebar marks the server as running.
-    Assert.Matches($@"{Regex.Escape(ServerText.Title)}\s+●", tui.Screen);
+    // The sidebar marks the server as running, once it is drawn with the focus.
+    await tui.WaitFor(
+        screen => Regex.IsMatch(screen, $@"{Regex.Escape(ServerText.Title)}\s+●"),
+        "the mark of the sidebar");
 
     // Once the other lip has stopped it, it can be started here again.
     await tui.SetServerRunning(false);
