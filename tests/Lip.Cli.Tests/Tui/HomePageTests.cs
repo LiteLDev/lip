@@ -127,6 +127,7 @@ public sealed class HomePageTests {
   public async Task Start_FocusesTheSteps_SoThatEnterCreatesAServerInAnEmptyWorkspace() {
     using TuiHarness tui = Start();
     await tui.WaitFor(HomeText.CreateServerDetail);
+    await tui.WaitFor(HomeText.NotInstalled);
 
     // The overview says that nothing is there, and no step is ticked.
     Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
@@ -227,6 +228,7 @@ public sealed class HomePageTests {
   [Fact]
   public async Task StartStep_WithoutAServer_SendsTheUserBackToTheFirstStep() {
     using TuiHarness tui = Start();
+    await tui.WaitFor(HomeText.NotInstalled);
     await tui.WaitFor(HomeText.CreateServerDetail);
 
     tui.Press(ConsoleKey.DownArrow, 2);
