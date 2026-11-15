@@ -77,6 +77,7 @@ public sealed class WorkspaceServer {
   private int _backlogSize;
   private QueueInputStream? _input;
   private volatile bool _running;
+  private volatile bool _starting;
   private volatile bool _stopping;
   private volatile bool _restarting;
 
@@ -97,6 +98,10 @@ public sealed class WorkspaceServer {
 
   /// Whether lip run runs for the workspace: from when it is started until it ends.
   public bool Running => _running;
+
+  /// Whether lip run runs and has not started its server yet: it takes the locks, recovers,
+  /// and prepares the system first (protocol/lip-run.md, steps 1 to 6).
+  public bool Starting => _starting;
 
   /// Whether lip was asked to stop since lip run started.
   public bool Stopping => _stopping;
@@ -136,6 +141,7 @@ public sealed class WorkspaceServer {
       }
 
       _running = true;
+      _starting = true;
       _stopping = false;
       _restarting = false;
       _input = input;
@@ -158,6 +164,7 @@ public sealed class WorkspaceServer {
       Restart = _restart,
       Started = () => {
         lock (Gate) {
+          _starting = false;
           _restarting = false;
           StartedAt = Environment.TickCount64;
         }
@@ -218,6 +225,7 @@ public sealed class WorkspaceServer {
             LogStyle.Muted));
         _stopping = false;
         _restarting = false;
+        _starting = false;
         _running = false;
         attached = [.. _attachments];
         _attachments.Clear();

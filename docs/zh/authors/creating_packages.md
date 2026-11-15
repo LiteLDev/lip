@@ -34,7 +34,7 @@ side = "server"
 platform = "win-x64"
 ```
 
-如果已经存在 `lip.toml`，或者命令没有运行在终端中而无法询问，命令会失败。在界面中，[工具](../interface/tools.md)页的**创建 lip.toml** 对所选工作区做同样的事。
+如果已经存在 `lip.toml`，或者命令没有运行在终端中而无法询问，命令会失败。在界面中，[工具](../interface/tools.md)页的**创建 lip.toml** 对当前工作区做同样的事。
 
 ## `lip.toml` 的结构
 

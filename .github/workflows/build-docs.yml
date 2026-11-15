@@ -35,6 +35,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # type-check docs.config.ts (and the kit) first: a config that does not parse fails the pull request clearly
       - run: pnpm typecheck
+      # the converter that writes the Traditional Chinese pages
+      - run: pnpm test
       - run: pnpm build
       - run: pnpm linkcheck
 

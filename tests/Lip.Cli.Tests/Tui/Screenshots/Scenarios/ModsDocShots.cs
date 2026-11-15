@@ -95,9 +95,10 @@ public sealed class ModsDocShots(ShotRun run) {
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(ScriptEngine);
 
-    // Space checks the highlighted mod; ↓ moves on.
-    tui.Press(ConsoleKey.Spacebar);
+    // Space checks the highlighted mod; ↓ moves on. The third and the fourth mod.
     tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Spacebar);
     await tui.WaitFor(ModsText.Checked(2));
     await shot.Capture(
@@ -111,7 +112,7 @@ public sealed class ModsDocShots(ShotRun run) {
             2, At.Text(ModsText.Checked(2)),
             shot.T("How many mods are checked.", "已勾选的模组数量。", "已勾選的模組數量。"),
             Side.Right),
-        Note.Keys("Space", "↓", "↓", "Space"));
+        Note.Keys("Space", "↓", "Space"));
 
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.UncheckAll);
@@ -149,8 +150,8 @@ public sealed class ModsDocShots(ShotRun run) {
             At.Text($"{ModsText.Source}  branch:main"),
             shot.T("Where the mod came from", "模组的来源", "模組的來源"), Side.Bottom));
 
-    // A mod installed from a URL has no other versions to name.
-    tui.Press(ConsoleKey.DownArrow);
+    // A mod installed from a URL, the last of the mods, has no other versions to name.
+    tui.Press(ConsoleKey.DownArrow, 2);
     await tui.WaitFor($"{ModsText.Source}  https://");
     await shot.Capture("mods-10-source-url", Note.Box(At.Row($"{ModsText.Source}  https://")));
     tui.Press(ConsoleKey.Enter);
@@ -164,14 +165,14 @@ public sealed class ModsDocShots(ShotRun run) {
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone(ModsText.UpdateToNeedsRepository);
 
-    // A mod installed from a folder.
-    tui.Press(ConsoleKey.DownArrow);
+    // A mod installed from a folder, the row above.
+    tui.Press(ConsoleKey.UpArrow);
     await tui.WaitFor($"{ModsText.Source}  {SpawnTweaksFolder}");
     await shot.Capture(
         "mods-12-source-local", Note.Box(At.Row($"{ModsText.Source}  {SpawnTweaksFolder}")));
 
     // Update asks each source again: the URL is downloaded again.
-    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor($"{ModsText.Source}  https://");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.UpdateTo);
@@ -293,8 +294,9 @@ public sealed class ModsDocShots(ShotRun run) {
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone($"[ {CommonText.Apply} ]");
 
-    // Update to version…: a prompt for what follows the @.
-    tui.Press(ConsoleKey.DownArrow);
+    // Update to version…, of the third mod: a prompt for what follows the @.
+    tui.Press(ConsoleKey.DownArrow, 3);
+    await tui.WaitFor(ScriptEngine + "  0.13.1");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.UpdateTo);
     tui.Press(ConsoleKey.DownArrow, 2);
@@ -347,24 +349,7 @@ public sealed class ModsDocShots(ShotRun run) {
         Note.Callout(
             1, At.Text("0.13.2"), shot.T("The new version", "新版本", "新版本"), Side.Right));
 
-    // A mod that was installed at one version, and is at its newest version already: no
-    // file changes, and lip records that the mod follows the newest version from now on.
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.UpdateTo);
-    tui.Press(ConsoleKey.DownArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(CommonText.OnlyRecordChanges);
-    await shot.Capture(
-        "mods-29-newest-first-time",
-        Note.Focus(At.Panel(ModsText.UpdateOperation(Catalogue.Gmlib))),
-        Note.Box(At.Text(CommonText.OnlyRecordChanges)));
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("✓ " + CommonText.Done);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitUntilGone("✓ " + CommonText.Done);
-    await tui.WaitFor(Catalogue.Gmlib + "  1.6.0");
-
-    // Update once more: there is nothing to apply.
+    // Update once more: the highlight is still on the mod, and there is nothing to apply.
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.UpdateTo);
     tui.Press(ConsoleKey.DownArrow);
@@ -372,7 +357,7 @@ public sealed class ModsDocShots(ShotRun run) {
     await tui.WaitFor(CommonText.NothingWouldChange);
     await shot.Capture(
         "mods-30-up-to-date",
-        Note.Focus(At.Panel(ModsText.UpdateOperation(Catalogue.Gmlib))),
+        Note.Focus(At.Panel(ModsText.UpdateOperation(ScriptEngine))),
         Note.Box(At.Text(CommonText.NothingWouldChange)));
   }
 
@@ -431,8 +416,9 @@ public sealed class ModsDocShots(ShotRun run) {
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(ScriptEngine);
 
-    // Uninstall LegacyMoney, and apply the plan.
-    tui.Press(ConsoleKey.DownArrow, 3);
+    // Uninstall LegacyMoney, the second mod, and apply the plan.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(Catalogue.Money + "  0.16.1");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.Uninstall);
     tui.Press(ConsoleKey.DownArrow, 3);
@@ -451,8 +437,9 @@ public sealed class ModsDocShots(ShotRun run) {
     await tui.WaitFor(ModsText.Installed(6));
 
     // While the server runs, the page says so, and the action rows are disabled.
+    // The highlight is on the mod that took the row of the one uninstalled, the second.
     await tui.SetServerRunning(true);
-    tui.Press(ConsoleKey.UpArrow, 4);
+    tui.Press(ConsoleKey.UpArrow, 2);
     await tui.WaitFor(CommonText.StopServerFirst);
     await shot.Capture(
         "mods-36-server-running-page",

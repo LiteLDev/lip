@@ -5,6 +5,8 @@
 //
 //   node scripts/zh-hant.mjs [--quiet]
 //
+// scripts/zh-hant.test.mjs (`pnpm test`) checks the converter.
+//
 // A page is converted in three steps, and only outside what is kept as written (fenced code, inline code, link
 // targets, URLs):
 //
@@ -17,7 +19,16 @@
 //
 // In link targets, /screenshots/zh-Hans/ becomes /screenshots/zh-Hant/ and a leading /zh/ becomes /zh-Hant/; a
 // #fragment is converted like the heading it points at.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TERMS } from './zh-hant-terms.mjs';
@@ -118,9 +129,11 @@ function target(link) {
 }
 
 // What is kept as written, as levimc-kit keeps it (kit/docs/node/convert.ts): fenced code, inline code, link
-// targets (`](…`, href="…", src="…"), autolinks and bare URLs.
+// targets (`](…`, href="…", src="…"), autolinks and bare URLs. A bare URL ends before a `]` and before Chinese
+// punctuation (，。、；：！？（）「」《》“”‘’… and the like), so that one in the text of a link or of a picture,
+// with such a mark right after it, does not take the rest of the line, and the target that follows, with it.
 const KEEP =
-  /(?:^|\n)[ \t]*(`{3,}|~{3,})[^\n]*\n(?:[\s\S]*?\n)?[ \t]*\1[ \t]*(?=\n|$)|`[^`\n]+`|\]\([^)\s]*|\b(?:href|src)\s*=\s*(["'])[^"']*\2|<https?:[^>]*>|https?:\/\/[^\s)<>"']+/g;
+  /(?:^|\n)[ \t]*(`{3,}|~{3,})[^\n]*\n(?:[\s\S]*?\n)?[ \t]*\1[ \t]*(?=\n|$)|`[^`\n]+`|\]\([^)\s]*|\b(?:href|src)\s*=\s*(["'])[^"']*\2|<https?:[^>]*>|https?:\/\/[^\s)<>"'\]\u2014\u2018-\u201f\u2026\u3000-\u303f\uff00-\uff65]+/g;
 
 /** A page in Traditional Chinese. */
 export function convertPage(markdown) {
@@ -140,27 +153,34 @@ export function convertPage(markdown) {
   return punctuated(held).replace(/\uE000(\d+)\uE001/g, (_, index) => kept[Number(index)]);
 }
 
-// Write the pages that changed, and delete those whose Simplified page is gone: the directory is this script's.
-const wanted = new Set();
-let written = 0;
-for (const source of files(from, '.md')) {
-  const page = join(to, relative(from, source));
-  wanted.add(page);
-  const text = convertPage(readFileSync(source, 'utf8'));
-  if (existsSync(page) && readFileSync(page, 'utf8') === text) continue;
-  mkdirSync(dirname(page), { recursive: true });
-  writeFileSync(page, text);
-  written++;
+/** Writes the pages that changed, and deletes those whose Simplified page is gone: the directory is this script's. */
+function main() {
+  const wanted = new Set();
+  let written = 0;
+  for (const source of files(from, '.md')) {
+    const page = join(to, relative(from, source));
+    wanted.add(page);
+    const text = convertPage(readFileSync(source, 'utf8'));
+    if (existsSync(page) && readFileSync(page, 'utf8') === text) continue;
+    mkdirSync(dirname(page), { recursive: true });
+    writeFileSync(page, text);
+    written++;
+  }
+  let deleted = 0;
+  for (const page of files(to, '.md')) {
+    if (wanted.has(page)) continue;
+    rmSync(page);
+    deleted++;
+  }
+  if (!quiet) {
+    console.log(
+      `zh-hant: ${wanted.size} pages in ${relative(docs, to)}/ (${written} written, ${deleted} deleted),` +
+        ` with ${texts.size} texts of the interface and ${terms.length} terms`,
+    );
+  }
 }
-let deleted = 0;
-for (const page of files(to, '.md')) {
-  if (wanted.has(page)) continue;
-  rmSync(page);
-  deleted++;
-}
-if (!quiet) {
-  console.log(
-    `zh-hant: ${wanted.size} pages in ${relative(docs, to)}/ (${written} written, ${deleted} deleted),` +
-      ` with ${texts.size} texts of the interface and ${terms.length} terms`,
-  );
-}
+
+// Only when the script is run, not when its converter is imported (scripts/zh-hant.test.mjs). The two paths
+// are compared as the files they name, since one of them may lead through a link.
+const same = (a, b) => existsSync(a) && existsSync(b) && realpathSync(a) === realpathSync(b);
+if (process.argv[1] && same(process.argv[1], fileURLToPath(import.meta.url))) main();

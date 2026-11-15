@@ -38,8 +38,8 @@
 <text x="49 67 85" y="222.5" text-anchor="middle" fill="#ffffff">工作区</text>
 <text x="49 67" y="242.5" text-anchor="middle">工具</text>
 <text x="76 94 112 130 148" y="262.5" text-anchor="middle" fill="#56c8d8" font-weight="700">安装服务器</text>
-<text x="58" y="282.5" textLength="576" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would install github.com/LiteLDev/bds 1.26.60 (3 files)</text>
-<text x="58" y="302.5" textLength="648" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would install github.com/LiteLDev/LeviLamina 26.60.3 (12 files)</text>
+<text x="58" y="282.5" textLength="396" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would install bds 1.26.60 (3 files)</text>
+<text x="58" y="302.5" textLength="468" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would install LeviLamina 26.60.3 (12 files)</text>
 <text x="58" y="322.5" textLength="828" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would ask you to accept the Minecraft EULA (https://www.minecraft.net/eula) and the</text>
 <text x="58" y="342.5" textLength="783" lengthAdjust="spacingAndGlyphs" font-weight="700">Privacy Policy (https://go.microsoft.com/fwlink/?LinkId=521839), and download the game.</text>
 <text x="58" y="382.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[</text>

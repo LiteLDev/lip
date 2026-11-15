@@ -88,7 +88,18 @@ public static class ErrorReporter {
   /// the current invocation: for the interface, whose commands are those of the selected
   /// workspace. The path of the report is relative to workspace.
   public static Failure Describe(
-      Exception exception, string[] args, bool cancelled, string workspace) {
+      Exception exception, string[] args, bool cancelled, string workspace) =>
+      Describe(
+          exception, cancelled,
+          (summary, hints) => WriteReport(exception, args, summary, hints, workspace));
+
+  /// As Describe, with the failure report written by writeReport, which gets the summary and
+  /// the hints and returns the path of the report: for whoever shows failures as lip does
+  /// without writing where lip writes, as the screenshots of the documentation do.
+  public static Failure Describe(
+      Exception exception,
+      bool cancelled,
+      Func<string, IReadOnlyList<string>, string> writeReport) {
     IReadOnlyList<Exception> failures = Unwrap(exception);
 
     if (cancelled && failures.All(f => Chain(f).Any(e => e is OperationCanceledException))) {
@@ -106,9 +117,7 @@ public static class ErrorReporter {
     string details = Redact(exception.ToString());
     try {
       return new Failure(
-          summary, hints, WriteReport(exception, args, summary, hints, workspace), null,
-          details,
-          Cancelled: false);
+          summary, hints, writeReport(summary, hints), null, details, Cancelled: false);
     }
     catch (Exception reportException) {
       return new Failure(
@@ -389,7 +398,7 @@ public static class ErrorReporter {
       }
       foreach (string file in Directory.EnumerateFiles(lipDirectory).Order(StringComparer.Ordinal)) {
         string fileName = Path.GetFileName(file);
-        if (fileName.StartsWith("workspace.", StringComparison.Ordinal) || fileName == "journal") {
+        if (fileName == "journal") {
           report.Append(CultureInfo.InvariantCulture, $"\n--- {fileName} ---\n")
               .Append(File.ReadAllText(file)).Append('\n');
         }

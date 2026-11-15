@@ -307,6 +307,43 @@ public sealed class ModConfigPageTests {
         "{ \"a\": }", fs.File.ReadAllText(Path.Join(Root, "mods", "Beta", "broken.json")));
   }
 
+  /// A row of the list of files that is longer than its column is cut with an ellipsis, in
+  /// its middle, and the mark of unsaved changes stays visible after it.
+  [Theory]
+  [InlineData(Language.En, 100, 28)]
+  [InlineData(Language.ZhHans, 100, 28)]
+  [InlineData(Language.ZhHant, 100, 28)]
+  [InlineData(Language.En, 120, 36)]
+  public async Task Files_ALongRow_IsCutWithAnEllipsis_AndKeepsTheMarkOfUnsavedChanges(
+      Language language, int width, int height) {
+    const string Mod = "LegacyScriptEngineQuickJsBridge";
+    const string Name = "a-configuration-file-with-a-rather-long-name.json";
+    MockFileSystem fs = Mods(Root, Mod);
+    fs.AddFile(
+        Path.Join(Root, "mods", Mod, "config", Name), new MockFileData("{ \"enabled\": false }"));
+    using TuiHarness tui = Start(fs, language, width, height);
+    await tui.GoTo(PageId.ModConfig);
+    await tui.WaitFor("enabled");
+
+    // The row is cut in its middle: the mod and the end of the name of the file stay.
+    string Row() => tui.Screen.Split('\n').First(
+        line => line.Contains("│ Legacy", StringComparison.Ordinal)
+            && line.Contains('…', StringComparison.Ordinal));
+    Assert.Matches(@"│ Legacy\S*…\S*\.json\s+│", Row());
+    Assert.DoesNotContain("●", Row());
+
+    // Act: a change that is not saved.
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(tui.Text(() => ModConfigText.Unsaved));
+
+    // Assert: the mark is after the label, inside the box, and the label still has its
+    // ellipsis and its end.
+    Assert.Matches(@"│ Legacy\S*…\S*\.json ●\s*│", Row());
+    tui.Snapshot("modconfig-long-row");
+  }
+
   /// Opens the tree of Alpha and switches "enabled".
   private static async Task Change(TuiHarness tui) {
     await OpenAlpha(tui);

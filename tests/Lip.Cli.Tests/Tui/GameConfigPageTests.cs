@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Text.RegularExpressions;
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.GameConfig;
@@ -236,6 +237,90 @@ public sealed class GameConfigPageTests {
     Assert.Equal(
         Properties.Replace("max-players=10", "max-players=20")
             .Replace("server-port=19132", "server-port=191"),
+        tui.Fs.File.ReadAllText(File("server.properties")));
+  }
+
+  /// A positive integer is not 0 and not below 0, and "equal to 5 or greater" is not 4: the
+  /// prompt says the least value, and refuses what is below it.
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task Enter_OnAPositiveInteger_RefusesZeroAndNegativeNumbers(Language language) {
+    const string properties =
+        "max-players=10\n# Allowed values: Any positive integer\n"
+        + "view-distance=32\n# Allowed values: Positive integer equal to 5 or greater.\n"
+        + "player-idle-timeout=30\n# Allowed values: Any non-negative integer.\n";
+    using TuiHarness tui = Start(language, properties);
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("max-players");
+    tui.Press(ConsoleKey.Enter);
+
+    // max-players: 0 and -3 are refused, 25 is taken.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.ValueAtLeast(1));
+    tui.Press(ConsoleKey.Backspace, 2);
+    tui.Type("0");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.NotAtLeast(1));
+    tui.Snapshot("gameconfig-positive");
+    tui.Press(ConsoleKey.Backspace);
+    tui.Type("-3");
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(GameConfigText.NotAtLeast(1), tui.Screen);
+    Assert.Contains("─ max-players ─", tui.Screen);
+    // What is no integer is told so; an integer of too many digits is outside the bounds.
+    tui.Press(ConsoleKey.Backspace, 2);
+    tui.Type("1.5");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.NotAnInteger);
+    tui.Press(ConsoleKey.Backspace, 3);
+    tui.Type("-99999999999999999999");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.NotAtLeast(1));
+    tui.Press(ConsoleKey.Backspace, 21);
+    tui.Type("25");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(screen => Regex.IsMatch(screen, @"\* max-players\s+25"), "the players");
+
+    // view-distance: 4 and 0 are refused, 5 is taken.
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.ValueAtLeast(5));
+    tui.Press(ConsoleKey.Backspace, 2);
+    tui.Type("4");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.NotAtLeast(5));
+    tui.Press(ConsoleKey.Backspace);
+    tui.Type("0");
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(GameConfigText.NotAtLeast(5), tui.Screen);
+    tui.Press(ConsoleKey.Backspace);
+    tui.Type("5");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(screen => Regex.IsMatch(screen, @"\* view-distance\s+5"), "the distance");
+
+    // player-idle-timeout: 0 is taken, -1 is refused.
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.ValueAtLeast(0));
+    tui.Press(ConsoleKey.Backspace, 2);
+    tui.Type("-1");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.NotAtLeast(0));
+    tui.Press(ConsoleKey.Backspace, 2);
+    tui.Type("0");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(
+        screen => Regex.IsMatch(screen, @"\* player-idle-timeout\s+0"), "the timeout");
+
+    await Save(tui);
+    Assert.Equal(
+        properties.Replace("max-players=10", "max-players=25")
+            .Replace("view-distance=32", "view-distance=5")
+            .Replace("player-idle-timeout=30", "player-idle-timeout=0"),
         tui.Fs.File.ReadAllText(File("server.properties")));
   }
 

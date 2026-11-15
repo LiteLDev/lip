@@ -265,13 +265,18 @@ public sealed class AppContext {
   /// (OperationRun). Pass run.Session on to the command: what the dry run read of the network,
   /// the command after it does not read again. session is the session to use, for a flow that
   /// read something before, such as the versions that the user chose from; a new one when not
-  /// given.
+  /// given. notApplied is called when the operation is not carried out: the user cancelled
+  /// the plan or declined the license, or the dry run or the operation failed or was
+  /// cancelled, once the user closed the dialog that says so; not when the plan had nothing
+  /// to apply. It is for a flow that did something before the operation, which the user is
+  /// then told about.
   public void PlanAndRun(
       string title,
       Func<OperationRun, Task<OperationResult>> operation,
       Action? done = null,
-      OperationSession? session = null) =>
-      _app.PlanAndRun(title, operation, done, session);
+      OperationSession? session = null,
+      Action? notApplied = null) =>
+      _app.PlanAndRun(title, operation, done, session, notApplied);
 
   /// Shows what a command told the user, once it succeeded, ending with done.
   public void ShowResult(string title, Operation operation, string? done = null) =>

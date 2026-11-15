@@ -100,8 +100,8 @@ public sealed class ServerDocShots(ShotRun run) {
         Note.Callout(
             1, At.Text("● " + CommonText.ServerRunning, 2),
             shot.T(
-                "The state changes at once, and the time starts to count.",
-                "状态立刻改变，并开始计时。", "狀態立刻改變，並開始計時。")),
+                "The server runs, and the time starts to count.",
+                "服务器已在运行，并开始计时。", "伺服器已在執行，並開始計時。")),
         Note.Callout(
             2, At.Button(ServerText.Stop),
             shot.T("The button now stops the server.", "按钮变成了“停止”。", "按鈕變成了「停止」。")),

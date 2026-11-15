@@ -7,7 +7,7 @@
 命令失败时，lip 会在终端里输出三样东西：
 
 ```text
-error: There is no server to run: 'D:\servers\survival\bedrock_server_mod.exe' is not a file, though the workspace has the game bds 1.26.60 with a loader. It may have been deleted or moved by hand; restore it, or install the game again by uninstalling it and setting it up.
+error: There is no server to run: 'D:\servers\survival\bedrock_server_mod.exe' is not a file, though the workspace has the game bds 1.26.60 with a loader. It may have been deleted or moved by hand. lip does not install a package again that is installed in the same version, so setting up the same versions here does not bring the file back. Restore it from a backup, or run 'lip setup --game 1.26.60 --loader levilamina@26.60.3' in an empty folder and copy the file from there.
 
 Full report: .lip\logs\20261114T201502Z-4120.log
 ```
@@ -24,7 +24,7 @@ Full report: .lip\logs\20261114T201502Z-4120.log
 
 ### 失败报告
 
-- **位置：** 运行命令时所在文件夹里的 `.lip/logs/`。在界面里，是所选工作区里的。
+- **位置：** 运行命令时所在文件夹里的 `.lip/logs/`。在界面里，是当前工作区里的。
 - **名字：** 失败的时间（UTC）加上 lip 进程的编号，例如 `20261114T201502Z-4120.log`。
 - **数量：** lip 保留最新的 20 份，更旧的会被删除。
 - **格式：** 纯文本。用任何编辑器都能打开。
@@ -127,7 +127,7 @@ lip 的大多数包都从 GitHub 下载。提示会告诉你遇到的是哪一�
 
 **`There is no server to run: '…' is not a file`**
 
-文件夹已经安装了服务器，但服务器的程序不见了。它可能被手动删除或移走，或者被安全软件清除了。请从备份中恢复。没有备份时，可靠的办法是换一个新文件夹：在那里安装服务器、安装你的模组，再把旧文件夹里的 `worlds/`、`server.properties`、`allowlist.json`、`permissions.json` 和模组的配置复制过去。
+文件夹已经安装了服务器，但服务器的程序不见了。它可能被手动删除或移走，或者被安全软件清除了。在这个文件夹里重新安装同样的版本并不能把它找回来：已经安装的包，lip 不会再安装一遍同一个版本。请从备份中恢复这个文件。没有备份时，在一个空文件夹里运行错误信息中给出的 `lip setup` 命令，再把缺少的文件从那里复制到这个文件夹。你也可以干脆换到那个新文件夹：在那里安装你的模组，再把旧文件夹里的 `worlds/`、`server.properties`、`allowlist.json`、`permissions.json` 和模组的配置复制过去。
 
 **`The game of this workspace is the Linux server … which lip runs only on Linux on x64.`**
 

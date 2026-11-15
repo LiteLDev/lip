@@ -51,7 +51,7 @@
 <text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
 <text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
 <text x="247" y="262.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Install github.com/LiteLDev/LeviOptimize@1.8.1</text>
-<text x="238" y="282.5" textLength="459" lengthAdjust="spacingAndGlyphs">Resolving github.com/LiteLDev/LeviOptimize@1.8.1...</text>
+<text x="238" y="282.5" textLength="279" lengthAdjust="spacingAndGlyphs">Resolving LeviOptimize@1.8.1...</text>
 <text x="238" y="302.5" textLength="459" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would install LeviOptimize 1.8.1 (5 files)</text>
 <text x="238" y="322.5" textLength="369" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would create the directory mods/</text>
 <text x="238" y="362.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Apply ]</text>

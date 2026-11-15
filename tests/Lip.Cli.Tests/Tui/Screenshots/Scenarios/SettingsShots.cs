@@ -50,7 +50,7 @@ public sealed class SettingsShots(ShotRun run) {
     await tui.WaitFor(SettingsText.SetProxy);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(SettingsText.ProxyUrl);
-    tui.Type("https://gh-proxy.org/");
+    tui.Type("https://proxy.example/");
     await shot.Capture(
         "settings-03-proxy", Note.Focus(At.Panel(SettingsText.GithubProxy)),
         Note.Keys("Enter"));

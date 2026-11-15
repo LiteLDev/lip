@@ -63,7 +63,7 @@
 <rect x="10.5" y="430.5" width="1013" height="103" rx="9.5" fill="#272b35" stroke="#3d4454"/>
 <circle cx="32" cy="449" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
 <text x="32" y="453.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
-<text x="52" y="453.5" textLength="436.8" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">The state changes at once, and the time starts to count.</text>
+<text x="52" y="453.5" textLength="358.8" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">The server runs, and the time starts to count.</text>
 <circle cx="32" cy="471" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
 <text x="32" y="475.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">2</text>
 <text x="52" y="475.5" textLength="249.6" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">The button now stops the server.</text>

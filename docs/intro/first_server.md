@@ -98,7 +98,7 @@ Without a way to GitHub, `lip` cannot download LeviLamina or the mods. You can c
 
 7. `lip` shows its plan before it changes anything. Read it:
 
-   - **(1)** The lines that start with `Dry run:` say what `lip` would install: the game (`github.com/LiteLDev/bds`) and LeviLamina. They are in English in every language, because they are what the command `lip setup` says.
+   - **(1)** The lines that start with `Dry run:` say what `lip` would install: the game (`bds`) and LeviLamina. They are in English in every language, because they are what the command `lip setup` says.
    - **(2)** **Apply** carries the plan out. **Cancel** and `Esc` leave everything as it is.
 
    Press `Enter` to apply.

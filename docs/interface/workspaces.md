@@ -14,7 +14,7 @@ Open the page: in the sidebar, move to **Workspaces** and press `Enter`.
 
 ![The Workspaces page: the rows "New server…" and "Add existing folder…", then three folders. The first has a dot, and the last is marked "missing".](/screenshots/en/workspaces-01-list.svg)
 
-1. Two actions: **New server…** creates a server, and **Add existing folder…** adds a folder that has one.
+1. Two actions: **New server…** creates a server, and **Add existing folder…** adds a folder that exists to the list.
 2. The selected workspace, marked with `●`.
 3. A workspace whose folder no longer exists, marked **missing**.
 
@@ -54,11 +54,11 @@ When the [Game config](game_config.md) or the [Mod config](mod_config.md) page h
 
 ## Add an existing folder
 
-Use this for a server that lip does not list yet: one that you set up with the commands, or copied from another computer.
+Use this for a server that lip does not list yet: one that you set up with the commands, or copied from another computer. lip takes any folder that exists, with or without a server in it.
 
 1. Move to **Add existing folder…** and press `Enter`.
 
-   ![The row "Add existing folder…" is selected. The line below the list says "Adds a folder that already holds a server."](/screenshots/en/workspaces-10-add-row.svg)
+   ![The row "Add existing folder…" is selected. The line below the list says "Adds a folder that exists to the list, with or without a server."](/screenshots/en/workspaces-10-add-row.svg)
 
 2. The folder browser opens in the selected workspace. Go to the folder of the server: `←` goes up one level, `↑` and `↓` move, and `Enter` or `→` opens a folder.
 
@@ -198,7 +198,7 @@ Now lip creates the folder, when it does not exist, adds it to the list and sele
 The lines are what the command says, in English: here the game, LeviLamina, and that lip will ask you to accept the license.
 
 - **Apply** installs.
-- **Cancel** installs nothing. The folder stays, empty, and stays the selected workspace; run the wizard again in it, or [remove it from the list](#remove-a-workspace-from-the-list).
+- **Cancel** installs nothing. The folder stays, empty, and stays the selected workspace, which lip says in a dialog. To set it up later, choose [**Change game or loader version…**](#change-the-game-or-the-loader-version) in its menu; or [remove it from the list](#remove-a-workspace-from-the-list).
 
 ### Step 6: the license
 
@@ -206,13 +206,17 @@ The game is Microsoft's. Before lip downloads it, you must accept the Minecraft 
 
 ![The dialog "Minecraft EULA" names the two documents, gives their addresses, and has the buttons Accept and Decline.](/screenshots/en/new-server-07-eula.svg)
 
-**Accept** goes on. **Decline** closes the dialog, and nothing is installed:
+**Accept** goes on. **Decline** installs nothing:
 
 ![The same dialog with the button Decline marked.](/screenshots/en/new-server-15-eula-decline.svg)
 
+lip then says what stays, as after **Cancel** in the plan: the folder was created and is in the list, and nothing was installed in it.
+
+![The dialog "New server" says "Nothing was installed. The folder stays, and is in the list of workspaces.", names "Change game or loader version…" as the way to go on, and has a Close button.](/screenshots/en/new-server-18-not-set-up.svg)
+
 ### Step 7: download and result
 
-lip downloads the game and LeviLamina and installs them. `Esc` cancels; what was done so far is undone.
+lip downloads the game and LeviLamina and installs them. `Esc` cancels; what was done so far is undone, and lip then says that the folder stays.
 
 ![The dialog "Set up server" shows two downloads, one at 100% and one at 62%.](/screenshots/en/new-server-08-progress.svg)
 

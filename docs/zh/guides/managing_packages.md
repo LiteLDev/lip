@@ -185,7 +185,7 @@ lip 会删除这个包安装的文件，然后删除所有不再被需要的依�
 需要知道的几点：
 
 - **只能卸载由你安装的包。** 依赖会在需要它的包都卸载后自行消失。
-- **仍被别的包需要的包会留下**，变成依赖。lip 会说明：`Package '<name>' is still required by other packages; keeping it as a dependency.`
+- **仍被别的包需要的包会留下**，变成依赖。lip 会说明：`<name> is still required by other packages; keeping it as a dependency.`
 - **你可能改过的文件会被保留**，前提是包这样声明了。例如，卸载游戏会保留 `server.properties`。见[保留什么删除什么](server_from_commands.md#保留什么删除什么)。
 - **游戏和加载器可以像其他包一样卸载。** 没有游戏的工作区就没有服务器可运行。
 

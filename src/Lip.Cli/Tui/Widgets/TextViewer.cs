@@ -93,69 +93,7 @@ public sealed class TextViewer {
     }
 
     _wrappedWidth = width;
-    _wrapped = [.. _lines.SelectMany(line => WrapLine(line, width))];
+    _wrapped = [.. _lines.SelectMany(line => TextWidth.Wrap(line, width))];
   }
 
-  /// A styled line as rows of at most width columns, broken at spaces where there are any;
-  /// the spaces at the start of the line are kept.
-  private static List<StyledLine> WrapLine(StyledLine line, int width) {
-    width = Math.Max(1, width);
-    if (TextWidth.Of(line.PlainText) <= width) {
-      return [line];
-    }
-
-    List<(string Text, int Width, Style Style)> cells = [];
-    foreach (Span span in line.Spans) {
-      foreach (System.Text.Rune rune in span.Text.EnumerateRunes()) {
-        System.Text.Rune shown = rune.Value == 9 ? new System.Text.Rune(' ') : rune;
-        cells.Add((shown.ToString(), TextWidth.Of(shown), span.Style));
-      }
-    }
-
-    List<StyledLine> rows = [];
-    int start = 0;
-    while (start < cells.Count) {
-      // The cells that fit, then back to the last space among them when the line goes on.
-      int end = start;
-      int used = 0;
-      while (end < cells.Count && used + cells[end].Width <= width) {
-        used += cells[end].Width;
-        end++;
-      }
-
-      end = Math.Max(end, start + 1);
-      int next = end;
-      if (end < cells.Count && cells[end].Text == " ") {
-        next = end + 1;
-      } else if (end < cells.Count) {
-        int space = end - 1;
-        while (space > start && cells[space].Text != " ") {
-          space--;
-        }
-
-        if (space > start && cells[start..space].Any(c => c.Text != " ")) {
-          end = space;
-          next = space + 1;
-        }
-      }
-
-      StyledLine row = new();
-      for (int i = start; i < end;) {
-        int run = i;
-        System.Text.StringBuilder text = new();
-        while (run < end && cells[run].Style == cells[i].Style) {
-          text.Append(cells[run].Text);
-          run++;
-        }
-
-        row.Add(text.ToString(), cells[i].Style);
-        i = run;
-      }
-
-      rows.Add(row);
-      start = next;
-    }
-
-    return rows;
-  }
 }

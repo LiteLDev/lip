@@ -776,10 +776,12 @@ public sealed partial class App {
     return true;
   }
 
-  private void ShowServerRuns(string title) =>
+  /// Says that the server of the selected workspace runs; closed is called once the user
+  /// closed the dialog.
+  private void ShowServerRuns(string title, Action? closed = null) =>
       Show(new ConfirmDialog(
           title, [new StyledLine(CommonText.StopServerFirst, Theme.Warning)],
-          [CommonText.Close]));
+          [CommonText.Close], _ => closed?.Invoke()));
 
   /// Starts the server of the selected workspace unless it runs: its managed server, or, when
   /// lip itself carries out the interface, a server that this process runs
@@ -867,6 +869,7 @@ public sealed partial class App {
         ? IsServerRunning(_workspace) ? (CommonText.ServerRunning, Theme.Good) : null
         : server.Restarting ? (CommonText.ServerRestarting, Theme.Warning)
         : server.Stopping ? (CommonText.ServerStopping, Theme.Warning)
+        : server.Starting ? (CommonText.ServerStarting, Theme.Warning)
         : (CommonText.ServerRunning, Theme.Good);
     int right = _screen.Width - 1;
     if (state is { } shown) {
@@ -876,33 +879,7 @@ public sealed partial class App {
     }
 
     x = _screen.Write(x, 0, " · ", Theme.Border);
-    _screen.Write(x, 0, FitEnd(_workspace, right - x), Theme.Muted);
-  }
-
-  /// The text cut to its last width columns, starting with an ellipsis when it was cut: the end
-  /// of a path says more than its start.
-  private static string FitEnd(string text, int width) {
-    if (TextWidth.Of(text) <= width) {
-      return text;
-    }
-
-    if (width <= 1) {
-      return "";
-    }
-
-    int start = text.Length;
-    int used = 1;
-    foreach (Rune rune in text.EnumerateRunes().Reverse()) {
-      int w = TextWidth.Of(rune);
-      if (used + w > width) {
-        break;
-      }
-
-      used += w;
-      start -= rune.Utf16SequenceLength;
-    }
-
-    return "…" + text[start..];
+    _screen.Write(x, 0, TextWidth.FitEnd(_workspace, right - x), Theme.Muted);
   }
 
   private void DrawSidebar(Rect rect) {
@@ -998,14 +975,19 @@ public sealed partial class App {
 
     // What a toast is never cut below, and the two columns between it and the hints.
     const int least = 10;
-    int kept = _toast is null ? 0 : least + 2;
+    // While the interface waits for its servers to stop before it quits, it says so in place
+    // of any other message, whichever page is shown.
+    (string Text, ToastKind Kind, long At)? shownToast = _quitOnceStopped
+        ? (CommonText.StoppingServers, ToastKind.Warning, 0)
+        : _toast;
+    int kept = shownToast is null ? 0 : least + 2;
     for (int i = 0; i < hints.Count - 1; i++) {
       if (Acts(hints[i]) && !Take(i, room - kept)) {
         break;
       }
     }
 
-    if (_toast is { } toast) {
+    if (shownToast is { } toast) {
       int most = Math.Min(
           Math.Max(least, _screen.Width / 2), room - used - (used > 0 ? 2 : 0));
       string text = TextWidth.Fit(toast.Text, Math.Max(least, most));

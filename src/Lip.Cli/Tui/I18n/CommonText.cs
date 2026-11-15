@@ -69,6 +69,7 @@ public static class CommonText {
           "请将终端放大到 60×16。按 Ctrl+C 退出。",
           "請將終端機放大到 60×16。按 Ctrl+C 結束。");
   public static string ServerRunning => L.T("Running", "运行中", "執行中");
+  public static string ServerStarting => L.T("Starting", "正在启动", "正在啟動");
   public static string ServerRestarting => L.T("Restarting", "正在重启", "正在重新啟動");
   public static string ServerStopping => L.T("Stopping", "正在停止", "正在停止");
   public static string ServerStopped => L.T("Stopped", "未运行", "未執行");
@@ -109,6 +110,7 @@ public static class CommonText {
           "只會更新 lip 的安裝紀錄。");
   public static string Cancelled =>
       L.T("Cancelled. Changes were undone.", "已取消，更改已撤销。", "已取消，變更已復原。");
+  public static string CancelledWord => L.T("Cancelled", "已取消", "已取消");
   public static string Failed => L.T("Failed", "失败", "失敗");
   public static string Error => L.T("error", "错误", "錯誤");
   public static string HintWord => L.T("hint", "提示", "提示");

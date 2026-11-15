@@ -38,7 +38,7 @@
 <text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Workspaces</text>
 <text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
 <text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
-<text x="202" y="422.5" textLength="378" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Adds a folder that already holds a server.</text>
+<text x="202" y="422.5" textLength="576" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Adds a folder that exists to the list, with or without a server.</text>
 <text x="35.5" y="482.5" text-anchor="middle" font-weight="700">↑</text>
 <text x="44.5" y="482.5" text-anchor="middle" font-weight="700">↓</text>
 <text x="58" y="482.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Move</text>

@@ -9,6 +9,7 @@
     "postinstall": "node scripts/fetch-kit.mjs",
     "kit": "node scripts/fetch-kit.mjs",
     "zh-hant": "node scripts/zh-hant.mjs",
+    "test": "node scripts/zh-hant.test.mjs",
     "dev": "node scripts/zh-hant.mjs && vite",
     "build": "node scripts/zh-hant.mjs && node kit/docs/build.mjs",
     "preview": "node kit/scripts/serve-pages.mjs dist --base /lip/ --port 4173",

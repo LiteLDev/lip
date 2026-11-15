@@ -62,7 +62,7 @@ Every change of the packages of a workspace goes the same way: installing, updat
 | 1. Preview | lip carries the command out as a [dry run](cli.md) and shows what it would do. Nothing has changed. |
 | 2. **Apply** or **Cancel** | **Apply** goes on. **Cancel** changes nothing. When the preview finds nothing to change, the only button is **Close**. |
 | 3. License | Only when the change installs the game: lip shows the Minecraft EULA and the Microsoft Privacy Policy. **Accept** goes on; **Decline** changes nothing. |
-| 4. Progress | `Esc` or `Ctrl+C` cancels; what was done so far is undone. |
+| 4. Progress | `Esc` or `Ctrl+C` cancels; what was done so far is undone, and a dialog titled **Cancelled** says so. It is not a failure. |
 | 5. Result | What the command said, and **✓ Done.** |
 
 - Applying does not start over: what the preview read and downloaded is used as it is.

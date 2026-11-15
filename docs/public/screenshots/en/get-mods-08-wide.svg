@@ -112,7 +112,7 @@
 <text x="571" y="302.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">97</text>
 <text x="607" y="302.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-11</text>
 <text x="724" y="302.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
-<text x="823" y="302.5" textLength="288" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyScript</text>
+<text x="823" y="302.5" textLength="180" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/</text>
 <text x="206.5" y="322.5" text-anchor="middle" fill="#9ad17b">✓</text>
 <text x="220" y="322.5" textLength="144" lengthAdjust="spacingAndGlyphs">LegacyRemoteCall</text>
 <text x="377.5" y="322.5" text-anchor="middle" fill="#8b95a7">·</text>
@@ -123,7 +123,7 @@
 <text x="557.5" y="322.5" text-anchor="middle" fill="#e5c07b">★</text>
 <text x="571" y="322.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">61</text>
 <text x="607" y="322.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-02</text>
-<text x="823" y="322.5" textLength="54" lengthAdjust="spacingAndGlyphs">Engine</text>
+<text x="823" y="322.5" textLength="162" lengthAdjust="spacingAndGlyphs">LegacyScriptEngine</text>
 <text x="724" y="342.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Latest</text>
 <text x="823" y="342.5" textLength="99" lengthAdjust="spacingAndGlyphs">0.13.2 #lua</text>
 <text x="724" y="362.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Platform</text>

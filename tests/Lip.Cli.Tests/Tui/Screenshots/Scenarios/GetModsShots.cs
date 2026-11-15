@@ -67,6 +67,8 @@ public sealed class GetModsShots(ShotRun run) {
     TuiHarness tui = shot.Tui;
     await tui.GoTo(PageId.GetMods);
     await tui.WaitFor("LegacyScriptEngine · LiteLDev");
+    // The details behind the menu, once the file of the mod is read.
+    await tui.WaitFor("0.13.2 #lua");
 
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(GetModsText.Install);

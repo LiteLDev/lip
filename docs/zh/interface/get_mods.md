@@ -187,7 +187,7 @@ lip 会请系统打开这个页面。在没有桌面环境的服务器上可能�
 
 4. 选**应用**。lip 做完后会显示它做了什么。
 
-   ![结果：两行以“Installing package”开头的文字，然后是“✓ 完成。”](/screenshots/zh-Hans/get-mods-27-install-result.svg)
+   ![结果：两行以“Installing”开头的文字，然后是“✓ 完成。”](/screenshots/zh-Hans/get-mods-27-install-result.svg)
 
 5. 按 `Enter`。这个模组在列表里有了 `✓`，一并装上的模组也有。
 

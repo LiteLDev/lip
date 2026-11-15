@@ -26,6 +26,9 @@ public sealed class ModConfigPage : Page {
   /// the page shows the one that has the focus.
   private const int WideWidth = 72;
 
+  /// The columns of the list of files, as last drawn.
+  private int _fileColumns = int.MaxValue / 2;
+
   /// A row of the list of files: a configuration file of a mod, or a mod that has none.
   private sealed record FileItem(string Mod, string? Path, string Name) {
     public string Label => Path is null ? Mod : $"{Mod} · {Name}";
@@ -720,7 +723,7 @@ public sealed class ModConfigPage : Page {
       int widest = _files.Items.Max(item => TextWidth.Of(item.Label));
       (Rect left, Rect right) = Panes.Columns(
           area, Math.Clamp(widest + 6, 24, area.Width * 2 / 5));
-      _files.Draw(
+      DrawFiles(
           screen, Ui.Panel(screen, left, ModConfigText.Files, focused && onFiles),
           focused && onFiles);
       DrawDocument(
@@ -731,11 +734,17 @@ public sealed class ModConfigPage : Page {
     } else if (_message is { } message && area.Height > 2) {
       // There is no room for the file beside the list: what stands in place of it is said
       // below the list.
-      _files.Draw(screen, area.Shrink(bottom: 2), focused);
+      DrawFiles(screen, area.Shrink(bottom: 2), focused);
       screen.WriteFit(area.X, area.Bottom - 1, area.Width, message(), Theme.Muted);
     } else {
-      _files.Draw(screen, area, focused);
+      DrawFiles(screen, area, focused);
     }
+  }
+
+  /// Draws the list of files in rect, whose rows are fitted to its width.
+  private void DrawFiles(ScreenBuffer screen, Rect rect, bool focused) {
+    _fileColumns = rect.Width;
+    _files.Draw(screen, rect, focused);
   }
 
   /// Draws the open file in rect: head, the name of the file, starts the line that says where
@@ -809,10 +818,33 @@ public sealed class ModConfigPage : Page {
     return text;
   }
 
-  /// A row of the list of files, marked while the file has changes that are not saved.
+  /// A row of the list of files, marked while the file has changes that are not saved. The
+  /// mark is never cut off: the label is cut to the room that is left. The last column is that
+  /// of the marks of the rows that are hidden.
   private StyledLine FileRow(FileItem item) {
-    StyledLine line = new(item.Label, item.Path is null ? Theme.Muted : default);
-    return Dirty && item == _open ? line.Add(" ●", Theme.Warning) : line;
+    const string Mark = " ●";
+    bool dirty = Dirty && item == _open;
+    int room = Math.Max(1, _fileColumns - 1 - (dirty ? TextWidth.Of(Mark) : 0));
+    StyledLine line = new(FitLabel(item, room), item.Path is null ? Theme.Muted : default);
+    return dirty ? line.Add(Mark, Theme.Warning) : line;
+  }
+
+  /// The label of a row of the list of files in at most width columns. One that is longer
+  /// keeps the mod, and the end of the name of the file behind an ellipsis, as in
+  /// "LeviOptimize · …g/config.json"; where the mod leaves the name too little room, the
+  /// label is cut in its middle.
+  private static string FitLabel(FileItem item, int width) {
+    // The least of the name of a file that still tells files apart.
+    const int LeastName = 8;
+    if (item.Path is null || TextWidth.Of(item.Label) <= width) {
+      return PackageCells.FitMiddle(item.Label, width);
+    }
+
+    string mod = item.Label[..^item.Name.Length];
+    int room = width - TextWidth.Of(mod);
+    return room >= Math.Min(LeastName, TextWidth.Of(item.Name))
+        ? mod + TextWidth.FitEnd(item.Name, room)
+        : PackageCells.FitMiddle(item.Label, width);
   }
 
   /// A row of the tree: its name, in a column, and its value.

@@ -284,6 +284,33 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip", "logs")));
   }
 
+  /// A result written as JSON reads as its text does: what JSON does not require to be
+  /// escaped, such as the "+" of a version, is written as it is
+  /// (protocol/lip.md, "Output": the result as JSON).
+  [Fact]
+  public async Task Json_OfAResult_EscapesOnlyWhatJsonRequires() {
+    // Arrange
+    Directory.CreateDirectory(Path.Join(_workspace, ".lip"));
+    File.WriteAllText(Path.Join(_workspace, ".lip", "state.json"), """
+        { "format": 4, "side": "server", "platform": "win-x64", "packages": [
+          { "manifest": { "format": 4, "id": "example.com/ab", "version": "1.0.0+build.5",
+              "variants": { "x": [ { "side": "server", "platform": "win-x64" } ] } },
+            "variant": "x", "explicit": true, "ref": "example.com/ab#x", "files": [] } ] }
+        """);
+
+    // Act
+    (int exitCode, string stdout, string stderr) = await Run("list", "--json");
+
+    // Assert
+    Assert.True(exitCode == 0, stderr);
+    Assert.Contains("\"example.com/ab#x@1.0.0+build.5\"", stdout);
+    Assert.DoesNotContain("\\u", stdout);
+    using JsonDocument list = JsonDocument.Parse(stdout);
+    Assert.Equal(
+        "example.com/ab#x@1.0.0+build.5",
+        list.RootElement.EnumerateObject().First().Value[0].GetString());
+  }
+
   /// An entry of the state file for a package of an id and variant, without files.
   private static string Installed(string id, string variant) => $$"""
       { "manifest": { "format": 4, "id": "{{id}}", "version": "1.0.0",

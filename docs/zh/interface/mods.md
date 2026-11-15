@@ -25,7 +25,7 @@
 在第一个模组上按 `↑` 会移到操作行，在最后一个操作行上按 `↓` 回到列表。`Tab` 也能从操作行移到列表。
 
 ::: info
-安装、更新或卸载之后，你的模组的顺序可能会变。lip 按最近一次安装它们的顺序排列。
+安装、更新或卸载之后，列表的顺序不会变。每一组都按名称排序，高亮也会留在原来那个模组上。
 :::
 
 ### 详情区
@@ -225,19 +225,17 @@
 
 ### 没有更新的版本时
 
-模组已经是最新版本时，计划写着“不会有任何更改。”，只有一个**关闭**按钮：
+模组已经是最新版本时，没有什么可应用的：计划写着“不会有任何更改。”，只有一个**关闭**按钮。不管你按多少次“更新”都是这样，“获取模组”按你选定的版本安装的模组也一样。
 
 ![什么都不会改的更新计划：“不会有任何更改。”，带一个“关闭”按钮。](/screenshots/zh-Hans/mods-30-up-to-date.svg)
 
 有两种计划写的不是这句，而是只有 lip 的记录会变。这两种情况下服务器的文件都不会变，应用或取消都可以。
 
-第一种：模组是“获取模组”安装的，并且已经是最新版本，这时第一次对它按“更新”。lip 之前记下的是你选的那个版本，现在改记为“这个模组跟随最新版本”：
-
-![计划里只有一句“只会更新 lip 的安装记录。”，按钮是“应用”和“取消”。](/screenshots/zh-Hans/mods-29-newest-first-time.svg)
+第一种：用**更新到指定版本…**指定了模组现在就是的那个版本。lip 会记下你要的是这个版本。
 
 第二种：对一个依赖按“更新”。之后 lip 把这个依赖算作你的模组：它会移到“你的模组”里，前面有了方框，也可以卸载了。
 
-![计划：“would mark package 'github.com/LiteLDev/LegacyRemoteCall' version 0.13.0 as explicitly installed.”和“只会更新 lip 的安装记录。”](/screenshots/zh-Hans/plan-03-record-only.svg)
+![计划：“would mark LegacyRemoteCall 0.13.0 as explicitly installed.”和“只会更新 lip 的安装记录。”](/screenshots/zh-Hans/plan-03-record-only.svg)
 
 ## 卸载
 
@@ -252,7 +250,7 @@
 
 4. 选**应用**。
 
-   ![结果：“Uninstalling package 'github.com/LiteLDev/LegacyMoney' version 0.16.1”，然后是“✓ 完成。”](/screenshots/zh-Hans/mods-35-uninstall-result.svg)
+   ![结果：“Uninstalling LegacyMoney 0.16.1”，然后是“✓ 完成。”](/screenshots/zh-Hans/mods-35-uninstall-result.svg)
 
 卸载会移除模组安装的文件。模组在服务器运行期间自己生成的文件（比如配置和数据）可能会留在 `mods` 下它的文件夹里。
 

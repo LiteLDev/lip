@@ -214,7 +214,8 @@ public class McmodServiceSetupTests {
     OperationResult record = await _ws.Service.Setup(
         new SetupRequest(_new, GameBuild.Windows, Loader: true),
         new OperationOptions(DryRun: true));
-    Assert.Equal(new OperationResult(Changes: true, OnlyStateFile: true), record);
+    Assert.Equal(
+        new OperationResult(Changes: true, OnlyStateFile: true, OnlySources: true), record);
 
     // A mod to install: packages would change.
     OperationResult install = await _ws.Service.Install(

@@ -139,9 +139,13 @@ public sealed partial class GameConfigPage {
             selected: Math.Max(0, type.Choices.ToList().IndexOf(property.Value))));
         break;
       default:
-        string label = type is { Kind: PropertyKind.Integer, Min: { } min, Max: { } max }
-            ? GameConfigText.ValueBetween(min, max)
-            : GameConfigText.Value;
+        string label = type switch {
+          { Kind: PropertyKind.Integer, Min: { } min, Max: { } max } =>
+              GameConfigText.ValueBetween(min, max),
+          { Kind: PropertyKind.Integer, Min: { } min } => GameConfigText.ValueAtLeast(min),
+          { Kind: PropertyKind.Integer, Max: { } max } => GameConfigText.ValueAtMost(max),
+          _ => GameConfigText.Value,
+        };
         Context.Show(new PromptDialog(
             property.Key,
             [new PromptField(label, property.Value)],
@@ -167,9 +171,17 @@ public sealed partial class GameConfigPage {
       return GameConfigText.NotOneLine;
     }
 
+    // What is no integer at all is told so, whatever the bounds of the type; an integer of
+    // too many digits is outside them.
+    string digits = value.StartsWith('-') || value.StartsWith('+') ? value[1..] : value;
+    if (digits.Length == 0 || !digits.All(char.IsAsciiDigit)) {
+      return GameConfigText.NotAnInteger;
+    }
+
     return type switch {
       { Min: { } min, Max: { } max } => GameConfigText.NotBetween(min, max),
       { Min: { } min } => GameConfigText.NotAtLeast(min),
+      { Max: { } max } => GameConfigText.NotAtMost(max),
       _ => GameConfigText.NotAnInteger,
     };
   }
@@ -204,7 +216,7 @@ public sealed partial class GameConfigPage {
   /// What a player is called in its list: the name in the allowlist, the xuid in the
   /// permissions.
   private static string PlayerLabel(PlayerListFile file, JsonNode? player) =>
-      player is not JsonObject ? player?.ToJsonString() ?? "null"
+      player is not JsonObject ? JsonConfigFile.EditText(player)
           : PlayerLists.Text(player, IsAllowlist(file) ? "name" : "xuid");
 
   private static bool IsAllowlist(PlayerListFile file) =>

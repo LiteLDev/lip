@@ -28,7 +28,12 @@ public record OperationOptions(
 /// anything at all: a package installed or uninstalled, with the directories and the files
 /// that takes, or the state file alone. OnlyStateFile: whether it is the state file alone, such
 /// as its first writing, an installed package marked otherwise, or another source recorded.
-public sealed record OperationResult(bool Changes, bool OnlyStateFile = false) {
+/// OnlySources: whether it is, in the state file, nothing but the sources recorded for
+/// installed packages, or the order they are listed in: every package stays at its version,
+/// with its files, and explicitly installed or not as it is, as when a package is requested
+/// by another source that gives the same package.
+public sealed record OperationResult(
+    bool Changes, bool OnlyStateFile = false, bool OnlySources = false) {
   /// Nothing changed, or would.
   public static OperationResult Unchanged { get; } = new(false);
 
@@ -83,7 +88,12 @@ public partial class McmodService(
     ISystemPreparer? systemPreparer = null,
     Func<Task<string>>? downloadServerBuilds = null,
     ResolverCache? resolverCache = null) {
-  private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
+  // What lip pkg view writes: only what JSON requires is escaped, so that ">=1.0.0", "<", "&",
+  // "+" and text in any language read as they were written.
+  private static readonly JsonSerializerOptions _indented = new() {
+    WriteIndented = true,
+    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+  };
 
   /// The state file as the user sees it from the workspace root.
   private const string WorkspaceFile = LockStore.LipDirectory + "/" + LockStore.FileName;
@@ -231,8 +241,8 @@ public partial class McmodService(
 
     foreach (Candidate kept in plan.Members.Where(c => removed.Contains(Fold(c.Package.Identity)))) {
       await _ui.PrintInfo(
-          $"Package '{kept.Package.Identity}' is still required by other packages; keeping it "
-          + "as a dependency.");
+          $"{PackageDisplay.Name(kept)} is still required by other packages; keeping it as a"
+          + " dependency.");
     }
 
     return await Execute(workspace, options, await Changes(workspace, options, plan));
@@ -510,7 +520,8 @@ public partial class McmodService(
     }
 
     GameBuild build = GameSetup.BuildOf(game);
-    bool loader = GameSetup.Loader(lockFile) is not null;
+    LockedPackage? loaderPackage = GameSetup.Loader(lockFile);
+    bool loader = loaderPackage is not null;
     string fileName = WorkspaceProgram.ServerFile(loader, build);
     string server = _fs.Path.Join(root, fileName);
     bool linuxServer = fileName == WorkspaceProgram.LinuxServerFileName;
@@ -522,11 +533,21 @@ public partial class McmodService(
     }
 
     if (!_fs.File.Exists(server)) {
+      // A setup with the versions that the workspace has installs nothing (protocol/
+      // lip-setup.md, "Setting up"), and uninstalling the game keeps it while the loader needs
+      // it, so lip cannot bring the file back here: the message says what does.
+      string setup = $"lip setup --game {game.Version}"
+          + (build == GameBuild.Linux ? " --build linux" : "")
+          + (loaderPackage is null
+              ? " --no-loader"
+              : $" --loader levilamina@{loaderPackage.Version}");
       throw new FileNotFoundException(
           $"There is no server to run: '{server}' is not a file, though the workspace has the"
           + $" game {PackageDisplay.Name(game)} {game.Version}"
-          + (loader ? " with a loader" : "") + ". It may have been deleted or moved by hand;"
-          + " restore it, or install the game again by uninstalling it and setting it up.",
+          + (loader ? " with a loader" : "") + ". It may have been deleted or moved by hand."
+          + " lip does not install a package again that is installed in the same version, so"
+          + " setting up the same versions here does not bring the file back. Restore it from"
+          + $" a backup, or run '{setup}' in an empty folder and copy the file from there.",
           server);
     }
 
@@ -946,7 +967,9 @@ public partial class McmodService(
 
   private async Task<Candidate> FirstCandidate(
       Workspace workspace, string argument, PackageRequest request) {
-    await _ui.PrintInfo($"Resolving {argument}...");
+    // A remote repository is named as every other message names its package.
+    string named = request.Ref.Kind == RefKind.Spec ? PackageDisplay.Name(request.Ref) : argument;
+    await _ui.PrintInfo($"Resolving {named}...");
     List<ResolveDiagnostic> diagnostics = [];
     await foreach (Candidate candidate in workspace.Resolver.ResolveLazyWithCauses(
         request.Ref, request.Range, workspace.Environment, diagnostics.Add)) {
@@ -1124,7 +1147,7 @@ public partial class McmodService(
         bool isExplicit = plan.Explicit.Contains(key);
         if (isExplicit != package.Explicit && kept.Contains(key)) {
           await _ui.PrintInfo((options.DryRun ? "Dry run: would mark" : "Marking")
-              + $" package '{package.Identity}' version {package.Version} as "
+              + $" {PackageDisplay.Name(package)} {package.Version} as "
               + (isExplicit ? "explicitly installed." : "not explicitly installed."));
         }
 
@@ -1144,6 +1167,24 @@ public partial class McmodService(
     }
 
     return new ChangeSet(changes, Finish);
+  }
+
+  /// The lock as the state file would hold it if no package changed the source that is
+  /// recorded for it, nor its place in the list: each package that recorded has too with the
+  /// source that recorded has for it, in the order of recorded, then the others.
+  private static LockFile AsRecorded(LockFile lockFile, LockFile recorded) {
+    int Place(LockedPackage package) {
+      int place = recorded.Packages.FindIndex(r => SameIdentity(r.Identity, package.Identity));
+      return place < 0 ? int.MaxValue : place;
+    }
+
+    return lockFile with {
+      Packages = [
+        .. lockFile.Packages.OrderBy(Place).Select(
+            p => recorded.Packages.FirstOrDefault(r => SameIdentity(r.Identity, p.Identity))
+                is { } before ? p with { Source = before.Source } : p),
+      ],
+    };
   }
 
   /// Plans every change against a view of the workspace as the earlier changes leave it, so
@@ -1178,7 +1219,7 @@ public partial class McmodService(
       });
       switch (change) {
         case UninstallChange(LockedPackage package): {
-            string what = $" package '{package.Identity}' version {package.Version}";
+            string what = $" {PackageDisplay.Name(package)} {package.Version}";
             PackagePlan plan = await _installer.PlanUninstall(
                 package, Context(workspace, options, remaining), view);
             if (options.DryRun) {
@@ -1191,18 +1232,18 @@ public partial class McmodService(
             break;
           }
         case InstallChange(Candidate candidate, bool isExplicit, _) install: {
-            string what = $" package '{candidate.Package.Identity}' version"
-                + $" {candidate.Package.Version} from {candidate.Archive.Key}";
+            // A package is named as the plan of a dry run names it; where it comes from is
+            // said only when the name does not say it: for a URL and a local path.
+            string from = candidate.Source.Kind == RefKind.Spec
+                ? ""
+                : $" from {candidate.Archive.Key}";
+            string what = $" {PackageDisplay.NameAndVersion(candidate)}{from}";
             PackagePlan plan = await _installer.PlanInstall(
                 candidate, Context(workspace, options, remaining), view);
             if (options.DryRun) {
               // The files are listed in the run trace only (McmodInstaller.PlanInstall).
-              string from = candidate.Source.Kind == RefKind.Spec
-                  ? ""
-                  : $" from {candidate.Archive.Key}";
-              await _ui.PrintInfo($"Dry run: would install"
-                  + $" {PackageDisplay.NameAndVersion(candidate)}{from}"
-                  + $" ({Files(plan.OwnedFiles.Count)})");
+              await _ui.PrintInfo(
+                  $"Dry run: would install{what} ({Files(plan.OwnedFiles.Count)})");
             }
 
             if (install.Note is string note) {
@@ -1236,10 +1277,16 @@ public partial class McmodService(
     OperationResult result = plans.Count > 0
         ? OperationResult.Changed
         : await _lockStore.Differs(workspace.Root, final)
-            ? new OperationResult(Changes: true, OnlyStateFile: true)
+            // Whether the file would keep its value but for the sources and the order of the
+            // packages. A state file that does not exist has no value to keep.
+            ? new OperationResult(
+                Changes: true, OnlyStateFile: true,
+                OnlySources: !await _lockStore.Differs(
+                    workspace.Root, AsRecorded(final, workspace.Lock)))
             : OperationResult.Unchanged;
     RunTrace.Write("workspace", $"{plans.Count} package changes"
-        + (result.OnlyStateFile ? "; the state file changes" : ""));
+        + (result.OnlySources ? "; the sources that the state file records change"
+            : result.OnlyStateFile ? "; the state file changes" : ""));
     if (options.DryRun) {
       return result;
     }

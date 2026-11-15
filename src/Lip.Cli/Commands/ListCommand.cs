@@ -10,11 +10,6 @@ namespace Lip.Cli.Commands;
 public class ListCommand(LipClient lipClient, CommandOutput output)
     : AsyncCommand<ListCommand.Settings> {
   private readonly CommandOutput _output = output;
-  private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
-    WriteIndented = true,
-    TypeInfoResolver = CliJsonContext.Default,
-  };
-
   private readonly LipClient _lipClient = lipClient;
 
   /// The packages written by --json.
@@ -35,7 +30,7 @@ public class ListCommand(LipClient lipClient, CommandOutput output)
       // written as is: Spectre.Console would wrap long lines, breaking strings apart.
       _output.Out.WriteLine(JsonSerializer.Serialize(
           new Installed(packages.ExplicitInstalled, packages.ImplicitInstalled),
-          (JsonTypeInfo<Installed>)_jsonSerializerOptions.GetTypeInfo(typeof(Installed))));
+          CliJsonContext.TypeInfo<Installed>(CliJsonContext.Indented)));
     } else {
       Tree explicitTree = new("User-Requested");
       foreach (string package in packages.ExplicitInstalled) {

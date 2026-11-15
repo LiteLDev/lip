@@ -42,7 +42,8 @@
 <text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
 <text x="220" y="182.5" textLength="108" lengthAdjust="spacingAndGlyphs">LeviOptimize</text>
 <text x="341.5" y="182.5" text-anchor="middle">·</text>
-<text x="355" y="182.5" textLength="108" lengthAdjust="spacingAndGlyphs">config/confi</text>
+<text x="359.5" y="182.5" text-anchor="middle">…</text>
+<text x="364" y="182.5" textLength="90" lengthAdjust="spacingAndGlyphs">onfig.json</text>
 <text x="499" y="182.5" textLength="63" lengthAdjust="spacingAndGlyphs">pay_tax</text>
 <text x="652" y="182.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">0.05</text>
 <text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Mod config</text>

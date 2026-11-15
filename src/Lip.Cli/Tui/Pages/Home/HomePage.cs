@@ -86,7 +86,7 @@ public sealed class HomePage : Page {
         [HomeText.Workspace, HomeText.Game, HomeText.Loader, HomeText.Mods, HomeText.Server];
     int labelWidth = labels.Max(TextWidth.Of) + 2;
     StyledLine[] values = [
-      new(FitEnd(Context.Workspace, area.Width - labelWidth)),
+      new(TextWidth.FitEnd(Context.Workspace, area.Width - labelWidth)),
       Value(GamePackage?.Version, HomeText.NotInstalled),
       Value(
           LoaderPackage is { } loader ? $"{Id(loader).Split('/')[^1]} {loader.Version}" : null,
@@ -256,30 +256,8 @@ public sealed class HomePage : Page {
             : new StyledLine(CommonText.ServerStopped, Theme.Muted)
         : server.Restarting ? new StyledLine("● " + CommonText.ServerRestarting, Theme.Warning)
         : server.Stopping ? new StyledLine("● " + CommonText.ServerStopping, Theme.Warning)
+        : server.Starting ? new StyledLine("● " + CommonText.ServerStarting, Theme.Warning)
         : new StyledLine("● " + CommonText.ServerRunning, Theme.Good);
-  }
-
-  /// The text cut to its last width columns, starting with an ellipsis when it was cut: the end
-  /// of a path says more than its start.
-  private static string FitEnd(string text, int width) {
-    if (TextWidth.Of(text) <= width) {
-      return text;
-    }
-
-    int start = text.Length;
-    int used = 1;
-    while (start > 0) {
-      int at = char.IsLowSurrogate(text[start - 1]) && start > 1 ? start - 2 : start - 1;
-      int columns = TextWidth.Of(text[at..start]);
-      if (used + columns > width) {
-        break;
-      }
-
-      used += columns;
-      start = at;
-    }
-
-    return width < 1 ? "" : "…" + text[start..];
   }
 
   #endregion
