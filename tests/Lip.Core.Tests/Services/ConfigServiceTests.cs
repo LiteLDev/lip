@@ -8,11 +8,13 @@ namespace Lip.Core.Tests.Services;
 /// The configuration (protocol/config.toml.md, config.schema.toml) and the migration of
 /// liprc.json (protocol/lip-compatibility.md, "liprc.json").
 public class ConfigServiceTests {
+  // In the config directory (protocol/lip-userspace.md, "Directories"), which is not the
+  // application data folder of .NET on macOS.
   private static string GetConfigPath() =>
-      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "config.toml");
+      Path.Combine(LipDirectories.Config, "config.toml");
 
   private static string GetLiprcPath() =>
-      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip", "liprc.json");
+      Path.Combine(LipDirectories.Config, "liprc.json");
 
   private const string _liprcJson = """
       {

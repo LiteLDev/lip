@@ -3,12 +3,25 @@ using Lip.Core.Infrastructure;
 namespace Lip.Core.Tests.Infrastructure;
 
 public class LipDirectoriesTests {
+  /// protocol/lip-userspace.md, "Directories": %APPDATA%\lip on Windows, $XDG_CONFIG_HOME/lip
+  /// elsewhere, macOS included, where .NET names another folder for application data.
   [Fact]
-  public void Config_IsLipUnderApplicationData() {
+  public void Config_FollowsPlatformConvention() {
+    // Arrange
+    string expected;
+    if (OperatingSystem.IsWindows()) {
+      expected = Path.Join(
+          Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip");
+    } else {
+      string? xdgConfigHome = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+      string configHome = !string.IsNullOrEmpty(xdgConfigHome) && Path.IsPathRooted(xdgConfigHome)
+          ? xdgConfigHome
+          : Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+      expected = Path.Join(configHome, "lip");
+    }
+
     // Act & Assert
-    Assert.Equal(
-        Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lip"),
-        LipDirectories.Config);
+    Assert.Equal(expected, LipDirectories.Config);
   }
 
   [Fact]
