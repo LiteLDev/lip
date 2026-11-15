@@ -20,9 +20,11 @@ and deterministic; pass ``--refresh`` to ignore the cache.
 ``--prune`` surveys nothing new. It reads the ``corpus.json`` that is there, lists the tags of
 every repository in it again, removes the entries whose tag ``v<version>``, or whose root
 ``tooth.json`` at that tag, is gone upstream (the repository was deleted, made private or replaced
-by another one, or its tags were deleted or made again), and writes ``corpus.json`` and
-``README.md`` again. Use it when upstream deleted something and a full survey, which would also
-drop what the sources no longer list, is not wanted. It needs ``git`` only.
+by another one, or its tags were deleted, or made again without a ``tooth.json``), and writes
+``corpus.json`` and ``README.md`` again. What the survey recorded about the entries that are left
+stays as it was. Use it when upstream deleted something and a full survey, which would also drop
+what the sources no longer list, is not wanted. It needs ``git`` only, and always asks upstream
+anew, whatever the cache holds.
 
 Usage:
   python survey.py [--cache DIR] [--refresh] [--jobs N] [--prune]
@@ -866,13 +868,16 @@ def prune(args: argparse.Namespace) -> int:
     repos = sorted({e["package"].split("#")[0] for e in corpus["entries"]})
     with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         listed = dict(zip(repos, pool.map(
-            lambda repo: ls_remote_tags(args.cache, args.refresh, f"https://{repo}.git"), repos)))
-    # A repository that could not be reached says nothing about its tags.
-    unreachable = [repo for repo, (_, err, _) in listed.items() if err == "timeout"]
+            lambda repo: ls_remote_tags(args.cache, True, f"https://{repo}.git"), repos)))
+    # git asks for a user name, or finds no repository, when the repository is deleted or private.
+    # Any other failure says nothing about the tags of the repository.
+    gone = ("could not read Username", "Repository not found", "not found")
+    unreachable = [f"{repo} ({err})" for repo, (ok, err, _) in listed.items()
+                   if not ok and not any(g in err for g in gone)]
     if unreachable:
-        raise SystemExit("timed out listing the tags of: " + ", ".join(unreachable))
+        raise SystemExit("could not list the tags of: " + ", ".join(unreachable))
 
-    http = Http(args.cache, args.refresh, "")
+    http = Http(args.cache, True, "")
 
     def tooth_url(e: dict) -> str:
         path = e["package"].split("#")[0]
