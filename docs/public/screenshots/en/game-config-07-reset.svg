@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="688" viewBox="0 0 944 688" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="610" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="609" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="202" y="88" width="117" height="20" fill="#4a5364"/>
+<rect x="346" y="148" width="558" height="20" fill="#4a5364"/>
+<rect x="31" y="168" width="144" height="20" fill="#4a5364"/>
+<rect x="355" y="308" width="234" height="20" fill="#2563c9"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M319 78H918.13M598 358H904M202 538H904M25.88 578H180.13M187.88 578H918.13M26.5 77.38V578.63M179.5 77.38V578.63M188.5 77.38V578.63M332.5 88V538.63M917.5 77.38V578.63"/>
+<path stroke="#56c8d8" d="M349.88 298H364M490 298H594.13M349.88 358H594.13M350.5 297.38V358.63M593.5 297.38V358.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="211" y="82.5" textLength="99" lengthAdjust="spacingAndGlyphs" font-weight="700">Game config</text>
+<text x="40" y="102.5" textLength="36" lengthAdjust="spacingAndGlyphs">Home</text>
+<text x="202" y="102.5" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Properties *</text>
+<text x="364" y="102.5" textLength="99" lengthAdjust="spacingAndGlyphs">server-name</text>
+<text x="652" y="102.5" textLength="72" lengthAdjust="spacingAndGlyphs">Survival</text>
+<text x="40" y="122.5" textLength="54" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="202" y="122.5" textLength="81" lengthAdjust="spacingAndGlyphs">Allowlist</text>
+<text x="364" y="122.5" textLength="72" lengthAdjust="spacingAndGlyphs">gamemode</text>
+<text x="652" y="122.5" textLength="72" lengthAdjust="spacingAndGlyphs">survival</text>
+<text x="40" y="142.5" textLength="36" lengthAdjust="spacingAndGlyphs">Mods</text>
+<text x="202" y="142.5" textLength="99" lengthAdjust="spacingAndGlyphs">Permissions</text>
+<text x="364" y="142.5" textLength="90" lengthAdjust="spacingAndGlyphs">difficulty</text>
+<text x="652" y="142.5" textLength="54" lengthAdjust="spacingAndGlyphs">normal</text>
+<text x="40" y="162.5" textLength="72" lengthAdjust="spacingAndGlyphs">Get mods</text>
+<text x="346" y="162.5" textLength="126" lengthAdjust="spacingAndGlyphs" fill="#ffffff">* allow-cheats</text>
+<text x="652" y="162.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[x]</text>
+<text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Game config</text>
+<text x="364" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">max-players</text>
+<text x="652" y="182.5" textLength="18" lengthAdjust="spacingAndGlyphs">10</text>
+<text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="364" y="202.5" textLength="99" lengthAdjust="spacingAndGlyphs">online-mode</text>
+<text x="652" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">[x]</text>
+<text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="364" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">allow-list</text>
+<text x="652" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">[x]</text>
+<text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="364" y="242.5" textLength="99" lengthAdjust="spacingAndGlyphs">server-port</text>
+<text x="652" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">19132</text>
+<text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="364" y="262.5" textLength="117" lengthAdjust="spacingAndGlyphs">server-portv6</text>
+<text x="652" y="262.5" textLength="45" lengthAdjust="spacingAndGlyphs">19133</text>
+<text x="364" y="282.5" textLength="117" lengthAdjust="spacingAndGlyphs">view-distance</text>
+<text x="652" y="282.5" textLength="18" lengthAdjust="spacingAndGlyphs">32</text>
+<text x="373" y="302.5" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">allow-cheats</text>
+<text x="652" y="302.5" textLength="9" lengthAdjust="spacingAndGlyphs">4</text>
+<text x="364" y="322.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Toggle</text>
+<text x="652" y="322.5" textLength="18" lengthAdjust="spacingAndGlyphs">30</text>
+<text x="364" y="342.5" textLength="99" lengthAdjust="spacingAndGlyphs">Reset value</text>
+<text x="652" y="342.5" textLength="117" lengthAdjust="spacingAndGlyphs">Bedrock level</text>
+<text x="899.5" y="342.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="346" y="382.5" textLength="135" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Original: false</text>
+<text x="346" y="402.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">If true then cheats like commands can be used.</text>
+<text x="346" y="422.5" textLength="297" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Allowed values: &quot;true&quot; or &quot;false&quot;</text>
+<text x="202" y="562.5" textLength="72" lengthAdjust="spacingAndGlyphs" font-weight="700">[ Save ]</text>
+<text x="283" y="562.5" textLength="99" lengthAdjust="spacingAndGlyphs">[ Discard ]</text>
+<text x="643" y="562.5" textLength="261" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Applies on next server start.</text>
+<text x="35.5" y="602.5" text-anchor="middle" font-weight="700">↑</text>
+<text x="44.5" y="602.5" text-anchor="middle" font-weight="700">↓</text>
+<text x="58" y="602.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Move</text>
+<text x="112" y="602.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="166" y="602.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Select</text>
+<text x="238" y="602.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="274" y="602.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Close</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V614H16zM343 285H601V371H343z"/>
+<rect x="351" y="326" width="242" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<rect x="10.5" y="630.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<rect x="24.5" y="642.5" width="25" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="37" y="658.5" text-anchor="middle" font-size="13" font-weight="700" fill="#d8dee9">↓</text>
+<rect x="58.5" y="642.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="66" y="658.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="612" viewBox="0 0 944 612" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="490" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="489" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="58" y="128" width="828" height="20" fill="#2563c9"/>
+<rect x="31" y="228" width="9" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H40M904 78H918.13M58 118H886M25.88 458H40M904 458H918.13M26.5 77.38V458.63M917.5 77.38V458.63"/>
+<path stroke="#56c8d8" d="M43.88 78H58M202 78H900.13M43.88 458H900.13M44.5 77.38V458.63M899.5 77.38V458.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="198" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\projects\WelcomeMod</text>
+<text x="67" y="82.5" textLength="126" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Folder to pack</text>
+<text x="58" y="102.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Folder</text>
+<text x="130" y="102.5" textLength="198" lengthAdjust="spacingAndGlyphs" font-weight="700">D:\projects\WelcomeMod</text>
+<text x="58" y="142.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#ffffff">..</text>
+<text x="58" y="162.5" textLength="99" lengthAdjust="spacingAndGlyphs">WelcomeMod\</text>
+<text x="58" y="442.5" textLength="198" lengthAdjust="spacingAndGlyphs" font-weight="700">[ Select this folder ]</text>
+<text x="265" y="442.5" textLength="108" lengthAdjust="spacingAndGlyphs">[ New folder</text>
+<text x="377.5" y="442.5" text-anchor="middle">…</text>
+<text x="391" y="442.5" textLength="108" lengthAdjust="spacingAndGlyphs">] [ Cancel ]</text>
+<text x="35.5" y="482.5" text-anchor="middle" font-weight="700">↑</text>
+<text x="44.5" y="482.5" text-anchor="middle" font-weight="700">↓</text>
+<text x="58" y="482.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Move</text>
+<text x="112" y="482.5" textLength="54" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter/</text>
+<text x="170.5" y="482.5" text-anchor="middle" font-weight="700">←</text>
+<text x="184" y="482.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Up</text>
+<text x="220" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Tab</text>
+<text x="256" y="482.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Next</text>
+<text x="310" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="346" y="482.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Cancel</text>
+</g>
+<circle cx="44" cy="98" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="44" y="102.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<circle cx="157" cy="462" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="157" y="466.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">2</text>
+<rect x="10.5" y="510.5" width="923" height="91" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<circle cx="32" cy="529" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="32" y="533.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<text x="52" y="533.5" textLength="382.2" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">The folder that is packed: the one with lip.toml.</text>
+<circle cx="32" cy="551" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="32" y="555.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">2</text>
+<text x="52" y="555.5" textLength="179.4" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">Packs the folder shown.</text>
+<rect x="24.5" y="566.5" width="38.4" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="582.5" textLength="23.4" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Tab</text>
+<rect x="71.9" y="566.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="79.4" y="582.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>
