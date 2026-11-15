@@ -48,8 +48,10 @@ public sealed class DaemonTests : IAsyncDisposable {
     }
 
     Directory.Delete(_directory, recursive: true);
-    if (!OperatingSystem.IsWindows()) {
-      Directory.Delete(Path.GetDirectoryName(_endpoint.Name)!, recursive: true);
+    // A test that starts no daemon leaves the directory of the socket uncreated.
+    string socketDirectory = Path.GetDirectoryName(_endpoint.Name)!;
+    if (!OperatingSystem.IsWindows() && Directory.Exists(socketDirectory)) {
+      Directory.Delete(socketDirectory, recursive: true);
     }
   }
 
