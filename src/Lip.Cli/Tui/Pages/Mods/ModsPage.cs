@@ -15,7 +15,8 @@ internal enum ModAction {
   GetMods,
 }
 
-/// Says that the catalogue is being read, for the details of a package. Esc gives up waiting.
+/// Says that the catalogue is being read, for the details of a package. Esc gives up waiting,
+/// and calls cancelled.
 internal sealed class CatalogueWait(Action cancelled) : Dialog {
   public override IReadOnlyList<Hint> Hints => [CommonText.HintCancel];
 
@@ -91,10 +92,6 @@ public sealed class ModsPage : Page {
   // The rows that the details area takes: a rule, a title, and two rows for a sentence, or
   // for a sentence and the source of a package.
   private const int DetailRows = 4;
-  // After how long the catalogue is read again when details are asked for, in milliseconds: as
-  // on the Get mods page.
-  private const int Stale = 10 * 60 * 1000;
-
   private readonly ListView<ModAction> _actions;
   private readonly ListView<InstalledPackage> _list;
   // The areas that take the keys: 0 the action rows, 1 the list, when it has rows.
@@ -108,12 +105,9 @@ public sealed class ModsPage : Page {
   // The columns of the name and of the version of a row, as last drawn.
   private int _nameWidth = 1;
   private int _versionWidth = 1;
-  // The catalogue, once it was read for the details of a package, and when; whether it is
-  // being read; and the dialog that waits for it, with the package it waits for.
-  private CatalogIndex? _index;
-  private long _indexAt;
-  private bool _indexReading;
-  private (Dialog Dialog, string Identity)? _waiting;
+  // The dialog that waits for the catalogue, for the details of a package; null when none
+  // does.
+  private Dialog? _waiting;
 
   public ModsPage(AppContext context) : base(context) {
     _actions = new ListView<ModAction>(
@@ -576,56 +570,51 @@ public sealed class ModsPage : Page {
   }
 
   /// Shows what the catalogue says of a package, as the Get mods page does. The catalogue is
-  /// read once and kept; until it was, a dialog waits for it. One that is old is shown all
-  /// the same, and read again for the next time. Nothing is written.
+  /// the one that every page shares (ModCatalogClient), which keeps what it read for a while:
+  /// the page keeps none of its own. While it is read, a dialog waits for it; Esc there
+  /// abandons the request. Nothing is written.
   private void ShowDetails(string identity) {
-    bool fresh = false;
-    if (_index is { } index) {
-      fresh = Environment.TickCount64 - _indexAt <= Stale;
-      ShowDetails(index, identity);
-    } else {
-      CatalogueWait wait = new(() => _waiting = null);
-      _waiting = (wait, identity);
-      Context.Show(wait);
-    }
-
-    if (fresh || _indexReading) {
-      // A read that an earlier wait started, and gave up, answers this one too.
+    CancellationTokenSource cancel = new();
+    // The catalogue is of no workspace. What the client kept answers at once.
+    Task<CatalogIndex> read = Context.Catalog.GetIndex(cancel.Token);
+    if (read.IsCompletedSuccessfully) {
+      cancel.Dispose();
+      ShowDetails(read.Result, identity);
       return;
     }
 
-    _indexReading = true;
-    ModCatalogClient catalog = Context.Catalog;
-    // The catalogue is of no workspace.
+    CatalogueWait wait = new(() => {
+      _waiting = null;
+      cancel.Cancel();
+    });
+    _waiting = wait;
+    Context.Show(wait);
     Context.Background(
-        () => catalog.GetIndex(),
-        read => {
-          _indexReading = false;
-          _index = read;
-          _indexAt = Environment.TickCount64;
-          Answer();
+        () => read,
+        index => {
+          cancel.Dispose();
+          if (EndWait(wait)) {
+            ShowDetails(index, identity);
+          }
         },
         _ => {
-          _indexReading = false;
-          Answer();
+          cancel.Dispose();
+          if (EndWait(wait)) {
+            Context.Message(ModsText.Details, ModsText.CatalogueUnreadable, Theme.Bad);
+          }
         },
         anyWorkspace: true);
   }
 
-  /// Ends the wait for the catalogue, when the user still waits: with the details, or with a
-  /// line that says that the catalogue cannot be read.
-  private void Answer() {
-    if (_waiting is not var (wait, identity)) {
-      return;
+  /// Closes the dialog that waits for the catalogue; false when the user gave up waiting.
+  private bool EndWait(Dialog wait) {
+    if (!ReferenceEquals(_waiting, wait)) {
+      return false;
     }
 
     _waiting = null;
     Context.Close(wait);
-    if (_index is { } index) {
-      ShowDetails(index, identity);
-    } else {
-      Context.Message(ModsText.Details, ModsText.CatalogueUnreadable, Theme.Bad);
-    }
+    return true;
   }
 
   private void ShowDetails(CatalogIndex index, string identity) {

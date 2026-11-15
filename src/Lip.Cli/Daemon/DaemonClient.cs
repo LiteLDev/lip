@@ -30,6 +30,10 @@ public sealed class DaemonClient(
   /// How long a started daemon may take to listen, and an old one to exit.
   private static readonly TimeSpan _startTimeout = TimeSpan.FromSeconds(10);
 
+  // Held while the command is sent and while a signal is passed on, so that a signal comes
+  // either before the command is sent or after it, in the order the client received it.
+  private readonly object _signalGate = new();
+  // The writer of the connection that the command was sent on, while the command runs.
   private FrameWriter? _writer;
 
   /// Whether a daemon of another version or executable that does not exit when asked carries out
@@ -46,11 +50,14 @@ public sealed class DaemonClient(
           welcome.Executable, executable,
           OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
-  /// Passes on a signal that the client received to the command. False when no command runs yet,
-  /// so that the signal ends the client as it would end lip.
-  public bool Signal(PosixSignal signal) =>
-      Volatile.Read(ref _writer) is { } writer
-      && writer.Send(FrameType.Signal, Messages.Int32((int)signal));
+  /// Passes on a signal that the client received to the command. False when the command is not
+  /// sent yet, so that the signal ends the client as it would end lip; a signal received from
+  /// the moment the command is sent is passed on.
+  public bool Signal(PosixSignal signal) {
+    lock (_signalGate) {
+      return _writer is { } writer && writer.Send(FrameType.Signal, Messages.Int32((int)signal));
+    }
+  }
 
   /// Has the daemon carry out the command (protocol/lip-daemon.md, "Carrying out a command").
   /// For the interface, attach starts passing on the keys and the size of the terminal of the
@@ -87,7 +94,10 @@ public sealed class DaemonClient(
   /// set when there is none.
   private async Task<Stream?> Connect() {
     bool started = false;
+    bool closed = false;
     for (int attempt = 0; attempt < 3; attempt++) {
+      // Null only when no daemon listens: one that listens but is busy is waited for, never
+      // taken for none, so that no second daemon is started beside it.
       Stream? connection = await endpoint.TryConnect();
       if (connection is null) {
         if (started) {
@@ -109,14 +119,25 @@ public sealed class DaemonClient(
         }
       }
 
-      Welcome welcome;
+      Welcome? greeted;
       try {
-        welcome = await Greet(connection);
+        greeted = await GreetWithin(connection, _startTimeout);
       }
       catch {
         await connection.DisposeAsync();
         throw;
       }
+
+      if (greeted is not { } welcome) {
+        // The daemon stopped listening as the client connected: it exits, and the client goes
+        // back to step 1 (protocol/lip-daemon.md, "Carrying out a command").
+        await connection.DisposeAsync();
+        started = false;
+        closed = true;
+        continue;
+      }
+
+      closed = false;
 
       if (IsSame(welcome)) {
         return connection;
@@ -132,7 +153,7 @@ public sealed class DaemonClient(
         if (KeepsBusyDaemon && await endpoint.TryConnect() is { } again) {
           bool same;
           try {
-            same = (await Greet(again)).ProcessId == welcome.ProcessId;
+            same = (await GreetWithin(again, _startTimeout))?.ProcessId == welcome.ProcessId;
           }
           catch {
             await again.DisposeAsync();
@@ -155,17 +176,37 @@ public sealed class DaemonClient(
       started = false;
     }
 
-    _fallback = "the daemon keeps being replaced";
+    _fallback = closed
+        ? "the daemon keeps closing the connection"
+        : "the daemon keeps being replaced";
     return null;
   }
 
   /// Sends Hello and reads the Welcome of the daemon.
-  public async Task<Welcome> Greet(Stream connection) {
+  public async Task<Welcome> Greet(
+      Stream connection, CancellationToken cancellationToken = default) {
     Frames.Write(connection, FrameType.Hello, new Hello(version, executable).Encode());
-    return await Frames.Read(connection, CancellationToken.None)
-        is { Type: FrameType.Welcome } frame
-        ? Welcome.Decode(frame.Payload)
-        : throw new InvalidDataException("The daemon did not answer as a daemon of lip.");
+    return await Frames.Read(connection, cancellationToken) switch {
+      { Type: FrameType.Welcome } frame => Welcome.Decode(frame.Payload),
+      null => throw new EndOfStreamException("The daemon closed the connection."),
+      _ => throw new InvalidDataException("The daemon did not answer as a daemon of lip."),
+    };
+  }
+
+  /// Greet for a daemon that may be exiting or busy: null when it closed the connection, which a
+  /// daemon that stopped listening does; TimeoutException when it does not answer in time.
+  private async Task<Welcome?> GreetWithin(Stream connection, TimeSpan timeout) {
+    using CancellationTokenSource limit = new(timeout);
+    try {
+      return await Greet(connection, limit.Token);
+    }
+    catch (OperationCanceledException) {
+      throw new TimeoutException(
+          $"the daemon of lip that runs did not answer within {timeout.TotalSeconds:0} seconds");
+    }
+    catch (IOException) {
+      return null;
+    }
   }
 
   /// Asks the daemon, after Greet, to exit; whether it does.
@@ -218,11 +259,15 @@ public sealed class DaemonClient(
       ClientStreams streams,
       Func<FrameWriter, IDisposable>? attach) {
     FrameWriter writer = new(connection);
-    if (!writer.Send(FrameType.Start, start.Encode())) {
-      return new ClientOutcome(null, null, "the daemon closed the connection");
+    // A signal that the client receives while the command is sent waits, and follows it.
+    lock (_signalGate) {
+      if (!writer.Send(FrameType.Start, start.Encode())) {
+        return new ClientOutcome(null, null, "the daemon closed the connection");
+      }
+
+      _writer = writer;
     }
 
-    Volatile.Write(ref _writer, writer);
     InputPump input = new(streams, writer);
     using IDisposable? attached = attach?.Invoke(writer);
     try {
@@ -272,7 +317,10 @@ public sealed class DaemonClient(
       }
     }
     finally {
-      Volatile.Write(ref _writer, null);
+      lock (_signalGate) {
+        _writer = null;
+      }
+
       writer.Close();
     }
   }

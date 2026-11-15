@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Abstractions.TestingHelpers;
+using System.IO.Pipes;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using Lip.Cli.Commands;
@@ -156,7 +159,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Act
     Task<ClientOutcome> run = client.Run(Start([]), streams.Client);
     await changing.Task;
-    await Signal(client, PosixSignal.SIGINT);
+    Assert.True(client.Signal(PosixSignal.SIGINT));
     ClientOutcome outcome = await run;
 
     // Assert
@@ -187,7 +190,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Act
     Task<ClientOutcome> run = client.Run(Start([]), streams.Client);
     await running.Task;
-    await Signal(client, PosixSignal.SIGINT);
+    Assert.True(client.Signal(PosixSignal.SIGINT));
     ClientOutcome outcome = await run;
 
     // Assert
@@ -215,7 +218,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Act
     Task<ClientOutcome> run = client.Run(Start([]), streams.Client);
     await listening.Task;
-    await Signal(client, PosixSignal.SIGTERM);
+    Assert.True(client.Signal(PosixSignal.SIGTERM));
 
     // Assert
     Assert.Equal(new ClientOutcome(3, null, null), await run);
@@ -237,7 +240,7 @@ public sealed class DaemonTests : IAsyncDisposable {
 
     // Act: a client that sends its command and goes away.
     Stream connection = (await _endpoint.TryConnect(TestContext.Current.CancellationToken))!;
-    await Client().Greet(connection);
+    await Client().Greet(connection, TestContext.Current.CancellationToken);
     Frames.Write(connection, FrameType.Start, Start([]).Encode());
     await listening.Task;
     await connection.DisposeAsync();
@@ -318,6 +321,219 @@ public sealed class DaemonTests : IAsyncDisposable {
   }
 
   [Fact]
+  public async Task Signal_FromTheMomentTheCommandIsSent_IsPassedOn() {
+    // Arrange
+    ConcurrentQueue<TaskCompletionSource> running = new();
+    _ = Host(async (_, _, invocation, _) => {
+      MockFileSystem fs = new();
+      using WorkspaceTransaction transaction = new(fs, "/w/.lip/journal");
+      Assert.True(running.TryDequeue(out TaskCompletionSource? started));
+      started.SetResult();
+      try {
+        await Task.Delay(Timeout.Infinite, invocation.Cancellation);
+        return 0;
+      }
+      catch (OperationCanceledException) {
+        return 130;
+      }
+    });
+
+    for (int i = 0; i < 40; i++) {
+      TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+      running.Enqueue(started);
+      DaemonClient client = Client();
+
+      // Act: the signal is given as soon as the daemon runs the command.
+      Task<ClientOutcome> run = client.Run(Start([]), new Streams("").Client);
+      await started.Task;
+      bool passedOn = client.Signal(PosixSignal.SIGINT);
+
+      // Assert
+      Assert.True(passedOn);
+      Assert.Equal(130, (await run).ExitCode);
+    }
+  }
+
+  [Fact]
+  public async Task Signal_BeforeTheCommandIsSentAndAfterItEnded_IsNotPassedOn() {
+    // Arrange
+    _ = Host((_, _, _, _) => Task.FromResult(0));
+    DaemonClient client = Client();
+
+    // Act
+    bool before = client.Signal(PosixSignal.SIGINT);
+    ClientOutcome outcome = await client.Run(Start([]), new Streams("").Client);
+    bool after = client.Signal(PosixSignal.SIGINT);
+
+    // Assert
+    Assert.False(before);
+    Assert.Equal(0, outcome.ExitCode);
+    Assert.False(after);
+  }
+
+  [Fact]
+  public async Task ManyClientsAtOnce_AllReachTheDaemonThatRuns() {
+    // Arrange
+    _ = Host(async (args, _, invocation, _) => {
+      await invocation.Out.WriteAsync(args[0]);
+      return 0;
+    });
+    Streams[] streams = [.. Enumerable.Range(0, 32).Select(_ => new Streams(""))];
+
+    // Act: no client starts a daemon, or falls back.
+    ClientOutcome[] outcomes = await Task.WhenAll(streams.Select(
+        (s, i) => Task.Run(() => Client().Run(Start([$"{i}"]), s.Client))));
+
+    // Assert
+    Assert.All(outcomes, o => Assert.Equal(new ClientOutcome(0, null, null), o));
+    Assert.Equal(
+        Enumerable.Range(0, 32).Select(i => $"{i}"), streams.Select(s => s.OutputText.ToString()));
+  }
+
+  [Fact]
+  public async Task TwoClientsAtOnce_WithNoDaemon_EndWithOneDaemonAndNeitherFallsBack() {
+    // Arrange: each client finds no daemon before either starts one.
+    using CountdownEvent bothFoundNone = new(2);
+    List<Task> started = [];
+    DaemonClient NewClient() => new(_endpoint, Version, Executable, () => {
+      bothFoundNone.Signal();
+      Assert.True(bothFoundNone.Wait(TimeSpan.FromSeconds(30)));
+      Task host = Host((_, _, _, _) => Task.FromResult(5));
+      lock (started) {
+        started.Add(host);
+      }
+
+      return null;
+    });
+
+    // Act
+    ClientOutcome[] outcomes = await Task.WhenAll(
+        Task.Run(() => NewClient().Run(Start([]), new Streams("").Client)),
+        Task.Run(() => NewClient().Run(Start([]), new Streams("").Client)));
+
+    // Assert: the daemon that lost the endpoint exited, and the other one carried out both.
+    Assert.All(outcomes, o => Assert.Equal(new ClientOutcome(5, null, null), o));
+    Assert.Equal(2, started.Count);
+    Task lost = Assert.Single(started, h => h.IsCompleted);
+    await Assert.ThrowsAsync<EndpointInUseException>(() => lost);
+  }
+
+  [Fact]
+  public async Task DaemonThatStopsListeningAsTheClientConnects_IsReplacedByANewOne() {
+    // Arrange: a daemon that takes the connection, stops listening and closes it.
+    IDaemonListener exiting = _endpoint.Listen();
+    Task closes = Task.Run(async () => {
+      Stream connection = await exiting.Accept(CancellationToken.None);
+      exiting.Dispose();
+      await connection.DisposeAsync();
+    }, TestContext.Current.CancellationToken);
+    int starts = 0;
+    DaemonClient client = new(_endpoint, Version, Executable, () => {
+      starts++;
+      // The daemon is started once the one that exits has let go of the endpoint.
+      Assert.True(closes.Wait(TimeSpan.FromSeconds(30)));
+      _ = Host((_, _, _, _) => Task.FromResult(4));
+      return null;
+    });
+
+    // Act
+    ClientOutcome outcome = await client.Run(Start([]), new Streams("").Client);
+
+    // Assert
+    Assert.Equal(new ClientOutcome(4, null, null), outcome);
+    Assert.Equal(1, starts);
+  }
+
+  [Fact]
+  public async Task Pipe_WhoseEveryInstanceIsTaken_IsWaitedForAndNoDaemonIsStarted() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "Named pipes are the endpoint on Windows.");
+    // Arrange: a daemon whose only pipe instance another client has.
+    CancellationToken cancellation = TestContext.Current.CancellationToken;
+    await using NamedPipeServerStream taken = PipeInstance();
+    await using NamedPipeClientStream other = new(
+        ".", _endpoint.Name, PipeDirection.InOut,
+        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+    await other.ConnectAsync(cancellation);
+    await taken.WaitForConnectionAsync(cancellation);
+    int starts = 0;
+    DaemonClient client = new(_endpoint, Version, Executable, () => {
+      starts++;
+      return "the test starts no daemon";
+    });
+
+    // Act: the daemon is busy for longer than a connection attempt lasts, then takes the client.
+    await Assert.ThrowsAsync<DaemonBusyException>(
+        () => _endpoint.TryConnect(TimeSpan.FromMilliseconds(300), cancellation));
+    Task<ClientOutcome> run = client.Run(Start([]), new Streams("").Client);
+    await Task.Delay(TimeSpan.FromMilliseconds(600), cancellation);
+    bool waited = !run.IsCompleted;
+    await using NamedPipeServerStream free = PipeInstance();
+    await free.WaitForConnectionAsync(cancellation);
+    Assert.Equal(FrameType.Hello, (await Frames.Read(free, cancellation))!.Value.Type);
+    Frames.Write(
+        free, FrameType.Welcome,
+        new Welcome(Version, Executable, Environment.ProcessId, 1).Encode());
+    Assert.Equal(FrameType.Start, (await Frames.Read(free, cancellation))!.Value.Type);
+    Frames.Write(free, FrameType.Exit, Messages.Int32(9));
+    ClientOutcome outcome = await run;
+
+    // Assert
+    Assert.True(waited);
+    Assert.Equal(new ClientOutcome(9, null, null), outcome);
+    Assert.Equal(0, starts);
+  }
+
+  [Fact]
+  public async Task Socket_WithNoRoomForAConnection_IsWaitedForAndNotTakenForNoDaemon() {
+    Assert.SkipUnless(
+        OperatingSystem.IsLinux(), "Linux tells a full socket from one that nothing listens on.");
+    // Arrange: a daemon that accepts no connection, with as many waiting as its socket holds.
+    CancellationToken cancellation = TestContext.Current.CancellationToken;
+    Directory.CreateDirectory(Path.GetDirectoryName(_endpoint.Name)!);
+    using Socket listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+    listener.Bind(new UnixDomainSocketEndPoint(_endpoint.Name));
+    listener.Listen(1);
+    List<Stream> waiting = [];
+    try {
+      Stopwatch watch = Stopwatch.StartNew();
+      bool busy = false;
+      while (!busy && watch.Elapsed < TimeSpan.FromSeconds(10)) {
+        try {
+          waiting.Add((await _endpoint.TryConnect(TimeSpan.FromMilliseconds(300), cancellation))!);
+        }
+        catch (DaemonBusyException) {
+          busy = true;
+        }
+      }
+
+      // Act: the daemon accepts a connection, which makes room for the client.
+      Task<Stream?> connect = _endpoint.TryConnect(TimeSpan.FromSeconds(10), cancellation);
+      await Task.Delay(TimeSpan.FromMilliseconds(300), cancellation);
+      bool waited = !connect.IsCompleted;
+      using Socket accepted = await listener.AcceptAsync(cancellation);
+      await using Stream? connected = await connect;
+
+      // Assert
+      Assert.True(busy);
+      Assert.True(waited);
+      Assert.NotNull(connected);
+    }
+    finally {
+      foreach (Stream connection in waiting) {
+        await connection.DisposeAsync();
+      }
+    }
+  }
+
+  /// One more instance of the named pipe of the endpoint, as the daemon creates them.
+  private NamedPipeServerStream PipeInstance() {
+    Assert.True(OperatingSystem.IsWindows());
+    return new NamedPipeServerStream(
+        _endpoint.Name, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
+        PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+  }
+
+  [Fact]
   public async Task SecondDaemon_CannotListenOnTheEndpoint() {
     // Arrange
     _ = Host((_, _, _, _) => Task.FromResult(0));
@@ -346,7 +562,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     Welcome welcome;
     await using (Stream connection =
         (await _endpoint.TryConnect(TestContext.Current.CancellationToken))!) {
-      welcome = await Client().Greet(connection);
+      welcome = await Client().Greet(connection, TestContext.Current.CancellationToken);
       refused = !await DaemonClient.AskToExit(connection);
     }
 
@@ -461,7 +677,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     string directory = Path.Join(_directory, "gone");
     Directory.CreateDirectory(directory);
     Stream connection = (await _endpoint.TryConnect(TestContext.Current.CancellationToken))!;
-    await Client().Greet(connection);
+    await Client().Greet(connection, TestContext.Current.CancellationToken);
     Frames.Write(connection, FrameType.Start, InterfaceStart(directory).Encode());
     App app = await AppOf(apps, directory);
     await WaitFor(app, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
@@ -587,7 +803,7 @@ public sealed class DaemonTests : IAsyncDisposable {
           Start(["run", "--managed"], root), Streams.Of("echo first-line\n", firstOutput));
       // cmd.exe writes the line it reads, then what it runs writes.
       await WaitUntil(() => firstOutput.Text.Split("first-line").Length > 2);
-      await Signal(first, PosixSignal.SIGHUP);
+      Assert.True(first.Signal(PosixSignal.SIGHUP));
       ClientOutcome detached = await firstRun;
       WorkspaceServer server = servers.Find(root)!;
       bool runningAfterDetach = server.Running;
@@ -596,7 +812,7 @@ public sealed class DaemonTests : IAsyncDisposable {
       bool refused;
       await using (Stream connection =
           (await _endpoint.TryConnect(TestContext.Current.CancellationToken))!) {
-        await Client().Greet(connection);
+        await Client().Greet(connection, TestContext.Current.CancellationToken);
         refused = !await DaemonClient.AskToExit(connection);
       }
 
@@ -670,25 +886,10 @@ public sealed class DaemonTests : IAsyncDisposable {
     }
   }
 
-  /// A client of the daemon of the test, which runs already. Where every instance of the named
-  /// pipe is taken for a moment, as when several clients connect at once, the client finds no
-  /// daemon; it then waits for the one of the test as it would for one that it started.
-  private DaemonClient Client() => new(_endpoint, Version, Executable, () => null);
-
-  /// Has the client pass a signal on to its command. The daemon may run the command a moment
-  /// before the client is ready to pass signals on, until when the client would end by the
-  /// signal instead; the signal is given once, when the client passes it on.
-  private static async Task Signal(DaemonClient client, PosixSignal signal) {
-    for (int i = 0; i < 400; i++) {
-      if (client.Signal(signal)) {
-        return;
-      }
-
-      await Task.Delay(25, TestContext.Current.CancellationToken);
-    }
-
-    Assert.Fail("The client did not pass the signal on.");
-  }
+  /// A client of the daemon of the test, which runs already: the client starts none, and falls
+  /// back should it find none.
+  private DaemonClient Client() =>
+      new(_endpoint, Version, Executable, () => "the test starts no daemon");
 
   private Task Host(
       CarryOutCommand run,

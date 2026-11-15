@@ -233,21 +233,43 @@ public sealed class ToolsPageTests {
     Assert.Contains(ToolsText.InitAbout, tui.Screen);
   }
 
-  [Fact]
-  public async Task Init_LipTomlExists_ShowsTheFailure_AndKeepsTheFile() {
+  [Theory]
+  [InlineData(Language.En, "lip.toml already exists here.")]
+  [InlineData(Language.ZhHans, "这里已有 lip.toml。")]
+  [InlineData(Language.ZhHant, "這裡已有 lip.toml。")]
+  public async Task Init_LipTomlExists_IsDisabledWithTheReason_UntilTheFileIsGone(
+      Language language, string reason) {
     MockFileSystem fs = new();
     fs.AddFile(InRoot("lip.toml"), new MockFileData("mine"));
-    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { FileSystem = fs });
+    using TuiHarness tui = TuiHarness.Start(
+        new TuiHarnessOptions { Language = language, FileSystem = fs });
     await tui.GoTo(PageId.Tools);
-    await tui.WaitFor(ToolsText.Found);
 
+    // The action is disabled: the reason is below its sentence, and Enter does nothing.
+    await tui.WaitFor(reason);
+    Assert.Equal(reason, ToolsText.Exists("lip.toml"));
+    Assert.Contains(ToolsText.InitAbout, tui.Screen);
+    Assert.DoesNotContain($"Enter {CommonText.HintSelect.Text}", tui.Screen);
+    await Frames(tui, "tools-init-disabled");
     tui.Press(ConsoleKey.Enter);
-
-    await tui.WaitFor("lip.toml already exists");
-    await Frames(tui, "tools-init-failure");
+    await tui.Settle();
+    Assert.DoesNotContain(CommonText.Question, tui.Screen);
     Assert.Equal("mine", fs.File.ReadAllText(InRoot("lip.toml")));
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone("lip.toml already exists");
+
+    // An action that the files do not concern can be chosen.
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ToolsText.PackAbout);
+    Assert.DoesNotContain(reason, tui.Screen);
+    Assert.Contains($"Enter {CommonText.HintSelect.Text}", tui.Screen);
+    tui.Press(ConsoleKey.UpArrow, 2);
+    await tui.WaitFor(reason);
+
+    // The file is deleted outside the interface: the action can be chosen again.
+    fs.File.Delete(InRoot("lip.toml"));
+    await tui.WaitUntilGone(reason);
+    await tui.WaitFor($"Enter {CommonText.HintSelect.Text}");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.Question);
   }
 
   [Fact]
@@ -275,16 +297,51 @@ public sealed class ToolsPageTests {
     Assert.Matches($@"tooth\.json\s+{ToolsText.Missing}", tui.Screen);
   }
 
+  [Theory]
+  [InlineData(Language.En, "There is no tooth.json here.")]
+  [InlineData(Language.ZhHans, "这里没有 tooth.json。")]
+  [InlineData(Language.ZhHant, "這裡沒有 tooth.json。")]
+  public async Task Migrate_WithoutToothJson_IsDisabledWithTheReason_UntilTheFileIsThere(
+      Language language, string reason) {
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { Language = language });
+    await tui.GoTo(PageId.Tools);
+    await tui.WaitFor(ToolsText.Missing);
+    Assert.DoesNotContain(reason, tui.Screen);
+
+    // The action is disabled: the reason is below its sentence, and Enter does nothing.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(reason);
+    Assert.Equal(reason, ToolsText.NoFile("tooth.json"));
+    Assert.Contains(ToolsText.MigrateAbout, tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(reason, tui.Screen);
+    Assert.False(tui.Fs.File.Exists(InRoot("lip.toml")));
+
+    // The file is written outside the interface: the action can be chosen.
+    tui.Fs.File.WriteAllText(InRoot("tooth.json"), Tooth);
+    await tui.WaitUntilGone(reason);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.Question);
+  }
+
   [Fact]
-  public async Task Migrate_WithoutToothJson_ShowsTheFailure() {
-    using TuiHarness tui = TuiHarness.Start();
+  public async Task Migrate_LipTomlExists_IsDisabledWithTheReason() {
+    MockFileSystem fs = new();
+    fs.AddFile(InRoot("lip.toml"), new MockFileData("mine"));
+    fs.AddFile(InRoot("tooth.json"), new MockFileData(Tooth));
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { FileSystem = fs });
     await tui.GoTo(PageId.Tools);
 
     tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(ToolsText.MigrateAbout);
+    await tui.WaitFor(ToolsText.Exists("lip.toml"));
     tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
 
-    await tui.WaitFor("There is no tooth.json");
-    Assert.False(tui.Fs.File.Exists(InRoot("lip.toml")));
+    Assert.DoesNotContain(CommonText.Question, tui.Screen);
+    Assert.Equal("mine", fs.File.ReadAllText(InRoot("lip.toml")));
+    Assert.True(fs.File.Exists(InRoot("tooth.json")));
   }
 
   [Theory]

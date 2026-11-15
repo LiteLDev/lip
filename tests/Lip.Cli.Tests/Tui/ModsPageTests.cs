@@ -60,6 +60,10 @@ public sealed class ModsPageTests {
   private Func<string, string> _catalogue = url =>
       url == ModCatalogClient.BaseUrl + "index.json" ? Catalogue : AlphaFile;
 
+  // The request for a URL of the catalogue, whose token is cancelled when the request is
+  // abandoned; used in place of _catalogue by a test that sets it.
+  private Func<string, CancellationToken, Task<string>>? _catalogueRequest;
+
   public ModsPageTests() {
     ArchiveUnavailableException nothing = new("The archives of the test have nothing.");
     _archives.Setup(a => a.ListVersions(It.IsAny<string>())).ReturnsAsync([]);
@@ -132,6 +136,7 @@ public sealed class ModsPageTests {
       Height = height,
       FileSystem = fs,
       Catalog = url => _catalogue(url),
+      CatalogRequest = _catalogueRequest,
       CreateClient = (interaction, hookOutput, workspace) => new LipClient(
           fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
           new McmodService(
@@ -1130,18 +1135,20 @@ public sealed class ModsPageTests {
   [InlineData(Language.En, 60, 16)]
   [InlineData(Language.ZhHans, 60, 16)]
   [InlineData(Language.ZhHant, 60, 16)]
-  public async Task Details_WaitForTheCatalogue_AndEscGivesUp(
+  public async Task Details_WaitForTheCatalogue_AndEscAbandonsTheRequest(
       Language language, int width, int height) {
-    using ManualResetEventSlim arrives = new();
+    TaskCompletionSource arrives = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource abandoned = new(TaskCreationOptions.RunContinuationsAsynchronously);
     int reads = 0;
-    _catalogue = url => {
-      if (url == ModCatalogClient.BaseUrl + "index.json") {
-        Interlocked.Increment(ref reads);
-        arrives.Wait(TimeSpan.FromSeconds(30));
-        return Catalogue;
+    _catalogueRequest = async (url, token) => {
+      if (url != ModCatalogClient.BaseUrl + "index.json") {
+        return AlphaFile;
       }
 
-      return AlphaFile;
+      Interlocked.Increment(ref reads);
+      token.Register(() => abandoned.TrySetResult());
+      await arrives.Task.WaitAsync(token);
+      return Catalogue;
     };
     using TuiHarness tui = Start(Server, language, width, height);
     try {
@@ -1156,32 +1163,40 @@ public sealed class ModsPageTests {
       Assert.Contains($" {HintOf(CommonText.HintCancel)}", tui.Screen);
       Assert.DoesNotContain(CommonText.HintSelect.Text, tui.Screen);
 
-      // Esc gives up: nothing is shown when the catalogue arrives.
+      // Esc gives up, and the request is abandoned: nothing is shown, and nothing is said of
+      // a catalogue that cannot be read.
       tui.Press(ConsoleKey.Escape);
       await tui.WaitUntilGone(ModsText.ReadingCatalogue);
+      await abandoned.Task.WaitAsync(
+          TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+      await tui.Settle();
+      Assert.DoesNotContain(ModsText.CatalogueUnreadable, tui.Screen);
+      Assert.Contains("[ ] " + Alpha, tui.Screen);
 
-      // Asked again meanwhile, the same read answers.
+      // Asked again, the catalogue is read again, and shown when it arrives.
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor(ModsText.UpdateTo);
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor(ModsText.ReadingCatalogue);
+      await tui.WaitUntil(() => Volatile.Read(ref reads) == 2, "the catalogue");
+      arrives.SetResult();
+      await tui.WaitFor("An economy core");
       tui.Press(ConsoleKey.Escape);
-      await tui.WaitUntilGone(ModsText.ReadingCatalogue);
-      arrives.Set();
-      await tui.WaitUntil(() => Volatile.Read(ref reads) == 1, "the catalogue");
-      await tui.Settle();
-      Assert.DoesNotContain("An economy core", tui.Screen);
-      Assert.Contains("[ ] " + Alpha, tui.Screen);
+      await tui.WaitUntilGone("An economy core");
 
-      // What arrived is kept for the next time.
+      // What arrived is kept, by the catalogue that every page shares, for the next time.
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor(ModsText.UpdateTo);
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor("An economy core");
-      Assert.Equal(1, Volatile.Read(ref reads));
+      Assert.Equal(2, Volatile.Read(ref reads));
+      Assert.Same(
+          await tui.Context.Catalog.GetIndex(TestContext.Current.CancellationToken),
+          await tui.Context.Catalog.GetIndex(TestContext.Current.CancellationToken));
+      Assert.Equal(2, Volatile.Read(ref reads));
     }
     finally {
-      arrives.Set();
+      arrives.TrySetResult();
     }
   }
 
