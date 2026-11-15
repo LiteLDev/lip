@@ -87,6 +87,8 @@ public sealed class TuiHarness : IDisposable {
 
   private readonly Dictionary<LipClient, IUserInteraction> _interactions = [];
   private readonly Dictionary<LipClient, string> _clientWorkspaces = [];
+  // The workspaces whose server another lip runs (SetServerRunning).
+  private readonly HashSet<string> _runningElsewhere = new(WorkspaceList.PathComparer);
   private readonly TuiHarnessOptions _options;
   private static readonly string NewLine = Environment.NewLine;
 
@@ -123,6 +125,11 @@ public sealed class TuiHarness : IDisposable {
           cancelled)),
       Workspaces = Workspaces,
       Servers = Servers,
+      ServerLockHeld = workspace => {
+        lock (_runningElsewhere) {
+          return _runningElsewhere.Contains(workspace);
+        }
+      },
       GithubProbe = options.GithubProbe,
       ServerSetup = options.ServerSetup?.Invoke(this),
       ManagedServers = options.ManagedServers,
@@ -196,6 +203,30 @@ public sealed class TuiHarness : IDisposable {
   public string WorkspaceOf(LipClient client) {
     lock (_interactions) {
       return _clientWorkspaces[client];
+    }
+  }
+
+  /// Makes the server of a workspace, the selected one when not given, run as one that
+  /// another lip runs, which holds its server lock; or not run any more. Returns once the
+  /// interface has seen it, which looks about once a second: Context.ServerRunning and
+  /// Context.IsServerRunning say so from then on.
+  public async Task SetServerRunning(bool running, string? workspace = null) {
+    string path = workspace ?? await Invoke(() => Context.Workspace);
+    SetServerLockHeld(running, path);
+    await WaitUntil(
+        () => Context.IsServerRunning(path) == running,
+        running ? "a running server" : "a stopped server");
+  }
+
+  /// As SetServerRunning, without waiting for the interface to see it: for a server that
+  /// starts or stops between two looks of the interface.
+  public void SetServerLockHeld(bool held, string workspace) {
+    lock (_runningElsewhere) {
+      if (held) {
+        _runningElsewhere.Add(workspace);
+      } else {
+        _runningElsewhere.Remove(workspace);
+      }
     }
   }
 
@@ -402,41 +433,60 @@ public static class TestClients {
 
 /// The server setup of the tests: two games, the newest of them for Linux too, and two
 /// LeviLamina versions for it; Setup records its calls, and its dry run says that it would ask
-/// for the license, as lip setup does.
+/// for the license, as lip setup does, and that the setup would change the workspace.
 public sealed class FakeServerSetup(TuiHarness harness) : IServerSetup {
   /// The calls of Setup, as "game build loader loaderVersion dryRun=… acceptEula=…". Lock it
   /// to read it.
   public List<string> Calls { get; } = [];
 
+  /// The sessions that the versions were read in and that the setups were carried out in, in
+  /// order; null where none was given. Lock Calls to read it.
+  public List<OperationSession?> Sessions { get; } = [];
+
   /// How many times the versions of the loader were asked for.
   public int LoaderLists { get; private set; }
 
-  public Task<IReadOnlyList<GameVersion>> GameVersions(LipClient client) =>
-      Task.FromResult<IReadOnlyList<GameVersion>>([
-        new GameVersion(SemVersion.Parse("1.21.50"), Windows: true, Linux: true),
-        new GameVersion(SemVersion.Parse("1.21.40"), Windows: true, Linux: false),
-      ]);
+  /// What Setup returns: what the setup changed, or would change.
+  public OperationResult Result { get; set; } = OperationResult.Changed;
+
+  public Task<IReadOnlyList<GameVersion>> GameVersions(
+      LipClient client, OperationSession? session = null) {
+    lock (Calls) {
+      Sessions.Add(session);
+    }
+
+    return Task.FromResult<IReadOnlyList<GameVersion>>([
+      new GameVersion(SemVersion.Parse("1.21.50"), Windows: true, Linux: true),
+      new GameVersion(SemVersion.Parse("1.21.40"), Windows: true, Linux: false),
+    ]);
+  }
 
   public Task<IReadOnlyList<SemVersion>> LoaderVersions(
-      LipClient client, SemVersion game, CancellationToken cancellationToken) {
+      LipClient client,
+      SemVersion game,
+      CancellationToken cancellationToken,
+      OperationSession? session = null) {
+    lock (Calls) {
+      Sessions.Add(session);
+    }
+
     LoaderLists++;
     return Task.FromResult<IReadOnlyList<SemVersion>>(
         [SemVersion.Parse("1.1.0"), SemVersion.Parse("1.0.0")]);
   }
 
-  public async Task Setup(
-      LipClient client,
-      SetupRequest request,
-      bool dryRun,
-      bool acceptEula,
-      CancellationToken cancellationToken) {
+  public async Task<OperationResult> Setup(
+      LipClient client, SetupRequest request, OperationRun run) {
     lock (Calls) {
       Calls.Add($"{request.Game} {request.Build} {request.Loader} {request.LoaderVersion}"
-          + $" dryRun={dryRun} acceptEula={acceptEula}");
+          + $" dryRun={run.DryRun} acceptEula={run.AcceptEula}");
+      Sessions.Add(run.Session);
     }
 
-    if (dryRun) {
+    if (run.DryRun) {
       await harness.InteractionOf(client).PrintInfo(GameSetup.EulaDryRunMessage + ".");
     }
+
+    return Result;
   }
 }

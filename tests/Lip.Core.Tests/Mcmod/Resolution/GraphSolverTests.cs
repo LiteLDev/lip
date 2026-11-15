@@ -878,6 +878,9 @@ public class GraphSolverTests {
     // Act
     IReadOnlyList<Candidate> result = (await solver.SolveGraph(
         [Request("github.com/c/c0")], [], s_environment)).Order;
+    // The solver returns on a stack that the members it went back through have filled, and
+    // the test runner would go on with the tests after this one on it: they start anew.
+    await Task.Yield();
 
     // Assert
     Assert.Equal(length, result.Count);

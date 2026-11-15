@@ -52,15 +52,24 @@ internal sealed class WorkspaceHarness {
   /// be obtained.
   public string? ServerBuilds { get; set; }
 
-  private Task<string> DownloadServerBuilds() => ServerBuilds is { } builds
-      ? Task.FromResult(builds)
-      : throw new ArchiveUnavailableException("The test has no builds list of the server.");
+  /// How many times the builds list of the server was downloaded.
+  public int ServerBuildsDownloads { get; private set; }
+
+  private Task<string> DownloadServerBuilds() {
+    ServerBuildsDownloads++;
+    return ServerBuilds is { } builds
+        ? Task.FromResult(builds)
+        : throw new ArchiveUnavailableException("The test has no builds list of the server.");
+  }
 
   /// Starts over with a new archive provider and service, as a new lip process does, so that
-  /// tags added since are seen.
+  /// tags added since are seen; or, with what a session shares (PublicApi.OperationSession), as
+  /// the next command of the session does.
   [MemberNotNull(nameof(ArchiveProvider), nameof(Service))]
-  public void Restart() {
-    ArchiveProvider = new ArchiveProvider(Git, Cache, Fs, Downloader.Object);
+  public void Restart(
+      ArchiveMemory? memory = null,
+      Lip.Core.Mcmod.Resolution.ResolverCache? resolverCache = null) {
+    ArchiveProvider = new ArchiveProvider(Git, Cache, Fs, Downloader.Object, memory: memory);
     Service = new McmodService(
         Faults,
         Ui.Object,
@@ -70,7 +79,8 @@ internal sealed class WorkspaceHarness {
         new McmodInstaller(Faults, CommandRunner.Object, Ui.Object),
         workspaceRoot: () => Root,
         systemPreparer: SystemPreparer.Object,
-        downloadServerBuilds: DownloadServerBuilds);
+        downloadServerBuilds: DownloadServerBuilds,
+        resolverCache: resolverCache);
   }
 
   /// Prepares the system for programs (protocol/lip-workspace.md, "System dependencies"); does

@@ -25,6 +25,33 @@ public class ScreenTests {
     Assert.Equal("a领", screen.RowText(0));
   }
 
+  [Theory]
+  [InlineData(3, "领 │地x")]
+  [InlineData(2, "领│ 地x")]
+  [InlineData(4, "领域│ x")]
+  public void Write_OverOneHalfOfAWideCharacter_KeepsTheWidthOfTheRow(int x, string expected) {
+    // Arrange: wide characters in the columns 0 to 1, 2 to 3 and 4 to 5.
+    ScreenBuffer screen = new(8, 1);
+    screen.Write(0, 0, "领域地x");
+
+    // Act: as the border of a dialog above the page.
+    screen.Write(x, 0, "│");
+
+    // Assert
+    Assert.Equal(expected, screen.RowText(0));
+    Assert.Equal(7, TextWidth.Of(screen.RowText(0)));
+  }
+
+  [Fact]
+  public void Fill_OverOneHalfOfAWideCharacter_KeepsTheWidthOfTheRow() {
+    ScreenBuffer screen = new(8, 1);
+    screen.Write(0, 0, "领域地x");
+
+    screen.Fill(new Rect(1, 0, 2, 1), default);
+
+    Assert.Equal("    地x", screen.RowText(0));
+  }
+
   [Fact]
   public void WriteFit_TooLong_EndsInAnEllipsis() {
     ScreenBuffer screen = new(20, 1);

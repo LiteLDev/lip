@@ -24,6 +24,10 @@ public interface ICausalResolver : IResolver {
 ///
 /// One instance caches archives, version lists and package files by archive key, so a source
 /// reached on several paths (or resolved again by the graph solver) is fetched and read once.
+/// The resolvers of one session (PublicApi.OperationSession) are given the same ResolverCache:
+/// what one read of the network, the builds list and the remote repositories, the others do not
+/// read again. What is read of a URL or a local path, and the commits pinned, are of one
+/// resolver only.
 ///
 /// A remote repository with a ref (@branch:, @tag:, @rev:, @version) has the single archive of the
 /// commit it resolves to; only a tag "v" + version gives it a tag version. The git archive must be
@@ -34,34 +38,33 @@ public class Resolver(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
     Action<string>? onWarning = null,
-    Func<Task<string>>? downloadServerBuilds = null) : ICausalResolver {
+    Func<Task<string>>? downloadServerBuilds = null,
+    ResolverCache? cache = null) : ICausalResolver {
   private readonly IArchiveProvider _archiveProvider = archiveProvider;
   private readonly IArchiveReader _archiveReader = archiveReader;
   private readonly Action<string> _onWarning = onWarning ?? (_ => { });
   private readonly ConcurrentDictionary<string, byte> _warned = new();
 
-  private readonly ConcurrentDictionary<string, Lazy<Task<ArchiveHandle>>> _archives = new();
-  private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<SpecVersion>>>>
-      _versions = new();
-  private readonly ConcurrentDictionary<string, Lazy<Task<PackageDocument>>> _documents = new();
+  /// What was read of the remote repositories and of the server, which a session shares.
+  private readonly ResolverCache _remote = cache ?? new ResolverCache();
+
+  /// What was read of the URLs and the local paths, whose archives the archive provider of
+  /// this resolver opened: a local path may hold something else the next time.
+  private readonly ResolverCache _local = new();
 
   /// The builds list of the server (protocol/lip-package.md, "The server"), downloaded once.
   private readonly Func<Task<string>> _downloadServerBuilds =
       downloadServerBuilds ?? BedrockServer.Download;
-  private readonly ConcurrentDictionary<string, Lazy<Task<BedrockServer>>> _server = new();
 
-  /// Commits of refs ("spec@branch:name"), so that a branch resolves to one commit for the whole
-  /// operation.
-  private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _commits = new();
+  /// The commits that version refs are pinned to (PinCommit).
+  private readonly ConcurrentDictionary<string, string> _pinned = new();
 
   /// Makes a version ref resolve to the commit a workspace recorded for it, as updating it gives
   /// the same commit even when its tag has moved since (protocol/lip-workspace.md, "Operations",
   /// "Updating").
   public void PinCommit(Ref reference, string commit) {
     if (reference is { Kind: RefKind.Spec, GitRef: { Kind: GitRefKind.Version } gitRef }) {
-      _commits.TryAdd(
-          $"{PackageNames.Fold(reference.Target)}@{gitRef}",
-          new(() => Task.FromResult(commit.ToLowerInvariant())));
+      _pinned.TryAdd($"{PackageNames.Fold(reference.Target)}@{gitRef}", commit.ToLowerInvariant());
     }
   }
 
@@ -98,14 +101,14 @@ public class Resolver(
       ArchiveHandle archive;
       try {
         archive = await Cached(
-            _archives, source.Target, () => _archiveProvider.Open(source.WithVariant("")));
+            _local.Archives, source.Target, () => _archiveProvider.Open(source.WithVariant("")));
       }
       catch (ArchiveUnavailableException ex) {
         walk.Report(source.ToString(), ex.Message, ex);
         yield break;
       }
 
-      if (await ResolveArchive(walk, archive, tagVersion: null) is Candidate candidate) {
+      if (await ResolveArchive(walk, archive, tagVersion: null, _local) is Candidate candidate) {
         yield return candidate;
       }
 
@@ -123,7 +126,7 @@ public class Resolver(
     IReadOnlyList<SpecVersion> versions;
     try {
       versions = await Cached(
-          _versions, source.Target, () => _archiveProvider.ListVersions(source.Target));
+          _remote.Versions, source.Target, () => _archiveProvider.ListVersions(source.Target));
     }
     catch (ArchiveUnavailableException ex) {
       walk.Report(source.ToString(), ex.Message, ex);
@@ -147,7 +150,7 @@ public class Resolver(
       ArchiveHandle archive;
       try {
         archive = await Cached(
-            _archives, $"{source.Target}@{version.Tag}",
+            _remote.Archives, $"{source.Target}@{version.Tag}",
             () => _archiveProvider.OpenVersion(source.Target, version));
       }
       catch (ArchiveUnavailableException ex) {
@@ -155,7 +158,7 @@ public class Resolver(
         continue;
       }
 
-      if (await ResolveArchive(walk, archive, version.Version) is Candidate candidate) {
+      if (await ResolveArchive(walk, archive, version.Version, _remote) is Candidate candidate) {
         yield return candidate;
       }
     }
@@ -164,7 +167,7 @@ public class Resolver(
   /// The builds list of the server. Throws ArchiveUnavailableException when it cannot be
   /// obtained.
   public Task<BedrockServer> Server() => Cached(
-      _server, "", async () => BedrockServer.Parse(await _downloadServerBuilds()));
+      _remote.Server, "", async () => BedrockServer.Parse(await _downloadServerBuilds()));
 
   /// The candidates of the server (protocol/lip-package.md, "The server"): the packages lip
   /// defines for the versions of the builds list, from highest to lowest.
@@ -229,19 +232,22 @@ public class Resolver(
     Ref source = walk.Source;
     ArchiveHandle archive;
     try {
-      string commit = await Cached(
-          _commits, $"{PackageNames.Fold(source.Target)}@{gitRef}",
-          () => _archiveProvider.ResolveGitRef(source.Target, gitRef));
+      string key = $"{PackageNames.Fold(source.Target)}@{gitRef}";
+      // A branch resolves to one commit for the whole operation, and for the whole session.
+      string commit = _pinned.TryGetValue(key, out string? pinned)
+          ? pinned
+          : await Cached(
+              _remote.Commits, key, () => _archiveProvider.ResolveGitRef(source.Target, gitRef));
       RunTrace.Write("resolve", $"{source.Target}@{gitRef} is the commit {commit}");
       // The archive of a version ref is named like that of the same version without a ref.
       archive = gitRef.Kind == GitRefKind.Version
           ? await Cached(
-              _archives, $"{source.Target}@{gitRef} {commit}",
+              _remote.Archives, $"{source.Target}@{gitRef} {commit}",
               async () => (await _archiveProvider.OpenCommit(source.Target, commit)) with {
                 Key = $"{source.Target}@{gitRef}",
               })
           : await Cached(
-              _archives, $"{source.Target}@rev:{commit}",
+              _remote.Archives, $"{source.Target}@rev:{commit}",
               () => _archiveProvider.OpenCommit(source.Target, commit));
     }
     catch (ArchiveUnavailableException ex) {
@@ -254,16 +260,21 @@ public class Resolver(
       GitRefKind.Tag => ArchiveProvider.ParseVersionTag($"refs/tags/{gitRef.Name}"),
       _ => null,
     };
-    return await ResolveArchive(walk, archive, tagVersion);
+    return await ResolveArchive(walk, archive, tagVersion, _remote);
   }
 
-  /// Step 2 for one archive: the candidate of the package, or null.
+  /// Step 2 for one archive: the candidate of the package, or null. The package file of the
+  /// archive is read once per cache.
   private async Task<Candidate?> ResolveArchive(
-      Walk walk, ArchiveHandle archive, SemVersion? tagVersion) {
+      Walk walk, ArchiveHandle archive, SemVersion? tagVersion, ResolverCache cache) {
     Ref source = walk.Source;
     PackageDocument document;
     try {
-      document = await Cached(_documents, archive.Key, () => _archiveReader.Read(archive));
+      // A version ref names its archive like the version, whatever commit it is pinned to.
+      document = await Cached(
+          cache.Documents,
+          archive.Commit is null ? archive.Key : $"{archive.Key} {archive.Commit}",
+          () => _archiveReader.Read(archive));
     }
     catch (ArchiveUnavailableException ex) {
       walk.Report(archive.Key, ex.Message, ex);
@@ -396,4 +407,22 @@ public class Resolver(
       Sink(new ResolveDiagnostic($"{archive}: {reason}", cause));
     }
   }
+}
+
+/// What the resolvers of one session (PublicApi.OperationSession) share: the archives, the
+/// version lists and the package files read of the remote repositories, the commits that their
+/// branches and tags were resolved to, and the builds list of the server.
+public sealed class ResolverCache {
+  internal ConcurrentDictionary<string, Lazy<Task<ArchiveHandle>>> Archives { get; } = new();
+
+  internal ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<SpecVersion>>>> Versions {
+    get;
+  } = new();
+
+  internal ConcurrentDictionary<string, Lazy<Task<PackageDocument>>> Documents { get; } = new();
+
+  internal ConcurrentDictionary<string, Lazy<Task<BedrockServer>>> Server { get; } = new();
+
+  /// By "spec@ref", the commit that the ref was resolved to.
+  internal ConcurrentDictionary<string, Lazy<Task<string>>> Commits { get; } = new();
 }

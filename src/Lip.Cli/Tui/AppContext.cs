@@ -5,6 +5,7 @@ using Lip.Cli.Tui.Widgets;
 using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
 using Semver;
 
@@ -118,8 +119,27 @@ public sealed class AppContext {
   /// The server of the selected workspace, or null when none ever ran in it.
   public WorkspaceServer? Server => _app.ServerSessions.Find(Workspace);
 
-  /// Whether the server of the selected workspace runs.
-  public bool ServerRunning => Server?.Running == true;
+  /// Whether the server of the selected workspace runs: a server of this process (Server), or
+  /// one that another lip runs, which holds the server lock of the workspace
+  /// (protocol/lip-workspace.md, "Server lock"). The interface asks about the lock about once
+  /// a second, in the background, so this is cheap, and at most that old. While it is true the
+  /// interface carries out no workspace operation, and the files of the server are not to be
+  /// saved (protocol/lip-tui.md, "Commands", "Configuration").
+  public bool ServerRunning => IsServerRunning(Workspace);
+
+  /// As ServerRunning, for any workspace of the workspace list.
+  public bool IsServerRunning(string workspace) => _app.IsServerRunning(workspace);
+
+  /// Whether the server of a workspace runs right now: as IsServerRunning, but looking at the
+  /// server lock itself. Not for the thread of the interface: for the work of Background or
+  /// RunOperation, right before it does what must not be done while the server runs.
+  public bool ServerRunsNow(string workspace) => _app.ServerRunsNow(workspace);
+
+  /// When the server of the selected workspace runs, tells the user in a dialog with the title
+  /// to stop it first (CommonText.StopServerFirst), and returns true: for what must not be
+  /// done meanwhile, as in "if (Context.RefuseWhileServerRuns(title)) { return; }". PlanAndRun
+  /// does this itself.
+  public bool RefuseWhileServerRuns(string title) => _app.RefuseWhileServerRuns(title);
 
   /// Whether the servers that the interface starts are managed servers, which keep running
   /// when it quits.
@@ -229,18 +249,22 @@ public sealed class AppContext {
       _app.Background(work, done, failed, anyWorkspace);
 
   /// A workspace operation, as every one of them goes: its dry run, whose messages are the
-  /// plan; [Apply] [Cancel]; the license of the game when a setup would ask for it; its
-  /// progress; its result. operation gets whether it is the dry run, and the cancellation
-  /// token. After it succeeded every page gets OnWorkspaceChanged, and done is called.
+  /// plan; [Apply] [Cancel], or only [Close] when the dry run says that nothing would change;
+  /// the license of the game when a setup would ask for it; its progress; its result. After
+  /// it succeeded every page gets OnWorkspaceChanged, and done is called. Nothing is carried
+  /// out while the server of the selected workspace runs: the user is told to stop it first.
+  ///
+  /// operation is called for the dry run, and again once the user applied the plan
+  /// (OperationRun). Pass run.Session on to the command: what the dry run read of the network,
+  /// the command after it does not read again. session is the session to use, for a flow that
+  /// read something before, such as the versions that the user chose from; a new one when not
+  /// given.
   public void PlanAndRun(
-      string title, Func<bool, CancellationToken, Task> operation, Action? done = null) =>
-      _app.PlanAndRun(title, (dryRun, _, token) => operation(dryRun, token), done);
-
-  /// As PlanAndRun, for an operation that may be a setup (protocol/lip-setup.md): operation
-  /// also gets whether the user accepted the license of the game.
-  public void PlanAndRun(
-      string title, Func<bool, bool, CancellationToken, Task> operation, Action? done = null) =>
-      _app.PlanAndRun(title, operation, done);
+      string title,
+      Func<OperationRun, Task<OperationResult>> operation,
+      Action? done = null,
+      OperationSession? session = null) =>
+      _app.PlanAndRun(title, operation, done, session);
 
   /// Shows what a command told the user, once it succeeded, ending with done.
   public void ShowResult(string title, Operation operation, string? done = null) =>

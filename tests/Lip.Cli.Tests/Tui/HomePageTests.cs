@@ -470,6 +470,9 @@ public sealed class HomePageTests {
     // The GitHub question, answered with the arrows and Enter.
     await tui.WaitFor(HomeText.GithubTitle);
     await tui.WaitFor(direct);
+    // The overview is read in the background, and shows "…" until it is.
+    await tui.WaitFor(
+        screen => !string.Join('\n', screen.Split('\n')[1..^1]).Contains('…'), "the overview");
     tui.Snapshot("home-github");
     AssertFits(tui);
     tui.Press(ConsoleKey.DownArrow);

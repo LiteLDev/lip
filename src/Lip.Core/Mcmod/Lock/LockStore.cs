@@ -78,6 +78,27 @@ public partial class LockStore(IFileSystem fs) {
         : lockFile;
   }
 
+  /// Whether writing the lock would change the state file: whether there is none, or it holds
+  /// another value (protocol/state.json.md) than the lock, as it is in the file: that of
+  /// linux-x64 is another than what Load reads of it.
+  public async Task<bool> Differs(string workspaceRoot, LockFile lockFile) {
+    string path = LipPath(NormalizeRoot(workspaceRoot), FileName);
+    if (!_fs.File.Exists(path)) {
+      return true;
+    }
+
+    try {
+      using JsonDocument written = JsonFile.Parse(await _fs.File.ReadAllBytesAsync(path));
+      return !JsonElement.DeepEquals(
+          written.RootElement, ReflectionJson.SerializeToElement(lockFile));
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+        or JsonException) {
+      RunTrace.Write("workspace", $"Cannot compare the state file {path}: {ex.Message}");
+      return true;
+    }
+  }
+
   /// Writes the lock: Stage, then CommitStaged.
   public async Task Save(string workspaceRoot, LockFile lockFile) {
     await Stage(workspaceRoot, lockFile);

@@ -118,7 +118,11 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
   /// Whether the page shows that there is no server, or that it does not know yet, instead of
   /// the server: the workspace has no game, and nothing runs in it.
-  private bool Missing => _hasGame != true && !Context.ServerRunning;
+  private bool Missing => _hasGame != true && !Running;
+
+  /// Whether the server that the page shows runs: that of this process, which the page can
+  /// stop and write to. A server that another lip runs (Context.ServerRunning) is not shown.
+  private bool Running => Context.Server?.Running == true;
 
   /// Whether lip can be asked to stop for the server now.
   private bool CanStop => Context.Server is { Running: true, Stopping: false };
@@ -155,7 +159,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   /// input line when it runs.
   private void Arrive() {
     _workspace = Context.Workspace;
-    _wasRunning = Context.ServerRunning;
+    _wasRunning = Running;
     Focus(_wasRunning ? Area.Input : Area.Controls);
   }
 
@@ -243,7 +247,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   }
 
   /// The last area that takes the keys: the input line while the server runs.
-  private Area LastArea => Context.ServerRunning ? Area.Input : Area.Log;
+  private Area LastArea => Running ? Area.Input : Area.Log;
 
   /// Gives an area the focus. The output follows its end unless it has the focus.
   private void Focus(Area area) {
@@ -256,7 +260,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   /// Follows the server: once it does not run, the focus leaves the input line, which is
   /// gone. A server that someone else starts does not move the focus.
   private void Follow() {
-    bool running = Context.ServerRunning;
+    bool running = Running;
     if (running == _wasRunning) {
       return;
     }
@@ -315,12 +319,12 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
   /// Starts the server of the selected workspace unless it runs.
   private void Start() {
-    if (Context.ServerRunning) {
+    if (Running) {
       return;
     }
 
     Context.StartServer(ServerText.StartTitle);
-    _wasRunning = Context.ServerRunning;
+    _wasRunning = Running;
     if (_wasRunning) {
       Focus(Area.Input);
     }
@@ -373,7 +377,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       case ConsoleKey.Enter or ConsoleKey.Spacebar:
         if (_control == 1) {
           ToggleRestart();
-        } else if (Context.ServerRunning) {
+        } else if (Running) {
           Context.Server?.Stop();
         } else {
           Start();
@@ -398,7 +402,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       case ConsoleKey.DownArrow:
         if (_scroll > 0) {
           _scroll--;
-        } else if (Context.ServerRunning) {
+        } else if (Running) {
           Focus(Area.Input);
         }
 
