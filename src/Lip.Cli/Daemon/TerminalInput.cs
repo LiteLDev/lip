@@ -7,7 +7,6 @@ namespace Lip.Cli.Daemon;
 /// taking a key that the user presses later.
 public sealed class TerminalInput : IDisposable {
   private static readonly TimeSpan s_poll = TimeSpan.FromMilliseconds(15);
-  private static readonly TimeSpan s_sizePoll = TimeSpan.FromMilliseconds(200);
 
   private readonly FrameWriter _writer;
   private readonly CancellationTokenSource _stopped = new();
@@ -33,19 +32,13 @@ public sealed class TerminalInput : IDisposable {
   }
 
   private void Pump() {
-    (int, int) size = (-1, -1);
-    long sizeCheckedAt = long.MinValue;
+    TerminalSize size = new(
+        () => Environment.TickCount64, () => (Console.WindowWidth, Console.WindowHeight));
     try {
       while (!_stopped.IsCancellationRequested) {
-        if (Environment.TickCount64 - sizeCheckedAt >= s_sizePoll.TotalMilliseconds) {
-          sizeCheckedAt = Environment.TickCount64;
-          (int, int) now = (Console.WindowWidth, Console.WindowHeight);
-          if (now != size) {
-            size = now;
-            if (!_writer.Send(FrameType.Resize, ResizeMessage.Encode(now.Item1, now.Item2))) {
-              return;
-            }
-          }
+        if (size.Changed() is var (width, height)
+            && !_writer.Send(FrameType.Resize, ResizeMessage.Encode(width, height))) {
+          return;
         }
 
         if (!Console.KeyAvailable) {
@@ -62,5 +55,31 @@ public sealed class TerminalInput : IDisposable {
     catch (Exception ex) when (ex is IOException or InvalidOperationException) {
       // The console is gone; the daemon finds the client gone when it exits.
     }
+  }
+}
+
+/// The size of a terminal, read every now and then: at once, and then no sooner than 200 ms
+/// after it was last read. clock gives the time in milliseconds.
+public sealed class TerminalSize(Func<long> clock, Func<(int Width, int Height)> read) {
+  private const long PollMilliseconds = 200;
+
+  private (int, int)? _size;
+  private long _readAt;
+
+  /// The size, when it is read now and is not what it was when it was last read; else null.
+  public (int Width, int Height)? Changed() {
+    long now = clock();
+    if (_size is not null && now - _readAt < PollMilliseconds) {
+      return null;
+    }
+
+    _readAt = now;
+    (int, int) size = read();
+    if (size == _size) {
+      return null;
+    }
+
+    _size = size;
+    return size;
   }
 }
