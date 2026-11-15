@@ -153,8 +153,8 @@ export default defineDocsConfig({
   contentDir: '.',
   repo,
   editLink: `${repo}/edit/main/docs/:path`,
-  hostname: 'https://docs.levimc.org',
-  sitemap: { hostname: 'https://docs.levimc.org' },
+  hostname: 'https://levimc.org',
+  sitemap: { hostname: 'https://levimc.org' },
   i18n: {
     mode: 'folder',
     defaultLocale: 'root',

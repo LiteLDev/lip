@@ -13,7 +13,7 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <Property Id="ARPURLINFOABOUT" Value="https://docs.levimc.org/lip/" />
+    <Property Id="ARPURLINFOABOUT" Value="https://levimc.org/lip/" />
     <Property Id="ARPHELPLINK" Value="https://github.com/LiteLDev/lip/issues" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
