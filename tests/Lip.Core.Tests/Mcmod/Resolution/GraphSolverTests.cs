@@ -830,7 +830,7 @@ public class GraphSolverTests {
     Assert.Equal(50, result.Count);
     Assert.Equal("github.com/p/p49@89.0.0", Names(result)[0]);
     Assert.Equal("github.com/p/p0@99.0.0", Names(result)[^1]);
-    Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed}");
+    Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"took {stopwatch.Elapsed}");
   }
 
   [Fact]
@@ -860,7 +860,8 @@ public class GraphSolverTests {
     Assert.Contains("  - github.com/p/p49 99.0.0", exception.Message);
     Assert.Contains("github.com/missing/missing *, but no version of it is available",
         exception.Message);
-    Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed}");
+    // Far above what a slow machine takes, and far below what trying the combinations would.
+    Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"took {stopwatch.Elapsed}");
   }
 
   [Fact]

@@ -233,8 +233,8 @@ public sealed class HomePageTests {
     await tui.WaitFor(HomeText.CreateServerDetail);
 
     tui.Press(ConsoleKey.DownArrow, 2);
-    await tui.WaitUntilGone(HomeText.CreateServerDetail);
-    Assert.Contains(HomeText.NeedServer, tui.Screen);
+    // The third step says what it needs once both keys are handled.
+    await tui.WaitFor(HomeText.NeedServer);
     tui.Press(ConsoleKey.Enter);
 
     await tui.WaitFor(HomeText.CreateServerDetail);
