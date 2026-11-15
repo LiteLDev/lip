@@ -13,10 +13,16 @@ namespace Lip.Cli.Tui.Pages.Workspaces;
 /// For a workspace of the list, the same choices without the directory. Esc in a step goes back
 /// to the step before it, and in the first step ends the wizard, which then changed nothing;
 /// what a step offers that cannot be read is said, and the wizard is back at the step before.
-internal sealed class ServerWizard(AppContext context) {
+/// workspaceSelected is called once the wizard selected the workspace that it then sets up.
+internal sealed class ServerWizard(AppContext context, Action workspaceSelected) {
+  /// What a workspace has of what a setup chooses, each null when it has none: the version of
+  /// its game, its build, and the version of its loader.
+  private sealed record Installed(string? Game, GameBuild? Build, string? Loader);
+
   /// The directory to set up, and whether it is that of a new server, which lip creates and
-  /// adds to the workspace list.
-  private sealed record Target(string Directory, bool Create);
+  /// adds to the workspace list; and, for a workspace of the list, what it has now, which is
+  /// what each step starts on.
+  private sealed record Target(string Directory, bool Create, Installed? Has = null);
 
   /// Asks for a new server. In a workspace without a game, the server may go there.
   public void NewServer() {
@@ -37,7 +43,7 @@ internal sealed class ServerWizard(AppContext context) {
           if (hasGame) {
             AskDirectory("", back: null);
           } else {
-            ChoosePlace("");
+            ChoosePlace(elsewhere: false);
           }
         });
   }
@@ -46,8 +52,9 @@ internal sealed class ServerWizard(AppContext context) {
   public void ChangeVersions(string workspace) =>
       ReadGames(new Target(workspace, Create: false), back: null);
 
-  /// The selected workspace, which has no game, or another directory.
-  private void ChoosePlace(string typed) =>
+  /// The selected workspace, which has no game, or another directory: the one that the user
+  /// chose before, when they come back to this step.
+  private void ChoosePlace(bool elsewhere) =>
       context.Show(new ChoiceDialog(
           WorkspacesText.NewServerTitle,
           [
@@ -56,12 +63,14 @@ internal sealed class ServerWizard(AppContext context) {
           ],
           chosen => {
             if (chosen == 0) {
-              ReadGames(new Target(context.Workspace, Create: true), () => ChoosePlace(typed));
+              ReadGames(
+                  new Target(context.Workspace, Create: true),
+                  () => ChoosePlace(elsewhere: false));
             } else {
-              AskDirectory(typed, () => ChoosePlace(typed));
+              AskDirectory("", () => ChoosePlace(elsewhere: true));
             }
           },
-          selected: typed.Length > 0 ? 1 : 0));
+          selected: elsewhere ? 1 : 0));
 
   private void AskDirectory(string typed, Action? back) {
     IFileSystem fileSystem = context.FileSystem;
@@ -91,18 +100,48 @@ internal sealed class ServerWizard(AppContext context) {
 
   private void ReadGames(Target target, Action? back) {
     LipClient client = context.ClientFor(target.Directory);
+    IServerSetup setup = context.ServerSetup;
     Read(
         WorkspacesText.ReadingGames,
-        token => context.ServerSetup.GameVersions(client).WaitAsync(token),
-        versions => {
-          if (versions.Count == 0) {
+        async token => {
+          IReadOnlyList<GameVersion> versions = await setup.GameVersions(client).WaitAsync(token);
+          // A workspace of the list starts on what it has; a new server has nothing yet.
+          Installed? has = target.Create ? null : await ReadInstalled(client).WaitAsync(token);
+          return (Versions: versions, Has: has);
+        },
+        read => {
+          if (read.Versions.Count == 0) {
             back?.Invoke();
             context.Message(Title(target), WorkspacesText.NoGames, Theme.Bad);
-          } else {
-            ChooseGame(target, client, versions, 0, back);
+            return;
           }
+
+          int game = read.Versions.ToList().FindIndex(
+              v => v.Version.ToString() == read.Has?.Game);
+          ChooseGame(
+              target with { Has = read.Has }, client, read.Versions, Math.Max(0, game), back);
         },
         back);
+  }
+
+  /// The game and the loader that a workspace has. A workspace that cannot be read has none
+  /// that the wizard knows of, and says why when it is set up.
+  private static async Task<Installed> ReadInstalled(LipClient client) {
+    try {
+      IReadOnlyList<InstalledPackage> packages = await client.ListPackages();
+      InstalledPackage? game = packages.FirstOrDefault(
+          p => BedrockServer.IsRepository(p.Identity.Split('#')[0]));
+      InstalledPackage? loader = packages.FirstOrDefault(
+          p => GameSetup.IsLoaderRepository(p.Identity.Split('#')[0]));
+      GameBuild? build = game is null ? null
+          : game.Identity.EndsWith('#' + BedrockServer.LinuxVariant, StringComparison.Ordinal)
+              ? GameBuild.Linux
+              : GameBuild.Windows;
+      return new Installed(game?.Version, build, loader?.Version);
+    }
+    catch (Exception) {
+      return new Installed(null, null, null);
+    }
   }
 
   /// Reads what a step offers, with its progress shown. When the user cancels the reading, or
@@ -146,9 +185,14 @@ internal sealed class ServerWizard(AppContext context) {
               .Add(v.Version.ToString().PadRight(widest + 2), Theme.Strong)
               .Add(string.Join(", ", Builds(v).Select(GameSetup.Name)), Theme.Muted)
               .Add(i == 0 ? "  " + WorkspacesText.Newest : "", Theme.Good)
-              .Add(v.Version.IsPrerelease ? "  " + WorkspacesText.Prerelease : "", Theme.Warning))),
+              .Add(v.Version.IsPrerelease ? "  " + WorkspacesText.Prerelease : "", Theme.Warning)
+              .Add(
+                  v.Version.ToString() == target.Has?.Game
+                      ? "  " + WorkspacesText.Installed
+                      : "",
+                  Theme.Accent))),
         ],
-        chosen => ChooseBuild(target, client, versions, chosen, 0, back),
+        chosen => ChooseBuild(target, client, versions, chosen, null, back),
         back,
         selected));
   }
@@ -158,10 +202,14 @@ internal sealed class ServerWizard(AppContext context) {
       LipClient client,
       IReadOnlyList<GameVersion> versions,
       int game,
-      int selected,
+      int? selected,
       Action? back) {
     GameVersion version = versions[game];
     List<GameBuild> builds = [.. Builds(version)];
+    // Unless the user comes back to the build that they chose, the one that the workspace
+    // has is selected when the game version has it.
+    int start = selected
+        ?? (target.Has?.Build is { } has ? Math.Max(0, builds.IndexOf(has)) : 0);
     context.Show(new ChoiceDialog(
         WorkspacesText.Build,
         [
@@ -180,15 +228,17 @@ internal sealed class ServerWizard(AppContext context) {
           }
         },
         () => ChooseGame(target, client, versions, game, back),
-        selected));
+        start));
   }
 
-  private void ReadLoaders(Target target, LipClient client, SemVersion game, Action back) =>
-      Read(
-          WorkspacesText.ReadingLoaders,
-          token => context.ServerSetup.LoaderVersions(client, game, token),
-          loaders => ChooseLoader(target, game, loaders, back),
-          back);
+  private void ReadLoaders(Target target, LipClient client, SemVersion game, Action back) {
+    IServerSetup setup = context.ServerSetup;
+    Read(
+        WorkspacesText.ReadingLoaders,
+        token => setup.LoaderVersions(client, game, token),
+        loaders => ChooseLoader(target, game, loaders, back),
+        back);
+  }
 
   private void ChooseLoader(
       Target target, SemVersion game, IReadOnlyList<SemVersion> loaders, Action back) =>
@@ -207,17 +257,35 @@ internal sealed class ServerWizard(AppContext context) {
           chosen => Finish(target, chosen < loaders.Count
               ? new SetupRequest(game, GameBuild.Windows, Loader: true, loaders[chosen])
               : new SetupRequest(game, GameBuild.Windows, Loader: false)),
-          back));
+          back,
+          LoaderOf(target, loaders)));
+
+  /// The row of the loaders that the dialog starts on: the loader that the workspace has, or
+  /// "No loader" when it has a game of the build windows without one; otherwise the newest
+  /// loader, as for a game of the build linux, which could have none.
+  private static int LoaderOf(Target target, IReadOnlyList<SemVersion> loaders) {
+    if (target.Has is not { Build: GameBuild.Windows } has) {
+      return 0;
+    }
+
+    if (has.Loader is null) {
+      return loaders.Count;
+    }
+
+    return Math.Max(0, loaders.ToList().FindIndex(v => v.ToString() == has.Loader));
+  }
 
   /// Creates the directory of a new server when it is missing and adds it to the workspace
   /// list; selects the directory; then sets it up. A step that fails ends the wizard.
   private void Finish(Target target, SetupRequest request) {
     void SetUp() {
+      workspaceSelected();
       LipClient client = context.Client;
+      IServerSetup setup = context.ServerSetup;
       context.PlanAndRun(
           WorkspacesText.SetUpTitle,
           (dryRun, acceptEula, token) =>
-              context.ServerSetup.Setup(client, request, dryRun, acceptEula, token));
+              setup.Setup(client, request, dryRun, acceptEula, token));
     }
 
     if (!target.Create) {

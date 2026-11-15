@@ -109,13 +109,18 @@ public sealed class Form(params FormField[] fields) {
   /// The index of the focused field.
   public int Focus { get; set; }
 
-  /// Whether each field takes two rows, its label above its value, as in a dialog; otherwise
-  /// the labels are a column at the left of the values.
+  /// Whether each field has its label above its value, as in a dialog, where a label longer
+  /// than the form is wide goes on in the rows below; otherwise the labels are a column at the
+  /// left of the values.
   public bool Stacked { get; init; }
 
-  /// The rows that the form takes.
-  public int Height => fields.Length * (Stacked ? 3 : 1) - (Stacked ? 1 : 0);
+  /// The rows that the form takes in width columns.
+  public int HeightFor(int width) =>
+      !Stacked ? fields.Length
+          : Math.Max(0, fields.Sum(field => LabelRows(field, width).Count + 2) - 1);
 
+  /// The keys of the form: with several fields ↑↓, and those of the focused field. Tab moves
+  /// between the fields too; the owner names it, since it goes on to what follows the form.
   public IReadOnlyList<Hint> Hints =>
       fields.Length == 0 ? []
           : fields.Length == 1 ? fields[0].Hints
@@ -150,28 +155,67 @@ public sealed class Form(params FormField[] fields) {
     }
 
     Focus = Math.Clamp(Focus, 0, fields.Length - 1);
-    int each = Stacked ? 3 : 1;
-    int shown = Math.Max(1, (rect.Height + (Stacked ? 1 : 0)) / each);
+    if (Stacked) {
+      DrawStacked(screen, rect, focused);
+      return;
+    }
+
+    int shown = Math.Max(1, rect.Height);
     _top = Ui.ScrollTo(Focus, Math.Min(_top, Math.Max(0, fields.Length - shown)), shown);
     int labels = Math.Min(
         fields.Max(f => TextWidth.Of(f.Label)) + 2, Math.Max(0, rect.Width / 2));
     for (int i = 0; i < shown && _top + i < fields.Length; i++) {
       FormField field = fields[_top + i];
       bool current = focused && _top + i == Focus;
-      int y = rect.Y + (i * each);
-      if (Stacked) {
-        screen.WriteFit(rect.X, y, rect.Width, field.Label, current ? Theme.Strong : Theme.Muted);
-        screen.Write(rect.X, y + 1, current ? "> " : "  ", Theme.Accent);
-        field.DrawValue(screen, rect.X + 2, y + 1, rect.Width - 2, current);
-      } else {
-        screen.Write(rect.X, y, current ? "> " : "  ", Theme.Accent);
-        screen.WriteFit(
-            rect.X + 2, y, labels - 1, field.Label, current ? Theme.Strong : default);
-        field.DrawValue(
-            screen, rect.X + 2 + labels, y, rect.Width - 2 - labels, current);
-      }
+      int y = rect.Y + i;
+      screen.Write(rect.X, y, current ? "> " : "  ", Theme.Accent);
+      screen.WriteFit(rect.X + 2, y, labels - 1, field.Label, current ? Theme.Strong : default);
+      field.DrawValue(screen, rect.X + 2 + labels, y, rect.Width - 2 - labels, current);
     }
 
     Ui.ScrollMarks(screen, rect, _top > 0, _top + shown < fields.Length);
+  }
+
+  /// The label of a field as the rows that it takes above the value in width columns.
+  private static List<string> LabelRows(FormField field, int width) =>
+      TextWidth.Wrap(field.Label, width);
+
+  /// Draws the fields one below the other, each as its label, its value and an empty row, from
+  /// the first field with which the focused one still fits rect.
+  private void DrawStacked(ScreenBuffer screen, Rect rect, bool focused) {
+    List<List<string>> labels = [.. fields.Select(field => LabelRows(field, rect.Width))];
+    _top = Math.Min(_top, Focus);
+    while (_top < Focus
+        && Enumerable.Range(_top, Focus - _top + 1).Sum(i => labels[i].Count + 2) - 1
+            > rect.Height) {
+      _top++;
+    }
+
+    int y = rect.Y;
+    int last = _top - 1;
+    for (int i = _top; i < fields.Length; i++) {
+      // The first field shown keeps the row of its value, however long its label is; the
+      // fields after it are shown whole or not at all.
+      int rows = Math.Min(labels[i].Count, Math.Max(0, rect.Bottom - y - 1));
+      if (y + rows >= rect.Bottom || (i > _top && rows < labels[i].Count)) {
+        break;
+      }
+
+      bool current = focused && i == Focus;
+      for (int row = 0; row < rows; row++) {
+        // A label that has more rows than there is room for ends with an ellipsis.
+        bool cut = row == rows - 1 && rows < labels[i].Count;
+        screen.WriteFit(
+            rect.X, y++, rect.Width, labels[i][row] + (cut ? " …" : ""),
+            current ? Theme.Strong : Theme.Muted);
+      }
+
+      screen.Write(rect.X, y, current ? "> " : "  ", Theme.Accent);
+      fields[i].DrawValue(screen, rect.X + 2, y, rect.Width - 2, current);
+      y += 2;
+      last = i;
+    }
+
+    Ui.ScrollMarks(screen, rect, _top > 0, last < fields.Length - 1);
   }
 }

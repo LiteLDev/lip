@@ -143,6 +143,31 @@ public sealed class WidgetTests {
   }
 
   [Fact]
+  public void Form_Stacked_WrapsALabelThatIsLongerThanItIsWide() {
+    Form form = new(
+        new TextRow(() => "one two three four five six seven eight", "v"),
+        new TextRow(() => "Name", "w")) { Stacked = true };
+
+    // Five rows of label, the value, an empty row, and the second field.
+    Assert.Equal(9, form.HeightFor(10));
+    ScreenBuffer screen = new(10, 9);
+    form.Draw(screen, new Rect(0, 0, 10, 9), focused: true);
+    Assert.Equal(
+        "one two\nthree four\nfive six\nseven\neight\n> v\n\nName\n  w", screen.Text);
+
+    // Without the room for all of it, the label ends with an ellipsis, the value is still
+    // shown, and the field after it is not, which the mark at the right says.
+    screen = new ScreenBuffer(10, 3);
+    form.Draw(screen, new Rect(0, 0, 10, 3), focused: true);
+    Assert.Equal("one two\nthree fou…\n> v      ▼", screen.Text);
+
+    // The focused field is among those shown.
+    form.Focus = 1;
+    form.Draw(screen = new ScreenBuffer(10, 3), new Rect(0, 0, 10, 3), focused: true);
+    Assert.Equal("Name     ▲\n> w\n", screen.Text);
+  }
+
+  [Fact]
   public void TextField_EditsAtTheCursor_AndShowsItsPlaceholderWhenEmpty() {
     TextField field = new("领地");
     ScreenBuffer screen = new(12, 1);

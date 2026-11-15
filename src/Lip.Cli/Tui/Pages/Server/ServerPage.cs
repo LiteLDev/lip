@@ -44,6 +44,9 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   private bool _atTop = true;
   private int _logRows = 1;
 
+  /// Whether the output had more rows than it showed when it was last drawn.
+  private bool _logScrolls;
+
   /// The last line of the output that was a row when it was last drawn: the rows written
   /// after it are scrolled past, so that what the user scrolled back to stays where it is.
   private StyledLine? _anchor;
@@ -74,15 +77,18 @@ public sealed class ServerPage(AppContext context) : Page(context) {
         return _hasGame is null ? [] : [CommonText.HintSelect];
       }
 
+      // The keys of the area that has the focus; then Tab and Ctrl+C, which work in each;
+      // then the keys that the bottom bar leaves out first: those that go to the area below,
+      // and those that page through the output.
       List<Hint> hints = [];
       switch (_focus) {
         case Area.Controls:
           hints.Add(CommonText.HintSwitch);
-          hints.Add(_control == 0 ? CommonText.HintSelect : CommonText.HintToggle);
+          hints.Add(_control == 0 ? CommonText.HintSelect : CommonText.HintToggleEither);
           break;
         case Area.Log:
-          hints.Add(CommonText.HintScroll);
-          hints.Add(CommonText.HintPage);
+          // Output that does not scroll leaves ↑ and ↓ to go to the areas above and below.
+          hints.Add(_logScrolls ? CommonText.HintScroll : CommonText.HintMove);
           break;
         default:
           hints.Add(ServerText.HintSend);
@@ -96,6 +102,14 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       hints.Add(CommonText.HintNext);
       if (CanStop) {
         hints.Add(CommonText.HintStop);
+      }
+
+      if (_focus == Area.Controls) {
+        // ↓ goes on to the output.
+        hints.Add(CommonText.HintMove);
+      } else if (_focus == Area.Log && _logScrolls) {
+        hints.Add(CommonText.HintPage);
+        hints.Add(CommonText.HintEnds);
       }
 
       return hints;
@@ -148,6 +162,14 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   public override void OnRequest(string request) {
     if (request == PageRequest.StartServer) {
       Start();
+    }
+  }
+
+  /// Tab from the sidebar goes to the controls, and Shift+Tab to the last area.
+  public override void OnTabIn(bool backward) {
+    Follow();
+    if (!Missing) {
+      Focus(backward ? LastArea : Area.Controls);
     }
   }
 
@@ -331,7 +353,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
             _restart = restart;
           }
 
-          Context.ShowFailure(ServerText.AutoRestart, exception);
+          Context.ShowFailure(CommonText.AutoRestart, exception);
         });
   }
 
@@ -398,8 +420,14 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     }
   }
 
+  /// The input line: Enter sends it, ↑ and ↓ go through the lines sent before, and Esc goes
+  /// back to the output above it, where no key changes anything, and from where Esc goes
+  /// back to the sidebar.
   private bool InputKey(ConsoleKeyInfo key) {
     switch (key.Key) {
+      case ConsoleKey.Escape:
+        Focus(Area.Log);
+        return true;
       case ConsoleKey.Enter:
         string line = _input.Value;
         Context.Server?.Send(line);
@@ -445,7 +473,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     screen.WriteFit(area.X, area.Y, area.Width, ServerText.NoServer, Theme.Muted);
     if (area.Height >= 3) {
       screen.Write(
-          area.X, area.Y + 2, $"[ {ServerText.NewServer} ]",
+          area.X, area.Y + 2, $"[ {CommonText.NewServer} ]",
           focused ? Theme.Selected : Theme.Strong, area.Right);
     }
   }
@@ -501,7 +529,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
         : chosen ? Theme.Selected
         : Theme.Strong;
     x = screen.Write(
-        x + 2, y, $"[{(_restart == true ? "x" : " ")}] {ServerText.AutoRestart}", toggle,
+        x + 2, y, $"[{(_restart == true ? "x" : " ")}] {CommonText.AutoRestart}", toggle,
         area.Right);
     if (chosen && _control == 1 && area.Right - x > 2) {
       screen.WriteFit(x + 2, y, area.Right - x - 2, ServerText.AutoRestartDetail, Theme.Muted);
@@ -522,6 +550,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   private void DrawLog(ScreenBuffer screen, Rect area, WorkspaceServer? server) {
     _logRows = Math.Max(1, area.Height);
     _atTop = true;
+    _logScrolls = false;
     if (area.Height < 1) {
       return;
     }
@@ -554,6 +583,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     // With no more rows than wanted, these are all the rows there are.
     _scroll = Math.Min(_scroll, Math.Max(0, rows.Count - area.Height));
     _atTop = rows.Count <= _scroll + area.Height;
+    _logScrolls = !_atTop || _scroll > 0;
     // Rows that do not fill the area start at its top.
     int shown = Math.Min(area.Height, rows.Count);
     for (int row = 0; row < shown; row++) {

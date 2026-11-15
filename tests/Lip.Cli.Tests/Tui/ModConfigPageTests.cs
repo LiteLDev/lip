@@ -121,6 +121,45 @@ public sealed class ModConfigPageTests {
   }
 
   [Fact]
+  public async Task Tab_GoesRoundTheFilesTheFileAndTheSidebar() {
+    using TuiHarness tui = Start();
+    await tui.GoTo(PageId.ModConfig);
+    await tui.WaitFor("{…} 2 items");
+    Assert.Contains(" ↑↓ Move  Enter Open  Tab Next  Esc Back", tui.Screen);
+
+    // The tree of the file is the last area while nothing is changed. Its first row is the
+    // version, which nothing changes.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor(" ↑↓ Move  Tab Next  Esc Back");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+
+    // From the sidebar Tab starts at the files, and Shift+Tab at the tree.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("Enter Open  Tab Next");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor(" ↑↓ Move  Tab Next  Esc Back");
+
+    // With a change, the buttons are the last area.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(" ↑↓ Move  Enter/Space Toggle  Tab Next  Esc Back");
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModConfigText.Unsaved);
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor(" ←→ Switch  Enter Select  Tab Next  ↑↓ Move  Esc Back");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor(" ←→ Switch  Enter Select  Tab Next  ↑↓ Move  Esc Back");
+
+    // ↑ goes back from the buttons to the tree.
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor("Enter/Space Toggle  Tab Next");
+  }
+
+  [Fact]
   public async Task Json_IsEditedAsATree_AndWrittenOnlyOnSave() {
     MockFileSystem fs = Workspace();
     using TuiHarness tui = Start(fs);
@@ -213,7 +252,7 @@ public sealed class ModConfigPageTests {
     // Enter on an element offers to edit it or to remove it.
     tui.Press(ConsoleKey.Home);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("删除");
+    await tui.WaitFor("移除");
     tui.Snapshot("modconfig-menu");
     Assert.Contains("编辑", tui.Screen);
     tui.Press(ConsoleKey.DownArrow);
@@ -297,7 +336,7 @@ public sealed class ModConfigPageTests {
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor("Save the changes?");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(_ => tui.Context.CurrentPage != PageId.ModConfig);
+    await tui.WaitUntil(() => tui.Context.CurrentPage != PageId.ModConfig);
     Assert.Contains("\"enabled\": true", fs.File.ReadAllText(AlphaPath));
   }
 
@@ -412,7 +451,7 @@ public sealed class ModConfigPageTests {
     tui.Snapshot("modconfig-tree");
     Assert.Contains("Alpha · config/config.json", tui.Screen);
     Assert.Contains(
-        $"[ {CommonText.Save} ] [ {tui.Text(() => ModConfigText.DiscardChanges)} ]", tui.Screen);
+        $"[ {CommonText.Save} ] [ {tui.Text(() => CommonText.Discard)} ]", tui.Screen);
 
     tui.Press(ConsoleKey.End);
     tui.Press(ConsoleKey.Enter);

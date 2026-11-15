@@ -291,25 +291,17 @@ public sealed class HomePage : Page {
     }
 
     LipClient client = Context.Client;
-    AppContext context = Context;
-    _ = Task.Run(async () => {
-      try {
-        if (await client.GithubProxy() is not null) {
-          return;
-        }
-
-        if (await probe.Check(null) is { } failure) {
-          context.Post(() => {
+    Context.Background(
+        async () => await client.GithubProxy() is null ? await probe.Check(null) : null,
+        failure => {
+          if (failure is not null) {
             _githubFailure = failure;
             AskAboutGithubWhenIdle();
-          });
-        }
-      }
-      catch (Exception ex) {
+          }
+        },
         // A failure of the check is no failure of the interface.
-        RunTrace.Write("github", "The GitHub check did not run: " + ex);
-      }
-    });
+        ex => RunTrace.Write("github", "The GitHub check did not run: " + ex),
+        anyWorkspace: true);
   }
 
   /// Asks the user about GitHub once nothing else is open, so that the question interrupts
@@ -348,7 +340,7 @@ public sealed class HomePage : Page {
         // As lip config set github_proxy "" does: configured, so lip does not ask again.
         LipClient client = Context.Client;
         bool started = Context.RunOperation(
-            HomeText.GithubDirect,
+            CommonText.ConnectDirectly,
             _ => client.ConfigSet(ConfigService.GithubProxyKey, ""),
             _ => Context.Toast(HomeText.GithubDirectSaved, ToastKind.Good));
         if (!started) {

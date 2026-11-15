@@ -246,6 +246,20 @@ public sealed class TuiHarness : IDisposable {
   public Task WaitFor(Func<string, bool> shown, string what = "what was waited for") =>
       Poll(() => shown(Screen), () => $"The screen never showed {what}:{NewLine}{Screen}");
 
+  /// Waits until holds, which is asked on the thread of the interface, as what reads the
+  /// context of the interface must be: WaitUntil(() => !Context.ContentFocused, "the sidebar").
+  public async Task WaitUntil(Func<bool> holds, string what = "what was waited for") {
+    for (int i = 0; i < 600; i++) {
+      if (await Invoke(holds)) {
+        return;
+      }
+
+      await Task.Delay(25, TestContext.Current.CancellationToken);
+    }
+
+    Assert.Fail($"The interface never reached {what}:{NewLine}{Screen}");
+  }
+
   /// Runs get on the thread of the interface and returns what it returns.
   public Task<T> Invoke<T>(Func<T> get) {
     TaskCompletionSource<T> result = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -268,13 +282,17 @@ public sealed class TuiHarness : IDisposable {
       });
 
   /// Goes to a page with the keys of the user: Esc back to the sidebar when the content area
-  /// has the focus, ↑ or ↓ to the entry of the page, then Enter; waits until its content area
-  /// has the focus.
+  /// has the focus, once for each level that the page is deep, ↑ or ↓ to the entry of the
+  /// page, then Enter; waits until its content area has the focus.
   public async Task GoTo(PageId page) {
     await Settle();
-    if (await Invoke(() => Context.ContentFocused)) {
+    for (int level = 0; await Invoke(() => Context.ContentFocused); level++) {
+      if (level == 8) {
+        Assert.Fail($"Esc never left the page:{NewLine}{Screen}");
+      }
+
       Press(ConsoleKey.Escape);
-      await Poll(() => !Context.ContentFocused, () => $"Esc never left the page:{NewLine}{Screen}");
+      await Settle();
     }
 
     IReadOnlyList<PageEntry> entries = _options.Pages ?? PageRegistry.All;

@@ -56,9 +56,9 @@ public sealed class ModConfigPage : Page {
     _rows = new ListView<TreeRow>(Row);
     _buttons = new ButtonRow(
         new Button(() => CommonText.Save, () => Save()) { Enabled = () => Dirty },
-        new Button(() => ModConfigText.DiscardChanges, AskDiscard) { Enabled = () => Dirty });
+        new Button(() => CommonText.Discard, AskDiscard) { Enabled = () => Dirty });
     _getMods = new ButtonRow(
-        new Button(() => ModConfigText.GetMods, () => Context.Navigate(PageId.GetMods)));
+        new Button(() => CommonText.GetMods, () => Context.Navigate(PageId.GetMods)));
   }
 
   public override string Title => ModConfigText.Title;
@@ -80,16 +80,23 @@ public sealed class ModConfigPage : Page {
         return [CommonText.HintSelect];
       }
 
+      // Tab goes on wherever the page has more than the list of files to go to.
       switch (_focus) {
         case Area.Files:
           return DocumentFocusable
-              ? [.. _files.Hints, CommonText.HintOpen, CommonText.HintNext]
-              : [.. _files.Hints];
+              ? [.. _files.Hints, CommonText.HintOpen, CommonText.HintNext, .. _files.PageHints]
+              : [.. _files.Hints, .. _files.PageHints];
         case Area.Buttons:
-          return [.. _buttons.Hints, CommonText.HintMove];
+          // ↑ goes back to the file.
+          return [.. _buttons.Hints, CommonText.HintNext, CommonText.HintMove];
         default:
           if (_tree is null) {
-            return _viewer.Scrollable ? [CommonText.HintScroll, CommonText.HintPage] : [];
+            return _viewer.Scrollable
+                ? [
+                  CommonText.HintScroll, CommonText.HintNext, CommonText.HintPage,
+                  CommonText.HintEnds,
+                ]
+                : [CommonText.HintNext];
           }
 
           List<Hint> hints = [CommonText.HintMove];
@@ -107,16 +114,14 @@ public sealed class ModConfigPage : Page {
             } else if (row.IsContainer) {
               hints.Add(CommonText.HintOpen);
             } else if (row.IsBoolean) {
-              hints.Add(new Hint("Enter/Space", CommonText.HintToggle.Text));
+              hints.Add(CommonText.HintToggleEither);
             } else {
               hints.Add(CommonText.HintEdit);
             }
           }
 
-          if (Dirty) {
-            hints.Add(CommonText.HintNext);
-          }
-
+          hints.Add(CommonText.HintNext);
+          hints.AddRange(_rows.PageHints);
           return hints;
       }
     }
@@ -157,6 +162,12 @@ public sealed class ModConfigPage : Page {
   }
 
   public override void ConfirmLeave(Action leave) => AskUnsaved(leave);
+
+  /// Tab from the sidebar goes to the files, and Shift+Tab to the last area that takes keys.
+  public override void OnTabIn(bool backward) {
+    _focus = !backward ? Area.Files : Dirty ? Area.Buttons : Area.Document;
+    Settle();
+  }
 
   #region Reading
 
@@ -335,7 +346,7 @@ public sealed class ModConfigPage : Page {
           }
 
           Context.Toast(
-              Context.ServerRunning ? ModConfigText.SavedRestart : ModConfigText.Saved,
+              Context.ServerRunning ? CommonText.SavedWhileRunning : CommonText.Saved,
               ToastKind.Good);
           then?.Invoke();
         });
@@ -346,8 +357,7 @@ public sealed class ModConfigPage : Page {
 
   private void AskDiscard() =>
       Context.Confirm(
-          ModConfigText.DiscardChanges, ModConfigText.DiscardQuestion, CommonText.Discard,
-          Discard);
+          CommonText.DiscardTitle, CommonText.DiscardQuestion, CommonText.Discard, Discard);
 
   /// Asks whether to save or discard the changes of the open file, and calls then once they
   /// are saved or discarded.
@@ -637,7 +647,7 @@ public sealed class ModConfigPage : Page {
     }
 
     if (NoMods) {
-      screen.WriteFit(area.X, area.Y, area.Width, ModConfigText.NoMods, Theme.Muted);
+      screen.WriteFit(area.X, area.Y, area.Width, CommonText.NoMods, Theme.Muted);
       _getMods.Draw(screen, area.X, area.Y + 2, focused, area.Right);
       return;
     }

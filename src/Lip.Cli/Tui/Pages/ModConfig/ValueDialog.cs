@@ -35,7 +35,8 @@ internal sealed class ValueDialog : Dialog {
     int width = Ui.DialogWidth(screen, 76);
     List<string> error = _error is null ? [] : TextWidth.Wrap(_error, width - 4);
     int below = error.Count > 0 ? error.Count + 1 : 0;
-    Rect inner = Ui.DialogFrame(screen, _title, width, _form.Height + 2 + below);
+    Rect inner = Ui.DialogFrame(
+        screen, _title, width, _form.HeightFor(width - 4) + 2 + below);
     _form.Draw(screen, inner.Shrink(bottom: below), true);
     for (int i = 0; i < error.Count; i++) {
       screen.Write(inner.X, inner.Bottom - error.Count + i, error[i], Theme.Bad, inner.Right);

@@ -23,7 +23,9 @@ public sealed class TextViewer {
   /// Whether more rows are shown than fit: the keys scroll only then.
   public bool Scrollable => _wrapped.Count > _rows;
 
-  public IReadOnlyList<Hint> Hints => Scrollable ? [CommonText.HintScroll] : [];
+  /// The keys that scroll, while there is something to scroll.
+  public IReadOnlyList<Hint> Hints =>
+      Scrollable ? [CommonText.HintScroll, CommonText.HintPage, CommonText.HintEnds] : [];
 
   /// Shows plain text, one line per line of it.
   public void SetText(string text, Style style = default) =>

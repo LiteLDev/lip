@@ -421,8 +421,14 @@ public sealed partial class App {
       case ConsoleKey.End or ConsoleKey.PageDown:
         ShowPage(_pages.Count - 1, focus: false);
         break;
-      case ConsoleKey.Enter or ConsoleKey.RightArrow or ConsoleKey.Tab:
+      case ConsoleKey.Enter or ConsoleKey.RightArrow:
         _contentFocused = true;
+        break;
+      case ConsoleKey.Tab:
+        // Tab goes round: from the sidebar to the first focus area of the page, or with
+        // Shift to its last one.
+        _contentFocused = true;
+        Current.OnTabIn(Ui.IsBackTab(key));
         break;
       case ConsoleKey.Escape:
         RequestQuit();
@@ -809,15 +815,26 @@ public sealed partial class App {
       limit -= 2;
     }
 
+    // A hint is shown whole or not at all. Where they do not all fit, the last one, which is
+    // that of Esc, stays, and the ones before it are left out from the end.
+    IReadOnlyList<Hint> hints = CurrentHints();
+    static int Columns(Hint hint) => TextWidth.Of(hint.Key) + 1 + TextWidth.Of(hint.Text);
+    int reserved = hints.Count > 1 ? Columns(hints[^1]) + 2 : 0;
     int x = 1;
-    foreach (Hint hint in CurrentHints()) {
-      // A hint is shown whole or not at all.
-      if (x + TextWidth.Of(hint.Key) + 1 + TextWidth.Of(hint.Text) > limit) {
-        break;
+    for (int i = 0; i < hints.Count; i++) {
+      bool last = i == hints.Count - 1;
+      if (x + Columns(hints[i]) + (last ? 0 : reserved) > limit) {
+        if (last) {
+          break;
+        }
+
+        // On to the last one.
+        i = hints.Count - 2;
+        continue;
       }
 
-      x = _screen.Write(x, y, hint.Key, Theme.Strong);
-      x = _screen.Write(x + 1, y, hint.Text, Theme.Muted) + 2;
+      x = _screen.Write(x, y, hints[i].Key, Theme.Strong);
+      x = _screen.Write(x + 1, y, hints[i].Text, Theme.Muted) + 2;
     }
   }
 

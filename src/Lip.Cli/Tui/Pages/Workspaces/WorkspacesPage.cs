@@ -33,9 +33,9 @@ public sealed class WorkspacesPage : Page {
   private int _rowWidth;
 
   public WorkspacesPage(AppContext context) : base(context) {
-    _wizard = new ServerWizard(context);
+    _wizard = new ServerWizard(context, FocusSelected);
     _actions = new ListView<int>(action => new StyledLine(
-        action == 0 ? WorkspacesText.NewServer : WorkspacesText.AddFolder, Theme.Accent)) {
+        action == 0 ? CommonText.NewServer : WorkspacesText.AddFolder, Theme.Accent)) {
       Items = [0, 1],
     };
     _list = new ListView<Entry>(Row) { Empty = () => WorkspacesText.Empty };
@@ -44,11 +44,13 @@ public sealed class WorkspacesPage : Page {
   public override string Title => WorkspacesText.Title;
 
   public override IReadOnlyList<Hint> Hints =>
-      _focus.Index == ActionsArea
-          ? [CommonText.HintMove, CommonText.HintSelect, CommonText.HintNext]
-          : _list.HasCurrent
-              ? [CommonText.HintMove, CommonText.HintActions, CommonText.HintNext]
-              : [CommonText.HintNext];
+      !_list.HasCurrent ? [CommonText.HintMove, CommonText.HintSelect]
+          : _focus.Index == ActionsArea
+              ? [CommonText.HintMove, CommonText.HintSelect, CommonText.HintNext]
+              : [
+                CommonText.HintMove, CommonText.HintActions, CommonText.HintNext,
+                .. _list.PageHints,
+              ];
 
   public override void OnShown() {
     _ticks = 0;
@@ -72,6 +74,18 @@ public sealed class WorkspacesPage : Page {
     if (request == PageRequest.NewServer) {
       _wizard.NewServer();
     }
+  }
+
+  /// Tab from the sidebar goes to the actions, and Shift+Tab to the list when it has rows.
+  public override void OnTabIn(bool backward) =>
+      _focus.Index = backward && _list.HasCurrent ? ListArea : ActionsArea;
+
+  /// The row of the selected workspace gets the selection and the focus: after the wizard
+  /// selected the workspace that it sets up, or a folder was added.
+  private void FocusSelected() {
+    _selectCurrent = true;
+    _focus.Index = ListArea;
+    Load();
   }
 
   public override void Draw(ScreenBuffer screen, Rect area, bool focused) {
@@ -165,35 +179,31 @@ public sealed class WorkspacesPage : Page {
     _loading = true;
     WorkspaceList workspaces = Context.Workspaces;
     IFileSystem fileSystem = Context.FileSystem;
-    AppContext context = Context;
-    _ = Task.Run(() => {
-      IReadOnlyList<Entry>? entries = null;
-      string? error = null;
-      try {
-        entries = [
+    void Loaded(string? error) {
+      _loading = false;
+      if (error is not null && error != _loadError) {
+        // Said once, not at every reading that fails the same way.
+        Context.Toast($"{WorkspacesText.ListUnreadable}: {error}", ToastKind.Bad);
+      }
+
+      _loadError = error;
+      if (_loadAgain) {
+        _loadAgain = false;
+        Load();
+      }
+    }
+
+    // The list is of no workspace: what was read of it counts whichever one is selected now.
+    Context.Background(
+        () => Task.FromResult<IReadOnlyList<Entry>>([
           .. workspaces.Read().Select(p => new Entry(p, !fileSystem.Directory.Exists(p))),
-        ];
-      }
-      catch (Exception ex) {
-        error = ex.Message;
-      }
-
-      context.Post(() => {
-        _loading = false;
-        if (entries is not null) {
+        ]),
+        entries => {
           Show(entries);
-        } else if (error != _loadError) {
-          // Said once, not at every reading that fails the same way.
-          Context.Toast($"{WorkspacesText.ListUnreadable}: {error}", ToastKind.Bad);
-        }
-
-        _loadError = error;
-        if (_loadAgain) {
-          _loadAgain = false;
-          Load();
-        }
-      });
-    });
+          Loaded(null);
+        },
+        ex => Loaded(ex.Message),
+        anyWorkspace: true);
   }
 
   /// Shows the workspaces, keeping the selection on the workspace it is on, or putting it on
@@ -202,11 +212,14 @@ public sealed class WorkspacesPage : Page {
     string? selected = _selectCurrent ? Context.Workspace
         : _list.HasCurrent ? _list.Current.Path : null;
     _list.Items = entries;
-    if (selected is not null) {
-      _list.Select(e => WorkspaceList.PathComparer.Equals(e.Path, selected));
+    bool found = selected is not null
+        && _list.Select(e => WorkspaceList.PathComparer.Equals(e.Path, selected));
+    // What was read before the selected workspace was added does not have its row yet: the
+    // next reading selects it.
+    if (found) {
+      _selectCurrent = false;
     }
 
-    _selectCurrent = false;
     if (entries.Count == 0 && _focus.Index == ListArea) {
       _focus.Index = ActionsArea;
     }
@@ -292,12 +305,8 @@ public sealed class WorkspacesPage : Page {
       Context.Show(new PromptDialog(
           WorkspacesText.AddTitle,
           [new PromptField(WorkspacesText.Folder, "", WorkspacesText.FolderExample)],
-          _ => {
-            // The directory may be the selected workspace already, which changes nothing.
-            _selectCurrent = true;
-            _focus.Index = ListArea;
-            Load();
-          },
+          // The directory may be the selected workspace already, which changes nothing.
+          _ => FocusSelected(),
           validate: values => {
             if (values[0].Length == 0) {
               return CommonText.Required;
@@ -337,7 +346,8 @@ public sealed class WorkspacesPage : Page {
                 },
                 ex => Context.Message(
                     Name(path), $"{CommonText.WorkspaceListUnwritable}: {ex.Message}",
-                    Theme.Bad));
+                    Theme.Bad),
+                anyWorkspace: true);
           });
 
   /// The name of the directory at a path, or the path when it has none, as a root.

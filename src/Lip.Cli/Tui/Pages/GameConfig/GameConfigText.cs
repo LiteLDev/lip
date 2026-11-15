@@ -28,21 +28,12 @@ public static class GameConfigText {
   public static string AppliesOnStart =>
       L.T("Applies on next server start.", "下次启动服务器时生效。", "下次啟動伺服器時生效。");
   public static string SaveTitle => L.T("Save game config", "保存游戏配置", "儲存遊戲設定");
-  public static string Saved => L.T("Saved.", "已保存。", "已儲存。");
-  public static string SavedWhileRunning =>
-      L.T(
-          "Saved. Restart the server to apply.",
-          "已保存，重启服务器后生效。",
-          "已儲存，重新啟動伺服器後生效。");
   public static string ChangedOnDisk =>
       L.T(
           "Changed on disk since it was read. Overwrite?",
           "读取之后，磁盘上的文件已被修改。要覆盖吗？",
           "讀取之後，磁碟上的檔案已被修改。要覆寫嗎？");
   public static string Overwrite => L.T("Overwrite", "覆盖", "覆寫");
-  public static string DiscardTitle => L.T("Discard changes", "放弃更改", "捨棄變更");
-  public static string DiscardQuestion =>
-      L.T("Discard all changes?", "要放弃所有更改吗？", "要捨棄所有變更嗎？");
 
   // A property.
   public static string Edit => L.T("Edit…", "编辑…", "編輯…");

@@ -78,10 +78,11 @@ public sealed class GameConfigPageTests {
     tui.Press(ConsoleKey.Tab);
     await tui.WaitFor(screen => screen.Contains($"Enter {CommonText.HintSelect.Text}"));
     tui.Press(ConsoleKey.Enter);
-    // Saved, and the focus is back on the rows: the message of a save before this one may
-    // still be shown.
-    await tui.WaitFor(screen => screen.Contains(GameConfigText.Saved)
-        && screen.Contains($"{CommonText.HintMove.Key} {CommonText.HintMove.Text}"));
+    // Saved, and the focus is back on the rows, away from the buttons: the message of a save
+    // before this one may still be shown.
+    await tui.WaitFor(screen => screen.Contains(CommonText.Saved)
+        && screen.Contains($"{CommonText.HintMove.Key} {CommonText.HintMove.Text}")
+        && !screen.Contains($"{CommonText.HintSwitch.Key} {CommonText.HintSwitch.Text}"));
   }
 
   [Theory]
@@ -527,7 +528,7 @@ public sealed class GameConfigPageTests {
     await tui.WaitFor(GameConfigText.ChangedOnDisk);
     tui.Press(ConsoleKey.LeftArrow);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(GameConfigText.Saved);
+    await tui.WaitFor(CommonText.Saved);
     Assert.Contains("\"Sam\"", tui.Fs.File.ReadAllText(File("allowlist.json")));
     Assert.DoesNotContain("Kai", tui.Fs.File.ReadAllText(File("allowlist.json")));
 
@@ -569,13 +570,13 @@ public sealed class GameConfigPageTests {
     // ↓ below the last row reaches the buttons; → goes to Discard.
     tui.Press(ConsoleKey.End);
     tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor("←→ Switch  Enter Select  Tab Next  Esc Back");
+    await tui.WaitFor("←→ Switch  Enter Select  Tab Next  ↑↓ Move  Esc Back");
     tui.Press(ConsoleKey.RightArrow);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(GameConfigText.DiscardQuestion);
+    await tui.WaitFor(CommonText.DiscardQuestion);
     tui.Snapshot("gameconfig-discard");
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(GameConfigText.DiscardQuestion);
+    await tui.WaitUntilGone(CommonText.DiscardQuestion);
     Assert.Contains("* allow-cheats [x]", tui.Screen);
 
     // ↑ goes back to the rows, and ↓ to the buttons again.
@@ -584,7 +585,7 @@ public sealed class GameConfigPageTests {
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor("←→ Switch");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(GameConfigText.DiscardQuestion);
+    await tui.WaitFor(CommonText.DiscardQuestion);
     tui.Press(ConsoleKey.Enter);
 
     await tui.WaitFor("allow-cheats [ ]");
@@ -622,7 +623,7 @@ public sealed class GameConfigPageTests {
     await tui.WaitFor(CommonText.UnsavedQuestion);
     tui.Press(ConsoleKey.RightArrow);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(_ => tui.Context.CurrentPage == PageId.ModConfig);
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.ModConfig);
     Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
 
     // Coming back shows the file as it is.
@@ -646,7 +647,7 @@ public sealed class GameConfigPageTests {
     await tui.WaitFor(CommonText.UnsavedQuestion);
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor(_ => tui.Context.CurrentPage == PageId.GetMods);
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.GetMods);
     Assert.Equal(
         Properties.Replace("allow-cheats=false", "allow-cheats=true"),
         tui.Fs.File.ReadAllText(File("server.properties")));
@@ -697,7 +698,7 @@ public sealed class GameConfigPageTests {
     await tui.WaitFor("Enter Edit");
     // Nothing to save: Tab leaves the page for the sidebar.
     tui.Press(ConsoleKey.Tab);
-    await tui.WaitFor(_ => !tui.Context.ContentFocused);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused);
 
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("Enter Edit");
@@ -716,6 +717,43 @@ public sealed class GameConfigPageTests {
     tui.Press(ConsoleKey.LeftArrow);
     await tui.WaitFor("Enter Open");
     Assert.True(tui.Context.ContentFocused);
+
+    // Tab from the sidebar starts at the sections, and Shift+Tab at the buttons, the last
+    // area while there are changes.
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused);
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor("←→ Switch");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused);
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("Enter Open");
+  }
+
+  [Fact]
+  public async Task Esc_GoesBackOneLevelAtATime_FromTheButtonsToTheRowsToTheSections() {
+    using TuiHarness tui = Start();
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("allow-cheats [ ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("Enter Edit");
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("* allow-cheats [x]");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("←→ Switch  Enter Select  Tab Next  ↑↓ Move  Esc Back");
+
+    // The buttons were reached from the rows: Esc goes back to them, then to the sections,
+    // then to the sidebar, and the changes are still there.
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor("Space Toggle");
+    Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor("Enter Open");
+    Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused);
+    Assert.Contains("* allow-cheats [x]", tui.Screen);
   }
 
   [Theory]

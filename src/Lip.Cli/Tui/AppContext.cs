@@ -12,7 +12,8 @@ namespace Lip.Cli.Tui;
 
 /// The services of the interface for its pages and its dialogs: the selected workspace and its
 /// client, navigation, dialogs, operations, and the parts of lip that tests replace. Every
-/// member but Post is for the thread of the interface.
+/// member is for the thread of the interface, but Post, SelfUpdate and DaemonStatus, which
+/// are for any thread.
 public sealed class AppContext {
   private readonly App _app;
   private readonly AppOptions _options;
@@ -79,16 +80,15 @@ public sealed class AppContext {
   /// server").
   public IServerSetup ServerSetup { get; }
 
-  /// lip self-update (protocol/lip-self-update.md) with the client of the selected workspace:
-  /// only checks for a newer release when checkOnly is set.
-  public Task<SelfUpdateResult> SelfUpdate(bool checkOnly) {
-    LipClient client = Client;
-    return _options.SelfUpdate is { } update
-        ? update(client, checkOnly)
-        : client.SelfUpdate(SemVersion.Parse(Version), checkOnly);
-  }
+  /// lip self-update (protocol/lip-self-update.md) with a client: only checks for a newer
+  /// release when checkOnly is set. For any thread: take the client from Client on the thread
+  /// of the interface, before the operation or the background work that calls this.
+  public Task<SelfUpdateResult> SelfUpdate(LipClient client, bool checkOnly) =>
+      _options.SelfUpdate is { } update
+          ? update(client, checkOnly)
+          : client.SelfUpdate(SemVersion.Parse(Version), checkOnly);
 
-  /// What lip daemon status finds: null when no daemon listens.
+  /// What lip daemon status finds: null when no daemon listens. For any thread.
   public Task<DaemonState?> DaemonStatus(CancellationToken cancellationToken = default) =>
       _options.DaemonStatus is { } status
           ? status(cancellationToken)
@@ -214,12 +214,19 @@ public sealed class AppContext {
   }
 
   /// Does work in the background without a dialog, such as reading what a page shows; then
-  /// calls done with its result, or failed, on the thread of the interface. Neither is called
-  /// when another workspace was selected meanwhile. Without failed, the failure is shown in
-  /// the bottom bar.
+  /// calls done with its result, or failed, on the thread of the interface. Without failed, the
+  /// failure is shown in the bottom bar.
+  ///
+  /// What the work reads is taken to be of the selected workspace: neither done nor failed is
+  /// called when another workspace was selected meanwhile. Set anyWorkspace for work that is
+  /// of no workspace, such as reading the workspace list, the catalogue, the user
+  /// configuration or the daemon: its callbacks are then called whatever is selected.
   public void Background<T>(
-      Func<Task<T>> work, Action<T> done, Action<Exception>? failed = null) =>
-      _app.Background(work, done, failed);
+      Func<Task<T>> work,
+      Action<T> done,
+      Action<Exception>? failed = null,
+      bool anyWorkspace = false) =>
+      _app.Background(work, done, failed, anyWorkspace);
 
   /// A workspace operation, as every one of them goes: its dry run, whose messages are the
   /// plan; [Apply] [Cancel]; the license of the game when a setup would ask for it; its

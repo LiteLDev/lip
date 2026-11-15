@@ -67,11 +67,15 @@ public sealed partial class GameConfigPage : Page {
           CommonText.HintNext,
         ],
         Area.Entries when CurrentFile is { Editable: true } =>
-            [CommonText.HintMove, .. EntryHints, CommonText.HintNext],
-        Area.Entries when CurrentFile is { } file && ReferenceEquals(_viewed, file) =>
-            [.. _viewer.Hints, CommonText.HintNext],
+            [CommonText.HintMove, .. EntryHints, CommonText.HintNext, .. CurrentList.PageHints],
+        Area.Entries when CurrentFile is { } file && ReferenceEquals(_viewed, file)
+            && _viewer.Scrollable => [
+              CommonText.HintScroll, CommonText.HintNext, CommonText.HintPage,
+              CommonText.HintEnds,
+            ],
         Area.Entries => [CommonText.HintNext],
-        _ => [.. _buttons.Hints, CommonText.HintNext],
+        // ↑ goes back to where the focus came from.
+        _ => [.. _buttons.Hints, CommonText.HintNext, CommonText.HintMove],
       };
     }
   }
@@ -107,6 +111,15 @@ public sealed partial class GameConfigPage : Page {
     RefreshEntries();
     if (Context.CurrentPage == PageId.GameConfig) {
       Load();
+    }
+  }
+
+  /// Tab from the sidebar goes to the sections, and Shift+Tab to the last area that takes
+  /// keys: the buttons while there are changes, otherwise the right side when it has rows.
+  public override void OnTabIn(bool backward) {
+    _area = backward && EntriesFocusable ? Area.Entries : Area.Sections;
+    if (backward) {
+      ToButtons();
     }
   }
 
@@ -257,7 +270,7 @@ public sealed partial class GameConfigPage : Page {
           }
 
           Context.Toast(
-              Context.ServerRunning ? GameConfigText.SavedWhileRunning : GameConfigText.Saved,
+              Context.ServerRunning ? CommonText.SavedWhileRunning : CommonText.Saved,
               ToastKind.Good);
           then?.Invoke();
         });
@@ -275,8 +288,7 @@ public sealed partial class GameConfigPage : Page {
 
   private void AskToDiscard() =>
       Context.Confirm(
-          GameConfigText.DiscardTitle, GameConfigText.DiscardQuestion, CommonText.Discard,
-          Load);
+          CommonText.DiscardTitle, CommonText.DiscardQuestion, CommonText.Discard, Load);
 
   /// The rows of the sections are those of the files as they are now.
   private void RefreshEntries() {
@@ -347,7 +359,8 @@ public sealed partial class GameConfigPage : Page {
           return true;
         }
 
-        if (key.Key == ConsoleKey.UpArrow) {
+        // ↑ and Esc go back to where the focus came to the buttons from.
+        if (key.Key is ConsoleKey.UpArrow or ConsoleKey.Escape) {
           _area = _from;
           return true;
         }

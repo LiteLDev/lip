@@ -20,13 +20,11 @@ public static class ModsText {
           "Updates every mod that you installed.",
           "更新你安装的所有模组。",
           "更新你安裝的所有模組。");
-  public static string GetMods => L.T("Get mods", "获取模组", "取得模組");
   public static string GetModsDetail =>
       L.T(
           "Browse the mods of levimc.org.",
           "浏览 levimc.org 上的模组。",
           "瀏覽 levimc.org 上的模組。");
-  public static string NewServer => L.T("New server…", "新建服务器…", "建立伺服器…");
   public static string NewServerDetail =>
       L.T(
           "This workspace has no server yet.",
@@ -34,7 +32,6 @@ public static class ModsText {
           "這個工作區還沒有伺服器。");
 
   // The list.
-  public static string Empty => L.T("No mods yet.", "还没有模组。", "還沒有模組。");
   public static string Installed(int count) =>
       L.T($"Installed ({count})", $"已安装（{count}）", $"已安裝（{count}）");
   public static string Checked(int count) =>

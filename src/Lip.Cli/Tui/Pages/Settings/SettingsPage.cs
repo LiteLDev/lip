@@ -74,14 +74,17 @@ public sealed class SettingsPage : Page {
   public override string Title => SettingsText.Title;
 
   public override IReadOnlyList<Hint> Hints =>
-      !_list.HasCurrent ? [] : _list.Current switch {
-        Row.Language => [CommonText.HintMove, CommonText.HintSelect],
-        Row.Proxy => [CommonText.HintMove, CommonText.HintActions],
-        Row.Restart => [CommonText.HintMove, new Hint("Enter/Space", CommonText.HintToggle.Text)],
-        Row.Daemon => [CommonText.HintMove, new Hint("Enter", SettingsText.Refresh)],
-        Row.About => [CommonText.HintMove],
-        _ => [CommonText.HintMove, CommonText.HintSelect],
-      };
+      !_list.HasCurrent ? [] : [
+        CommonText.HintMove,
+        .. _list.Current switch {
+          Row.Proxy => [CommonText.HintActions],
+          Row.Restart => [CommonText.HintToggleEither],
+          Row.Daemon => [new Hint("Enter", SettingsText.Refresh)],
+          Row.About => (Hint[])[],
+          _ => [CommonText.HintSelect],
+        },
+        .. _list.PageHints,
+      ];
 
   public override void OnShown() {
     LoadConfig();
@@ -155,7 +158,7 @@ public sealed class SettingsPage : Page {
       row switch {
         Row.Language => SettingsText.Language,
         Row.Proxy => SettingsText.GithubProxy,
-        Row.Restart => SettingsText.AutoRestart,
+        Row.Restart => CommonText.AutoRestart,
         Row.Cache => SettingsText.ClearCache,
         Row.CheckUpdates => SettingsText.CheckUpdates,
         Row.InstallUpdate => SettingsText.InstallUpdate,
@@ -315,7 +318,7 @@ public sealed class SettingsPage : Page {
         Context.ShowMenu(
             SettingsText.GithubProxy,
             new MenuItem(SettingsText.SetProxy, () => PromptProxy(_proxy ?? "")),
-            new MenuItem(SettingsText.ConnectDirectly, () => SaveProxy(""), !known || _proxy != ""),
+            new MenuItem(CommonText.ConnectDirectly, () => SaveProxy(""), !known || _proxy != ""),
             new MenuItem(SettingsText.Reset, () => SaveProxy(null), !known || _proxy is not null));
         return true;
       case Row.Restart:
@@ -406,7 +409,9 @@ public sealed class SettingsPage : Page {
       await change(client);
     });
     _changes = current;
-    Run(
+    // Also when another workspace was selected meanwhile: what the page shows besides the
+    // restart policy is of no workspace, and the change was made whatever is selected now.
+    Context.Background(
         async () => {
           await current;
           return true;
@@ -424,22 +429,8 @@ public sealed class SettingsPage : Page {
             Context.ShowFailure(title, ex);
             LoadConfig();
           }
-        });
-  }
-
-  /// Does work in the background, then calls done with its result, or failed, on the thread of
-  /// the interface, also when another workspace was selected meanwhile: what the page shows
-  /// besides the restart policy is not of a workspace.
-  private void Run<T>(Func<Task<T>> work, Action<T> done, Action<Exception> failed) {
-    _ = Task.Run(async () => {
-      try {
-        T result = await work();
-        Context.Post(() => done(result));
-      }
-      catch (Exception ex) {
-        Context.Post(() => failed(ex));
-      }
-    });
+        },
+        anyWorkspace: true);
   }
 
   private void ChooseLanguage() {
@@ -464,7 +455,7 @@ public sealed class SettingsPage : Page {
 
     bool on = !(_restartLoaded && _restart);
     (_restart, _restartLoaded, _restartError) = (on, true, null);
-    Change(SettingsText.AutoRestart, client => client.ConfigSet(
+    Change(CommonText.AutoRestart, client => client.ConfigSet(
         ConfigService.RestartKey,
         on ? ConfigService.RestartOnFailure : ConfigService.RestartNever,
         workspace: true));
@@ -547,7 +538,7 @@ public sealed class SettingsPage : Page {
         client => value is null
             ? client.ConfigDelete(ConfigService.GithubProxyKey)
             : client.ConfigSet(ConfigService.GithubProxyKey, value),
-        () => Context.Toast(SettingsText.Saved, ToastKind.Good));
+        () => Context.Toast(CommonText.Saved, ToastKind.Good));
   }
 
   #endregion
@@ -567,9 +558,11 @@ public sealed class SettingsPage : Page {
 
   /// lip self-update --check: when there is a newer release, offers to install it.
   private void CheckForUpdates() {
+    // The client is read here, on the thread of the interface, and not by the operation.
+    LipClient client = Context.Client;
     Context.RunOperation(
         SettingsText.CheckUpdates,
-        _ => Context.SelfUpdate(checkOnly: true),
+        _ => Context.SelfUpdate(client, checkOnly: true),
         result => {
           if (result.Outcome != SelfUpdateOutcome.Available || result.Latest is not { } latest) {
             SetUpdate(UpdateState.UpToDate, null);
@@ -587,9 +580,10 @@ public sealed class SettingsPage : Page {
   /// lip self-update: afterwards the user is told to start lip again, or to quit it so that
   /// the installer can replace it.
   private void InstallUpdate() {
+    LipClient client = Context.Client;
     Context.RunOperation(
         SettingsText.InstallUpdate,
-        _ => Context.SelfUpdate(checkOnly: false),
+        _ => Context.SelfUpdate(client, checkOnly: false),
         result => {
           string version = (result.Latest ?? _latest)?.ToString() ?? "";
           switch (result.Outcome) {
@@ -615,12 +609,13 @@ public sealed class SettingsPage : Page {
   }
 
   /// Asks the daemon how it is, as lip daemon status does. Only the last answer asked for
-  /// counts.
+  /// counts, whichever workspace is selected when it comes: the daemon is of none.
   private void LoadDaemon() {
     int read = ++_daemonReads;
     (_daemonLoaded, _daemonError) = (false, null);
-    Run(
-        () => Context.DaemonStatus(),
+    AppContext context = Context;
+    Context.Background(
+        () => context.DaemonStatus(),
         state => {
           if (read == _daemonReads) {
             (_daemon, _daemonLoaded, _daemonError) = (state, true, null);
@@ -630,7 +625,8 @@ public sealed class SettingsPage : Page {
           if (read == _daemonReads) {
             (_daemon, _daemonLoaded, _daemonError) = (null, false, ex.Message);
           }
-        });
+        },
+        anyWorkspace: true);
   }
 
   #endregion

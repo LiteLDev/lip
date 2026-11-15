@@ -59,7 +59,7 @@ These hold on every page. Tests enforce some of them; reviewers check the rest.
 | Enter | Open or carry out the selected item; on a row of a list, open its action menu |
 | Space | Check (multi-select), switch a toggle |
 | Esc | Back one level: dialog → content → sidebar; in the sidebar, ask to quit |
-| Tab / Shift+Tab | Next / previous focus area |
+| Tab / Shift+Tab | Next / previous focus area, round the sidebar and the areas of the page |
 | PgUp PgDn Home End | Page through a list or a text |
 | Characters | Only where a text field has the focus |
 
@@ -67,8 +67,24 @@ These hold on every page. Tests enforce some of them; reviewers check the rest.
   as an extra. Every action is a visible row or button that the arrow keys reach. The one
   exception is Ctrl+C: on the Server page while the server runs it stops the server, and
   everywhere else it asks to quit (the shell does that when the page does not take the key).
-- The bottom bar lists only the keys that work now. A page returns them from `Hints`; a dialog
-  from its own `Hints`. Take them from `CommonText.Hint…` where one fits.
+- Esc goes back one level, never further. Inside a page that is from an inner area to the one
+  it was entered from (the tree of a file → the files, the input line of the server → its
+  output), and only from the outermost one to the sidebar.
+- Tab goes round: sidebar → first area of the page → … → last area → sidebar; Shift+Tab the
+  other way. So a page returns false for Tab at its last area and for Shift+Tab at its first,
+  and overrides `OnTabIn` to take the focus at its first or last area when Tab comes from the
+  sidebar. Enter and → in the sidebar give the page the focus where it was.
+- The bottom bar lists exactly the keys that work now. A page returns them from `Hints`; a
+  dialog from its own `Hints`. Take them from `CommonText.Hint…` where one fits.
+  - Every key that does something of its own is listed, and no key that does nothing now:
+    `↑↓ Scroll` only while the text scrolls, `Tab Next` only while the page has more than one
+    area that takes the focus.
+  - Two keys that do the same are one hint: `Enter/Space Toggle`, `↑↓/Tab Move`,
+    `←→/Tab Switch`. Not listed apart: Space where it presses what Enter presses (a button, a
+    row of a menu), and ← or Tab where they leave the page as `Esc Back` does.
+  - Order them by how much they matter. The bar shows a hint whole or not at all; where they
+    do not all fit, it keeps the last one, Esc, and leaves the others out from the end. So the
+    keys that page (`ListView.PageHints`, `PgUp/PgDn Page`, `Home/End Ends`) go last.
 - Every workspace operation goes through `Context.PlanAndRun`: preview (dry run) →
   `[Apply] [Cancel]` → the license when needed → progress → result. Cancel is "preview only".
 
@@ -99,7 +115,8 @@ public sealed class ModsPage(AppContext context) : Page(context) {
 
   public override string Title => ModsText.Title;
 
-  public override IReadOnlyList<Hint> Hints => [.. _list.Hints, CommonText.HintActions];
+  public override IReadOnlyList<Hint> Hints =>
+      [.. _list.Hints, CommonText.HintActions, .. _list.PageHints];
 
   public override void OnShown() => Load();
 
@@ -139,9 +156,10 @@ What `Page` gives you (all called on the thread of the interface):
 |---|---|
 | `Title` | The entry of the sidebar and the title of the content box. From `XxxText`. |
 | `Badge` | A short mark after the sidebar entry (`●` while the server runs). |
-| `Hints` | The keys that work now. Leave out Esc when Esc just goes back: the shell adds `Esc Back`. |
+| `Hints` | The keys that work now, the most important first. Leave out Esc when Esc just goes back: the shell adds `Esc Back`. |
 | `Draw(screen, area, focused)` | Draw inside `area`. `focused` is false while the sidebar or a dialog takes the keys: draw selections with `focused` so that they look inactive then. |
 | `OnKey(key)` | Return true when the page took the key. What it does not take, the shell handles: Esc, ← and Tab go back to the sidebar; Ctrl+C asks to quit. So return false for ← at your leftmost pane, and for Tab at your last focus area. |
+| `OnTabIn(backward)` | Tab (or Shift+Tab, `backward`) brought the focus from the sidebar: give it to your first (or last) focus area. A page with one area needs nothing. |
 | `OnStart()` | Once, when the interface starts, for every page, before anything is drawn. The Home page starts the GitHub check here. |
 | `OnShown()` / `OnHidden()` | The page becomes / stops being the one shown. Moving through the sidebar shows each page it passes, so `OnShown` must be cheap: start loading in the background. |
 | `OnTick()` | Four times a second, for every page, shown or not. The screen is drawn again after each tick. |
@@ -157,6 +175,12 @@ Rules that keep ten pages working together:
 - **Never block the thread of the interface.** No `.Result`, no `.Wait()`, no file or network
   access in `Draw`, `OnKey` or `OnTick`. Use `Context.Background` (no dialog) or
   `Context.RunOperation` (progress dialog); both call you back on the thread of the interface.
+  Do not write `Task.Run` + `Post` yourself: work that is of no workspace is
+  `Context.Background(…, anyWorkspace: true)`.
+- **`Context` is for the thread of the interface.** The work that `Background` and
+  `RunOperation` run is not on it: read `Context.Client`, `Context.Workspace` and whatever
+  else the work needs into locals first, and use only those in the work. `Post`,
+  `SelfUpdate` and `DaemonStatus` are the members that any thread may call.
 - A page lives as long as the interface, and the language may change while it runs: never
   store the result of `L.T` (or of an `XxxText` member) in a field. Persistent widgets take
   `Func<string>` for that reason.
@@ -190,7 +214,8 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 
 ## AppContext
 
-`Context` in a page or a dialog. Everything but `Post` is for the thread of the interface.
+`Context` in a page or a dialog. Everything is for the thread of the interface, but `Post`,
+`SelfUpdate` and `DaemonStatus`, which any thread may call.
 
 **Workspace**
 
@@ -214,8 +239,8 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 | `Catalog` | `ModCatalogClient` for levimc.org. |
 | `GithubProbe` | The reachability check, or null when the interface makes none. |
 | `ServerSetup` | `IServerSetup`: `GameVersions`, `LoaderVersions`, `Setup`. Use it instead of `LipClient.Setup` so that tests can fake it. |
-| `SelfUpdate(checkOnly)` | `lip self-update [--check]`. |
-| `DaemonStatus()` | `lip daemon status`: a `DaemonState`, or null when no daemon listens. |
+| `SelfUpdate(client, checkOnly)` | `lip self-update [--check]` with a client that you read from `Client` before the operation started. For any thread. |
+| `DaemonStatus()` | `lip daemon status`: a `DaemonState`, or null when no daemon listens. For any thread. |
 | `OpenUrl(url)` | Opens an `http`/`https` URL in the browser; anything else is refused with a toast. |
 
 **Server**
@@ -250,7 +275,8 @@ server in `Draw`.
 | Member | |
 |---|---|
 | `Post(action)` | Runs `action` on the thread of the interface. For any thread. |
-| `Background(work, done, failed?)` | Runs `work` off the thread without a dialog, then `done(result)` on it. Dropped when another workspace was selected meanwhile. Without `failed`, a failure is a toast. |
+| `Background(work, done, failed?, anyWorkspace?)` | Runs `work` off the thread without a dialog, then `done(result)` on it. Without `failed`, a failure is a toast. What the work read is taken to be of the selected workspace: `done` and `failed` are dropped when another workspace was selected meanwhile. |
+| `Background(…, anyWorkspace: true)` | The same for work that is of no workspace (the workspace list, the catalogue, the user configuration, the daemon, the GitHub check): its callbacks are called whatever is selected by then. |
 | `RunOperation(title, action, succeeded?, cancellable?)` | Runs a command with a progress dialog; then `succeeded(operation)`, or the failure dialog. Returns false when another operation runs. `operation.Log` holds what the command said. |
 | `RunOperation<T>(title, action, succeeded, cancellable?)` | The same for a command with a result. |
 | `PlanAndRun(title, (dryRun, token) => …, done?)` | The standard flow of a workspace operation. Pass `confirmed: true` to `LipClient` where it has it. |
@@ -260,6 +286,19 @@ server in `Draw`.
 
 The messages of a command (`IUserInteraction`) go to the log of the operation that runs, or to
 the toast when none runs; a question of a command (`Ask`) opens a prompt.
+
+```csharp
+// The workspace list is of no workspace: it is shown whichever one is selected by then.
+WorkspaceList workspaces = Context.Workspaces;
+Context.Background(
+    () => Task.FromResult(workspaces.Read()), paths => _list.Items = paths,
+    anyWorkspace: true);
+
+// lip self-update: the client is read here, not in the operation.
+LipClient client = Context.Client;
+Context.RunOperation(
+    SettingsText.CheckUpdates, _ => Context.SelfUpdate(client, checkOnly: true), Checked);
+```
 
 ```csharp
 // lip install, as every workspace operation goes.
@@ -287,14 +326,14 @@ include its `Hints` in yours.
 
 | Widget | For | Keys it takes |
 |---|---|---|
-| `ListView<T>(render)` | A scrolling list. `Items`, `Selected`, `Current`/`HasCurrent`, `Select(match)`. `MultiSelect` + `Checked` + `CanCheck` + `Targets` (the checked rows, or the selected one). `Wrap`. `Empty`. | ↑ ↓ PgUp PgDn Home End, Space with `MultiSelect`. Without `Wrap`, ↑ on the first row and ↓ on the last return false, so that you can move the focus to what is above or below. Enter is yours. |
+| `ListView<T>(render)` | A scrolling list. `Items`, `Selected`, `Current`/`HasCurrent`, `Select(match)`. `MultiSelect` + `Checked` + `CanCheck` + `Targets` (the checked rows, or the selected one). `Wrap`. `Empty`. `Hints` (↑↓, Space) and `PageHints` (PgUp/PgDn, Home/End, while it has more rows than it shows: put them last). | ↑ ↓ PgUp PgDn Home End, Space with `MultiSelect`. Without `Wrap`, ↑ on the first row and ↓ on the last return false, so that you can move the focus to what is above or below. Enter is yours. |
 | `ButtonRow(buttons…)` | Buttons side by side: `new Button(() => Text.Start, Start) { Enabled = () => … }`. `Draw(screen, x, y, focused)`. | ← → (false at the ends), Enter, Space |
-| `Form(fields…)` | Rows of `TextRow`, `ChoiceRow`, `ToggleRow`; `Stacked` puts labels above values. | ↑ ↓ Tab Shift+Tab between fields (false at the ends); the rest goes to the field. Enter is yours. |
+| `Form(fields…)` | Rows of `TextRow`, `ChoiceRow`, `ToggleRow`; `Stacked` puts labels above values, and wraps a label that is longer than the form is wide (`HeightFor(width)`). | ↑ ↓ Tab Shift+Tab between fields (false at the ends); the rest goes to the field. Enter is yours. Its `Hints` name ↑↓; name Tab yourself. |
 | `TextRow` | A text with a placeholder. `Value` is trimmed. | characters, ← → Home End Backspace Delete |
 | `ChoiceRow` | One of several options, drawn `‹ value ›`. `Selected`. | ← → and Space |
 | `ToggleRow` | On or off, drawn `[x]`. `On`. | Space |
 | `TextField` | The bare text field, for a search box or an input line. | as `TextRow` |
-| `TextViewer` | Scrolling text: `SetText(string)` or `Lines` (styled). Wraps at spaces, keeps indentation. `ScrollToEnd()`. | ↑ ↓ PgUp PgDn Home End while `Scrollable` |
+| `TextViewer` | Scrolling text: `SetText(string)` or `Lines` (styled). Wraps at spaces, keeps indentation. `ScrollToEnd()`. `Hints` are empty unless it scrolls. | ↑ ↓ PgUp PgDn Home End while `Scrollable` |
 | `FocusRing(count)` | Which area of the page has the focus. | Tab / Shift+Tab (false at the ends) |
 | `Panes.Columns(area, left)`, `Panes.Rows(area, top)` | Split an area in two. | — |
 | `Ui.Panel(screen, rect, title, focused)` | A titled box inside the page; returns its inside. | — |
@@ -304,7 +343,7 @@ Dialogs (`Context.Show(new …)`); each takes every key until it closes:
 | Dialog | For |
 |---|---|
 | `ConfirmDialog(title, lines, buttons, chosen?, border?, fromEnd?)` | Lines that scroll above buttons. Enter presses the chosen button; **Esc presses the last one**, so put the button that changes nothing last. |
-| `PromptDialog(title, fields, submit, cancel?, validate?)` | One or more text fields. `validate` returns a localized error to keep the dialog open. |
+| `PromptDialog(title, fields, submit, cancel?, validate?)` | One or more text fields. A long label, such as a question of a command, is wrapped. `validate` returns a localized error to keep the dialog open. |
 | `ChoiceDialog(title, items, chosen, cancel?, selected?)` | Choose one of a list; `ChoiceItem.Detail` is the one-sentence explanation in the details area. |
 | `Menu(title, items)` | The action menu of a row (`Context.ShowMenu`). An item with `Enabled: false` is shown muted and skipped. |
 | `ViewerDialog(title, text or lines)` | A large scrolling text: a README, a JSON text. |
@@ -337,6 +376,9 @@ public override bool OnKey(ConsoleKeyInfo key) {
 
   return key.Key == ConsoleKey.UpArrow && _focus.Previous();   // ↑ on the first row
 }
+
+// Tab from the sidebar starts at the actions, Shift+Tab at the list.
+public override void OnTabIn(bool backward) => _focus.Index = backward ? 1 : 0;
 ```
 
 ## Text and languages
@@ -357,7 +399,11 @@ public static class ModsText {
 - Every text that the interface itself shows goes through `L.T(en, zhHans, zhHant)`, in your
   `XxxText` class, as properties or methods (never fields).
 - Reuse `CommonText` for buttons (`Ok`, `Cancel`, `Apply`, `Save`, `Discard`, …), hints and
-  common words, so that they read the same everywhere.
+  common words, so that they read the same everywhere. What two pages name is there too:
+  `NewServer`, `GetMods`, `AutoRestart`, `ConnectDirectly`, `NoMods`, `Saved`,
+  `SavedWhileRunning`, `DiscardTitle`, `DiscardQuestion`. When your page needs a text that
+  another page has, move it to `CommonText` instead of writing it again.
+- One word for one thing: a directory is a folder (文件夹, 資料夾), and a URL is 网址 (網址).
 - Use the real Traditional Chinese terms (伺服器, 設定, 檔案, 模組, 工作區), not a character by
   character conversion of the Simplified text.
 - `L.T` reads the language of the interface that the calling thread or task belongs to. That
@@ -421,8 +467,13 @@ What `TuiHarnessOptions` replaces:
 `TestClients.CmdWorkspace()` and `TestClients.CmdClient(…)` give a workspace on the disk whose
 server is `cmd.exe` (Windows only), for tests of the Server page.
 
-Each page has `tests/Lip.Cli.Tests/Tui/<Name>PageTests.cs` with one smoke test; extend that
-file. Run at least one flow in `zh-Hans` and one in `zh-Hant`.
+Each page has `tests/Lip.Cli.Tests/Tui/<Name>PageTests.cs`; extend that file. What leads from
+one page to another is tested with the pages of lip in `FlowTests.cs`. Run at least one flow
+in `zh-Hans` and one in `zh-Hant`.
+
+`Press` and `Type` return at once. Before asserting on the screen, wait for what the keys
+lead to (`WaitFor` its text), or `Settle()` when nothing new is shown; a test that reads the
+screen right after `GoTo` reads it before the page has loaded.
 
 ### Looking at the frames
 

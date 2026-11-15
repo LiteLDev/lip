@@ -80,7 +80,7 @@ public sealed class GithubDialog : Dialog {
   private static string Label(GithubAnswer answer) =>
       answer switch {
         GithubAnswer.Proxy => HomeText.GithubProxy,
-        GithubAnswer.Direct => HomeText.GithubDirect,
+        GithubAnswer.Direct => CommonText.ConnectDirectly,
         _ => CommonText.Later,
       };
 

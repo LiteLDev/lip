@@ -24,7 +24,7 @@ public static class HomeText {
   public static string CreateServerDetail =>
       L.T(
           "Pick a folder, a game and a loader.",
-          "选择目录、游戏版本和加载器。",
+          "选择文件夹、游戏版本和加载器。",
           "選擇資料夾、遊戲版本和載入器。");
 
   public static string CreateServerDoneDetail =>
@@ -58,14 +58,13 @@ public static class HomeText {
   public static string GithubTitle => L.T("GitHub unreachable", "无法连接 GitHub", "無法連線 GitHub");
   public static string GithubQuestion =>
       L.T("How should lip reach GitHub?", "lip 应如何连接 GitHub？", "lip 要如何連線 GitHub？");
-  public static string GithubProxy => L.T("Use a proxy", "使用代理", "使用代理");
-  public static string GithubDirect => L.T("Connect directly", "直接连接", "直接連線");
+  public static string GithubProxy => L.T("Use a proxy", "使用代理", "使用代理伺服器");
 
   public static string GithubProxyDetail =>
       L.T(
           "Enter the URL of a GitHub proxy; lip tests it first.",
-          "输入 GitHub 代理的 URL，lip 会先测试。",
-          "輸入 GitHub 代理的 URL，lip 會先測試。");
+          "输入 GitHub 代理的网址，lip 会先测试。",
+          "輸入 GitHub 代理伺服器的網址，lip 會先測試。");
 
   public static string GithubDirectDetail =>
       L.T(

@@ -18,11 +18,31 @@ public static class CommonText {
   public static string Retry => L.T("Retry", "重试", "重試");
   public static string Later => L.T("Later", "以后再说", "稍後再說");
 
+  // What several pages name: the same words for the same thing.
+  public static string NewServer => L.T("New server…", "新建服务器…", "建立伺服器…");
+  public static string GetMods => L.T("Get mods", "获取模组", "取得模組");
+  public static string AutoRestart => L.T("Auto restart", "自动重启", "自動重新啟動");
+  public static string ConnectDirectly => L.T("Connect directly", "直接连接", "直接連線");
+  public static string NoMods => L.T("No mods yet.", "还没有模组。", "還沒有模組。");
+  public static string Saved => L.T("Saved.", "已保存。", "已儲存。");
+  public static string SavedWhileRunning =>
+      L.T(
+          "Saved. Restart the server to apply.",
+          "已保存，重启服务器后生效。",
+          "已儲存，重新啟動伺服器後生效。");
+  public static string DiscardTitle => L.T("Discard changes", "放弃更改", "捨棄變更");
+  public static string DiscardQuestion =>
+      L.T("Discard the changes?", "要放弃更改吗？", "要捨棄變更嗎？");
+
   // The hints of the bottom bar: a key, and one or two words.
+  // A hint names two keys, as in "Enter/Space", where both do the same.
   public static Hint HintMove => new("↑↓", L.T("Move", "移动", "移動"));
+  public static Hint HintMoveFields => new("↑↓/Tab", HintMove.Text);
   public static Hint HintScroll => new("↑↓", L.T("Scroll", "滚动", "捲動"));
   public static Hint HintPage => new("PgUp/PgDn", L.T("Page", "翻页", "翻頁"));
+  public static Hint HintEnds => new("Home/End", L.T("Ends", "首尾", "首尾"));
   public static Hint HintSwitch => new("←→", L.T("Switch", "切换", "切換"));
+  public static Hint HintSwitchButtons => new("←→/Tab", HintSwitch.Text);
   public static Hint HintChange => new("←→", L.T("Change", "更改", "變更"));
   public static Hint HintNext => new("Tab", L.T("Next", "下一项", "下一項"));
   public static Hint HintOpen => new("Enter", L.T("Open", "打开", "開啟"));
@@ -31,6 +51,7 @@ public static class CommonText {
   public static Hint HintEdit => new("Enter", L.T("Edit", "编辑", "編輯"));
   public static Hint HintActions => new("Enter", L.T("Actions", "操作", "操作"));
   public static Hint HintToggle => new("Space", L.T("Toggle", "切换", "切換"));
+  public static Hint HintToggleEither => new("Enter/Space", HintToggle.Text);
   public static Hint HintCheck => new("Space", L.T("Check", "勾选", "勾選"));
   public static Hint HintBack => new("Esc", L.T("Back", "返回", "返回"));
   public static Hint HintCancel => new("Esc", L.T("Cancel", "取消", "取消"));
@@ -62,7 +83,7 @@ public static class CommonText {
   public static string WorkspaceSelected => L.T("Workspace", "工作区", "工作區");
   public static string WorkspaceListUnwritable =>
       L.T("Cannot write the workspace list", "无法写入工作区列表", "無法寫入工作區清單");
-  public static string NotADirectory => L.T("Not a directory", "不是目录", "不是目錄");
+  public static string NotADirectory => L.T("Not a folder", "不是文件夹", "不是資料夾");
 
   // Operations.
   public static string Working => L.T("Working…", "处理中…", "處理中…");

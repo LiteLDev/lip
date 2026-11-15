@@ -8,8 +8,6 @@ public static class ModConfigText {
 
   // The list of files.
   public static string Files => L.T("Files", "文件", "檔案");
-  public static string NoMods => L.T("No mods yet.", "还没有模组。", "還沒有模組。");
-  public static string GetMods => L.T("Get mods", "获取模组", "取得模組");
   public static string CannotList =>
       L.T("Cannot read the workspace", "无法读取工作区", "無法讀取工作區");
 
@@ -32,10 +30,10 @@ public static class ModConfigText {
   public static string Unsaved => L.T("Unsaved", "未保存", "未儲存");
   public static string AddValue => L.T("Add value…", "添加值…", "新增值…");
   public static string AddTitle => L.T("Add value", "添加值", "新增值");
-  public static string Edit => L.T("Edit", "编辑", "編輯");
+  public static string Edit => L.T("Edit…", "编辑…", "編輯…");
   public static string Open => L.T("Open", "打开", "開啟");
   public static string Toggle => L.T("Toggle", "切换", "切換");
-  public static string Remove => L.T("Remove", "删除", "移除");
+  public static string Remove => L.T("Remove", "移除", "移除");
   public static string Value => L.T("Value", "值", "值");
   public static string Text => L.T("Text", "文本", "文字");
   public static string Number => L.T("Number", "数字", "數字");
@@ -62,17 +60,7 @@ public static class ModConfigText {
           "请输入文本、数字、true、false 或 null。",
           "請輸入文字、數字、true、false 或 null。");
 
-  // Saving and discarding.
-  public static string DiscardChanges => L.T("Discard changes", "放弃更改", "捨棄變更");
-  public static string DiscardQuestion =>
-      L.T("Discard the changes?", "要放弃更改吗？", "要捨棄變更嗎？");
-  public static string Saved => L.T("Saved.", "已保存。", "已儲存。");
-  public static string SavedRestart =>
-      L.T(
-          "Saved. Restart the server to apply.",
-          "已保存，重启服务器后生效。",
-          "已儲存，重新啟動伺服器後生效。");
-
+  // Saving.
   public static string SaveTitle(string file) =>
       L.T($"Save {file}", $"保存 {file}", $"儲存 {file}");
 }

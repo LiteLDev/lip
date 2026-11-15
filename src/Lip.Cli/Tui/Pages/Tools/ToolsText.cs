@@ -25,9 +25,9 @@ public static class ToolsText {
           "將工作區中的 tooth.json 轉換為 lip.toml。");
   public static string PackAbout =>
       L.T(
-          "Packs a directory into the ZIP archive of a package.",
-          "将目录打包为包的 ZIP 压缩包。",
-          "將目錄封裝成套件的 ZIP 壓縮檔。");
+          "Packs a folder into the ZIP archive of a package.",
+          "将文件夹打包为包的 ZIP 压缩包。",
+          "將資料夾封裝成套件的 ZIP 壓縮檔。");
   public static string ViewAbout =>
       L.T(
           "Shows the package file and the versions of a package.",
@@ -39,7 +39,7 @@ public static class ToolsText {
   public static string ViewTitle => L.T("View package", "查看包信息", "檢視套件資訊");
 
   // The fields.
-  public static string Directory => L.T("Directory", "目录", "目錄");
+  public static string Directory => L.T("Folder", "文件夹", "資料夾");
   public static string Output => L.T("Output file", "输出文件", "輸出檔案");
   public static string Package => L.T("Package", "包", "套件");
   public static string OutputRequired =>
