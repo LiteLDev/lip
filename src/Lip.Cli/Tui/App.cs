@@ -7,6 +7,7 @@ using Lip.Cli.Tui.Widgets;
 using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod.Lock;
 using Lip.Core.PublicApi;
 using Lip.Core.Services;
 
@@ -41,6 +42,12 @@ public sealed class AppOptions {
 
   /// The servers of the process: ServerSessions.Shared when not given.
   public ServerSessions? Servers { get; init; }
+
+  /// Whether the server lock of a workspace, an absolute path, is held
+  /// (protocol/lip-workspace.md, "Server lock"): whether a lip runs its server. Called off the
+  /// thread of the interface, about once a second for every workspace of the list.
+  /// ServerLock.IsHeld on the file system of the workspaces when not given.
+  public Func<string, bool>? ServerLockHeld { get; init; }
 
   /// Checks that GitHub is reached (protocol/lip-tui.md, "GitHub reachability"); the check is
   /// not made when not given.
@@ -83,6 +90,8 @@ public sealed partial class App {
   // Below this width the sidebar shows icons, and the names only while it has the focus.
   private const int WideWidth = 80;
   private const int ToastMilliseconds = 6000;
+  // How many ticks pass between two looks at the server locks of the workspaces: a second.
+  private const int ServerLockTicks = 4;
 
   private readonly ITerminal _terminal;
   private readonly Func<IUserInteraction, Func<Stream>, string, LipClient> _createClient;
@@ -91,6 +100,15 @@ public sealed partial class App {
   private readonly string _version;
   private readonly WorkspaceList _workspaces;
   private readonly ServerSessions _servers;
+  private readonly Func<string, bool> _serverLockHeld;
+  // The workspaces whose server lock was held when the interface last looked.
+  private HashSet<string> _serverLocksHeld = new(WorkspaceList.PathComparer);
+  private bool _serverLocksPending;
+  // Whether to look again once the look that is pending is done: something changed since.
+  private bool _serverLocksAgain;
+  private int _serverLockTick;
+  // Whether the server of this process for the selected workspace ran when last seen.
+  private bool _ownServerRan;
   // The invocation of lip that the interface is carried out for.
   private readonly Invocation _invocation;
   private readonly bool _managed;
@@ -130,6 +148,9 @@ public sealed partial class App {
     _workspaces = options.Workspaces
         ?? new WorkspaceList(new System.IO.Abstractions.FileSystem(), null);
     _servers = options.Servers ?? ServerSessions.Shared;
+    System.IO.Abstractions.IFileSystem fileSystem = _workspaces.FileSystem;
+    _serverLockHeld = options.ServerLockHeld
+        ?? (workspace => ServerLock.IsHeld(fileSystem, workspace));
     _invocation = Invocation.Current;
     _managed = options.ManagedServers ?? _invocation != Invocation.Process;
     _clientLanguage = options.ClientLanguage;
@@ -204,6 +225,7 @@ public sealed partial class App {
 
         Current.OnShown();
       });
+      ReadServerLocks();
       if (_workspaceListFailure is { } failure) {
         Toast($"{CommonText.WorkspaceListUnwritable}: {failure}", ToastKind.Bad);
       }
@@ -334,6 +356,10 @@ public sealed partial class App {
       _toast = null;
     }
 
+    if (++_serverLockTick >= ServerLockTicks) {
+      ReadServerLocks();
+    }
+
     // A page whose tick fails says so once, and gets no more ticks.
     foreach (Page page in _pages) {
       if (_tickFailed.Contains(page)) {
@@ -369,6 +395,18 @@ public sealed partial class App {
     Volatile.Write(ref _serversPending, 0);
     if (_quitOnceStopped && _servers.Running().Count == 0) {
       _quit = true;
+    }
+
+    // A server of this process that stopped holds its lock no more: the workspace is not
+    // taken to have a running server until the next look.
+    bool runs = _servers.Find(_workspace)?.Running == true;
+    if (runs != _ownServerRan) {
+      _ownServerRan = runs;
+      if (!runs) {
+        _serverLocksHeld.Remove(_workspace);
+      }
+
+      ReadServerLocks();
     }
   }
 
@@ -548,6 +586,8 @@ public sealed partial class App {
     Leave(() => {
       _workspace = _workspaces.Normalize(workspace);
       _client = _createClient(_interaction, _hookOutput, _workspace);
+      _ownServerRan = _servers.Find(_workspace)?.Running == true;
+      ReadServerLocks();
       WorkspaceChanged();
       Toast($"{CommonText.WorkspaceSelected}: {_workspace}", ToastKind.Info);
       switched?.Invoke();
@@ -618,6 +658,106 @@ public sealed partial class App {
   #endregion
 
   #region Server
+
+  /// Whether the server of a workspace runs: a server of this process, or one of another lip,
+  /// which holds the server lock of the workspace, as the interface last saw it.
+  internal bool IsServerRunning(string workspace) =>
+      _servers.Find(workspace)?.Running == true
+      || _serverLocksHeld.Contains(workspace)
+      || _serverLocksHeld.Contains(_workspaces.Normalize(workspace));
+
+  /// Whether the server of a workspace runs now. For any thread but that of the interface:
+  /// it looks at the server lock.
+  internal bool ServerRunsNow(string workspace) =>
+      _servers.Find(workspace)?.Running == true || ServerLockHeld(workspace);
+
+  private bool ServerLockHeld(string workspace) {
+    try {
+      return _serverLockHeld(workspace);
+    }
+    catch (Exception ex) {
+      RunTrace.Write("interface", $"The server lock of {workspace} was not looked at: {ex}");
+      return false;
+    }
+  }
+
+  /// Looks, in the background, at the server locks of the selected workspace, first, and of
+  /// the workspaces of the list; one look at a time. When something changed while a look was
+  /// pending, such as the selected workspace, what it saw is dropped and it is made again.
+  private void ReadServerLocks() {
+    _serverLockTick = 0;
+    if (_serverLocksPending) {
+      _serverLocksAgain = true;
+      return;
+    }
+
+    _serverLocksPending = true;
+    string selected = _workspace;
+    _ = Task.Run(() => {
+      HashSet<string> held = new(WorkspaceList.PathComparer);
+      try {
+        // The selected workspace is not kept waiting for the others, which may be slow.
+        bool selectedHeld = ServerLockHeld(selected);
+        if (selectedHeld) {
+          held.Add(selected);
+        }
+
+        Post(() => {
+          if (_serverLocksAgain) {
+            return;
+          }
+
+          if (selectedHeld) {
+            _serverLocksHeld.Add(selected);
+          } else {
+            _serverLocksHeld.Remove(selected);
+          }
+        });
+
+        IReadOnlyList<string> listed;
+        try {
+          listed = _workspaces.Read();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+          listed = [];
+        }
+
+        foreach (string workspace in listed) {
+          if (!WorkspaceList.PathComparer.Equals(workspace, selected)
+              && ServerLockHeld(workspace)) {
+            held.Add(workspace);
+          }
+        }
+      }
+      finally {
+        Post(() => {
+          _serverLocksPending = false;
+          if (_serverLocksAgain) {
+            _serverLocksAgain = false;
+            ReadServerLocks();
+          } else {
+            _serverLocksHeld = held;
+          }
+        });
+      }
+    });
+  }
+
+  /// When the server of the selected workspace runs, says that it must be stopped first, and
+  /// returns true.
+  internal bool RefuseWhileServerRuns(string title) {
+    if (!IsServerRunning(_workspace)) {
+      return false;
+    }
+
+    ShowServerRuns(title);
+    return true;
+  }
+
+  private void ShowServerRuns(string title) =>
+      Show(new ConfirmDialog(
+          title, [new StyledLine(CommonText.StopServerFirst, Theme.Warning)],
+          [CommonText.Close]));
 
   /// Starts the server of the selected workspace unless it runs: its managed server, or, when
   /// lip itself carries out the interface, a server that this process runs
@@ -700,7 +840,9 @@ public sealed partial class App {
   private void DrawTopBar() {
     int x = _screen.Write(1, 0, $"lip {_version}", Theme.Strong);
     WorkspaceServer? server = _servers.Find(_workspace);
-    (string Text, Style Style)? state = server is not { Running: true } ? null
+    // A server that another lip runs is known to run, and no more.
+    (string Text, Style Style)? state = server is not { Running: true }
+        ? IsServerRunning(_workspace) ? (CommonText.ServerRunning, Theme.Good) : null
         : server.Restarting ? (CommonText.ServerRestarting, Theme.Warning)
         : server.Stopping ? (CommonText.ServerStopping, Theme.Warning)
         : (CommonText.ServerRunning, Theme.Good);

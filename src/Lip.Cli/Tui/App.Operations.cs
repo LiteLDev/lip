@@ -9,20 +9,22 @@ namespace Lip.Cli.Tui;
 /// The commands that the interface carries out: one at a time, in the background, with their
 /// progress, their plan, their result or their failure shown in dialogs.
 public sealed partial class App {
-  // What a dry run says of the packages that an operation would change.
-  private static readonly string[] _packageChanges = [
-    "Dry run: would install", "Dry run: would uninstall", "Dry run: would mark",
-  ];
+  // What starts a message of a command that is a warning, and what a dry run starts the
+  // messages with that say what it would do.
+  private const string WarningMark = "⚠ ";
+  private const string DryRunMark = "Dry run:";
 
   private Operation? _operation;
 
   /// Runs a command in the background, showing its progress; then calls succeeded, or shows
-  /// why it failed. One command runs at a time: false, and nothing runs, while another does.
+  /// why it failed, unless failed, when given, says that it took care of the failure. One
+  /// command runs at a time: false, and nothing runs, while another does.
   internal bool RunOperation(
       string title,
       Func<CancellationToken, Task> action,
       Action<Operation>? succeeded,
-      bool cancellable) {
+      bool cancellable,
+      Func<Exception, bool>? failed = null) {
     if (_operation is not null) {
       return false;
     }
@@ -45,7 +47,7 @@ public sealed partial class App {
         _operation = null;
         if (failure is null) {
           succeeded?.Invoke(operation);
-        } else {
+        } else if (failed?.Invoke(failure) != true) {
           ShowFailure(title, failure, operation.Cancel.IsCancellationRequested, operation.Log);
         }
       });
@@ -128,31 +130,67 @@ public sealed partial class App {
   /// A workspace operation: first as a dry run, whose messages are the plan; then, when the
   /// user applies the plan, for real, after the license of the game when the dry run says that
   /// a setup would ask for it (protocol/lip-tui.md, "Commands"). Cancelling the plan is the
-  /// preview only. done is called once the operation succeeded and its result is shown.
+  /// preview only, and a plan that would change nothing cannot be applied. Both are carried
+  /// out in one session, a new one when none is given. Nothing is carried out while the
+  /// server of the selected workspace runs. done is called once the operation succeeded and
+  /// its result is shown.
   internal void PlanAndRun(
-      string title, Func<bool, bool, CancellationToken, Task> operation, Action? done) {
-    RunOperation($"{CommonText.Preview} · {title}", token => operation(true, false, token), plan => {
-      // What would happen to which packages ("Dry run: would install X 1.0.0 (N files)") stands
-      // out from the rest of the log, such as what was resolved and downloaded.
-      List<StyledLine> lines = [
-        .. plan.Log.Select(line =>
-            line.PlainText.StartsWith("Dry run:", StringComparison.Ordinal)
-                ? new StyledLine(line.PlainText, Theme.Strong)
-                : line),
-      ];
-      if (!lines.Any(l => _packageChanges.Any(
-          c => l.PlainText.StartsWith(c, StringComparison.Ordinal)))) {
+      string title,
+      Func<OperationRun, Task<OperationResult>> operation,
+      Action? done,
+      OperationSession? session) {
+    if (RefuseWhileServerRuns(title)) {
+      return;
+    }
+
+    OperationSession shared = session ?? new OperationSession();
+    string workspace = _workspace;
+    // The server may have started since the interface last looked: it is looked for again,
+    // off the thread of the interface, before each of the two.
+    void RequireStopped() {
+      if (ServerRunsNow(workspace)) {
+        throw new ServerRunsException();
+      }
+    }
+
+    bool ServerRuns(Exception failure) {
+      if (failure is not ServerRunsException) {
+        return false;
+      }
+
+      _serverLocksHeld.Add(workspace);
+      ShowServerRuns(title);
+      return true;
+    }
+
+    OperationResult? planned = null;
+    RunOperation($"{CommonText.Preview} · {title}", async token => {
+      RequireStopped();
+      planned = await operation(new OperationRun(shared, DryRun: true, AcceptEula: false, token));
+    }, plan => {
+      List<StyledLine> lines = [.. plan.Log.Select(PlanLine)];
+      if (planned is not { Changes: true }) {
+        // Nothing to apply.
         lines.Add(new StyledLine(CommonText.NothingWouldChange, Theme.Muted));
+        Show(new ConfirmDialog(title, lines, [CommonText.Close], fromEnd: true));
+        return;
+      }
+
+      if (planned.OnlyStateFile) {
+        lines.Add(new StyledLine(CommonText.OnlyRecordChanges, Theme.Muted));
       }
 
       bool asksForLicense = plan.Log.Any(l => l.PlainText.StartsWith(
           GameSetup.EulaDryRunMessage, StringComparison.Ordinal));
       void Run(bool acceptEula) =>
-          RunOperation(title, token => operation(false, acceptEula, token), result => {
+          RunOperation(title, async token => {
+            RequireStopped();
+            await operation(new OperationRun(shared, DryRun: false, acceptEula, token));
+          }, result => {
             WorkspaceChanged();
             ShowResult(title, result, CommonText.Done);
             done?.Invoke();
-          }, cancellable: true);
+          }, cancellable: true, ServerRuns);
 
       Show(new ConfirmDialog(
           title, lines, [CommonText.Apply, CommonText.Cancel], choice => {
@@ -183,8 +221,24 @@ public sealed partial class App {
                   }
                 }));
           }));
-    }, cancellable: true);
+    }, cancellable: true, ServerRuns);
   }
+
+  /// A line of the log of a dry run, as the plan shows it: what the operation would do ("Dry
+  /// run: would install X 1.0.0 (N files)") stands out from the rest of the log, such as what
+  /// was resolved and downloaded, and so does a warning, such as the packages that a setup
+  /// would leave out.
+  private static StyledLine PlanLine(StyledLine line) {
+    string text = line.PlainText;
+    return text.StartsWith(WarningMark, StringComparison.Ordinal)
+        ? new StyledLine(text, Theme.Warning with { Bold = true })
+        : text.StartsWith(DryRunMark, StringComparison.Ordinal)
+            ? new StyledLine(text, Theme.Strong)
+            : line;
+  }
+
+  /// The server of the workspace of an operation runs, so the operation is not carried out.
+  private sealed class ServerRunsException : Exception;
 
   /// A message of a command: part of the log of the operation that runs, otherwise a message in
   /// the bottom bar, where a message about something wrong stays rather than give way to one
@@ -226,7 +280,7 @@ public sealed partial class App {
         Print("success", message, "✓ ", Theme.Good, ToastKind.Good);
 
     public Task PrintWarning(string message) =>
-        Print("warning", message, "⚠ ", Theme.Warning, ToastKind.Warning);
+        Print("warning", message, WarningMark, Theme.Warning, ToastKind.Warning);
 
     public Task PrintError(string message) =>
         Print("error", message, "✗ ", Theme.Bad, ToastKind.Bad);

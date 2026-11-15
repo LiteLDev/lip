@@ -278,9 +278,23 @@ public sealed class ScreenBuffer {
   public void Fill(Rect rect, Style style) {
     for (int y = Math.Max(0, rect.Y); y < Math.Min(Height, rect.Bottom); y++) {
       for (int x = Math.Max(0, rect.X); x < Math.Min(Width, rect.Right); x++) {
-        _cells[(y * Width) + x] = new Cell { Rune = _space, Style = style };
+        Set(x, y, new Cell { Rune = _space, Style = style });
       }
     }
+  }
+
+  /// Sets a cell. A wide character takes two cells: when one of them is set to something
+  /// else, such as the border of a dialog above the page, the other becomes a space, so that
+  /// the row keeps its width.
+  private void Set(int x, int y, Cell cell) {
+    int at = (y * Width) + x;
+    if (_cells[at].Continuation) {
+      _cells[at - 1].Rune = _space;
+    } else if (x + 1 < Width && _cells[at + 1].Continuation) {
+      _cells[at + 1] = new Cell { Rune = _space, Style = _cells[at + 1].Style };
+    }
+
+    _cells[at] = cell;
   }
 
   /// Writes text from (x, y) up to, not including, the column limit; returns the column after
@@ -302,9 +316,9 @@ public sealed class ScreenBuffer {
       }
 
       if (x >= 0) {
-        _cells[(y * Width) + x] = new Cell { Rune = rune, Style = style };
+        Set(x, y, new Cell { Rune = rune, Style = style });
         if (w == 2) {
-          _cells[(y * Width) + x + 1] = new Cell { Rune = _space, Style = style, Continuation = true };
+          Set(x + 1, y, new Cell { Rune = _space, Style = style, Continuation = true });
         }
       }
 

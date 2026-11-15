@@ -98,10 +98,10 @@ public static class GameSetup {
 /// (protocol/lip-install.md, "Setting up").
 public partial class McmodService {
   /// lip setup (protocol/lip-setup.md).
-  public async Task Setup(SetupRequest request, OperationOptions options) {
+  public async Task<OperationResult> Setup(SetupRequest request, OperationOptions options) {
     using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
-    await SetUp(workspace, request, [], options);
+    return await SetUp(workspace, request, [], options);
   }
 
   /// The versions of the game that the builds list names, as the interface offers them for a new
@@ -237,7 +237,7 @@ public partial class McmodService {
 
   /// Carries out a setup (protocol/lip-setup.md, "Setting up") with the requests of the other
   /// package arguments of lip install, if any.
-  private async Task SetUp(
+  private async Task<OperationResult> SetUp(
       Workspace workspace,
       SetupRequest request,
       List<(string Argument, PackageRequest Request)> others,
@@ -346,7 +346,8 @@ public partial class McmodService {
       await AcceptLicense(options);
     }
 
-    await Execute(workspace, options, changes, prepareSystem: request.Build == GameBuild.Windows);
+    return await Execute(
+        workspace, options, changes, prepareSystem: request.Build == GameBuild.Windows);
   }
 
   /// The loader of a setup (protocol/lip-setup.md, "The loader"): LeviLamina of the version

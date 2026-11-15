@@ -1,5 +1,7 @@
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Widgets;
+using Lip.Cli.Workspaces;
+using Lip.Core.Catalog;
 using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
 using Semver;
@@ -14,13 +16,36 @@ internal enum ModAction {
   GetMods,
 }
 
+/// Says that the catalogue is being read, for the details of a package. Esc gives up waiting.
+internal sealed class CatalogueWait(Action cancelled) : Dialog {
+  public override IReadOnlyList<Hint> Hints => [CommonText.HintCancel];
+
+  public override void Draw(ScreenBuffer screen) {
+    string text = ModsText.ReadingCatalogue;
+    int width = Math.Min(Ui.DialogWidth(screen), Math.Max(36, TextWidth.Of(text) + 4));
+    Rect inner = Ui.DialogFrame(screen, ModsText.Details, width, 3);
+    screen.WriteFit(inner.X, inner.Y, inner.Width, text, Theme.Muted);
+  }
+
+  public override void OnKey(ConsoleKeyInfo key) {
+    if (key.Key == ConsoleKey.Escape) {
+      Close();
+      cancelled();
+    }
+  }
+}
+
 /// The Mods page: the installed packages of the selected workspace, with lip install, lip
 /// update and lip uninstall (protocol/lip-install.md, lip-update.md, lip-uninstall.md,
 /// lip-list.md). Action rows stand above the list; Enter on a package opens its action menu,
-/// which acts on the checked packages when there are any.
+/// which acts on the checked packages when there are any. While the server of the workspace
+/// runs, what changes the workspace is shown disabled, and a line says so.
 public sealed class ModsPage : Page {
   // The rows that the details area takes: a rule, a title, and a sentence of up to two rows.
   private const int DetailRows = 4;
+  // After how long the catalogue is read again when details are asked for, in milliseconds: as
+  // on the Get mods page.
+  private const int Stale = 10 * 60 * 1000;
 
   private readonly ListView<ModAction> _actions;
   private readonly ListView<InstalledPackage> _list;
@@ -35,9 +60,16 @@ public sealed class ModsPage : Page {
   // The columns of the name and of the version of a row, as last drawn.
   private int _nameWidth = 1;
   private int _versionWidth = 1;
+  // The catalogue, once it was read for the details of a package, and when; whether it is
+  // being read; and the dialog that waits for it, with the package it waits for.
+  private CatalogIndex? _index;
+  private long _indexAt;
+  private bool _indexReading;
+  private (Dialog Dialog, string Identity)? _waiting;
 
   public ModsPage(AppContext context) : base(context) {
-    _actions = new ListView<ModAction>(action => new StyledLine(Label(action)));
+    _actions = new ListView<ModAction>(
+        action => new StyledLine(Label(action), Disabled(action) ? Theme.Muted : default));
     // Only what both lip update and lip uninstall take can be checked: neither a dependency,
     // which cannot be uninstalled, nor the game or the loader, which cannot be updated.
     _list = new ListView<InstalledPackage>(Row) {
@@ -58,9 +90,12 @@ public sealed class ModsPage : Page {
             CommonText.HintNext,
             .. _list.PageHints,
           ]
-          : _focus.Count > 1
-              ? [CommonText.HintMove, CommonText.HintSelect, CommonText.HintNext]
-              : [CommonText.HintMove, CommonText.HintSelect];
+          : [
+            CommonText.HintMove,
+            .. _actions.HasCurrent && !Disabled(_actions.Current)
+                ? [CommonText.HintSelect] : (Hint[])[],
+            .. _focus.Count > 1 ? [CommonText.HintNext] : (Hint[])[],
+          ];
 
   public override void OnShown() {
     Sync();
@@ -78,7 +113,8 @@ public sealed class ModsPage : Page {
   }
 
   public override void OnRequest(string request) {
-    if (request == PageRequest.InstallFromSource) {
+    if (request == PageRequest.InstallFromSource
+        && !Context.RefuseWhileServerRuns(ModsText.InstallTitle)) {
       PromptInstall();
     }
   }
@@ -90,6 +126,12 @@ public sealed class ModsPage : Page {
   public override void Draw(ScreenBuffer screen, Rect area, bool focused) {
     if (area.Width < 1 || area.Height < 1) {
       return;
+    }
+
+    // While the server runs, the first row says that nothing can be changed.
+    if (Context.ServerRunning && area.Height > _actions.Items.Count + 1) {
+      screen.WriteFit(area.X, area.Y, area.Width, ModsText.ServerRuns, Theme.Warning);
+      area = area.Shrink(top: 1);
     }
 
     bool onList = _focus.Index == 1;
@@ -114,7 +156,7 @@ public sealed class ModsPage : Page {
 
     if (_focus.Index == 0) {
       if (key.Key == ConsoleKey.Enter) {
-        if (_actions.HasCurrent) {
+        if (_actions.HasCurrent && !Disabled(_actions.Current)) {
           Run(_actions.Current);
         }
 
@@ -266,6 +308,11 @@ public sealed class ModsPage : Page {
 
   #region Drawing
 
+  /// Whether the action row cannot be carried out now: it changes the workspace, and the
+  /// server of the workspace runs.
+  private bool Disabled(ModAction action) =>
+      action is ModAction.InstallFromSource or ModAction.UpdateAll && Context.ServerRunning;
+
   private static string Label(ModAction action) =>
       action switch {
         ModAction.NewServer => CommonText.NewServer,
@@ -343,9 +390,15 @@ public sealed class ModsPage : Page {
   private void DrawDetails(ScreenBuffer screen, Rect rect) {
     StyledLine title;
     string detail;
+    Style style = Theme.Muted;
     if (_focus.Index == 0 && _actions.HasCurrent) {
       title = new StyledLine(Label(_actions.Current).TrimEnd('…'), Theme.Strong);
       detail = Detail(_actions.Current);
+      if (Disabled(_actions.Current)) {
+        // Why the row does nothing now.
+        detail = CommonText.StopServerFirst;
+        style = Theme.Warning;
+      }
     } else if (_focus.Index == 1 && _list.HasCurrent) {
       InstalledPackage package = _list.Current;
       int room = Math.Max(1, rect.Width - TextWidth.Of(package.Version) - 2);
@@ -360,7 +413,7 @@ public sealed class ModsPage : Page {
     screen.Write(rect.X, rect.Y + 1, title, rect.Right);
     List<string> lines = TextWidth.Wrap(detail, rect.Width);
     for (int i = 0; i < lines.Count && rect.Y + 2 + i < rect.Bottom; i++) {
-      screen.Write(rect.X, rect.Y + 2 + i, lines[i], Theme.Muted, rect.Right);
+      screen.Write(rect.X, rect.Y + 2 + i, lines[i], style, rect.Right);
     }
   }
 
@@ -385,17 +438,22 @@ public sealed class ModsPage : Page {
     }
   }
 
-  /// The action menu of the selected package, or of the checked ones when there are any.
+  /// The action menu of the selected package, or of the checked ones when there are any. What
+  /// changes the workspace cannot be chosen while its server runs, and says why.
   private void ShowActions() {
+    bool running = Context.ServerRunning;
+    MenuItem Change(string label, Action run) =>
+        new(label, run, Enabled: !running, Reason: running ? CommonText.StopServerFirst : null);
+
     if (_list.Checked.Count > 0) {
       // In the order of the list.
       string[] identities = [.. _list.Targets.Select(p => p.Identity)];
       Context.ShowMenu(
           ModsText.Checked(identities.Length),
-          new MenuItem(
+          Change(
               ModsText.UpdateChecked(identities.Length),
               () => Update(identities, ModsText.UpdateChecked(identities.Length))),
-          new MenuItem(
+          Change(
               ModsText.UninstallChecked(identities.Length),
               () => Uninstall(identities, ModsText.UninstallChecked(identities.Length))),
           new MenuItem(ModsText.UncheckAll, _list.Checked.Clear));
@@ -404,18 +462,18 @@ public sealed class ModsPage : Page {
 
     InstalledPackage package = _list.Current;
     string identity = package.Identity;
-    List<MenuItem> items = [];
+    List<MenuItem> items = [new MenuItem(ModsText.Details, () => ShowDetails(identity))];
     if (IsSystem(package)) {
       // lip update refuses the game and the loader: lip setup changes them.
       items.Add(new MenuItem(ModsText.GoToWorkspaces, () => Context.Navigate(PageId.Workspaces)));
     } else {
       // Updating a dependency makes it explicitly installed, which the plan says.
-      items.Add(new MenuItem(
+      items.Add(Change(
           ModsText.Update, () => Update([identity], ModsText.UpdateOperation(identity))));
-      items.Add(new MenuItem(ModsText.UpdateTo, () => PromptUpdateTo(identity)));
+      items.Add(Change(ModsText.UpdateTo, () => PromptUpdateTo(identity)));
       if (package.Explicit) {
         // lip uninstall refuses a dependency: it leaves with what needs it.
-        items.Add(new MenuItem(
+        items.Add(Change(
             ModsText.Uninstall,
             () => Uninstall([identity], ModsText.UninstallOperation(identity))));
       }
@@ -424,22 +482,127 @@ public sealed class ModsPage : Page {
     Context.ShowMenu(identity, [.. items]);
   }
 
-  /// Asks for the package arguments of lip install, then installs them.
-  private void PromptInstall() =>
+  /// Shows what the catalogue says of a package, as the Get mods page does. The catalogue is
+  /// read once and kept; until it was, a dialog waits for it. One that is old is shown all
+  /// the same, and read again for the next time. Nothing is written.
+  private void ShowDetails(string identity) {
+    bool fresh = false;
+    if (_index is { } index) {
+      fresh = Environment.TickCount64 - _indexAt <= Stale;
+      ShowDetails(index, identity);
+    } else {
+      CatalogueWait wait = new(() => _waiting = null);
+      _waiting = (wait, identity);
+      Context.Show(wait);
+    }
+
+    if (fresh || _indexReading) {
+      // A read that an earlier wait started, and gave up, answers this one too.
+      return;
+    }
+
+    _indexReading = true;
+    ModCatalogClient catalog = Context.Catalog;
+    // The catalogue is of no workspace.
+    Context.Background(
+        () => catalog.GetIndex(),
+        read => {
+          _indexReading = false;
+          _index = read;
+          _indexAt = Environment.TickCount64;
+          Answer();
+        },
+        _ => {
+          _indexReading = false;
+          Answer();
+        },
+        anyWorkspace: true);
+  }
+
+  /// Ends the wait for the catalogue, when the user still waits: with the details, or with a
+  /// line that says that the catalogue cannot be read.
+  private void Answer() {
+    if (_waiting is not var (wait, identity)) {
+      return;
+    }
+
+    _waiting = null;
+    Context.Close(wait);
+    if (_index is { } index) {
+      ShowDetails(index, identity);
+    } else {
+      Context.Message(ModsText.Details, ModsText.CatalogueUnreadable, Theme.Bad);
+    }
+  }
+
+  private void ShowDetails(CatalogIndex index, string identity) {
+    if (index.Find(identity) is { } mod) {
+      Context.Show(new ModDetailsDialog(mod));
+    } else {
+      Context.Message(ModsText.Details, ModsText.NotInCatalogue);
+    }
+  }
+
+  /// Asks how to name what to install: by browsing for a local file or folder, or by typing
+  /// package arguments. selected is the way that is highlighted.
+  private void PromptInstall(int selected = 0) =>
+      Context.Show(new ChoiceDialog(
+          ModsText.InstallTitle,
+          [
+            new ChoiceItem(ModsText.Browse, ModsText.BrowseDetail),
+            new ChoiceItem(ModsText.TypeSource, ModsText.TypeSourceDetail),
+          ],
+          chosen => {
+            if (chosen == 0) {
+              BrowseInstall();
+            } else {
+              TypeInstall();
+            }
+          },
+          selected: selected));
+
+  /// Asks for a local .zip file or folder with the file browser, from the workspace, then
+  /// installs it. The path is one package argument, whatever characters it has. Esc goes back
+  /// to the choice.
+  private void BrowseInstall() {
+    System.IO.Abstractions.IPath paths = Context.FileSystem.Path;
+    WorkspaceList workspaces = Context.Workspaces;
+    string workspace = Context.Workspace;
+    Context.Show(PathPicker.OpenFile(
+        ModsText.InstallLocal, Context.Workspace, [".zip"],
+        path => {
+          // The title names the file or the folder, not the way to it.
+          string name = paths.GetFileName(path);
+          Install([path], name.Length > 0 ? name : path);
+        },
+        cancel: () => PromptInstall(0),
+        // The folder that the browser starts at is no package.
+        validate: path => workspaces.Same(path, workspace) ? ModsText.IsWorkspace : null,
+        orFolder: true));
+  }
+
+  /// Asks for the package arguments of lip install, then installs them. Esc goes back to the
+  /// choice.
+  private void TypeInstall() =>
       Context.Show(new PromptDialog(
           ModsText.InstallTitle,
           [new PromptField(ModsText.Source, "", ModsText.SourcePlaceholder)],
           values => {
             List<string> arguments = SplitArguments(values[0]);
-            LipClient client = Context.Client;
-            // The plan that the user applies confirms what a setup uninstalls.
-            Context.PlanAndRun(
-                ModsText.InstallOperation(string.Join(' ', arguments)),
-                (dryRun, acceptEula, token) =>
-                    client.Install(arguments, dryRun, token, acceptEula, confirmed: true));
+            Install(arguments, string.Join(' ', arguments));
           },
+          cancel: () => PromptInstall(1),
           validate: values =>
               SplitArguments(values[0]).Count == 0 ? CommonText.Required : null));
+
+  private void Install(IReadOnlyList<string> arguments, string name) {
+    LipClient client = Context.Client;
+    // The plan that the user applies confirms what a setup uninstalls.
+    Context.PlanAndRun(
+        ModsText.InstallOperation(name),
+        run => client.Install(
+            arguments, run.DryRun, run.Token, run.AcceptEula, confirmed: true, run.Session));
+  }
 
   /// Asks for the ref of lip update package@ref, then updates the package to it.
   private void PromptUpdateTo(string identity) =>
@@ -477,13 +640,14 @@ public sealed class ModsPage : Page {
   private void Update(IReadOnlyList<string> arguments, string title) {
     LipClient client = Context.Client;
     Context.PlanAndRun(
-        title, (dryRun, token) => client.Update(arguments, dryRun, token), _list.Checked.Clear);
+        title, run => client.Update(arguments, run.DryRun, run.Token, run.Session),
+        _list.Checked.Clear);
   }
 
   private void Uninstall(IReadOnlyList<string> identities, string title) {
     LipClient client = Context.Client;
     Context.PlanAndRun(
-        title, (dryRun, token) => client.Uninstall(identities, dryRun, token),
+        title, run => client.Uninstall(identities, run.DryRun, run.Token, run.Session),
         _list.Checked.Clear);
   }
 

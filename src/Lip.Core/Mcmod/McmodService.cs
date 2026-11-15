@@ -24,6 +24,18 @@ public record OperationOptions(
     bool AcceptEula = false,
     bool Confirmed = false);
 
+/// What a workspace operation changed, or, as a dry run, would change. Changes: whether it is
+/// anything at all: a package installed or uninstalled, with the directories and the files
+/// that takes, or the state file alone. OnlyStateFile: whether it is the state file alone, such
+/// as its first writing, an installed package marked otherwise, or another source recorded.
+public sealed record OperationResult(bool Changes, bool OnlyStateFile = false) {
+  /// Nothing changed, or would.
+  public static OperationResult Unchanged { get; } = new(false);
+
+  /// Packages changed, or would.
+  public static OperationResult Changed { get; } = new(true);
+}
+
 /// One package of the state file, as listed to the user.
 public record InstalledPackage(string Identity, string Version, bool Explicit);
 
@@ -60,7 +72,9 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// starts the server, systemPreparer prepares the system for the platform
 /// (protocol/lip-workspace.md, "System dependencies"); without it, nothing is prepared.
 /// downloadServerBuilds downloads the builds list of the server (protocol/lip-package.md, "The
-/// server"); without it, from its URL.
+/// server"); without it, from its URL. resolverCache is what the resolvers of the service share
+/// with those of the other services of its session (PublicApi.OperationSession); without it,
+/// every operation resolves anew.
 public partial class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
@@ -70,7 +84,8 @@ public partial class McmodService(
     McmodInstaller installer,
     Func<string>? workspaceRoot = null,
     ISystemPreparer? systemPreparer = null,
-    Func<Task<string>>? downloadServerBuilds = null) {
+    Func<Task<string>>? downloadServerBuilds = null,
+    ResolverCache? resolverCache = null) {
   private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
 
   /// The state file as the user sees it from the workspace root.
@@ -87,8 +102,10 @@ public partial class McmodService(
   private readonly WorkspaceLayout _layout = new(fileSystem, userInteraction);
   private readonly ISystemPreparer? _systemPreparer = systemPreparer;
   private readonly Func<Task<string>>? _downloadServerBuilds = downloadServerBuilds;
+  private readonly ResolverCache? _resolverCache = resolverCache;
 
-  public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
+  public async Task<OperationResult> Install(
+      IReadOnlyList<string> packages, OperationOptions options) {
     using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
     List<(string Argument, PackageRequest Request)> requests = ParseRequests(packages);
@@ -98,11 +115,10 @@ public partial class McmodService(
     if (requests.Any(r => GameSetup.NamesServer(r.Request.Ref)
         || GameSetup.NamesLoader(r.Request.Ref))) {
       SetupRequest setup = await SetupFromArguments(workspace, requests);
-      await SetUp(workspace, setup, [
+      return await SetUp(workspace, setup, [
         .. requests.Where(r => !GameSetup.NamesServer(r.Request.Ref)
             && !GameSetup.NamesLoader(r.Request.Ref)),
       ], options);
-      return;
     }
 
     (List<Candidate> candidates, Dictionary<string, Candidate> requested, List<string> unpinned) =
@@ -128,7 +144,7 @@ public partial class McmodService(
     }
 
     CheckGameAndLoader(workspace, packages, plan);
-    await Execute(workspace, options, await Changes(workspace, options, plan));
+    return await Execute(workspace, options, await Changes(workspace, options, plan));
   }
 
   /// The candidates of the package arguments of lip install, failing when one is already
@@ -182,7 +198,8 @@ public partial class McmodService(
     return (candidates, requested, unpinned);
   }
 
-  public async Task Uninstall(IReadOnlyList<string> packages, OperationOptions options) {
+  public async Task<OperationResult> Uninstall(
+      IReadOnlyList<string> packages, OperationOptions options) {
     using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
 
@@ -221,10 +238,11 @@ public partial class McmodService(
           + "as a dependency.");
     }
 
-    await Execute(workspace, options, await Changes(workspace, options, plan));
+    return await Execute(workspace, options, await Changes(workspace, options, plan));
   }
 
-  public async Task Update(IReadOnlyList<string> packages, OperationOptions options) {
+  public async Task<OperationResult> Update(
+      IReadOnlyList<string> packages, OperationOptions options) {
     using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
 
@@ -354,7 +372,7 @@ public partial class McmodService(
       }
     }
 
-    await Execute(workspace, options, await Changes(
+    return await Execute(workspace, options, await Changes(
         workspace, options, plan with { Members = members }));
   }
 
@@ -577,7 +595,8 @@ public partial class McmodService(
   /// "The server"): the package file of the version named, or of the highest one.
   private async Task<string> ViewServer(string package, Ref source) {
     BedrockServer server = await new Resolver(
-        _archiveProvider, _archiveReader, downloadServerBuilds: _downloadServerBuilds).Server();
+        _archiveProvider, _archiveReader, downloadServerBuilds: _downloadServerBuilds,
+        cache: _resolverCache).Server();
     SemVersion? version = source.GitRef switch {
       null => server.ReleaseVersions.FirstOrDefault(),
       { Kind: GitRefKind.Version } gitRef => server.Versions.FirstOrDefault(
@@ -650,7 +669,8 @@ public partial class McmodService(
       _archiveProvider,
       _archiveReader,
       message => RunTrace.Write("resolve", message),
-      _downloadServerBuilds);
+      _downloadServerBuilds,
+      _resolverCache);
 
   /// The installed package with the identity, version and commit of a candidate, with the
   /// source of the candidate; otherwise the candidate. Such a package is not replaced
@@ -1101,8 +1121,8 @@ public partial class McmodService(
   /// cancellation) undoes every change and leaves the state file as it was
   /// (protocol/lip-workspace.md, "Atomicity"). In a dry run, reports the plans instead.
   /// With prepareSystem, the system is prepared even when no hook command runs
-  /// (protocol/lip-setup.md, "Order").
-  private async Task Execute(
+  /// (protocol/lip-setup.md, "Order"). Returns what it changed, or, in a dry run, would change.
+  private async Task<OperationResult> Execute(
       Workspace workspace,
       OperationOptions options,
       ChangeSet changeSet,
@@ -1181,14 +1201,22 @@ public partial class McmodService(
     }
 
     LockFile final = LockWith(workspace, await changeSet.Finish(remaining));
+    // Without a change to a package, the state file is all that the operation writes.
+    OperationResult result = plans.Count > 0
+        ? OperationResult.Changed
+        : await _lockStore.Differs(workspace.Root, final)
+            ? new OperationResult(Changes: true, OnlyStateFile: true)
+            : OperationResult.Unchanged;
+    RunTrace.Write("workspace", $"{plans.Count} package changes"
+        + (result.OnlyStateFile ? "; the state file changes" : ""));
     if (options.DryRun) {
-      return;
+      return result;
     }
 
     options.CancellationToken.ThrowIfCancellationRequested();
     if (plans.Count == 0) {
       await _lockStore.Save(workspace.Root, final);
-      return;
+      return result;
     }
 
     // The system is prepared before anything changes, so that a failure is an early one
@@ -1270,6 +1298,8 @@ public partial class McmodService(
       RunTrace.Write("workspace", $"Cleanup warning: {error}");
       await _ui.PrintWarning(error.Message);
     }
+
+    return result;
   }
 
   private static string Files(int count) => count == 1 ? "1 file" : $"{count} files";

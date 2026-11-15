@@ -812,4 +812,470 @@ public sealed class GameConfigPageTests {
     await tui.WaitFor($"←→ {CommonText.HintSwitch.Text}");
     tui.Snapshot("gameconfig-buttons");
   }
+
+  #region While the server runs
+
+  /// Goes to the page and to the row of allow-cheats, a boolean, in the properties.
+  private static async Task ToAllowCheats(TuiHarness tui) {
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("allow-cheats [ ]");
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor("If true then cheats");
+  }
+
+  [Fact]
+  public async Task WhileTheServerRuns_PropertiesAreOnlyShown_AndAreEditedAgainOnceItStops() {
+    using TuiHarness tui = Start();
+    await ToAllowCheats(tui);
+    Assert.Contains("Enter Edit  Space Toggle", tui.Screen);
+    Assert.Contains(GameConfigText.AppliesOnStart, tui.Screen);
+
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(GameConfigText.StopToEdit);
+    Assert.DoesNotContain(GameConfigText.AppliesOnStart, tui.Screen);
+    // The values and the descriptions are still read; the hints offer no editing.
+    Assert.Contains("allow-cheats [ ]", tui.Screen);
+    Assert.Contains("If true then cheats", tui.Screen);
+    await tui.WaitFor(" ↑↓ Move  Enter Actions  Tab Next  Esc Back");
+    Assert.DoesNotContain("Space Toggle", tui.Screen);
+    Assert.DoesNotContain("Enter Edit", tui.Screen);
+
+    // Space switches nothing, and says why.
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Assert.Contains("allow-cheats [ ]", tui.Screen);
+    Assert.DoesNotContain("*", tui.Screen);
+
+    // Enter shows the action of the row, which cannot be chosen.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ allow-cheats ─");
+    tui.Snapshot("gameconfig-running-menu");
+    Assert.Contains(GameConfigText.Toggle, tui.Screen);
+    Assert.Contains(" ↑↓ Move  Esc Close", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.Settle();
+    Assert.Contains("─ allow-cheats ─", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("─ allow-cheats ─");
+    Assert.Contains("allow-cheats [ ]", tui.Screen);
+
+    // An enumeration and a text open no dialog to change them either.
+    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ gamemode ─");
+    Assert.Contains(GameConfigText.Choose, tui.Screen);
+    Assert.DoesNotContain("Enter Select", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("─ gamemode ─");
+    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ server-name ─");
+    Assert.Contains(GameConfigText.Edit, tui.Screen);
+    Assert.DoesNotContain(GameConfigText.Value + " ", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("─ server-name ─");
+
+    // Nothing can be saved or discarded: Tab leaves the page.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
+
+    // The server stops: the page is edited again, as it is.
+    await tui.SetServerRunning(false);
+    await tui.WaitFor(GameConfigText.AppliesOnStart);
+    Assert.DoesNotContain(GameConfigText.StopToEdit, tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("Enter Edit");
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor("Enter Edit  Space Toggle");
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("* allow-cheats [x]");
+    await Save(tui);
+    Assert.Equal(
+        Properties.Replace("allow-cheats=false", "allow-cheats=true"),
+        tui.Fs.File.ReadAllText(File("server.properties")));
+  }
+
+  [Fact]
+  public async Task WhileTheServerRuns_TheAllowlistIsOnlyShown_InSimplifiedChinese() {
+    using TuiHarness tui = Start(Language.ZhHans, allowlist: Allowlist);
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("属性");
+    await tui.SetServerRunning(true);
+    await tui.WaitFor("服务器运行中，停止后才能修改。");
+    Assert.DoesNotContain("下次启动服务器时生效。", tui.Screen);
+
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Alex 111");
+    tui.Press(ConsoleKey.RightArrow);
+    // Add player… is disabled: its details say why, no hint offers it, and Enter asks nothing.
+    await tui.WaitFor("请先停止服务器。");
+    Assert.Contains("开启 allow-list 后，只有这些玩家可以加入。", tui.Screen);
+    await tui.WaitFor(" ↑↓ 移动  Tab 下一项  Esc 返回");
+    tui.Snapshot("gameconfig-running-add-player");
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.Settle();
+    Assert.DoesNotContain("XUID（可选）", tui.Screen);
+
+    // The actions of a player are shown, and none of them can be chosen.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Enter 操作");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ Alex ─");
+    tui.Snapshot("gameconfig-running-player-menu");
+    Assert.Contains("无视人数上限", tui.Screen);
+    Assert.Contains("移除", tui.Screen);
+    Assert.Contains("请先停止服务器。", tui.Screen);
+    Assert.DoesNotContain("Enter 选择", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains("─ Alex ─", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("─ Alex ─");
+
+    Assert.Contains("Alex 111", tui.Screen);
+    Assert.DoesNotContain("*", tui.Screen);
+    Assert.Equal(Allowlist, tui.Fs.File.ReadAllText(File("allowlist.json")));
+  }
+
+  [Fact]
+  public async Task WhileTheServerRuns_ThePermissionsAreOnlyShown_InTraditionalChinese() {
+    using TuiHarness tui = Start(Language.ZhHant, permissions: Permissions);
+    await tui.SetServerRunning(true);
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("伺服器執行中，停止後才能修改。");
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor("222 member");
+    tui.Press(ConsoleKey.RightArrow);
+    await tui.WaitFor("請先停止伺服器。");
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.DoesNotContain("─ 新增玩家 ─", tui.Screen);
+
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Enter 操作");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ 222 ─");
+    Assert.Contains("變更權限…", tui.Screen);
+    Assert.Contains("移除", tui.Screen);
+    Assert.Contains("請先停止伺服器。", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.DoesNotContain("operator", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("─ 222 ─");
+    Assert.Equal(Permissions, tui.Fs.File.ReadAllText(File("permissions.json")));
+
+    // Once the server has stopped the player is changed, and the change is saved.
+    await tui.SetServerRunning(false);
+    await tui.WaitFor("下次啟動伺服器時生效。");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("變更權限…");
+    await tui.WaitFor("Enter 選擇");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("operator");
+    tui.Press(ConsoleKey.Home);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("222 operator");
+    await Save(tui);
+    Assert.Contains("\"operator\"", tui.Fs.File.ReadAllText(File("permissions.json")));
+  }
+
+  [Fact]
+  public async Task AServerThatStarts_KeepsTheChangesUnsaved_UntilItHasStopped() {
+    using TuiHarness tui = Start();
+    await ToAllowCheats(tui);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("* allow-cheats [x]");
+
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(GameConfigText.StopToSave);
+    Assert.Contains("* allow-cheats [x]", tui.Screen);
+    Assert.Contains("Properties *", tui.Screen);
+
+    // Of the buttons only Discard can be chosen: Enter asks, and Esc keeps the changes.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor(" Enter Select  Tab Next  ↑↓ Move  Esc Back");
+    Assert.DoesNotContain("←→ Switch", tui.Screen);
+    tui.Snapshot("gameconfig-running-unsaved");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.DiscardQuestion);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(CommonText.DiscardQuestion);
+    Assert.Contains("* allow-cheats [x]", tui.Screen);
+
+    // Leaving cannot save: Enter is Cancel, which stays.
+    tui.Press(ConsoleKey.Escape, 3);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(GameConfigText.CannotSaveNow);
+    tui.Snapshot("gameconfig-running-leave");
+    Assert.Contains($"[ {CommonText.Discard} ] [ {CommonText.Cancel} ]", tui.Screen);
+    Assert.DoesNotContain($"[ {CommonText.Save} ] [ {CommonText.Discard} ] [", tui.Screen);
+    Assert.Contains("server.properties", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(GameConfigText.CannotSaveNow);
+    Assert.Equal(PageId.GameConfig, await tui.Invoke(() => tui.Context.CurrentPage));
+    Assert.Contains("* allow-cheats [x]", tui.Screen);
+    Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
+
+    // The server stops: the changes are still there, and are saved.
+    await tui.SetServerRunning(false);
+    await tui.WaitFor(GameConfigText.AppliesOnStart);
+    Assert.Contains("* allow-cheats [x]", tui.Screen);
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor("←→ Switch  Enter Select");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.Saved);
+    Assert.Equal(
+        Properties.Replace("allow-cheats=false", "allow-cheats=true"),
+        tui.Fs.File.ReadAllText(File("server.properties")));
+  }
+
+  [Fact]
+  public async Task AServerThatStarts_LetsTheChangesBeDiscarded_ToLeaveThePage() {
+    using TuiHarness tui = Start();
+    await ToAllowCheats(tui);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("* allow-cheats [x]");
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(GameConfigText.StopToSave);
+
+    tui.Press(ConsoleKey.Escape, 2);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(GameConfigText.CannotSaveNow);
+    tui.Press(ConsoleKey.LeftArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.ModConfig);
+    Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
+
+    // Coming back shows the file as it is, still only shown.
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor("allow-cheats [ ]");
+    await tui.WaitFor(GameConfigText.StopToEdit);
+    Assert.DoesNotContain("*", tui.Screen);
+  }
+
+  [Fact]
+  public async Task AServerThatStarts_WhileADialogAsksForAValue_KeepsTheValueUnsaved() {
+    using TuiHarness tui = Start();
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("server-name  Dedicated Server");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("Enter Edit");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ server-name ─");
+
+    await tui.SetServerRunning(true);
+    tui.Type("!");
+    tui.Press(ConsoleKey.Enter);
+
+    // What the user typed is not lost: it is a change like the others, and is not written.
+    await tui.WaitUntilGone("─ server-name ─");
+    await tui.WaitFor("* server-name  Dedicated Server!");
+    await tui.WaitFor(GameConfigText.StopToSave);
+    Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
+
+    // The row offers its actions from then on, and none of them can be chosen.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.Reset);
+    await tui.WaitFor(" ↑↓ Move  Esc Close");
+    Assert.Contains(CommonText.StopServerFirst, tui.Screen);
+  }
+
+  [Fact]
+  public async Task AServerThatStarts_WhileAMenuIsOpen_KeepsItsActionsFromChangingAnything() {
+    using TuiHarness tui = Start(allowlist: Allowlist);
+    await tui.GoTo(PageId.GameConfig);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Alex 111");
+    tui.Press(ConsoleKey.RightArrow);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Enter Actions");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.Remove);
+
+    // Remove was offered before the server started; chosen after, it removes nobody.
+    await tui.SetServerRunning(true);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitUntilGone("─ Alex ─");
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Assert.Contains("Alex 111", tui.Screen);
+    Assert.DoesNotContain("Allowlist *", tui.Screen);
+    Assert.Contains(GameConfigText.StopToEdit, tui.Screen);
+  }
+
+  [Fact]
+  public async Task AServerThatStops_LeavesTheChosenButtonAlone_WhileTheButtonsHaveTheFocus() {
+    using TuiHarness tui = Start();
+    await ToAllowCheats(tui);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("* allow-cheats [x]");
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(GameConfigText.StopToSave);
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor(" Enter Select  Tab Next  ↑↓ Move  Esc Back");
+
+    // Discard is chosen, the only button there was: Enter still discards, and asks first.
+    await tui.SetServerRunning(false);
+    await tui.WaitFor("←→ Switch  Enter Select");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.DiscardQuestion);
+    Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
+  }
+
+  [Fact]
+  public async Task APageOpenedWhileTheServerRuns_ReadsItsFilesAgain_OnceTheServerHasStopped() {
+    using TuiHarness tui = Start(allowlist: Allowlist);
+    await tui.SetServerRunning(true);
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor(GameConfigText.StopToEdit);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Alex 111");
+
+    // A menu is open when the server stops: the files are read once it has closed.
+    tui.Press(ConsoleKey.RightArrow);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Enter Actions");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ Alex ─");
+    tui.Fs.File.WriteAllText(
+        File("allowlist.json"), "[{\"ignoresPlayerLimit\":false,\"name\":\"Kai\",\"xuid\":\"9\"}]");
+    await tui.SetServerRunning(false);
+    await tui.WaitFor(GameConfigText.AppliesOnStart);
+    await tui.Settle();
+    Assert.Contains("Alex 111", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+
+    await tui.WaitFor("Kai 9");
+    Assert.DoesNotContain("Alex", tui.Screen);
+  }
+
+  [Fact]
+  public async Task Save_WritesNothing_WhenTheServerStartedSinceTheInterfaceLooked() {
+    using TuiHarness tui = Start();
+    await ToAllowCheats(tui);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("* allow-cheats [x]");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("←→ Switch  Enter Select");
+
+    // The server starts and Save is pressed before the interface looks at its lock again.
+    await tui.Invoke(() => {
+      tui.SetServerLockHeld(true, tui.Root);
+      tui.Press(ConsoleKey.Enter);
+      return true;
+    });
+
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Assert.Contains($"─ {GameConfigText.SaveTitle} ─", tui.Screen);
+    Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"─ {GameConfigText.SaveTitle} ─");
+
+    // The changes stay, and the page says that they are saved once the server has stopped.
+    await tui.WaitFor(GameConfigText.StopToSave);
+    Assert.Contains("* allow-cheats [x]", tui.Screen);
+    Assert.DoesNotContain(CommonText.Saved, tui.Screen);
+  }
+
+  [Fact]
+  public async Task AServerThatStops_HasItsFilesReadAgain_UnlessTheyHaveChanges() {
+    using TuiHarness tui = Start();
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("gamemode     survival");
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(GameConfigText.StopToEdit);
+
+    // The server writes its file while it runs; the page shows it once the server stopped.
+    string written = Properties.Replace("gamemode=survival", "gamemode=adventure");
+    tui.Fs.File.WriteAllText(File("server.properties"), written);
+    await tui.SetServerRunning(false);
+    await tui.WaitFor("gamemode     adventure");
+    Assert.Contains(GameConfigText.AppliesOnStart, tui.Screen);
+
+    // With changes the page keeps what it has, and saving asks before it overwrites.
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("* allow-cheats [x]");
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(GameConfigText.StopToSave);
+    tui.Fs.File.WriteAllText(File("server.properties"), Properties);
+    await tui.SetServerRunning(false);
+    await tui.WaitFor(GameConfigText.AppliesOnStart);
+    await tui.Settle();
+    Assert.Contains("* allow-cheats [x]", tui.Screen);
+    Assert.Contains("gamemode     adventure", tui.Screen);
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("←→ Switch  Enter Select");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.ChangedOnDisk);
+    Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task WhileTheServerRuns_ThePageFitsTheTerminal_InEveryLanguage(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(language, Properties, Allowlist, Permissions, width, height);
+    await tui.GoTo(PageId.GameConfig);
+    await tui.WaitFor("gamemode");
+    tui.Snapshot("gameconfig-stopped");
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(GameConfigText.Properties + " *");
+
+    // With changes: the note is whole, beside the buttons.
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(GameConfigText.StopToSave);
+    tui.Snapshot("gameconfig-running-changes");
+    Assert.Contains($"[ {CommonText.Save} ] [ {CommonText.Discard} ]", tui.Screen);
+    Assert.Contains($"Enter {CommonText.HintActions.Text}", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.Reset);
+    await tui.WaitFor(CommonText.StopServerFirst);
+    tui.Snapshot("gameconfig-running-property-menu");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(GameConfigText.Reset);
+
+    // Without: discarded, and only shown.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor($"Enter {CommonText.HintSelect.Text}");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.DiscardQuestion);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.StopToEdit);
+    await tui.WaitFor("gamemode");
+    tui.Snapshot("gameconfig-running-properties");
+    Assert.DoesNotContain(GameConfigText.Properties + " *", tui.Screen);
+
+    tui.Press(ConsoleKey.Escape);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.RightArrow);
+    await tui.WaitFor(CommonText.StopServerFirst);
+    tui.Snapshot("gameconfig-running-allowlist");
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(GameConfigText.Remove);
+    tui.Snapshot("gameconfig-running-player-menu");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(GameConfigText.Remove);
+  }
+
+  #endregion
 }

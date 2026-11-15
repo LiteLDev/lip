@@ -43,8 +43,8 @@ Adding and removing read the workspace list again before they write it. The inte
 
 The user may ask the interface for a **new server**. The user then names a directory, and chooses, in this order:
 
-1. a game version G: a version that the builds list ([lip-package(7), "The server"](lip-package.md#the-server)) names, offered with the versions that are not prereleases first, then the others, each from highest to lowest;
-2. a build B ([lip-setup(1), "Terms"](lip-setup.md#terms)): `windows` when the builds list has a build of G for `win-x64`, and `linux` when it has one for `linux-x64`; and
+1. a game version G: a version that the builds list ([lip-package(7), "The server"](lip-package.md#the-server)) names and that step 2 offers a build for, offered with the versions that are not prereleases first, then the others, each from highest to lowest;
+2. a build B ([lip-setup(1), "Terms"](lip-setup.md#terms)): `windows` is offered when the builds list has a build of G for `win-x64`, and `linux` when it has one for `linux-x64` and `lip` runs on Linux on x64. When one build only is offered, it is B, and the user is not asked; and
 3. when B is `windows`, the loader: a version V of the loader source ([lip-setup(1), "Terms"](lip-setup.md#terms)) among the versions that fit G, or no loader. When B is `linux`, the setup has no loader, and the user is not asked.
 
 The **versions that fit** G are those of the candidates of Resolve(`github.com/LiteLDev/LeviLamina`, any version, environment) ([lip-package(7), "Resolution"](lip-package.md#resolution)) that fit G, from the first; the search may stop as [lip-setup(1), "The loader"](lip-setup.md#the-loader) defines, and at a candidate that does not fit G after one that does. `lip` reads the builds list and resolves these candidates as a setup does.
@@ -81,7 +81,9 @@ In the interface, the user asks for the commands of [lip(1)]. `lip` carries out 
 - A command that fails does not end the interface.
 - `lip run` is carried out as "Server" defines.
 
-Before a workspace operation, `lip` may carry out the same command as a dry run ([lip(1), "Dry run"](lip.md#dry-run)).
+Before a workspace operation, `lip` may carry out the same command as a dry run ([lip(1), "Dry run"](lip.md#dry-run)). The operation that the user then asks for may use what that dry run read from the network, such as the version tags, the package files and the archives it downloaded, instead of reading it again; it reads the workspace only after it took the workspace lock ([lip-workspace(7), "Carrying out an operation"](lip-workspace.md#carrying-out-an-operation)). When that dry run finds that the operation would install no package, uninstall none, and leave the state file with the value it has, the interface does not offer to carry out the operation; a state file that does not exist has no value.
+
+While the server of the selected workspace runs ("Server"), the interface carries out no `lip setup`, `lip install`, `lip uninstall` or `lip update` for it.
 
 When the user cancels a workspace operation in the interface while it changes the workspace, the operation is cancelled and undone ([lip-workspace(7), "Atomicity"](lip-workspace.md#atomicity), rule 2).
 
@@ -90,6 +92,8 @@ When the user cancels a workspace operation in the interface while it changes th
 The server that the user starts in the interface is the managed server of the selected workspace ([lip-run(1), "Managed servers"](lip-run.md#managed-servers)): `lip` starts it as `lip run --managed --detach` would, with the selected workspace as its working directory and the environment variables of the client of the interface, unless it runs already. When it fails before its server starts, the failure is shown in the interface.
 
 The interface shows the managed server of the selected workspace, whichever client or interface started it, and whether it runs, waits to be restarted ([lip-run(1), "Restarting"](lip-run.md#restarting)), or ran and with which exit code. It shows what that server writes to its standard output and its standard error, and the messages of `lip` about it, as an attached client gets them ([lip-run(1), "Attaching"](lip-run.md#attaching)). It gives that server the lines that the user enters for it, each ended by LF (U+000A), and asks `lip` to stop for it ([lip-run(1), "Stopping"](lip-run.md#stopping)) when the user asks the interface to stop the server. The interface shows, for each workspace of the workspace list, whether its managed server runs.
+
+For "Commands" and "Configuration", the server of a workspace **runs** while its managed server runs, or while a process holds the server lock of the workspace ([lip-workspace(7), "Server lock"](lip-workspace.md#server-lock)), as a `lip run` that is not managed does.
 
 Quitting the interface does not stop a managed server. When the server exits, the interface goes on.
 
@@ -105,6 +109,8 @@ The interface shows the **configuration files** of the selected workspace, and l
 A configuration file that does not exist is not created, except `allowlist.json` and `permissions.json`, which `lip` reads as the empty array `[]` when they do not exist. The server and the mods should create their files when the server first starts.
 
 `lip` writes a configuration file only when the user saves the changes they made to it, and writes it atomically ([README, "Files"](README.md#files)). It writes nothing else to the workspace for it. A change takes effect when the server is next started.
+
+While the server of the selected workspace runs ("Server"), the interface does not save `server.properties`, `allowlist.json` or `permissions.json`. It saves the configuration files of the mods all the same.
 
 A **property** of `server.properties` is a line of it that does not start with `#` and contains `=`: its key is the text before the first `=`, without the spaces around it, and its value the text after that `=`. Saving `server.properties` replaces the value of each property that the user changed, and changes no other character of the file.
 
