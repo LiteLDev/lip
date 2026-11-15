@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO.Abstractions.TestingHelpers;
 using System.Runtime.InteropServices;
 using System.Text;
+using Lip.Cli.Commands;
 using Lip.Cli.Daemon;
 using Lip.Cli.Tui;
 using Lip.Core.Catalog;
@@ -536,11 +537,131 @@ public sealed class DaemonTests : IAsyncDisposable {
     Assert.Fail("The screen never showed what was waited for:\n" + app.ScreenText);
   }
 
+  [Fact]
+  public async Task ManagedRun_KeepsRunningWhenTheClientDetaches_AndIsAttachedToAgain() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "The server of the test is cmd.exe.");
+    // Arrange (protocol/lip-run.md, "Managed servers" and "Attaching")
+    ServerSessions servers = new();
+    string root = Path.Join(_directory, "ws");
+    Directory.CreateDirectory(root);
+    File.Copy(
+        Path.Join(Environment.SystemDirectory, "cmd.exe"),
+        Path.Join(root, WorkspaceProgram.WindowsServerFileName));
+    Directory.CreateDirectory(Path.Join(root, ".lip"));
+    File.WriteAllText(Path.Join(root, ".lip", "state.json"), """
+        { "format": 4, "side": "server", "platform": "win-x64", "packages": [ {
+          "manifest": { "format": 4, "id": "github.com/LiteLDev/bds", "version": "1.21.0",
+            "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } },
+          "variant": "", "explicit": true, "ref": "github.com/LiteLDev/bds@1.21.0",
+          "files": [] } ] }
+        """);
+    System.IO.Abstractions.FileSystem fs = new();
+    _ = Host(
+        (args, _, invocation, _) => RunCommand.RunManaged(
+            invocation, args.Contains("--detach"), servers,
+            (interaction, workspace) => Tui.TuiAppTests.CmdClient(
+                fs, interaction, () => Stream.Null, workspace)),
+        runsServers: () => servers.AnyRunning);
+    try {
+      // Act: the first client starts the server, gives it a line, and detaches.
+      SyncStream firstOutput = new();
+      DaemonClient first = Client();
+      Task<ClientOutcome> firstRun = first.Run(
+          Start(["run", "--managed"], root), Streams.Of("echo first-line\n", firstOutput));
+      // cmd.exe writes the line it reads, then what it runs writes.
+      await WaitUntil(() => firstOutput.Text.Split("first-line").Length > 2);
+      first.Signal(PosixSignal.SIGHUP);
+      ClientOutcome detached = await firstRun;
+      WorkspaceServer server = servers.Find(root)!;
+      bool runningAfterDetach = server.Running;
+
+      // The daemon does not exit while the server runs.
+      bool refused;
+      await using (Stream connection =
+          (await _endpoint.TryConnect(TestContext.Current.CancellationToken))!) {
+        await Client().Greet(connection);
+        refused = !await DaemonClient.AskToExit(connection);
+      }
+
+      // A second client attaches, gets what the server wrote before, and makes it exit.
+      SyncStream secondOutput = new();
+      ClientOutcome exited = await Client().Run(
+          Start(["run", "--managed"], root), Streams.Of("exit 5\n", secondOutput));
+
+      // Assert
+      Assert.Equal(new ClientOutcome(0, null, null), detached);
+      Assert.True(runningAfterDetach);
+      Assert.True(refused);
+      Assert.Equal(new ClientOutcome(5, null, null), exited);
+      Assert.Contains("first-line", secondOutput.Text);
+      Assert.False(server.Running);
+    }
+    finally {
+      servers.Find(root)?.Send("exit");
+    }
+  }
+
+  [Fact]
+  public async Task ManagedRun_Detach_StartsTheServerAndEnds_AndAFailureBeforeItStartsFails() {
+    // Arrange: a workspace without a game.
+    ServerSessions servers = new();
+    System.IO.Abstractions.FileSystem fs = new();
+    _ = Host((args, _, invocation, _) => RunCommand.RunManaged(
+        invocation, args.Contains("--detach"), servers,
+        (interaction, workspace) => Tui.TuiAppTests.CmdClient(
+            fs, interaction, () => Stream.Null, workspace)));
+    Streams streams = new("");
+
+    // Act
+    ClientOutcome outcome = await Client().Run(
+        Start(["run", "--managed", "--detach"]), streams.Client);
+
+    // Assert: the command failed as lip run did.
+    Assert.Equal(1, outcome.ExitCode);
+    Assert.Contains("There is no server to run", streams.ErrorText.ToString());
+    Assert.False(servers.AnyRunning);
+  }
+
+  private static async Task WaitUntil(Func<bool> condition) {
+    for (int i = 0; i < 400 && !condition(); i++) {
+      await Task.Delay(25, TestContext.Current.CancellationToken);
+    }
+
+    Assert.True(condition());
+  }
+
+  /// A stream that is written and read at once.
+  private sealed class SyncStream : MemoryStream {
+    public string Text {
+      get {
+        lock (this) {
+          return Encoding.UTF8.GetString(ToArray());
+        }
+      }
+    }
+
+    public override void Write(byte[] buffer, int offset, int count) {
+      lock (this) {
+        base.Write(buffer, offset, count);
+      }
+    }
+
+    public override void Write(ReadOnlySpan<byte> buffer) {
+      lock (this) {
+        base.Write(buffer);
+      }
+    }
+  }
+
   private DaemonClient Client() => new(_endpoint, Version, Executable, () => "not started");
 
-  private Task Host(CarryOutCommand run, string version = Version, TimeSpan? idle = null) {
+  private Task Host(
+      CarryOutCommand run,
+      string version = Version,
+      TimeSpan? idle = null,
+      Func<bool>? runsServers = null) {
     Task host = new DaemonHost(
-        _endpoint, version, Executable, idle ?? TimeSpan.FromMinutes(1), run).Run();
+        _endpoint, version, Executable, idle ?? TimeSpan.FromMinutes(1), run, runsServers).Run();
     lock (_hosts) {
       _hosts.Add(host);
     }
@@ -573,6 +694,11 @@ public sealed class DaemonTests : IAsyncDisposable {
     public StringWriter OutputText { get; } = new() { NewLine = "\n" };
 
     public StringWriter ErrorText { get; } = new() { NewLine = "\n" };
+
+    /// Streams whose standard input is input and standard output is output.
+    public static ClientStreams Of(string input, Stream output) => new(
+        new MemoryStream(Encoding.UTF8.GetBytes(input)), false, output, output,
+        new StringWriter(), new StringWriter());
 
     public ClientStreams Client => new(
         new MemoryStream(Encoding.UTF8.GetBytes(input)), false, Output, new MemoryStream(),

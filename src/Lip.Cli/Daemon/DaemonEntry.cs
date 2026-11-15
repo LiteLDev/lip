@@ -28,7 +28,7 @@ public static class DaemonEntry {
 
     DaemonHost host = new(
         DaemonEndpoint.ForCurrentUser(), DaemonProcess.Version, DaemonProcess.Executable,
-        IdleTimeout, CarryOut);
+        IdleTimeout, CarryOut, () => ServerSessions.Shared.AnyRunning);
     try {
       await host.Run();
       return 0;
@@ -120,7 +120,9 @@ public static class DaemonEntry {
   public static async Task<int> RunClient(string[] args) {
     DaemonClient client = new(
         DaemonEndpoint.ForCurrentUser(), DaemonProcess.Version, DaemonProcess.Executable,
-        DaemonProcess.Start);
+        DaemonProcess.Start) {
+      KeepsBusyDaemon = IsManagedRun(args),
+    };
     ClientOutcome outcome;
     using (Signals.Listen(client.Signal)) {
       outcome = await client.Run(StartOf(args), StreamsOf());
@@ -141,6 +143,11 @@ public static class DaemonEntry {
         + " it out itself.");
     return await LipApp.RunInProcess(args);
   }
+
+  /// Whether the arguments are those of lip run --managed, which a daemon of another version
+  /// that runs a managed server carries out (protocol/lip-daemon.md, "Carrying out a command").
+  public static bool IsManagedRun(string[] args) =>
+      args.Length > 1 && args[0] == "run" && args.Contains("--managed");
 
   /// The command of this process, with everything of it that the daemon carries it out with.
   public static Start StartOf(string[] args) {

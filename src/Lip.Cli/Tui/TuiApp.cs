@@ -29,9 +29,13 @@ public sealed partial class TuiApp {
   private readonly string _version;
   private readonly WorkspaceList _workspaces;
   private readonly ServerSessions _servers;
-  private readonly StopListener _listenForStop;
   private readonly GithubProbe? _githubProbe;
   private readonly IServerSetup _serverSetup;
+  // The invocation of lip that the interface is carried out for.
+  private readonly Invocation _invocation;
+  // Whether the servers that the interface starts are managed servers (protocol/lip-tui.md,
+  // "Server"): when the daemon carries out the interface.
+  private readonly bool _managed;
   // The client of the selected workspace.
   private LipClient _client;
   // The selected workspace (protocol/lip-tui.md, "Workspaces").
@@ -56,9 +60,11 @@ public sealed partial class TuiApp {
   /// not checked when not given. serverSetup sets up a new server: through LipClient when not
   /// given.
   ///
-  /// The servers that the interface starts are asked to stop when lip is (protocol/lip-run.md,
-  /// "Stopping"): through the current invocation (Invocation) when the daemon carries out the
-  /// interface for a client, otherwise through the signals of this process.
+  /// The servers that the interface starts are managed servers when managedServers is set, by
+  /// default when the daemon carries out the interface for a client: quitting leaves them
+  /// running. Otherwise lip itself carries out the interface, its servers are also asked to stop
+  /// by the signals of this process (protocol/lip-run.md, "Stopping"), and quitting stops them
+  /// (protocol/lip-tui.md, "Server").
   public TuiApp(
       ITerminal terminal,
       Func<IUserInteraction, Func<Stream>, string, LipClient> createClient,
@@ -69,7 +75,8 @@ public sealed partial class TuiApp {
       WorkspaceList? workspaces = null,
       ServerSessions? servers = null,
       GithubProbe? githubProbe = null,
-      IServerSetup? serverSetup = null) {
+      IServerSetup? serverSetup = null,
+      bool? managedServers = null) {
     _githubProbe = githubProbe;
     _serverSetup = serverSetup ?? ClientServerSetup.Instance;
     _describeFailure = describeFailure ?? ErrorReporter.Describe;
@@ -79,10 +86,8 @@ public sealed partial class TuiApp {
     _version = version;
     _workspaces = workspaces ?? new WorkspaceList(new System.IO.Abstractions.FileSystem(), null);
     _servers = servers ?? ServerSessions.Shared;
-    Invocation invocation = Invocation.Current;
-    _listenForStop = invocation == Invocation.Process
-        ? ServerSession.ListenForSignals
-        : invocation.ListenForStop;
+    _invocation = Invocation.Current;
+    _managed = managedServers ?? _invocation != Invocation.Process;
     _interaction = new Interaction(this);
     _hookOutput = () => new LineSinkStream((line, transient) =>
         Post(() => AddHookLine(new StyledLine("│ " + line, Theme.Muted), transient)));
@@ -109,7 +114,7 @@ public sealed partial class TuiApp {
     using Timer timer = new(_ => Post(Tick), null, 250, 250);
     // Only a change that this interface shows or waits for draws the screen again.
     void Changed(WorkspaceServer server) {
-      if (_quitOnceStopped || ReferenceEquals(server.Owner, this)
+      if (_quitOnceStopped
           || WorkspaceList.PathComparer.Equals(server.Workspace, _workspace)) {
         Post(ServersChanged);
       }
@@ -365,14 +370,14 @@ public sealed partial class TuiApp {
       return;
     }
 
-    if (_servers.RunningFor(this).Count == 0) {
+    if (_managed || _servers.Running().Count == 0) {
       _quit = true;
       return;
     }
 
     Push(new MessageDialog(
         this, "Quit lip",
-        [new StyledLine("The server is running. Quitting stops it first.")],
+        [new StyledLine("A server is running. Quitting stops it first.")],
         ["Stop and quit", "Cancel"],
         choice => {
           if (choice == 0) {

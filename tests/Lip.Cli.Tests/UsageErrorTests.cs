@@ -127,6 +127,17 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
     Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
   }
 
+  [Fact]
+  public async Task RunDetachWithoutManaged_IsUsageError() {
+    // protocol/lip-run.md, OPTIONS
+    (int exitCode, string stdout, string stderr) = await Run("run", "--detach");
+
+    Assert.NotEqual(0, exitCode);
+    Assert.Equal("", stdout);
+    Assert.Contains("--detach", stderr);
+    Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
+  }
+
   [Theory]
   [InlineData("config")]
   [InlineData("cache")]

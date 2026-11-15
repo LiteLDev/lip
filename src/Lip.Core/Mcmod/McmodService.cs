@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -369,15 +370,80 @@ public partial class McmodService(
     ];
   }
 
-  /// lip run (protocol/lip-run.md): takes the workspace lock, recovers an interrupted operation,
-  /// releases the lock, then runs the server that the game and the loader choose, for the
-  /// environment of protocol/lip.md, "Environment", and returns its exit code.
-  /// The server reads the bytes read from input, and the line "stop" when lip is first asked to
-  /// stop (listen); inputIsConsole when input is an interactive Windows console. Throws when a
-  /// step before the server starts fails.
+  /// lip run (protocol/lip-run.md): takes the server lock and holds it until it returns; takes the
+  /// workspace lock, recovers an interrupted operation, releases the lock, then runs the server
+  /// that the game and the loader choose, for the environment of protocol/lip.md, "Environment";
+  /// restarts it as "Restarting" says, reading restart of the workspace configuration when it
+  /// exits; and returns the exit code of the server that ran last. The server reads the bytes
+  /// read from input, and the line "stop" when lip is first asked to stop (listen);
+  /// inputIsConsole when input is an interactive Windows console. Throws when a step before a
+  /// server starts fails.
   public async Task<int> Run(
-      Stream input, bool inputIsConsole, StopListener listen, IProgramStarter starter) {
+      Stream input,
+      bool inputIsConsole,
+      StopListener listen,
+      IProgramStarter starter,
+      ServerRunOptions? options = null) {
+    options ??= new ServerRunOptions();
     string root = _fs.Path.GetFullPath(_workspaceRoot());
+    _lockStore.CreateLipDirectory(root);
+    using ServerLock serverLock =
+        ServerLock.Acquire(_fs, _lockStore.GetServerLockPath(root), root);
+    using ServerSession session = new(starter, input, inputIsConsole, listen);
+    RestartPolicy policy = options.Restart;
+    // When the server was restarted within the window.
+    List<DateTimeOffset> restarts = [];
+    while (true) {
+      int exitCode = await RunServer(root, session, options.Started);
+      if (exitCode == 0 || session.StopRequested) {
+        return exitCode;
+      }
+
+      string restart;
+      try {
+        restart = await new Services.ConfigService(_fs, _ui, () => root).GetRestart();
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        // lip run exits with the exit code of the server all the same.
+        RunTrace.Write("run", $"Cannot read the workspace configuration: {ex.Message}");
+        restart = Services.ConfigService.RestartNever;
+      }
+
+      RunTrace.Write("run", $"restart is {restart}");
+      if (restart != Services.ConfigService.RestartOnFailure) {
+        return exitCode;
+      }
+
+      DateTimeOffset now = policy.Time.GetUtcNow();
+      restarts.RemoveAll(at => now - at >= policy.Window);
+      string code = exitCode.ToString(CultureInfo.InvariantCulture);
+      string limit = policy.Limit.ToString(CultureInfo.InvariantCulture) + " times within "
+          + policy.Window.TotalMinutes.ToString("0.##", CultureInfo.InvariantCulture)
+          + " minutes";
+      if (restarts.Count >= policy.Limit) {
+        await _ui.PrintWarning(
+            $"The server exited with code {code}. lip restarted it {limit}, so it does not"
+            + " restart it again. Look at what the server wrote above for why it fails.");
+        return exitCode;
+      }
+
+      restarts.Add(now);
+      await _ui.PrintWarning(
+          $"The server exited with code {code}, and restart is on-failure: lip restarts it in"
+          + $" {policy.Delay.TotalSeconds.ToString("0.##", CultureInfo.InvariantCulture)}"
+          + $" seconds (restart {restarts.Count.ToString(CultureInfo.InvariantCulture)}, at most"
+          + $" {limit}).");
+      options.Restarting?.Invoke(exitCode);
+      await Task.WhenAny(Task.Delay(policy.Delay, policy.Time), session.Stopped);
+      if (session.StopRequested) {
+        RunTrace.Write("run", "Asked to stop while waiting to restart the server");
+        return exitCode;
+      }
+    }
+  }
+
+  /// Steps 2 to 7 of lip run (protocol/lip-run.md): runs the server once in session.
+  private async Task<int> RunServer(string root, ServerSession session, Action? started) {
     LockFile? lockFile;
     using (await BeginOperation(new OperationOptions())) {
       // Read once a recovered operation is complete, as that operation leaves it.
@@ -425,7 +491,7 @@ public partial class McmodService(
       ProgramStartInfo start = linuxServer
           ? WorkspaceProgram.LinuxServer(host)
           : WorkspaceProgram.Server(host, fileName);
-      return await ServerSession.Run(starter, start, input, inputIsConsole, listen);
+      return await session.RunServer(start, started);
     }
     catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
         or InvalidOperationException) {

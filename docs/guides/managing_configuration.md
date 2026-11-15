@@ -33,7 +33,7 @@ lip config set <KEY> <VALUE>
 ### Common Settings
 
 -   `github_proxy` (user): A URL to use as a proxy for GitHub requests, or an empty string to connect to GitHub directly.
--   `restart` (workspace): `never` or `on-failure`, whether the server of the workspace is restarted when it exits.
+-   `restart` (workspace): `never` or `on-failure`, whether [`lip run`](../cli/commands/run.md#restarting) restarts the server of the workspace when it exits with a non-zero exit code.
 
 Examples:
 ```sh

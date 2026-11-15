@@ -25,6 +25,7 @@ public partial class LockStore(IFileSystem fs) {
   public const string FileName = "state.json";
   public const string StagedFileName = "state.json.tmp";
   public const string MutexFileName = "lock";
+  public const string ServerLockFileName = "server.lock";
   public const string JournalFileName = "journal";
 
   private static readonly JsonSerializerOptions _readOptions = new() {
@@ -37,6 +38,10 @@ public partial class LockStore(IFileSystem fs) {
 
   /// The path of the workspace lock file (WorkspaceMutex), &lt;root&gt;/.lip/lock.
   public string GetMutexPath(string workspaceRoot) => LipPath(workspaceRoot, MutexFileName);
+
+  /// The path of the server lock file (ServerLock), &lt;root&gt;/.lip/server.lock.
+  public string GetServerLockPath(string workspaceRoot) =>
+      LipPath(workspaceRoot, ServerLockFileName);
 
   /// The path of the journal (WorkspaceTransaction), &lt;root&gt;/.lip/journal.
   public string GetJournalPath(string workspaceRoot) => LipPath(workspaceRoot, JournalFileName);

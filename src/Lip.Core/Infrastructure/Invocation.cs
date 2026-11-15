@@ -13,6 +13,7 @@ public sealed class Invocation {
 
   private readonly object _gate = new();
   private readonly List<Action> _stopListeners = [];
+  private readonly List<Action> _detachListeners = [];
   private readonly CancellationTokenSource _cancellation = new();
   private readonly string? _workingDirectory;
   private readonly IReadOnlyDictionary<string, string>? _environment;
@@ -165,28 +166,59 @@ public sealed class Invocation {
 
   /// Listens for lip being asked to stop (protocol/lip-run.md, "Stopping"): calls stop each time,
   /// until the returned registration is disposed. A StopListener.
-  /// When the command was abandoned before, stop is called at once.
+  /// When the command was abandoned before, stop is called at once, unless a detach listener is
+  /// registered (ListenForDetach).
   public IDisposable ListenForStop(Action stop) {
     bool abandoned;
     lock (_gate) {
       _stopListeners.Add(stop);
-      abandoned = _abandoned;
+      abandoned = _abandoned && _detachListeners.Count == 0;
     }
 
     if (abandoned) {
       stop();
     }
 
-    return new StopRegistration(this, stop);
+    return new Registration(this, _stopListeners, stop);
+  }
+
+  /// Listens for the client detaching from a managed server (protocol/lip-run.md, "Attaching"):
+  /// until the returned registration is disposed, SIGHUP and SIGTERM, and the command being
+  /// abandoned, call detach, and ask lip to stop no more. When the command was abandoned before,
+  /// detach is called at once.
+  public IDisposable ListenForDetach(Action detach) {
+    bool abandoned;
+    lock (_gate) {
+      _detachListeners.Add(detach);
+      abandoned = _abandoned;
+    }
+
+    if (abandoned) {
+      detach();
+    }
+
+    return new Registration(this, _detachListeners, detach);
   }
 
   /// lip receives the signal: SIGINT, SIGQUIT, SIGTERM or SIGHUP, or a console control signal as
   /// .NET maps it to one of these. Returns true when lip goes on, false when the signal ends lip at
-  /// once (protocol/lip.md, "Workspace operations"; protocol/lip-run.md, "Stopping").
+  /// once (protocol/lip.md, "Workspace operations"; protocol/lip-run.md, "Stopping" and
+  /// "Attaching").
   public bool Signal(PosixSignal signal) {
     Action[] listeners;
+    Action[] detachers;
     lock (_gate) {
       listeners = [.. _stopListeners];
+      detachers = [.. _detachListeners];
+    }
+
+    if (detachers.Length > 0 && signal is PosixSignal.SIGHUP or PosixSignal.SIGTERM) {
+      RunTrace.Write("run", $"Detached by {signal}");
+      foreach (Action detach in detachers) {
+        detach();
+      }
+
+      return true;
     }
 
     // .NET maps Ctrl+Break to SIGQUIT on Windows, where it is a console control signal.
@@ -215,13 +247,25 @@ public sealed class Invocation {
     return false;
   }
 
-  /// The command is abandoned (protocol/lip-daemon.md, "Carrying out a command"): the server of
-  /// lip run is asked to stop, and anything else is cancelled.
+  /// The command is abandoned (protocol/lip-daemon.md, "Carrying out a command"): a client
+  /// attached to a managed server detaches, the server of lip run is asked to stop, and anything
+  /// else is cancelled.
   public void Abandon() {
     Action[] listeners;
+    Action[] detachers;
     lock (_gate) {
       _abandoned = true;
       listeners = [.. _stopListeners];
+      detachers = [.. _detachListeners];
+    }
+
+    if (detachers.Length > 0) {
+      RunTrace.Write("run", "Detached: the client ended");
+      foreach (Action detach in detachers) {
+        detach();
+      }
+
+      return;
     }
 
     if (listeners.Length > 0) {
@@ -236,10 +280,11 @@ public sealed class Invocation {
     _cancellation.Cancel();
   }
 
-  private sealed class StopRegistration(Invocation invocation, Action stop) : IDisposable {
+  private sealed class Registration(Invocation invocation, List<Action> listeners, Action listener)
+      : IDisposable {
     public void Dispose() {
       lock (invocation._gate) {
-        invocation._stopListeners.Remove(stop);
+        listeners.Remove(listener);
       }
     }
   }

@@ -31,6 +31,11 @@ public sealed class DaemonClient(
   private static readonly TimeSpan _startTimeout = TimeSpan.FromSeconds(10);
 
   private FrameWriter? _writer;
+
+  /// Whether a daemon of another version or executable that does not exit when asked carries out
+  /// the command all the same, as it does for lip run --managed (protocol/lip-daemon.md,
+  /// "Carrying out a command", step 2).
+  public bool KeepsBusyDaemon { get; init; }
   // Why Connect found no daemon.
   private string? _fallback;
 
@@ -124,7 +129,25 @@ public sealed class DaemonClient(
       }
 
       if (!exits) {
-        _fallback = $"the daemon of lip {welcome.Version} that runs carries out a command";
+        if (KeepsBusyDaemon && await endpoint.TryConnect() is { } again) {
+          bool same;
+          try {
+            same = (await Greet(again)).ProcessId == welcome.ProcessId;
+          }
+          catch {
+            await again.DisposeAsync();
+            throw;
+          }
+
+          if (same) {
+            return again;
+          }
+
+          await again.DisposeAsync();
+        }
+
+        _fallback = $"the daemon of lip {welcome.Version} that runs carries out a command or"
+            + " runs a managed server";
         return null;
       }
 

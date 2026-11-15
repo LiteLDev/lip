@@ -41,7 +41,7 @@ restart = "on-failure"
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `restart` | `"never"` 或 `"on-failure"` | `"never"` | 工作区的服务器退出时是否重启。 |
+| `restart` | `"never"` 或 `"on-failure"` | `"never"` | 工作区的服务器以非零退出码退出时是否重启：`on-failure` 时在 5 秒后重启，10 分钟内至多 5 次（参见 [`lip run`](commands/run.md#重启)）。 |
 
 ## 管理方式
 

@@ -45,7 +45,7 @@ The only configuration key of the user scope is `github_proxy`, without a defaul
 | `format` | required | `4`. |
 | `restart` | optional | `"never"` or `"on-failure"`. |
 
-The only configuration key of the workspace scope is `restart`, default `never`: whether the server ([lip-run(1)](lip-run.md)) of the workspace is restarted when it exits. Its effect is not defined here.
+The only configuration key of the workspace scope is `restart`, default `never`: whether the server of the workspace is restarted when it exits with an exit code other than 0 ([lip-run(1), "Restarting"](lip-run.md#restarting)): never with `never`, and with `on-failure` as lip-run(1) defines.
 
 ## FILES
 

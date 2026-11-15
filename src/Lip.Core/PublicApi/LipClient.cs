@@ -352,8 +352,13 @@ public sealed class LipClient {
 
   /// Runs the server as Run does, started by starter and asked to stop through listen: for the
   /// interface (protocol/lip-tui.md, "Server"), which reads the output of the server itself.
-  public async Task<int> Run(Stream input, StopListener listen, IProgramStarter starter) {
-    return await (await GetMcmodService()).Run(input, inputIsConsole: false, listen, starter);
+  public async Task<int> Run(
+      Stream input,
+      StopListener listen,
+      IProgramStarter starter,
+      ServerRunOptions? options = null) {
+    return await (await GetMcmodService()).Run(
+        input, inputIsConsole: false, listen, starter, options);
   }
 
   /// Checks for, or installs, the latest release of lip newer than running

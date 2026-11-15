@@ -18,4 +18,6 @@ Shows whether the daemon runs, and if so its version and process ID. It never st
 lip daemon stop
 ```
 
-Asks the daemon to exit and waits until it has. If the daemon is carrying out a command, such as a `lip run` whose server is running, it keeps running and `lip daemon stop` fails; run it again once the command has ended. If no daemon runs, it does nothing.
+Asks the daemon to exit and waits until it has. If the daemon is carrying out a command, such as a `lip run` whose server is running, or runs a managed server (see [`lip run --managed`](run.md#managed-servers)), it keeps running and `lip daemon stop` fails; stop the managed servers, then run it again once the commands have ended. If no daemon runs, it does nothing.
+
+The daemon does not exit by itself while it runs a managed server, and a newer `lip` keeps using it for `lip run --managed` until its managed servers have stopped.

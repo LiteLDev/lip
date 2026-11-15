@@ -1,4 +1,5 @@
 using System.Globalization;
+using Lip.Core.Infrastructure;
 
 namespace Lip.Cli.Tui;
 
@@ -24,21 +25,29 @@ public sealed partial class TuiApp {
           ]
           : [("Enter", "start the server"), ("↑/↓", "scroll"), ("Tab", "next tab"), ("q", "quit")];
 
+  /// Starts the server of the selected workspace: its managed server, or, when lip itself
+  /// carries out the interface, a server that this process runs (protocol/lip-tui.md, "Server").
   private void StartServer() {
     _serverScroll = 0;
-    Server.Start(
-        this, _client, _listenForStop,
-        failure => Post(() => {
+    string workspace = _workspace;
+    Task? started = Server.Start(
+        interaction => _createClient(interaction, () => Stream.Null, workspace),
+        _invocation,
+        listenForStop: _managed ? null : ServerSession.ListenForSignals);
+    started?.ContinueWith(
+        task => Post(() => {
           if (!_quitOnceStopped) {
-            ShowFailure("Run the server", failure, cancelled: false, []);
+            ShowFailure(
+                "Run the server", task.Exception!.InnerException!, cancelled: false, []);
           }
-        }));
+        }),
+        CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
   }
 
   /// Something about a server changed: the screen is drawn again, and the interface quits once
   /// the servers it asked to stop have exited.
   private void ServersChanged() {
-    if (_quitOnceStopped && _servers.RunningFor(this).Count == 0) {
+    if (_quitOnceStopped && _servers.Running().Count == 0) {
       _quit = true;
     }
   }
@@ -47,10 +56,11 @@ public sealed partial class TuiApp {
   /// (protocol/lip-run.md, "Stopping").
   private void StopServer() => Server.Stop();
 
-  /// Quits the interface: at once when it runs no server, otherwise once the servers that it
-  /// started, which it asks to stop, have exited (protocol/lip-tui.md, "Server").
+  /// Quits the interface: at once when its servers are managed servers or none runs, otherwise
+  /// once the servers of this process, which it asks to stop, have exited (protocol/lip-tui.md,
+  /// "Server").
   private void QuitOnceServerStopped() {
-    IReadOnlyList<WorkspaceServer> running = _servers.RunningFor(this);
+    IReadOnlyList<WorkspaceServer> running = _managed ? [] : _servers.Running();
     if (running.Count == 0) {
       _quit = true;
       return;
@@ -67,7 +77,11 @@ public sealed partial class TuiApp {
     WorkspaceServer? server = _servers.Find(_workspace);
     bool running = server?.Running == true;
     string state;
-    if (running) {
+    if (running && server!.Restarting) {
+      state = string.Create(
+          CultureInfo.InvariantCulture,
+          $"exited with code {server.ExitCode} · restarting");
+    } else if (running) {
       TimeSpan up = TimeSpan.FromMilliseconds(Environment.TickCount64 - server!.StartedAt);
       state = (server.Stopping ? "stopping" : "running")
           + string.Create(CultureInfo.InvariantCulture, $" · up {up:hh\\:mm\\:ss}");

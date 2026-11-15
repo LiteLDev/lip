@@ -156,6 +156,7 @@ An operation succeeds or fails as a whole.
 | `state.json` | The state file ([state.json(5)]). |
 | `state.json.tmp` | The state file being written ("Carrying out an operation"). |
 | `lock` | The file of the workspace lock ("Workspace lock"). |
+| `server.lock` | The file of the server lock ("Server lock"). |
 | `journal` | The journal ([journal(5)]). |
 | `logs` | The directory of failure reports ([lip(1), EXIT STATUS](lip.md#exit-status)). |
 | `wine` | The Wine prefix that "Running programs" names. |
@@ -163,7 +164,7 @@ An operation succeeds or fails as a whole.
 
 On Windows `.lip` should have the hidden attribute. Its other entries are not defined here, and an implementation must not read meaning into them.
 
-Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early ("Atomicity", rule 1) may leave them.
+Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early ("Atomicity", rule 1) may leave them. Creating `.lip` and `.lip/server.lock` is not a change either, and is not part of an operation.
 
 Creating `.lip/logs` and writing or deleting below it is not a change, and any process may do so at any time. Neither is anything that Wine does below `.lip/wine`.
 
@@ -176,6 +177,12 @@ The **workspace lock** is held on `.lip/lock`. To take it, a process creates `.l
 `.lip/lock` must not be deleted, renamed or replaced while the workspace lock is held. Its content is not defined here.
 
 A process that only reads the state file need not take the workspace lock.
+
+### Server lock
+
+The **server lock** is held on `.lip/server.lock` by the process that runs the server of the workspace ([lip-run(1)](lip-run.md)), so that at most one server of the workspace runs. It is taken, held and released as the workspace lock is ("Workspace lock"), on `.lip/server.lock` instead of `.lip/lock`; `.lip/server.lock` must not be deleted, renamed or replaced while the server lock is held, and its content is not defined here.
+
+The server lock and the workspace lock are independent: holding one neither takes nor waits for the other, and an operation does not take the server lock.
 
 ### Carrying out an operation
 

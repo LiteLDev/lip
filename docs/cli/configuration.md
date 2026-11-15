@@ -41,7 +41,7 @@ restart = "on-failure"
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `restart` | `"never"` or `"on-failure"` | `"never"` | Whether the server of the workspace is restarted when it exits. |
+| `restart` | `"never"` or `"on-failure"` | `"never"` | Whether the server of the workspace is restarted when it exits with a non-zero exit code: with `on-failure`, after 5 seconds, at most 5 times within 10 minutes (see [`lip run`](commands/run.md#restarting)). |
 
 ## Management
 

@@ -33,7 +33,7 @@ lip config set <KEY> <VALUE>
 ### 常见配置
 
 - `github_proxy`（用户）：GitHub 请求使用的代理 URL，或空字符串表示直接连接 GitHub。
-- `restart`（工作区）：`never` 或 `on-failure`，工作区的服务器退出时是否重启。
+- `restart`（工作区）：`never` 或 `on-failure`，工作区的服务器以非零退出码退出时 [`lip run`](../cli/commands/run.md#重启) 是否重启它。
 
 示例：
 ```sh

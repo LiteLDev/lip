@@ -167,11 +167,49 @@ public sealed class PipedProgramStarter(Action<byte[]> output, Action<byte[]> er
 /// until the returned registration is disposed.
 public delegate IDisposable StopListener(Action stop);
 
-/// Runs the server for lip run once it is started (protocol/lip-run.md, "Standard streams" and
-/// "Stopping").
-public static class ServerSession {
+/// Runs the servers of one lip run (protocol/lip-run.md, "Standard streams" and "Stopping"):
+/// one at a time, more than one when the server is restarted ("Restarting"). The bytes read from
+/// input are forwarded to the standard input of the server that runs, in order, and those read
+/// while none runs to the next one; input ending does not end the standard input of a server. The
+/// first time lip is asked to stop, the server that runs, or the next one once it starts, reads
+/// the line "stop". Stop requests are listened for from when the session is created until it is
+/// disposed, so that none ends lip meanwhile.
+public sealed class ServerSession : IDisposable {
   /// The line the server reads when lip is first asked to stop.
   private static readonly byte[] _stopLine = Encoding.ASCII.GetBytes("stop\n");
+
+  private readonly IProgramStarter _starter;
+  private readonly Stream _input;
+  private readonly bool _inputIsConsole;
+  private readonly object _sync = new();
+  private readonly SemaphoreSlim _gate = new(1, 1);
+  private readonly TaskCompletionSource _stopRequested =
+      new(TaskCreationOptions.RunContinuationsAsynchronously);
+  private readonly CancellationTokenSource _ended = new();
+  private readonly IDisposable _stopRegistration;
+  private IStartedProgram? _server;
+  private TaskCompletionSource _serverChanged =
+      new(TaskCreationOptions.RunContinuationsAsynchronously);
+  private bool _stopWritten;
+  private bool _forwarding;
+
+  /// inputIsConsole: input is an interactive Windows console, whose input never ends.
+  public ServerSession(
+      IProgramStarter starter, Stream input, bool inputIsConsole, StopListener listen) {
+    _starter = starter;
+    _input = input;
+    _inputIsConsole = inputIsConsole;
+    _stopRegistration = listen(() => {
+      _stopRequested.TrySetResult();
+      StopOnce();
+    });
+  }
+
+  /// Whether lip was asked to stop since the session was created.
+  public bool StopRequested => _stopRequested.Task.IsCompleted;
+
+  /// Completes when lip is first asked to stop.
+  public Task Stopped => _stopRequested.Task;
 
   /// Listens for SIGINT, SIGTERM and SIGHUP, and on Windows for every console control signal
   /// (.NET maps CTRL_C_EVENT to SIGINT, CTRL_BREAK_EVENT to SIGQUIT, CTRL_CLOSE_EVENT to SIGHUP,
@@ -193,82 +231,136 @@ public static class ServerSession {
     return new Registrations(registrations);
   }
 
-  /// Starts the server and forwards the bytes read from input to its standard input, in order,
-  /// without ending it when input ends; writes the line "stop" to it the first time lip is asked
-  /// to stop; and returns the exit code of the server once it exits. Throws when the server
-  /// cannot be started. Stop requests are listened for from before the server starts, so that
-  /// none ends lip while the server runs; one that comes before it starts is passed on once it
-  /// has. inputIsConsole: input is an interactive Windows console, whose input never ends.
+  /// Runs one server in a session of its own, and returns its exit code once it exits. Throws
+  /// when it cannot be started.
   public static async Task<int> Run(
       IProgramStarter starter,
       ProgramStartInfo start,
       Stream input,
       bool inputIsConsole,
       StopListener listen) {
-    SemaphoreSlim gate = new(1, 1);
-    IStartedProgram? server = null;
-    int stopRequested = 0;
-    void StopOnce() {
-      if (Volatile.Read(ref server) is { } started
-          && Interlocked.CompareExchange(ref stopRequested, 2, 1) == 1) {
-        RunTrace.Write("run", "Writing the line 'stop' to the server");
-        _ = Write(started, gate, _stopLine, _stopLine.Length);
-      }
-    }
+    using ServerSession session = new(starter, input, inputIsConsole, listen);
+    return await session.RunServer(start);
+  }
 
-    using IDisposable stopRegistration = listen(() => {
-      Interlocked.CompareExchange(ref stopRequested, 1, 0);
-      StopOnce();
-    });
-
+  /// Starts the server, calls started once it has, and returns its exit code once it exits.
+  /// Throws when it cannot be started.
+  public async Task<int> RunServer(ProgramStartInfo start, Action? started = null) {
     RunTrace.Write("run", $"Starting {start.FileName} {string.Join(' ', start.Arguments)}"
         + $" in {start.WorkingDirectory}"
         + string.Concat(start.EnvironmentOverrides.Select(v => $", {v.Key}={v.Value}")));
-    using IStartedProgram program = starter.Start(start);
-    Volatile.Write(ref server, program);
+    using IStartedProgram program = _starter.Start(start);
+    SetServer(program);
     StopOnce();
+    started?.Invoke();
+    bool forward;
+    lock (_sync) {
+      forward = !_forwarding;
+      _forwarding = true;
+    }
 
-    // Reading the input of lip may block until the process exits; nothing waits for it.
-    _ = Task.Run(() => Forward(program, input, inputIsConsole, gate));
-    int exitCode = await program.WaitForExit();
-    RunTrace.Write("run", $"The server exited with code {exitCode}");
-    return exitCode;
+    if (forward) {
+      // Reading the input of lip may block until the process exits; nothing waits for it.
+      _ = Task.Run(Forward);
+    }
+
+    try {
+      int exitCode = await program.WaitForExit();
+      RunTrace.Write("run", $"The server exited with code {exitCode}");
+      return exitCode;
+    }
+    finally {
+      SetServer(null);
+    }
   }
 
-  private static async Task Forward(
-      IStartedProgram server, Stream input, bool inputIsConsole, SemaphoreSlim gate) {
+  public void Dispose() {
+    _stopRegistration.Dispose();
+    _ended.Cancel();
+    SetServer(null);
+  }
+
+  private void SetServer(IStartedProgram? server) {
+    TaskCompletionSource changed;
+    lock (_sync) {
+      _server = server;
+      changed = _serverChanged;
+      _serverChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    changed.TrySetResult();
+  }
+
+  /// Writes the line "stop" to the server that runs, when lip was asked to stop and it was not
+  /// written yet.
+  private void StopOnce() {
+    IStartedProgram server;
+    lock (_sync) {
+      if (!StopRequested || _stopWritten || _server is null) {
+        return;
+      }
+
+      _stopWritten = true;
+      server = _server;
+    }
+
+    RunTrace.Write("run", "Writing the line 'stop' to the server");
+    _ = Write(server, _stopLine, _stopLine.Length);
+  }
+
+  private async Task Forward() {
     byte[] buffer = new byte[4096];
     try {
-      while (true) {
-        int read = await input.ReadAsync(buffer);
+      while (!_ended.IsCancellationRequested) {
+        int read = await _input.ReadAsync(buffer);
         if (read == 0) {
-          if (inputIsConsole) {
+          if (_inputIsConsole) {
             // A console read that a console control signal (Ctrl+C, Ctrl+Break) interrupts, or
             // that reads a Ctrl+Z line, reads nothing, though the console has not ended; the next
             // read waits for the user to type again.
             continue;
           }
-          break;
-        }
 
-        if (!await Write(server, gate, buffer, read)) {
+          // The standard input of the server stays open.
+          RunTrace.Write("run", "The standard input of lip ended");
           return;
         }
-      }
 
-      // The standard input of the server stays open.
-      RunTrace.Write("run", "The standard input of lip ended");
+        await Deliver(buffer, read);
+      }
     }
     catch (Exception ex) when (ex is IOException or ObjectDisposedException) {
       RunTrace.Write("run", $"Cannot read the standard input of lip: {ex.Message}");
     }
   }
 
+  /// Writes the bytes to the server that runs, or to the next one when none runs or it exits
+  /// before it reads them; drops them once the session ends.
+  private async Task Deliver(byte[] bytes, int count) {
+    while (true) {
+      IStartedProgram? server;
+      Task changed;
+      lock (_sync) {
+        if (_ended.IsCancellationRequested) {
+          return;
+        }
+
+        server = _server;
+        changed = _serverChanged.Task;
+      }
+
+      if (server is not null && await Write(server, bytes, count)) {
+        return;
+      }
+
+      await changed;
+    }
+  }
+
   /// Writes the bytes to the server, after those written before; false when the server no longer
   /// reads them.
-  private static async Task<bool> Write(
-      IStartedProgram server, SemaphoreSlim gate, byte[] bytes, int count) {
-    await gate.WaitAsync();
+  private async Task<bool> Write(IStartedProgram server, byte[] bytes, int count) {
+    await _gate.WaitAsync();
     try {
       await server.StandardInput.WriteAsync(bytes.AsMemory(0, count));
       await server.StandardInput.FlushAsync();
@@ -281,7 +373,7 @@ public static class ServerSession {
       return false;
     }
     finally {
-      gate.Release();
+      _gate.Release();
     }
   }
 

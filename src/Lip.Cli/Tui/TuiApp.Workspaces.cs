@@ -118,12 +118,15 @@ public sealed partial class TuiApp {
         string path = _list[_top + i];
         bool current = _app._workspaces.Same(path, _app._workspace);
         bool missing = !_app._workspaces.FileSystem.Directory.Exists(path);
+        // Whether the server of the workspace runs (protocol/lip-tui.md, "Server").
+        bool serving = _app._servers.Find(_app._workspaces.Normalize(path))?.Running == true;
+        string mark = missing ? "(missing)" : serving ? "(server running)" : "";
         int y = inner.Y + i;
         int x = screen.Write(inner.X, y, current ? "● " : "  ", Theme.Good);
-        x = screen.WriteFit(x, y, inner.Right - x - (missing ? 10 : 0), path,
-            current ? Theme.Strong : default);
-        if (missing) {
-          screen.Write(x + 1, y, "(missing)", Theme.Warning);
+        x = screen.WriteFit(x, y, inner.Right - x - (mark.Length > 0 ? mark.Length + 1 : 0),
+            path, current ? Theme.Strong : default);
+        if (mark.Length > 0) {
+          screen.Write(x + 1, y, mark, missing ? Theme.Warning : Theme.Good);
         }
 
         if (_top + i == _selected) {

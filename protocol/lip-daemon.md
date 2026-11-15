@@ -37,7 +37,7 @@ The daemon directory holds `daemon.sock` and files whose names and content are n
 A client does, in order:
 
 1. Connect to the endpoint. When nothing listens on it, start a daemon, with the arguments, the environment variables and the user of the client, in a new session without a terminal and without the standard streams of the client, and connect once it listens.
-2. When the daemon has another version or runs another executable file than the client, ask it to exit. A daemon that carries out no command exits, and the client goes back to step 1; a daemon that carries out a command keeps running, and the client goes on at "Fallback".
+2. When the daemon has another version or runs another executable file than the client, ask it to exit. A daemon that carries out no command and runs no managed server ([lip-run(1), "Managed servers"](lip-run.md#managed-servers)) exits, and the client goes back to step 1. Any other daemon keeps running; the client of `lip run --managed` then goes on at step 3 with it, and any other client at "Fallback".
 3. Have the daemon carry out the command.
 
 The daemon carries out the command as lip(1) and the page of the command define, with the arguments, the working directory, the environment variables and the process ID of the client, as `lip` itself would in the client process. Everything those pages define of `lip` holds as observed from the client:
@@ -46,12 +46,12 @@ The daemon carries out the command as lip(1) and the page of the command define,
 - What `lip` writes to its standard output and to its standard error, the client writes there, in the order the daemon writes it. The output of the programs that the command runs ([lip-workspace(7), "Running programs"](lip-workspace.md#running-programs)) is written so too, the standard output of a program to standard output and its standard error to standard error.
 - Whether a standard stream of `lip` is a terminal, and the size of the terminal, are those of the client.
 - For the interface, the client reads the keys that the user presses on its terminal, and passes them on to the interface in their order; the interface also follows the size of the terminal of the client as it changes. What the interface writes to the terminal, the client writes to its standard output. How the client sets up its terminal for this is not defined here.
-- The signals and the console control signals that the client receives are received by `lip`: they interrupt it as lip(1), "Workspace operations" defines, and ask it to stop as lip-run(1), "Stopping" defines. When they would end `lip` at once, the client ends at once, as that signal ends a process, and the command is **abandoned**.
+- The signals and the console control signals that the client receives are received by `lip`: they interrupt it as lip(1), "Workspace operations" defines, ask it to stop as lip-run(1), "Stopping" defines, and detach it as lip-run(1), "Attaching" defines. When they would end `lip` at once, the client ends at once, as that signal ends a process, and the command is **abandoned**.
 - The client exits with the exit code of the command.
 
-When the client ends before the command does, `lip` is asked to stop ([lip-run(1), "Stopping"](lip-run.md#stopping)) while the server of `lip run`, or a server that the interface started ([lip-tui(1), "Server"](lip-tui.md#server)), runs; otherwise the command is abandoned.
+When the client ends before the command does, `lip` is asked to stop ([lip-run(1), "Stopping"](lip-run.md#stopping)) while the server of `lip run` without `--managed` runs; the client detaches while it is attached to a managed server ([lip-run(1), "Attaching"](lip-run.md#attaching)); otherwise the command is abandoned.
 
-Commands that a daemon carries out for different clients are, to each other, carried out by different processes: for example, each finds the workspace lock that the other takes held by another process ([lip-workspace(7), "Workspace lock"](lip-workspace.md#workspace-lock)). The interfaces that a daemon carries out are the exception for their servers, which they share ([lip-tui(1), "Server"](lip-tui.md#server)).
+Commands that a daemon carries out for different clients are, to each other, carried out by different processes: for example, each finds the workspace lock that the other takes held by another process ([lip-workspace(7), "Workspace lock"](lip-workspace.md#workspace-lock)). The managed servers of a daemon are the exception: every client of the daemon finds the same ones ([lip-run(1), "Managed servers"](lip-run.md#managed-servers)), and the server lock that a managed server holds is held by the daemon.
 
 An abandoned command writes nothing more to the client, and ends as soon as it can: a workspace operation that changes the workspace is cancelled and undone ([lip-workspace(7), "Atomicity"](lip-workspace.md#atomicity), rule 2); any other command changes nothing more.
 
@@ -67,9 +67,9 @@ When a client cannot start a daemon or connect to the endpoint, or step 2 of "Ca
 
 A daemon exits:
 
-- after it has had no connection for a time that is not defined here;
-- when a client asks it to (step 2 of "Carrying out a command"), or `lip daemon stop` does, and it carries out no command; and
-- once it carries out no command, after it has carried out `lip self-update` that updated `lip` or started an installer ([lip-self-update(1)](lip-self-update.md)).
+- after it has had no connection and run no managed server for a time that is not defined here;
+- when a client asks it to (step 2 of "Carrying out a command"), or `lip daemon stop` does, and it carries out no command and runs no managed server; and
+- once it carries out no command and runs no managed server, after it has carried out `lip self-update` that updated `lip` or started an installer ([lip-self-update(1)](lip-self-update.md)).
 
 Before it exits, it stops listening on the endpoint and, elsewhere than on Windows, deletes `daemon.sock`.
 
@@ -78,7 +78,7 @@ Before it exits, it stops listening on the endpoint and, elsewhere than on Windo
 The commands of the command group `daemon` are carried out by the process that they start, never by a daemon, and never start one.
 
 - `lip daemon status`: The result is whether a daemon listens on the endpoint and, when one does, its version and its process ID.
-- `lip daemon stop`: When a daemon listens on the endpoint, asks it to exit and waits until it has. When it carries out a command, the command fails, and the daemon keeps running. When no daemon listens, the command succeeds and changes nothing.
+- `lip daemon stop`: When a daemon listens on the endpoint, asks it to exit and waits until it has. When it carries out a command or runs a managed server, the command fails, and the daemon keeps running; the message should say to stop the managed servers first. When no daemon listens, the command succeeds and changes nothing.
 
 ## OPTIONS
 

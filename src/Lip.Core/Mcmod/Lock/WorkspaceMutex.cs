@@ -49,7 +49,7 @@ public sealed class WorkspaceMutex : IDisposable {
   }
 
   /// A sharing or lock violation on Windows; elsewhere the failed flock.
-  private static bool IsLocked(IOException ex) =>
+  internal static bool IsLocked(IOException ex) =>
       ex is not FileNotFoundException and not DirectoryNotFoundException
       && (!OperatingSystem.IsWindows() || (ex.HResult & 0xFFFF) is 32 or 33);
 

@@ -142,10 +142,12 @@ The server and most mods create their configuration files when the server first 
 
 ## Running the server
 
-In the Server tab, `Enter` starts the server of the selected workspace as [`lip run`](./commands/run.md) does. What the server writes is shown in the window; `PgUp` and `PgDn` scroll back. While the server runs, what you type is a line for the server, sent with `Enter`; `↑` and `↓` recall earlier lines.
+In the Server tab, `Enter` starts the server of the selected workspace as a managed server, as [`lip run --managed --detach`](./commands/run.md#managed-servers) does: the daemon of lip runs it, and it keeps running after you quit lip or close its terminal. What the server writes is shown in the window; `PgUp` and `PgDn` scroll back. While the server runs, what you type is a line for the server, sent with `Enter`; `↑` and `↓` recall earlier lines.
 
-`Ctrl+C` asks the server to stop, by sending it the line `stop`. Quitting lip while servers you started run does the same for each of them, and lip waits until they have exited. Closing the terminal does too.
+`Ctrl+C` asks the server to stop, by sending it the line `stop`. Quitting lip, or closing its terminal, leaves the server running: open lip again, or run `lip run --managed` in the workspace, to see it again. The title of the Server tab tells whether the server runs, waits to be restarted (with `restart = "on-failure"`, see [`lip run`](./commands/run.md#restarting)), or with which code it exited.
 
-Each workspace has its own server, so servers of several workspaces can run at once: select another workspace to start or see its server. Interfaces open in several terminals at once share the servers: each shows the server of its selected workspace, and can send it lines or stop it.
+Each workspace has its own server, so servers of several workspaces can run at once: select another workspace to start or see its server; the workspace list (`w`) marks the workspaces whose server runs. Interfaces open in several terminals at once, and `lip run --managed`, share the servers: each shows the server of its selected workspace, whoever started it, and can send it lines or stop it.
+
+When lip cannot use its daemon and runs the interface itself, the servers it starts are not managed: quitting lip asks them to stop, and lip waits until they have exited.
 
 The other tabs stay usable while the server runs. As with `lip run`, the workspace is not locked meanwhile, and changes to packages take effect when the server is started again.

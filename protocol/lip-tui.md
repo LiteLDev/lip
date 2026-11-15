@@ -74,13 +74,13 @@ When the user cancels a workspace operation in the interface while it changes th
 
 ### Server
 
-The interface runs the server as [lip-run(1)] defines, with these differences:
+The server that the user starts in the interface is the managed server of the selected workspace ([lip-run(1), "Managed servers"](lip-run.md#managed-servers)): `lip` starts it as `lip run --managed --detach` would, with the selected workspace as its working directory and the environment variables of the client of the interface, unless it runs already. When it fails before its server starts, the failure is shown in the interface.
 
-- The standard streams of the server are not those of `lip`. The server reads from its standard input the lines that the user enters for it in the interface, each ended by LF (U+000A), in their order. `lip` reads the standard output and the standard error of the server, and shows them in the interface. The standard input of the server does not end before the server exits.
-- `lip` is also asked to stop ([lip-run(1), "Stopping"](lip-run.md#stopping)) when the user asks the interface to stop the server, and, for every server that the interface started, when the user quits the interface while that server runs. The interface ends once those servers have exited.
-- When the server exits, the interface goes on.
+The interface shows the managed server of the selected workspace, whichever client or interface started it, and whether it runs, waits to be restarted ([lip-run(1), "Restarting"](lip-run.md#restarting)), or ran and with which exit code. It shows what that server writes to its standard output and its standard error, and the messages of `lip` about it, as an attached client gets them ([lip-run(1), "Attaching"](lip-run.md#attaching)). It gives that server the lines that the user enters for it, each ended by LF (U+000A), and asks `lip` to stop for it ([lip-run(1), "Stopping"](lip-run.md#stopping)) when the user asks the interface to stop the server. The interface shows, for each workspace of the workspace list, whether its managed server runs.
 
-There is at most one server per workspace. Its workspace is the selected workspace when the user starts it, and the interface shows the server of the selected workspace. The interfaces that one daemon carries out at the same time share their servers: each shows what a server of its selected workspace writes, sends it the lines its user enters, and asks it to stop when its user asks to, whichever interface started it.
+Quitting the interface does not stop a managed server. When the server exits, the interface goes on.
+
+When `lip` itself carries out the interface ([lip-daemon(1), "Fallback"](lip-daemon.md#fallback)), the servers that it starts are not managed servers: `lip` runs them as above, in its own process, and when the user quits the interface while any of them runs, `lip` is asked to stop for each, and the interface ends once they have all exited.
 
 ### Configuration
 

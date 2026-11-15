@@ -26,8 +26,10 @@ public class DaemonStopCommand(IUserInteraction userInteraction)
       daemon = await DaemonStatusCommand.Client(endpoint).Greet(connection);
       if (!await DaemonClient.AskToExit(connection)) {
         throw new InvalidOperationException(
-            $"The daemon of lip (process {daemon.ProcessId}) carries out commands, so it keeps"
-            + " running. Run 'lip daemon stop' again once they have ended.");
+            $"The daemon of lip (process {daemon.ProcessId}) carries out commands or runs managed"
+            + " servers, so it keeps running. Stop the managed servers first (attach with"
+            + " 'lip run --managed' in their workspaces and press Ctrl+C, or stop them in the"
+            + " interface), then run 'lip daemon stop' again once the commands have ended.");
       }
     }
 

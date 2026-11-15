@@ -292,6 +292,8 @@ public sealed class QueueInputStream : Stream {
 
   public void Send(string text) => _channel.Writer.TryWrite(Encoding.UTF8.GetBytes(text));
 
+  public void Send(byte[] bytes) => _channel.Writer.TryWrite(bytes);
+
   public void Complete() => _channel.Writer.TryComplete();
 
   public override bool CanRead => true;

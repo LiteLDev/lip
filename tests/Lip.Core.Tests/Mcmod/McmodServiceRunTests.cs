@@ -293,4 +293,159 @@ public class McmodServiceRunTests : IDisposable {
     // Assert
     Assert.True(recovered);
   }
+
+  [Fact]
+  public async Task Run_ServerLockHeld_FailsWithoutStarting() {
+    // Arrange: another lip run runs the server (protocol/lip-run.md, step 1).
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    _lockStore.CreateLipDirectory(_root);
+    using ServerLock held =
+        ServerLock.Acquire(_fs, _lockStore.GetServerLockPath(_root), _root);
+
+    // Act & Assert
+    ServerRunningException ex = await Assert.ThrowsAsync<ServerRunningException>(Run);
+    Assert.Contains("already running", ex.Message);
+    Assert.Empty(_started);
+  }
+
+  [Fact]
+  public async Task Run_ServerLockHeldWhileTheServerRuns_AndReleasedAfter() {
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    bool held = false;
+    _onStart = () => held = Assert.Throws<ServerRunningException>(() =>
+        ServerLock.Acquire(_fs, _lockStore.GetServerLockPath(_root), _root)) is not null;
+
+    // Act
+    await Run();
+
+    // Assert
+    Assert.True(held);
+    using ServerLock released =
+        ServerLock.Acquire(_fs, _lockStore.GetServerLockPath(_root), _root);
+  }
+
+  [Theory]
+  [InlineData(null)]
+  [InlineData("never")]
+  public async Task Run_RestartNotOnFailure_DoesNotRestart(string? restart) {
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    if (restart is not null) {
+      WriteRestart(restart);
+    }
+
+    // Act
+    int code = await RunExiting([1]);
+
+    // Assert
+    Assert.Equal(1, code);
+    Assert.Single(_started);
+  }
+
+  [Fact]
+  public async Task Run_OnFailure_RestartsAFailedServerUntilItExitsWithZero() {
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    WriteRestart("on-failure");
+
+    // Act
+    int code = await RunExiting([1, 2, 0]);
+
+    // Assert
+    Assert.Equal(0, code);
+    Assert.Equal(3, _started.Count);
+    _ui.Verify(
+        u => u.PrintWarning(It.Is<string>(m => m.Contains("restarts it"))), Times.Exactly(2));
+  }
+
+  [Fact]
+  public async Task Run_OnFailure_GivesUpAfterFiveRestartsWithinTenMinutes() {
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    WriteRestart("on-failure");
+
+    // Act
+    int code = await RunExiting([1, 1, 1, 1, 1, 7, 1]);
+
+    // Assert: the first run and 5 restarts.
+    Assert.Equal(7, code);
+    Assert.Equal(6, _started.Count);
+    _ui.Verify(u => u.PrintWarning(It.Is<string>(m => m.Contains("does not restart it again"))));
+  }
+
+  [Fact]
+  public async Task Run_OnFailure_RestartsOlderThanTheWindowDoNotCount() {
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    WriteRestart("on-failure");
+    ManualClock clock = new();
+
+    // Act: 11 minutes pass while each server runs.
+    int code = await RunExiting(
+        [1, 1, 1, 1, 1, 1, 1, 0], clock, () => clock.Now += TimeSpan.FromMinutes(11));
+
+    // Assert
+    Assert.Equal(0, code);
+    Assert.Equal(8, _started.Count);
+  }
+
+  [Fact]
+  public async Task Run_OnFailure_AskedToStop_DoesNotRestart() {
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    WriteRestart("on-failure");
+    Action? stop = null;
+
+    // Act: lip is asked to stop while the server runs, which then fails.
+    int code = await RunExiting([3, 0], listen: s => {
+      stop = s;
+      return new MemoryStream();
+    }, onStart: () => stop!());
+
+    // Assert
+    Assert.Equal(3, code);
+    Assert.Single(_started);
+  }
+
+  private void WriteRestart(string restart) {
+    _lockStore.CreateLipDirectory(_root);
+    File.WriteAllText(
+        Path.Join(_root, ".lip", "config.toml"), $"format = 4\nrestart = \"{restart}\"\n");
+  }
+
+  /// Runs lip run, whose servers exit with the codes in order, restarting them at once.
+  private async Task<int> RunExiting(
+      int[] codes, ManualClock? clock = null, Action? onStart = null, StopListener? listen = null) {
+    int next = 0;
+    Mock<IProgramStarter> starter = new();
+    starter.Setup(s => s.Start(It.IsAny<ProgramStartInfo>()))
+        .Returns((ProgramStartInfo start) => {
+          _started.Add(start);
+          onStart?.Invoke();
+          ServerSessionTests.FakeServer server = new();
+          server.Exit(codes[next++]);
+          return server;
+        });
+    return await _service.Run(
+        Stream.Null, inputIsConsole: false, listen ?? (_ => new MemoryStream()), starter.Object,
+        new ServerRunOptions {
+          Restart = new RestartPolicy(
+              5, TimeSpan.FromMinutes(10), TimeSpan.Zero,
+              (TimeProvider?)clock ?? TimeProvider.System),
+        });
+  }
+
+  private sealed class ManualClock : TimeProvider {
+    public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+
+    public override DateTimeOffset GetUtcNow() => Now;
+  }
 }

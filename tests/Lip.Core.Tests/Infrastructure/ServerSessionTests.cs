@@ -64,6 +64,35 @@ public class ServerSessionTests {
   }
 
   [Fact]
+  public async Task RunServer_Restarted_TheNextServerReadsWhatIsReadAfterTheFirstExited() {
+    // Arrange (protocol/lip-run.md, "Standard streams")
+    FakeServer next = new();
+    Queue<FakeServer> servers = new([_server, next]);
+    using ServerSession session = new(
+        new QueueStarter(servers), _input, inputIsConsole: false, _stop.Listen);
+    Task<int> first = session.RunServer(_start);
+    _input.Send("list\n");
+    await _server.StandardInputUntil("list\n");
+    _server.Exit(1);
+    await first;
+
+    // Act: read while no server runs.
+    _input.Send("say hi\n");
+    await Task.Delay(50, Token);
+    Task<int> second = session.RunServer(_start);
+
+    // Assert
+    Assert.Equal("say hi\n", await next.StandardInputUntil("say hi\n"));
+    Assert.Equal("list\n", _server.StandardInputText);
+    next.Exit(0);
+    Assert.Equal(0, await second);
+  }
+
+  private sealed class QueueStarter(Queue<FakeServer> servers) : IProgramStarter {
+    public IStartedProgram Start(ProgramStartInfo start) => servers.Dequeue();
+  }
+
+  [Fact]
   public async Task Run_ConsoleReadsNothing_KeepsForwarding() {
     // Arrange: a console read that Ctrl+C interrupts reads nothing.
     Task<int> run = Run(inputIsConsole: true);

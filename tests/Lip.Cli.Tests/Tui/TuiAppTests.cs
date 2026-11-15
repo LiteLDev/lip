@@ -77,7 +77,8 @@ public sealed class TuiAppTests : IDisposable {
       FakeTerminal? terminal = null,
       string? workingDirectory = null,
       GithubProbe? githubProbe = null,
-      IServerSetup? serverSetup = null) {
+      IServerSetup? serverSetup = null,
+      bool managedServers = false) {
     TuiApp app = new(
         terminal ?? _terminal,
         createClient ?? ((interaction, hookOutput, workspace) =>
@@ -91,7 +92,8 @@ public sealed class TuiAppTests : IDisposable {
         new WorkspaceList(_fs, _workspaceList),
         _servers,
         githubProbe,
-        serverSetup);
+        serverSetup,
+        managedServers);
     _runs.Add(Task.Run(app.Run));
     return app;
   }
@@ -659,6 +661,75 @@ public sealed class TuiAppTests : IDisposable {
       }
     }
   }
+
+  [Fact]
+  public async Task Server_Managed_KeepsRunningWhenTheInterfaceQuits() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "The server of the test is cmd.exe.");
+    string root = CmdWorkspace();
+    try {
+      FileSystem fs = new();
+      TuiApp app = Start(
+          (interaction, hookOutput, _) => CmdClient(fs, interaction, hookOutput, root),
+          managedServers: true);
+      _terminal.Type("3");
+      await WaitFor(app, "Press Enter to start the server");
+      _terminal.Press(ConsoleKey.Enter);
+      await WaitFor(app, "running · up");
+
+      // Act: quitting asks nothing, and stops nothing (protocol/lip-tui.md, "Server").
+      _terminal.Press(ConsoleKey.Q, ConsoleModifiers.Control);
+      Assert.Equal(0, await _runs[0].WaitAsync(TestContext.Current.CancellationToken));
+
+      // Assert
+      WorkspaceServer server = _servers.Find(_root)!;
+      Assert.True(server.Running);
+      server.Send("exit 4");
+      for (int i = 0; i < 400 && server.Running; i++) {
+        await Task.Delay(25, TestContext.Current.CancellationToken);
+      }
+
+      Assert.False(server.Running);
+      Assert.Equal(4, server.ExitCode);
+    }
+    finally {
+      _servers.Find(_root)?.Send("exit");
+      await Task.Delay(200, TestContext.Current.CancellationToken);
+      try {
+        Directory.Delete(root, recursive: true);
+      }
+      catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) {
+      }
+    }
+  }
+
+  /// A workspace whose server, a game of the build windows without a loader, is cmd.exe, which
+  /// runs the lines it reads and exits when it reads "exit".
+  private static string CmdWorkspace() {
+    string root = Directory.CreateTempSubdirectory("lip-tui-test-").FullName;
+    File.Copy(
+        Path.Join(Environment.SystemDirectory, "cmd.exe"),
+        Path.Join(root, WorkspaceProgram.WindowsServerFileName));
+    Directory.CreateDirectory(Path.Join(root, ".lip"));
+    File.WriteAllText(Path.Join(root, ".lip", "state.json"), """
+        { "format": 4, "side": "server", "platform": "win-x64", "packages": [ {
+          "manifest": { "format": 4, "id": "github.com/LiteLDev/bds", "version": "1.21.0",
+            "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } },
+          "variant": "", "explicit": true, "ref": "github.com/LiteLDev/bds@1.21.0",
+          "files": [] } ] }
+        """);
+    return root;
+  }
+
+  /// The client of the workspace at root, which prepares no system.
+  internal static LipClient CmdClient(
+      FileSystem fs, IUserInteraction interaction, Func<Stream> hookOutput, string root) =>
+      new(
+          fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
+          new McmodService(
+              fs, interaction, new LockStore(fs), Mock.Of<IArchiveProvider>(),
+              new ArchiveReader(),
+              new McmodInstaller(fs, new CommandRunner(hookOutput), interaction),
+              workspaceRoot: () => root));
 
   [Fact]
   public async Task Config_ServerProperties_EditsAndSavesOnlyTheChangedLines() {

@@ -15,12 +15,19 @@ public delegate Task<int> CarryOutCommand(
 ///
 /// Once it is closing, it listens no more and refuses to start commands, so that a client that
 /// comes later starts a new daemon; it exits when the commands it carries out have ended.
+///
+/// While runsServers says that it runs a managed server (protocol/lip-run.md, "Managed servers"),
+/// it is not idle, it is not asked to exit, and it does not exit.
 public sealed class DaemonHost(
     DaemonEndpoint endpoint,
     string version,
     string executable,
     TimeSpan idleTimeout,
-    CarryOutCommand run) {
+    CarryOutCommand run,
+    Func<bool>? runsServers = null) {
+  private readonly Func<bool> _runsServers = runsServers ?? (() => false);
+  // lip was updated: the daemon closes once it runs no managed server.
+  private bool _replaced;
   private readonly object _gate = new();
   // Cancelled when the daemon exits, once nothing more is to be said to a client.
   private readonly CancellationTokenSource _exit = new();
@@ -52,7 +59,8 @@ public sealed class DaemonHost(
     catch (OperationCanceledException) {
     }
 
-    // The commands that run end before the daemon does; none starts any more.
+    // The commands that run, and the managed servers that they started, end before the daemon
+    // does; no command starts any more.
     while (true) {
       Task[] commands;
       lock (_gate) {
@@ -60,7 +68,12 @@ public sealed class DaemonHost(
       }
 
       if (commands.Length == 0) {
-        return;
+        if (!_runsServers()) {
+          return;
+        }
+
+        await Task.Delay(TimeSpan.FromMilliseconds(100));
+        continue;
       }
 
       await Task.WhenAll(commands);
@@ -109,10 +122,10 @@ public sealed class DaemonHost(
     _listener = null;
   }
 
-  /// Closes when no command runs; false when one runs.
+  /// Closes when no command and no managed server runs; false when one runs.
   private bool TryClose() {
     lock (_gate) {
-      if (_commands.Count > 0) {
+      if (_commands.Count > 0 || _runsServers()) {
         return false;
       }
 
@@ -122,8 +135,30 @@ public sealed class DaemonHost(
   }
 
   private void CheckIdle() {
+    bool serving = _runsServers();
     lock (_gate) {
-      if (!_closing && _connections == 0 && DateTime.UtcNow - _idleSince >= idleTimeout) {
+      if (_closing) {
+        return;
+      }
+
+      if (serving) {
+        // Idle from when the last managed server stopped running.
+        _idleSince = DateTime.UtcNow;
+        return;
+      }
+
+      if (_replaced) {
+        // A command that runs may still start a managed server, which clients must reach.
+        if (_commands.Count == 0) {
+          RunTrace.Write("daemon", "lip was updated, and nothing runs: exiting");
+          Close();
+          _exit.Cancel();
+        }
+
+        return;
+      }
+
+      if (_connections == 0 && DateTime.UtcNow - _idleSince >= idleTimeout) {
         RunTrace.Write("daemon", "No connection for a while: exiting");
         Close();
         _exit.Cancel();
@@ -239,8 +274,14 @@ public sealed class DaemonHost(
       lock (_gate) {
         _commands.Remove(done.Task);
         if (invocation.LipReplaced && !_closing) {
-          RunTrace.Write("daemon", "lip was updated: exiting once no command runs");
-          Close();
+          if (_runsServers() || _commands.Count > 0) {
+            RunTrace.Write(
+                "daemon", "lip was updated: exiting once no command and no managed server runs");
+            _replaced = true;
+          } else {
+            RunTrace.Write("daemon", "lip was updated: exiting once no command runs");
+            Close();
+          }
         }
 
         if (_closing && _commands.Count == 0) {
