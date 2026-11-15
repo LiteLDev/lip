@@ -20,6 +20,11 @@ public sealed partial class GameConfigPage {
         return [];
       }
 
+      if (ReadOnly) {
+        // Enter shows the actions of the row, none of which can be chosen now.
+        return CurrentList.Current == AddRow ? [] : [CommonText.HintActions];
+      }
+
       if (CurrentProperty is { } property) {
         Hint enter = property.Changed ? CommonText.HintActions : CommonText.HintEdit;
         return property.Type.Kind == PropertyKind.Boolean
@@ -41,7 +46,26 @@ public sealed partial class GameConfigPage {
           ? properties.Properties[CurrentList.Current]
           : null;
 
+  /// Starts what changes a file unless the server runs: then it says why not, and nothing
+  /// changes. A dialog that was open when the server started is not kept from finishing: what
+  /// the user gave it is kept with the other changes, unsaved until the server has stopped.
+  private void IfEditable(Action change) {
+    if (ReadOnly) {
+      Context.Toast(CommonText.StopServerFirst, ToastKind.Warning);
+    } else {
+      change();
+    }
+  }
+
+  /// An action of the menu of a row. While the server runs it cannot be chosen, and says why.
+  private MenuItem Item(string label, Action run) =>
+      new(
+          label, () => IfEditable(run), Enabled: !ReadOnly,
+          Reason: ReadOnly ? CommonText.StopServerFirst : null);
+
   /// Carries out Enter, or Space, on the selected row; false when the key does nothing there.
+  /// While the server runs Enter shows the actions of the row, disabled, and whatever would
+  /// change something at once says why it does not.
   private bool Act(bool space) {
     if (!CurrentList.HasCurrent) {
       return false;
@@ -54,12 +78,16 @@ public sealed partial class GameConfigPage {
             return false;
           }
 
-          Toggle(properties, property);
-        } else if (property.Changed) {
+          IfEditable(() => Toggle(properties, property));
+        } else if (property.Changed || ReadOnly) {
           Context.ShowMenu(
               property.Key,
-              new MenuItem(EditLabel(property), () => Edit(properties, property)),
-              new MenuItem(GameConfigText.Reset, () => ServerProperties.Reset(property)));
+              [
+                Item(EditLabel(property), () => Edit(properties, property)),
+                .. property.Changed
+                    ? [Item(GameConfigText.Reset, () => ServerProperties.Reset(property))]
+                    : (MenuItem[])[],
+              ]);
         } else {
           Edit(properties, property);
         }
@@ -67,7 +95,7 @@ public sealed partial class GameConfigPage {
         return true;
       case PlayerListFile players when !space:
         if (CurrentList.Current == AddRow) {
-          AddPlayer(players);
+          IfEditable(() => AddPlayer(players));
         } else if (CurrentList.Current < players.Players.Count) {
           ShowPlayerMenu(players, players.Players[CurrentList.Current]);
         }
@@ -230,18 +258,18 @@ public sealed partial class GameConfigPage {
   private void ShowPlayerMenu(PlayerListFile file, JsonNode? player) {
     List<MenuItem> items = [];
     if (player is JsonObject entry && IsAllowlist(file)) {
-      items.Add(new MenuItem(
+      items.Add(Item(
           IgnoresLimit(entry) ? GameConfigText.ApplyLimit : GameConfigText.IgnoreLimit,
           () => file.Change(_ => entry[IgnoresLimitMember] = !IgnoresLimit(entry))));
     } else if (player is JsonObject listed) {
-      items.Add(new MenuItem(
+      items.Add(Item(
           GameConfigText.ChangePermission,
           () => ChoosePermission(
               PlayerLabel(file, listed), PlayerLists.Text(listed, "permission"),
               permission => file.Change(_ => listed["permission"] = permission))));
     }
 
-    items.Add(new MenuItem(GameConfigText.Remove, () => {
+    items.Add(Item(GameConfigText.Remove, () => {
       file.Change(players => players.Remove(player));
       PlayersChanged(file, null);
     }));
@@ -277,7 +305,8 @@ public sealed partial class GameConfigPage {
 
   private StyledLine RenderPlayer(int section, int index) {
     if (index == AddRow) {
-      return new StyledLine("+ " + GameConfigText.AddPlayer, Theme.Accent);
+      return new StyledLine(
+          "+ " + GameConfigText.AddPlayer, ReadOnly ? Theme.Muted : Theme.Accent);
     }
 
     if (_files?[section] is not PlayerListFile file || index >= file.Players.Count) {
@@ -345,6 +374,10 @@ public sealed partial class GameConfigPage {
       }
     } else if (file is PlayerListFile players && CurrentList.HasCurrent
         && CurrentList.Current == AddRow) {
+      if (ReadOnly) {
+        Add(CommonText.StopServerFirst, Theme.Warning);
+      }
+
       Add(
           IsAllowlist(players) ? GameConfigText.AllowlistDetail : GameConfigText.PermissionsDetail,
           Theme.Muted);

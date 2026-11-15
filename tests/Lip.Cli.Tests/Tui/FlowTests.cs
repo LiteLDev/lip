@@ -341,7 +341,7 @@ public sealed class FlowTests {
   public async Task ModConfig_GetMods_OpensTheCatalogue() {
     using TuiHarness tui = Start(out _, game: true);
     await tui.GoTo(PageId.ModConfig);
-    await tui.WaitFor(CommonText.NoMods);
+    await tui.WaitFor(Lip.Cli.Tui.Pages.ModConfig.ModConfigText.NoMods);
     Assert.Contains($"[ {CommonText.GetMods} ]", tui.Screen);
 
     tui.Press(ConsoleKey.Enter);

@@ -86,7 +86,7 @@ public sealed class ModConfigPageTests {
   public async Task NoMods_OffersGetMods_WhichEnterOpens() {
     using TuiHarness tui = TuiHarness.Start();
     await tui.GoTo(PageId.ModConfig);
-    await tui.WaitFor("No mods yet.");
+    await tui.WaitFor("No configurable mods.");
     Assert.Contains("[ Get mods ]", tui.Screen);
     Assert.Contains("Enter Select", tui.Screen);
 
@@ -114,7 +114,7 @@ public sealed class ModConfigPageTests {
 
     // A mod without a file says so, and has nothing to open.
     tui.Press(ConsoleKey.End);
-    await tui.WaitFor("No config file yet.");
+    await tui.WaitFor("No config file. Starting the server may create one.");
     tui.Press(ConsoleKey.Enter);
     await tui.Settle();
     Assert.Contains("↑↓ Move  Esc Back", tui.Screen);
@@ -387,7 +387,7 @@ public sealed class ModConfigPageTests {
     await tui.WaitFor("Save the changes?");
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor("No mods yet.");
+    await tui.WaitFor("No configurable mods.");
     Assert.Contains("\"enabled\": true", fs.File.ReadAllText(AlphaPath));
   }
 
@@ -490,4 +490,160 @@ public sealed class ModConfigPageTests {
     Assert.Contains(tui.Text(() => ModConfigText.Files), tui.Screen);
     Assert.Contains($"{{…}} {tui.Text(() => ModConfigText.Items(2))}", tui.Screen);
   }
+
+  #region The empty page, and while the server runs
+
+  [Theory]
+  [InlineData(Language.En, "No configurable mods.", 120, 36)]
+  [InlineData(Language.ZhHans, "没有可配置的模组。", 120, 36)]
+  [InlineData(Language.ZhHant, "沒有可設定的模組。", 120, 36)]
+  [InlineData(Language.En, "No configurable mods.", 60, 16)]
+  [InlineData(Language.ZhHans, "没有可配置的模组。", 60, 16)]
+  [InlineData(Language.ZhHant, "沒有可設定的模組。", 60, 16)]
+  public async Task NoMods_SaysThatNoneIsConfigurable_InEveryLanguage(
+      Language language, string text, int width, int height) {
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      Language = language,
+      Width = width,
+      Height = height,
+    });
+    await tui.GoTo(PageId.ModConfig);
+
+    await tui.WaitFor(text);
+    tui.Snapshot("modconfig-empty");
+    Assert.DoesNotContain(CommonText.NoMods, tui.Screen);
+    Assert.Contains($"[ {CommonText.GetMods} ]", tui.Screen);
+    Assert.Contains($"Enter {CommonText.HintSelect.Text}", tui.Screen);
+
+    // The server changes nothing about it.
+    await tui.SetServerRunning(true);
+    await tui.Settle();
+    Assert.Contains(text, tui.Screen);
+    Assert.DoesNotContain(ModConfigText.MayNeedRestart, tui.Screen);
+  }
+
+  [Fact]
+  public async Task AModWithoutAFile_DoesNotPromiseOne() {
+    using TuiHarness tui = Start(Mods(Root, "Gamma"));
+    await tui.GoTo(PageId.ModConfig);
+
+    await tui.WaitFor("No config file. Starting the server may create one.");
+    Assert.Contains("Gamma", tui.Screen);
+    Assert.DoesNotContain("No configurable mods.", tui.Screen);
+  }
+
+  [Fact]
+  public async Task WhileTheServerRuns_FilesAreEditedAndSaved_AndThePageSaysARestartMayBeNeeded() {
+    MockFileSystem fs = Workspace();
+    using TuiHarness tui = Start(fs);
+    await tui.GoTo(PageId.ModConfig);
+    await tui.WaitFor("limits");
+    Assert.DoesNotContain("Changes may need a server restart.", tui.Screen);
+
+    // The line is there as soon as the server runs, whatever has the focus.
+    await tui.SetServerRunning(true);
+    await tui.WaitFor("Changes may need a server restart.");
+    tui.Snapshot("modconfig-running-files");
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Enter/Space Toggle");
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("[x] true");
+    await tui.WaitFor("Unsaved");
+    Assert.Contains("Changes may need a server restart.", tui.Screen);
+    Assert.Equal(AlphaConfig, fs.File.ReadAllText(AlphaPath));
+
+    // Saving writes the file, and says the same.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("←→ Switch  Enter Select");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("Saved. Restart may be needed.");
+    await tui.WaitUntilGone("Unsaved");
+    Assert.Contains("\"enabled\": true", fs.File.ReadAllText(AlphaPath));
+    Assert.DoesNotContain(CommonText.SavedWhileRunning, tui.Screen);
+    Assert.Contains("Changes may need a server restart.", tui.Screen);
+
+    // Once the server has stopped the line is gone, and a save is just a save.
+    await tui.SetServerRunning(false);
+    await tui.WaitUntilGone("Changes may need a server restart.");
+    await tui.WaitFor("Enter/Space Toggle");
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor("Unsaved");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("←→ Switch  Enter Select");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("Unsaved");
+    await tui.WaitFor(screen => screen.Contains("Saved.")
+        && !screen.Contains("Saved. Restart may be needed."));
+    Assert.Contains("\"enabled\": false", fs.File.ReadAllText(AlphaPath));
+  }
+
+  [Fact]
+  public async Task AServerThatStarts_KeepsTheChangesOfAFile_WhichAreSavedAllTheSame() {
+    MockFileSystem fs = Workspace();
+    using TuiHarness tui = Start(fs);
+    await Change(tui);
+    Assert.DoesNotContain(ModConfigText.MayNeedRestart, tui.Screen);
+
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(ModConfigText.MayNeedRestart);
+    Assert.Contains("[x] true", tui.Screen);
+    Assert.Contains(ModConfigText.Unsaved, tui.Screen);
+
+    // Leaving offers to save, as ever.
+    tui.Press(ConsoleKey.Escape, 2);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Save the changes?");
+    Assert.Contains("[ Save ] [ Discard ] [ Cancel ]", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntil(() => tui.Context.CurrentPage != PageId.ModConfig);
+    Assert.Contains("\"enabled\": true", fs.File.ReadAllText(AlphaPath));
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task WhileTheServerRuns_ThePageFitsTheTerminal_InEveryLanguage(
+      Language language, int width, int height) {
+    MockFileSystem fs = Workspace();
+    using TuiHarness tui = Start(fs, language, width, height);
+    await tui.GoTo(PageId.ModConfig);
+    await tui.WaitFor("Beta · settings.toml");
+    tui.Snapshot("modconfig-stopped-files");
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(ModConfigText.MayNeedRestart);
+    tui.Snapshot("modconfig-running-files");
+
+    // A mod without a file, and the line about the server below what says so.
+    tui.Press(ConsoleKey.End);
+    await tui.WaitFor(ModConfigText.NoFile);
+    tui.Snapshot("modconfig-running-nofile");
+    Assert.Contains(ModConfigText.MayNeedRestart, tui.Screen);
+    tui.Press(ConsoleKey.Home);
+    await tui.WaitUntilGone(ModConfigText.NoFile);
+    await tui.Settle();
+
+    // The tree, with a change, its buttons, and the line.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("limits");
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModConfigText.Unsaved);
+    tui.Snapshot("modconfig-running-tree");
+    Assert.Contains($"[ {CommonText.Save} ] [ {CommonText.Discard} ]", tui.Screen);
+    Assert.Contains(ModConfigText.MayNeedRestart, tui.Screen);
+
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor($"Enter {CommonText.HintSelect.Text}");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModConfigText.SavedWhileRunning);
+    tui.Snapshot("modconfig-running-saved");
+    Assert.Contains("\"enabled\": true", fs.File.ReadAllText(AlphaPath));
+  }
+
+  #endregion
 }

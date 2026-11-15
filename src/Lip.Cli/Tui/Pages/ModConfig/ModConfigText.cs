@@ -6,6 +6,22 @@ namespace Lip.Cli.Tui.Pages.ModConfig;
 public static class ModConfigText {
   public static string Title => L.T("Mod config", "模组配置", "模組設定");
 
+  // Nothing to list: no mod is installed, or none that has a directory of its own.
+  public static string NoMods =>
+      L.T("No configurable mods.", "没有可配置的模组。", "沒有可設定的模組。");
+
+  // While the server runs: some mods read their files only when they start.
+  public static string MayNeedRestart =>
+      L.T(
+          "Changes may need a server restart.",
+          "更改可能需要重启服务器才生效。",
+          "變更可能需重新啟動伺服器才生效。");
+  public static string SavedWhileRunning =>
+      L.T(
+          "Saved. Restart may be needed.",
+          "已保存，可能需要重启服务器。",
+          "已儲存，可能需重新啟動伺服器。");
+
   // The list of files.
   public static string Files => L.T("Files", "文件", "檔案");
   public static string CannotList =>
@@ -14,9 +30,9 @@ public static class ModConfigText {
   // What is shown in place of a file.
   public static string NoFile =>
       L.T(
-          "No config file yet. Start the server once.",
-          "还没有配置文件，请先启动一次服务器。",
-          "還沒有設定檔，請先啟動一次伺服器。");
+          "No config file. Starting the server may create one.",
+          "没有配置文件，启动服务器后可能会生成。",
+          "沒有設定檔，啟動伺服器後可能會產生。");
   public static string Gone => L.T("The file is gone.", "文件已不存在。", "檔案已不存在。");
   public static string CannotRead => L.T("Cannot read the file", "无法读取文件", "無法讀取檔案");
 

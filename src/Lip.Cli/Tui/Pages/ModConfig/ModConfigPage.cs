@@ -10,7 +10,8 @@ namespace Lip.Cli.Tui.Pages.ModConfig;
 /// The Mod config page: the configuration files of the installed mods (protocol/lip-tui.md,
 /// "Configuration"). The files are listed at the left; the selected one is shown at the right.
 /// A JSON file is edited as a tree, in memory, and written only when the user saves it; any
-/// other file, and a JSON file that cannot be read, is only shown.
+/// other file, and a JSON file that cannot be read, is only shown. The files are edited and
+/// saved while the server runs too; the page then says that a change may need a restart.
 public sealed class ModConfigPage : Page {
   /// The narrowest area that shows the files and the open file side by side; in a narrower one
   /// the page shows the one that has the focus.
@@ -67,7 +68,8 @@ public sealed class ModConfigPage : Page {
 
   private bool Dirty => _tree?.Dirty == true;
 
-  /// Whether the list was read and names no mod.
+  /// Whether the list was read and names no mod: none is installed, or none that keeps files
+  /// in a directory of its own.
   private bool NoMods => _loaded && _error is null && _files.Items.Count == 0;
 
   /// Whether the open file has something that takes keys: a tree, or text that scrolls.
@@ -346,7 +348,7 @@ public sealed class ModConfigPage : Page {
           }
 
           Context.Toast(
-              Context.ServerRunning ? CommonText.SavedWhileRunning : CommonText.Saved,
+              Context.ServerRunning ? ModConfigText.SavedWhileRunning : CommonText.Saved,
               ToastKind.Good);
           then?.Invoke();
         });
@@ -647,9 +649,16 @@ public sealed class ModConfigPage : Page {
     }
 
     if (NoMods) {
-      screen.WriteFit(area.X, area.Y, area.Width, CommonText.NoMods, Theme.Muted);
+      screen.WriteFit(area.X, area.Y, area.Width, ModConfigText.NoMods, Theme.Muted);
       _getMods.Draw(screen, area.X, area.Y + 2, focused, area.Right);
       return;
+    }
+
+    // While the server runs, the last row says that it may not see a change until it restarts.
+    if (Context.ServerRunning && area.Height > 3) {
+      screen.WriteFit(
+          area.X, area.Bottom - 1, area.Width, ModConfigText.MayNeedRestart, Theme.Warning);
+      area = area.Shrink(bottom: 1);
     }
 
     bool onFiles = _focus == Area.Files;
