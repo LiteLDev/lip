@@ -24,6 +24,7 @@
 - [`lip install`](commands/install.md)：安装包。
 - [`lip list`](commands/list.md)：列出已安装包。
 - [`lip run`](commands/run.md)：运行工作区的服务器。
+- [`lip self-update`](commands/self_update.md)：把 lip 自身更新到最新发布的版本。
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。
 

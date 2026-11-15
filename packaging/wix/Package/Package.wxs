@@ -35,6 +35,29 @@
     </Component>
 
     <!--
+      install.json tells lip self-update which installer to download (protocol/lip-self-update.md):
+      "setup" when setup.exe installs this package, which sets INSTALLKIND, and "msi" otherwise.
+      The two components never install together, so ICE30 is suppressed.
+    -->
+    <Property Id="INSTALLKIND" Value="msi" Secure="yes" />
+
+    <Component
+      Id="InstallJsonMsi"
+      Directory="INSTALLFOLDER"
+      Guid="{DA9FCC7B-D254-4CCC-953C-EED026C86919}"
+      Condition="INSTALLKIND &lt;&gt; &quot;setup&quot;">
+      <File Id="InstallJsonMsi" Source="$(sys.SOURCEFILEDIR)install-msi.json" Name="install.json" ShortName="install.jsn" />
+    </Component>
+
+    <Component
+      Id="InstallJsonSetup"
+      Directory="INSTALLFOLDER"
+      Guid="{0FD9D230-CABD-4EFA-99AE-0FE01FF48668}"
+      Condition="INSTALLKIND = &quot;setup&quot;">
+      <File Id="InstallJsonSetup" Source="$(sys.SOURCEFILEDIR)install-setup.json" Name="install.json" ShortName="install.jsn" />
+    </Component>
+
+    <!--
       Versions up to 0.35.0 were installed by an Inno Setup installer. Run its uninstaller
       first, so that it neither keeps a second entry in Installed Apps nor later deletes the
       files and the PATH entry this package installs to the same place.

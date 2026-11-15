@@ -1,7 +1,6 @@
 <Wix
   xmlns="http://wixtoolset.org/schemas/v4/wxs"
-  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
-  xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
 
   <Bundle
     Name="lip"
@@ -22,26 +21,12 @@
       <Payload Name="2052\thm.wxl" SourceFile="zh-CN.wxl" />
     </BootstrapperApplication>
 
-    <netfx:DotNetCoreSearch
-      RuntimeType="core"
-      Platform="$(sys.BUILDARCH)"
-      MajorVersion="$(DotNetMajorVersion)"
-      Variable="DotNetRuntimeVersion" />
-
     <Chain>
-      <!-- Downloaded only when the runtime is missing: a cached package would be downloaded on every install. -->
-      <ExePackage
-        Id="DotNetRuntime"
-        SourceFile="$(DotNetRuntimeInstaller)"
-        DownloadUrl="$(DotNetRuntimeUrl)"
-        Compressed="no"
-        Cache="remove"
-        DetectCondition="DotNetRuntimeVersion"
-        InstallArguments="/install /quiet /norestart"
-        Permanent="yes"
-        Vital="yes" />
-
-      <MsiPackage SourceFile="$(Lip.Package.TargetPath)" />
+      <!-- lip is self-contained: it needs no .NET runtime. -->
+      <MsiPackage SourceFile="$(Lip.Package.TargetPath)">
+        <!-- Written to install.json, for lip self-update (protocol/lip-self-update.md). -->
+        <MsiProperty Name="INSTALLKIND" Value="setup" />
+      </MsiPackage>
     </Chain>
 
   </Bundle>

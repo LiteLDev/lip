@@ -28,8 +28,9 @@ lip <command> [<argument>...]
 | `cache clean` | [lip-cache(1)] |
 | `config get`, `config set`, `config list`, `config delete` | [lip-config(1)] |
 | `pkg init`, `pkg pack`, `pkg view`, `pkg migrate` | [lip-pkg(1)] |
+| `self-update` | [lip-self-update(1)] |
 
-The commands of the command group `pkg` are for developing packages; every other command is for running a server.
+The commands of the command group `pkg` are for developing packages; `self-update` updates `lip` itself; every other command is for running a server.
 
 ### Terms
 
@@ -40,7 +41,7 @@ The commands of the command group `pkg` are for developing packages; every other
 - **flag**: An option that takes no value.
 - **operand**: An argument of a command that is not part of an option.
 - **usage error**: A list of arguments that "Arguments" or OPTIONS rejects.
-- **result**: The data a command is asked for; only `list`, `pkg view`, `config get` and `config list` have one.
+- **result**: The data a command is asked for; only `list`, `pkg view`, `config get`, `config list` and `self-update --check` have one.
 - **message**: Any text other than a result or help (progress, information, warnings, errors, the final success line); its wording is not defined here.
 - **help**: Text describing how to invoke `lip` or a command; its wording is not defined here.
 - **workspace operation**: An operation ([lip-workspace(7)]) that `install`, `uninstall` or `update` carries out without `-n` or `--dry-run`.
@@ -165,6 +166,7 @@ A command that fails other than on a usage error may write a **failure report**:
 [lip-cache(1)]: lip-cache.md
 [lip-config(1)]: lip-config.md
 [lip-pkg(1)]: lip-pkg.md
+[lip-self-update(1)]: lip-self-update.md
 [lip-tui(1)]: lip-tui.md
 [lip-package(7)]: lip-package.md
 [lip-workspace(7)]: lip-workspace.md

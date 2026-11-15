@@ -38,12 +38,13 @@ jobs:
           echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
           echo "NAME=lip-${GITHUB_REF_NAME#v}-${{ matrix.runtime }}" >> "$GITHUB_ENV"
 
+      # Self-contained: lip needs no .NET runtime where it runs.
       - shell: bash
         run: |
           dotnet publish src/Lip.Cli \
             -o bin \
             -r ${{ matrix.runtime }} \
-            --no-self-contained \
+            --self-contained \
             -p:DebugType=embedded \
             -p:Version="$VERSION"
           mkdir dist
@@ -83,6 +84,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      # lip self-update verifies what it downloads against SHA256SUMS (protocol/lip-self-update.md).
+      - working-directory: dist
+        run: |
+          sha256sum -- * > ../SHA256SUMS
+          mv ../SHA256SUMS SHA256SUMS
 
       # The notes list the pull requests since the newest stable release below the tag's version, which
       # need not be an ancestor of the tag (v0.37.0 was released from a rollback branch).

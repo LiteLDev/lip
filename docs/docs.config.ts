@@ -77,7 +77,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
   },
 };
 
-const COMMANDS = ['cache_clean', 'config', 'install', 'list', 'pkg_init', 'pkg_migrate', 'pkg_pack', 'pkg_view', 'run', 'uninstall', 'update'];
+const COMMANDS = ['cache_clean', 'config', 'install', 'list', 'pkg_init', 'pkg_migrate', 'pkg_pack', 'pkg_view', 'run', 'self_update', 'uninstall', 'update'];
 
 /** The sections of one locale (`p`: its URL prefix, '/' or '/zh/'); zh-Hant is converted from zh by the kit. */
 const nav = (p: string, t: Labels): NavEntry[] => [
@@ -119,7 +119,8 @@ const nav = (p: string, t: Labels): NavEntry[] => [
       { text: t.overview, link: `${p}cli/overview` },
       { text: t.tui, link: `${p}cli/tui` },
       { text: t.configuration, link: `${p}cli/configuration` },
-      { text: t.commands, items: COMMANDS.map((c) => ({ text: c.replace('_', ' '), link: `${p}cli/commands/${c}` })) },
+      // A page is named after its command with "_" for " " or "-" (self_update: lip self-update).
+      { text: t.commands, items: COMMANDS.map((c) => ({ text: c === 'self_update' ? 'self-update' : c.replace('_', ' '), link: `${p}cli/commands/${c}` })) },
     ],
   },
 ];

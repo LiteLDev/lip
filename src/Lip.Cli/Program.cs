@@ -9,6 +9,10 @@ using Lip.Core.PublicApi;
 using Semver;
 using Spectre.Console.Cli;
 
+// The executable that lip self-update could not delete while it ran (protocol/
+// lip-self-update.md, "Starting").
+SelfUpdater.DeleteOldExecutable(new System.IO.Abstractions.FileSystem(), Environment.ProcessPath);
+
 RunTrace.TraceHttp();
 
 // Without an argument, on a terminal, lip runs the interface (protocol/lip-tui.md); otherwise
@@ -122,6 +126,9 @@ app.Configure(config => {
 
   config.AddCommand<RunCommand>("run")
       .WithDescription("Runs the server of the workspace");
+
+  config.AddCommand<SelfUpdateCommand>("self-update")
+      .WithDescription("Updates lip itself to its latest release");
 
   config.AddCommand<UninstallCommand>("uninstall")
       .WithDescription("Uninstalls packages");

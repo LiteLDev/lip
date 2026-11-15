@@ -24,6 +24,7 @@ Commands for running a server:
 -   [`lip install`](commands/install.md): Install packages.
 -   [`lip list`](commands/list.md): List installed packages.
 -   [`lip run`](commands/run.md): Run the server of the workspace.
+-   [`lip self-update`](commands/self_update.md): Update lip itself to its latest release.
 -   [`lip uninstall`](commands/uninstall.md): Uninstall packages.
 -   [`lip update`](commands/update.md): Update packages.
 

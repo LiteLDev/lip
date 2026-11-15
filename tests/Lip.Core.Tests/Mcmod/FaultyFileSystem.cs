@@ -15,6 +15,13 @@ internal sealed class FaultyFileSystem(MockFileSystem inner) : IFileSystem {
     set => _file.Fail = value;
   }
 
+  /// Called with the path before File.Delete; returning true makes it throw an IOException, as
+  /// deleting a running executable does on Windows. Not counted in Calls.
+  public Func<string, bool> FailDelete {
+    get => _file.FailDelete;
+    set => _file.FailDelete = value;
+  }
+
   /// The number of File.Create and File.Move calls so far.
   public int Calls => _file.Calls;
 
@@ -47,7 +54,16 @@ internal sealed class FaultyFileSystem(MockFileSystem inner) : IFileSystem {
   private sealed class FaultyFile(MockFileSystem fileSystem) : MockFile(fileSystem) {
     public Func<string, string, bool> Fail { get; set; } = (_, _) => false;
 
+    public Func<string, bool> FailDelete { get; set; } = _ => false;
+
     public int Calls { get; private set; }
+
+    public override void Delete(string path) {
+      if (FailDelete(path)) {
+        throw new IOException($"injected failure: delete {path}");
+      }
+      base.Delete(path);
+    }
 
     public override FileSystemStream Create(string path) {
       Check("create", path);
