@@ -28,7 +28,7 @@ lip
 
 执行修改期间，按 `Ctrl+C` 可以取消，并撤销已经完成的部分。命令失败时，界面会显示原因、可以采取的措施，以及 `.lip/logs` 下失败报告的路径，然后继续运行。
 
-在 Packages 标签页的安装对话框（`i`）里，包的写法与命令行相同（见 [`lip install`](./commands/install.md)），以空格分隔；第二个输入框是 `--platform`。
+在 Packages 标签页的安装对话框（`i`）里，包的写法与命令行相同（见 [`lip install`](./commands/install.md)），以空格分隔。
 
 ## 浏览模组
 

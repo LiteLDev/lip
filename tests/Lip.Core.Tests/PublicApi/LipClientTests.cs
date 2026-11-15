@@ -309,7 +309,7 @@ public class LipClientTests {
     const string liprc = """{ "github_proxy": "https://proxy.com" }""";
     _ws.AddFile("pkg/lip.toml", WorkspaceHarness.LipToml(id, "1.0.0"));
     if (command != "install") {
-      await _ws.Service.Install(["./pkg"], new(Platform: WorkspaceHarness.Platform));
+      await _ws.Service.Install(["./pkg"], new());
     }
 
     _ws.Fs.AddFile(_liprcPath, new(liprc));
@@ -395,7 +395,7 @@ public class LipClientTests {
           }
           """),
     });
-    OperationOptions options = new(Platform: WorkspaceHarness.Platform);
+    OperationOptions options = new();
     await _ws.Service.Install(["example.com/b"], options);
     await _ws.Service.Install(["example.com/a"], options);
     await _ws.Service.Install(["example.com/v#x"], options);

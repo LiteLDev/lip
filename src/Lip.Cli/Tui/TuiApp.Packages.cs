@@ -138,7 +138,7 @@ public sealed partial class TuiApp {
         break;
       case 'U':
         PlanAndRun("Update every package", (dryRun, token) =>
-            _client.Update([], dryRun, null, token));
+            _client.Update([], dryRun, token));
         break;
       case 'u' when selected is not null:
         UpdatePackage(selected);
@@ -151,11 +151,11 @@ public sealed partial class TuiApp {
 
   private void UpdatePackage(InstalledPackage package) =>
       PlanAndRun($"Update {package.Identity}", (dryRun, token) =>
-          _client.Update([package.Identity], dryRun, null, token));
+          _client.Update([package.Identity], dryRun, token));
 
   private void UninstallPackage(InstalledPackage package) =>
       PlanAndRun($"Uninstall {package.Identity}", (dryRun, token) =>
-          _client.Uninstall([package.Identity], dryRun, null, token));
+          _client.Uninstall([package.Identity], dryRun, token));
 
   /// What can be done with an installed package; only an explicitly installed one can be
   /// uninstalled (protocol/lip-uninstall.md).
@@ -171,7 +171,7 @@ public sealed partial class TuiApp {
         chosen => actions[chosen].Run()));
   }
 
-  /// Asks for the package arguments and the platform of lip install, then installs.
+  /// Asks for the package arguments of lip install, then installs.
   private void PromptInstall(string packages) {
     Push(new PromptDialog(
         this, "Install packages",
@@ -180,7 +180,6 @@ public sealed partial class TuiApp {
               "Packages, separated by spaces: a repository, an https:// URL of a .zip file, or"
                   + " a local .zip file or directory",
               packages, "LeviLamina  github.com/owner/repo#variant@1.2.3  ./mod.zip"),
-          new PromptField("Platform (--platform), empty for the one of the workspace"),
         ],
         values => {
           List<string> arguments = SplitArguments(values[0]);
@@ -188,9 +187,8 @@ public sealed partial class TuiApp {
             return;
           }
 
-          string? platform = values[1].Length == 0 ? null : values[1];
           PlanAndRun($"Install {string.Join(' ', arguments)}", (dryRun, token) =>
-              _client.Install(arguments, dryRun, platform, token));
+              _client.Install(arguments, dryRun, token));
         }));
   }
 }

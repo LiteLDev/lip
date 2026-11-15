@@ -106,6 +106,10 @@ When lip needs the files of an installed package again, it installs it with the 
 
 The state file of lip v0.39.x, also of format 4, named the side `platform` and the platform `runtime`, at its root and in the entries of each recorded `manifest`. lip does not read such a state file: a root or an entry that has `runtime`, or whose `platform` is `"server"` or `"client"`, fails the command with a message to rename `platform` to `side` and `runtime` to `platform`. lip does not migrate it; rename the two keys at the root and in every entry of every `manifest`. The next section covers the workspaces of lip v0.37.0 and earlier.
 
+## Workspaces of linux-x64
+
+Earlier versions of lip installed packages for other platforms than `win-x64` with `--platform`. lip reads a state file that records the platform `linux-x64` as one of `win-x64`, in which `github.com/LiteLDev/bds` is its variant `github.com/LiteLDev/bds#linux`, the Linux server, which the next `install`, `uninstall` or `update` records so. A state file of `linux-x64` that records any other package fails every command that reads it, with a message naming that package: install the packages again in a new workspace. A state file that records another platform fails `install`, `uninstall`, `update` and `run`.
+
 ## Workspaces of lip v0.x
 
 A workspace of lip v0.37.0 and earlier has a `tooth_lock.json` of format version 3 in its root instead of a state file. lip migrates it automatically:

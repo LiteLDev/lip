@@ -115,7 +115,7 @@ platform = "win-arm64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-arm64.zip"] }]
 ```
 
-运行端和平台没有对应条目的工作区无法安装该包。除非工作区通过 `--platform` 指定了其他平台，lip 都使用平台 `win-x64`，在 Linux 上也是如此（此时通过 Wine 运行服务器）；因此服务端 mod 需要 `win-x64` 的 `server` 条目，而 `linux-x64` 的条目只用于以 `--platform linux-x64` 创建的工作区。
+运行端和平台没有对应条目的工作区无法安装该包。lip 始终使用平台 `win-x64`，在 Linux 上也是如此（此时通过 Wine 运行服务器）；因此服务端 mod 需要 `win-x64` 的 `server` 条目，lip 从不安装 `linux-x64` 等其他平台的条目。
 
 ## 变体
 

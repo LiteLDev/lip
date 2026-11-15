@@ -19,9 +19,22 @@ public sealed partial class BedrockServer {
   /// Where the builds list is.
   public const string BuildsUrl = "https://levimc.org/api/v4/mc/versions/";
 
-  /// The platforms the server has builds for, with the directory of their downloads.
-  private static readonly (string Platform, string Directory)[] _platforms =
-      [("win-x64", "bin-win"), ("linux-x64", "bin-linux")];
+  /// The variant of the Linux server.
+  public const string LinuxVariant = "linux";
+
+  /// The file of the Linux server that lip makes executable when it writes it.
+  public const string LinuxExecutable = "bedrock_server";
+
+  /// The platforms the server has builds for.
+  private static readonly string[] _platforms = ["win-x64", "linux-x64"];
+
+  /// The variants of the server, with the platform of the builds each one installs and the
+  /// directory of their downloads.
+  private static readonly (string Variant, string Platform, string Directory)[] _variants = [
+    ("", "win-x64", "bin-win"),
+    ("windows", "win-x64", "bin-win"),
+    (LinuxVariant, "linux-x64", "bin-linux"),
+  ];
 
   private static readonly string[] _preserve =
       ["server.properties", "allowlist.json", "permissions.json"];
@@ -57,6 +70,10 @@ public sealed partial class BedrockServer {
   public static bool IsRepository(string repository) =>
       PackageNames.AreEqual(repository, Repository);
 
+  /// Whether a source names packages of the server: a remote repository source of its location.
+  public static bool IsServer(Ref source) =>
+      source.Kind == RefKind.Spec && IsRepository(source.Target);
+
   /// An archive without files: the packages of the server are in no archive.
   public static ArchiveHandle Archive(SemVersion version) =>
       new($"{Repository}@{version}", new NoFiles());
@@ -85,7 +102,7 @@ public sealed partial class BedrockServer {
         throw new JsonException("The root is not an object.");
       }
 
-      foreach ((string platform, _) in _platforms) {
+      foreach (string platform in _platforms) {
         if (document.RootElement.TryGetProperty($"server/{platform}", out JsonElement builds)
             && builds.ValueKind == JsonValueKind.Array) {
           server._builds[platform] = [
@@ -110,42 +127,16 @@ public sealed partial class BedrockServer {
     return server;
   }
 
-  /// The package file of a version of the server: an entry for each platform that has a build
-  /// of the version, the first one in the builds list, or the one a version
-  /// major.minor.patch-patch.N names.
+  /// The package file of a version of the server: the variants "" and "windows" of the Windows
+  /// server and "linux" of the Linux server, each with one entry for the platform win-x64 when
+  /// the platform of its builds has a build of the version, the first one in the builds list, or
+  /// the one a version major.minor.patch-patch.N names.
   public JsonElement PackageFile(SemVersion version) {
-    JsonArray entries = [];
-    foreach ((string platform, string directory) in _platforms) {
-      if (_builds.GetValueOrDefault(platform)?.FirstOrDefault(
-              b => (version.IsPrerelease ? PatchVersionOf(b) : VersionOf(b)).Equals(version))
-          is not string build) {
-        continue;
+    JsonObject variants = [];
+    foreach ((string variant, string platform, string directory) in _variants) {
+      if (Entry(platform, directory, version) is JsonObject entry) {
+        variants[variant] = new JsonArray(entry);
       }
-
-      bool windows = platform == "win-x64";
-      JsonObject entry = new() {
-        ["side"] = "server",
-        ["platform"] = platform,
-        ["assets"] = new JsonArray(new JsonObject {
-          ["type"] = "zip",
-          ["urls"] = new JsonArray(
-              $"https://www.minecraft.net/bedrockdedicatedserver/{directory}/bedrock-server-"
-              + $"{build}.zip"),
-          ["place"] = new JsonArray(new JsonObject { ["src"] = "", ["dest"] = "" }),
-        }),
-        ["preserve"] = new JsonArray([.. _preserve.Select(glob => (JsonNode)glob)]),
-        ["purge"] = new JsonArray([
-          .. _purge.Skip(windows ? 0 : 1).Select(glob => (JsonNode)glob),
-        ]),
-      };
-      if (!windows) {
-        // lip writes files without the mode they have in a ZIP archive.
-        entry["hooks"] = new JsonObject {
-          ["post_install"] = new JsonArray("chmod +x bedrock_server"),
-        };
-      }
-
-      entries.Add(entry);
     }
 
     JsonObject file = new() {
@@ -156,10 +147,38 @@ public sealed partial class BedrockServer {
         ["name"] = "Minecraft Bedrock Dedicated Server",
         ["description"] = "The server of Minecraft: Bedrock Edition.",
       },
-      ["variants"] = new JsonObject { [""] = entries },
+      ["variants"] = variants,
     };
     using JsonDocument json = JsonDocument.Parse(file.ToJsonString());
     return json.RootElement.Clone();
+  }
+
+  /// The entry of a variant whose builds are those of a platform, downloaded from a directory, for
+  /// a version, or null when the platform has no build of the version. Every entry is for the platform win-x64: the Linux
+  /// server is placed by lip, which sets the mode of bedrock_server itself, and has no hooks.
+  private JsonObject? Entry(string platform, string directory, SemVersion version) {
+    if (_builds.GetValueOrDefault(platform)?.FirstOrDefault(
+            b => (version.IsPrerelease ? PatchVersionOf(b) : VersionOf(b)).Equals(version))
+        is not string build) {
+      return null;
+    }
+
+    bool windows = platform == "win-x64";
+    return new JsonObject {
+      ["side"] = "server",
+      ["platform"] = "win-x64",
+      ["assets"] = new JsonArray(new JsonObject {
+        ["type"] = "zip",
+        ["urls"] = new JsonArray(
+            $"https://www.minecraft.net/bedrockdedicatedserver/{directory}/bedrock-server-"
+            + $"{build}.zip"),
+        ["place"] = new JsonArray(new JsonObject { ["src"] = "", ["dest"] = "" }),
+      }),
+      ["preserve"] = new JsonArray([.. _preserve.Select(glob => (JsonNode)glob)]),
+      ["purge"] = new JsonArray([
+        .. _purge.Skip(windows ? 0 : 1).Select(glob => (JsonNode)glob),
+      ]),
+    };
   }
 
   /// The version of a build: its first three numbers.

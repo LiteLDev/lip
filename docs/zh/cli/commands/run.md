@@ -22,7 +22,7 @@ lip run
 
 ### Wine
 
-当工作区[环境](../../concepts/lip_toml.md#环境)的平台以 `win` 开头（例如默认的 `win-x64`），且 lip 不在 Windows 上运行时，服务器通过 [Wine](https://www.winehq.org/) 运行：lip 运行在 `PATH` 中找到的 `wine`，以 `bedrock_server_mod.exe` 的绝对路径为其唯一参数，并设置以下环境变量：
+当 lip 不在 Windows 上运行时，由于工作区[环境](../../concepts/lip_toml.md#环境)的平台是 `win-x64`，服务器通过 [Wine](https://www.winehq.org/) 运行：lip 运行在 `PATH` 中找到的 `wine`，以 `bedrock_server_mod.exe` 的绝对路径为其唯一参数，并设置以下环境变量：
 
 | 变量 | 值 |
 | --- | --- |

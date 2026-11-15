@@ -115,7 +115,7 @@ platform = "win-arm64"
 assets = [{ type = "mcmod", urls = ["https://github.com/user/MyMod/releases/download/v1.0.0/MyMod-client-win-arm64.zip"] }]
 ```
 
-A workspace whose side and platform have no entry cannot install the package. lip uses the platform `win-x64` unless a workspace was given another one with `--platform`, also on Linux, where it runs the server through Wine; so a server mod needs a `server` entry for `win-x64`, and an entry for `linux-x64` only serves workspaces created with `--platform linux-x64`.
+A workspace whose side and platform have no entry cannot install the package. lip always uses the platform `win-x64`, also on Linux, where it runs the server through Wine; so a server mod needs a `server` entry for `win-x64`, and lip never installs an entry for another platform such as `linux-x64`.
 
 ## Variants
 

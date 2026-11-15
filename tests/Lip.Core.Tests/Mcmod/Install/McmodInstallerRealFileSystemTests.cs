@@ -110,6 +110,65 @@ public class McmodInstallerRealFileSystemTests : IDisposable {
     Assert.True(File.Exists(Path.Combine(_root, "post_uninstall.txt")));
   }
 
+  [Theory]
+  [InlineData("github.com/LiteLDev/bds#linux", true)]
+  [InlineData("github.com/LiteLDev/bds#windows", false)]
+  [InlineData("example.com/other#linux", false)]
+  public async Task Install_LinuxServer_MakesBedrockServerExecutable(
+      string source, bool executable) {
+    // Arrange: lip itself gives bedrock_server of the variant "linux" of the server the mode
+    // 0755 when it does not run on Windows (protocol/lip-package.md, "The server").
+    const string url = "https://example.com/bedrock-server.zip";
+    Mock<IArchiveProvider> provider = new();
+    provider.Setup(p => p.OpenAsset(It.Is<IReadOnlyList<string>>(u => u.Single() == url)))
+        .ReturnsAsync(new ZipSource(WorkspaceHarness.Zip(new() {
+          ["bedrock_server"] = "elf",
+          ["server.properties"] = "props",
+        })));
+    using JsonDocument entryJson = JsonDocument.Parse($$"""
+        {
+          "side": "server",
+          "platform": "win-x64",
+          "assets": [ { "type": "zip", "urls": [ "{{url}}" ], "place": [ { "src": "", "dest": "" } ] } ]
+        }
+        """);
+    PackageEntry entry = PackageFileParser.ParseEntry(entryJson.RootElement);
+    Ref reference = Ref.Parse(source, allowFile: false);
+    Package package = new(reference.Target, reference.Variant, SemVersion.Parse("1.21.0"), entry) {
+      Manifest = Resolution.TestCandidates.Manifest(
+          reference.Target, "1.21.0", reference.Variant, entry),
+    };
+    ArchiveHandle archive = new(
+        $"{source}@1.21.0", new ZipSource(WorkspaceHarness.Zip(new() { ["lip.toml"] = "{}" })),
+        null);
+    Candidate candidate = Candidate.Create(package, archive, reference, provider.Object);
+    FileSystem fs = new();
+    SoloInstaller installer =
+        new(fs, new McmodInstaller(fs, new CommandRunner(), new Mock<IUserInteraction>().Object));
+    InstallContext context = new(
+        _root,
+        new LipEnvironment(McmodSide.Server, "win-x64"),
+        new LockFile { Side = "server", Platform = "win-x64", Packages = [] },
+        false);
+
+    // Act
+    await installer.Install(candidate, context);
+
+    // Assert
+    string server = Path.Combine(_root, "bedrock_server");
+    Assert.Equal("elf", File.ReadAllText(server));
+    if (!OperatingSystem.IsWindows()) {
+      const UnixFileMode execute =
+          UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+      Assert.Equal(
+          executable ? (UnixFileMode)0b111_101_101 : File.GetUnixFileMode(server) & ~execute,
+          File.GetUnixFileMode(server));
+      Assert.Equal(
+          UnixFileMode.None,
+          File.GetUnixFileMode(Path.Combine(_root, "server.properties")) & execute);
+    }
+  }
+
   // 8.3 short names (Windows): a path through the short name of a directory names what the long
   // name does, so the write rules and purge see it by its long name (protocol/lip-workspace.md,
   // "Installing and uninstalling").

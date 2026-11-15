@@ -138,8 +138,13 @@ public partial class McmodInstaller(
           "pre_install", entry.Hooks.PreInstall, context.Environment.Platform));
     }
 
+    // lip itself makes bedrock_server of the Linux server executable (protocol/lip-package.md,
+    // "The server").
+    bool linuxServer = BedrockServer.IsServer(candidate.Source)
+        && package.Variant == BedrockServer.LinuxVariant;
     steps.AddRange(plan.Select(w => new WriteStep(
-        w.Target, w.FullPath, w.Source, w.SourceKey, entry.PreserveFiles, w.Keep)));
+        w.Target, w.FullPath, w.Source, w.SourceKey, entry.PreserveFiles, w.Keep,
+        linuxServer && paths.AreEqual(w.Target, BedrockServer.LinuxExecutable))));
     if (entry.Hooks.PostInstall.Count > 0) {
       steps.Add(new ScriptStep(
           "post_install", entry.Hooks.PostInstall, context.Environment.Platform));
@@ -327,7 +332,7 @@ public partial class McmodInstaller(
 
             try {
               await using Stream content = await write.Source.OpenRead(write.Key);
-              await transaction.WriteFile(full, content, cancellationToken);
+              await transaction.WriteFile(full, content, cancellationToken, write.Executable);
             }
             catch (Exception ex) when (ex is not OperationCanceledException) {
               throw new McmodInstallException(
@@ -519,8 +524,8 @@ public partial class McmodInstaller(
             $"The package file that the state file ({LockStore.LipDirectory}/"
             + $"{LockStore.FileName}) records for {package.Identity} {package.Version} has no"
             + $" entry of {variant} for the side {environment.Side.ToSpecString()} and"
-            + $" the platform {environment.Platform}. If you passed --platform, pass the platform"
-            + " the workspace was installed for instead.");
+            + $" the platform {environment.Platform}. If you edited the state file by hand, undo"
+            + " the change.");
   }
 
   /// A package for messages: its identity and version.

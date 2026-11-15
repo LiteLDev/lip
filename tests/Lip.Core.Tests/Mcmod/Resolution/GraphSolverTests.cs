@@ -117,6 +117,64 @@ public class GraphSolverTests {
   }
 
   [Theory]
+  [InlineData("", "windows")]
+  [InlineData("", "linux")]
+  [InlineData("windows", "linux")]
+  public async Task SolveGraph_TwoVariantsOfTheServerRequested_Fails(string first, string second) {
+    // Arrange: a workspace holds one package of the server (protocol/lip-workspace.md,
+    // "Valid states", rule 3).
+    const string server = "github.com/LiteLDev/bds";
+    FakeResolver resolver = new();
+    resolver.Add(Package(server, "1.21.0", variant: first));
+    resolver.Add(Package(server, "1.21.0", variant: second));
+    GraphSolver solver = new(resolver);
+    string Source(string variant) => variant == "" ? server : $"{server}#{variant}";
+
+    // Act
+    DependencyResolutionException ex = await Assert.ThrowsAsync<DependencyResolutionException>(
+        () => solver.SolveGraph(
+            [Request(Source(first)), Request(Source(second))], [], s_environment));
+
+    // Assert
+    Assert.Contains("are both the server", ex.Message);
+  }
+
+  [Fact]
+  public async Task SolveGraph_OtherVariantOfTheInstalledServer_Fails() {
+    // Arrange
+    const string server = "github.com/LiteLDev/bds";
+    FakeResolver resolver = new();
+    resolver.Add(Package(server, "1.21.0", variant: "windows"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException ex = await Assert.ThrowsAsync<DependencyResolutionException>(
+        () => solver.SolveGraph(
+            [Request($"{server}#windows")], [Package(server, "1.21.0")], s_environment));
+
+    // Assert
+    Assert.Contains("(installed)", ex.Message);
+  }
+
+  [Fact]
+  public async Task SolveGraph_PackageWithTheIdOfTheServerFromAnotherSource_IsNotTheServer() {
+    // Arrange: only the source github.com/LiteLDev/bds names packages of the server.
+    const string server = "github.com/LiteLDev/bds";
+    FakeResolver resolver = new();
+    resolver.Add(Package(server, "1.21.0"));
+    resolver.Add(Package(server, "1.21.0", source: "https://example.com/bds.zip#linux",
+        variant: "linux"));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    SolvedGraph graph = await solver.SolveGraph(
+        [Request(server), Request("https://example.com/bds.zip#linux")], [], s_environment);
+
+    // Assert
+    Assert.Equal(2, graph.Order.Count);
+  }
+
+  [Theory]
   [InlineData("github.com/x/x")]
   [InlineData("github.com/X/x")]
   public async Task Solve_TwoSourcesOfSameIdentity_Fails(string otherId) {

@@ -13,7 +13,7 @@
 不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
 
 ### 可以在 Linux 上运行服务器吗？
-**可以。** 在任何系统上，lip 默认都安装平台 `win-x64` 的包，在 Linux 和 macOS 上通过 Wine 运行其钩子命令和服务器，Wine 需要你自行安装。如需改为安装 Linux 原生包，请在该工作区的第一次 `lip install` 中指定 `--platform linux-x64`；`lip run` 无法启动 Linux 原生服务器，需要你自行启动。参见[运行服务器](guides/running_server.md#linux-原生包)。
+**可以。** 在任何系统上，lip 都安装平台 `win-x64` 的包，在 Linux 和 macOS 上通过 Wine 运行其钩子命令和服务器，Wine 需要你自行安装。单独的 Linux 版服务器是 `github.com/LiteLDev/bds#linux`；`lip run` 无法启动它，需要你自行启动。参见[运行服务器](guides/running_server.md#linux-版服务器)。
 
 ### 为什么我仓库的某个标签不是版本？
 只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。不过，仍可用 git 引用安装任意标签、分支或提交，例如 `lip install github.com/user/repo@tag:1.2.3` 或 `@branch:main`；此时包的版本是其 `lip.toml` 声明的 `version`。参见 [git 引用](cli/commands/install.md#git-引用)。

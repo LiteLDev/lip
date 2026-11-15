@@ -280,14 +280,13 @@ The environment of a workspace is a pair `(side, platform)`:
 - **side**: `server` or `client`, the side of the game the workspace is. lip manages server
   workspaces only, so it always uses `server`. Client workspaces are managed by launchers such as
   LeviLauncher; lip refuses a workspace whose [state file](lockfiles.md) records `client`.
-- **platform**: a [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog): `--platform`,
-  else the platform the state file records, else `win-x64`, whatever system lip runs on. Linux-native
-  packages, such as the `linux-x64` entry of `github.com/LiteLDev/bds`, need `--platform linux-x64`
-  on the first command of the workspace. Every `install`, `uninstall` and `update` (except with
-  `--dry-run`, which writes no file) records the platform it used in the state file, so
-  `--platform` replaces the recorded platform for later commands. A platform starting with `win` is a **Windows platform**:
-  on other systems, lip runs the programs of such a workspace through Wine (see
-  [Running a Server](../guides/running_server.md)).
+- **platform**: a [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog), always `win-x64`,
+  whatever system lip runs on. On other systems than Windows, lip runs the programs of a workspace
+  through Wine (see [Running a Server](../guides/running_server.md)). The Linux server is not
+  another platform but the variant `linux` of `github.com/LiteLDev/bds`, whose entry is for
+  `win-x64`. A state file of an earlier lip that records `linux-x64` is read as one of `win-x64`
+  (see [State file](lockfiles.md#workspaces-of-linux-x64)). A platform starting with `win` is a
+  **Windows platform**.
 
 ## Earlier Formats
 

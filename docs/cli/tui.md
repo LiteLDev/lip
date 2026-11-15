@@ -28,7 +28,7 @@ Every change to the workspace is planned first: lip carries it out as a dry run 
 
 While the change is applied, `Ctrl+C` cancels it and undoes what was done so far. When a command fails, the interface shows the cause, what you can do about it, and the path of the failure report below `.lip/logs`, and goes on.
 
-In the install dialog of the Packages tab (`i`), the packages are written as on the command line (see [`lip install`](./commands/install.md)), separated by spaces; the second field is `--platform`.
+In the install dialog of the Packages tab (`i`), the packages are written as on the command line (see [`lip install`](./commands/install.md)), separated by spaces.
 
 ## Browsing mods
 

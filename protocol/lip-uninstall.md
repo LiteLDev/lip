@@ -7,7 +7,7 @@ lip-uninstall - uninstall packages from the workspace
 ## SYNOPSIS
 
 ```
-lip uninstall <PACKAGES>... [-n | --dry-run] [--platform <RID>] [-h | --help]
+lip uninstall <PACKAGES>... [-n | --dry-run] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -24,7 +24,6 @@ Every named package must be explicitly installed; otherwise the command fails. T
 ## OPTIONS
 
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would uninstall or mark no longer explicitly installed.
-- `--platform <RID>`: The platform of the environment ([lip(1), "Environment"](lip.md#environment)) is `<RID>`.
 
 ## SEE ALSO
 

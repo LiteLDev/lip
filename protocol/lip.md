@@ -115,7 +115,7 @@ A package argument is made into the request (source, range) whose range matches 
 `lip` manages only workspaces whose side is `"server"`. The environment of `install`, `uninstall`, `update` and `run` is:
 
 - side: `"server"`. When the state file records another side, the command fails.
-- platform: the value of the `--platform` option of the command, when given; otherwise the platform the state file records; otherwise `"win-x64"`, whatever system `lip` runs on.
+- platform: `"win-x64"`, whatever system `lip` runs on. A state file that records the platform `"linux-x64"` is read as [lip-compatibility(7), "Workspaces of linux-x64"](lip-compatibility.md#workspaces-of-linux-x64) defines. When the state file records a platform other than these two, the command fails.
 
 A workspace operation has the environment above, and records it in the state file, replacing the one recorded.
 

@@ -13,7 +13,7 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 
 Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md) and [`list`](commands/list.md). [`pkg view`](commands/pkg_view.md) always prints JSON.
 
-[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) accept `--platform <RID>` to set the platform of the workspace [environment](../concepts/lip_toml.md#environment). Without it, the platform is the one the state file records, or else `win-x64`, whatever system lip runs on; Linux-native packages need `--platform linux-x64`. lip manages server workspaces only.
+[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) install the packages of the platform `win-x64` into the workspace, whatever system lip runs on (see [Environment](../concepts/lip_toml.md#environment)); the Linux server is the variant `github.com/LiteLDev/bds#linux`. lip manages server workspaces only.
 
 ## Commands
 

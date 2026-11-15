@@ -12,7 +12,7 @@ public class ToothLockMigrationTests {
   private const string App = "example.com/app";
   private const string Other = "example.com/other";
 
-  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
+  private static readonly OperationOptions _options = new();
 
   private readonly WorkspaceHarness _ws = new();
 

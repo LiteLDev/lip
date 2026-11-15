@@ -26,8 +26,14 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("--json", "pkg", "view", "x", "--json")]
   [InlineData("--bogus", "config", "list", "--bogus")]
   [InlineData("--bogus", "run", "--bogus")]
-  // lip run has no --platform (protocol/lip-run.md).
+  // lip has no --platform: the platform is always win-x64 (protocol/lip.md, "Environment").
   [InlineData("--platform", "run", "--platform", "win-x64")]
+  [InlineData("--platform", "install", "--platform", "win-x64", "x")]
+  [InlineData("--platform", "install", "x", "--platform", "linux-x64")]
+  [InlineData("--platform", "uninstall", "x", "--platform", "win-x64")]
+  [InlineData("--platform", "update", "--platform", "win-x64")]
+  [InlineData("--platform", "update", "--platform")]
+  [InlineData("--platform", "install", "x", "--platform", "", "-n")]
   [InlineData("--bogus", "config", "get", "--bogus", "x")]
   [InlineData("--bogus", "config", "delete", "--bogus", "x")]
   [InlineData("-x", "install", "-x", "foo")]
@@ -53,15 +59,7 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("pkg", "pack", "-o")]
   [InlineData("pkg", "pack", "--output")]
   [InlineData("pkg", "pack", "-o", "--help")]
-  [InlineData("update", "--platform")]
-  [InlineData("update", "--platform", "-n")]
-  [InlineData("install", "x", "--platform")]
-  [InlineData("uninstall", "x", "--platform")]
   // An empty value is no value (protocol/lip.md, "Arguments"), so -h does not make it help.
-  [InlineData("update", "-n", "--platform", "")]
-  [InlineData("update", "--platform", "", "-h")]
-  [InlineData("install", "x", "--platform", "", "-n")]
-  [InlineData("uninstall", "x", "--platform", "")]
   [InlineData("pkg", "pack", "-o", "")]
   [InlineData("pkg", "pack", "--output", "", "--help")]
   public async Task OptionWithoutValue_IsUsageError(params string[] args) {

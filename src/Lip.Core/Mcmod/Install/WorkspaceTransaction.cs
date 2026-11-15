@@ -73,18 +73,35 @@ public sealed class WorkspaceTransaction : IDisposable {
     }
   }
 
-  /// Writes a file, creating its directory; an existing file is backed up first.
-  public async Task WriteFile(string path, Stream content, CancellationToken cancellationToken) {
+  /// Writes a file, creating its directory; an existing file is backed up first. An executable
+  /// file gets the mode 0755 when lip does not run on Windows.
+  public async Task WriteFile(
+      string path,
+      Stream content,
+      CancellationToken cancellationToken,
+      bool executable = false) {
     CreateDirectory(_fs.Path.GetDirectoryName(path)!);
     if (_fs.File.Exists(path)) {
       Backup(path);
     }
 
     Record(new JournalEntry(JournalOp.CreateFile, path));
-    await using FileSystemStream output = _fs.File.Create(path);
-    await content.CopyToAsync(output, cancellationToken);
-    RunTrace.Write("workspace", $"Wrote {Show(path)} ({output.Length} bytes)");
+    await using (FileSystemStream output = _fs.File.Create(path)) {
+      await content.CopyToAsync(output, cancellationToken);
+      RunTrace.Write("workspace", $"Wrote {Show(path)} ({output.Length} bytes)");
+    }
+
+    if (executable && !OperatingSystem.IsWindows()) {
+      _fs.File.SetUnixFileMode(path, ExecutableMode);
+      RunTrace.Write("workspace", $"Made {Show(path)} executable (mode 0755)");
+    }
   }
+
+  /// The mode 0755: read, write and execute for the owner, read and execute for the others.
+  private const UnixFileMode ExecutableMode =
+      UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+      | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+      | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
 
   /// Deletes a file: renames it to a backup, deleted at commit.
   public void DeleteFile(string path) => Backup(path);

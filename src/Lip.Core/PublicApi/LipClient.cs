@@ -197,11 +197,10 @@ public sealed class LipClient {
   public async Task Install(
       IEnumerable<string> packages,
       bool dryRun,
-      string? platform = null,
       CancellationToken cancellationToken = default) {
     await (await GetMcmodService(dryRun)).Install(
         [.. packages],
-        Options(dryRun, platform, cancellationToken));
+        new OperationOptions(dryRun, cancellationToken));
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependency packages,
@@ -270,11 +269,10 @@ public sealed class LipClient {
   public async Task Uninstall(
       IEnumerable<string> packages,
       bool dryRun,
-      string? platform = null,
       CancellationToken cancellationToken = default) {
     await (await GetMcmodService(dryRun)).Uninstall(
         [.. packages],
-        Options(dryRun, platform, cancellationToken));
+        new OperationOptions(dryRun, cancellationToken));
   }
 
   /// Updates the given packages to the requested (or newest) version; without packages, every
@@ -282,29 +280,15 @@ public sealed class LipClient {
   public async Task Update(
       IEnumerable<string> packages,
       bool dryRun,
-      string? platform = null,
       CancellationToken cancellationToken = default) {
     await (await GetMcmodService(dryRun)).Update(
         [.. packages],
-        Options(dryRun, platform, cancellationToken));
+        new OperationOptions(dryRun, cancellationToken));
   }
 
   /// The result of lip pkg view as JSON (protocol/lip-pkg.md, "lip pkg view"): the package file
   /// of the first archive the package argument names, and the versions of its remote repository.
   public async Task<string> View(string package) {
     return await (await GetMcmodService()).View(package);
-  }
-
-  private static OperationOptions Options(
-      bool dryRun,
-      string? platform,
-      CancellationToken cancellationToken) {
-    // An empty value is a usage error (protocol/lip.md, "Arguments"), which the CLI reports; it
-    // never stands for an omitted --platform.
-    if (platform == "") {
-      throw new ArgumentException("The platform must not be empty.", nameof(platform));
-    }
-
-    return new OperationOptions(dryRun, platform, cancellationToken);
   }
 }

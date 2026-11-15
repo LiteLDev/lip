@@ -9,7 +9,7 @@ public class WorkspaceLayoutTests {
   private const string Demo = "example.com/demo";
   private const string DemoUrl = "https://example.com/demo.mcmod";
 
-  private static readonly OperationOptions s_options = new(Platform: WorkspaceHarness.Platform);
+  private static readonly OperationOptions s_options = new();
 
   private readonly WorkspaceHarness _ws = new();
 
@@ -171,30 +171,6 @@ public class WorkspaceLayoutTests {
     // Assert
     Assert.Contains("'Mods' and 'mods'", ex.Message);
     Assert.Equal(before, Snapshot());
-  }
-
-  [Fact]
-  public async Task Install_OtherPlatformModsInAnotherCase_CreatesMods() {
-    // Arrange: the paths of a workspace for another platform tell case apart.
-    SkipOnWindows();
-    _ws.AddTag(Demo, "1.0.0", new() {
-      ["lip.toml"] = WorkspaceHarness.Toml($$"""
-          {
-            "format": 4, "id": "{{Demo}}", "version": "1.0.0",
-            "variants": { "": [ { "side": "server", "platform": "linux-x64",
-              "assets": [ { "type": "self", "place": [ { "src": "Demo.so", "dest": "mods/Demo/Demo.so" } ] } ] } ] }
-          }
-          """),
-      ["Demo.so"] = "so",
-    });
-    _ws.AddFile("Mods/Other/Other.so", "other");
-
-    // Act
-    await _ws.Service.Install([Demo], new OperationOptions(Platform: "linux-x64"));
-
-    // Assert
-    Assert.True(_ws.Exists("mods/Demo/Demo.so"));
-    Assert.True(_ws.Exists("Mods/Other/Other.so"));
   }
 
   private static void SkipOnWindows() =>

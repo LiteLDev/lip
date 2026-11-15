@@ -10,12 +10,10 @@ using Semver;
 
 namespace Lip.Core.Mcmod;
 
-/// Options shared by the workspace operations. Platform overrides the platform of the environment
-/// (protocol/lip.md, "Environment"). Cancelling the token stops an operation; one that has started
-/// changing the workspace undoes its changes first.
+/// Options shared by the workspace operations. Cancelling the token stops an operation; one that
+/// has started changing the workspace undoes its changes first.
 public record OperationOptions(
     bool DryRun = false,
-    string? Platform = null,
     CancellationToken CancellationToken = default);
 
 /// One package of the state file, as listed to the user.
@@ -276,7 +274,7 @@ public class McmodService(
   public async Task<IReadOnlyList<InstalledPackage>> List() {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LockFile? lockFile = await _lockStore.Load(root)
-        ?? await ReadToothLock(root, DetermineEnvironment(null, null), resolveCommits: false);
+        ?? await ReadToothLock(root, DetermineEnvironment(null), resolveCommits: false);
     return [
       .. (lockFile?.Packages ?? [])
           .Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit)),
@@ -285,7 +283,7 @@ public class McmodService(
 
   /// lip run (protocol/lip-run.md): takes the workspace lock, recovers an interrupted operation,
   /// releases the lock, then runs the server, bedrock_server_mod.exe at the workspace root, for the
-  /// environment of protocol/lip.md, "Environment" (no --platform), and returns its exit code.
+  /// environment of protocol/lip.md, "Environment", and returns its exit code.
   /// The server reads the bytes read from input, and the line "stop" when lip is first asked to
   /// stop (listen); inputIsConsole when input is an interactive Windows console. Throws when a
   /// step before the server starts fails.
@@ -294,19 +292,23 @@ public class McmodService(
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LockFile? lockFile;
     using (await BeginOperation(new OperationOptions())) {
-      // Read once a recovered operation is complete, so that it records the platform it gave.
+      // Read once a recovered operation is complete, as that operation leaves it.
       lockFile = await _lockStore.Load(root);
     }
 
-    LipEnvironment environment = DetermineEnvironment(lockFile, null);
+    LipEnvironment environment = DetermineEnvironment(lockFile);
     string server = _fs.Path.Join(root, WorkspaceProgram.ServerFileName);
     if (!_fs.File.Exists(server)) {
+      bool linuxServer = lockFile?.Packages.Any(p => p.Variant == BedrockServer.LinuxVariant
+          && BedrockServer.IsRepository(p.Id)) ?? false;
       throw new FileNotFoundException(
           $"There is no server to run: '{server}' is not a file."
-          + (WorkspaceProgram.IsWindowsPlatform(environment.Platform)
-              ? " Install the server first, e.g. with 'lip install github.com/LiteLDev/LeviLamina'."
-              : $" Install a package that provides it for the platform {environment.Platform},"
-                + " or start the server of the workspace yourself."),
+          + (linuxServer
+              ? " The workspace holds the Linux server"
+                + $" {BedrockServer.Repository}#{BedrockServer.LinuxVariant}, which lip run does"
+                + $" not run; start it yourself, e.g. with './{BedrockServer.LinuxExecutable}'."
+              : " Install the server first, e.g. with"
+                + " 'lip install github.com/LiteLDev/LeviLamina'."),
           server);
     }
 
@@ -323,9 +325,7 @@ public class McmodService(
           $"Could not start the server: lip could not run {program} in '{root}' for the"
           + $" platform {environment.Platform}"
           + (throughWine
-              ? ". Install Wine, so that 'wine' is found through PATH, or install the server for"
-                + " the platform lip runs on in a new workspace, with 'lip install"
-                + " <PACKAGES>... --platform <RID>'."
+              ? ". Install Wine, so that 'wine' is found through PATH."
               : "."),
           ex);
     }
@@ -337,12 +337,12 @@ public class McmodService(
   /// path), and "versions", the versions of the version tags of a remote repository, lowest first,
   /// whatever its variant and ref. For an archive without a package file, the package file
   /// protocol/lip-compatibility.md, "tooth.json" derives from its tooth.json for the side server
-  /// and the platform the state file records, or win-x64 without a state file.
+  /// and the platform win-x64.
   public async Task<string> View(string package) {
     PackageRequest request = PackageArguments.Parse(
         package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
 
-    if (request.Ref.Kind == RefKind.Spec && BedrockServer.IsRepository(request.Ref.Target)) {
+    if (BedrockServer.IsServer(request.Ref)) {
       return await ViewServer(package, request.Ref);
     }
 
@@ -415,19 +415,12 @@ public class McmodService(
   }
 
   /// The package file of an archive, as lip pkg view shows it: read for the side server and the
-  /// platform the state file records, or DefaultPlatform when there is no state file. Only a
-  /// package file derived from a tooth.json depends on them, so the state file is read only for
-  /// one; a state file that cannot be read fails the command, as it fails a workspace operation.
+  /// platform win-x64, which only a package file derived from a tooth.json depends on.
   private async Task<JsonElement> ManifestJson(ArchiveHandle archive, SemVersion? tagVersion) {
     PackageDocument document = await _archiveReader.Read(archive);
-    if (!document.IsLegacy) {
-      return document.Json;
-    }
-
-    string? platform =
-        (await _lockStore.Load(_fs.Path.GetFullPath(_workspaceRoot())))?.Platform;
-    LipEnvironment environment = new(McmodSide.Server, platform ?? DefaultPlatform);
-    return document.ReadFor(environment, tagVersion).Json;
+    return document.IsLegacy
+        ? document.ReadFor(new LipEnvironment(McmodSide.Server, Platform), tagVersion).Json
+        : document.Json;
   }
 
   #region Planning
@@ -435,14 +428,14 @@ public class McmodService(
   private async Task<Workspace> OpenWorkspace(OperationOptions options) {
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LockFile? recorded = await _lockStore.Load(root);
-    LipEnvironment environment = DetermineEnvironment(recorded, options.Platform);
+    LipEnvironment environment = DetermineEnvironment(recorded);
     recorded ??= await ReadToothLock(root, environment, resolveCommits: true);
     RunTrace.Write("workspace", $"Workspace {root}: "
         + (recorded is null
             ? "no state file yet"
             : $"{recorded.Packages.Count} installed packages, platform {recorded.Platform}")
         + $"; using the environment ({environment.Side.ToSpecString()},"
-        + $" {environment.Platform})" + (options.Platform is null ? "" : " from --platform"));
+        + $" {environment.Platform})");
     // A workspace without a state file gets the environment of its first operation.
     LockFile lockFile = recorded ?? new LockFile {
       Side = environment.Side.ToSpecString(),
@@ -623,16 +616,14 @@ public class McmodService(
         + " before it.");
   }
 
-  /// The platform of the environment when neither --platform nor the state file gives one,
-  /// whatever system lip runs on (protocol/lip.md, "Environment").
-  public const string DefaultPlatform = "win-x64";
+  /// The platform of every environment, whatever system lip runs on (protocol/lip.md,
+  /// "Environment").
+  public const string Platform = "win-x64";
 
-  /// The environment of the workspace (protocol/lip.md, "Environment"). lip manages server
-  /// workspaces only, so the side is always server. The platform is --platform, then the state
-  /// file, then DefaultPlatform.
-  private static LipEnvironment DetermineEnvironment(
-      LockFile? lockFile,
-      string? explicitPlatform) {
+  /// The environment of the workspace (protocol/lip.md, "Environment"): the side server and the
+  /// platform win-x64. Fails when the state file records another side or platform; a state file
+  /// of linux-x64 is already read as one of win-x64 (LinuxWorkspace).
+  private static LipEnvironment DetermineEnvironment(LockFile? lockFile) {
     string server = McmodSide.Server.ToSpecString();
     if (lockFile?.Side is { } side && side != server) {
       throw new InvalidOperationException(
@@ -641,9 +632,14 @@ public class McmodService(
           + " Client workspaces are managed by launchers such as LeviLauncher.");
     }
 
-    return new LipEnvironment(
-        McmodSide.Server,
-        explicitPlatform ?? lockFile?.Platform ?? DefaultPlatform);
+    if (lockFile?.Platform is { } platform && platform != Platform) {
+      throw new InvalidOperationException(
+          $"The state file {WorkspaceFile} records the platform \"{platform}\", but lip installs"
+          + $" packages for the platform \"{Platform}\" only, on every system. Install the"
+          + " packages again in a new workspace.");
+    }
+
+    return new LipEnvironment(McmodSide.Server, Platform);
   }
 
   private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
@@ -666,6 +662,30 @@ public class McmodService(
     foreach ((string argument, PackageRequest request) in requests) {
       Candidate candidate = await FirstCandidate(workspace, argument, request);
       string identity = candidate.Package.Identity;
+      // A workspace holds one package of the server, whatever its variant
+      // (protocol/lip-workspace.md, "Valid states", rule 3); said here, before the solver tries
+      // every version of both.
+      if (BedrockServer.IsServer(candidate.Source)) {
+        int otherServer = candidates.FindIndex(c => BedrockServer.IsServer(c.Source)
+            && !SameIdentity(c.Package.Identity, identity));
+        if (otherServer >= 0) {
+          throw new InvalidOperationException(
+              $"The arguments '{requests[otherServer].Argument}' and '{argument}' name two"
+              + $" variants of the server {BedrockServer.Repository}, which a workspace holds"
+              + " once. Install one of them only.");
+        }
+
+        if (workspace.Lock.Packages.FirstOrDefault(p => !SameIdentity(p.Identity, identity)
+                && Ref.TryParse(p.Source, out Ref? installed, out _)
+                && BedrockServer.IsServer(installed))
+            is LockedPackage server) {
+          throw new InvalidOperationException(
+              $"'{argument}' is the server {BedrockServer.Repository}, and the workspace already"
+              + $" holds its variant '{server.Identity}', which a workspace holds once. Uninstall"
+              + $" '{server.Identity}' first, or the packages that need it.");
+        }
+      }
+
       int earlier = candidates.FindIndex(c => SameIdentity(c.Package.Identity, identity));
       if (!allowSameIdentity && earlier >= 0) {
         throw new InvalidOperationException(
@@ -1056,7 +1076,7 @@ public class McmodService(
   /// "Reinstalling"): with the package file the state file records, and the archive of the
   /// commit it records for a remote repository, otherwise the archive its source names now,
   /// opened when first needed. Fails when it is no candidate in the environment, e.g. when its
-  /// package file has no entry for another --platform (protocol/lip-workspace.md, "Valid states").
+  /// package file has no entry for it (protocol/lip-workspace.md, "Valid states").
   private Candidate PinnedCandidate(Workspace workspace, LockedPackage package) {
     try {
       Package rebuilt = new(
@@ -1068,7 +1088,7 @@ public class McmodService(
       };
       Ref source = ParseRecordedSource(package);
       // The packages of the server are in no archive, and have no commit.
-      bool server = source.Kind == RefKind.Spec && BedrockServer.IsRepository(source.Target);
+      bool server = BedrockServer.IsServer(source);
       if (source.Kind == RefKind.Spec && package.Commit is null && !server) {
         throw new LockFormatException(
             $"The entry of '{package.Identity}' has no \"commit\" field, which every package"
@@ -1091,15 +1111,8 @@ public class McmodService(
           $"Cannot use the installed package '{package.Identity}' as the state file"
           + $" {WorkspaceFile} records it, in the environment"
           + $" ({workspace.Environment.Side.ToSpecString()}, {workspace.Environment.Platform})."
-          // LockedEntry throws McmodInstallException when the package has no entry for the
-          // environment; a LockFormatException already says what to do.
-          + (ex is McmodInstallException
-              && workspace.Environment.Platform != workspace.Lock.Platform
-              ? $" The workspace was installed for the platform {workspace.Lock.Platform}; run"
-                  + " lip without --platform, or with that platform."
-              : ex is LockFormatException
-                  ? ""
-                  : " If the file was edited by hand, undo the edit."),
+          // A LockFormatException already says what to do.
+          + (ex is LockFormatException ? "" : " If the file was edited by hand, undo the edit."),
           ex);
     }
   }

@@ -10,7 +10,7 @@ state.json - the state file of a workspace
 
 ## DESCRIPTION
 
-The **state file** is the JSON file `.lip/state.json`, valid against [`state.schema.json`](state.schema.json). It records the environment of the workspace and its installed packages. Packages and paths are those of [lip-workspace(7)]: a path is relative to the workspace and `/`-separated. A workspace without a state file has no installed packages and no recorded environment, unless [lip-compatibility(7), "tooth_lock.json"](lip-compatibility.md#tooth_lockjson) reads one for it.
+The **state file** is the JSON file `.lip/state.json`, valid against [`state.schema.json`](state.schema.json). It records the environment of the workspace and its installed packages. Packages and paths are those of [lip-workspace(7)]: a path is relative to the workspace and `/`-separated. A workspace without a state file has no installed packages and no recorded environment, unless [lip-compatibility(7), "tooth_lock.json"](lip-compatibility.md#tooth_lockjson) reads one for it. A state file that records the platform `"linux-x64"` is read as [lip-compatibility(7), "Workspaces of linux-x64"](lip-compatibility.md#workspaces-of-linux-x64) defines.
 
 The state file is only written atomically, through `.lip/state.json.tmp` ([lip-workspace(7), "Carrying out an operation"](lip-workspace.md#carrying-out-an-operation)), so a process reading it without the workspace lock reads either the file before an operation or the file after it.
 

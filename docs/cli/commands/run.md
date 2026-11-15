@@ -22,7 +22,7 @@ The workspace is not locked while the server runs: you can run `lip install`, `l
 
 ### Wine
 
-When the platform of the workspace [environment](../../concepts/lip_toml.md#environment) starts with `win` (such as the default `win-x64`) and lip does not run on Windows, the server is run through [Wine](https://www.winehq.org/): lip runs `wine`, found through `PATH`, with the absolute path of `bedrock_server_mod.exe` as its only argument and these environment variables:
+When lip does not run on Windows, as the platform of the workspace [environment](../../concepts/lip_toml.md#environment) is `win-x64`, the server is run through [Wine](https://www.winehq.org/): lip runs `wine`, found through `PATH`, with the absolute path of `bedrock_server_mod.exe` as its only argument and these environment variables:
 
 | Variable | Value |
 | --- | --- |

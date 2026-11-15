@@ -21,7 +21,7 @@ lip install github.com/LiteLDev/LeviLamina
 
 lip 只管理服务端工作区。客户端 mod 由 LeviLauncher 等启动器管理。
 
-在任何系统上，lip 默认都安装平台 `win-x64` 的包。在 Linux 和 macOS 上，它通过 Wine 运行这些包的钩子命令和服务器；如需安装 Linux 原生包，请在该工作区的第一次 `lip install` 中加上 `--platform linux-x64`，并自行启动服务器，因为 `lip run` 无法启动 Linux 原生服务器。参见[运行服务器](../guides/running_server.md#linux-原生包)。
+在任何系统上，lip 都安装平台 `win-x64` 的包。在 Linux 和 macOS 上，它通过 Wine 运行这些包的钩子命令和服务器。Linux 版服务器是 `github.com/LiteLDev/bds#linux`，需要你自行启动，因为 `lip run` 无法启动它。参见[运行服务器](../guides/running_server.md#linux-版服务器)。
 
 ## 运行服务器
 

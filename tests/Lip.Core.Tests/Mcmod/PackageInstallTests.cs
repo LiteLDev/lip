@@ -8,7 +8,7 @@ namespace Lip.Core.Tests.Mcmod;
 /// End-to-end tests of installing packages with a package file (protocol/lip-workspace.md,
 /// "Installing and uninstalling").
 public class PackageInstallTests {
-  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
+  private static readonly OperationOptions _options = new();
 
   [Fact]
   public async Task Install_SelfAsset_PlacesFilesAndRecordsWorkspaceFile() {

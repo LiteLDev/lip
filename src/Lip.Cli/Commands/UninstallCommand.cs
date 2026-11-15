@@ -9,7 +9,7 @@ public class UninstallCommand(LipClient lipClient, IUserInteraction userInteract
   private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
-  public class Settings : EnvironmentSettings {
+  public class Settings : CommandSettings {
     [CommandArgument(0, "<PACKAGES>")]
     [Description("The packages to uninstall: a package name, or the path[[#variant]] it was installed from")]
     public required string[] Packages { get; init; }
@@ -23,7 +23,7 @@ public class UninstallCommand(LipClient lipClient, IUserInteraction userInteract
     await _lipClient.Uninstall(
         settings.Packages,
         settings.DryRun,
-        settings.Platform, cancellationToken);
+        cancellationToken);
     await _userInteraction.PrintSuccess("Packages uninstalled successfully.");
     return 0;
   }

@@ -1519,7 +1519,7 @@ public class McmodInstallerTests {
 /// Assets downloaded through the archive provider (protocol/lip-workspace.md, "Installing and
 /// uninstalling" step 2).
 public class McmodInstallerAssetDownloadTests {
-  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
+  private static readonly OperationOptions _options = new();
 
   private static string ZipEntry(params string[] urls) => $$"""
       "assets": [ { "type": "zip", "urls": [ {{string.Join(", ", urls.Select(u => $"\"{u}\""))}} ],

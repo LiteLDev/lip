@@ -13,7 +13,7 @@
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md) 和 [`list`](commands/list.md)。[`pkg view`](commands/pkg_view.md) 始终输出 JSON。
 
-[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 支持 `--platform <RID>`，用于设置工作区[环境](../concepts/lip_toml.md#环境)中的平台。不指定时，平台为状态文件记录的平台，否则为 `win-x64`，无论 lip 运行在什么系统上；Linux 原生包需要 `--platform linux-x64`。lip 只管理服务端工作区。
+[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 向工作区安装平台 `win-x64` 的包，无论 lip 运行在什么系统上（参见[环境](../concepts/lip_toml.md#环境)）；Linux 版服务器是变体 `github.com/LiteLDev/bds#linux`。lip 只管理服务端工作区。
 
 ## 命令
 

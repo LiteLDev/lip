@@ -2,11 +2,11 @@
 
 ## NAME
 
-lip-compatibility - the files of formats 1 to 3, and the packages that lip must install
+lip-compatibility - the files of formats 1 to 3, workspaces of linux-x64, and the packages that lip must install
 
 ## DESCRIPTION
 
-`lip` reads and migrates the files of formats 1 to 3, written by lip v0.x, as this page defines.
+`lip` reads and migrates the files of formats 1 to 3, written by lip v0.x, and the state files of format 4 that record the platform `"linux-x64"`, as this page defines.
 
 ### Packages
 
@@ -58,6 +58,20 @@ That state file has `format` 4, `side` s, `platform` r and, for each member M of
 | `files` | Each member of `files` of M that names a path below the workspace, relative to the workspace when not absolute, as that path relative to the workspace, `/`-separated. |
 
 A workspace operation writes it as its state file ([lip-workspace(7), "Carrying out an operation"](lip-workspace.md#carrying-out-an-operation)), then deletes `tooth_lock.json`.
+
+### Workspaces of linux-x64
+
+Earlier versions of `lip` installed packages for other platforms than `"win-x64"`. A state file ([state.json(5)](state.json.md)) whose `platform` is `"linux-x64"` is read, wherever `lip` reads a state file, as the state file with the `platform` `"win-x64"` in which each package P whose `ref` is a remote repository source ([lip-package(7), "Sources"](lip-package.md#sources)) of the location `github.com/LiteLDev/bds`, compared ASCII case-insensitively, without a variant, has instead:
+
+| Member | Value |
+|---|---|
+| `variant` | `"linux"`. |
+| `ref` | The `ref` of P with `#linux` inserted after its location. |
+| `manifest` | The `manifest` of P whose `variants` is `{ "linux": [E] }`, E being the entry of its `variants[""]` whose `side` is `"server"` and whose `platform` is `"linux-x64"`, with the `platform` `"win-x64"` and without `hooks`. |
+
+Its other members are those of P: it is a package of the variant `"linux"` of [lip-package(7), "The server"](lip-package.md#the-server).
+
+When such a state file records any other package, or such a package P whose `variants[""]` has no such entry E, it cannot be read so: a command that reads it fails when it reads it, with a message that names the package and says that `lip` installs packages for `"win-x64"` only.
 
 ### `liprc.json`
 

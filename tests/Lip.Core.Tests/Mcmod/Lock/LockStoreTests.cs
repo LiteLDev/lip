@@ -188,7 +188,7 @@ public class LockStoreTests {
   [Fact]
   public async Task Stage_ThenCommitStaged_RenamesStateJsonTmpOverStateJson() {
     // Arrange
-    await _store.Save(_root, Lock() with { Platform = "linux-x64" });
+    await _store.Save(_root, Lock() with { Platform = "osx-arm64" });
     string staged = _fs.Path.Join(_root, ".lip", "state.json.tmp");
 
     // Act
@@ -196,7 +196,7 @@ public class LockStoreTests {
 
     // Assert
     Assert.True(_fs.File.Exists(staged));
-    Assert.Equal("linux-x64", (await _store.Load(_root))!.Platform);
+    Assert.Equal("osx-arm64", (await _store.Load(_root))!.Platform);
     _store.CommitStaged(_root);
     Assert.False(_fs.File.Exists(staged));
     Assert.Equal("win-x64", (await _store.Load(_root))!.Platform);
@@ -205,7 +205,7 @@ public class LockStoreTests {
   [Fact]
   public async Task DiscardStaged_StagedLock_DeletesItAndKeepsStateJson() {
     // Arrange
-    await _store.Save(_root, Lock() with { Platform = "linux-x64" });
+    await _store.Save(_root, Lock() with { Platform = "osx-arm64" });
     await _store.Stage(_root, Lock());
 
     // Act
@@ -214,7 +214,7 @@ public class LockStoreTests {
 
     // Assert
     Assert.False(_fs.File.Exists(_fs.Path.Join(_root, ".lip", "state.json.tmp")));
-    Assert.Equal("linux-x64", (await _store.Load(_root))!.Platform);
+    Assert.Equal("osx-arm64", (await _store.Load(_root))!.Platform);
   }
 
   [Fact]

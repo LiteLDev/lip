@@ -7,7 +7,7 @@ lip-install - install packages into the workspace
 ## SYNOPSIS
 
 ```
-lip install <PACKAGES>... [-n | --dry-run] [--platform <RID>] [-h | --help]
+lip install <PACKAGES>... [-n | --dry-run] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -23,7 +23,6 @@ Each of `<PACKAGES>` is a package argument ([lip(1), "Package arguments"](lip.md
 ## OPTIONS
 
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would install, uninstall or mark explicitly installed.
-- `--platform <RID>`: The platform of the environment ([lip(1), "Environment"](lip.md#environment)) is `<RID>`.
 
 ## SEE ALSO
 

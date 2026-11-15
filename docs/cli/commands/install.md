@@ -43,22 +43,23 @@ A package installed from a git ref also satisfies dependencies on its package id
 
 ### Platforms
 
-lip installs the entries for the side `server` and the platform of the workspace [environment](../../concepts/lip_toml.md#environment). The platform is `--platform` when given, else the platform the [state file](../../concepts/lockfiles.md) records, else `win-x64`, **whatever system lip runs on**: on Linux and macOS too, lip installs the Windows server by default and runs it, and the hooks of its packages, through Wine (see [Running a Server](../../guides/running_server.md)).
+lip installs the entries for the side `server` and the platform `win-x64`, the platform of every workspace [environment](../../concepts/lip_toml.md#environment), **whatever system lip runs on**: on Linux and macOS too, lip installs the Windows server and runs it, and the hooks of its packages, through Wine (see [Running a Server](../../guides/running_server.md)).
 
-To install the packages of another platform, such as the Linux-native server of `github.com/LiteLDev/bds`, name it on the first command of the workspace:
+### The Server
+
+`github.com/LiteLDev/bds`, the Bedrock Dedicated Server, has three variants: the default variant and `windows` install the Windows server, and `linux` installs the Linux server:
 
 ```shell
-lip install github.com/LiteLDev/bds --platform linux-x64
+lip install github.com/LiteLDev/bds#linux
 ```
 
-The state file then records `linux-x64`, so later commands in the workspace use it without `--platform`. [`lip run`](run.md) cannot start such a Linux-native server, as it runs only `bedrock_server_mod.exe`; see [Running a Server](../../guides/running_server.md#linux-native-packages).
+A workspace holds only one of them: installing a second variant of the server, such as `github.com/LiteLDev/bds#windows` next to `github.com/LiteLDev/bds`, is an error. lip makes `bedrock_server` of the Linux server executable itself. [`lip run`](run.md) cannot start the Linux server, as it runs only `bedrock_server_mod.exe`; see [Running a Server](../../guides/running_server.md#the-linux-server).
 
 ## Options
 
 | Option | Description |
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
-| `--platform <RID>` | The platform of the workspace [environment](../../concepts/lip_toml.md#environment), a .NET RID such as `linux-x64`. Without it, the platform the state file records, or else `win-x64`, whatever system lip runs on. |
 
 ## Examples
 
@@ -67,7 +68,7 @@ lip install github.com/LiteLDev/LeviLamina
 lip install github.com/LiteLDev/LegacyScriptEngine#lua
 lip install LeviLamina@26.60.6
 lip install github.com/user/repo@1.0.0
-lip install github.com/LiteLDev/bds --platform linux-x64
+lip install github.com/LiteLDev/bds#linux
 lip install github.com/LiteLDev/LeviLamina@branch:main
 lip install github.com/user/repo@tag:v1.0.0
 lip install https://example.com/package.zip

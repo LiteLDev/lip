@@ -9,7 +9,7 @@ public class UpdateCommand(LipClient lipClient, IUserInteraction userInteraction
   private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
-  public class Settings : EnvironmentSettings {
+  public class Settings : CommandSettings {
     [CommandArgument(0, "[PACKAGES]")]
     [Description("The packages to update, in the forms install takes (default: every explicitly installed package, from the ref it was installed from)")]
     public string[] Packages { get; init; } = [];
@@ -23,7 +23,6 @@ public class UpdateCommand(LipClient lipClient, IUserInteraction userInteraction
     await _lipClient.Update(
         settings.Packages,
         settings.DryRun,
-        settings.Platform,
         cancellationToken);
     await _userInteraction.PrintSuccess("Packages updated successfully.");
     return 0;

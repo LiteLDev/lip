@@ -60,7 +60,7 @@ The set S of packages installed in a workspace, given the requests that made its
 
 1. For every request (s, range), S contains a candidate of Resolve(s, range, environment), or a package that stands in for one.
 2. For every dependency (k, R) of every package in S, S contains a candidate of Resolve(k, R, environment), or a package that stands in for one.
-3. No two packages in S have the same identity, and no two mods in S have the same mod name, compared ASCII case-insensitively.
+3. No two packages in S have the same identity, no two mods in S have the same mod name, compared ASCII case-insensitively, and no two packages in S are packages of [lip-package(7), "The server"](lip-package.md#the-server).
 
 An operation that cannot end in such an S is a failure. When several such S exist, packages earlier in the sequences of candidates should be preferred.
 

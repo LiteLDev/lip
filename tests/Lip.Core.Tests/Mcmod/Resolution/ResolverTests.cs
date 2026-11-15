@@ -742,16 +742,17 @@ public class ResolverTests {
       """;
 
   [Theory]
-  [InlineData("win-x64", "bin-win", "1.21.1.3")]
-  [InlineData("linux-x64", "bin-linux", "1.21.1.02")]
+  [InlineData("", "bin-win", "1.21.1.3")]
+  [InlineData("#windows", "bin-win", "1.21.1.3")]
+  [InlineData("#linux", "bin-linux", "1.21.1.02")]
   public async Task Resolve_Server_DefinesThePackagesItself(
-      string platform, string directory, string build) {
-    // Act
+      string variant, string directory, string build) {
+    // Act: every variant has its entry for win-x64 (protocol/lip-package.md, "The server").
     ResolveResult result = await ServerResolver(Builds).Resolve(
-        Source(Server), VersionRange.Parse("<1.21.10"),
-        new LipEnvironment(McmodSide.Server, platform));
+        Source(Server + variant), VersionRange.Parse("<1.21.10"), s_server);
 
-    // Assert: the first build of each version for the platform; no repository is read.
+    // Assert: the first build of each version for the platform of the builds of the variant; no
+    // repository is read.
     Assert.Equal(["1.21.1", "1.21.0"], result.Candidates.Select(c => c.Package.Version.ToString()));
     Assert.Equal(
         [
@@ -762,11 +763,14 @@ public class ResolverTests {
     Candidate candidate = result.Candidates[0];
     PackageEntry entry = candidate.Package.Entry;
     Assert.Empty(entry.Dependencies);
-    Assert.Equal(
-        platform == "linux-x64" ? ["chmod +x bedrock_server"] : [], entry.Hooks.PostInstall);
+    Assert.Empty(entry.Hooks.PostInstall);
+    Assert.Equal("win-x64", entry.Platform);
     Assert.Equal(new EntryPlacement("", ""), Assert.Single(entry.Assets[0].Placements));
     Assert.Contains(entry.PreserveFiles, glob => glob.Pattern == "server.properties");
-    Assert.Equal(Server, candidate.Package.Identity);
+    Assert.Equal(
+        directory == "bin-win",
+        entry.RemoveFiles.Any(glob => glob.Pattern == "bedrock_server.exe.bak"));
+    Assert.Equal(Server + variant, candidate.Package.Identity);
     Assert.Null(candidate.Archive.Commit);
     Assert.Empty(candidate.Archive.Source.Keys);
     Assert.Empty(_reader.Counts);
@@ -800,14 +804,26 @@ public class ResolverTests {
   }
 
   [Fact]
-  public async Task Resolve_Server_VersionWithoutBuildForThePlatform_NoCandidate() {
-    // Act: 1.21.10 has a build for win-x64 only.
+  public async Task Resolve_Server_VersionWithoutBuildForTheVariant_NoCandidate() {
+    // Act: 1.21.10 has a build for win-x64 only, so it has no variant "linux".
     ResolveResult result = await ServerResolver(Builds).Resolve(
-        Source($"{Server}@1.21.10"), null, new LipEnvironment(McmodSide.Server, "linux-x64"));
+        Source($"{Server}#linux@1.21.10"), null, s_server);
 
     // Assert
     Assert.Empty(result.Candidates);
     Assert.Contains("no entry", Assert.Single(result.Diagnostics));
+  }
+
+  [Fact]
+  public async Task Resolve_Server_OtherVariant_NoCandidate() {
+    // Act
+    ResolveResult result = await ServerResolver(Builds).Resolve(
+        Source($"{Server}#macos"), null, s_server);
+
+    // Assert: each version names its variants instead.
+    Assert.Empty(result.Candidates);
+    Assert.NotEmpty(result.Diagnostics);
+    Assert.All(result.Diagnostics, d => Assert.Contains("\"windows\"", d));
   }
 
   [Theory]

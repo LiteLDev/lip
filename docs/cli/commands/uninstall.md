@@ -27,4 +27,3 @@ Dependencies that no explicitly installed package needs any more are uninstalled
 | Option | Description |
 | --- | --- |
 | `-n, --dry-run` | Run without making any changes. |
-| `--platform <RID>` | The platform of the workspace [environment](../../concepts/lip_toml.md#environment), a .NET RID such as `linux-x64`. Without it, the platform the state file records, or else `win-x64`, whatever system lip runs on. |

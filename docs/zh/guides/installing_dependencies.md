@@ -68,4 +68,3 @@ lip 管理服务端工作区：mod 安装到 `mods/<name>/`（参见[环境](../
 ## 命令参数
 
 - `-n, --dry-run`：仅模拟安装，不做实际更改，可用于预览结果。
-- `--platform <RID>`：设置工作区的平台，即 .NET RID，例如 `linux-x64`。不指定时，lip 使用状态文件记录的平台，否则为 `win-x64`，无论它运行在什么系统上。参见[平台](../cli/commands/install.md#平台)。

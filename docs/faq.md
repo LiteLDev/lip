@@ -13,7 +13,7 @@
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
 ### Can I run a server on Linux?
-**Yes.** lip installs the packages of the platform `win-x64` by default on every system, and on Linux and macOS runs their hook commands and the server through Wine, which you install yourself. To install Linux-native packages instead, give `--platform linux-x64` on the first `lip install` of the workspace; `lip run` cannot start a Linux-native server, so you start that one yourself. See [Running a Server](guides/running_server.md#linux-native-packages).
+**Yes.** lip installs the packages of the platform `win-x64` on every system, and on Linux and macOS runs their hook commands and the server through Wine, which you install yourself. The Linux server alone is `github.com/LiteLDev/bds#linux`; `lip run` cannot start it, so you start that one yourself. See [Running a Server](guides/running_server.md#the-linux-server).
 
 ### Why is a tag of my repository not a version?
 Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) version, such as `v1.2.3`, are versions. Tags such as `v1.2` or `1.2.3` are ignored. You can still install any tag, branch or commit with a git ref, e.g. `lip install github.com/user/repo@tag:1.2.3` or `@branch:main`; the package's version is then the `version` its `lip.toml` declares. See [Git refs](cli/commands/install.md#git-refs).

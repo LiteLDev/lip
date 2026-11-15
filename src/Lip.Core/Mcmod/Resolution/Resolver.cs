@@ -85,7 +85,7 @@ public class Resolver(
     RunTrace.Write("resolve", $"Resolving {source} {range?.ToString() ?? "(any version)"}"
         + $" for ({environment.Side.ToSpecString()}, {environment.Platform})");
 
-    if (source.Kind == RefKind.Spec && BedrockServer.IsRepository(source.Target)) {
+    if (BedrockServer.IsServer(source)) {
       await foreach (Candidate candidate in ResolveServer(walk)) {
         yield return candidate;
       }
@@ -351,11 +351,10 @@ public class Resolver(
     string available = string.Join(", ", entries.Select(
         e => $"({e.Side.ToSpecString()}, {e.Platform})"));
     // An entry for another platform of the same side: the package does not support the
-    // platform lip installs for. Whether --platform can help depends on the workspace, which is
-    // not known here, so the advice is conditional.
+    // platform lip installs for, the only one (protocol/lip.md, "Environment").
     string platformNote = entries.Any(e => e.Side == environment.Side)
-        ? $"; it does not support the platform {environment.Platform} (if the server runs on"
-          + " another platform and the workspace has no packages yet, pass it with --platform)"
+        ? $"; it does not support the platform {environment.Platform}, the only platform lip"
+          + " installs packages for"
         : "";
     walk.Report(
         archive.Key, $"its {fileName} has {wanted}; it has entries for {available}{platformNote}");

@@ -17,7 +17,7 @@ public class McmodServiceTests {
   private const string Lib = "example.com/lib";
   private const string App = "example.com/app";
 
-  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
+  private static readonly OperationOptions _options = new();
 
   private readonly WorkspaceHarness _ws = new();
 
@@ -51,7 +51,7 @@ public class McmodServiceTests {
 
   [Fact]
   public async Task Install_WithoutPlatform_UsesWinX64WhateverTheSystem() {
-    // Arrange: without --platform and a state file, the platform is win-x64 on every system
+    // Arrange: without a state file, the platform is win-x64 on every system
     // (protocol/lip.md, "Environment").
     AddLib("1.0.0");
 
@@ -61,31 +61,6 @@ public class McmodServiceTests {
     // Assert
     Assert.Equal("win-x64", (await _ws.Lock()).Platform);
     Assert.True(_ws.Exists("lib/lib.dll"));
-  }
-
-  [Fact]
-  public async Task Install_WithoutPlatform_UsesThePlatformOfTheStateFile() {
-    // Arrange
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.toml"] = WorkspaceHarness.Toml($$"""
-          {
-            "format": 4,
-            "id": "{{Lib}}",
-            "version": "1.0.0",
-            "variants": { "": [ { "side": "server", "platform": "linux-x64" } ] }
-          }
-          """),
-    });
-    _ws.AddFile(".lip/state.json", """
-        { "format": 4, "side": "server", "platform": "linux-x64", "packages": [] }
-        """);
-
-    // Act
-    await _ws.Service.Install([Lib], new OperationOptions());
-
-    // Assert
-    Assert.Equal("linux-x64", (await _ws.Lock()).Platform);
-    Assert.Single((await _ws.Lock()).Packages);
   }
 
   [Fact]
@@ -525,50 +500,138 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_PlatformOption_RecordsPlatform() {
-    // Arrange: lib has entries for win-x64 and linux-x64.
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.toml"] = WorkspaceHarness.Toml($$"""
-          {
-            "format": 4,
-            "id": "{{Lib}}",
-            "version": "1.0.0",
-            "variants": {
-              "": [
-                { "side": "server", "platform": "win-x64",
-                  "assets": [ { "type": "self", "place": [ { "src": "win.dll", "dest": "lib.dll" } ] } ] },
-                { "side": "server", "platform": "linux-x64",
-                  "assets": [ { "type": "self", "place": [ { "src": "linux.so", "dest": "lib.so" } ] } ] }
-              ]
-            }
-          }
-          """),
-      ["win.dll"] = "win",
-      ["linux.so"] = "linux",
-    });
+  public async Task Install_OtherPlatformRecorded_ThrowsWithoutChanges() {
+    // Arrange: protocol/lip.md, "Environment": the platform is win-x64; a state file of a
+    // platform other than win-x64 and linux-x64 fails the command.
+    AddLibAndApp();
+    _ws.AddFile(".lip/state.json", """
+        { "format": 4, "side": "server", "platform": "osx-arm64", "packages": [] }
+        """);
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
 
     // Act
-    await _ws.Service.Install([Lib], _options with { Platform = "linux-x64" });
+    InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install([Lib], _options));
 
     // Assert
-    Assert.Equal("linux", _ws.Fs.File.ReadAllText(_ws.Path("lib.so")));
-    Assert.False(_ws.Exists("lib.dll"));
-    Assert.Equal("linux-x64", (await _ws.Lock()).Platform);
+    Assert.Contains("osx-arm64", ex.Message);
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  /// A state file of linux-x64 written by an earlier lip, with the Linux server installed from
+  /// the given source, and the given other packages (JSON objects).
+  private void AddLinuxWorkspace(string serverSource = Server, params string[] others) {
+    _ws.AddFile("bedrock_server", "elf");
+    _ws.AddFile("server.properties", "props");
+    _ws.AddFile(".lip/state.json", $$"""
+        {
+          "format": 4, "side": "server", "platform": "linux-x64",
+          "packages": [
+            {
+              "manifest": {
+                "format": 4, "id": "{{Server}}", "version": "1.21.0",
+                "variants": { "": [
+                  { "side": "server", "platform": "linux-x64",
+                    "assets": [ { "type": "zip",
+                      "urls": [ "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.21.0.03.zip" ],
+                      "place": [ { "src": "", "dest": "" } ] } ],
+                    "preserve": [ "server.properties" ],
+                    "hooks": { "post_install": [ "chmod +x bedrock_server" ] } }
+                ] }
+              },
+              "variant": "", "explicit": true, "ref": "{{serverSource}}",
+              "files": [ "bedrock_server", "server.properties" ]
+            }{{string.Concat(others.Select(o => ", " + o))}}
+          ]
+        }
+        """);
+  }
+
+  private const string Server = "github.com/LiteLDev/bds";
+
+  [Theory]
+  [InlineData(Server, Server + "#linux")]
+  [InlineData("github.com/litelDEV/BDS@1.21.0", "github.com/litelDEV/BDS#linux@1.21.0")]
+  public async Task List_LinuxWorkspace_ReadsTheServerAsItsVariantLinux(
+      string source, string read) {
+    // Arrange: protocol/lip-compatibility.md, "Workspaces of linux-x64".
+    AddLinuxWorkspace(source);
+
+    // Act
+    IReadOnlyList<InstalledPackage> packages = await _ws.Service.List();
+    LockFile lockFile = (await _ws.LockStore.Load(_ws.Root))!;
+
+    // Assert
+    Assert.Equal($"{Server}#linux", Assert.Single(packages).Identity);
+    Assert.Equal("win-x64", lockFile.Platform);
+    LockedPackage package = Assert.Single(lockFile.Packages);
+    Assert.Equal(read, package.Source);
+    Assert.Equal("linux", package.Variant);
+    JsonElement entry = Assert.Single(
+        package.Manifest.GetProperty("variants").EnumerateObject()).Value[0];
+    Assert.Equal("linux", package.Manifest.GetProperty("variants").EnumerateObject().Single().Name);
+    Assert.Equal("win-x64", entry.GetProperty("platform").GetString());
+    Assert.False(entry.TryGetProperty("hooks", out _));
+    Assert.Equal("server.properties", entry.GetProperty("preserve")[0].GetString());
   }
 
   [Fact]
-  public async Task Update_PlatformOptionWithoutChanges_ReplacesTheRecordedPlatform() {
+  public async Task Uninstall_LinuxWorkspace_UninstallsTheServerAndRecordsWinX64() {
+    // Arrange
+    AddLinuxWorkspace();
+
+    // Act
+    await _ws.Service.Uninstall([$"{Server}#linux"], _options);
+
+    // Assert: server.properties matches preserve; no hook command runs.
+    Assert.False(_ws.Exists("bedrock_server"));
+    Assert.True(_ws.Exists("server.properties"));
+    LockFile lockFile = await _ws.Lock();
+    Assert.Equal("win-x64", lockFile.Platform);
+    Assert.Empty(lockFile.Packages);
+    _ws.CommandRunner.VerifyNoOtherCalls();
+  }
+
+  [Fact]
+  public async Task Install_LinuxWorkspaceWithOtherPackage_ThrowsWithoutChanges() {
+    // Arrange: only the server of a workspace of linux-x64 is read.
+    AddLibAndApp();
+    AddLinuxWorkspace(others: $$"""
+        {
+          "manifest": { "format": 4, "id": "{{App}}", "version": "1.0.0",
+            "variants": { "": [ { "side": "server", "platform": "linux-x64" } ] } },
+          "variant": "", "explicit": true, "ref": "{{App}}",
+          "commit": "{{new string('a', 40)}}", "files": []
+        }
+        """);
+    SortedDictionary<string, string> before = WorkspaceSnapshot();
+
+    // Act
+    InvalidOperationException install = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.Install([Lib], _options));
+    InvalidOperationException list = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => _ws.Service.List());
+
+    // Assert
+    Assert.Contains($"'{App}'", install.Message);
+    Assert.Contains("win-x64", install.Message);
+    Assert.Equal(install.Message, list.Message);
+    Assert.Equal(before, WorkspaceSnapshot());
+  }
+
+  [Fact]
+  public async Task Update_WithoutChanges_RecordsWinX64() {
     // Arrange: protocol/lip.md, "Environment": a workspace operation records its environment,
     // replacing the one recorded, even when it changes nothing.
     _ws.AddFile(".lip/state.json", """
-        { "format": 4, "side": "server", "platform": "win-x64", "packages": [] }
+        { "format": 4, "side": "server", "platform": "linux-x64", "packages": [] }
         """);
 
     // Act
-    await _ws.Service.Update([], _options with { Platform = "linux-x64" });
+    await _ws.Service.Update([], _options);
 
     // Assert
-    Assert.Equal("linux-x64", (await _ws.Lock()).Platform);
+    Assert.Equal("win-x64", (await _ws.Lock()).Platform);
     Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
   }
 
@@ -1524,29 +1587,31 @@ public class McmodServiceTests {
 
   [Fact]
   public async Task Install_InstalledPackageWithoutEntryForThePlatform_FailsWithoutChanges() {
-    // Arrange: lib has an entry for win-x64 only, so it is no candidate for linux-x64
-    // (protocol/lip-workspace.md, "Valid states").
+    // Arrange: the package file the state file records for lib has an entry for linux-x64 only,
+    // so it is no candidate for win-x64 (protocol/lip-workspace.md, "Valid states").
     AddLib("1.0.0");
-    await _ws.Service.Install([Lib], _options);
+    _ws.AddFile(".lip/state.json", $$"""
+        {
+          "format": 4, "side": "server", "platform": "win-x64",
+          "packages": [ {
+            "manifest": { "format": 4, "id": "{{Lib}}", "version": "1.0.0",
+              "variants": { "": [ { "side": "server", "platform": "linux-x64" } ] } },
+            "variant": "", "explicit": true, "ref": "{{Lib}}",
+            "commit": "{{new string('a', 40)}}", "files": []
+          } ]
+        }
+        """);
     const string any = "example.com/any";
-    _ws.AddTag(any, "1.0.0", new() {
-      ["lip.toml"] = WorkspaceHarness.Toml($$"""
-          {
-            "format": 4,
-            "id": "{{any}}",
-            "version": "1.0.0",
-            "variants": { "": [ { "side": "server", "platform": "linux-x64" } ] }
-          }
-          """),
-    });
+    _ws.AddTag(any, "1.0.0", new() { ["lip.toml"] = WorkspaceHarness.LipToml(any, "1.0.0") });
     SortedDictionary<string, string> before = WorkspaceSnapshot();
 
     // Act
     InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
-        () => _ws.Service.Install([any], _options with { Platform = "linux-x64" }));
+        () => _ws.Service.Install([any], _options));
 
     // Assert
     Assert.Contains($"'{Lib}'", ex.Message);
+    Assert.DoesNotContain("--platform", ex.ToString());
     Assert.Equal(before, WorkspaceSnapshot());
   }
 
@@ -1614,20 +1679,17 @@ public class McmodServiceTests {
   }
 
   [Theory]
-  [InlineData(null, "win-x64")]
-  [InlineData("linux-x64", "linux-x64")]
-  public async Task View_ToothJson_ReadsItForThePlatformOfTheStateFile(
-      string? recorded, string platform) {
-    // Arrange: protocol/lip-pkg.md, "lip pkg view": side server, and the platform the state
-    // file records, or win-x64 without one.
+  [InlineData(null)]
+  [InlineData("""{ "format": 4, "side": "server", "platform": "osx-arm64", "packages": [] }""")]
+  [InlineData("""{ "format_version": 3, "packages": [] }""")]
+  public async Task View_ToothJson_ReadsItForWinX64WithoutReadingTheStateFile(string? state) {
+    // Arrange: protocol/lip-pkg.md, "lip pkg view": the side server and the platform win-x64.
     _ws.AddTag(Lib, "1.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
       ["file.dll"] = "lib 1.0.0",
     });
-    if (recorded is not null) {
-      _ws.AddFile(".lip/state.json", $$"""
-          { "format": 4, "side": "server", "platform": "{{recorded}}", "packages": [] }
-          """);
+    if (state is not null) {
+      _ws.AddFile(".lip/state.json", state);
     }
 
     // Act
@@ -1636,20 +1698,7 @@ public class McmodServiceTests {
     // Assert
     JsonNode entry = result["manifest"]!["variants"]![""]!.AsArray().Single()!;
     Assert.Equal("server", (string?)entry["side"]);
-    Assert.Equal(platform, (string?)entry["platform"]);
-  }
-
-  [Fact]
-  public async Task View_ToothJsonWithInvalidStateFile_Throws() {
-    // Arrange: the state file records no platform lip can read, as for a workspace operation.
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.0.0", "lib/lib.dll"),
-      ["file.dll"] = "lib 1.0.0",
-    });
-    _ws.AddFile(".lip/state.json", """{ "format_version": 3, "packages": [] }""");
-
-    // Act & Assert
-    await Assert.ThrowsAsync<LockFormatException>(() => _ws.Service.View(Lib));
+    Assert.Equal("win-x64", (string?)entry["platform"]);
   }
 
   [Fact]

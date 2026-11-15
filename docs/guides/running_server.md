@@ -91,17 +91,19 @@ lip is not released for Linux on arm64, where nothing that was tried runs a Levi
 
 lip downloads the server itself, without a Windows program, so installing `github.com/LiteLDev/bds` needs no Wine.
 
-### Linux-Native Packages
+### The Linux Server
 
-To install the packages of another platform instead, such as the Linux-native server of `github.com/LiteLDev/bds`, give the platform on the first command of a new workspace:
+The variant `linux` of `github.com/LiteLDev/bds` installs the Linux server of Minecraft instead of the Windows one:
 
 ```shell
-lip install github.com/LiteLDev/bds --platform linux-x64
+lip install github.com/LiteLDev/bds#linux
 ```
 
-The workspace then keeps `linux-x64`: lip installs only entries of `linux-x64`, runs hook commands with `sh -c`, and runs programs without Wine. A package without an entry for `linux-x64`, such as a Windows-only mod, cannot be installed there.
+lip places the files of the Linux server and makes `bedrock_server` executable itself, without a hook command, so nothing runs through Wine. A workspace holds only one variant of the server, so `github.com/LiteLDev/bds#linux` cannot be installed next to `github.com/LiteLDev/bds` or `github.com/LiteLDev/bds#windows`.
 
-`lip run` still runs only `bedrock_server_mod.exe` at the workspace root, which no `linux-x64` package installs: LeviLamina has no entry for `linux-x64`, and the Linux-native server of `github.com/LiteLDev/bds` is `bedrock_server`. Start such a server yourself, e.g. with `./bedrock_server`.
+`lip run` still runs only `bedrock_server_mod.exe` at the workspace root, which the Linux server does not have, and LeviLamina loads only into the Windows server. Start the Linux server yourself, e.g. with `./bedrock_server`.
+
+A workspace that an earlier lip created with `--platform linux-x64` keeps working when it holds only the server: lip reads its server as `github.com/LiteLDev/bds#linux` (see [State file](../concepts/lockfiles.md#workspaces-of-linux-x64)).
 
 ## While the Server Runs
 

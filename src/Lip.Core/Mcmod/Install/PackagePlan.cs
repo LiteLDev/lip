@@ -46,14 +46,16 @@ public sealed record ScriptStep(string Stage, IReadOnlyList<string> Commands, st
 /// Writes the file of an archive, replacing what is there. Target is workspace-relative.
 /// Preserve: the globs of preserve of the package; a file there when the step runs that matches
 /// one is kept instead. PlannedKeep: whether the file is kept with the workspace as planned,
-/// i.e. unless hook commands change it.
+/// i.e. unless hook commands change it. Executable: whether the file written gets the mode 0755
+/// when lip does not run on Windows (protocol/lip-package.md, "The server").
 public sealed record WriteStep(
     string Target,
     string FullPath,
     ISource Source,
     string Key,
     IReadOnlyList<PathGlob> Preserve,
-    bool PlannedKeep = false) : PlannedStep;
+    bool PlannedKeep = false,
+    bool Executable = false) : PlannedStep;
 
 /// Deletes a file, if it still exists then.
 public sealed record DeleteFileStep(string FullPath) : PlannedStep;

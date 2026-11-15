@@ -39,7 +39,7 @@ The result is written as JSON followed by a line break, as a JSON object with ex
 { "manifest": { ... }, "versions": ["<version>", ...] }
 ```
 
-- `manifest`: The package file of the first archive that the source of `<PACKAGE>` names ([lip-package(7), "Resolution"](lip-package.md#resolution), step 1), as it is read for the side `"server"` and the platform that `.lip/state.json` records, or `"win-x64"` when that file does not exist; a `tooth_lock.json` is not read. When that archive cannot be obtained or is not a package, the command fails.
+- `manifest`: The package file of the first archive that the source of `<PACKAGE>` names ([lip-package(7), "Resolution"](lip-package.md#resolution), step 1), as it is read for the side `"server"` and the platform `"win-x64"`. When that archive cannot be obtained or is not a package, the command fails.
 - `versions`: When the source is a remote repository, the versions of the version tags of that repository, whatever the variant and the ref of the source, in ascending [SemVer] precedence, each once. Otherwise, an empty array.
 
 `lip pkg view` has no `--json` option, and changes no file or directory other than entries of the cache ([lip-userspace(7)](lip-userspace.md)).

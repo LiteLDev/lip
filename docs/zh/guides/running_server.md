@@ -91,17 +91,19 @@ lip 不为 arm64 的 Linux 发布，因为试过的办法都无法在那里可�
 
 lip 自己下载服务器，不借助任何 Windows 程序，因此安装 `github.com/LiteLDev/bds` 不需要 Wine。
 
-### Linux 原生包
+### Linux 版服务器
 
-如需改为安装其他平台的包，例如 `github.com/LiteLDev/bds` 的 Linux 原生服务器，请在新工作区的第一条命令中指定平台：
+`github.com/LiteLDev/bds` 的变体 `linux` 安装 Minecraft 的 Linux 版服务器，而不是 Windows 版：
 
 ```shell
-lip install github.com/LiteLDev/bds --platform linux-x64
+lip install github.com/LiteLDev/bds#linux
 ```
 
-此后工作区保持 `linux-x64`：lip 只安装 `linux-x64` 的条目，用 `sh -c` 运行钩子命令，并且不通过 Wine 运行程序。没有 `linux-x64` 条目的包（例如仅支持 Windows 的 mod）无法安装到其中。
+lip 放置 Linux 版服务器的文件，并自己把 `bedrock_server` 设为可执行，不借助钩子命令，因此没有任何程序通过 Wine 运行。一个工作区只能装服务器的一个变体，因此 `github.com/LiteLDev/bds#linux` 不能与 `github.com/LiteLDev/bds` 或 `github.com/LiteLDev/bds#windows` 同时安装。
 
-`lip run` 仍只运行工作区根目录下的 `bedrock_server_mod.exe`，而没有任何 `linux-x64` 的包会安装它：LeviLamina 没有 `linux-x64` 的条目，`github.com/LiteLDev/bds` 的 Linux 原生服务器是 `bedrock_server`。请自行启动这样的服务器，例如运行 `./bedrock_server`。
+`lip run` 仍只运行工作区根目录下的 `bedrock_server_mod.exe`，而 Linux 版服务器没有它，LeviLamina 也只加载到 Windows 版服务器中。请自行启动 Linux 版服务器，例如运行 `./bedrock_server`。
+
+早期 lip 以 `--platform linux-x64` 创建的工作区，若只装有服务器，则仍可使用：lip 把其中的服务器读作 `github.com/LiteLDev/bds#linux`（参见[状态文件](../concepts/lockfiles.md#linux-x64-的工作区)）。
 
 ## 服务器运行期间
 

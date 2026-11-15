@@ -8,7 +8,7 @@ namespace Lip.Core.Tests.Mcmod;
 /// nothing and runs no hook command; a later failure undoes every change of the workspace, the
 /// layout and the state file.
 public class McmodServiceAtomicityTests {
-  private static readonly OperationOptions _options = new(Platform: WorkspaceHarness.Platform);
+  private static readonly OperationOptions _options = new();
 
   private WorkspaceHarness _ws = new();
 

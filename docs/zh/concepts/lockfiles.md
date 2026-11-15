@@ -106,6 +106,10 @@ lip 只按身份、版本和提交比较已安装的包与它解析出的包：�
 
 lip v0.39.x 的状态文件同样是格式 4，但在其根部以及每个记录的 `manifest` 的条目中，把运行端写作 `platform`、把平台写作 `runtime`。lip 不读取这样的状态文件：含有 `runtime`、或 `platform` 为 `"server"` 或 `"client"` 的根部或条目会使命令失败，并给出消息，提示把 `platform` 改名为 `side`、把 `runtime` 改名为 `platform`。lip 不会迁移它；请在根部以及每个 `manifest` 的每个条目中改名这两个键。下一节介绍 lip v0.37.0 及更早版本的工作区。
 
+## linux-x64 的工作区
+
+早期版本的 lip 曾通过 `--platform` 为 `win-x64` 以外的平台安装包。lip 把记录平台 `linux-x64` 的状态文件当作 `win-x64` 的状态文件读取，其中的 `github.com/LiteLDev/bds` 是其变体 `github.com/LiteLDev/bds#linux`，即 Linux 版服务器，下一次 `install`、`uninstall` 或 `update` 会如此记录它。记录了其他任何包的 `linux-x64` 状态文件会使读取它的每条命令失败，并给出指明该包的消息：请在新工作区中重新安装这些包。记录其他平台的状态文件会使 `install`、`uninstall`、`update` 和 `run` 失败。
+
 ## lip v0.x 的工作区
 
 lip v0.37.0 及更早版本的工作区在其根目录中有一个格式版本 3 的 `tooth_lock.json`，而没有状态文件。lip 会自动迁移它：

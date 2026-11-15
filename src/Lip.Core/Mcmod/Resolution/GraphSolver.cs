@@ -388,6 +388,14 @@ public class GraphSolver(IResolver resolver) {
               + " the one you want again.");
         }
 
+        if (IsServer(candidate) && _members.Values.FirstOrDefault(m => IsServer(m.Candidate))
+            is Member server) {
+          throw Fail($"Installed packages {ShowSource(server.Candidate)} and"
+              + $" {ShowSource(candidate)} are both the server {BedrockServer.Repository}, which a"
+              + " workspace holds once. Uninstall the explicitly installed packages that need one"
+              + " of them.");
+        }
+
         if (await ModName(candidate) is string modName) {
           foreach (Member member in _members.Values) {
             if (await ModName(member.Candidate) is string otherName
@@ -642,6 +650,16 @@ public class GraphSolver(IResolver resolver) {
             + $"{ShowSource(same.Candidate)}{(same.Level < 0 ? " (installed)" : "")}");
       }
 
+      // A workspace holds one package of the server, whatever its variant
+      // (protocol/lip-workspace.md, "Valid states", rule 3).
+      if (IsServer(candidate) && _members.Values.FirstOrDefault(m => IsServer(m.Candidate))
+          is Member server) {
+        return (server.Level, $"{ShowSource(candidate)} and {ShowSource(server.Candidate)}"
+            + (server.Level < 0 ? " (installed)" : "")
+            + $" are both the server {BedrockServer.Repository}, which a workspace holds once;"
+            + " install one variant of it only");
+      }
+
       string? modName;
       try {
         modName = await candidate.GetModManifest() is ModManifest manifest ? manifest.Name : null;
@@ -767,6 +785,9 @@ public class GraphSolver(IResolver resolver) {
 
       return null;
     }
+
+    /// Whether a candidate is a package of the server (protocol/lip-package.md, "The server").
+    private static bool IsServer(Candidate candidate) => BedrockServer.IsServer(candidate.Source);
 
     /// The mod name of a candidate, or null for a file package and for a mod whose mod manifest
     /// cannot be read (which installing it reports).

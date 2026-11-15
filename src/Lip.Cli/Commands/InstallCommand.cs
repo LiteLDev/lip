@@ -9,7 +9,7 @@ public class InstallCommand(LipClient lipClient, IUserInteraction userInteractio
   private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
-  public class Settings : EnvironmentSettings {
+  public class Settings : CommandSettings {
     [CommandArgument(0, "<PACKAGES>")]
     [Description("The packages to install: path[[#variant]][[@version]], path[[#variant]]@branch:<name>, @tag:<name> or @rev:<commit>, an https:// URL of a .zip file, or a local .zip file or directory")]
     public required string[] Packages { get; init; }
@@ -23,7 +23,7 @@ public class InstallCommand(LipClient lipClient, IUserInteraction userInteractio
     await _lipClient.Install(
         settings.Packages,
         settings.DryRun,
-        settings.Platform, cancellationToken);
+        cancellationToken);
     await _userInteraction.PrintSuccess("Packages installed successfully.");
     return 0;
   }

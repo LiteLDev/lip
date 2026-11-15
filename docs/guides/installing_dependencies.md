@@ -68,4 +68,3 @@ Before `lip install`, `lip uninstall` or `lip update` writes or deletes files in
 ## Command Flags
 
 -   `-n, --dry-run`: Simulate the installation without making any changes. Useful to see what would happen.
--   `--platform <RID>`: Set the platform of the workspace, a .NET RID such as `linux-x64`. Without it, lip uses the platform the state file records, or else `win-x64`, whatever system it runs on. See [Platforms](../cli/commands/install.md#platforms).

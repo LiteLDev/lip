@@ -252,12 +252,12 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
 - **运行端**（side）：`server` 或 `client`，即工作区是游戏的哪一端。lip 只管理服务端工作区，因此始终使用
   `server`。客户端工作区由 LeviLauncher 等启动器管理；若工作区的[状态文件](lockfiles.md)记录的是
   `client`，lip 会拒绝处理。
-- **平台**（platform）：一个 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)：`--platform`，
-  否则为状态文件记录的平台，否则为 `win-x64`，无论 lip 运行在什么系统上。Linux 原生包（例如
-  `github.com/LiteLDev/bds` 的 `linux-x64` 条目）需要在该工作区的第一条命令中指定 `--platform linux-x64`。
-  每次 `install`、`uninstall` 和 `update`（使用 `--dry-run` 时除外，它不写入任何文件）都会把所用的平台记录到状态文件中，因此 `--platform` 会替换已记录的平台，
-  供后续命令使用。以 `win` 开头的平台是 **Windows 平台**：在其他系统上，lip 通过 Wine 运行这类工作区的程序（参见
-  [运行服务器](../guides/running_server.md)）。
+- **平台**（platform）：一个 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)，始终为 `win-x64`，
+  无论 lip 运行在什么系统上。在 Windows 以外的系统上，lip 通过 Wine 运行工作区的程序（参见
+  [运行服务器](../guides/running_server.md)）。Linux 版服务器不是另一个平台，而是 `github.com/LiteLDev/bds`
+  的变体 `linux`，其条目的平台是 `win-x64`。早期 lip 写下的、记录 `linux-x64` 的状态文件会被当作 `win-x64` 的状态文件读取
+  （参见[状态文件](lockfiles.md#linux-x64-的工作区)）。以 `win` 开头的平台是
+  **Windows 平台**。
 
 ## 早期格式
 

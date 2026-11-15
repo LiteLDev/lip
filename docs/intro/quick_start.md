@@ -21,7 +21,7 @@ lip install github.com/LiteLDev/LeviLamina
 
 lip manages server workspaces only. Client mods are managed by launchers such as LeviLauncher.
 
-lip installs the packages of the platform `win-x64` by default, on every system. On Linux and macOS, it runs their hook commands and the server through Wine; for Linux-native packages, add `--platform linux-x64` to the first `lip install` of the workspace, and start the server yourself, as `lip run` cannot start a Linux-native one. See [Running a Server](../guides/running_server.md#linux-native-packages).
+lip installs the packages of the platform `win-x64`, on every system. On Linux and macOS, it runs their hook commands and the server through Wine. The Linux server is `github.com/LiteLDev/bds#linux`, which you start yourself, as `lip run` cannot start it. See [Running a Server](../guides/running_server.md#the-linux-server).
 
 ## Running the Server
 

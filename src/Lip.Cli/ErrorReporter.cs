@@ -207,9 +207,6 @@ public static class ErrorReporter {
         break;
       case WorkspaceBusyException:
         break;
-      case PlatformNotSupportedException:
-        yield return "Use --platform to choose the platform to install packages for.";
-        break;
     }
   }
 

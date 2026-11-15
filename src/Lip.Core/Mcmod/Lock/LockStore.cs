@@ -45,7 +45,8 @@ public partial class LockStore(IFileSystem fs) {
       _fs.Path.Join(NormalizeRoot(workspaceRoot), LipDirectory, name);
 
   /// Returns null when none exists. Throws LockFormatException when the lock exists but cannot
-  /// be read.
+  /// be read. A state file of linux-x64 is read as LinuxWorkspace reads it, which throws
+  /// InvalidOperationException when it cannot.
   public async Task<LockFile?> Load(string workspaceRoot) {
     string root = NormalizeRoot(workspaceRoot);
 
@@ -66,7 +67,10 @@ public partial class LockStore(IFileSystem fs) {
     LockFile lockFile = Parse(bytes, path);
     RunTrace.Write("workspace", $"Read the state file {path}: side {lockFile.Side},"
         + $" platform {lockFile.Platform}, {lockFile.Packages.Count} packages");
-    return lockFile;
+    // protocol/lip-compatibility.md, "Workspaces of linux-x64".
+    return lockFile.Platform == LinuxWorkspace.Platform
+        ? LinuxWorkspace.Read(lockFile, path)
+        : lockFile;
   }
 
   /// Writes the lock: Stage, then CommitStaged.

@@ -80,16 +80,30 @@ The source `github.com/LiteLDev/bds`, compared ASCII case-insensitively, names t
 
 The **builds list** is the response body of an HTTPS GET of `https://levimc.org/api/v4/mc/versions/`, following redirects: a [JSON] object. Its members `server/win-x64` and `server/linux-x64`, when they are arrays, hold the builds of those platforms. A **build** is a string that is four decimal numbers separated by `.`. A build a.b.c.d is a build of two versions, written here without the leading zeros of its numbers: a.b.c, and a.b.c-patch.d, which no other build of the platform is a build of. Anything else in the builds list is ignored. A builds list that cannot be obtained, or is not a JSON object, names no package.
 
-For each version V that a build is a build of, the source names one package, without a tag version and without a commit. Its package file has `format` 4, the `id` `github.com/LiteLDev/bds`, the `version` V, an `info` that is not defined here, and, as `variants[""]`, the entries below of the platforms that have a build of V, B being the first such build in the array of the platform:
+For each version V that a build is a build of, the source names one package, without a tag version and without a commit. Its package file has `format` 4, the `id` `github.com/LiteLDev/bds`, the `version` V, an `info` that is not defined here, and these variants, each only when its platform of builds has a build of V, B being the first such build in the array of that platform:
 
-| Key | Entry of `win-x64` | Entry of `linux-x64` |
+| Variant | Platform of builds | Server |
+|---|---|---|
+| `""` | `win-x64` | The Windows server. |
+| `"windows"` | `win-x64` | The Windows server. |
+| `"linux"` | `linux-x64` | The Linux server. |
+
+Each of these variants has one entry:
+
+| Key | Entry of the Windows server | Entry of the Linux server |
 |---|---|---|
 | `side` | `"server"` | `"server"` |
-| `platform` | `"win-x64"` | `"linux-x64"` |
+| `platform` | `"win-x64"` | `"win-x64"` |
 | `assets` | One asset, with `type` `"zip"`, `urls` `["https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-B.zip"]` and `place` `[{ src = "", dest = "" }]`. | The same, with `bin-linux` for `bin-win`. |
 | `preserve` | `["server.properties", "allowlist.json", "permissions.json"]` | The same. |
 | `purge` | `["bedrock_server.exe.bak", "packet-statistics.txt", "valid_known_packs.json", "behavior_packs/", "config/", "definitions/", "development_behavior_packs/", "development_resource_packs/", "development_skin_packs/", "resource_packs/", "world_templates/"]` | The same, without `"bedrock_server.exe.bak"`. |
-| `hooks` | None. | `post_install`: `["chmod +x bedrock_server"]`. |
+| `hooks` | None. | None. |
+
+The entry of the Linux server has the platform `"win-x64"`, the platform of every environment ([lip(1), "Environment"](lip.md#environment)), although the server it places runs on Linux.
+
+When `lip` does not run on Windows, the file `bedrock_server` at the workspace root that installing a package of the variant `"linux"` writes has the mode 0755 ([chmod(2)]) once it is written. On Windows its mode is not defined here.
+
+A workspace holds at most one package of this source, whatever its variant ([lip-workspace(7), "Valid states"](lip-workspace.md#valid-states), rule 3).
 
 Without a ref, the source names these packages from the highest version to the lowest; with the ref `<version>`, the package of that version; with any other ref, none. Where a page names the archive of such a package, it is an archive without files.
 
@@ -128,6 +142,7 @@ A candidate is a **mod** when its selected entry has an asset of type `"mcmod"`.
 [Git objects]: https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 [git-check-ref-format]: https://git-scm.com/docs/git-check-ref-format
 [Go module path]: https://pkg.go.dev/golang.org/x/mod/module#CheckPath
+[chmod(2)]: https://man7.org/linux/man-pages/man2/chmod.2.html
 [SemVer]: https://semver.org/spec/v2.0.0.html
 [`SemVersionRange.Parse`]: https://github.com/WalkerCodeRanger/semver/tree/v3.0.0
 [RID]: https://learn.microsoft.com/dotnet/core/rid-catalog
