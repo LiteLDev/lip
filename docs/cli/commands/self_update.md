@@ -22,11 +22,10 @@ Otherwise lip downloads the update for the way it was installed, verifies it aga
 
 | Installed with | Update |
 | --- | --- |
-| `setup.exe` | Downloads `lip-<version>-<platform>-setup.exe` and runs it as administrator with `/quiet`. Windows asks you to allow it. |
 | `.msi` | Downloads `lip-<version>-<platform>.msi` and runs `msiexec /i <file> /qn` as administrator. Windows asks you to allow it. |
 | A portable archive | Downloads `lip-<version>-<platform>.zip` (`.tar.xz` on Linux) and replaces the files of lip in its directory in place. |
 
-The Windows installers write `install.json` next to `lip.exe`, which tells lip which installer installed it; without that file lip treats itself as portable. lip starts an installer and exits at once; the installer finishes in the background.
+The Windows installer writes `install.json` next to `lip.exe`, which tells lip that the installer installed it; without that file lip treats itself as portable. lip starts an installer and exits at once; the installer finishes in the background.
 
 A portable update keeps the other files of the directory. On Windows the running `lip.exe` cannot be deleted, so lip renames it to `lip.exe.old`, which the next run of lip deletes. If any file cannot be replaced, lip puts the old files back. On Linux, extracting the `.tar.xz` archive needs `tar` and `xz`.
 

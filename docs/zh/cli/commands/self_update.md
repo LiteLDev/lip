@@ -22,11 +22,10 @@ lip 通过 GitHub API 读取 [lip 的 Release](https://github.com/LiteLDev/lip/r
 
 | 安装方式 | 更新 |
 | --- | --- |
-| `setup.exe` | 下载 `lip-<version>-<platform>-setup.exe`，以管理员身份用 `/quiet` 运行。Windows 会请求你的允许。 |
 | `.msi` | 下载 `lip-<version>-<platform>.msi`，以管理员身份运行 `msiexec /i <file> /qn`。Windows 会请求你的允许。 |
 | 便携压缩包 | 下载 `lip-<version>-<platform>.zip`（Linux 为 `.tar.xz`），在 lip 所在目录中原地替换 lip 的文件。 |
 
-Windows 安装包会在 `lip.exe` 旁写入 `install.json`，告诉 lip 是哪个安装包安装了它；没有这个文件时，lip 把自己当作便携版。lip 启动安装包后立即退出，安装包在后台完成安装。
+Windows 安装包会在 `lip.exe` 旁写入 `install.json`，告诉 lip 它是由安装包安装的；没有这个文件时，lip 把自己当作便携版。lip 启动安装包后立即退出，安装包在后台完成安装。
 
 便携版更新会保留目录中的其他文件。在 Windows 上，正在运行的 `lip.exe` 无法删除，因此 lip 把它重命名为 `lip.exe.old`，下次运行 lip 时会删除它。如果有文件无法替换，lip 会把旧文件放回原处。在 Linux 上，解压 `.tar.xz` 压缩包需要 `tar` 和 `xz`。
 

@@ -1,7 +1,6 @@
 <#
 .SYNOPSIS
-Builds the Windows installers of lip: lip-<Version>-win-<Arch>.msi, and
-lip-<Version>-win-<Arch>-setup.exe, which installs that package.
+Builds the Windows installer of lip: lip-<Version>-win-<Arch>.msi.
 
 .EXAMPLE
 ./packaging/wix/build.ps1 -Version 1.2.3 -Arch x64 -BinDir .tmp/artifacts -OutDir .tmp/wix
@@ -35,7 +34,7 @@ if ($productVersion -notmatch '^\d+\.\d+\.\d+$') {
 }
 
 # Incremental builds would not notice that only the properties below changed.
-dotnet build (Join-Path $PSScriptRoot 'Bundle/Lip.Bundle.wixproj') `
+dotnet build (Join-Path $PSScriptRoot 'Package/Lip.Package.wixproj') `
     --configuration Release `
     --no-incremental `
     "-p:Platform=$Arch" `
@@ -43,4 +42,3 @@ dotnet build (Join-Path $PSScriptRoot 'Bundle/Lip.Bundle.wixproj') `
     "-p:BinDir=$BinDir"
 
 Copy-Item (Join-Path $PSScriptRoot "Package/bin/$Arch/Release/lip.msi") (Join-Path $OutDir "lip-$Version-win-$Arch.msi")
-Copy-Item (Join-Path $PSScriptRoot "Bundle/bin/$Arch/Release/lip-setup.exe") (Join-Path $OutDir "lip-$Version-win-$Arch-setup.exe")

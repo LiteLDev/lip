@@ -22,7 +22,7 @@
 用根部带有 `lip.toml` 的目录或 ZIP 文件的路径运行 `lip install`，例如 `lip install ../MyTool` 或 `lip install ./package.zip`。状态文件会记录该路径：卸载不需要它，`lip update` 会重新读取它。
 
 ### 如何升级 lip 自身？
-运行 [`lip self-update`](cli/commands/self_update.md)。它在 GitHub 上找到最新的 Release，并按 `lip` 的安装方式安装：使用新版 `setup.exe` 或 `.msi`（Windows 会请求你的允许），或在原地替换便携压缩包的文件。`lip self-update --check` 只打印新版本号。如果你是通过旧的 `futrime.lip` winget 包或 npm 安装的 `lip`，请先卸载，再按[安装](intro/installation.md)中的方式重新安装。
+运行 [`lip self-update`](cli/commands/self_update.md)。它在 GitHub 上找到最新的 Release，并按 `lip` 的安装方式安装：使用新版 `.msi`（Windows 会请求你的允许），或在原地替换便携压缩包的文件。`lip self-update --check` 只打印新版本号。如果你是通过旧的 `futrime.lip` winget 包或 npm 安装的 `lip`，请先卸载，再按[安装](intro/installation.md)中的方式重新安装。
 
 ### lip 需要安装 git 吗？
 不需要。lip 使用内置客户端通过 HTTPS 访问 git 仓库，无需安装 `git` 命令行工具。详见[内部机制](guides/internal_mechanism.md#包解析)。

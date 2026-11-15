@@ -4,12 +4,8 @@
     <OutputName>lip</OutputName>
     <AcceptEula>wix7</AcceptEula>
     <DefineConstants>$(DefineConstants);ProductVersion=$(ProductVersion);BinDir=$(BinDir)</DefineConstants>
-    <!--
-      ICE09, ICE32 and ICE61 are implemented in VBScript, which recent Windows versions no longer
-      ship. ICE30 flags install.json, installed by one of two components that never install
-      together (Package.wxs).
-    -->
-    <SuppressIces>ICE09;ICE30;ICE32;ICE61</SuppressIces>
+    <!-- These ICEs are implemented in VBScript, which recent Windows versions no longer ship. -->
+    <SuppressIces>ICE09;ICE32;ICE61</SuppressIces>
   </PropertyGroup>
 
   <ItemGroup>

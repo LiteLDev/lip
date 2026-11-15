@@ -4,21 +4,15 @@
 
 ## Windows installer <Badge platform="windows" />
 
-Each [release](https://github.com/LiteLDev/lip/releases/latest) provides two installers for Windows, for x64 (`win-x64`) and ARM64 (`win-arm64`). Both install `lip` to `C:\Program Files\lip` and add that directory to the system `PATH`. Open a new terminal afterwards to use `lip`.
+Each [release](https://github.com/LiteLDev/lip/releases/latest) provides a Windows installer, `lip-<version>-<platform>.msi`, for x64 (`win-x64`) and ARM64 (`win-arm64`). It installs `lip` to `C:\Program Files\lip` and adds that directory to the system `PATH`. Open a new terminal afterwards to use `lip`. Run it, or install silently, for example with deployment tools such as Group Policy, Intune or Ansible:
 
-- `lip-<version>-<platform>-setup.exe`: run it, or install silently:
-
-  ```shell
-  lip-<version>-win-x64-setup.exe /quiet
-  ```
-
-- `lip-<version>-<platform>.msi` suits deployment tools such as Group Policy, Intune or Ansible. To install silently:
-
-  ```shell
-  msiexec /i lip-<version>-win-x64.msi /qn
-  ```
+```shell
+msiexec /i lip-<version>-win-x64.msi /qn
+```
 
 Running a newer installer upgrades `lip` in place, and replaces an installation made by the `setup.exe` of lip 0.35.0 or earlier. Uninstall `lip` from **Settings > Apps > Installed apps**.
+
+The releases of lip 0.36.0 to 0.40.0 also had a `setup.exe`. The installer upgrades what it installed as well, but **Installed apps** then still lists that `setup.exe` as a second `lip`, which you can uninstall: it no longer removes `lip`.
 
 ## Portable archive
 

@@ -15,7 +15,6 @@ namespace Lip.Core.Infrastructure;
 /// How lip was installed (protocol/lip-self-update.md, "Terms").
 public enum InstallationKind {
   Portable,
-  Setup,
   Msi,
 }
 
@@ -214,9 +213,6 @@ public sealed class SelfUpdater {
     VerifyChecksum(assetPath, assetName, expected);
 
     switch (kind) {
-      case InstallationKind.Setup:
-        _elevatedStarter.Start(assetPath, ["/quiet", "/norestart"]);
-        return new(SelfUpdateOutcome.InstallerStarted, latest.Version);
       case InstallationKind.Msi:
         _elevatedStarter.Start("msiexec.exe", ["/i", assetPath, "/qn", "/norestart"]);
         return new(SelfUpdateOutcome.InstallerStarted, latest.Version);
@@ -298,25 +294,21 @@ public sealed class SelfUpdater {
   }
 
   /// The installation kind, from install.json in the installation directory: portable without
-  /// it; a failure when it is not a JSON object whose member kind is "setup" or "msi".
+  /// it; a failure when it is not a JSON object whose member kind is "msi".
   public static InstallationKind ReadKind(IFileSystem fileSystem, string installDirectory) {
     string path = fileSystem.Path.Join(installDirectory, InstallFileName);
     if (!fileSystem.File.Exists(path)) {
       return InstallationKind.Portable;
     }
 
-    string invalid = $"{path} is not valid: it must be {{\"kind\": \"setup\"}} or"
-        + " {\"kind\": \"msi\"}. Reinstall lip with its Windows installer, or delete that file"
+    string invalid = $"{path} is not valid: it must be {{\"kind\": \"msi\"}}. Reinstall lip with its Windows installer, or delete that file"
         + " if lip was not installed by one.";
     try {
       using JsonDocument document = JsonDocument.Parse(fileSystem.File.ReadAllBytes(path));
       if (document.RootElement.ValueKind == JsonValueKind.Object
           && document.RootElement.TryGetProperty("kind", out JsonElement kind)) {
-        switch (kind.ValueKind == JsonValueKind.String ? kind.GetString() : null) {
-          case "setup":
-            return InstallationKind.Setup;
-          case "msi":
-            return InstallationKind.Msi;
+        if (kind.ValueKind == JsonValueKind.String && kind.GetString() == "msi") {
+          return InstallationKind.Msi;
         }
       }
     }
@@ -330,7 +322,6 @@ public sealed class SelfUpdater {
   public static string GetAssetName(
       InstallationKind kind, SemVersion version, string platform, bool linuxArchives) =>
       kind switch {
-        InstallationKind.Setup => $"lip-{version}-{platform}-setup.exe",
         InstallationKind.Msi => $"lip-{version}-{platform}.msi",
         _ => $"lip-{version}-{platform}{(linuxArchives ? ".tar.xz" : ".zip")}",
       };

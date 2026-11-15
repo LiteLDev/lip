@@ -22,7 +22,7 @@ Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) ve
 Run `lip install` with the path of a directory or a ZIP file that has a `lip.toml` at its root, e.g. `lip install ../MyTool` or `lip install ./package.zip`. The state file records the path: uninstalling needs nothing, and `lip update` reads it again.
 
 ### How do I upgrade lip itself?
-Run [`lip self-update`](cli/commands/self_update.md). It finds the latest release on GitHub and installs it the way `lip` was installed: with the newer `setup.exe` or `.msi` (Windows asks you to allow it), or by replacing the files of a portable archive in place. `lip self-update --check` only prints the newer version. If you installed `lip` from the old `futrime.lip` winget package or from npm, uninstall it first and then install it again with one of the methods in [Installation](intro/installation.md).
+Run [`lip self-update`](cli/commands/self_update.md). It finds the latest release on GitHub and installs it the way `lip` was installed: with the newer `.msi` (Windows asks you to allow it), or by replacing the files of a portable archive in place. `lip self-update --check` only prints the newer version. If you installed `lip` from the old `futrime.lip` winget package or from npm, uninstall it first and then install it again with one of the methods in [Installation](intro/installation.md).
 
 ### Does lip require git?
 No. lip talks to git repositories over HTTPS with its own built-in client, so the `git` command-line tool does not need to be installed. See [Internal Mechanism](guides/internal_mechanism.md#package-resolution).

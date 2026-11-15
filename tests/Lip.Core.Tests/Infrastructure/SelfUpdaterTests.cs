@@ -104,17 +104,16 @@ public class SelfUpdaterTests {
     Assert.Equal(InstallationKind.Portable, SelfUpdater.ReadKind(_fs, _install));
   }
 
-  [Theory]
-  [InlineData("{\"kind\": \"setup\"}", InstallationKind.Setup)]
-  [InlineData("{\"kind\": \"msi\", \"other\": 1}", InstallationKind.Msi)]
-  public void ReadKind_InstallJson_IsItsKind(string json, InstallationKind expected) {
-    _fs.AddFile(Path.Join(_install, "install.json"), json);
+  [Fact]
+  public void ReadKind_InstallJsonOfMsi_IsMsi() {
+    _fs.AddFile(Path.Join(_install, "install.json"), "{\"kind\": \"msi\", \"other\": 1}");
 
-    Assert.Equal(expected, SelfUpdater.ReadKind(_fs, _install));
+    Assert.Equal(InstallationKind.Msi, SelfUpdater.ReadKind(_fs, _install));
   }
 
   [Theory]
   [InlineData("{\"kind\": \"portable\"}")]
+  [InlineData("{\"kind\": \"setup\"}")]
   [InlineData("{\"kind\": 1}")]
   [InlineData("[\"setup\"]")]
   [InlineData("{}")]
@@ -277,26 +276,15 @@ public class SelfUpdaterTests {
   }
 
   [Fact]
-  public async Task Run_Setup_StartsTheInstallerElevated() {
-    _fs.AddFile(Path.Join(_install, "install.json"), "{\"kind\":\"setup\"}");
-    AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64-setup.exe"] = [1, 2, 3] });
-
-    SelfUpdateResult result = await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
-
-    string installer = Path.Join(_cache, "self-update", "lip-1.1.0-win-x64-setup.exe");
-    Assert.Equal(SelfUpdateOutcome.InstallerStarted, result.Outcome);
-    Assert.Equal([1, 2, 3], _fs.File.ReadAllBytes(installer));
-    _starter.Verify(s => s.Start(installer, new[] { "/quiet", "/norestart" }));
-  }
-
-  [Fact]
   public async Task Run_Msi_StartsMsiexecElevated() {
     _fs.AddFile(Path.Join(_install, "install.json"), "{\"kind\":\"msi\"}");
     AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64.msi"] = [4] });
 
-    await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
+    SelfUpdateResult result = await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
 
     string msi = Path.Join(_cache, "self-update", "lip-1.1.0-win-x64.msi");
+    Assert.Equal(SelfUpdateOutcome.InstallerStarted, result.Outcome);
+    Assert.Equal([4], _fs.File.ReadAllBytes(msi));
     _starter.Verify(s => s.Start("msiexec.exe", new[] { "/i", msi, "/qn", "/norestart" }));
   }
 

@@ -1,12 +1,11 @@
 <#
 .SYNOPSIS
-Installs, upgrades and uninstalls the Windows installers of lip on this machine, and checks
+Installs, upgrades and uninstalls the Windows installer of lip on this machine, and checks
 the result of each step. Must run elevated, on a machine where lip is not installed.
 Compatible with Windows PowerShell 5.1, so that it also runs in Windows Server Core containers.
 
 .PARAMETER ArtifactsDir
-Directory containing lip-<version>-win-<Arch>.msi and lip-<version>-win-<Arch>-setup.exe
-for the versions 0.0.1 and 0.0.2.
+Directory containing lip-<version>-win-<Arch>.msi for the versions 0.0.1 and 0.0.2.
 
 .PARAMETER InnoSetup
 A setup.exe of a lip version released with the former Inno Setup installer. Required by the
@@ -20,8 +19,8 @@ param(
     [ValidateSet('x64', 'arm64')]
     [string] $Arch,
 
-    [ValidateSet('Inno', 'Msi', 'Bundle')]
-    [string[]] $Scenario = @('Inno', 'Msi', 'Bundle'),
+    [ValidateSet('Inno', 'Msi')]
+    [string[]] $Scenario = @('Inno', 'Msi'),
 
     [string] $InnoSetup
 )
@@ -75,12 +74,6 @@ function Invoke-Msi([string] $Action, [string] $Version, [int] $ExpectedExitCode
     $msi = Get-Artifact $Version '.msi'
     $log = Join-Path $logDir "msi-$($Action.TrimStart('/'))-$Version-$(Get-Random).log"
     Invoke-Installer "msiexec $Action lip $Version" 'msiexec.exe' @($Action, "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"") $ExpectedExitCode
-}
-
-function Invoke-Bundle([string] $Action, [string] $Version) {
-    $bundle = Get-Artifact $Version '-setup.exe'
-    $log = Join-Path $logDir "bundle-$($Action.TrimStart('/'))-$Version-$(Get-Random).log"
-    Invoke-Installer "setup.exe $Action lip $Version" $bundle @($Action, '/quiet', '/norestart', '/log', "`"$log`"")
 }
 
 function Get-LipEntries {
@@ -154,18 +147,6 @@ if ($Scenario -contains 'Msi') {
     Assert-Installed '0.0.2' 'msi'
 
     Invoke-Msi '/x' '0.0.2'
-    Assert-NotInstalled
-}
-
-if ($Scenario -contains 'Bundle') {
-    Write-Host '# setup.exe install, upgrade and uninstall'
-    Invoke-Bundle '/install' '0.0.1'
-    Assert-Installed '0.0.1' 'setup'
-
-    Invoke-Bundle '/install' '0.0.2'
-    Assert-Installed '0.0.2' 'setup'
-
-    Invoke-Bundle '/uninstall' '0.0.2'
     Assert-NotInstalled
 }
 
