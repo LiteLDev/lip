@@ -8,6 +8,7 @@ using Lip.Cli.Tui.Pages.Mods;
 using Lip.Cli.Tui.Pages.Server;
 using Lip.Cli.Tui.Pages.Settings;
 using Lip.Cli.Tui.Pages.Workspaces;
+using Lip.Cli.Tui.Widgets;
 using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
@@ -49,7 +50,8 @@ public sealed class FlowTests {
     return fs;
   }
 
-  /// The interface with the pages of lip, a catalogue of one mod, and a fake server setup.
+  /// The interface with the pages of lip, as on a system that is not Linux on x64, a
+  /// catalogue of one mod, and a fake server setup.
   private static TuiHarness Start(
       out Func<FakeServerSetup> setup,
       bool game,
@@ -59,6 +61,7 @@ public sealed class FlowTests {
     TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
       Language = language,
       FileSystem = Workspace(game),
+      Pages = WorkspacesPageTests.Pages(linux: false),
       Catalog = Catalog,
       GithubProbe = probe,
       ServerSetup = harness => fake = new FakeServerSetup(harness),
@@ -92,8 +95,6 @@ public sealed class FlowTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Build} ─");
-    tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
@@ -112,9 +113,9 @@ public sealed class FlowTests {
             "1.21.50 Windows True 1.1.0 dryRun=False acceptEula=True",
           ],
           setup().Calls);
-      // The setup was carried out in the session of its dry run.
-      Assert.NotNull(setup().Sessions[^1]);
-      Assert.Same(setup().Sessions[^2], setup().Sessions[^1]);
+      // The versions were read, and the setup was carried out, in the session of its dry run.
+      Assert.NotNull(setup().Sessions[0]);
+      Assert.All(setup().Sessions, session => Assert.Same(setup().Sessions[0], session));
     }
 
     await Shown(tui, PageId.Workspaces);
@@ -139,10 +140,12 @@ public sealed class FlowTests {
 
     // A workspace that has a game: the wizard asks for the folder of another server.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.NewFolderExample);
+    await tui.WaitFor($"─ {WorkspacesText.NewServerTitle} ─");
+    await tui.WaitFor($"{PathPickerText.Folder}  {tui.Root}");
+    await tui.WaitUntilGone(PathPickerText.Reading);
     Assert.Equal(PageId.Workspaces, await Page(tui));
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(WorkspacesText.NewFolderExample);
+    await tui.WaitUntilGone($"─ {WorkspacesText.NewServerTitle} ─");
 
     await Shown(tui, PageId.Workspaces);
     Assert.True(await tui.Invoke(() => tui.Context.Idle));
@@ -323,7 +326,8 @@ public sealed class FlowTests {
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(WorkspacesText.ElsewhereDetail);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.NewFolderExample);
+    await tui.WaitFor($"{PathPickerText.Folder}  {tui.Root}");
+    await tui.WaitUntilGone(PathPickerText.Reading);
 
     // Esc goes back one step at a time, and out of the first one to the page.
     tui.Press(ConsoleKey.Escape);

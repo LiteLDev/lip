@@ -43,8 +43,8 @@ Adding and removing read the workspace list again before they write it. The inte
 
 The user may ask the interface for a **new server**. The user then names a directory, and chooses, in this order:
 
-1. a game version G: a version that the builds list ([lip-package(7), "The server"](lip-package.md#the-server)) names, offered with the versions that are not prereleases first, then the others, each from highest to lowest;
-2. a build B ([lip-setup(1), "Terms"](lip-setup.md#terms)): `windows` when the builds list has a build of G for `win-x64`, and `linux` when it has one for `linux-x64`; and
+1. a game version G: a version that the builds list ([lip-package(7), "The server"](lip-package.md#the-server)) names and that step 2 offers a build for, offered with the versions that are not prereleases first, then the others, each from highest to lowest;
+2. a build B ([lip-setup(1), "Terms"](lip-setup.md#terms)): `windows` is offered when the builds list has a build of G for `win-x64`, and `linux` when it has one for `linux-x64` and `lip` runs on Linux on x64. When one build only is offered, it is B, and the user is not asked; and
 3. when B is `windows`, the loader: a version V of the loader source ([lip-setup(1), "Terms"](lip-setup.md#terms)) among the versions that fit G, or no loader. When B is `linux`, the setup has no loader, and the user is not asked.
 
 The **versions that fit** G are those of the candidates of Resolve(`github.com/LiteLDev/LeviLamina`, any version, environment) ([lip-package(7), "Resolution"](lip-package.md#resolution)) that fit G, from the first; the search may stop as [lip-setup(1), "The loader"](lip-setup.md#the-loader) defines, and at a candidate that does not fit G after one that does. `lip` reads the builds list and resolves these candidates as a setup does.
