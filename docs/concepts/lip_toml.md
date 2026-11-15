@@ -1,5 +1,8 @@
 # lip.toml
 
+This page describes every field of `lip.toml`, so that you can read the package file of any
+package and write your own. For a walk-through, see [Creating packages](../authors/creating_packages.md).
+
 A lip package is an archive with a **package file**, `lip.toml`, at its root. `lip.toml` names the
 package, gives its version, and describes, for each variant, side and platform, what lip
 installs: the dependencies, the files to place, the mod to install and the commands to run.
@@ -19,7 +22,13 @@ A package lives in an **archive**, a tree of files and directories with `lip.tom
 - a **ZIP archive**: a ZIP file, downloaded over HTTPS or on your disk. Whether a file is a ZIP
   archive depends only on its content, not its name. Its entries must be regular files or
   directories with `/`-separated paths that do not start with `/` or contain a `..` segment or `\`;
-- a **directory archive**: a directory on your disk, taken as the archive of its contents.
+- a **directory archive**: a directory on your disk, taken as the archive of its contents. The
+  names of its files and directories must not contain `\`.
+
+One package has no archive and no `lip.toml`: the game, `github.com/LiteLDev/bds`. lip defines
+its package file itself, from the list of server builds; see
+[`lip setup`](../reference/commands/setup.md#game-versions-and-builds) and
+[The server files](../reference/files.md#the-server-files).
 
 ## Example
 
@@ -93,7 +102,7 @@ package, and lip does not install it.
 | --- | --- | --- |
 | `name` | `string` | Display name. |
 | `description` | `string` | Short description. |
-| `tags` | `string[]` | Tags. See [Recommended Tags](../guides/creating_packages.md#recommended-tags). |
+| `tags` | `string[]` | Tags. See [Recommended Tags](../authors/creating_packages.md#recommended-tags). |
 | `logo` | `string` | URL of the logo image. It must start with `https://`; the image is the response, directly or after redirects. |
 
 lip does not use `info`.
@@ -151,7 +160,7 @@ version such as `1.2.3` matches exactly that version.
 
 | Type | Fields | Description |
 | --- | --- | --- |
-| `self` | `place` (optional) | The archive of the `lip.toml` itself, e.g. the repository at the tag. |
+| `self` | `place` (optional) | The archive of the `lip.toml` itself, e.g. the repository at the tag. A `urls` is ignored. |
 | `zip` | `urls`, `place` (optional) | A ZIP archive downloaded over HTTPS. |
 | `mcmod` | `urls` | A ZIP archive downloaded over HTTPS that holds a LeviLamina mod; it has no `place`. See [Mods](#mods). |
 
@@ -188,6 +197,10 @@ place = [
 
 The root `lip.toml` of the package is never written.
 
+lip refuses to write some paths: `.lip` and everything below it, a file that another installed
+package owns, and a path with a segment that contains `:` or ends in `.` or a space (see
+[File names](../reference/files.md#file-names)). The installation then fails.
+
 ### Globs
 
 `preserve`, `purge` and the glob form of placements use POSIX `fnmatch` patterns,
@@ -214,7 +227,7 @@ Commands run in the workspace root, with the environment variables of lip, as
 `cmd /s /c "<command>"` when the platform of the workspace [environment](#environment) is a
 Windows platform, so that `cmd` runs the command as written, and as `sh -c <command>` otherwise,
 with `sh` found through `PATH`; on a system other than Windows, a Windows platform runs them
-through Wine (see [Running a Server](../guides/running_server.md#wine-prefix)), where a command
+through Wine (see [Linux and macOS](../guides/linux_macos.md)), where a command
 containing `"` does not reach `cmd` as written. A command that exits with a non-zero code fails the operation. If an operation fails, lip undoes its file
 changes, but not what hook commands already did, so hook commands should be safe to run again.
 
@@ -239,8 +252,8 @@ urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-{
 A template may use any Scriban expression, e.g. `{{version | string.replace "." "_"}}`. An undefined
 variable renders as nothing. A template that does not parse or fails to render, such as
 `{{ if }}`, makes the archive not a package. To write `{{` literally, write `{{ "{{" }}`.
-[`lip pkg view`](../cli/commands/pkg_view.md) shows the package file with its templates rendered, and the
-[state file](lockfiles.md) records it so.
+[`lip pkg view`](../reference/commands/pkg_view.md) shows the package file with its templates rendered, and the
+[state file](state_file.md) records it so.
 
 ## Mods
 
@@ -266,8 +279,8 @@ files outside `mods/`.
 
 The **identity** of an installed package is its package id, followed by `#<variant>` when the
 variant is not `""`, e.g. `github.com/LiteLDev/LegacyScriptEngine#lua`. A workspace holds at
-most one package of each identity; [`lip list`](../cli/commands/list.md) shows identities, and
-[`lip uninstall`](../cli/commands/uninstall.md) accepts them.
+most one package of each identity; [`lip list`](../reference/commands/list.md) shows identities, and
+[`lip uninstall`](../reference/commands/uninstall.md) accepts them.
 
 The identity comes from the `id` of the package, not from where it was installed from: a ZIP
 file whose `lip.toml` has `id = "github.com/user/repo"` has the same identity as the
@@ -279,13 +292,13 @@ The environment of a workspace is a pair `(side, platform)`:
 
 - **side**: `server` or `client`, the side of the game the workspace is. lip manages server
   workspaces only, so it always uses `server`. Client workspaces are managed by launchers such as
-  LeviLauncher; lip refuses a workspace whose [state file](lockfiles.md) records `client`.
+  LeviLauncher; lip refuses a workspace whose [state file](state_file.md) records `client`.
 - **platform**: a [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog), always `win-x64`,
   whatever system lip runs on. On other systems than Windows, lip runs the programs of a workspace
-  through Wine (see [Running a Server](../guides/running_server.md)). The Linux server is not
+  through Wine (see [Linux and macOS](../guides/linux_macos.md)). The Linux server is not
   another platform but the variant `linux` of `github.com/LiteLDev/bds`, whose entry is for
   `win-x64`. A state file of an earlier lip that records `linux-x64` is read as one of `win-x64`
-  (see [State file](lockfiles.md#workspaces-of-linux-x64)). A platform starting with `win` is a
+  (see [State file](state_file.md#workspaces-of-linux-x64)). A platform starting with `win` is a
   **Windows platform**.
 
 ## Earlier Formats
@@ -298,12 +311,12 @@ keys of each entry, and keep everything else.
 
 Packages of lip v0.37.0 and earlier have, instead of `lip.toml`, a `tooth.json` of format
 version 1, 2 or 3. lip still installs them, but never writes them; convert yours to `lip.toml`
-with [`lip pkg migrate`](../cli/commands/pkg_migrate.md). An archive with a `lip.toml` is read from it,
+with [`lip pkg migrate`](../reference/commands/pkg_migrate.md). An archive with a `lip.toml` is read from it,
 whatever `tooth.json` it also has, and a `tooth.json` of any other format is not read.
 
 Formats 1 and 2 are first read as format 3, as lip v0.37.0 did. A format 3 `tooth.json` is then
 converted completely, for the environment of the workspace, into a package file, and lip uses
-only that one: it is what lip resolves, installs, and records in the [state file](lockfiles.md).
+only that one: it is what lip resolves, installs, and records in the [state file](state_file.md).
 Nothing of format 3 remains at install time.
 
 - `tooth` becomes `id`. `version` is the version of the package: the tag version at a version tag,
@@ -343,9 +356,8 @@ A package of an earlier format is always a file package. Its identity follows th
 `github.com/LiteLDev/LegacyScriptEngine#lua`.
 
 The format 3 schema is
-[`legacy/v3/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v3/tooth.schema.yaml)
-(formats 1 and 2: [`legacy/v1/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v1/tooth.schema.yaml), [`legacy/v2/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v2/tooth.schema.yaml)),
-and lip v0.37.0 documented it in its
+[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/v0.37.0/schemas/manifest.schema.json)
+of lip v0.37.0, which documented the format in its
 [Package Manifest](https://github.com/LiteLDev/lip/blob/v0.37.0/docs/concepts/package_manifest.md)
 page:
 
@@ -374,3 +386,10 @@ page:
   ]
 }
 ```
+
+## See also
+
+- [Creating packages](../authors/creating_packages.md) and [Migrating packages](../authors/migrating_packages.md)
+- [`lip pkg init`](../reference/commands/pkg_init.md), [`lip pkg view`](../reference/commands/pkg_view.md)
+- [State file](state_file.md): where the package file of each installed package is recorded.
+- [Internals](internals.md): how lip resolves sources and versions.

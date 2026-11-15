@@ -1,7 +1,9 @@
 # lip.toml
 
+本页说明 `lip.toml` 的每一个字段，读完后你能看懂任何包的包文件，也能写出自己的。分步讲解参见[创建包](../authors/creating_packages.md)。
+
 lip 包是根部带有**包文件** `lip.toml` 的归档。`lip.toml` 给出包的名称和版本，并针对每个变体、运行端和平台
-描述 lip 要安装的内容：依赖、要放置的文件、要安装的 mod 以及要运行的命令。
+描述 lip 要安装的内容：依赖、要放置的文件、要安装的模组以及要运行的命令。
 规范性定义见协议的 [lip.toml(5)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.toml.md) 页。
 
 `lip.toml` 是格式 4 的 [TOML 1.0](https://toml.io/cn/v1.0.0) 文件，由以 TOML 编写的 JSON Schema
@@ -17,11 +19,15 @@ lip 包是根部带有**包文件** `lip.toml` 的归档。`lip.toml` 给出包�
 - **ZIP 归档**：一个 ZIP 文件，可通过 HTTPS 下载，也可位于你的磁盘上。一个文件是否为 ZIP 归档只看
   内容，与文件名无关。其条目必须是普通文件或目录，路径以 `/` 分隔，不得以 `/` 开头，也不得包含
   `..` 段或 `\`；
-- **目录归档**：你磁盘上的一个目录，以其内容作为归档。
+- **目录归档**：你磁盘上的一个目录，以其内容作为归档。其中文件和目录的名字不得包含 `\`。
+
+有一个包既没有归档也没有 `lip.toml`：游戏 `github.com/LiteLDev/bds`。lip 根据服务器构建的列表自己定义
+它的包文件；参见 [`lip setup`](../reference/commands/setup.md#游戏版本与构建)和
+[服务器文件](../reference/files.md#服务器文件)。
 
 ## 示例
 
-一个 mod，以附加到每个 GitHub Release 的 ZIP 文件发布，支持 Windows x64 上的服务端和客户端：
+一个模组，以附加到每个 GitHub Release 的 ZIP 文件发布，支持 Windows x64 上的服务端和客户端：
 
 ```toml
 format = 4
@@ -86,7 +92,7 @@ urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-c
 | --- | --- | --- |
 | `name` | `string` | 显示名称。 |
 | `description` | `string` | 简短描述。 |
-| `tags` | `string[]` | 标签。参见[推荐标签](../guides/creating_packages.md#推荐标签)。 |
+| `tags` | `string[]` | 标签。参见[推荐标签](../authors/creating_packages.md#推荐标签)。 |
 | `logo` | `string` | 徽标图片的 URL，必须以 `https://` 开头；其响应（直接或经重定向后）即为该图片。 |
 
 lip 不使用 `info`。
@@ -138,9 +144,9 @@ ID 和变体的依赖。
 
 | 类型 | 字段 | 说明 |
 | --- | --- | --- |
-| `self` | `place`（可选） | `lip.toml` 自身所在的归档，例如标签处的仓库。 |
+| `self` | `place`（可选） | `lip.toml` 自身所在的归档，例如标签处的仓库。写了 `urls` 也会被忽略。 |
 | `zip` | `urls`、`place`（可选） | 通过 HTTPS 下载的 ZIP 归档。 |
-| `mcmod` | `urls` | 通过 HTTPS 下载、包含一个 LeviLamina mod 的 ZIP 归档；它没有 `place`。参见 [Mod](#mod)。 |
+| `mcmod` | `urls` | 通过 HTTPS 下载、包含一个 LeviLamina 模组的 ZIP 归档；它没有 `place`。参见 [模组](#模组)。 |
 
 `urls` 是同一文件的 HTTPS URL 组成的非空数组，按顺序尝试。一个条目最多有一个 `mcmod` 资源。资源按
 顺序写入；两个资源或放置规则写入同一路径时，以后者为准。
@@ -171,6 +177,9 @@ place = [
 
 包根部的 `lip.toml` 永远不会被写入。
 
+有些路径 lip 拒绝写入：`.lip` 及其下的一切、其他已安装的包拥有的文件，以及某一段含有 `:` 或以 `.` 或
+空格结尾的路径（参见[文件名](../reference/files.md#文件名)）。此时安装失败。
+
 ### glob
 
 `preserve`、`purge` 以及 glob 形式的放置规则使用 POSIX `fnmatch` 模式，按段逐一匹配：
@@ -178,7 +187,7 @@ place = [
 单个字符。`**` 段匹配零个或多个段；以 `/` 结尾的模式匹配一个目录及其下的所有内容。没有转义字符。
 glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 
-`preserve` 和 `purge` 匹配的是相对于工作区的路径，对 mod 也是如此：应写
+`preserve` 和 `purge` 匹配的是相对于工作区的路径，对模组也是如此：应写
 `mods/MyMod/config/`，而不是 `config/`。`purge` 永远不会匹配工作区根目录下的 `mods`
 或 `.lip`，也不会匹配 `.lip` 之下的任何内容；`mods` 之下的路径不会仅因 `mods` 匹配而匹配：
 `mods/` 和 `*/` 不会删除 `mods` 之下的任何内容。
@@ -195,7 +204,7 @@ glob 不得为空、不得以 `/` 开头，也不得包含 `//` 或 `\`。
 命令在工作区根目录中以 lip 的环境变量运行：工作区[环境](#环境)的平台为 Windows 平台时以
 `cmd /s /c "<命令>"` 运行，使 `cmd` 按原样运行该命令，否则以 `sh -c <命令>` 运行，`sh` 通过 `PATH` 查找；
 在 Windows 以外的系统上，Windows 平台的命令通过 Wine 运行（参见
-[运行服务器](../guides/running_server.md#wine-前缀)），此时含有 `"` 的命令无法按原样到达 `cmd`。以非零退出码退出的命令会使操作失败。操作失败时，lip 会撤销其文件改动，但不会撤销钩子命令已经做过的事，因此钩子命令应当可以
+[Linux 和 macOS](../guides/linux_macos.md)），此时含有 `"` 的命令无法按原样到达 `cmd`。以非零退出码退出的命令会使操作失败。操作失败时，lip 会撤销其文件改动，但不会撤销钩子命令已经做过的事，因此钩子命令应当可以
 安全地再次运行。
 
 ## 模板
@@ -216,22 +225,22 @@ urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-{
 
 模板中可以使用任何 Scriban 表达式，例如 `{{version | string.replace "." "_"}}`。未定义的变量渲染为空。
 无法解析或渲染失败的模板（例如 `{{ if }}`）会使该归档不是包。要原样写出 `{{`，请写成 `{{ "{{" }}`。
-[`lip pkg view`](../cli/commands/pkg_view.md) 显示渲染后的包文件，[状态文件](lockfiles.md)中记录的也是渲染后的包文件。
+[`lip pkg view`](../reference/commands/pkg_view.md) 显示渲染后的包文件，[状态文件](state_file.md)中记录的也是渲染后的包文件。
 
-## Mod
+## 模组
 
-带有 `mcmod` 资源的条目是 **mod**；否则该包是**文件包**，只放置文件。
+带有 `mcmod` 资源的条目是 **模组**；否则该包是**文件包**，只放置文件。
 
-`mcmod` 资源的归档根部必须有该 mod 的 LeviLamina `manifest.json`，它是一个 JSON 对象，其 `name` 须匹配
-`^[A-Za-z0-9][A-Za-z0-9._-]*$`。这个 `name` 就是 **mod 名称**。lip 把整个归档按原路径写入
-`mods/<mod 名称>/`。
+`mcmod` 资源的归档根部必须有该模组的 LeviLamina `manifest.json`，它是一个 JSON 对象，其 `name` 须匹配
+`^[A-Za-z0-9][A-Za-z0-9._-]*$`。这个 `name` 就是 **模组名称**。lip 把整个归档按原路径写入
+`mods/<模组名称>/`。
 
-lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检查也不修改其中的任何其他内容：
-`manifest.json` 与其他文件一样，按归档中的原样写入 mod 目录。让其 `dependencies` 与条目的
+lip 只读取 `manifest.json` 的 `name`，用来命名模组目录。它不检查也不修改其中的任何其他内容：
+`manifest.json` 与其他文件一样，按归档中的原样写入模组目录。让其 `dependencies` 与条目的
 `deps` 保持一致由你自己负责。缺少 `manifest.json`，或其中没有有效的 `name`，会在任何修改之前
 使安装失败。
 
-两个 mod 名称相同（不区分 ASCII 大小写）的 mod 不能安装在同一个工作区中。
+两个模组名称相同（不区分 ASCII 大小写）的模组不能安装在同一个工作区中。
 
 条目在 `mcmod` 资源之外还可以有其他资源，例如一个把文件放到 `mods/` 之外的 `zip` 资源。
 
@@ -239,7 +248,7 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
 
 已安装包的**身份**是其包 ID，当变体不为 `""` 时再加上 `#<variant>`，例如
 `github.com/LiteLDev/LegacyScriptEngine#lua`。一个工作区中每个身份至多有一个包；
-[`lip list`](../cli/commands/list.md) 显示身份，[`lip uninstall`](../cli/commands/uninstall.md) 也接受
+[`lip list`](../reference/commands/list.md) 显示身份，[`lip uninstall`](../reference/commands/uninstall.md) 也接受
 身份。
 
 身份来自包的 `id`，而不是安装来源：`lip.toml` 写有 `id = "github.com/user/repo"` 的 ZIP 文件，
@@ -250,13 +259,13 @@ lip 只读取 `manifest.json` 的 `name`，用来命名 mod 目录。它不检�
 工作区的环境是一个二元组 `(side, platform)`：
 
 - **运行端**（side）：`server` 或 `client`，即工作区是游戏的哪一端。lip 只管理服务端工作区，因此始终使用
-  `server`。客户端工作区由 LeviLauncher 等启动器管理；若工作区的[状态文件](lockfiles.md)记录的是
+  `server`。客户端工作区由 LeviLauncher 等启动器管理；若工作区的[状态文件](state_file.md)记录的是
   `client`，lip 会拒绝处理。
 - **平台**（platform）：一个 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)，始终为 `win-x64`，
   无论 lip 运行在什么系统上。在 Windows 以外的系统上，lip 通过 Wine 运行工作区的程序（参见
-  [运行服务器](../guides/running_server.md)）。Linux 版服务器不是另一个平台，而是 `github.com/LiteLDev/bds`
+  [Linux 和 macOS](../guides/linux_macos.md)）。Linux 版服务器不是另一个平台，而是 `github.com/LiteLDev/bds`
   的变体 `linux`，其条目的平台是 `win-x64`。早期 lip 写下的、记录 `linux-x64` 的状态文件会被当作 `win-x64` 的状态文件读取
-  （参见[状态文件](lockfiles.md#linux-x64-的工作区)）。以 `win` 开头的平台是
+  （参见[状态文件](state_file.md#linux-x64-的工作区)）。以 `win` 开头的平台是
   **Windows 平台**。
 
 ## 早期格式
@@ -267,12 +276,12 @@ lip v0.39 的 `lip.toml` 同样是格式 4，但把运行端写作 `platform`、
 `runtime` 改名为 `platform`。把每个条目的这两个键改名即可，其余内容保持不变。
 
 lip v0.37.0 及更早版本的包没有 `lip.toml`，而是有格式版本 1、2 或 3 的 `tooth.json`。lip 仍会安装它们，
-但从不写入它们；请使用 [`lip pkg migrate`](../cli/commands/pkg_migrate.md) 把你的包转换为 `lip.toml`。带有
+但从不写入它们；请使用 [`lip pkg migrate`](../reference/commands/pkg_migrate.md) 把你的包转换为 `lip.toml`。带有
 `lip.toml` 的归档从 `lip.toml` 读取，不论它是否还有 `tooth.json`；其他格式的 `tooth.json` 不会被读取。
 
 格式 1 和 2 先像 lip v0.37.0 那样读取为格式 3。格式 3 的 `tooth.json` 随后针对工作区的环境被完整地
 转换为一个包文件，lip 只使用转换结果：
-lip 解析、安装并记录到[状态文件](lockfiles.md)中的都是它。安装时不再保留任何格式 3 的语义。
+lip 解析、安装并记录到[状态文件](state_file.md)中的都是它。安装时不再保留任何格式 3 的语义。
 
 - `tooth` 变为 `id`。`version` 为包的版本：在版本标签处为标签版本，而不论 `tooth.json` 的 `version` 写的是
   什么；否则为该 `version`。
@@ -302,13 +311,13 @@ lip 解析、安装并记录到[状态文件](lockfiles.md)中的都是它。安
 
 转换后在包文件中无效的 glob 或放置规则会被略去。随后放置规则按 `lip.toml` 的方式执行：例如，缺失的文件现在会使安装
 失败，包的 `tooth.json` 也永远不会被写入。
+
 早期格式的包始终是文件包。其身份遵循同样的规则，例如 `github.com/LiteLDev/LegacyScriptEngine#lua`。
 
-格式 3 的 schema 为
-[`legacy/v3/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v3/tooth.schema.yaml)
-（格式 1 和 2：[`legacy/v1/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v1/tooth.schema.yaml)、[`legacy/v2/tooth.schema.yaml`](https://github.com/LiteLDev/lip/blob/1e023e6/specs/schemas/legacy/v2/tooth.schema.yaml)），
+格式 3 的 schema 是 lip v0.37.0 的
+[`manifest.schema.json`](https://github.com/LiteLDev/lip/blob/v0.37.0/schemas/manifest.schema.json)，
 lip v0.37.0 在其[包清单](https://github.com/LiteLDev/lip/blob/v0.37.0/docs/concepts/package_manifest.md)页面
-中对其做了说明：
+中记录了这一格式：
 
 ```json
 {
@@ -335,3 +344,10 @@ lip v0.37.0 在其[包清单](https://github.com/LiteLDev/lip/blob/v0.37.0/docs/
   ]
 }
 ```
+
+## 另请参阅
+
+- [创建包](../authors/creating_packages.md)和[迁移包](../authors/migrating_packages.md)
+- [`lip pkg init`](../reference/commands/pkg_init.md)、[`lip pkg view`](../reference/commands/pkg_view.md)
+- [状态文件](state_file.md)：每个已安装包的包文件记录在哪里。
+- [内部机制](internals.md)：lip 怎样解析来源和版本。
