@@ -435,8 +435,9 @@ public sealed class ModsPage : Page {
             // The plan that the user applies confirms what a setup uninstalls.
             Context.PlanAndRun(
                 ModsText.InstallOperation(string.Join(' ', arguments)),
-                (dryRun, acceptEula, token) =>
-                    client.Install(arguments, dryRun, token, acceptEula, confirmed: true));
+                run => client.Install(
+                    arguments, run.DryRun, run.Token, run.AcceptEula, confirmed: true,
+                    run.Session));
           },
           validate: values =>
               SplitArguments(values[0]).Count == 0 ? CommonText.Required : null));
@@ -477,13 +478,14 @@ public sealed class ModsPage : Page {
   private void Update(IReadOnlyList<string> arguments, string title) {
     LipClient client = Context.Client;
     Context.PlanAndRun(
-        title, (dryRun, token) => client.Update(arguments, dryRun, token), _list.Checked.Clear);
+        title, run => client.Update(arguments, run.DryRun, run.Token, run.Session),
+        _list.Checked.Clear);
   }
 
   private void Uninstall(IReadOnlyList<string> identities, string title) {
     LipClient client = Context.Client;
     Context.PlanAndRun(
-        title, (dryRun, token) => client.Uninstall(identities, dryRun, token),
+        title, run => client.Uninstall(identities, run.DryRun, run.Token, run.Session),
         _list.Checked.Clear);
   }
 

@@ -270,11 +270,16 @@ public sealed class ChoiceDialog : Dialog {
   }
 }
 
-/// An action of a Menu: its label, what it does, and whether it can be chosen now.
-public sealed record MenuItem(string Label, Action Run, bool Enabled = true);
+/// An action of a Menu: its label, what it does, and whether it can be chosen now. Reason: for
+/// one that cannot, one short sentence saying why, such as CommonText.StopServerFirst; the
+/// menu shows it while the action is highlighted.
+public sealed record MenuItem(
+    string Label, Action Run, bool Enabled = true, string? Reason = null);
 
 /// The action menu of a row: what Enter on the row offers. ↑ and ↓ move, Enter carries the
-/// action out, Esc closes the menu.
+/// action out, Esc closes the menu. An action that cannot be chosen is shown muted: ↑ and ↓
+/// skip it, unless it says why, and then they stop at it, the menu shows its reason below the
+/// actions, and Enter does nothing.
 public sealed class Menu : Dialog {
   private readonly string _title;
   private readonly IReadOnlyList<MenuItem> _items;
@@ -283,25 +288,57 @@ public sealed class Menu : Dialog {
   public Menu(string title, IReadOnlyList<MenuItem> items) {
     _title = title;
     _items = items;
-    _selected = Math.Max(0, items.ToList().FindIndex(i => i.Enabled));
+    int first = items.ToList().FindIndex(i => i.Enabled);
+    _selected = Math.Max(0, first >= 0 ? first : items.ToList().FindIndex(Reachable));
   }
 
-  public override IReadOnlyList<Hint> Hints =>
-      [CommonText.HintMove, CommonText.HintSelect, CommonText.HintClose];
+  /// The action that is highlighted, or null when none can be.
+  private MenuItem? Current =>
+      _selected < _items.Count && Reachable(_items[_selected]) ? _items[_selected] : null;
+
+  /// Whether the menu has an action that says why it cannot be chosen.
+  private bool HasReasons => _items.Any(i => !i.Enabled && i.Reason is not null);
+
+  public override IReadOnlyList<Hint> Hints => [
+    CommonText.HintMove,
+    .. Current is { Enabled: true } ? [CommonText.HintSelect] : (Hint[])[],
+    CommonText.HintClose,
+  ];
 
   public override void Draw(ScreenBuffer screen) {
     int widest = Math.Max(
         TextWidth.Of(_title) + 4,
         _items.Count == 0 ? 0 : _items.Max(i => TextWidth.Of(i.Label)));
-    Rect inner = Ui.DialogFrame(
-        screen, _title, Math.Min(Ui.DialogWidth(screen, 76), Math.Max(28, widest + 4)),
-        Math.Max(1, _items.Count) + 2);
-    for (int i = 0; i < _items.Count && i < inner.Height; i++) {
+    if (HasReasons) {
+      widest = Math.Max(
+          widest, _items.Max(i => i.Enabled ? 0 : TextWidth.Of(i.Reason ?? "")));
+    }
+
+    int width = Math.Min(Ui.DialogWidth(screen, 76), Math.Max(28, widest + 4));
+    // The reason of the highlighted action, below a rule: room for it is kept while any
+    // action has one, so that the menu does not change its size as the user moves.
+    List<string> reason = Current is { Enabled: false, Reason: { } why }
+        ? TextWidth.Wrap(why, width - 4)
+        : [];
+    int below = HasReasons ? Math.Max(1, reason.Count) + 1 : 0;
+    Rect inner = Ui.DialogFrame(screen, _title, width, Math.Max(1, _items.Count) + 2 + below);
+    int rows = inner.Height - below;
+    for (int i = 0; i < _items.Count && i < rows; i++) {
       screen.WriteFit(
           inner.X, inner.Y + i, inner.Width, _items[i].Label,
           _items[i].Enabled ? default : Theme.Muted);
-      if (i == _selected && _items[i].Enabled) {
-        screen.Restyle(inner.X - 1, inner.Y + i, inner.Width + 2, Theme.Selected);
+      if (i == _selected && Current is { } current) {
+        screen.Restyle(
+            inner.X - 1, inner.Y + i, inner.Width + 2,
+            current.Enabled ? Theme.Selected : Theme.SelectedInactive);
+      }
+    }
+
+    if (below > 0) {
+      int y = inner.Bottom - below;
+      screen.Write(inner.X, y, new string('─', inner.Width), Theme.Border);
+      for (int i = 0; i < reason.Count && y + 1 + i < inner.Bottom; i++) {
+        screen.Write(inner.X, y + 1 + i, reason[i], Theme.Warning, inner.Right);
       }
     }
   }
@@ -312,9 +349,9 @@ public sealed class Menu : Dialog {
         Close();
         return;
       case ConsoleKey.Enter or ConsoleKey.Spacebar:
-        if (_selected < _items.Count && _items[_selected].Enabled) {
+        if (Current is { Enabled: true } current) {
           Close();
-          _items[_selected].Run();
+          current.Run();
         }
 
         return;
@@ -327,11 +364,14 @@ public sealed class Menu : Dialog {
     }
   }
 
-  /// To the action before or after that can be chosen, round.
+  /// Whether ↑ and ↓ stop at the action: it can be chosen, or it says why it cannot.
+  private static bool Reachable(MenuItem item) => item.Enabled || item.Reason is not null;
+
+  /// To the action before or after that ↑ and ↓ stop at, round.
   private void Move(int step) {
     for (int i = 1; i <= _items.Count; i++) {
       int at = ((_selected + (i * step)) % _items.Count + _items.Count) % _items.Count;
-      if (_items[at].Enabled) {
+      if (Reachable(_items[at])) {
         _selected = at;
         return;
       }

@@ -1,4 +1,13 @@
+using Lip.Core.PublicApi;
+
 namespace Lip.Cli.Tui;
+
+/// One carrying out of a workspace operation by AppContext.PlanAndRun: first as a dry run,
+/// then, once the user applied its plan, for real. Session is the same both times: give it to
+/// the command, which then reads of the network only what its dry run did not. AcceptEula:
+/// the user accepted the license of the game in the interface.
+public sealed record OperationRun(
+    OperationSession Session, bool DryRun, bool AcceptEula, CancellationToken Token);
 
 /// Something a command downloads.
 public sealed class ProgressItem(string label) {

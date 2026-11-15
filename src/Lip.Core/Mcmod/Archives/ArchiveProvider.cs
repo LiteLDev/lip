@@ -21,12 +21,18 @@ namespace Lip.Core.Mcmod;
 /// on every read, never through the cache. A ref
 /// (branch, tag) is resolved with ls-refs; a rev must be a full commit id, since an abbreviated
 /// one cannot be resolved without fetching the history.
+///
+/// The providers of one session (PublicApi.OperationSession) are given the same ArchiveMemory:
+/// the version tags that one listed and the downloads that one keeps in memory
+/// (LeaveCacheUnchanged) are those of the others, and a download kept in memory is stored in the
+/// cache by the first of them that may change it, instead of being downloaded again.
 public class ArchiveProvider(
     IGitRemoteClient gitRemoteClient,
     ICacheService cacheService,
     IFileSystem fileSystem,
     IFileDownloader fileDownloader,
-    Url? githubProxy = null) : IArchiveProvider {
+    Url? githubProxy = null,
+    ArchiveMemory? memory = null) : IArchiveProvider {
   private const string _headsRefPrefix = "refs/heads/";
   private const string _tagsRefPrefix = "refs/tags/";
   private const string _versionTagRefPrefix = $"{_tagsRefPrefix}v";
@@ -37,12 +43,7 @@ public class ArchiveProvider(
   private readonly IFileDownloader _fileDownloader = fileDownloader;
   private readonly Url? _githubProxy = githubProxy;
 
-  private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<TaggedVersion>>>>
-      _tagCache = new();
-
-  // LeaveCacheUnchanged: the URLs forgotten since, and the downloads kept in memory.
-  private readonly ConcurrentDictionary<string, bool> _forgotten = new();
-  private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _memoryDownloads = new();
+  private readonly ArchiveMemory _memory = memory ?? new ArchiveMemory();
   private bool _leaveCacheUnchanged;
 
   public async Task<ArchiveHandle> Open(Ref target) {
@@ -119,20 +120,32 @@ public class ArchiveProvider(
 
   public async Task Forget(string url) {
     url = WithoutFragment(url);
+    // Once per ArchiveMemory: what was downloaded since the URL was forgotten is not forgotten
+    // again by the next provider. A cached download that was only left unused, since the
+    // cache was left unchanged then, is deleted by the first provider that may.
+    bool first = _memory.Forgotten.TryAdd(url, false);
     if (_leaveCacheUnchanged) {
-      RunTrace.Write("cache", $"Not using the cached download of {url}, if any");
-      _forgotten[url] = true;
+      RunTrace.Write("cache", first
+          ? $"Not using the cached download of {url}, if any"
+          : $"{url} was forgotten already");
+      return;
+    }
+
+    if (!first && _memory.Forgotten.TryGetValue(url, out bool deleted) && deleted) {
+      RunTrace.Write("cache", $"{url} was forgotten already");
       return;
     }
 
     IFileInfo? file = await _cacheService.TryGetFile(CacheKeys.Http(url));
     if (file is null) {
       RunTrace.Write("cache", $"{url} is not cached: nothing to forget");
-      return;
+    } else {
+      RunTrace.Write(
+          "cache", $"Forgetting the cached download of {url}: deleting {file.FullName}");
+      DeleteCached(file, url);
     }
 
-    RunTrace.Write("cache", $"Forgetting the cached download of {url}: deleting {file.FullName}");
-    DeleteCached(file, url);
+    _memory.Forgotten[url] = true;
   }
 
   public async Task<ISource> OpenAsset(IReadOnlyList<string> urls) {
@@ -187,12 +200,25 @@ public class ArchiveProvider(
   /// meanwhile.
   ///
   /// After LeaveCacheUnchanged, a damaged cached download is not deleted, and a download that is
-  /// not cached, is damaged, or was forgotten since is downloaded into memory instead.
+  /// not cached, is damaged, or was forgotten since is downloaded into memory instead. Without
+  /// it, a download that the ArchiveMemory keeps is stored in the cache and used.
   private async Task<ZipSource> DownloadZip(string url) {
     url = WithoutFragment(url);
-    IFileInfo? file = _leaveCacheUnchanged && _forgotten.ContainsKey(url)
+    if (!_leaveCacheUnchanged && await KeptDownload(url) is { } kept) {
+      return await StoreKept(url, kept);
+    }
+
+    // A download that was forgotten while the cache was left unchanged is still in the cache.
+    bool stale = _memory.Forgotten.TryGetValue(url, out bool deleted) && !deleted;
+    IFileInfo? file = _leaveCacheUnchanged && stale
         ? null
         : await _cacheService.TryGetFile(CacheKeys.Http(url));
+    if (file is not null && stale) {
+      RunTrace.Write("cache", $"Deleting the forgotten download of {url}: {file.FullName}");
+      DeleteCached(file, url);
+      file = null;
+    }
+
     if (file is not null) {
       try {
         byte[] content = _fileSystem.File.ReadAllBytes(file.FullName);
@@ -242,7 +268,85 @@ public class ArchiveProvider(
     }
 
     ValidateZip(downloadedContent, $"The download of {url} ({downloaded.FullName})");
+    Stored(url);
     return CachedZipSource(url, downloaded, downloadedContent);
+  }
+
+  /// The download of a URL that the ArchiveMemory keeps, or null when it keeps none.
+  private async Task<byte[]?> KeptDownload(string url) {
+    if (!_memory.Downloads.TryGetValue(url, out Lazy<Task<byte[]>>? kept)) {
+      return null;
+    }
+
+    try {
+      return await kept.Value;
+    }
+    catch (Exception) {
+      // The provider that started it said why it failed, or was cancelled; this one downloads
+      // the URL itself.
+      _memory.Downloads.TryRemove(new(url, kept));
+      return null;
+    }
+  }
+
+  /// Stores a download that the ArchiveMemory keeps in the cache, replacing the cached download
+  /// of the URL, which it was downloaded instead of; the ArchiveMemory then lets go of it.
+  /// The providers that open the URL at the same time store it once.
+  private async Task<ZipSource> StoreKept(string url, byte[] content) {
+    Lazy<Task<IFileInfo>> storing = _memory.Storing.GetOrAdd(
+        url, _ => new(() => WriteKept(url, content)));
+    try {
+      return CachedZipSource(url, await storing.Value, content);
+    }
+    finally {
+      _memory.Storing.TryRemove(new(url, storing));
+    }
+  }
+
+  private async Task<IFileInfo> WriteKept(string url, byte[] content) {
+    RunTrace.Write("cache", $"Storing the download of {url} that was kept in memory");
+    if (await _cacheService.TryGetFile(CacheKeys.Http(url)) is { } cached) {
+      if (HasContent(cached, content)) {
+        // Stored a moment ago, by this session or by another process.
+        Stored(url);
+        return cached;
+      }
+
+      DeleteCached(cached, url);
+    }
+
+    IFileInfo stored;
+    try {
+      stored = await _cacheService.GetOrCreateFile(CacheKeys.Http(url), destination =>
+          _fileSystem.File.WriteAllBytesAsync(destination.FullName, content));
+    }
+    catch (Exception ex) when (IsUnavailable(ex)) {
+      throw new ArchiveUnavailableException(
+          $"Could not store the download of {url} in the lip cache ({LipDirectories.Cache}).", ex);
+    }
+
+    Stored(url);
+    return stored;
+  }
+
+  /// Whether a file holds exactly the content; false when it cannot be read.
+  private bool HasContent(IFileInfo file, byte[] content) {
+    try {
+      return file.Length == content.Length
+          && _fileSystem.File.ReadAllBytes(file.FullName).AsSpan().SequenceEqual(content);
+    }
+    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+      return false;
+    }
+  }
+
+  /// The cache holds a new download of the URL: it is not kept in memory any more, and the
+  /// download that was forgotten is gone.
+  private void Stored(string url) {
+    _memory.Downloads.TryRemove(url, out _);
+    if (_memory.Forgotten.ContainsKey(url)) {
+      _memory.Forgotten[url] = true;
+    }
   }
 
   private static string WithoutFragment(string url) => url.Split('#', 2)[0];
@@ -317,7 +421,7 @@ public class ArchiveProvider(
   }
 
   private async Task<IReadOnlyList<TaggedVersion>> GetTaggedVersions(string spec) {
-    Lazy<Task<IReadOnlyList<TaggedVersion>>> lazy = _tagCache.GetOrAdd(
+    Lazy<Task<IReadOnlyList<TaggedVersion>>> lazy = _memory.Tags.GetOrAdd(
         spec, _ => new(() => ListTaggedVersions(spec)));
 
     try {
@@ -325,7 +429,7 @@ public class ArchiveProvider(
     }
     catch {
       // Do not keep failures (e.g. network errors) cached so that later calls can retry.
-      _tagCache.TryRemove(new(spec, lazy));
+      _memory.Tags.TryRemove(new(spec, lazy));
       throw;
     }
   }
@@ -397,9 +501,9 @@ public class ArchiveProvider(
   }
 
   /// Downloads a URL into memory, as Download downloads it into the cache, once per
-  /// ArchiveProvider (LeaveCacheUnchanged).
+  /// ArchiveMemory (LeaveCacheUnchanged).
   private async Task<byte[]> DownloadIntoMemory(string url) {
-    Lazy<Task<byte[]>> lazy = _memoryDownloads.GetOrAdd(url, _ => new(() =>
+    Lazy<Task<byte[]>> lazy = _memory.Downloads.GetOrAdd(url, _ => new(() =>
         FromFirstCandidate(url, async downloadUrl => {
           using MemoryStream stream = new();
           await _fileDownloader.Download(downloadUrl, stream);
@@ -413,7 +517,7 @@ public class ArchiveProvider(
     }
     catch {
       // Do not keep failures (e.g. network errors) so that later calls can retry.
-      _memoryDownloads.TryRemove(new(url, lazy));
+      _memory.Downloads.TryRemove(new(url, lazy));
       throw;
     }
   }
@@ -474,6 +578,26 @@ public class ArchiveProvider(
   private static bool IsUnavailable(Exception ex) =>
       ex is not (OperationCanceledException or ArchiveUnavailableException
           or ArgumentNullException or InvalidCastException or NullReferenceException);
+}
 
-  private record TaggedVersion(SpecVersion Version, string Commit);
+/// A version tag of a remote repository, and the commit it points to.
+internal sealed record TaggedVersion(SpecVersion Version, string Commit);
+
+/// What the archive providers of one session (PublicApi.OperationSession) share, in memory: the
+/// version tags listed, the downloads kept in memory while the cache was left unchanged, and
+/// the URLs forgotten.
+public sealed class ArchiveMemory {
+  internal ConcurrentDictionary<string, Lazy<Task<IReadOnlyList<TaggedVersion>>>> Tags { get; } =
+      new();
+
+  /// The URLs forgotten, each with whether its cached download was deleted since: one that was
+  /// forgotten while the cache was left unchanged is still there, and is not to be used.
+  internal ConcurrentDictionary<string, bool> Forgotten { get; } = new();
+
+  internal ConcurrentDictionary<string, Lazy<Task<byte[]>>> Downloads { get; } = new();
+
+  /// The downloads that are being stored in the cache now.
+  internal ConcurrentDictionary<string, Lazy<Task<System.IO.Abstractions.IFileInfo>>> Storing {
+    get;
+  } = new();
 }

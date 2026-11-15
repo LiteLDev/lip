@@ -449,6 +449,33 @@ public sealed class ShellTests {
     await tui.WaitUntilGone("Rename");
     Assert.Equal(["name new name"], log);
 
+    // An action that cannot be chosen and says why: ↑ and ↓ stop at it, the menu shows why,
+    // and Enter does nothing. One that does not say why is skipped.
+    await tui.Invoke(() => tui.Context.ShowMenu(
+        "Actions",
+        new MenuItem("Details", () => log.Add("details")),
+        new MenuItem("Update", () => log.Add("update"), Enabled: false, "Stop the server first."),
+        new MenuItem("Pin", () => log.Add("pin"), Enabled: false),
+        new MenuItem("Uninstall", () => log.Add("uninstall"), Enabled: false,
+            "Stop the server first.")));
+    await tui.WaitFor("Uninstall");
+    Assert.DoesNotContain("Stop the server first.", tui.Screen);
+    Assert.Contains("↑↓ Move  Enter Select  Esc Close", tui.Screen);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("Stop the server first.");
+    Assert.Contains("↑↓ Move  Esc Close", tui.Screen);
+    tui.Snapshot("shell-menu-reason");
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitUntilGone("Stop the server first.");
+    Assert.Contains("Uninstall", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("Uninstall");
+    Assert.Equal(["name new name", "details"], log);
+    log.Remove("details");
+
     // A choice, with the detail of the selected option.
     await tui.Invoke(() => tui.Context.Show(new ChoiceDialog(
         "Build",
@@ -520,16 +547,18 @@ public sealed class ShellTests {
     await tui.WaitFor(_ => answer == "pkg");
   }
 
-  /// A workspace operation of the tests: it records its calls, and says what lip says.
-  private static Func<bool, bool, CancellationToken, Task> Operation(
-      TuiHarness tui, List<string> calls, bool setup) =>
-      async (dryRun, acceptEula, _) => {
+  /// A workspace operation of the tests: it records its calls and their sessions, and says
+  /// what lip says.
+  private static Func<OperationRun, Task<OperationResult>> Operation(
+      TuiHarness tui, List<string> calls, bool setup, List<OperationSession>? sessions = null) =>
+      async run => {
         lock (calls) {
-          calls.Add($"dryRun={dryRun} acceptEula={acceptEula}");
+          calls.Add($"dryRun={run.DryRun} acceptEula={run.AcceptEula}");
+          sessions?.Add(run.Session);
         }
 
         IUserInteraction interaction = tui.InteractionOf(tui.Context.Client);
-        if (dryRun) {
+        if (run.DryRun) {
           await interaction.PrintInfo("Resolved 1 package");
           await interaction.PrintInfo("Dry run: would install github.com/acme/Alpha 1.2.0");
           if (setup) {
@@ -538,6 +567,19 @@ public sealed class ShellTests {
         } else {
           await interaction.PrintSuccess("Installed github.com/acme/Alpha 1.2.0");
         }
+
+        return OperationResult.Changed;
+      };
+
+  /// A workspace operation of the tests that says nothing, and returns the result.
+  private static Func<OperationRun, Task<OperationResult>> Operation(
+      List<string> calls, OperationResult result) =>
+      run => {
+        lock (calls) {
+          calls.Add($"dryRun={run.DryRun}");
+        }
+
+        return Task.FromResult(result);
       };
 
   [Fact]
@@ -545,10 +587,11 @@ public sealed class ShellTests {
     using TuiHarness tui = Start();
     await tui.WaitFor("body of Alpha");
     List<string> calls = [];
+    List<OperationSession> sessions = [];
     bool done = false;
 
     await tui.Invoke(() => tui.Context.PlanAndRun(
-        "Install Alpha", Operation(tui, calls, setup: true), () => done = true));
+        "Install Alpha", Operation(tui, calls, setup: true, sessions), () => done = true));
 
     // The plan of the dry run, with [Apply] chosen.
     await tui.WaitFor("[ Apply ] [ Cancel ]");
@@ -571,7 +614,40 @@ public sealed class ShellTests {
     Assert.True(done);
     Assert.Equal(
         ["dryRun=True acceptEula=False", "dryRun=False acceptEula=True"], calls);
+    // The dry run and the operation after it are of one session.
+    Assert.Equal(2, sessions.Count);
+    Assert.Same(sessions[0], sessions[1]);
     Assert.Contains("workspace", _pages[PageId.Server].Events);
+  }
+
+  [Fact]
+  public async Task PlanAndRun_WithASession_CarriesBothOutInIt_AndWithoutOne_InANewOneEachTime() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    List<string> calls = [];
+    List<OperationSession> sessions = [];
+    OperationSession held = new();
+
+    // A flow that read something before gives its session.
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: false, sessions), session: held));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("✓ Done.");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("✓ Done.");
+
+    // Another operation, without one.
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: false, sessions)));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("[ Apply ]");
+
+    Assert.Equal(3, sessions.Count);
+    Assert.Same(held, sessions[0]);
+    Assert.Same(held, sessions[1]);
+    Assert.NotSame(held, sessions[2]);
   }
 
   [Fact]
@@ -603,24 +679,181 @@ public sealed class ShellTests {
   }
 
   [Fact]
-  public async Task PlanAndRun_WithoutASetup_AsksNoLicense_AndAPlanWithoutChangesSaysSo() {
+  public async Task PlanAndRun_WithoutASetup_AsksNoLicense() {
     using TuiHarness tui = Start();
     await tui.WaitFor("body of Alpha");
     List<string> calls = [];
 
     await tui.Invoke(() => tui.Context.PlanAndRun(
-        "Update", (dryRun, _) => {
-          lock (calls) {
-            calls.Add($"dryRun={dryRun}");
-          }
-
-          return Task.CompletedTask;
-        }));
-    await tui.WaitFor("Nothing would change.");
+        "Update", Operation(calls, OperationResult.Changed)));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    Assert.DoesNotContain("Nothing would change.", tui.Screen);
     tui.Press(ConsoleKey.Enter);
 
     await tui.WaitFor("✓ Done.");
     Assert.Equal(["dryRun=True", "dryRun=False"], calls);
+  }
+
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHant)]
+  public async Task PlanAndRun_APlanThatWouldChangeNothing_CannotBeApplied(Language language) {
+    using TuiHarness tui = Start(new TuiHarnessOptions { Language = language });
+    await tui.WaitFor("body of Alpha");
+    List<string> calls = [];
+    bool done = false;
+
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Update", async run => {
+          lock (calls) {
+            calls.Add($"dryRun={run.DryRun}");
+          }
+
+          // A line that a plan with changes has too does not make it one.
+          await tui.InteractionOf(tui.Context.Client).PrintInfo("Resolving Alpha...");
+          return OperationResult.Unchanged;
+        },
+        () => done = true));
+
+    // The plan says so, and offers nothing but to close it.
+    await tui.WaitFor(CommonText.NothingWouldChange);
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+    Assert.DoesNotContain($"[ {CommonText.Cancel} ]", tui.Screen);
+    Assert.Contains(
+        $"Enter {CommonText.HintSelect.Text}  Esc {CommonText.HintClose.Text}", tui.Screen);
+    tui.Snapshot("shell-plan-unchanged");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(CommonText.NothingWouldChange);
+
+    // Nothing was carried out.
+    await tui.Settle();
+    Assert.Equal(["dryRun=True"], calls);
+    Assert.False(done);
+    Assert.True(await tui.Invoke(() => tui.Context.Idle));
+    Assert.DoesNotContain("workspace", _pages[PageId.Home].Events);
+  }
+
+  [Fact]
+  public async Task PlanAndRun_APlanThatChangesOnlyTheStateFile_SaysSo_AndCanBeApplied() {
+    using TuiHarness tui = Start(new TuiHarnessOptions { Language = Language.ZhHans });
+    await tui.WaitFor("body of Alpha");
+    List<string> calls = [];
+
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Update", Operation(calls, new OperationResult(Changes: true, OnlyStateFile: true))));
+    await tui.WaitFor(CommonText.OnlyRecordChanges);
+    Assert.Contains($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]", tui.Screen);
+    Assert.DoesNotContain(CommonText.NothingWouldChange, tui.Screen);
+    tui.Snapshot("shell-plan-record");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("✓ " + CommonText.Done);
+    Assert.Equal(["dryRun=True", "dryRun=False"], calls);
+  }
+
+  [Fact]
+  public async Task PlanAndRun_AWarningOfThePlan_IsShownWithIt() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Set up", async run => {
+          await tui.InteractionOf(tui.Context.Client).PrintWarning(
+              "Dry run: these packages have no version for the game 1.21.0, so the setup would"
+              + " uninstall them, after asking you to confirm it: Alpha 1.0.0");
+          return OperationResult.Changed;
+        }));
+
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    Assert.Contains("⚠ Dry run: these packages have no version", tui.Screen);
+    Assert.DoesNotContain("Nothing would change.", tui.Screen);
+    tui.Snapshot("shell-plan-warning");
+  }
+
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  public async Task PlanAndRun_WhileTheServerRuns_CarriesNothingOut_AndSaysToStopIt(
+      Language language) {
+    using TuiHarness tui = Start(new TuiHarnessOptions { Language = language });
+    await tui.WaitFor("body of Alpha");
+    List<string> calls = [];
+    Assert.False(await tui.Invoke(() => tui.Context.ServerRunning));
+
+    // Another lip runs the server of the selected workspace.
+    await tui.SetServerRunning(true);
+    Assert.True(await tui.Invoke(() => tui.Context.ServerRunning));
+    await tui.WaitFor("● " + CommonText.ServerRunning);
+
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: false)));
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Assert.Contains("─ Install Alpha ─", tui.Screen);
+    Assert.Contains($"[ {CommonText.Close} ]", tui.Screen);
+    Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+    tui.Snapshot("shell-server-runs");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+
+    // The helper of the pages says the same.
+    Assert.True(await tui.Invoke(() => tui.Context.RefuseWhileServerRuns("Save")));
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Assert.Contains("─ Save ─", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    Assert.Empty(calls);
+
+    // Once the server has stopped, the operation is carried out.
+    await tui.SetServerRunning(false);
+    await tui.WaitUntilGone("● " + CommonText.ServerRunning);
+    Assert.False(await tui.Invoke(() => tui.Context.RefuseWhileServerRuns("Save")));
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: false)));
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+    Assert.Equal(["dryRun=True acceptEula=False"], calls);
+  }
+
+  [Fact]
+  public async Task PlanAndRun_AServerStartedSinceTheInterfaceLooked_IsSeenBeforeEachRun() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    List<string> calls = [];
+
+    // The plan is shown; then the server starts, and the plan is applied at once.
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: false)));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    tui.SetServerLockHeld(true, tui.Root);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("Stop the server first.");
+    Assert.DoesNotContain("Failed", tui.Screen);
+    Assert.Equal(["dryRun=True acceptEula=False"], calls);
+    Assert.True(await tui.Invoke(() => tui.Context.ServerRunning));
+    Assert.DoesNotContain("workspace", _pages[PageId.Home].Events);
+  }
+
+  [Fact]
+  public async Task ServerRunning_IsOfEachWorkspace_AndOfTheServersOfThisProcessToo() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    string other = Path.Join(tui.Root, "other");
+    tui.Fs.AddDirectory(other);
+    tui.Workspaces.Add(other);
+
+    // Another lip runs the server of a workspace of the list that is not selected.
+    await tui.SetServerRunning(true, other);
+    Assert.True(await tui.Invoke(() => tui.Context.IsServerRunning(other)));
+    Assert.False(await tui.Invoke(() => tui.Context.IsServerRunning(tui.Root)));
+    Assert.False(await tui.Invoke(() => tui.Context.ServerRunning));
+    Assert.DoesNotContain("● Running", tui.Screen);
+
+    // It is the selected one.
+    await tui.Invoke(() => tui.Context.SwitchWorkspace(other));
+    await tui.WaitUntil(() => tui.Context.ServerRunning, "a running server");
+    await tui.WaitFor("● Running");
+    Assert.Null(await tui.Invoke(() => tui.Context.Server));
   }
 
   [Fact]
@@ -927,13 +1160,60 @@ public sealed class ShellTests {
     await tui.GoTo(PageId.Settings);
     Check("frame-page");
 
-    await tui.Invoke(() => tui.Context.PlanAndRun("lip install github.com/acme/Alpha", async (_, _) =>
-        await tui.InteractionOf(tui.Context.Client).PrintInfo(
-            "Dry run: would install github.com/acme/Alpha 1.2.0 (12 files)")));
+    await tui.Invoke(() => tui.Context.PlanAndRun("lip install github.com/acme/Alpha", async _ => {
+      await tui.InteractionOf(tui.Context.Client).PrintInfo(
+          "Dry run: would install github.com/acme/Alpha 1.2.0 (12 files)");
+      return OperationResult.Changed;
+    }));
     await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
     Check("frame-plan");
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone($"[ {CommonText.Apply} ]");
+
+    // A plan that would change nothing, and one of the state file alone.
+    await tui.Invoke(() => tui.Context.PlanAndRun("lip update", async _ => {
+      await tui.InteractionOf(tui.Context.Client).PrintInfo("Resolving github.com/acme/Alpha...");
+      return OperationResult.Unchanged;
+    }));
+    await tui.WaitFor(CommonText.NothingWouldChange);
+    Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+    Check("frame-plan-unchanged");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(CommonText.NothingWouldChange);
+
+    await tui.Invoke(() => tui.Context.PlanAndRun("lip update", async _ => {
+      await tui.InteractionOf(tui.Context.Client).PrintWarning(
+          "Dry run: these packages have no version for the game 1.21.0, so the setup would"
+          + " uninstall them, after asking you to confirm it: Alpha 1.0.0");
+      return new OperationResult(Changes: true, OnlyStateFile: true);
+    }));
+    await tui.WaitFor(CommonText.OnlyRecordChanges);
+    Check("frame-plan-record");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(CommonText.OnlyRecordChanges);
+
+    // A menu whose actions say why they cannot be chosen.
+    await tui.Invoke(() => tui.Context.ShowMenu(
+        "github.com/acme/Alpha",
+        new MenuItem("README", () => { }),
+        new MenuItem("Update", () => { }, Enabled: false, CommonText.StopServerFirst),
+        new MenuItem("Uninstall", () => { }, Enabled: false, CommonText.StopServerFirst)));
+    await tui.WaitFor("Uninstall");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Check("frame-menu-reason");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("Uninstall");
+
+    // The server of the workspace runs: nothing is carried out.
+    await tui.SetServerRunning(true);
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "lip install github.com/acme/Alpha", _ => Task.FromResult(OperationResult.Changed)));
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Check("frame-server-runs");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    await tui.SetServerRunning(false);
 
     await tui.Invoke(() => tui.Context.Show(new PromptDialog(
         "GitHub", [new PromptField("URL", "", "https://example.com/")], _ => { })));

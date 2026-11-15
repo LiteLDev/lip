@@ -22,8 +22,8 @@ public sealed class LipClient {
   private readonly IUserInteraction _userInteraction;
   private readonly ICacheService _cacheService;
   private readonly ConfigService _configService;
-  // The service of a command, given whether it is a dry run.
-  private readonly Func<bool, Task<McmodService>> _createMcmodService;
+  // The service of a command, given whether it is a dry run, and its session, if any.
+  private readonly Func<bool, OperationSession?, Task<McmodService>> _createMcmodService;
   // The absolute path of the workspace root.
   private readonly Func<string> _workspaceRoot;
 
@@ -38,7 +38,7 @@ public sealed class LipClient {
           userInteraction,
           cacheService,
           configService,
-          _ => Task.FromResult(mcmodService),
+          (_, _) => Task.FromResult(mcmodService),
           fileSystem.Directory.GetCurrentDirectory) {
   }
 
@@ -47,7 +47,7 @@ public sealed class LipClient {
       IUserInteraction userInteraction,
       ICacheService cacheService,
       ConfigService configService,
-      Func<bool, Task<McmodService>> createMcmodService,
+      Func<bool, OperationSession?, Task<McmodService>> createMcmodService,
       Func<string> workspaceRoot) {
     _fileSystem = fileSystem;
     _userInteraction = userInteraction;
@@ -95,14 +95,16 @@ public sealed class LipClient {
         userInteraction,
         cacheService,
         configService,
-        dryRun => CreateMcmodService(
+        (dryRun, session) => CreateMcmodService(
             fileSystem, userInteraction, cacheService, configService, dryRun, hookOutput,
-            workspaceRoot),
+            workspaceRoot, session),
         workspaceRoot);
   }
 
   /// The service of the commands that may reach GitHub, which reads github_proxy; for a dry run,
-  /// without writing the configuration.
+  /// without writing the configuration. With a session, what the service reads of the network
+  /// is what the other services of the session read of it; the configuration, the workspace
+  /// and the cache it reads itself.
   private static async Task<McmodService> CreateMcmodService(
       IFileSystem fileSystem,
       IUserInteraction userInteraction,
@@ -110,7 +112,8 @@ public sealed class LipClient {
       ConfigService configService,
       bool dryRun,
       Func<Stream>? hookOutput,
-      Func<string> workspaceRoot) {
+      Func<string> workspaceRoot,
+      OperationSession? session) {
     FileDownloader fileDownloader = new(userInteraction);
     // An empty github_proxy, like an absent one, means GitHub is reached directly
     // (protocol/config.toml.md, "User configuration").
@@ -120,11 +123,13 @@ public sealed class LipClient {
     RunTrace.Write("config", githubProxy is null
         ? $"github_proxy {described}: GitHub is reached directly"
         : $"GitHub is reached through github_proxy {described}");
-    GitRemoteClient gitRemoteClient = new(githubProxy);
+    OperationSession.Network network = session?.NetworkFor(githubProxyValue, githubProxy)
+        ?? new OperationSession.Network(githubProxyValue, githubProxy);
 
     CommandRunner commandRunner = new(hookOutput);
+    // One provider per command: whether it leaves the cache unchanged is of the command.
     ArchiveProvider archiveProvider = new(
-        gitRemoteClient, cacheService, fileSystem, fileDownloader, githubProxy);
+        network.Git, cacheService, fileSystem, fileDownloader, githubProxy, network.Archives);
 
     return new(
         fileSystem,
@@ -134,13 +139,15 @@ public sealed class LipClient {
         new ArchiveReader(),
         new McmodInstaller(fileSystem, commandRunner, userInteraction),
         workspaceRoot,
-        systemPreparer: SystemDependencies.Create(fileSystem, fileDownloader, userInteraction));
+        systemPreparer: SystemDependencies.Create(fileSystem, fileDownloader, userInteraction),
+        resolverCache: network.Resolver);
   }
 
   /// The service of a command; a dry run (protocol/lip.md, "Dry run") reads the configuration
   /// without writing it.
-  private Task<McmodService> GetMcmodService(bool dryRun = false) =>
-      _createMcmodService(dryRun);
+  private Task<McmodService> GetMcmodService(
+      bool dryRun = false, OperationSession? session = null) =>
+      _createMcmodService(dryRun, session);
 
   public async Task CacheClean() {
     await _cacheService.Clean();
@@ -225,39 +232,48 @@ public sealed class LipClient {
 
   /// lip install (protocol/lip-install.md). acceptEula: --accept-eula, for an install carried out
   /// as a setup; confirmed: the user confirmed the plan that its dry run showed (the interface).
-  public async Task Install(
+  /// session: the session of the command (OperationSession), if it has one. Returns what the
+  /// install changed, or, as a dry run, would change.
+  public async Task<OperationResult> Install(
       IEnumerable<string> packages,
       bool dryRun,
       CancellationToken cancellationToken = default,
       bool acceptEula = false,
-      bool confirmed = false) {
-    await (await GetMcmodService(dryRun)).Install(
+      bool confirmed = false,
+      OperationSession? session = null) {
+    return await (await GetMcmodService(dryRun, session)).Install(
         [.. packages],
         new OperationOptions(dryRun, cancellationToken, acceptEula, confirmed));
   }
 
   /// lip setup (protocol/lip-setup.md). acceptEula: --accept-eula; confirmed: the user confirmed
-  /// the plan that its dry run showed (the interface).
-  public async Task Setup(
+  /// the plan that its dry run showed (the interface). session: the session of the command, if
+  /// it has one. Returns what the setup changed, or, as a dry run, would change.
+  public async Task<OperationResult> Setup(
       SetupRequest request,
       bool dryRun,
       CancellationToken cancellationToken = default,
       bool acceptEula = false,
-      bool confirmed = false) {
-    await (await GetMcmodService(dryRun)).Setup(
+      bool confirmed = false,
+      OperationSession? session = null) {
+    return await (await GetMcmodService(dryRun, session)).Setup(
         request, new OperationOptions(dryRun, cancellationToken, acceptEula, confirmed));
   }
 
   /// The versions of the game that the interface offers for a new server (protocol/lip-tui.md,
-  /// "New server").
-  public async Task<IReadOnlyList<GameVersion>> GameVersions() =>
-      await (await GetMcmodService(dryRun: true)).GameVersions();
+  /// "New server"). With a session, the builds list is read once in it.
+  public async Task<IReadOnlyList<GameVersion>> GameVersions(OperationSession? session = null) =>
+      await (await GetMcmodService(dryRun: true, session)).GameVersions();
 
   /// The versions of LeviLamina that fit a game version, from highest to lowest
-  /// (protocol/lip-tui.md, "New server").
+  /// (protocol/lip-tui.md, "New server"). With a session, what is read of LeviLamina is read
+  /// once in it.
   public async Task<IReadOnlyList<Semver.SemVersion>> LoaderVersions(
-      Semver.SemVersion game, CancellationToken cancellationToken = default) =>
-      await (await GetMcmodService(dryRun: true)).LoaderVersions(game, cancellationToken);
+      Semver.SemVersion game,
+      CancellationToken cancellationToken = default,
+      OperationSession? session = null) =>
+      await (await GetMcmodService(dryRun: true, session)).LoaderVersions(
+          game, cancellationToken);
 
   /// The value of github_proxy: a URI, "" (GitHub is reached directly), or null when it is not
   /// configured (protocol/config.toml.md, "User configuration"), read without writing a file.
@@ -401,25 +417,31 @@ public sealed class LipClient {
     await (await GetMcmodService()).PrepareSystem(cancellationToken);
   }
 
-  public async Task Uninstall(
+  /// lip uninstall (protocol/lip-uninstall.md). session: the session of the command, if it
+  /// has one. Returns what the uninstall changed, or, as a dry run, would change.
+  public async Task<OperationResult> Uninstall(
       IEnumerable<string> packages,
       bool dryRun,
-      CancellationToken cancellationToken = default) {
-    await (await GetMcmodService(dryRun)).Uninstall(
+      CancellationToken cancellationToken = default,
+      OperationSession? session = null) {
+    return await (await GetMcmodService(dryRun, session)).Uninstall(
         [.. packages],
         new OperationOptions(dryRun, cancellationToken));
   }
 
   /// Updates the given packages to the requested (or newest) version; without packages, every
-  /// explicitly installed package.
-  public async Task Update(
+  /// explicitly installed package. session: the session of the command, if it has one. Returns
+  /// what the update changed, or, as a dry run, would change.
+  public async Task<OperationResult> Update(
       IEnumerable<string> packages,
       bool dryRun,
-      CancellationToken cancellationToken = default) {
-    await (await GetMcmodService(dryRun)).Update(
+      CancellationToken cancellationToken = default,
+      OperationSession? session = null) {
+    return await (await GetMcmodService(dryRun, session)).Update(
         [.. packages],
         new OperationOptions(dryRun, cancellationToken));
   }
+
 
   /// The result of lip pkg view as JSON (protocol/lip-pkg.md, "lip pkg view"): the package file
   /// of the first archive the package argument names, and the versions of its remote repository.

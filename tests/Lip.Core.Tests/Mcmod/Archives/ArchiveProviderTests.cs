@@ -67,8 +67,8 @@ public class ArchiveProviderTests {
         });
   }
 
-  private ArchiveProvider CreateProvider(Url? githubProxy = null) =>
-      new(_git.Object, _cache, _fileSystem, _downloader.Object, githubProxy);
+  private ArchiveProvider CreateProvider(Url? githubProxy = null, ArchiveMemory? memory = null) =>
+      new(_git.Object, _cache, _fileSystem, _downloader.Object, githubProxy, memory);
 
   private string AddBlob(string content) => AddBlob(Encoding.UTF8.GetBytes(content));
 
@@ -540,6 +540,142 @@ public class ArchiveProviderTests {
     Assert.Equal("new", await Read(archive, "lip.toml"));
     Assert.Equal(cached, _fileSystem.File.ReadAllBytes(entry));
     Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
+  }
+
+  // The providers of one session share an ArchiveMemory (PublicApi.OperationSession).
+
+  [Fact]
+  public async Task SharedMemory_DownloadKeptByADryRun_IsStoredAndUsedWithoutDownloadingAgain() {
+    // Arrange: the provider of a dry run downloads the URL into memory.
+    byte[] content = Zip(("lip.toml", "{}"));
+    _downloads[_url] = content;
+    ArchiveMemory memory = new();
+    ArchiveProvider dryRun = CreateProvider(memory: memory);
+    dryRun.LeaveCacheUnchanged();
+    await dryRun.Open(Ref.Parse(_url, allowFile: false));
+    Assert.False(_fileSystem.Directory.Exists(LipDirectories.Cache));
+
+    // Act: the provider of the command after it, then one of a later process.
+    ArchiveHandle archive = await CreateProvider(memory: memory)
+        .Open(Ref.Parse(_url, allowFile: false));
+    ArchiveHandle later = await CreateProvider().Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("{}", await Read(archive, "lip.toml"));
+    Assert.Equal("{}", await Read(later, "lip.toml"));
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
+    Assert.Equal(
+        content,
+        _fileSystem.File.ReadAllBytes(Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
+    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task SharedMemory_Forget_DownloadsOnceAndReplacesTheCachedDownload() {
+    // Arrange: lip update as a dry run forgets the URL, and downloads it into memory.
+    string entry = Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url));
+    _fileSystem.AddFile(entry, new MockFileData(Zip(("lip.toml", "old"))));
+    byte[] content = Zip(("lip.toml", "new"));
+    _downloads[_url] = content;
+    ArchiveMemory memory = new();
+    ArchiveProvider dryRun = CreateProvider(memory: memory);
+    dryRun.LeaveCacheUnchanged();
+    await dryRun.Forget(_url);
+    await dryRun.Open(Ref.Parse(_url, allowFile: false));
+
+    // Act: lip update after it forgets the URL too.
+    ArchiveProvider provider = CreateProvider(memory: memory);
+    await provider.Forget(_url);
+    ArchiveHandle archive = await provider.Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("new", await Read(archive, "lip.toml"));
+    Assert.Equal(content, _fileSystem.File.ReadAllBytes(entry));
+    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task SharedMemory_ForgottenByADryRunThatDidNotDownload_IsDownloadedAgain() {
+    // Arrange
+    string entry = Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url));
+    _fileSystem.AddFile(entry, new MockFileData(Zip(("lip.toml", "old"))));
+    byte[] content = Zip(("lip.toml", "new"));
+    _downloads[_url] = content;
+    ArchiveMemory memory = new();
+    ArchiveProvider dryRun = CreateProvider(memory: memory);
+    dryRun.LeaveCacheUnchanged();
+    await dryRun.Forget(_url);
+
+    // Act: the command after it forgets the URL for good, whether or not it opens it.
+    ArchiveProvider provider = CreateProvider(memory: memory);
+    await provider.Forget(_url);
+    Assert.False(_fileSystem.File.Exists(entry));
+    ArchiveHandle archive = await provider.Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("new", await Read(archive, "lip.toml"));
+    Assert.Equal(content, _fileSystem.File.ReadAllBytes(entry));
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task SharedMemory_DownloadThatFailedInADryRun_IsDownloadedByTheCommandAfterIt() {
+    // Arrange: the URL cannot be downloaded yet.
+    ArchiveMemory memory = new();
+    ArchiveProvider dryRun = CreateProvider(memory: memory);
+    dryRun.LeaveCacheUnchanged();
+    await Assert.ThrowsAsync<ArchiveUnavailableException>(
+        () => dryRun.Open(Ref.Parse(_url, allowFile: false)));
+    _downloads[_url] = Zip(("lip.toml", "{}"));
+
+    // Act
+    ArchiveHandle archive = await CreateProvider(memory: memory)
+        .Open(Ref.Parse(_url, allowFile: false));
+
+    // Assert
+    Assert.Equal("{}", await Read(archive, "lip.toml"));
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
+  }
+
+  [Fact]
+  public async Task SharedMemory_KeptDownloadOpenedTwiceAtOnce_IsStoredOnce() {
+    // Arrange
+    _downloads[_url] = Zip(("lip.toml", "{}"));
+    ArchiveMemory memory = new();
+    ArchiveProvider dryRun = CreateProvider(memory: memory);
+    dryRun.LeaveCacheUnchanged();
+    await dryRun.Open(Ref.Parse(_url, allowFile: false));
+    ArchiveProvider provider = CreateProvider(memory: memory);
+
+    // Act
+    ArchiveHandle[] archives = await Task.WhenAll(
+        provider.Open(Ref.Parse(_url, allowFile: false)),
+        provider.Open(Ref.Parse(_url, allowFile: false)));
+
+    // Assert
+    Assert.All(archives, archive => Assert.NotNull(archive.Source));
+    Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
+    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
+    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task SharedMemory_VersionTags_AreListedOnce() {
+    // Arrange
+    SetupTags(new GitRemoteRef("refs/tags/v1.0.0", "a1", null));
+    ArchiveMemory memory = new();
+
+    // Act
+    await CreateProvider(memory: memory).ListVersions(_spec);
+    IReadOnlyList<SpecVersion> versions =
+        await CreateProvider(memory: memory).ListVersions(_spec);
+
+    // Assert
+    Assert.Equal(["v1.0.0"], versions.Select(v => v.Tag));
+    _git.Verify(
+        c => c.ListRefs(It.IsAny<Url>(), It.IsAny<IEnumerable<string>>()), Times.Once);
   }
 
   [Fact]

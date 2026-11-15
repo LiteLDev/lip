@@ -1,6 +1,7 @@
 using Flurl;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
+using Lip.Core.Mcmod.Resolution;
 using Moq;
 using Semver;
 
@@ -93,6 +94,151 @@ public class McmodServiceSetupTests {
               It.Is<Url>(u => u.ToString().Contains(url)),
               It.IsAny<System.IO.Abstractions.IFileInfo>()),
           Times.Never);
+
+  #region Sessions
+
+  /// The next command of a session: a new service that shares what the session shares.
+  private void NextOfSession(ArchiveMemory memory, ResolverCache cache) => _ws.Restart(memory, cache);
+
+  private int ServerDownloadsIntoMemory() => _ws.Downloader.Invocations.Count(
+      i => i.Method.Name == nameof(IFileDownloader.Download)
+          && i.Arguments[0] is Url url && url.ToString().Contains("bedrockdedicatedserver"));
+
+  [Fact]
+  public async Task Session_SetupAfterItsDryRun_ReadsNothingOfTheNetworkAgain() {
+    // Arrange: the versions are read, then the setup is planned, in one session.
+    ArchiveMemory memory = new();
+    ResolverCache cache = new();
+    NextOfSession(memory, cache);
+    await _ws.Service.GameVersions();
+    NextOfSession(memory, cache);
+    IReadOnlyList<SemVersion> loaders = await _ws.Service.LoaderVersions(
+        _new, TestContext.Current.CancellationToken);
+    Assert.Equal(["2.0.0"], loaders.Select(v => v.ToString()));
+    NextOfSession(memory, cache);
+    SortedDictionary<string, string> before = _ws.Snapshot();
+    OperationResult plan = await _ws.Service.Setup(
+        new SetupRequest(_new, GameBuild.Windows, Loader: true, SemVersion.Parse("2.0.0")),
+        new OperationOptions(DryRun: true));
+    Assert.True(plan.Changes);
+    Assert.Equal(before, _ws.Snapshot());
+    Assert.Equal(1, ServerDownloadsIntoMemory());
+    int refs = _ws.Git.ListedRefs.Count;
+    int trees = _ws.Git.ListedTrees.Count;
+
+    // Act: the setup, which takes the lock and reads the state file itself.
+    NextOfSession(memory, cache);
+    OperationResult result = await _ws.Service.Setup(
+        new SetupRequest(_new, GameBuild.Windows, Loader: true, SemVersion.Parse("2.0.0")),
+        _accept);
+
+    // Assert: nothing is listed, resolved or downloaded again.
+    Assert.True(result.Changes);
+    Assert.Equal(1, _ws.ServerBuildsDownloads);
+    Assert.Equal(refs, _ws.Git.ListedRefs.Count);
+    Assert.Equal(trees, _ws.Git.ListedTrees.Count);
+    Assert.Equal(1, ServerDownloadsIntoMemory());
+    VerifyServerNotDownloaded();
+    Assert.True(_ws.Exists("bedrock_server.exe"));
+    Assert.True(_ws.Exists("bedrock_server_mod.exe"));
+    // The download that the dry run kept in memory is in the cache now.
+    Assert.Single(
+        _ws.Fs.AllFiles, f => f.StartsWith(LipDirectories.Cache, StringComparison.Ordinal));
+  }
+
+  [Fact]
+  public async Task Session_Without_EveryCommandReadsTheNetworkItself() {
+    // Arrange
+    await _ws.Service.Setup(
+        new SetupRequest(_new, GameBuild.Windows, Loader: true),
+        new OperationOptions(DryRun: true));
+    int refs = _ws.Git.ListedRefs.Count;
+
+    // Act
+    _ws.Restart();
+    await _ws.Service.Setup(new SetupRequest(_new, GameBuild.Windows, Loader: true), _accept);
+
+    // Assert
+    Assert.Equal(2, _ws.ServerBuildsDownloads);
+    Assert.Equal(2 * refs, _ws.Git.ListedRefs.Count);
+    Assert.Equal(1, ServerDownloadsIntoMemory());
+    _ws.Downloader.Verify(
+        d => d.DownloadFile(
+            It.Is<Url>(u => u.ToString().Contains("bedrockdedicatedserver")),
+            It.IsAny<System.IO.Abstractions.IFileInfo>()),
+        Times.Once);
+  }
+
+  [Fact]
+  public async Task Session_TheStateFileIsReadAgainByTheCommandAfterTheDryRun() {
+    // Arrange: a mod is planned for the game 1.21.0, which is then replaced by 1.20.0.
+    await _ws.Service.Setup(new SetupRequest(_new, GameBuild.Windows, Loader: true), _accept);
+    ArchiveMemory memory = new();
+    ResolverCache cache = new();
+    NextOfSession(memory, cache);
+    OperationResult plan = await _ws.Service.Install([Mod], new OperationOptions(DryRun: true));
+    Assert.True(plan.Changes);
+    Assert.Contains(
+        _ws.Infos, i => i.StartsWith("Dry run: would install") && i.Contains("1.0.0"));
+    _ws.Restart();
+    await _ws.Service.Setup(new SetupRequest(_old, GameBuild.Windows, Loader: true), _accept);
+
+    // Act
+    NextOfSession(memory, cache);
+    await _ws.Service.Install([Mod], new OperationOptions());
+
+    // Assert: the version for the loader that the workspace has now.
+    Assert.Equal("0.9.0", (await Packages())[Mod].Version);
+  }
+
+  [Fact]
+  public async Task Result_SaysWhetherAnythingChanges_AndWhetherOnlyTheStateFileDoes() {
+    // A new workspace: packages change.
+    OperationResult first = await _ws.Service.Setup(
+        new SetupRequest(_new, GameBuild.Windows, Loader: true), _accept);
+    Assert.Equal(new OperationResult(Changes: true), first);
+
+    // The same setup again: nothing would change, and nothing does.
+    string state = _ws.Fs.File.ReadAllText(_ws.LockPath);
+    OperationResult again = await _ws.Service.Setup(
+        new SetupRequest(_new, GameBuild.Windows, Loader: true),
+        new OperationOptions(DryRun: true));
+    Assert.Equal(OperationResult.Unchanged, again);
+    Assert.Equal(
+        OperationResult.Unchanged,
+        await _ws.Service.Setup(new SetupRequest(_new, GameBuild.Windows, Loader: true), _accept));
+    Assert.Equal(state, _ws.Fs.File.ReadAllText(_ws.LockPath));
+
+    // Another source to record: only the state file would change.
+    UnpinGameAndLoader();
+    OperationResult record = await _ws.Service.Setup(
+        new SetupRequest(_new, GameBuild.Windows, Loader: true),
+        new OperationOptions(DryRun: true));
+    Assert.Equal(new OperationResult(Changes: true, OnlyStateFile: true), record);
+
+    // A mod to install: packages would change.
+    OperationResult install = await _ws.Service.Install(
+        [Mod], new OperationOptions(DryRun: true));
+    Assert.Equal(OperationResult.Changed, install);
+  }
+
+  [Fact]
+  public async Task Result_OfAnOperationThatWritesTheFirstStateFile_IsAChange() {
+    // Act: nothing is installed, so nothing is updated, but the state file is written.
+    OperationResult plan = await _ws.Service.Update([], new OperationOptions(DryRun: true));
+    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
+    OperationResult result = await _ws.Service.Update([], new OperationOptions());
+
+    // Assert
+    Assert.Equal(new OperationResult(Changes: true, OnlyStateFile: true), plan);
+    Assert.Equal(plan, result);
+    Assert.True(_ws.Fs.File.Exists(_ws.LockPath));
+    Assert.Equal(
+        OperationResult.Unchanged,
+        await _ws.Service.Update([], new OperationOptions(DryRun: true)));
+  }
+
+  #endregion
 
   #region New server
 

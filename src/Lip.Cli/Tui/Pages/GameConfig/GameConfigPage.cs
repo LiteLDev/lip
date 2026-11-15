@@ -220,6 +220,12 @@ public sealed partial class GameConfigPage : Page {
       return;
     }
 
+    // The files of the server are not saved while it runs (protocol/lip-tui.md,
+    // "Configuration").
+    if (Context.RefuseWhileServerRuns(GameConfigText.SaveTitle)) {
+      return;
+    }
+
     LipClient client = Context.Client;
     List<(GameFile File, string Text)> written = [];
     List<string> conflicts = [];
