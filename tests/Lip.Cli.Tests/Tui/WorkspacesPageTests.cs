@@ -546,21 +546,20 @@ public sealed class WorkspacesPageTests {
 
   /// A server setup that cannot read the versions of the loader.
   private sealed class NoLoaders(FakeServerSetup setup) : IServerSetup {
-    public Task<IReadOnlyList<GameVersion>> GameVersions(LipClient client) =>
-        setup.GameVersions(client);
+    public Task<IReadOnlyList<GameVersion>> GameVersions(
+        LipClient client, OperationSession? session = null) =>
+        setup.GameVersions(client, session);
 
     public Task<IReadOnlyList<SemVersion>> LoaderVersions(
-        LipClient client, SemVersion game, CancellationToken cancellationToken) =>
+        LipClient client,
+        SemVersion game,
+        CancellationToken cancellationToken,
+        OperationSession? session = null) =>
         Task.FromException<IReadOnlyList<SemVersion>>(
             new InvalidOperationException("GitHub is not reached."));
 
-    public Task Setup(
-        LipClient client,
-        SetupRequest request,
-        bool dryRun,
-        bool acceptEula,
-        CancellationToken cancellationToken) =>
-        setup.Setup(client, request, dryRun, acceptEula, cancellationToken);
+    public Task<OperationResult> Setup(LipClient client, SetupRequest request, OperationRun run) =>
+        setup.Setup(client, request, run);
   }
 
   [Fact]

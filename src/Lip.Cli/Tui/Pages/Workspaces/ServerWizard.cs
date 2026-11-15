@@ -283,9 +283,7 @@ internal sealed class ServerWizard(AppContext context, Action workspaceSelected)
       LipClient client = context.Client;
       IServerSetup setup = context.ServerSetup;
       context.PlanAndRun(
-          WorkspacesText.SetUpTitle,
-          (dryRun, acceptEula, token) =>
-              setup.Setup(client, request, dryRun, acceptEula, token));
+          WorkspacesText.SetUpTitle, run => setup.Setup(client, request, run));
     }
 
     if (!target.Create) {

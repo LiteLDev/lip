@@ -112,6 +112,9 @@ public sealed class FlowTests {
             "1.21.50 Windows True 1.1.0 dryRun=False acceptEula=True",
           ],
           setup().Calls);
+      // The setup was carried out in the session of its dry run.
+      Assert.NotNull(setup().Sessions[^1]);
+      Assert.Same(setup().Sessions[^2], setup().Sessions[^1]);
     }
 
     await Shown(tui, PageId.Workspaces);

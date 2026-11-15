@@ -6,20 +6,21 @@ namespace Lip.Cli.Tui;
 
 /// What the interface needs of lip to set up a server (protocol/lip-tui.md, "New server"): the
 /// versions of the game, the versions of LeviLamina that fit one, and lip setup, each with the
-/// client of the directory of the server.
+/// client of the directory of the server. Give the three the same session, and the setup
+/// reads of the network only what reading the versions did not.
 public interface IServerSetup {
-  Task<IReadOnlyList<GameVersion>> GameVersions(LipClient client);
+  Task<IReadOnlyList<GameVersion>> GameVersions(
+      LipClient client, OperationSession? session = null);
 
   Task<IReadOnlyList<SemVersion>> LoaderVersions(
-      LipClient client, SemVersion game, CancellationToken cancellationToken);
-
-  /// lip setup, whose plan the user confirmed when it is not a dry run.
-  Task Setup(
       LipClient client,
-      SetupRequest request,
-      bool dryRun,
-      bool acceptEula,
-      CancellationToken cancellationToken);
+      SemVersion game,
+      CancellationToken cancellationToken,
+      OperationSession? session = null);
+
+  /// lip setup, as AppContext.PlanAndRun carries it out: its plan is confirmed by the user
+  /// when it is not a dry run. Returns what it changed, or would change.
+  Task<OperationResult> Setup(LipClient client, SetupRequest request, OperationRun run);
 }
 
 /// The server setup of LipClient.
@@ -29,18 +30,18 @@ public sealed class ClientServerSetup : IServerSetup {
   private ClientServerSetup() {
   }
 
-  public Task<IReadOnlyList<GameVersion>> GameVersions(LipClient client) =>
-      client.GameVersions();
+  public Task<IReadOnlyList<GameVersion>> GameVersions(
+      LipClient client, OperationSession? session = null) =>
+      client.GameVersions(session);
 
   public Task<IReadOnlyList<SemVersion>> LoaderVersions(
-      LipClient client, SemVersion game, CancellationToken cancellationToken) =>
-      client.LoaderVersions(game, cancellationToken);
-
-  public Task Setup(
       LipClient client,
-      SetupRequest request,
-      bool dryRun,
-      bool acceptEula,
-      CancellationToken cancellationToken) =>
-      client.Setup(request, dryRun, cancellationToken, acceptEula, confirmed: true);
+      SemVersion game,
+      CancellationToken cancellationToken,
+      OperationSession? session = null) =>
+      client.LoaderVersions(game, cancellationToken, session);
+
+  public Task<OperationResult> Setup(LipClient client, SetupRequest request, OperationRun run) =>
+      client.Setup(
+          request, run.DryRun, run.Token, run.AcceptEula, confirmed: true, run.Session);
 }

@@ -10,7 +10,7 @@ Tui/
   AppContext.cs               what a page may use of the shell (Context)
   Page.cs                     the base class of a page, and Hint
   Pages.cs                    PageId, PageRequest, PageRegistry: the only list of the pages
-  Operation.cs                Operation, ProgressItem, DaemonState, ToastKind
+  Operation.cs                Operation, OperationRun, ProgressItem, DaemonState, ToastKind
   ServerSetup.cs              IServerSetup: game versions, loader versions, lip setup
   I18n/L.cs                   Language, L.T, Languages
   I18n/CommonText.cs          shared text: buttons, hints, common words
@@ -87,6 +87,11 @@ These hold on every page. Tests enforce some of them; reviewers check the rest.
     keys that page (`ListView.PageHints`, `PgUp/PgDn Page`, `Home/End Ends`) go last.
 - Every workspace operation goes through `Context.PlanAndRun`: preview (dry run) →
   `[Apply] [Cancel]` → the license when needed → progress → result. Cancel is "preview only".
+  A plan that would change nothing has only `[Close]`.
+- While the server of the selected workspace runs, nothing changes the workspace: no setup,
+  install, uninstall or update, and no saving of `server.properties`, `allowlist.json` or
+  `permissions.json` (`protocol/lip-tui.md`, "Commands", "Configuration"). See "While the
+  server runs" below.
 
 ### Copy rules
 
@@ -238,7 +243,7 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 | `Version` | The version of lip. |
 | `Catalog` | `ModCatalogClient` for levimc.org. |
 | `GithubProbe` | The reachability check, or null when the interface makes none. |
-| `ServerSetup` | `IServerSetup`: `GameVersions`, `LoaderVersions`, `Setup`. Use it instead of `LipClient.Setup` so that tests can fake it. |
+| `ServerSetup` | `IServerSetup`: `GameVersions(client, session?)`, `LoaderVersions(client, game, token, session?)`, `Setup(client, request, run)`. Use it instead of `LipClient.Setup` so that tests can fake it. |
 | `SelfUpdate(client, checkOnly)` | `lip self-update [--check]` with a client that you read from `Client` before the operation started. For any thread. |
 | `DaemonStatus()` | `lip daemon status`: a `DaemonState`, or null when no daemon listens. For any thread. |
 | `OpenUrl(url)` | Opens an `http`/`https` URL in the browser; anything else is refused with a toast. |
@@ -247,13 +252,53 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 
 | Member | |
 |---|---|
-| `Servers` | The `ServerSessions` of the process: `Find(workspace)?.Running` for any workspace. |
-| `Server` / `ServerRunning` | The `WorkspaceServer` of the selected workspace (null when none ever ran): `Running`, `Restarting`, `Stopping`, `ExitCode`, `StartedAt`, `LastLines(n)`, `Send(line)`, `Stop()`. |
+| `Servers` | The `ServerSessions` of the process: the servers that this process runs. |
+| `Server` | The `WorkspaceServer` of the selected workspace that this process runs (null when none ever ran): `Running`, `Restarting`, `Stopping`, `ExitCode`, `StartedAt`, `LastLines(n)`, `Send(line)`, `Stop()`. |
+| `ServerRunning` | Whether the server of the selected workspace runs: `Server` runs, **or another lip runs it** (a plain `lip run`, another daemon), which holds `.lip/server.lock`. |
+| `IsServerRunning(workspace)` | The same for any workspace of the workspace list. |
+| `RefuseWhileServerRuns(title)` | When the server of the selected workspace runs: shows "Stop the server first." in a dialog with the title, and returns true. |
+| `ServerRunsNow(workspace)` | As `IsServerRunning`, but it looks at the lock itself. **Not for the thread of the interface**: for the work of `Background` or `RunOperation`, right before it writes. |
 | `StartServer(title)` | Starts it as the protocol defines; a failure before it starts is shown in a dialog titled `title`. |
 | `ManagedServers` | Whether servers keep running when the interface quits. |
 
 The shell draws the screen again whenever a server changes or writes; a page just reads the
 server in `Draw`.
+
+### While the server runs
+
+`ServerRunning` and `IsServerRunning` are cheap: the shell looks at the server locks of the
+selected workspace and of the workspaces of the list about once a second, in the background,
+and they answer from what it saw, so a server that another lip started may be up to a second
+unseen. Read them in `Draw` and `OnKey` freely; where that second matters, call
+`Context.ServerRunsNow(workspace)` in the background work itself. A server that
+another lip runs is known to run and no more: `Server` is null or stopped for it, so use
+`Server?.Running` where you need the server itself (its output, its input, stopping it).
+
+`PlanAndRun` refuses by itself: it shows the message and carries nothing out, and it looks at
+the lock again, off the thread of the interface, before the dry run and before the operation.
+For anything else that must not happen meanwhile, such as saving a file of the server:
+
+```csharp
+private void Save() {
+  if (Context.RefuseWhileServerRuns(GameConfigText.SaveTitle)) {
+    return;
+  }
+  …
+}
+```
+
+Show what cannot be done now as disabled, with `CommonText.StopServerFirst` as the reason: a
+`MenuItem` takes it (`Reason`), and a page shows it in its details area for a disabled row.
+
+```csharp
+bool running = Context.ServerRunning;
+Context.ShowMenu(
+    package.Identity,
+    new MenuItem(ModsText.Details, Details),
+    new MenuItem(
+        ModsText.Uninstall, Uninstall, Enabled: !running,
+        Reason: running ? CommonText.StopServerFirst : null));
+```
 
 **Navigation and dialogs**
 
@@ -279,8 +324,7 @@ server in `Draw`.
 | `Background(…, anyWorkspace: true)` | The same for work that is of no workspace (the workspace list, the catalogue, the user configuration, the daemon, the GitHub check): its callbacks are called whatever is selected by then. |
 | `RunOperation(title, action, succeeded?, cancellable?)` | Runs a command with a progress dialog; then `succeeded(operation)`, or the failure dialog. Returns false when another operation runs. `operation.Log` holds what the command said. |
 | `RunOperation<T>(title, action, succeeded, cancellable?)` | The same for a command with a result. |
-| `PlanAndRun(title, (dryRun, token) => …, done?)` | The standard flow of a workspace operation. Pass `confirmed: true` to `LipClient` where it has it. |
-| `PlanAndRun(title, (dryRun, acceptEula, token) => …, done?)` | The same for what may be a setup (`install`, `setup`). |
+| `PlanAndRun(title, run => …, done?, session?)` | The standard flow of a workspace operation. `run` is an `OperationRun`: `DryRun`, `AcceptEula`, `Token`, `Session`; return what the command returns, an `OperationResult`. Pass `run.Session` on, and `confirmed: true` where `LipClient` has it. |
 | `ShowResult(title, operation, done?)` | The messages of a finished operation, ending with `✓ done`. |
 | `ShowFailure(title, exception, cancelled?, log?)` | The failure dialog; the report goes to `.lip/logs` of the selected workspace. |
 
@@ -305,9 +349,52 @@ Context.RunOperation(
 LipClient client = Context.Client;
 Context.PlanAndRun(
     ModsText.InstallTitle(package),
-    (dryRun, acceptEula, token) =>
-        client.Install([package], dryRun, token, acceptEula, confirmed: true));
+    run => client.Install(
+        [package], run.DryRun, run.Token, run.AcceptEula, confirmed: true, run.Session));
+
+// lip uninstall, which is never a setup.
+Context.PlanAndRun(
+    title, run => client.Uninstall(identities, run.DryRun, run.Token, run.Session));
 ```
+
+### Sessions
+
+`PlanAndRun` calls the operation twice: for the dry run, and, once the user applied the plan,
+for real. Both get the same `OperationSession` (`Lip.Core.PublicApi`) in `run.Session`. A
+command that is given a session reads of the network only what no command of the session
+read before it: the operation does not list the tags, resolve the refs, fetch the package
+files or download the archives that its dry run already did. It still takes the workspace
+lock, reads the state file and solves again, so what it does is right for the workspace as it
+is then. **Always pass `run.Session` on**; without it the operation repeats the whole dry run.
+
+The command returns an `OperationResult` (`Lip.Core.Mcmod`): `Changes` (whether anything
+changes, or would) and `OnlyStateFile` (nothing but what lip records of the packages).
+Return it from the operation: when the dry run says that nothing would change, the plan has
+only `[Close]`. Do not look at the lines of the log for that.
+
+A flow that reads something before its operation holds one session from its first read to
+the end, so that the operation reads nothing twice. The new server wizard does:
+
+```csharp
+private OperationSession _session = new();          // a new one each time the wizard starts
+
+// The versions, read in the session.
+LipClient client = Context.ClientFor(directory);
+IServerSetup setup = Context.ServerSetup;
+OperationSession session = _session;
+Context.Background(() => setup.GameVersions(client, session), versions => …);
+Context.RunOperation(title, token => setup.LoaderVersions(client, game, token, session), …);
+
+// The setup, in the same session: it reads the builds list and LeviLamina no more.
+Context.PlanAndRun(
+    WorkspacesText.SetUpTitle, run => setup.Setup(client, request, run), done, session);
+```
+
+`LipClient.GameVersions(session)`, `LoaderVersions(game, token, session)`, `Install`,
+`Update`, `Uninstall` and `Setup` take the session as their last argument. A session works
+with any client, of any workspace. It keeps what a dry run downloaded in memory until the
+operation stores it in the cache: make a new one for each flow, and let go of it with the
+flow.
 
 **Language**
 
@@ -345,7 +432,7 @@ Dialogs (`Context.Show(new …)`); each takes every key until it closes:
 | `ConfirmDialog(title, lines, buttons, chosen?, border?, fromEnd?)` | Lines that scroll above buttons. Enter presses the chosen button; **Esc presses the last one**, so put the button that changes nothing last. |
 | `PromptDialog(title, fields, submit, cancel?, validate?)` | One or more text fields. A long label, such as a question of a command, is wrapped. `validate` returns a localized error to keep the dialog open. |
 | `ChoiceDialog(title, items, chosen, cancel?, selected?)` | Choose one of a list; `ChoiceItem.Detail` is the one-sentence explanation in the details area. |
-| `Menu(title, items)` | The action menu of a row (`Context.ShowMenu`). An item with `Enabled: false` is shown muted and skipped. |
+| `Menu(title, items)` | The action menu of a row (`Context.ShowMenu`). An item with `Enabled: false` is shown muted and skipped; with a `Reason` too, ↑ and ↓ stop at it, the menu shows the reason below the actions, and Enter does nothing. |
 | `ViewerDialog(title, text or lines)` | A large scrolling text: a README, a JSON text. |
 | `PathPicker.Folder` / `.OpenFile` / `.SaveFile` | A path, from a small file browser: see "Asking for a path". **Never ask for a path with a `PromptDialog`.** |
 | `ProgressDialog` | Shown by `RunOperation`; you do not create it. |
@@ -510,7 +597,8 @@ public static class ModsText {
 - Reuse `CommonText` for buttons (`Ok`, `Cancel`, `Apply`, `Save`, `Discard`, …), hints and
   common words, so that they read the same everywhere. What two pages name is there too:
   `NewServer`, `GetMods`, `AutoRestart`, `ConnectDirectly`, `NoMods`, `Saved`,
-  `SavedWhileRunning`, `DiscardTitle`, `DiscardQuestion`. When your page needs a text that
+  `SavedWhileRunning`, `DiscardTitle`, `DiscardQuestion`, `StopServerFirst` (why something
+  is disabled while the server runs). When your page needs a text that
   another page has, move it to `CommonText` instead of writing it again.
 - One word for one thing: a directory is a folder (文件夹, 資料夾), and a URL is 网址 (網址).
 - Use the real Traditional Chinese terms (伺服器, 設定, 檔案, 模組, 工作區), not a character by
@@ -556,6 +644,8 @@ public async Task Uninstall_AsksForThePlan_ThenRemovesThePackage() {
 | `Quit()` | Ctrl+C, then Enter; returns the exit code. `Dispose` ends the interface too. |
 | `Resize(w, h)` | Another terminal size. |
 | `Dump(writer or path, name?)`, `Snapshot(name)` | Write the current frame as text for visual review. |
+| `SetServerRunning(running, workspace?)` | Makes the server of a workspace (the selected one when not given) run as one that another lip runs, or stop, and waits until the interface has seen it: `Context.ServerRunning` is true from then on. No process is started. |
+| `SetServerLockHeld(held, workspace)` | The same without waiting, for a server that starts between two looks of the interface. |
 | `Fs`, `Root`, `Workspaces`, `Servers`, `Context`, `Config`, `OpenedUrls`, `ClientWorkspaces`, `InteractionOf(client)`, `WorkspaceOf(client)` | The fake world. |
 
 What `TuiHarnessOptions` replaces:
@@ -567,14 +657,26 @@ What `TuiHarnessOptions` replaces:
 | `CreateClient` | The `LipClient` of a workspace. Wrap `LipClient.Create(fs, interaction, hookOutput, workspace)` or build a client with mocked services to fake or record commands; `InteractionOf(client)` is how a fake command talks to the user. |
 | `Catalog` | The JSON text of a catalogue URL (`ModCatalogClient.BaseUrl + "index.json"`, `ModCatalogClient.DetailUrl(id)`). |
 | `GithubProbe` | `new GithubProbe((url, token) => Task.FromResult(200))`. |
-| `ServerSetup` | `harness => new FakeServerSetup(harness)`: two games, two loaders, a setup that records its calls and asks for the license. |
+| `ServerSetup` | `harness => new FakeServerSetup(harness)`: two games, two loaders, a setup that records its calls (`Calls`) and their sessions (`Sessions`), asks for the license, and returns `Result` (`OperationResult.Changed` unless you set it). |
 | `SelfUpdate`, `DaemonStatus` | `lip self-update` and `lip daemon status`. |
 | `ManagedServers`, `Servers` | Whether servers outlive the interface, and the `ServerSessions`. |
 | `Pages` | Other pages than those of lip (the shell tests use their own). |
 | `DescribeFailure` | The failure report; by default nothing is written. |
 
 `TestClients.CmdWorkspace()` and `TestClients.CmdClient(…)` give a workspace on the disk whose
-server is `cmd.exe` (Windows only), for tests of the Server page.
+server is `cmd.exe` (Windows only), for tests of the Server page. For a page that only needs
+"the server runs", use `SetServerRunning` instead:
+
+```csharp
+await tui.SetServerRunning(true);
+tui.Press(ConsoleKey.Enter);                     // the action menu of a row
+await tui.WaitFor(tui.Text(() => ModsText.Uninstall));
+tui.Press(ConsoleKey.DownArrow);                 // to the disabled action
+await tui.WaitFor(CommonText.StopServerFirst);   // its reason
+```
+
+A fake operation returns its result itself: `OperationResult.Changed`,
+`OperationResult.Unchanged`, or `new OperationResult(Changes: true, OnlyStateFile: true)`.
 
 Each page has `tests/Lip.Cli.Tests/Tui/<Name>PageTests.cs`; extend that file. What leads from
 one page to another is tested with the pages of lip in `FlowTests.cs`. Run at least one flow

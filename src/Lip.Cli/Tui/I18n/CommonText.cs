@@ -69,6 +69,12 @@ public static class CommonText {
   public static string ServerRestarting => L.T("Restarting", "正在重启", "正在重新啟動");
   public static string ServerStopping => L.T("Stopping", "正在停止", "正在停止");
   public static string ServerStopped => L.T("Stopped", "未运行", "未執行");
+
+  /// Why something cannot be done while the server of the workspace runs: the message of
+  /// AppContext.RefuseWhileServerRuns, and the reason of a menu item or a row that is disabled
+  /// for it.
+  public static string StopServerFirst =>
+      L.T("Stop the server first.", "请先停止服务器。", "請先停止伺服器。");
   public static string QuitTitle => L.T("Quit lip", "退出 lip", "結束 lip");
   public static string QuitQuestion => L.T("Quit lip?", "要退出 lip 吗？", "要結束 lip 嗎？");
   public static string QuitStopsServers =>
@@ -93,6 +99,11 @@ public static class CommonText {
   public static string Preview => L.T("Preview", "预览", "預覽");
   public static string NothingWouldChange =>
       L.T("Nothing would change.", "不会有任何更改。", "不會有任何變更。");
+  public static string OnlyRecordChanges =>
+      L.T(
+          "Only lip's record of the packages would change.",
+          "只会更新 lip 的安装记录。",
+          "只會更新 lip 的安裝紀錄。");
   public static string Cancelled =>
       L.T("Cancelled. Changes were undone.", "已取消，更改已撤销。", "已取消，變更已復原。");
   public static string Failed => L.T("Failed", "失败", "失敗");

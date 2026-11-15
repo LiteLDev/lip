@@ -249,7 +249,11 @@ public sealed class HomePage : Page {
 
   private StyledLine ServerState() {
     WorkspaceServer? server = Context.Server;
-    return server is not { Running: true } ? new StyledLine(CommonText.ServerStopped, Theme.Muted)
+    // A server that another lip runs is known to run, and no more.
+    return server is not { Running: true }
+        ? Context.ServerRunning
+            ? new StyledLine("● " + CommonText.ServerRunning, Theme.Good)
+            : new StyledLine(CommonText.ServerStopped, Theme.Muted)
         : server.Restarting ? new StyledLine("● " + CommonText.ServerRestarting, Theme.Warning)
         : server.Stopping ? new StyledLine("● " + CommonText.ServerStopping, Theme.Warning)
         : new StyledLine("● " + CommonText.ServerRunning, Theme.Good);

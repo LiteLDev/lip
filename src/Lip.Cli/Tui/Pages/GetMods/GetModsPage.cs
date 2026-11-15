@@ -602,8 +602,8 @@ public sealed class GetModsPage : Page {
     LipClient client = Context.Client;
     Context.PlanAndRun(
         GetModsText.InstallTitle(package),
-        (dryRun, acceptEula, token) =>
-            client.Install([package], dryRun, token, acceptEula, confirmed: true));
+        run => client.Install(
+            [package], run.DryRun, run.Token, run.AcceptEula, confirmed: true, run.Session));
   }
 
   #endregion
