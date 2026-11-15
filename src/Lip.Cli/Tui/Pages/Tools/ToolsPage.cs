@@ -18,8 +18,10 @@ public sealed class ToolsPage : Page {
   private const string PackFileName = "package.zip";
   private const string PackExtension = ".zip";
 
-  // The most columns of the identity of a package in the list of the installed ones.
-  private const int MaxNameWidth = 40;
+  // The columns that a row of the list of the installed packages may take, so that it fits the
+  // dialog on the narrowest terminal, and the fewest that the identity of a package gets.
+  private const int RowWidth = 50;
+  private const int MinNameWidth = 16;
 
   private readonly ToolAction[] _actions;
   private readonly ListView<ToolAction> _list;
@@ -244,35 +246,39 @@ public sealed class ToolsPage : Page {
 
   /// Lists the packages installed in the selected workspace, as the Mods page orders them:
   /// the mods that the user installed, their dependencies, then the game and the loader.
-  /// Enter shows the installed version of the chosen one.
+  /// Enter shows the chosen one by the source that the state file records, since only a
+  /// package of the version tags of a repository is named by its identity and version: a
+  /// repository at the version or the commit that is installed, a URL or a local path as it
+  /// is now. An identity that is too long for its column is cut in its middle, and the line
+  /// below the list has it in full.
   private void ViewInstalled() {
     LipClient client = Context.Client;
     Context.RunOperation(
         ToolsText.ViewInstalledTitle,
         _ => client.ListPackages(),
         installed => {
-          InstalledPackage[] packages = [
-            .. installed.OrderBy(p => IsSystem(p) ? 2 : p.Explicit ? 0 : 1),
-          ];
-          if (packages.Length == 0) {
+          IReadOnlyList<InstalledPackage> packages = InstalledPackage.Listed(installed);
+          if (packages.Count == 0) {
             Context.Show(new ConfirmDialog(
                 ToolsText.ViewInstalledTitle, [new StyledLine(ToolsText.NothingInstalled)],
                 [CommonText.Close], _ => View(0)));
             return;
           }
 
-          int nameWidth = Math.Min(MaxNameWidth, packages.Max(p => TextWidth.Of(p.Identity)));
+          int nameWidth = Math.Min(
+              packages.Max(p => TextWidth.Of(p.Identity)),
+              Math.Max(
+                  MinNameWidth, RowWidth - 2 - packages.Max(p => TextWidth.Of(p.Version))));
           Context.Show(new ChoiceDialog(
               ToolsText.ViewInstalledTitle,
               [
                 .. packages.Select(p => new ChoiceItem(
                     new StyledLine(
-                        Cells.Pad(TextWidth.Fit(p.Identity, nameWidth), nameWidth + 2)
-                            + p.Version,
+                        PackageCells.PadMiddle(p.Identity, nameWidth) + "  " + p.Version,
                         p.Explicit ? default : Theme.Muted),
-                    Argument(p))),
+                    Described(p))),
               ],
-              chosen => Show(Argument(packages[chosen]), Argument(packages[chosen])),
+              chosen => Show(packages[chosen].ViewArgument, Shown(packages[chosen])),
               cancel: () => View(0)));
         });
   }
@@ -311,17 +317,21 @@ public sealed class ToolsPage : Page {
         cancellable: true);
   }
 
-  /// The package argument that names the installed version of a package: its identity, a
-  /// repository with the variant after '#', then the version after '@' (protocol/lip.md,
-  /// "Package arguments").
-  private static string Argument(InstalledPackage package) =>
+  /// What an installed package is called: its identity, with the variant after '#', then its
+  /// version after '@'.
+  private static string Named(InstalledPackage package) =>
       $"{package.Identity}@{package.Version}";
 
-  /// Whether the package is the game or the loader, which lip setup installs.
-  private static bool IsSystem(InstalledPackage package) {
-    string repository = package.Identity.Split('#')[0];
-    return BedrockServer.IsRepository(repository) || GameSetup.IsLoaderRepository(repository);
-  }
+  /// The title of what is shown of an installed package: what it is called when it is of a
+  /// repository, whose installed version or commit is shown; otherwise the URL or the local
+  /// path, since what that holds now is shown.
+  private static string Shown(InstalledPackage package) =>
+      package.Repository is null ? package.SourceNote ?? Named(package) : Named(package);
+
+  /// The line about an installed package below the list: what it is called, in full, and
+  /// where it is from when that is not the version tags of its repository.
+  private static string Described(InstalledPackage package) =>
+      package.SourceNote is { } source ? $"{Named(package)} · {source}" : Named(package);
 
   /// An action of the page: its label and one sentence about it, in the language of the
   /// interface when they are read, and what Enter does.

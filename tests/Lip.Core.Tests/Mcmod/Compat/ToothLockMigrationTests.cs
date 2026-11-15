@@ -78,8 +78,8 @@ public class ToothLockMigrationTests {
 
     // Assert
     Assert.Equal(
-        [new InstalledPackage(Lib, "1.0.0", false), new InstalledPackage(App, "1.0.0", true)],
-        packages);
+        [(Lib, "1.0.0", false), (App, "1.0.0", true)],
+        packages.Select(p => (p.Identity, p.Version, p.Explicit)));
     Assert.Equal(before, _ws.Fs.File.ReadAllText(ToothLockPath));
     Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
     Assert.Empty(_ws.Git.ListedRefs);

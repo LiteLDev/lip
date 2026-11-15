@@ -49,6 +49,11 @@ public static class ModsText {
   // What a package is, in the details area.
   public static string ExplicitDetail =>
       L.T("Installed by you.", "由你安装。", "由你安裝。");
+  public static string AtVersionDetail =>
+      L.T(
+          "Installed by you at this version, where Update keeps it.",
+          "由你安装并固定在此版本，“更新”不会改变它。",
+          "由你安裝並固定在此版本，「更新」不會變更它。");
   public static string DependencyDetail =>
       L.T(
           "Installed because another mod needs it.",
@@ -67,6 +72,13 @@ public static class ModsText {
 
   // The action menu of a row.
   public static string Details => ModDetailsText.Details;
+  public static string DetailsOf(string name) =>
+      L.T($"Details of {name}", $"{name} 的详情", $"{name} 的詳細資料");
+  public static string UpdateToNeedsRepository =>
+      L.T(
+          "Only a mod from a repository has versions.",
+          "只有来自仓库的模组才有版本可选。",
+          "只有來自儲存庫的模組才有版本可選。");
   public static string Update => L.T("Update", "更新", "更新");
   public static string UpdateTo => L.T("Update to version…", "更新到指定版本…", "更新到指定版本…");
   public static string Uninstall => L.T("Uninstall", "卸载", "解除安裝");

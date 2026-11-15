@@ -36,9 +36,6 @@ public sealed record OperationResult(bool Changes, bool OnlyStateFile = false) {
   public static OperationResult Changed { get; } = new(true);
 }
 
-/// One package of the state file, as listed to the user.
-public record InstalledPackage(string Identity, string Version, bool Explicit);
-
 /// The workspace operations: install, uninstall, update and list (protocol/lip-workspace.md,
 /// protocol/lip.md).
 ///
@@ -385,7 +382,11 @@ public partial class McmodService(
         ?? await ReadToothLock(root, DetermineEnvironment(null), resolveCommits: false);
     return [
       .. (lockFile?.Packages ?? [])
-          .Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit)),
+          .Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit) {
+            Variant = p.Variant,
+            Source = p.Source,
+            Commit = p.Commit,
+          }),
     ];
   }
 

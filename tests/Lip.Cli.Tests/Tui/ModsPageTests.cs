@@ -75,13 +75,35 @@ public sealed class ModsPageTests {
   /// The start of a sentence of the details area, which is wrapped where the page is narrow.
   private static string StartOf(string sentence) => sentence[..Math.Min(sentence.Length, 10)];
 
-  /// An installed package without files; all but the game are of a commit of a repository.
-  private static string Package(string id, string version, bool isExplicit) => $$"""
+  /// An installed package without files. All but the game are of a commit of a repository,
+  /// and of its version tags unless a source is given; a source that is no repository has no
+  /// commit.
+  private static string Package(
+      string id, string version, bool isExplicit, string? source = null) => $$"""
       { "manifest": { "format": 4, "id": "{{id}}", "version": "{{version}}",
           "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } },
         "variant": "", "explicit": {{(isExplicit ? "true" : "false")}},
-        "ref": "{{id}}@{{version}}", {{(id == Game ? "" : CommitField)}}"files": [] }
+        "ref": "{{source ?? (id == Game ? $"{id}@{version}" : id)}}", {{(
+            id == Game || source?.Contains("://", StringComparison.Ordinal) == true
+                ? "" : CommitField)}}"files": [] }
       """;
+
+  /// A folder of the file system of the test, which a package was installed from.
+  private static readonly string _local =
+      OperatingSystem.IsWindows() ? @"C:\packages\gamma" : "/packages/gamma";
+
+  private const string Gamma = "github.com/acme/Gamma";
+  private const string Delta = "github.com/acme/Delta";
+  private const string BetaUrl = "https://example.com/beta.zip";
+
+  /// Mods of a branch, of a URL, of a local folder and of one version, a dependency and the
+  /// game.
+  private static readonly string _sourced = State(
+      Package(Lib, "2.0.0", false), Package(Game, "1.21.0", true),
+      Package(Alpha, "1.2.0", true, $"{Alpha}@branch:main"),
+      Package(Beta, "0.3.1", true, BetaUrl),
+      Package(Gamma, "0.1.0", true, Ref.FromFile(_local).ToString()),
+      Package(Delta, "3.0.0", true, $"{Delta}@3.0.0"));
 
   private static string State(params string[] packages) => $$"""
       { "format": 4, "side": "server", "platform": "win-x64",
@@ -101,6 +123,8 @@ public sealed class ModsPageTests {
     if (state is not null) {
       fs.AddFile(StatePath(TuiHarness.DefaultRoot), new MockFileData(state));
     }
+
+    fs.AddDirectory(_local);
 
     return TuiHarness.Start(new TuiHarnessOptions {
       Language = language,
@@ -397,7 +421,9 @@ public sealed class ModsPageTests {
     await tui.WaitFor(ModsText.UninstallChecked(2));
     tui.Snapshot("mods-checked-menu");
     Assert.DoesNotContain(ModsText.UpdateTo, tui.Screen);
-    tui.Press(ConsoleKey.DownArrow);
+    // The first action shows the details of the row that is highlighted.
+    Assert.Contains(ModsText.DetailsOf("Lib"), tui.Screen);
+    tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Apply} ]");
     tui.Snapshot("mods-checked-plan");
@@ -484,6 +510,227 @@ public sealed class ModsPageTests {
     Assert.Contains(Asked(), call => call.Contains(Alpha, StringComparison.Ordinal));
   }
 
+  /// Opens the menu of the highlighted mod and chooses Update, whose dry run fails, since the
+  /// archives of the test have nothing; then closes the failure.
+  private static async Task UpdateAndClose(TuiHarness tui) {
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains(CommonText.Failed, tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"[ {CommonText.Close} ]");
+  }
+
+  /// protocol/lip-update.md: the request of a package is made again by its source. Its
+  /// identity names the version tags of a repository, which a package of a URL or of a local
+  /// path has none of, and which a package of a branch would be moved back to.
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Update_AsksAgainForTheSourceThatTheModWasInstalledFrom(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(_sourced, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    // A branch: the details area names it, and the update stays on it.
+    await tui.WaitFor($"{ModsText.Source}  branch:main");
+    Assert.Contains(ModsText.ExplicitDetail, tui.Screen);
+    tui.Snapshot("mods-source-branch");
+    await UpdateAndClose(tui);
+    Assert.Contains($"ResolveGitRef({Alpha}, branch:main)", Asked());
+    Assert.DoesNotContain($"ListVersions({Alpha})", Asked());
+
+    // A URL: it has no other versions to name, which the menu says; it is downloaded again.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor($"{ModsText.Source}  {BetaUrl}");
+    tui.Snapshot("mods-source-url");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ModsText.UpdateToNeedsRepository);
+    Assert.DoesNotContain(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-source-url-menu");
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(ModsText.UpdateToNeedsRepository, tui.Screen);
+    Assert.DoesNotContain(ModsText.UpdateToTitle + " ", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ModsText.UpdateToNeedsRepository);
+    await UpdateAndClose(tui);
+    Assert.Contains($"Forget({BetaUrl})", Asked());
+    Assert.Contains($"Open({BetaUrl})", Asked());
+    Assert.DoesNotContain($"ListVersions({Beta})", Asked());
+
+    // A local folder: it is read again.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(Gamma + "  0.1.0");
+    if (width >= 120) {
+      Assert.Contains($"{ModsText.Source}  {_local}", tui.Screen);
+    }
+
+    tui.Snapshot("mods-source-local");
+    Assert.Empty(OpenedPaths());
+    await UpdateAndClose(tui);
+    Assert.Equal([_local], OpenedPaths().Distinct());
+    Assert.DoesNotContain($"ListVersions({Gamma})", Asked());
+
+    // One version: the details area says that Update keeps it, and it is asked for again.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(Delta + "  3.0.0");
+    // The sentence is wrapped where the page is narrow.
+    Assert.Contains(
+        ModsText.AtVersionDetail[..Math.Min(20, ModsText.AtVersionDetail.Length)], tui.Screen);
+    Assert.DoesNotContain(ModsText.Source + "  ", tui.Screen);
+    tui.Snapshot("mods-source-version");
+    await UpdateAndClose(tui);
+    Assert.Contains(
+        Asked(), call => call.StartsWith($"OpenCommit({Delta},", StringComparison.Ordinal));
+    Assert.DoesNotContain($"ListVersions({Delta})", Asked());
+  }
+
+  [Fact]
+  public async Task UpdateTo_OfAModOfABranch_NamesItsRepositoryAtTheRef() {
+    using TuiHarness tui = Start(_sourced, Language.ZhHant);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Alpha + "@");
+    // A commit that is not written in full is no ref.
+    tui.Type("rev:0123");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.RefInvalid);
+    tui.Press(ConsoleKey.Backspace, 8);
+    tui.Type("tag:nightly");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains(ModsText.UpdateOperation($"{Alpha}@tag:nightly"), tui.Screen);
+    Assert.Contains($"ResolveGitRef({Alpha}, tag:nightly)", Asked());
+    Assert.DoesNotContain($"ResolveGitRef({Alpha}, branch:main)", Asked());
+  }
+
+  [Fact]
+  public async Task Checked_UpdateAsksForTheSourceOfEach() {
+    using TuiHarness tui = Start(_sourced, Language.ZhHans);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModsText.Checked(2));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateChecked(2));
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains(
+        $"{CommonText.Preview} · {ModsText.UpdateChecked(2)} · {CommonText.Failed}", tui.Screen);
+    Assert.Contains($"Forget({BetaUrl})", Asked());
+    Assert.Contains($"ResolveGitRef({Alpha}, branch:main)", Asked());
+    Assert.DoesNotContain(
+        Asked(), call => call.StartsWith("ListVersions(", StringComparison.Ordinal));
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Checked_DetailsAreThoseOfTheHighlightedRow(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    // Alpha is checked, and the dependency is highlighted.
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ModsText.DependencyDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.DetailsOf("Lib"));
+    Assert.Contains(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-checked-details");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("一个依赖库");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("一个依赖库");
+    // The check stays.
+    Assert.Contains("[x] " + Alpha, tui.Screen);
+    Assert.Empty(Asked());
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Menu_ThatIsOpenWhenTheServerStopsOrStarts_IsMadeAgain(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(ModsText.ServerRuns);
+
+    // The menu says why Update cannot be chosen.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(CommonText.StopServerFirst);
+
+    // The server stops: the menu stays open, says so no more, and Update, which is still
+    // highlighted, can be chosen.
+    await tui.SetServerRunning(false);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    Assert.Contains(ModsText.UpdateTo, tui.Screen);
+    Assert.Contains(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-menu-server-stopped");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains($"ListVersions({Alpha})", Asked());
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"[ {CommonText.Close} ]");
+    int asked = Asked().Count;
+
+    // The server starts while the menu is open, with Uninstall highlighted: the menu says why
+    // that cannot be chosen, and Enter changes nothing.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.Settle();
+    Assert.DoesNotContain(CommonText.StopServerFirst, tui.Screen);
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Assert.Contains(ModsText.UpdateTo, tui.Screen);
+    Assert.DoesNotContain(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-menu-server-started");
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(ModsText.UpdateTo, tui.Screen);
+    Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+    Assert.Equal(asked, Asked().Count);
+    Assert.Contains(Alpha, Installed(tui));
+
+    // The highlight is where it was: one step on is Details, which can be chosen.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    Assert.Contains(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ModsText.UpdateTo);
+  }
+
   [Fact]
   public async Task UpdateAll_UpdatesEveryMod() {
     using TuiHarness tui = Start(Server);
@@ -498,9 +745,8 @@ public sealed class ModsPageTests {
     tui.Snapshot("mods-update-all");
     Assert.Contains(
         $"{CommonText.Preview} · {ModsText.UpdateAll} · {CommonText.Failed}", tui.Screen);
-    // The update began with the first mod, whose archive the test does not have.
-    Assert.Contains(
-        Asked(), call => call.StartsWith($"OpenCommit({Alpha},", StringComparison.Ordinal));
+    // The update began with the first mod, whose repository has no version in the test.
+    Assert.Contains($"ListVersions({Alpha})", Asked());
   }
 
   [Theory]
@@ -928,9 +1174,15 @@ public sealed class ModsPageTests {
     await tui.WaitFor(ModsText.UncheckAll);
     tui.Snapshot("mods-running-checked");
     Assert.Contains(select, tui.Screen);
-    tui.Press(ConsoleKey.UpArrow);
-    await tui.WaitFor(CommonText.StopServerFirst);
-    tui.Press(ConsoleKey.Enter);
+    foreach (string action in (string[])[ModsText.UpdateChecked(1), ModsText.UninstallChecked(1)]) {
+      Assert.Contains(action, tui.Screen);
+      tui.Press(ConsoleKey.DownArrow);
+      await tui.WaitFor(CommonText.StopServerFirst);
+      tui.Press(ConsoleKey.Enter);
+      await tui.Settle();
+      Assert.DoesNotContain(select, tui.Screen);
+    }
+
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitUntilGone(CommonText.StopServerFirst);
     tui.Press(ConsoleKey.Enter);
