@@ -27,6 +27,7 @@
 <text x="49 67" y="152.5" text-anchor="middle">主页</text>
 <text x="184 202 220 238 256 274 292 310 328 346 364 382 400 418 436 454 472" y="152.5" text-anchor="middle" fill="#e5c07b">服务器运行中，停止后才能更改模组。</text>
 <text x="49 67 85" y="172.5" text-anchor="middle">服务器</text>
+<text x="134.5" y="172.5" text-anchor="middle" fill="#9ad17b">●</text>
 <text x="184 202 220 238 256" y="172.5" text-anchor="middle" fill="#ffffff">从来源安装</text>
 <text x="269.5" y="172.5" text-anchor="middle" fill="#ffffff">…</text>
 <text x="49 67" y="192.5" text-anchor="middle" fill="#ffffff">模组</text>

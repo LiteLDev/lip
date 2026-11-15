@@ -72,11 +72,6 @@ public static class GetModsText {
   // The actions of a mod.
   public static string Install => L.T("Install…", "安装…", "安裝…");
 
-  /// The action that installs while the server of the workspace runs: it cannot be chosen,
-  /// and says why.
-  public static string InstallWhileRunning => L.T(
-      "Install… (stop the server first)", "安装…（请先停止服务器）", "安裝…（請先停止伺服器）");
-
   public static string NoServer => L.T(
       "This folder has no server yet. Create one first.",
       "此文件夹还没有服务器，请先创建。",

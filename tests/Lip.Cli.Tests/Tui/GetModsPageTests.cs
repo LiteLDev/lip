@@ -259,6 +259,172 @@ public sealed class GetModsPageTests {
     await tui.WaitFor("2 个模组");
   }
 
+  [Theory]
+  // The names of the featured tags as the page shows them: Alpha has the tag "money", which
+  // is of "Economy".
+  [InlineData(Language.ZhHans, "经济", "Alpha")]
+  [InlineData(Language.ZhHant, "經濟", "Alpha")]
+  [InlineData(Language.ZhHant, "Economy", "Alpha")]
+  [InlineData(Language.En, "Economy", "Alpha")]
+  // The names of the license families: Alpha is under MIT, and Beta has no license.
+  [InlineData(Language.ZhHans, "宽松许可", "Alpha")]
+  [InlineData(Language.ZhHant, "寬鬆授權", "Alpha")]
+  [InlineData(Language.ZhHant, "無授權條款", "Beta")]
+  [InlineData(Language.ZhHans, "Permissive", "Alpha")]
+  [InlineData(Language.En, "Permissive", "Alpha")]
+  public async Task Search_MatchesTheNamesOfTagsAndLicenseFamilies_AsThePageShowsThem(
+      Language language, string search, string found) {
+    using TuiHarness tui = Start(language);
+    await tui.GoTo(PageId.GetMods);
+    await tui.WaitFor(GetModsText.Count(2));
+
+    tui.Press(ConsoleKey.UpArrow, 3);
+    tui.Type(search);
+
+    await tui.WaitFor(GetModsText.Count(1));
+    Assert.Contains($"{found} · acme", tui.Screen);
+  }
+
+  [Fact]
+  public async Task Search_FollowsTheLanguage_WhenItChangesWhileThePageIsHidden() {
+    using TuiHarness tui = Start(Language.ZhHans);
+    await tui.GoTo(PageId.GetMods);
+    await tui.WaitFor(GetModsText.Count(2));
+    tui.Press(ConsoleKey.UpArrow, 3);
+    tui.Type("經濟");
+    await tui.WaitFor(GetModsText.NoMatch);
+
+    // In Traditional Chinese the tag is named as the search has it.
+    await tui.GoTo(PageId.Home);
+    await tui.Invoke(() => tui.Context.SetLanguage(Language.ZhHant));
+    await tui.GoTo(PageId.GetMods);
+
+    await tui.WaitFor(GetModsText.Count(1));
+    Assert.Contains("Alpha · acme", tui.Screen);
+  }
+
+  [Fact]
+  public async Task Catalogue_IsReadOnce_HoweverOftenThePageIsShown_AndByTheDetailsOfAModToo() {
+    List<string> urls = [];
+    using TuiHarness tui = Start(catalog: url => {
+      lock (urls) {
+        urls.Add(url);
+      }
+
+      return Catalog(url);
+    });
+    string alpha = ModCatalogClient.DetailUrl("github.com/acme/Alpha");
+    await tui.GoTo(PageId.GetMods);
+    await tui.WaitFor("Alpha · acme");
+    await tui.WaitFor("1.3.0");
+
+    // Shown again, the page asks for the catalogue again, and is given what was read.
+    await tui.GoTo(PageId.Home);
+    await tui.GoTo(PageId.GetMods);
+    await tui.WaitFor("Alpha · acme");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("0.3.0");
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor("1.3.0");
+
+    // The dialog of the details of a mod, which other pages show, reads the same file.
+    CatalogIndex index = await tui.Context.Catalog.GetIndex(
+        TestContext.Current.CancellationToken);
+    await tui.Invoke(() => tui.Context.Show(new ModDetailsDialog(index.Mods[0])));
+    await tui.WaitFor($"[ {ModDetailsText.Readme} ]");
+    await tui.WaitFor(
+        screen => System.Text.RegularExpressions.Regex.IsMatch(
+            screen, $@"│ {ModDetailsText.Latest}\s+1\.3\.0"),
+        "the details in the dialog");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("The readme of Alpha.");
+
+    lock (urls) {
+      Assert.Single(urls, ModCatalogClient.BaseUrl + "index.json");
+      Assert.Single(urls, alpha);
+    }
+  }
+
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Esc_WhileTheFileOfAModIsWaitedFor_StopsWaiting_AndAbandonsTheRequest(
+      bool dialog) {
+    // The file of Alpha cannot be read at first, so that nothing but the action of the user
+    // waits for it; then its request never answers, and tells when it is abandoned.
+    string alpha = ModCatalogClient.DetailUrl("github.com/acme/Alpha");
+    int requests = 0;
+    TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource abandoned = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      FileSystem = Workspace(),
+      CatalogRequest = async (url, token) => {
+        if (url != alpha) {
+          return Catalog(url);
+        }
+
+        if (Interlocked.Increment(ref requests) == 1 && !dialog) {
+          throw new IOException("offline");
+        }
+
+        token.Register(() => abandoned.TrySetResult());
+        started.TrySetResult();
+        await Task.Delay(Timeout.Infinite, token);
+        return AlphaDetail;
+      },
+    });
+    if (dialog) {
+      // The dialog of the details of a mod: Esc closes it.
+      CatalogIndex index = await tui.Context.Catalog.GetIndex(
+          TestContext.Current.CancellationToken);
+      await tui.Invoke(() => tui.Context.Show(new ModDetailsDialog(index.Mods[0])));
+      await tui.WaitFor($"[ {ModDetailsText.Readme} ]");
+    } else {
+      // The README of a mod of the page: Esc cancels the wait behind its dialog.
+      await tui.GoTo(PageId.GetMods);
+      await tui.WaitFor("Alpha · acme");
+      await tui.WaitFor(_ => Volatile.Read(ref requests) == 1, "the file that cannot be read");
+      await tui.WaitFor(
+          screen => System.Text.RegularExpressions.Regex.IsMatch(
+              screen, $@"{ModDetailsText.Latest}\s+—"),
+          "the file that cannot be read");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(ModDetailsText.OpenInBrowser);
+      tui.Press(ConsoleKey.DownArrow);
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor($"Esc {CommonText.HintCancel.Text}");
+    }
+
+    await started.Task.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+    Assert.False(abandoned.Task.IsCompleted);
+    tui.Press(ConsoleKey.Escape);
+
+    await abandoned.Task.WaitAsync(
+        TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+    await tui.WaitUntil(() => tui.Context.Idle, "no dialog");
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+  }
+
+  [Fact]
+  public async Task Actions_OfAModWithoutAPage_SayWhyThePageCannotBeOpened_InTraditionalChinese() {
+    using TuiHarness tui = Start(Language.ZhHant);
+    await tui.GoTo(PageId.GetMods);
+    await tui.WaitFor("Beta · acme");
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor("领地系统");
+
+    // Beta has no page: the action is there, ↓ stops at it, and it says why.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModDetailsText.OpenInBrowser);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ModDetailsText.NoPage);
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+
+    Assert.Contains(ModDetailsText.NoPage, tui.Screen);
+    Assert.Empty(tui.OpenedUrls);
+  }
+
   [Fact]
   public async Task Search_ThatMatchesNothing_SaysSo() {
     using TuiHarness tui = Start();
@@ -648,28 +814,27 @@ public sealed class GetModsPageTests {
       await tui.Invoke(() => tui.Context.Navigate(PageId.GetMods));
       await tui.WaitFor("Alpha · acme");
 
-      // The action says why it cannot be chosen; the README is the first that can.
+      // The README is the first action that can be chosen. The one that installs is there,
+      // says why it cannot be chosen, and Enter does nothing on it.
       tui.Press(ConsoleKey.Enter);
-      await tui.WaitFor(GetModsText.InstallWhileRunning);
-      tui.Press(ConsoleKey.UpArrow, 2);
+      await tui.WaitFor(ModDetailsText.OpenInBrowser);
+      Assert.DoesNotContain(CommonText.StopServerFirst, tui.Screen);
+      tui.Press(ConsoleKey.UpArrow);
+      await tui.WaitFor(CommonText.StopServerFirst);
+      Assert.Contains(GetModsText.Install, tui.Screen);
+      Assert.DoesNotContain($"Enter {CommonText.HintSelect.Text}", tui.Screen.Split('\n')[^1]);
+      tui.Press(ConsoleKey.Enter);
+      await tui.Settle();
+      Assert.Contains(ModDetailsText.OpenInBrowser, tui.Screen);
+      Assert.DoesNotContain(GetModsText.Custom, tui.Screen);
+
+      tui.Press(ConsoleKey.DownArrow);
+      await tui.WaitUntilGone(CommonText.StopServerFirst);
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor("The readme of Alpha.");
-      Assert.DoesNotContain("Custom…", tui.Screen);
     }
     finally {
-      foreach (WorkspaceServer server in servers.Running()) {
-        server.Send("exit");
-        for (int i = 0; i < 200 && server.Running; i++) {
-          await Task.Delay(25, TestContext.Current.CancellationToken);
-        }
-      }
-
-      try {
-        Directory.Delete(root, recursive: true);
-      }
-      catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) {
-        // The server still runs.
-      }
+      TestClients.Remove(root, servers);
     }
   }
 
@@ -850,11 +1015,15 @@ public sealed class GetModsPageTests {
       Assert.Equal(["https://levimc.org/mods/github.com/acme/Alpha/"], tui.OpenedUrls);
     }
 
-    // Beta has no README and no page: the viewer says so, and the last action is skipped.
+    // Beta has no README and no page: the viewer says so, and the last action says why it
+    // cannot be chosen.
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("Open in browser");
     tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(ModDetailsText.NoPage);
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitUntilGone(ModDetailsText.NoPage);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("No README.");
   }

@@ -224,19 +224,7 @@ public sealed class FlowTests {
       await tui.WaitFor("○ " + ServerText.ExitedWith(0));
     }
     finally {
-      foreach (WorkspaceServer server in servers.Running()) {
-        server.Send("exit");
-        for (int i = 0; i < 200 && server.Running; i++) {
-          await Task.Delay(25, TestContext.Current.CancellationToken);
-        }
-      }
-
-      try {
-        Directory.Delete(root, recursive: true);
-      }
-      catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) {
-        // The server still runs.
-      }
+      TestClients.Remove(root, servers);
     }
   }
 
@@ -247,10 +235,8 @@ public sealed class FlowTests {
         url.ToString().StartsWith(Proxy, StringComparison.Ordinal) ? 200 : 503));
     using TuiHarness tui = Start(out _, game: false, Language.ZhHans, probe);
     await tui.WaitFor(HomeText.GithubTitle);
-    await tui.WaitFor(HomeText.GithubLaterDetail);
 
-    // Act: ↑ twice to "Use a proxy", Enter, the URL, Enter.
-    tui.Press(ConsoleKey.UpArrow, 2);
+    // Act: "Use a proxy" is selected: Enter, the URL, Enter.
     await tui.WaitFor(HomeText.GithubProxyDetail);
     tui.Snapshot("flow-github-question");
     tui.Press(ConsoleKey.Enter);

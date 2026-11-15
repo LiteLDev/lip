@@ -25,11 +25,14 @@ public static class CommonText {
   public static string ConnectDirectly => L.T("Connect directly", "直接连接", "直接連線");
   public static string NoMods => L.T("No mods yet.", "还没有模组。", "還沒有模組。");
   public static string Saved => L.T("Saved.", "已保存。", "已儲存。");
-  public static string SavedWhileRunning =>
+
+  /// Asked before a file is saved that changed on the disk since it was read, with Overwrite.
+  public static string ChangedOnDisk =>
       L.T(
-          "Saved. Restart the server to apply.",
-          "已保存，重启服务器后生效。",
-          "已儲存，重新啟動伺服器後生效。");
+          "Changed on disk since it was read. Overwrite?",
+          "读取之后，磁盘上的文件已被修改。要覆盖吗？",
+          "讀取之後，磁碟上的檔案已被修改。要覆寫嗎？");
+  public static string Overwrite => L.T("Overwrite", "覆盖", "覆寫");
   public static string DiscardTitle => L.T("Discard changes", "放弃更改", "捨棄變更");
   public static string DiscardQuestion =>
       L.T("Discard the changes?", "要放弃更改吗？", "要捨棄變更嗎？");

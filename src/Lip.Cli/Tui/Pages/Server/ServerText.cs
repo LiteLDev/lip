@@ -19,6 +19,15 @@ public static class ServerText {
     return L.T($"Exited with code {number}", $"已退出，退出码 {number}", $"已結束，結束代碼 {number}");
   }
 
+  /// The state of a server that another lip runs, and where it is stopped.
+  public static string RunningElsewhere =>
+      L.T("Running outside this interface", "在此界面之外运行", "在此介面之外執行");
+  public static string RunningElsewhereDetail =>
+      L.T(
+          "Another `lip run` started it. Stop it there.",
+          "它由另一个 `lip run` 启动，请在那里停止。",
+          "它由另一個 `lip run` 啟動，請在那裡停止。");
+
   // The output and the input line.
   public static string Output => L.T("Output", "输出", "輸出");
   public static string NoOutput => L.T("No output yet.", "还没有输出。", "還沒有輸出。");

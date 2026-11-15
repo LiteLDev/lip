@@ -40,6 +40,10 @@ public static class ModDetailsText {
   public static string Readme => L.T("README", "README", "README");
   public static string OpenInBrowser =>
       L.T("Open in browser", "在浏览器中打开", "在瀏覽器中開啟");
+
+  /// Why the page of a mod cannot be opened.
+  public static string NoPage =>
+      L.T("This mod has no page.", "此模组没有页面。", "此模組沒有頁面。");
   public static string NoReadme => L.T("No README.", "没有 README。", "沒有 README。");
   public static string NoFile => L.T(
       "Cannot read the details of this mod.", "无法读取此模组的详情。", "無法讀取此模組的詳細資料。");

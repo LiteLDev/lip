@@ -27,6 +27,7 @@
 <text x="49 67" y="152.5" text-anchor="middle">首頁</text>
 <text x="184 202 220 238 256 274 292 310 328 346 364 382 400 418 436 454 472" y="152.5" text-anchor="middle" fill="#e5c07b">伺服器執行中，停止後才能變更模組。</text>
 <text x="49 67 85" y="172.5" text-anchor="middle">伺服器</text>
+<text x="134.5" y="172.5" text-anchor="middle" fill="#9ad17b">●</text>
 <text x="184 202 220 238 256" y="172.5" text-anchor="middle" fill="#ffffff">從來源安裝</text>
 <text x="269.5" y="172.5" text-anchor="middle" fill="#ffffff">…</text>
 <text x="49 67" y="192.5" text-anchor="middle" fill="#ffffff">模組</text>

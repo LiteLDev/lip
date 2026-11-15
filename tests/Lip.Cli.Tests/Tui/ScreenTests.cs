@@ -79,6 +79,26 @@ public class ScreenTests {
   }
 
   [Theory]
+  // Chinese text is broken between its characters, not only at the spaces around a name.
+  [InlineData("此工作區使用 linux 組建，它無法在本系統上執行。", 20,
+      "此工作區使用 linux|組建，它無法在本系統|上執行。")]
+  // A mark that closes does not start a line, and one that opens does not end one.
+  [InlineData("安裝遊戲，然後啟動", 8, "安裝遊|戲，然後|啟動")]
+  [InlineData("請看（說明）文字", 6, "請看|（說|明）文|字")]
+  [InlineData("請輸入“名稱”後繼續", 8, "請輸入|“名稱”後|繼續")]
+  // What is part of the character before it stays with it: a skin tone, a joined emoji.
+  [InlineData("好👍🏽好", 4, "好|👍🏽|好")]
+  [InlineData("好👩‍💻好", 4, "好|👩‍💻|好")]
+  // A name in Latin letters stays whole between the characters around it.
+  [InlineData("需要LeviLamina才能執行", 12, "需要|LeviLamina才|能執行")]
+  public void Wrap_BreaksChineseTextBetweenCharacters(string text, int width, string expected) {
+    List<string> lines = TextWidth.Wrap(text, width);
+
+    Assert.Equal(expected, string.Join('|', lines));
+    Assert.All(lines, line => Assert.True(TextWidth.Of(line) <= width));
+  }
+
+  [Theory]
   [InlineData("one two three", 7, "one two|three")]
   [InlineData("abcdefgh", 3, "abc|def|gh")]
   [InlineData("a\nb", 5, "a|b")]

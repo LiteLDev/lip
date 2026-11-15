@@ -28,6 +28,7 @@
 <text x="292" y="102.5" textLength="99" lengthAdjust="spacingAndGlyphs" fill="#ffffff">server-name</text>
 <text x="580" y="102.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Survival</text>
 <text x="49 67 85" y="122.5" text-anchor="middle">服务器</text>
+<text x="134.5" y="122.5" text-anchor="middle" fill="#9ad17b">●</text>
 <text x="184 202 220" y="122.5" text-anchor="middle">白名单</text>
 <text x="292" y="122.5" textLength="72" lengthAdjust="spacingAndGlyphs">gamemode</text>
 <text x="580" y="122.5" textLength="72" lengthAdjust="spacingAndGlyphs">survival</text>

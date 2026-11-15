@@ -73,6 +73,10 @@ public sealed class PathPicker : Dialog {
     public string? Select { get; init; }
     public Note Note { get; init; }
     public string? Name { get; init; }
+
+    /// The path that the bar starts with, and takes the focus for: the folder that the
+    /// picker started at, when lip creates it later and it does not exist yet.
+    public string? Typed { get; init; }
   }
 
   private readonly string _title;
@@ -145,7 +149,9 @@ public sealed class PathPicker : Dialog {
   ///
   /// With mayNotExist, for a folder that lip creates later, nothing is created: [ New folder… ]
   /// chooses the folder of that name in the one shown, and a path typed in the bar that does
-  /// not exist is chosen as it is, unless a name in it is none or a file is in its way.
+  /// not exist is chosen as it is, unless a name in it is none or a file is in its way. When
+  /// start itself does not exist, as when the user comes back to the picker after they chose
+  /// such a folder, the bar has the focus and holds start, so that Enter chooses it again.
   ///
   /// start is the folder shown first: the nearest folder above it that exists when it does
   /// not, and the roots when there is none. chosen gets the full path, without a separator at
@@ -307,6 +313,11 @@ public sealed class PathPicker : Dialog {
 
     if (_loading) {
       return (PathPickerText.Reading, Theme.Muted);
+    }
+
+    if (_current is null && _started && _mode != Mode.File) {
+      // The roots are no folder: the buttons that need one are disabled, and this is why.
+      return (PathPickerText.AtRoots, Theme.Muted);
     }
 
     return _note switch {
@@ -628,6 +639,9 @@ public sealed class PathPicker : Dialog {
     if (outcome.Name is { } name) {
       _name.Set(name);
       Focus(Area.Name);
+    } else if (outcome.Typed is { } typed) {
+      _focus = Array.IndexOf(_areas, Area.Bar);
+      _bar.Set(typed);
     } else if (Focused == Area.Bar) {
       Focus(Area.List);
     }
@@ -693,12 +707,17 @@ public sealed class PathPicker : Dialog {
         directory = null;
       }
 
+      string? wanted = directory;
       while (directory is not null && !fileSystem.Directory.Exists(directory)) {
         string? parent = fileSystem.Path.GetDirectoryName(directory);
         directory = string.IsNullOrEmpty(parent) ? null : parent;
       }
 
-      return Open(directory, select: null);
+      Outcome shown = Open(directory, select: null);
+      // A folder that lip creates later is not lost for not being there yet.
+      return mode == Mode.NewFolder && wanted is not null && wanted != directory
+          ? shown with { Typed = wanted }
+          : shown;
     }
 
     /// The entries of a folder, or the roots when directory is null: "..", the folders, then

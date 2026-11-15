@@ -11,8 +11,17 @@ namespace Lip.Cli.Tui.Pages.ModConfig;
 /// "Configuration"). The files are listed at the left; the selected one is shown at the right.
 /// A JSON file is edited as a tree, in memory, and written only when the user saves it; any
 /// other file, and a JSON file that cannot be read, is only shown. The files are edited and
-/// saved while the server runs too; the page then says that a change may need a restart.
+/// saved while the server runs too; the page then says that a change may need a restart. The
+/// server and the mods write these files themselves: a file that changed on the disk since
+/// it was read is saved only once the user said to overwrite it.
 public sealed class ModConfigPage : Page {
+  /// What saving a file came to.
+  private enum Saved {
+    Written,
+    Gone,
+    Changed,
+  }
+
   /// The narrowest area that shows the files and the open file side by side; in a narrower one
   /// the page shows the one that has the focus.
   private const int WideWidth = 72;
@@ -47,6 +56,8 @@ public sealed class ModConfigPage : Page {
   private JsonTree? _tree;
   private Func<string>? _note;
   private Func<string>? _message;
+  // Whether the file that is read again takes the focus once it is shown.
+  private bool _refocus;
   // The columns of the names and of the values of the tree, as last drawn.
   private int _nameWidth = 12;
   private int _valueWidth = 40;
@@ -237,6 +248,10 @@ public sealed class ModConfigPage : Page {
   /// its text is read, and after that when the text is the same.
   private void Open(FileItem? item, bool keep = false) {
     int read = ++_read;
+    if (item != _open) {
+      _refocus = false;
+    }
+
     _open = item;
     if (item?.Path is not { } path) {
       _text = null;
@@ -266,6 +281,7 @@ public sealed class ModConfigPage : Page {
         },
         exception => {
           if (read == _read && !Dirty) {
+            _refocus = false;
             _text = null;
             ClearDocument();
             _message = () => $"{ModConfigText.CannotRead}: {exception.Message}";
@@ -277,6 +293,8 @@ public sealed class ModConfigPage : Page {
   private void Show(string path, string? text) {
     ClearDocument();
     _text = text;
+    bool refocus = _refocus;
+    _refocus = false;
     if (text is null) {
       _message = () => ModConfigText.Gone;
       return;
@@ -287,6 +305,10 @@ public sealed class ModConfigPage : Page {
         _tree = new JsonTree(JsonConfigFile.Parse(text));
         _rows.Items = _tree.Rows();
         _rows.Selected = 0;
+        if (refocus) {
+          _focus = Area.Document;
+        }
+
         return;
       }
       catch (JsonException exception) {
@@ -315,8 +337,10 @@ public sealed class ModConfigPage : Page {
   #region Saving
 
   /// Writes the open file when it has changes, then calls then; a failure is shown, and then
-  /// is not called.
-  private void Save(Action? then = null) {
+  /// is not called. A file that does not hold what was read of it any more, because the
+  /// server or a mod wrote it meanwhile, is written only with overwrite: the user is asked
+  /// whether to overwrite it, to read it again, or to do neither.
+  private void Save(Action? then = null, bool overwrite = false) {
     if (_tree is not { Dirty: true } tree || _open?.Path is not { } path) {
       then?.Invoke();
       return;
@@ -324,21 +348,50 @@ public sealed class ModConfigPage : Page {
 
     string text = tree.Serialize();
     string title = ModConfigText.SaveTitle(_open.Name);
+    string? source = _text;
     LipClient client = Context.Client;
     Context.RunOperation(
         title,
         async _ => {
           // A configuration file that does not exist is not created.
-          if (await client.ReadConfigFile(path) is null) {
-            return false;
+          if (await client.ReadConfigFile(path) is not { } now) {
+            return Saved.Gone;
+          }
+
+          if (!overwrite && now != source) {
+            return Saved.Changed;
           }
 
           await client.WriteConfigFile(path, text);
-          return true;
+          return Saved.Written;
         },
-        written => {
-          if (!written) {
+        saved => {
+          if (saved == Saved.Gone) {
             Context.Message(title, ModConfigText.Gone, Theme.Bad);
+            return;
+          }
+
+          if (saved == Saved.Changed) {
+            // Esc presses the last button, which changes nothing, and so does Enter at first.
+            Context.Show(new ConfirmDialog(
+                title,
+                [
+                  new StyledLine(CommonText.ChangedOnDisk),
+                  new StyledLine(ModConfigText.ReloadDetail, Theme.Muted),
+                ],
+                [CommonText.Overwrite, ModConfigText.Reload, CommonText.Cancel],
+                choice => {
+                  if (choice == 0) {
+                    Save(then, overwrite: true);
+                  } else if (choice == 1 && ReferenceEquals(tree, _tree)) {
+                    // The file is read again, which drops the changes. A user who was on
+                    // their way elsewhere goes on, as after Discard; one who saved with the
+                    // button is shown the file where they were.
+                    _refocus = then is null;
+                    Discard();
+                    then?.Invoke();
+                  }
+                }) { Selected = 2 });
             return;
           }
 

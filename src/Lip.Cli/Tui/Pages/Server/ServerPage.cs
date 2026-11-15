@@ -11,7 +11,8 @@ namespace Lip.Cli.Tui.Pages.Server;
 /// The Server page: the server of the selected workspace (protocol/lip-tui.md, "Server"). A
 /// line says whether it runs; below it a button starts or stops it and a toggle sets whether
 /// it is restarted after a failure; then what the server wrote, and a line that the server
-/// reads when the user enters it.
+/// reads when the user enters it. A server that another lip runs is known to run and no more:
+/// the page says so, where it is stopped, and offers neither to start it nor its output.
 public sealed class ServerPage(AppContext context) : Page(context) {
   /// The areas of the page that take the keys, from top to bottom.
   private enum Area {
@@ -68,13 +69,22 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   public override string Title => ServerText.Title;
 
   public override StyledLine? Badge =>
-      Context.Server is not { Running: true } server ? null
-          : new StyledLine("●", server.Restarting || server.Stopping ? Theme.Warning : Theme.Good);
+      Context.Server is { Running: true } server
+          ? new StyledLine("●", server.Restarting || server.Stopping ? Theme.Warning : Theme.Good)
+          : Context.ServerRunsElsewhere ? new StyledLine("●", Theme.Good)
+          : null;
 
   public override IReadOnlyList<Hint> Hints {
     get {
       if (Missing) {
         return _hasGame is null ? [] : [CommonText.HintSelect];
+      }
+
+      if (Elsewhere) {
+        // The button is disabled, and the controls are the only area.
+        return _control == 0
+            ? [CommonText.HintSwitch]
+            : [CommonText.HintSwitch, CommonText.HintToggleEither];
       }
 
       // The keys of the area that has the focus; then Tab and Ctrl+C, which work in each;
@@ -118,11 +128,15 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
   /// Whether the page shows that there is no server, or that it does not know yet, instead of
   /// the server: the workspace has no game, and nothing runs in it.
-  private bool Missing => _hasGame != true && !Running;
+  private bool Missing => _hasGame != true && !Running && !Elsewhere;
 
   /// Whether the server that the page shows runs: that of this process, which the page can
-  /// stop and write to. A server that another lip runs (Context.ServerRunning) is not shown.
+  /// stop and write to.
   private bool Running => Context.Server?.Running == true;
+
+  /// Whether another lip runs the server of the workspace: it holds the server lock, and this
+  /// process has no server that runs. The page can neither start, stop, read nor write it.
+  private bool Elsewhere => Context.ServerRunsElsewhere;
 
   /// Whether lip can be asked to stop for the server now.
   private bool CanStop => Context.Server is { Running: true, Stopping: false };
@@ -190,8 +204,20 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
     WorkspaceServer? server = Context.Server;
     bool running = server?.Running == true;
-    DrawState(screen, area, server);
-    DrawControls(screen, area, focused, server);
+    bool elsewhere = Elsewhere;
+    DrawState(screen, area, server, elsewhere);
+    DrawControls(screen, area, focused, server, elsewhere);
+    if (elsewhere) {
+      // Why it cannot be started, and where it is stopped, in place of its output.
+      int row = area.Y + 3;
+      foreach (string line in TextWidth.Wrap(ServerText.RunningElsewhereDetail, area.Width)) {
+        if (row < area.Bottom) {
+          screen.Write(area.X, row++, line, Theme.Muted, area.Right);
+        }
+      }
+
+      return;
+    }
 
     // The input line and the rule above it are there only while a server reads the line.
     int logTop = area.Y + 3;
@@ -229,6 +255,11 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       return true;
     }
 
+    if (Elsewhere) {
+      // Tab leaves the page: the controls are its only area.
+      return key.Key != ConsoleKey.Tab && key.Key != ConsoleKey.DownArrow && ControlsKey(key);
+    }
+
     if (key.Key == ConsoleKey.Tab) {
       Area next = _focus + (Ui.IsBackTab(key) ? -1 : 1);
       if (next < Area.Controls || next > LastArea) {
@@ -246,8 +277,9 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     };
   }
 
-  /// The last area that takes the keys: the input line while the server runs.
-  private Area LastArea => Running ? Area.Input : Area.Log;
+  /// The last area that takes the keys: the input line while the server runs, and the
+  /// controls for a server that another lip runs.
+  private Area LastArea => Running ? Area.Input : Elsewhere ? Area.Controls : Area.Log;
 
   /// Gives an area the focus. The output follows its end unless it has the focus.
   private void Focus(Area area) {
@@ -260,6 +292,11 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   /// Follows the server: once it does not run, the focus leaves the input line, which is
   /// gone. A server that someone else starts does not move the focus.
   private void Follow() {
+    if (Elsewhere && _focus != Area.Controls) {
+      // The output is not that of the server that runs now, and is not shown.
+      Focus(Area.Controls);
+    }
+
     bool running = Running;
     if (running == _wasRunning) {
       return;
@@ -319,7 +356,8 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
   /// Starts the server of the selected workspace unless it runs.
   private void Start() {
-    if (Running) {
+    if (Running || Elsewhere) {
+      // It runs already; a server that another lip runs is stopped there first.
       return;
     }
 
@@ -379,6 +417,9 @@ public sealed class ServerPage(AppContext context) : Page(context) {
           ToggleRestart();
         } else if (Running) {
           Context.Server?.Stop();
+        } else if (Elsewhere) {
+          // Disabled: the line below the controls says why.
+          return false;
         } else {
           Start();
         }
@@ -483,8 +524,11 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   }
 
   /// The line that says whether the server runs, and since when or how it ended.
-  private static void DrawState(ScreenBuffer screen, Rect area, WorkspaceServer? server) {
-    (string text, Style style) = State(server);
+  private static void DrawState(
+      ScreenBuffer screen, Rect area, WorkspaceServer? server, bool elsewhere) {
+    (string text, Style style) = elsewhere
+        ? ("● " + ServerText.RunningElsewhere, Theme.Good)
+        : State(server);
     screen.WriteFit(area.X, area.Y, area.Width, text, style);
   }
 
@@ -518,11 +562,14 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
   /// The button that starts or stops the server, the toggle, and what the toggle does while
   /// it is chosen.
-  private void DrawControls(ScreenBuffer screen, Rect area, bool focused, WorkspaceServer? server) {
+  private void DrawControls(
+      ScreenBuffer screen, Rect area, bool focused, WorkspaceServer? server, bool elsewhere) {
     int y = area.Y + 1;
     bool chosen = focused && _focus == Area.Controls;
     bool running = server?.Running == true;
-    Style button = running && server!.Stopping ? Theme.Muted
+    // A button that does nothing now is muted, and still shows where the focus is.
+    Style button = elsewhere ? (_control == 0 && chosen ? Theme.SelectedInactive : Theme.Muted)
+        : running && server!.Stopping ? Theme.Muted
         : _control != 0 ? default
         : chosen ? Theme.Selected
         : Theme.Strong;

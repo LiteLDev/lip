@@ -170,27 +170,49 @@ public static class TextWidth {
     return builder.Append('…').ToString();
   }
 
-  /// The text as lines of at most width columns, broken at spaces where there are any.
+  // What does not start a line, and what does not end one, where a line is broken between
+  // two characters and not at a space.
+  private const string NotAtStart = "，。、；：！？）」』》〉】”’…—,.;:!?)]}%";
+  private const string NotAtEnd = "（「『《〈【“‘([{";
+
+  /// Whether a line may be broken between two characters of a word: one of them is two
+  /// columns wide, the first is no mark that opens, and the second is neither a mark that
+  /// closes nor part of the character before it, as a combining mark, a variation selector,
+  /// what follows a zero width joiner, and an emoji modifier are.
+  private static bool BreaksBetween(Rune first, Rune second) =>
+      (Of(first) == 2 || Of(second) == 2)
+      && Of(second) > 0
+      && first.Value != 0x200D
+      && second.Value is < 0x1F3FB or > 0x1F3FF
+      && !(second.IsBmp && NotAtStart.Contains((char)second.Value))
+      && !(first.IsBmp && NotAtEnd.Contains((char)first.Value));
+
+  /// The text as lines of at most width columns, broken at spaces where there are any, and
+  /// before or after a character that is two columns wide, as Chinese text is broken, but not
+  /// before a mark that closes or after one that opens. A word that is longer than a line is
+  /// broken where the line ends.
   public static List<string> Wrap(string text, int width) {
     List<string> lines = [];
     width = Math.Max(1, width);
     foreach (string paragraph in text.Replace("\r", "", StringComparison.Ordinal).Split('\n')) {
       StringBuilder line = new();
       int used = 0;
-      foreach (string word in paragraph.Replace('\t', ' ').Split(' ')) {
-        int w = Of(word);
-        if (used > 0 && used + 1 + w > width) {
+      foreach ((string unit, bool spaced) in Units(paragraph.Replace('\t', ' '))) {
+        int w = Of(unit);
+        bool space = spaced && used > 0;
+        if (used > 0 && used + (space ? 1 : 0) + w > width) {
           lines.Add(line.ToString());
           line.Clear();
           used = 0;
+          space = false;
         }
 
-        if (used > 0) {
+        if (space) {
           line.Append(' ');
           used++;
         }
 
-        foreach (Rune rune in word.EnumerateRunes()) {
+        foreach (Rune rune in unit.EnumerateRunes()) {
           int rw = Of(rune);
           if (used + rw > width) {
             lines.Add(line.ToString());
@@ -207,6 +229,31 @@ public static class TextWidth {
     }
 
     return lines;
+  }
+
+  /// The parts of a paragraph that a line is not broken inside of unless it must be, each
+  /// with whether a space is before it: the words, and in a word each character that is two
+  /// columns wide, with the marks that stay with it.
+  private static IEnumerable<(string Unit, bool Spaced)> Units(string paragraph) {
+    bool first = true;
+    foreach (string word in paragraph.Split(' ')) {
+      StringBuilder unit = new();
+      bool spaced = !first;
+      first = false;
+      Rune? before = null;
+      foreach (Rune rune in word.EnumerateRunes()) {
+        if (before is { } last && BreaksBetween(last, rune)) {
+          yield return (unit.ToString(), spaced);
+          unit.Clear();
+          spaced = false;
+        }
+
+        unit.Append(rune.ToString());
+        before = rune;
+      }
+
+      yield return (unit.ToString(), spaced);
+    }
   }
 
   /// A styled line as rows of at most width columns.

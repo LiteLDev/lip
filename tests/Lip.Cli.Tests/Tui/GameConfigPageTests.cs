@@ -515,17 +515,17 @@ public sealed class GameConfigPageTests {
     tui.Press(ConsoleKey.Tab);
     await tui.WaitFor("←→ Switch");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(GameConfigText.ChangedOnDisk);
+    await tui.WaitFor(CommonText.ChangedOnDisk);
     tui.Snapshot("gameconfig-conflict");
-    Assert.Contains($"[ {GameConfigText.Overwrite} ] [ {CommonText.Cancel} ]", tui.Screen);
+    Assert.Contains($"[ {CommonText.Overwrite} ] [ {CommonText.Cancel} ]", tui.Screen);
     // Enter is Cancel: nothing is written, and the changes stay.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitUntilGone(GameConfigText.ChangedOnDisk);
+    await tui.WaitUntilGone(CommonText.ChangedOnDisk);
     Assert.Equal(server, tui.Fs.File.ReadAllText(File("allowlist.json")));
     Assert.Contains("Allowlist *", tui.Screen);
 
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(GameConfigText.ChangedOnDisk);
+    await tui.WaitFor(CommonText.ChangedOnDisk);
     tui.Press(ConsoleKey.LeftArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(CommonText.Saved);
@@ -1218,7 +1218,7 @@ public sealed class GameConfigPageTests {
     tui.Press(ConsoleKey.Tab);
     await tui.WaitFor("←→ Switch  Enter Select");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(GameConfigText.ChangedOnDisk);
+    await tui.WaitFor(CommonText.ChangedOnDisk);
     Assert.Equal(Properties, tui.Fs.File.ReadAllText(File("server.properties")));
   }
 
