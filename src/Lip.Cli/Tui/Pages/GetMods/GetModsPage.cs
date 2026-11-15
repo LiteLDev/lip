@@ -1,4 +1,3 @@
-using System.Globalization;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Widgets;
 using Lip.Core.Catalog;
@@ -9,8 +8,8 @@ namespace Lip.Cli.Tui.Pages.GetMods;
 /// The Get mods page: the mods of the catalogue (protocol/lip-tui.md, "Catalogue") that have a
 /// build for a server. From top to bottom: the search, the order, the filters; the mods; and
 /// the details of the selected mod, at the right of the mods where the page is wide enough.
-/// Enter on a mod offers to install it, to choose a version, to read its README and to open
-/// its page in the browser.
+/// Enter on a mod offers to install it, which asks for the version, to read its README and to
+/// open its page in the browser.
 public sealed class GetModsPage : Page {
   /// The areas of the page that take the keys.
   private enum Area {
@@ -30,7 +29,7 @@ public sealed class GetModsPage : Page {
     public override void DrawValue(ScreenBuffer screen, int x, int y, int width, bool focused) =>
         screen.WriteFit(
             x, y, width,
-            filters.Count == 0 ? GetModsText.None : GetModsText.FiltersActive(filters.Count),
+            filters.Count == 0 ? ModDetailsText.None : GetModsText.FiltersActive(filters.Count),
             focused ? Theme.Accent : filters.Count == 0 ? default : Theme.Good);
   }
 
@@ -55,11 +54,14 @@ public sealed class GetModsPage : Page {
   private readonly ListView<CatalogMod> _list;
   // The files of the mods: those read, those being read, and those that could not be read
   // since the selection last moved.
-  private readonly Dictionary<string, CatalogDetail> _details = new(StringComparer.Ordinal);
+  private readonly Dictionary<string, CatalogDetail> _files = new(StringComparer.Ordinal);
   private readonly Dictionary<string, Task<CatalogDetail>> _detailReads =
       new(StringComparer.Ordinal);
   private readonly HashSet<string> _detailsFailed = new(StringComparer.Ordinal);
   private HashSet<string> _installed = new(StringComparer.OrdinalIgnoreCase);
+  // The game and the LeviLamina of the selected workspace; null until they are read, and
+  // while they are read again.
+  private CatalogWorkspace? _workspace;
   private string? _installedOf;
   private int _installedRead;
   private CatalogIndex? _catalog;
@@ -72,12 +74,8 @@ public sealed class GetModsPage : Page {
   private long _restedSince;
   private int _rowWidth = 1;
   private bool _wide;
-  // The lines of the details that are shown, what they were made from, the first of them that
-  // is shown, and how many fit.
-  private List<StyledLine> _detailLines = [];
-  private (string Id, int Width, bool Wide, string Latest, Language Language)? _detailLinesOf;
-  private int _detailTop;
-  private int _detailRows = 1;
+  // The details of the selected mod.
+  private readonly ModDetails _view = new();
 
   public GetModsPage(AppContext context) : base(context) {
     _search = new TextRow(() => GetModsText.Search, "", () => GetModsText.SearchExample) {
@@ -110,15 +108,13 @@ public sealed class GetModsPage : Page {
         Area.List => _list.HasCurrent
             ? [.. _list.Hints, CommonText.HintActions, CommonText.HintNext, .. _list.PageHints]
             : [CommonText.HintNext],
-        _ => [
-          CommonText.HintScroll, CommonText.HintNext, CommonText.HintPage, CommonText.HintEnds,
-        ],
+        _ => [.. _view.Hints, CommonText.HintNext, .. _view.PageHints],
       };
     }
   }
 
   /// Whether the details have more rows than fit: they take the focus only then.
-  private bool DetailsScroll => _detailLines.Count > _detailRows;
+  private bool DetailsScroll => _view.Scrollable;
 
   public override void OnShown() {
     if (_catalog is null || Environment.TickCount64 - _loadedAt > Stale) {
@@ -153,7 +149,7 @@ public sealed class GetModsPage : Page {
     }
 
     string id = _list.Current.Id;
-    if (!_details.ContainsKey(id) && !_detailsFailed.Contains(id)) {
+    if (!_files.ContainsKey(id) && !_detailsFailed.Contains(id)) {
       ReadDetail(id);
     }
   }
@@ -178,7 +174,7 @@ public sealed class GetModsPage : Page {
           _catalog = index;
           _loadedAt = Environment.TickCount64;
           _generation++;
-          _details.Clear();
+          _files.Clear();
           _detailReads.Clear();
           _detailsFailed.Clear();
           _filters.Build(index);
@@ -202,6 +198,7 @@ public sealed class GetModsPage : Page {
     }
 
     int read = ++_installedRead;
+    _workspace = null;
     LipClient client = Context.Client;
     Context.Background(
         () => client.ListPackages(),
@@ -210,6 +207,7 @@ public sealed class GetModsPage : Page {
             _installed = new HashSet<string>(
                 packages.Select(package => package.Identity.Split('#')[0]),
                 StringComparer.OrdinalIgnoreCase);
+            _workspace = CatalogWorkspace.Of(packages);
           }
         },
         _ => {
@@ -239,7 +237,7 @@ public sealed class GetModsPage : Page {
       if (detail is null) {
         _detailsFailed.Add(id);
       } else {
-        _details[id] = detail;
+        _files[id] = detail;
         _detailsFailed.Remove(id);
       }
     }
@@ -252,7 +250,7 @@ public sealed class GetModsPage : Page {
   /// read, otherwise once it is, behind a dialog that Esc cancels. then gets the file, or
   /// null and why when it cannot be read.
   private void WithDetail(CatalogMod mod, Action<CatalogDetail?, string?> then) {
-    if (_details.TryGetValue(mod.Id, out CatalogDetail? known)) {
+    if (_files.TryGetValue(mod.Id, out CatalogDetail? known)) {
       then(known, null);
       return;
     }
@@ -302,7 +300,7 @@ public sealed class GetModsPage : Page {
   /// once the selection rests, again when it could not be read before.
   private void Rested() {
     _restedSince = Environment.TickCount64;
-    _detailTop = 0;
+    _view.ScrollToStart();
     _detailsFailed.Clear();
   }
 
@@ -347,40 +345,20 @@ public sealed class GetModsPage : Page {
 
     CatalogMod? mod = _list.HasCurrent ? _list.Current : null;
     if (details.Height >= 2) {
-      Rule(screen, details, mod?.Name ?? GetModsText.Details, focused && _area == Area.Details);
+      Rule(
+          screen, details, mod?.Name ?? ModDetailsText.Details,
+          focused && _area == Area.Details);
     }
 
-    DrawDetails(screen, details.Shrink(top: 1), mod);
+    // Below the mods there are too few rows for an empty one.
+    _view.Spaced = _wide;
+    _view.Show(
+        mod, mod is null ? null : _files.GetValueOrDefault(mod.Id),
+        mod is not null && _detailsFailed.Contains(mod.Id));
+    _view.Draw(screen, details.Shrink(top: 1));
     if (_area == Area.Details && !DetailsScroll) {
       _area = Area.List;
     }
-  }
-
-  /// The details of a mod, from the first line that is shown, with marks where lines are
-  /// hidden above or below.
-  private void DrawDetails(ScreenBuffer screen, Rect rect, CatalogMod? mod) {
-    _detailRows = Math.Max(1, rect.Height);
-    if (mod is null || rect.Height < 1 || rect.Width < 2) {
-      _detailLines = [];
-      _detailLinesOf = null;
-      return;
-    }
-
-    // The lines are made again only when what they say changed.
-    (string, int, bool, string, Language) of =
-        (mod.Id, rect.Width - 1, _wide, Latest(mod), Context.Language);
-    if (_detailLinesOf != of) {
-      _detailLinesOf = of;
-      _detailLines = DetailLines(mod, rect.Width - 1);
-    }
-
-    _detailTop = Math.Clamp(_detailTop, 0, Math.Max(0, _detailLines.Count - _detailRows));
-    for (int i = 0; i < _detailRows && _detailTop + i < _detailLines.Count; i++) {
-      screen.Write(rect.X, rect.Y + i, _detailLines[_detailTop + i], rect.Right);
-    }
-
-    Ui.ScrollMarks(
-        screen, rect, _detailTop > 0, _detailTop + _detailRows < _detailLines.Count);
   }
 
   /// While the catalogue is read, that it is; when it cannot be read, a short message, why, and
@@ -415,75 +393,31 @@ public sealed class GetModsPage : Page {
         rect.X + 1, rect.Y, rect.Width - 2, $" {title} ", focused ? Theme.Accent : Theme.Strong);
   }
 
-  /// A mod as a row of the list: a mark when it is installed, its name and its author, its
-  /// stars, and when it was updated where there is room.
+  /// A mod as a row of the list: a mark when it is installed, its name and its author, and at
+  /// the right, each in a column of its own, its downloads, its stars and when it was updated.
+  /// The downloads are left out when the catalogue does not count them or counts none, and
+  /// the stars when there are none; a narrow list has no day, and a narrower one no downloads.
   private StyledLine Row(CatalogMod mod) {
-    bool dated = _rowWidth >= 44;
-    string stars = string.Create(CultureInfo.InvariantCulture, $"★ {mod.Stars}");
-    int room = Math.Max(4, _rowWidth - 2 - 8 - (dated ? 12 : 0));
+    bool dated = _rowWidth >= 48;
+    bool counted = _rowWidth >= 36;
+    string downloads = counted && mod.Downloads is > 0 and { } count
+        ? "↓ " + Cells.Compact(count)
+        : "";
+    string stars = mod.Stars > 0 ? "★ " + Cells.Compact(mod.Stars) : "";
+    int room = Math.Max(4, _rowWidth - 2 - 8 - (counted ? 8 : 0) - (dated ? 12 : 0));
     string name = TextWidth.Fit(mod.Name, room);
     int rest = room - TextWidth.Of(name);
     string owner = rest > 5 && mod.Owner.Length > 0 ? TextWidth.Fit(" · " + mod.Owner, rest) : "";
     StyledLine line = new StyledLine()
         .Add(_installed.Contains(mod.Id) ? "✓ " : "  ", Theme.Good)
         .Add(name)
-        .Add(Cells.Pad(owner, rest), Theme.Muted)
-        .Add(new string(' ', Math.Max(0, 8 - TextWidth.Of(stars))) + stars, Theme.Warning);
+        .Add(Cells.Pad(owner, rest), Theme.Muted);
+    if (counted) {
+      line.Add(Cells.PadLeft(downloads, 8), Theme.Accent with { Bold = false });
+    }
+
+    line.Add(Cells.PadLeft(stars, 8), Theme.Warning);
     return dated ? line.Add("  " + Cells.Date(mod.Updated)) : line;
-  }
-
-  /// The latest version of a mod, with its variant when that is not the default one, as its
-  /// file says; a dash when the file says none or cannot be read.
-  private string Latest(CatalogMod mod) =>
-      _details.TryGetValue(mod.Id, out CatalogDetail? detail)
-          ? (detail.LatestVersion ?? "—")
-              + (detail.LatestVariant is { Length: > 0 } variant ? $" #{variant}" : "")
-          : _detailsFailed.Contains(mod.Id) ? "—" : CommonText.Loading;
-
-  /// The details of a mod as lines of at most width columns: its description, then its fields,
-  /// the names in a column.
-  private List<StyledLine> DetailLines(CatalogMod mod, int width) {
-    width = Math.Max(8, width);
-    List<StyledLine> lines = [];
-    if (mod.Description.Length > 0) {
-      lines.AddRange(TextWidth.Wrap(mod.Description, width).Select(row => new StyledLine(row)));
-      // Below the mods there are too few rows for an empty one.
-      if (_wide) {
-        lines.Add(new StyledLine());
-      }
-    }
-
-    IEnumerable<string> tags = CatalogQuery.DisplayTags(mod)
-        .Select(tag => GetModsText.Tag(tag, CatalogQuery.Label(tag)));
-    List<(string Name, string Value, Style Style)> fields = [
-      (GetModsText.Author, mod.Owner, Theme.Accent),
-      (GetModsText.Stars, mod.Stars.ToString(CultureInfo.InvariantCulture), Theme.Warning),
-      (GetModsText.Id, mod.Id, default),
-      (GetModsText.Latest, Latest(mod), default),
-      (GetModsText.Platform, string.Join(", ", mod.Platforms), default),
-      (
-        GetModsText.Game,
-        string.Join(", ", mod.GameVersions.Take(3)) + (mod.GameVersions.Count > 3 ? ", …" : ""),
-        default),
-      (GetModsText.Tags, string.Join(", ", tags), Theme.Tag),
-      (GetModsText.License, CatalogQuery.LicenseOf(mod) ?? GetModsText.None, default),
-      (
-        GetModsText.Depends,
-        string.Join(", ", mod.Dependencies.Select(d => $"{Cells.BareName(d.Key)} {d.Value}")),
-        default),
-      (GetModsText.Updated, Cells.Date(mod.Updated), default),
-    ];
-    int names = fields.Max(field => TextWidth.Of(field.Name)) + 2;
-    foreach ((string name, string value, Style style) in fields.Where(f => f.Value.Length > 0)) {
-      List<string> rows = TextWidth.Wrap(value, Math.Max(4, width - names));
-      for (int i = 0; i < rows.Count; i++) {
-        lines.Add(new StyledLine()
-            .Add(Cells.Pad(i == 0 ? name : "", names), Theme.Muted)
-            .Add(rows[i], style));
-      }
-    }
-
-    return lines;
   }
 
   #endregion
@@ -573,23 +507,12 @@ public sealed class GetModsPage : Page {
   /// their start where they are below the mods.
   private bool DetailsKey(ConsoleKeyInfo key) {
     if (key.Key is ConsoleKey.Escape or ConsoleKey.LeftArrow || Ui.IsBackTab(key)
-        || (key.Key == ConsoleKey.UpArrow && _detailTop == 0 && !_wide)) {
+        || (key.Key == ConsoleKey.UpArrow && _view.AtStart && !_wide)) {
       _area = Area.List;
       return true;
     }
 
-    int last = Math.Max(0, _detailLines.Count - _detailRows);
-    int? top = key.Key switch {
-      ConsoleKey.UpArrow => _detailTop - 1,
-      ConsoleKey.DownArrow => _detailTop + 1,
-      ConsoleKey.PageUp => _detailTop - _detailRows,
-      ConsoleKey.PageDown => _detailTop + _detailRows,
-      ConsoleKey.Home => 0,
-      ConsoleKey.End => last,
-      _ => null,
-    };
-    if (top is { } moved) {
-      _detailTop = Math.Clamp(moved, 0, last);
+    if (_view.OnKey(key)) {
       return true;
     }
 
@@ -621,33 +544,56 @@ public sealed class GetModsPage : Page {
 
   #region Actions
 
+  /// The actions of a mod. It cannot be installed while the server of the workspace runs:
+  /// the action says so.
   private void ShowActions(CatalogMod mod) =>
       Context.ShowMenu(
           mod.Name,
-          new MenuItem(GetModsText.InstallLatest, () => InstallLatest(mod)),
-          new MenuItem(GetModsText.ChooseVersion, () => ChooseVersion(mod)),
-          new MenuItem(GetModsText.Readme, () => ShowReadme(mod)),
+          Context.ServerRunning
+              ? new MenuItem(GetModsText.InstallWhileRunning, () => { }, Enabled: false)
+              : new MenuItem(GetModsText.Install, () => ChooseVersion(mod)),
+          new MenuItem(ModDetailsText.Readme, () => ShowReadme(mod)),
           new MenuItem(
-              GetModsText.OpenInBrowser, () => Context.OpenUrl(mod.Url),
+              ModDetailsText.OpenInBrowser, () => Context.OpenUrl(mod.Url),
               Enabled: mod.Url.Length > 0));
 
-  /// Installs the latest version, in the variant that the catalogue names as the latest: the
-  /// default one when the file of the mod cannot be read.
-  private void InstallLatest(CatalogMod mod) =>
-      WithDetail(mod, (detail, _) => Install(
-          mod.Id + (detail?.LatestVariant is { Length: > 0 } variant ? "#" + variant : "")));
+  /// Asks for the variant and the version, among those that fit the game and the LeviLamina
+  /// that the workspace has now. A workspace without a game is offered a server instead.
+  /// Without the file of the mod there is no version to choose from, and the user can still
+  /// write one.
+  private void ChooseVersion(CatalogMod mod) {
+    if (_workspace is { } known) {
+      ChooseVersion(mod, known);
+      return;
+    }
 
-  /// Asks for the variant and the version. Without the file of the mod there is no version to
-  /// choose from, and the user can still write one.
-  private void ChooseVersion(CatalogMod mod) =>
-      WithDetail(mod, (detail, _) => Context.Show(new VersionDialog(mod, detail, Install)));
+    // What the workspace has is not read yet: it is read behind a dialog, so that no key
+    // goes elsewhere meanwhile.
+    LipClient client = Context.Client;
+    Context.RunOperation(
+        mod.Name,
+        async _ => CatalogWorkspace.Of(await client.ListPackages()),
+        workspace => ChooseVersion(mod, workspace));
+  }
+
+  private void ChooseVersion(CatalogMod mod, CatalogWorkspace workspace) {
+    if (workspace.Game is null) {
+      Context.Confirm(
+          mod.Name, GetModsText.NoServer, CommonText.NewServer,
+          () => Context.Navigate(PageId.Workspaces, PageRequest.NewServer));
+      return;
+    }
+
+    WithDetail(
+        mod, (detail, _) => Context.Show(new VersionDialog(mod, detail, workspace, Install)));
+  }
 
   private void ShowReadme(CatalogMod mod) =>
       WithDetail(mod, (detail, error) => {
         if (detail is null) {
-          Context.Toast(error ?? GetModsText.Unavailable, ToastKind.Bad);
+          Context.Toast(error ?? ModDetailsText.NoFile, ToastKind.Bad);
         } else {
-          Context.Show(new ViewerDialog(mod.Name, detail.Readme ?? GetModsText.NoReadme));
+          Context.Show(new ViewerDialog(mod.Name, detail.Readme ?? ModDetailsText.NoReadme));
         }
       });
 

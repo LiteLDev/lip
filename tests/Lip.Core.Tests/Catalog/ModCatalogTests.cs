@@ -1,4 +1,6 @@
 using Lip.Core.Catalog;
+using Lip.Core.Mcmod;
+using Semver;
 
 namespace Lip.Core.Tests.Catalog;
 
@@ -16,7 +18,8 @@ public class ModCatalogTests {
             "side": ["server", "client"], "platform": ["win-x64"],
             "gameVersions": ["1.26.60", "1.26.51"],
             "deps": {"github.com/LiteLDev/LeviLamina": "26.60.*"},
-            "stars": 12, "updated": "2026-11-03T13:14:02Z", "created": "2023-12-29T13:10:56Z",
+            "stars": 12, "downloads": 55912,
+            "updated": "2026-11-03T13:14:02Z", "created": "2023-12-29T13:10:56Z",
             "license": "MIT",
             "url": "https://levimc.org/mods/github.com/LiteLDev/LegacyMoney/", "requiredBy": 3
           },
@@ -33,7 +36,7 @@ public class ModCatalogTests {
           {
             "id": "github.com/LiteLDev/Arke", "name": "Arke", "owner": "LiteLDev",
             "description": "Shader packs", "tags": ["shader"], "side": ["client"],
-            "platform": ["win-x64"], "stars": 63,
+            "platform": ["win-x64"], "stars": 63, "downloads": 0,
             "updated": "2026-11-08T03:02:57Z", "created": "2026-11-07T05:55:46Z"
           },
           {"id": "github.com/LiteLDev/Arke", "name": "Duplicate"},
@@ -63,6 +66,10 @@ public class ModCatalogTests {
     Assert.Equal(["server", "client"], money.Sides);
     Assert.Equal("26.60.*", money.Dependencies["github.com/LiteLDev/LeviLamina"]);
     Assert.Equal(12, money.Stars);
+    // The downloads are a count, or unknown when the file leaves them out: not none.
+    Assert.Equal(55912, money.Downloads);
+    Assert.Null(index.Mods[1].Downloads);
+    Assert.Equal(0, index.Mods[2].Downloads);
     Assert.Equal(3, money.RequiredBy);
     Assert.Equal(new DateTimeOffset(2026, 11, 3, 13, 14, 2, TimeSpan.Zero), money.Updated);
     Assert.True(money.RunsOn("server"));
@@ -87,7 +94,10 @@ public class ModCatalogTests {
               {
                 "version": "0.23.1", "prerelease": false, "released": "2026-11-03T13:14:02Z",
                 "variants": {
-                  "lua": [{"side": "server", "platform": "win-x64"}],
+                  "lua": [{
+                    "side": "server", "platform": "win-x64",
+                    "deps": {"github.com/LiteLDev/LeviLamina": "26.60.*"}
+                  }],
                   "client": [{"side": "client", "platform": "win-x64"}],
                   "": [{"side": "client"}, {"side": "server"}]
                 }
@@ -112,6 +122,16 @@ public class ModCatalogTests {
     // for a version that does not say.
     Assert.Equal(["", "lua"], detail.Versions[0].Variants);
     Assert.Equal([""], detail.Versions[1].Variants);
+    Assert.Equal(["", "lua"], detail.ServerVariants());
+    // Every entry of every variant is kept, with what it is for and what it depends on.
+    Assert.Equal(
+        ["lua:server", "client:client", ":client", ":server"],
+        detail.Versions[0].Builds.Select(build => $"{build.Variant}:{build.Side}"));
+    CatalogBuild lua = Assert.Single(detail.Versions[0].ServerBuilds("lua"));
+    Assert.Equal("win-x64", lua.Platform);
+    Assert.Equal("26.60.*", lua.Dependencies["github.com/LiteLDev/LeviLamina"]);
+    Assert.Empty(detail.Versions[0].ServerBuilds("").Single().Dependencies);
+    Assert.Empty(detail.Versions[1].Builds);
   }
 
   [Theory]
@@ -226,7 +246,8 @@ public class ModCatalogTests {
 
   [Theory]
   [InlineData("", "server", null, CatalogSort.Relevance, "LegacyMoney,PLand")]
-  [InlineData("", null, null, CatalogSort.Stars, "Arke,PLand,LegacyMoney")]
+  // Arke has the most stars and no download, PLand no count of downloads.
+  [InlineData("", null, null, CatalogSort.Popularity, "PLand,Arke,LegacyMoney")]
   [InlineData("", null, null, CatalogSort.Updated, "Arke,PLand,LegacyMoney")]
   [InlineData("", null, null, CatalogSort.Newest, "Arke,PLand,LegacyMoney")]
   [InlineData("", "client", null, CatalogSort.Relevance, "LegacyMoney,Arke")]
@@ -246,5 +267,265 @@ public class ModCatalogTests {
         index, search, new CatalogFilter(side, tag is null ? [] : [tag], [], []), sort);
 
     Assert.Equal(expected, string.Join(',', mods.Select(mod => mod.Name)));
+  }
+
+  /// A mod with what the orders and the popularity look at.
+  private static CatalogMod Mod(
+      string id, int stars, long? downloads = null, double popularity = 0, int updated = 0,
+      int created = 0) =>
+      new(id, id, "", "", [], [], [], [], new Dictionary<string, string>(), stars,
+          updated == 0 ? null : new DateTimeOffset(2026, 1, updated, 0, 0, 0, TimeSpan.Zero),
+          created == 0 ? null : new DateTimeOffset(2025, 1, created, 0, 0, 0, TimeSpan.Zero),
+          0, "") {
+        Downloads = downloads,
+        Popularity = popularity,
+      };
+
+  [Fact]
+  public void Popularity_IsTheMeanOfTheZScoresOfTheStarsAndTheDownloads() {
+    // ln(1 + x) of the stars is one of two values, three mods each: the mean is halfway and
+    // the population deviation is half their distance, so z is +1 or -1. The same holds for
+    // the downloads of the four mods that have a count.
+    IReadOnlyList<double> scores = CatalogPopularity.Scores([
+      Mod("a", 99, 1000),  // (+1 + +1) / 2
+      Mod("b", 99, 10),    // (+1 + -1) / 2
+      Mod("c", 99),        // no count: z of the stars twice
+      Mod("d", 0, 1000),   // (-1 + +1) / 2
+      Mod("e", 0, 10),     // (-1 + -1) / 2
+      Mod("f", 0),         // no count
+    ]);
+
+    Assert.Equal([1, 0, 1, 0, -1, -1], scores);
+  }
+
+  [Fact]
+  public void Popularity_IsRoundedToThreeDecimals() {
+    // ln(1 + x) of 0, 1 and 3 stars is 0, ln 2 and 2 ln 2: the mean is ln 2 and the
+    // population deviation ln 2 * sqrt(2 / 3), so z is -sqrt(1.5), 0 and sqrt(1.5) =
+    // 1.2247...; no mod has a count of downloads.
+    IReadOnlyList<double> scores =
+        CatalogPopularity.Scores([Mod("a", 0), Mod("b", 1), Mod("c", 3)]);
+
+    Assert.Equal([-1.225, 0, 1.225], scores);
+  }
+
+  [Fact]
+  public void Popularity_OfModsThatDoNotDiffer_IsZero() {
+    // The deviation of the stars is 0, and so is that of the downloads of the one mod that
+    // has a count.
+    Assert.Equal([0, 0], CatalogPopularity.Scores([Mod("a", 5, 700), Mod("b", 5)]));
+    Assert.Equal([0], CatalogPopularity.Scores([Mod("a", 5)]));
+    Assert.Empty(CatalogPopularity.Scores([]));
+  }
+
+  [Fact]
+  public async Task GetIndex_GivesEveryModItsPopularity() {
+    CatalogIndex index = await ReadIndex();
+
+    // Three mods, 12, 35 and 63 stars; the downloads of the two that have a count are 55912
+    // and 0, so their z is +1 and -1, and the mod without a count takes z of its stars twice.
+    double[] logs = [Math.Log(13), Math.Log(36), Math.Log(64)];
+    double mean = logs.Average();
+    double deviation = Math.Sqrt(logs.Sum(log => Math.Pow(log - mean, 2)) / 3);
+    double[] expected = [
+      Math.Round((((logs[0] - mean) / deviation) + 1) / 2, 3),
+      Math.Round((logs[1] - mean) / deviation, 3),
+      Math.Round((((logs[2] - mean) / deviation) - 1) / 2, 3),
+    ];
+    Assert.Equal(expected, index.Mods.Select(mod => mod.Popularity));
+  }
+
+  [Theory]
+  // The most popular, then the most stars, then the last updated, then the id.
+  [InlineData(CatalogSort.Popularity, "b,D,c,a,e")]
+  // The last updated, then the most popular, then the id, whatever its case.
+  [InlineData(CatalogSort.Updated, "e,b,D,a,c")]
+  // The last created, then the most popular, then the id.
+  [InlineData(CatalogSort.Newest, "c,b,a,D,e")]
+  // The order of the catalogue.
+  [InlineData(CatalogSort.Relevance, "e,D,c,b,a")]
+  public void Select_OrdersAsLevimcOrgDoes(CatalogSort sort, string expected) {
+    CatalogIndex index = new([
+      Mod("e", stars: 1, popularity: -1, updated: 9, created: 1),
+      Mod("D", stars: 5, popularity: 1, updated: 3, created: 2),
+      Mod("c", stars: 5, popularity: 1, updated: 2, created: 9),
+      Mod("b", stars: 9, popularity: 1, updated: 3, created: 5),
+      Mod("a", stars: 5, popularity: 0.5, updated: 3, created: 5),
+    ]);
+
+    IReadOnlyList<CatalogMod> mods = CatalogQuery.Select(
+        index, "", new CatalogFilter(null, [], [], []), sort);
+
+    Assert.Equal(expected, string.Join(',', mods.Select(mod => mod.Id)));
+  }
+
+  [Fact]
+  public void CatalogSort_NamesTheOrdersOfLevimcOrg_InItsOrder() =>
+      Assert.Equal(
+          [CatalogSort.Relevance, CatalogSort.Popularity, CatalogSort.Updated, CatalogSort.Newest],
+          Enum.GetValues<CatalogSort>());
+
+  [Theory]
+  [InlineData("github.com/LiteLDev/LegacyMoney", "LegacyMoney")]
+  [InlineData("GitHub.com/liteldev/legacymoney", "LegacyMoney")]
+  [InlineData("github.com/LiteLDev/LegacyMoney#lua", "LegacyMoney")]
+  [InlineData("github.com/LiteLDev/LegacyMoney2", null)]
+  [InlineData("github.com/LiteLDev", null)]
+  public async Task Find_GivesTheModOfAnInstalledPackage(string identity, string? expected) {
+    CatalogIndex index = await ReadIndex();
+
+    Assert.Equal(expected, index.Find(identity)?.Name);
+  }
+
+  [Fact]
+  public void CatalogWorkspace_ReadsTheGameAndTheLoaderOfTheInstalledPackages() {
+    CatalogWorkspace workspace = CatalogWorkspace.Of([
+      new InstalledPackage("github.com/acme/Alpha", "1.2.0", true),
+      new InstalledPackage("github.com/LiteLDev/bds#linux", "1.26.60", true),
+      new InstalledPackage("github.com/liteldev/levilamina", "26.60.7", true),
+    ]);
+
+    Assert.Equal(new CatalogWorkspace("1.26.60", "26.60.7"), workspace);
+    Assert.Equal(new CatalogWorkspace(null, null), CatalogWorkspace.Of([]));
+  }
+
+  private const string Loader = "github.com/LiteLDev/LeviLamina";
+  private const string Game = "github.com/LiteLDev/bds";
+
+  /// A version with one entry per variant given as "variant|side|id range,id range".
+  private static CatalogVersion Version(string name, params string[] builds) =>
+      new(name, name.Contains('-'), null, [
+        .. builds.Select(build => {
+          string[] parts = build.Split('|', 3);
+          return new CatalogBuild(
+              parts[0], parts[1], "win-x64",
+              parts[2].Split(',', StringSplitOptions.RemoveEmptyEntries)
+                  .Select(dependency => dependency.Split(' ', 2))
+                  .ToDictionary(pair => pair[0], pair => pair[1]));
+        }),
+      ]);
+
+  [Theory]
+  // The range of LeviLamina contains the installed one, or not.
+  [InlineData("", "1.26.60", "26.60.7", true)]
+  [InlineData("", "1.26.60", "26.50.2", false)]
+  // A mod that needs LeviLamina does not fit a workspace without it.
+  [InlineData("", "1.26.60", null, false)]
+  // A variant that depends on neither fits any workspace.
+  [InlineData("plain", "1.26.60", null, true)]
+  [InlineData("plain", null, null, true)]
+  // A dependency on the game is compared with the game.
+  [InlineData("game", "1.26.60", null, true)]
+  [InlineData("game", "1.21.0", null, false)]
+  [InlineData("game", null, null, false)]
+  // One entry that fits is enough.
+  [InlineData("two", "1.26.60", "26.50.2", true)]
+  // A range that cannot be read rules nothing out.
+  [InlineData("odd", "1.26.60", "26.50.2", true)]
+  // An entry for another platform than that of lip does not count; one without does.
+  [InlineData("linux", "1.26.60", "26.60.7", false)]
+  [InlineData("any", "1.26.60", "26.60.7", true)]
+  // Only variants with an entry for a server count.
+  [InlineData("client", "1.26.60", "26.60.7", false)]
+  [InlineData("none", "1.26.60", "26.60.7", false)]
+  public void IsCompatible_ComparesTheRangesOfAVariantWithTheWorkspace(
+      string variant, string? game, string? loader, bool expected) {
+    CatalogVersion version = Version(
+        "1.0.0",
+        $"|server|{Loader} 26.60.*,github.com/acme/Other 9.*",
+        "plain|server|github.com/acme/Other 9.*",
+        $"game|server|{Game}#linux 1.26.60",
+        $"two|server|{Loader} 26.60.*",
+        $"two|server|{Loader} 26.50.*",
+        $"odd|server|{Loader} not-a-range",
+        $"client|client|{Loader} 26.60.*");
+    version = version with {
+      Builds = [
+        .. version.Builds,
+        new CatalogBuild("linux", "server", "linux-x64", new Dictionary<string, string>()),
+        new CatalogBuild("any", "server", "", new Dictionary<string, string>()),
+      ],
+    };
+
+    Assert.Equal(
+        expected,
+        CatalogCompatibility.IsCompatible(version, variant, new CatalogWorkspace(game, loader)));
+  }
+
+  [Fact]
+  public void Versions_AreThoseOfTheVariantThatFit_InTheOrderOfTheFile() {
+    CatalogDetail detail = new("github.com/acme/Alpha", null, null, "1.3.0", "", [
+      Version("1.3.0", $"|server|{Loader} 26.70.*", $"lua|server|{Loader} 26.60.*"),
+      Version("1.2.0", $"|server|{Loader} 26.60.*"),
+      Version("1.2.0-rc.1", $"|server|{Loader} 26.60.*"),
+      Version("1.1.0", $"|server|{Loader} 26.50.*"),
+      // A version whose variants the file does not list is of the default variant, and fits.
+      Version("1.0.0"),
+    ], null);
+    CatalogWorkspace workspace = new("1.26.60", "26.60.7");
+
+    Assert.Equal(
+        ["1.2.0", "1.2.0-rc.1", "1.0.0"],
+        CatalogCompatibility.Versions(detail, "", workspace).Select(version => version.Version));
+    Assert.Equal(
+        ["1.3.0"],
+        CatalogCompatibility.Versions(detail, "lua", workspace).Select(version => version.Version));
+    Assert.Empty(
+        CatalogCompatibility.Versions(detail, "lua", new CatalogWorkspace("1.26.60", null)));
+    Assert.True(CatalogCompatibility.NeedsLoader(detail, "lua"));
+    Assert.False(CatalogCompatibility.NeedsLoader(detail, "other"));
+  }
+
+  [Fact]
+  public void LoaderSupport_TellsWhichGamesHaveALeviLamina() {
+    LoaderSupport support = new(new CatalogDetail(Loader, null, null, "26.70.0-rc.1", "", [
+      // A prerelease counts only for a game that no other version is for.
+      Version("26.70.0-rc.2", $"|server|{Game} 1.26.70"),
+      Version("26.70.0-rc.1", $"|server|{Game} 1.26.70"),
+      Version("26.60.8-rc.1", $"|server|{Game} 1.26.60"),
+      Version("26.60.7", $"|server|{Game} 1.26.60", "client|client|"),
+      Version("26.60.6", $"|server|{Game} 1.26.60"),
+      Version("26.50.2", $"|server|{Game} 1.26.50 || 1.26.51"),
+      // Not the game of lip, an entry for a client, and no entry at all: none counts.
+      Version("0.4.2", "|server|github.com/tooth-hub/bds 1.20.50"),
+      Version("0.4.1", $"client|client|{Game} 1.20.40"),
+      Version("0.4.0"),
+    ], null));
+
+    Assert.Equal("26.60.7", support.VersionFor("1.26.60"));
+    Assert.Equal("26.50.2", support.VersionFor("1.26.51"));
+    Assert.Equal("26.70.0-rc.2", support.VersionFor(SemVersion.Parse("1.26.70")));
+    Assert.Null(support.VersionFor("1.20.50"));
+    Assert.Null(support.VersionFor("1.20.40"));
+    Assert.Null(support.VersionFor("not a version"));
+    Assert.True(support.Supports("1.26.50"));
+    Assert.False(support.Supports(SemVersion.Parse("1.21.0")));
+  }
+
+  [Fact]
+  public async Task GetLoaderSupport_ReadsTheFileOfLeviLamina_Once() {
+    List<string> urls = [];
+    ModCatalogClient client = new((url, _) => {
+      urls.Add(url);
+      return Task.FromResult("""
+          {
+            "id": "github.com/LiteLDev/LeviLamina",
+            "versions": [ {
+              "version": "26.60.7",
+              "variants": { "": [ {
+                "side": "server", "platform": "win-x64",
+                "deps": {"github.com/LiteLDev/bds": "1.26.60"}
+              } ] }
+            } ]
+          }
+          """);
+    });
+
+    LoaderSupport support = await client.GetLoaderSupport(TestContext.Current.CancellationToken);
+
+    Assert.Equal(
+        ["https://levimc.org/api/v4/mods/github.com/LiteLDev/LeviLamina/index.json"], urls);
+    Assert.True(support.Supports("1.26.60"));
+    Assert.False(support.Supports("1.26.61"));
   }
 }

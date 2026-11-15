@@ -141,7 +141,7 @@ public sealed class FilterDialog : Dialog {
     };
     string label = value.Section switch {
       FilterSection.License => GetModsText.LicenseFamily(value.Key, value.Label),
-      FilterSection.Tags => GetModsText.Tag(value.Key, value.Label),
+      FilterSection.Tags => ModDetailsText.Tag(value.Key, value.Label),
       _ => value.Label,
     };
     string count = value.Count.ToString(CultureInfo.InvariantCulture);
