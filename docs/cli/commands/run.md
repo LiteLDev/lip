@@ -30,7 +30,7 @@ Before it starts the server, `lip run`:
 4. fails if the workspace has no game (pointing to `lip setup`), if the server is the Linux server and lip does not run on Linux on x64, or if the server is not a file; and
 5. for the Windows servers, `bedrock_server_mod.exe` and `bedrock_server.exe`, installs what the server needs of the system when it is missing: Wine on Linux and macOS, and the Microsoft Visual C++ Redistributable (see [System Dependencies](../../guides/internal_mechanism.md#system-dependencies)). The Linux server needs neither.
 
-The workspace is not locked while the server runs: you can run `lip install`, `lip uninstall` and `lip update` in the same workspace from another terminal. Their changes take effect when the server is started again.
+The workspace is not locked while the server runs: you can run `lip install`, `lip uninstall` and `lip update` in the same workspace from another terminal. Their changes take effect when the server is started again. The [interface](../tui.md#while-the-server-runs) does not carry them out meanwhile: it sees the server of a `lip run` too, and asks you to stop it first.
 
 ### Wine
 
