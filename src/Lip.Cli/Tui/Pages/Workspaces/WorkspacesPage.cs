@@ -3,12 +3,14 @@ using System.Text;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Widgets;
 using Lip.Cli.Workspaces;
+using Lip.Core.Infrastructure;
 
 namespace Lip.Cli.Tui.Pages.Workspaces;
 
 /// The Workspaces page: the workspace list (protocol/lip-tui.md, "Workspaces"), below the rows
 /// that ask for a new server ("New server") and that add a directory. Enter on a workspace
-/// offers to select it, to set it up again, and to remove it from the list.
+/// offers to select it, to set it up again, and to remove it from the list. A workspace whose
+/// server runs, whichever lip runs it, says so, and is not set up again meanwhile.
 public sealed class WorkspacesPage : Page {
   // The areas of the page that take the focus.
   private const int ActionsArea = 0;
@@ -32,8 +34,11 @@ public sealed class WorkspacesPage : Page {
   private int _ticks;
   private int _rowWidth;
 
-  public WorkspacesPage(AppContext context) : base(context) {
-    _wizard = new ServerWizard(context, FocusSelected);
+  /// runsLinuxServer tells whether lip runs the Linux server on this system, and so whether
+  /// the build linux is offered: WorkspaceProgram.RunsLinuxServer when not given.
+  public WorkspacesPage(AppContext context, Func<bool>? runsLinuxServer = null) : base(context) {
+    _wizard = new ServerWizard(
+        context, FocusSelected, runsLinuxServer ?? (() => WorkspaceProgram.RunsLinuxServer));
     _actions = new ListView<int>(action => new StyledLine(
         action == 0 ? CommonText.NewServer : WorkspacesText.AddFolder, Theme.Accent)) {
       Items = [0, 1],
@@ -258,9 +263,11 @@ public sealed class WorkspacesPage : Page {
     }
 
     Entry entry = _list.Current;
+    bool current = IsCurrent(entry);
     string state = entry.Missing ? WorkspacesText.MissingDetail
-        : IsCurrent(entry) ? WorkspacesText.CurrentDetail
-        : IsRunning(entry) ? WorkspacesText.RunningDetail
+        : IsRunning(entry)
+            ? current ? WorkspacesText.CurrentRunningDetail : WorkspacesText.RunningDetail
+        : current ? WorkspacesText.CurrentDetail
         : "";
     return [FitEnd(entry.Path, width), TextWidth.Fit(state, width)];
   }
@@ -269,12 +276,13 @@ public sealed class WorkspacesPage : Page {
   private bool IsCurrent(Entry entry) =>
       WorkspaceList.PathComparer.Equals(entry.Path, Context.Workspace);
 
-  /// Whether the server of the workspace runs (protocol/lip-tui.md, "Server").
-  private bool IsRunning(Entry entry) => Context.Servers.Find(entry.Path)?.Running == true;
+  /// Whether the server of the workspace runs (protocol/lip-tui.md, "Server"): one of this
+  /// process, or one that another lip runs.
+  private bool IsRunning(Entry entry) => Context.IsServerRunning(entry.Path);
 
   /// The action menu of a workspace. The selected workspace is neither selected again nor
   /// removed; a directory that is missing is neither selected nor set up; and a workspace is
-  /// not set up while its server runs.
+  /// not set up while its server runs, which the menu says.
   private void OpenMenu(Entry entry) {
     bool current = IsCurrent(entry);
     List<MenuItem> items = [];
@@ -283,9 +291,10 @@ public sealed class WorkspacesPage : Page {
     }
 
     if (!entry.Missing) {
+      bool running = IsRunning(entry);
       items.Add(new MenuItem(
           WorkspacesText.ChangeVersions, () => _wizard.ChangeVersions(entry.Path),
-          Enabled: !IsRunning(entry)));
+          Enabled: !running, Reason: running ? CommonText.StopServerFirst : null));
     }
 
     if (!current) {
@@ -300,27 +309,28 @@ public sealed class WorkspacesPage : Page {
     Context.ShowMenu(Name(entry.Path), [.. items]);
   }
 
-  /// Asks for a directory that exists, adds it to the list and selects it.
-  private void AddFolder() =>
-      Context.Show(new PromptDialog(
-          WorkspacesText.AddTitle,
-          [new PromptField(WorkspacesText.Folder, "", WorkspacesText.FolderExample)],
-          // The directory may be the selected workspace already, which changes nothing.
-          _ => FocusSelected(),
-          validate: values => {
-            if (values[0].Length == 0) {
-              return CommonText.Required;
-            }
+  /// Asks for a directory that exists, in a folder browser that starts at the selected
+  /// workspace, adds it to the list and selects it.
+  private void AddFolder() => AddFolder(Context.Workspace);
 
-            // Adding is the check: the dialog stays open with why the directory was not added.
-            try {
-              return Context.AddWorkspace(values[0], out string? error) ? null : error;
-            }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException
-                or IOException) {
-              return WorkspacesText.InvalidPath;
-            }
-          }));
+  private void AddFolder(string start) =>
+      Context.Show(PathPicker.Folder(WorkspacesText.AddTitle, start, folder => {
+        string? error;
+        try {
+          // The directory may be the selected workspace already, which changes nothing.
+          if (Context.AddWorkspace(folder, out error, FocusSelected)) {
+            return;
+          }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+            or IOException) {
+          error = WorkspacesText.InvalidPath;
+        }
+
+        // The browser is back at the folder, below why it was not added.
+        AddFolder(folder);
+        Context.Message(WorkspacesText.AddTitle, error!, Theme.Bad);
+      }));
 
   /// Removes a workspace other than the selected one from the list, once the user confirmed;
   /// no file in it changes.
