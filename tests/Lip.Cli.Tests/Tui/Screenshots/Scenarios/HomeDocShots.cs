@@ -147,6 +147,9 @@ public sealed class HomeDocShots(ShotRun run) {
     tui.Press(ConsoleKey.UpArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(HomeText.GithubDirectSaved);
+    // The page is no longer behind the question: it shows what the workspace has.
+    await tui.WaitFor("LeviLamina " + World.LoaderVersion);
+    await tui.WaitFor(HomeText.StartServerDetail);
     await shot.Capture(
         "home-10-github-direct-saved",
         Note.Arrow(

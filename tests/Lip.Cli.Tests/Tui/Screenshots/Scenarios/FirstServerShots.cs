@@ -511,6 +511,8 @@ public sealed class FirstServerShots(ShotRun run) {
     TuiHarness tui = shot.Tui;
     await tui.WaitFor(HomeText.GithubQuestion);
     await tui.WaitFor(HomeText.GithubProxyDetail);
+    // Behind the question, the page says what the workspace has once it has read it.
+    await tui.WaitFor(HomeText.NotInstalled);
 
     await shot.Capture(
         "first-server-25-github",
