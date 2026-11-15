@@ -31,12 +31,17 @@ The **value** of a configuration key is the value the file gives it; when the fi
 |---|---|---|
 | `format` | required | `4`. |
 | `github_proxy` | optional | A string: a URI, or empty. |
+| `language` | optional | `"en"`, `"zh-Hans"` or `"zh-Hant"`. |
 
-The only configuration key of the user scope is `github_proxy`, without a default. It says how `lip` sends network requests to GitHub (git repositories and downloads):
+The configuration keys of the user scope are `github_proxy` and `language`, both without a default.
+
+`github_proxy` says how `lip` sends network requests to GitHub (git repositories and downloads):
 
 - A URI: a URI prefix through which `lip` sends them; a request that fails through it is sent to GitHub directly.
 - Empty: `lip` sends them to GitHub directly.
 - No value: `lip` sends them to GitHub directly. `github_proxy` is then **not configured**; with any value, it is configured.
+
+`language` is the language of the interface ([lip-tui(1), "Language"](lip-tui.md#language)): English with `en`, Simplified Chinese with `zh-Hans`, and Traditional Chinese with `zh-Hant`.
 
 ### Workspace configuration
 
@@ -54,4 +59,4 @@ The only configuration key of the workspace scope is `restart`, default `never`:
 
 ## SEE ALSO
 
-[lip-config(1)](lip-config.md), [lip-userspace(7)](lip-userspace.md), [lip-workspace(7)](lip-workspace.md)
+[lip-config(1)](lip-config.md), [lip-tui(1)](lip-tui.md), [lip-userspace(7)](lip-userspace.md), [lip-workspace(7)](lip-workspace.md)

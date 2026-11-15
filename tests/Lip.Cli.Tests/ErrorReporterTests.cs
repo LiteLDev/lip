@@ -73,6 +73,34 @@ public class ErrorReporterTests {
     Assert.Contains("Check the package name", Assert.Single(hints));
   }
 
+  /// The interface reports the failure of a command below the workspace that is selected in
+  /// it, not below the directory that lip was started in.
+  [Fact]
+  public void Describe_WithAWorkspace_WritesTheReportBelowIt() {
+    // Arrange
+    string workspace = Directory.CreateTempSubdirectory("lip-report-test-").FullName;
+    try {
+      // Act
+      Failure failure = ErrorReporter.Describe(
+          new InvalidOperationException("It broke."), ["(interface)", "Install"],
+          cancelled: false, workspace);
+
+      // Assert
+      Assert.Contains("It broke.", failure.Summary);
+      Assert.Null(failure.ReportError);
+      Assert.StartsWith(Path.Join(".lip", "logs") + Path.DirectorySeparatorChar, failure.ReportPath);
+      string report = File.ReadAllText(Path.Join(workspace, failure.ReportPath));
+      Assert.Contains("Install", report);
+      Assert.Contains(workspace, report);
+      Assert.False(Directory.Exists(Path.Join(Environment.CurrentDirectory, ".lip", "logs"))
+          && Directory.GetFiles(Path.Join(Environment.CurrentDirectory, ".lip", "logs"))
+              .Any(f => Path.GetFileName(f) == Path.GetFileName(failure.ReportPath)));
+    }
+    finally {
+      Directory.Delete(workspace, recursive: true);
+    }
+  }
+
   private static Candidate Candidate(string id, string version) {
     PackageEntry entry = new() {
       Side = McmodSide.Server,

@@ -1,0 +1,274 @@
+using System.IO.Abstractions;
+using Lip.Cli.Servers;
+using Lip.Cli.Tui.I18n;
+using Lip.Cli.Tui.Widgets;
+using Lip.Cli.Workspaces;
+using Lip.Core.Catalog;
+using Lip.Core.Infrastructure;
+using Lip.Core.PublicApi;
+using Semver;
+
+namespace Lip.Cli.Tui;
+
+/// The services of the interface for its pages and its dialogs: the selected workspace and its
+/// client, navigation, dialogs, operations, and the parts of lip that tests replace. Every
+/// member but Post is for the thread of the interface.
+public sealed class AppContext {
+  private readonly App _app;
+  private readonly AppOptions _options;
+
+  internal AppContext(App app, AppOptions options) {
+    _app = app;
+    _options = options;
+    ServerSetup = options.ServerSetup ?? ClientServerSetup.Instance;
+  }
+
+  #region The workspace
+
+  /// The client of the selected workspace: every command of lip. It is another object after
+  /// another workspace was selected.
+  public LipClient Client => _app.ClientOfWorkspace;
+
+  /// The selected workspace, the canonical form of an absolute path (protocol/lip-tui.md,
+  /// "Workspaces").
+  public string Workspace => _app.SelectedWorkspace;
+
+  /// The workspace list.
+  public WorkspaceList Workspaces => _app.WorkspaceList;
+
+  /// The file system of the workspaces.
+  public IFileSystem FileSystem => _app.WorkspaceList.FileSystem;
+
+  /// The canonical form of a path, absolute or relative to the selected workspace.
+  public string FullPath(string path) => _app.FullPath(path);
+
+  /// Selects the workspace, once the page shown has no unsaved changes; then calls switched.
+  /// Every page gets OnWorkspaceChanged.
+  public void SwitchWorkspace(string workspace, Action? switched = null) =>
+      _app.SwitchWorkspace(workspace, switched);
+
+  /// Adds the directory at path, absolute or relative to the selected workspace, to the
+  /// workspace list, and selects it as SwitchWorkspace does. False, with why in the language of
+  /// the interface, when it is not a directory or the list cannot be written.
+  public bool AddWorkspace(string path, out string? error, Action? switched = null) =>
+      _app.AddWorkspace(path, out error, switched);
+
+  /// Tells every page that what it read of the selected workspace is stale: for a page that
+  /// changed the workspace by other means than PlanAndRun.
+  public void NotifyWorkspaceChanged() => _app.WorkspaceChanged();
+
+  /// A client for another directory than the selected workspace, such as that of a new server,
+  /// whose messages and questions are shown in the interface too.
+  public LipClient ClientFor(string directory) => _app.ClientFor(directory);
+
+  #endregion
+
+  #region The parts of lip
+
+  /// The version of lip.
+  public string Version => _options.Version;
+
+  /// Reads the catalogue (protocol/lip-tui.md, "Catalogue").
+  public ModCatalogClient Catalog => _options.Catalog;
+
+  /// Checks that GitHub is reached, or null when the interface does not check
+  /// (protocol/lip-tui.md, "GitHub reachability").
+  public GithubProbe? GithubProbe => _options.GithubProbe;
+
+  /// The versions of the game and of the loader, and lip setup (protocol/lip-tui.md, "New
+  /// server").
+  public IServerSetup ServerSetup { get; }
+
+  /// lip self-update (protocol/lip-self-update.md) with the client of the selected workspace:
+  /// only checks for a newer release when checkOnly is set.
+  public Task<SelfUpdateResult> SelfUpdate(bool checkOnly) {
+    LipClient client = Client;
+    return _options.SelfUpdate is { } update
+        ? update(client, checkOnly)
+        : client.SelfUpdate(SemVersion.Parse(Version), checkOnly);
+  }
+
+  /// What lip daemon status finds: null when no daemon listens.
+  public Task<DaemonState?> DaemonStatus(CancellationToken cancellationToken = default) =>
+      _options.DaemonStatus is { } status
+          ? status(cancellationToken)
+          : Task.FromResult<DaemonState?>(null);
+
+  /// Opens an http or https URL in the browser of the user; a failure, or anything else than
+  /// such a URL, is said in the bottom bar. A URL may come from the catalogue, which is not to
+  /// be trusted with starting a program.
+  public void OpenUrl(string url) {
+    if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+        || uri.Scheme is not ("http" or "https")) {
+      Toast(url, ToastKind.Bad);
+    } else if (_options.OpenUrl is { } open) {
+      open(uri.AbsoluteUri);
+    } else if (!App.OpenInBrowser(uri.AbsoluteUri, out string? error)) {
+      Toast(error!, ToastKind.Bad);
+    }
+  }
+
+  #endregion
+
+  #region The server
+
+  /// The servers of the process, of every workspace (protocol/lip-tui.md, "Server").
+  public ServerSessions Servers => _app.ServerSessions;
+
+  /// The server of the selected workspace, or null when none ever ran in it.
+  public WorkspaceServer? Server => _app.ServerSessions.Find(Workspace);
+
+  /// Whether the server of the selected workspace runs.
+  public bool ServerRunning => Server?.Running == true;
+
+  /// Whether the servers that the interface starts are managed servers, which keep running
+  /// when it quits.
+  public bool ManagedServers => _app.Managed;
+
+  /// Starts the server of the selected workspace unless it runs, as protocol/lip-tui.md,
+  /// "Server" defines. A failure before the server starts is shown in a dialog with the title.
+  public void StartServer(string title) => _app.StartServer(title);
+
+  #endregion
+
+  #region Navigation and dialogs
+
+  /// Shows the page and gives the content area the focus, once the page shown has no unsaved
+  /// changes. With a request, one of PageRequest, the page then gets OnRequest.
+  public void Navigate(PageId page, string? request = null) => _app.Navigate(page, request);
+
+  /// The page shown.
+  public PageId CurrentPage => _app.CurrentPage;
+
+  /// Whether the content area, and not the sidebar, has the focus.
+  public bool ContentFocused => _app.ContentFocused;
+
+  /// Gives the content area the focus.
+  public void FocusContent() => _app.Focus(content: true);
+
+  /// Gives the sidebar the focus.
+  public void FocusSidebar() => _app.Focus(content: false);
+
+  /// Opens the dialog above everything else; it takes every key until it closes.
+  public void Show(Dialog dialog) => _app.Show(dialog);
+
+  /// Closes the dialog.
+  public void Close(Dialog dialog) => _app.Close(dialog);
+
+  /// Whether nothing is open above the page: no dialog, and no operation. Something that asks
+  /// the user without being asked to, such as the GitHub question, waits for this.
+  public bool Idle => _app.Idle;
+
+  /// Asks a question with two buttons; confirmed is called when the user chooses the first.
+  public void Confirm(
+      string title, string question, string confirm, Action confirmed, string? cancel = null) =>
+      Show(new ConfirmDialog(
+          title, [new StyledLine(question)], [confirm, cancel ?? CommonText.Cancel],
+          choice => {
+            if (choice == 0) {
+              confirmed();
+            }
+          }));
+
+  /// Shows a message with one button.
+  public void Message(string title, string message, Style style = default) =>
+      Show(new ConfirmDialog(title, [new StyledLine(message, style)], [CommonText.Close]));
+
+  /// Shows the action menu of a row.
+  public void ShowMenu(string title, params MenuItem[] items) => Show(new Menu(title, items));
+
+  /// Shows a message at the right of the bottom bar for a few seconds.
+  public void Toast(string text, ToastKind kind = ToastKind.Info) => _app.Toast(text, kind);
+
+  /// Asks to quit, as Esc in the sidebar does.
+  public void RequestQuit() => _app.RequestQuit();
+
+  #endregion
+
+  #region Operations
+
+  /// Runs the action on the thread of the interface, which then draws the screen again. For
+  /// any thread.
+  public void Post(Action action) => _app.Post(action);
+
+  /// Runs a command in the background, showing its progress in a dialog; then calls succeeded
+  /// with what the command told the user, or shows why it failed. The user may cancel it with
+  /// Esc when cancellable is set. One command runs at a time: false, and nothing runs, while
+  /// another does.
+  public bool RunOperation(
+      string title,
+      Func<CancellationToken, Task> action,
+      Action<Operation>? succeeded = null,
+      bool cancellable = false) =>
+      _app.RunOperation(title, action, succeeded, cancellable);
+
+  /// As RunOperation, for a command with a result, which succeeded gets.
+  public bool RunOperation<T>(
+      string title,
+      Func<CancellationToken, Task<T>> action,
+      Action<T> succeeded,
+      bool cancellable = false) {
+    T? result = default;
+    return _app.RunOperation(
+        title, async token => result = await action(token), _ => succeeded(result!), cancellable);
+  }
+
+  /// Does work in the background without a dialog, such as reading what a page shows; then
+  /// calls done with its result, or failed, on the thread of the interface. Neither is called
+  /// when another workspace was selected meanwhile. Without failed, the failure is shown in
+  /// the bottom bar.
+  public void Background<T>(
+      Func<Task<T>> work, Action<T> done, Action<Exception>? failed = null) =>
+      _app.Background(work, done, failed);
+
+  /// A workspace operation, as every one of them goes: its dry run, whose messages are the
+  /// plan; [Apply] [Cancel]; the license of the game when a setup would ask for it; its
+  /// progress; its result. operation gets whether it is the dry run, and the cancellation
+  /// token. After it succeeded every page gets OnWorkspaceChanged, and done is called.
+  public void PlanAndRun(
+      string title, Func<bool, CancellationToken, Task> operation, Action? done = null) =>
+      _app.PlanAndRun(title, (dryRun, _, token) => operation(dryRun, token), done);
+
+  /// As PlanAndRun, for an operation that may be a setup (protocol/lip-setup.md): operation
+  /// also gets whether the user accepted the license of the game.
+  public void PlanAndRun(
+      string title, Func<bool, bool, CancellationToken, Task> operation, Action? done = null) =>
+      _app.PlanAndRun(title, operation, done);
+
+  /// Shows what a command told the user, once it succeeded, ending with done.
+  public void ShowResult(string title, Operation operation, string? done = null) =>
+      _app.ShowResult(title, operation, done ?? CommonText.Done);
+
+  /// Shows why something failed, with what to do about it; the failure report is written below
+  /// the selected workspace.
+  public void ShowFailure(
+      string title,
+      Exception exception,
+      bool cancelled = false,
+      IReadOnlyList<StyledLine>? log = null) =>
+      _app.ShowFailure(title, exception, cancelled, log ?? []);
+
+  #endregion
+
+  #region Language
+
+  /// The interface language (protocol/lip-tui.md, "Language").
+  public Language Language => _app.Language;
+
+  /// The value of the configuration key language, or null when it has none and the interface
+  /// follows the client language.
+  public Language? LanguageSetting => _app.LanguageSetting;
+
+  /// The language of this interface, for L.Bind: a thread that the interface did not start,
+  /// such as that of a test, reads the text of the interface in its language once bound.
+  public LanguageScope LanguageScope => _app.LanguageScope;
+
+  /// The client language, or null when there is none.
+  public Language? ClientLanguage => _options.ClientLanguage;
+
+  /// Sets the configuration key language, or removes it when setting is null; the interface is
+  /// drawn in the language that follows at once.
+  public void SetLanguage(Language? setting) => _app.SetLanguage(setting);
+
+  #endregion
+}

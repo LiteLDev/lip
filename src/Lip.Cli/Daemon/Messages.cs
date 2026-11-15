@@ -28,7 +28,9 @@ public sealed record Welcome(string Version, string Executable, int ProcessId, i
 }
 
 /// The payload of Start: the command and everything of the client that it is carried out with
-/// (protocol/lip-daemon.md, "Carrying out a command").
+/// (protocol/lip-daemon.md, "Carrying out a command"). Language is the client language
+/// (protocol/lip-tui.md, "Language") as a value of the configuration key language, or empty
+/// when there is none.
 public sealed record Start(
     IReadOnlyList<string> Arguments,
     string WorkingDirectory,
@@ -38,7 +40,8 @@ public sealed record Start(
     bool IsOutputRedirected,
     bool IsErrorRedirected,
     ConsoleProfile Output,
-    ConsoleProfile Error) {
+    ConsoleProfile Error,
+    string Language = "") {
   public byte[] Encode() => Messages.Write(w => {
     w.Write(Arguments.Count);
     foreach (string argument in Arguments) {
@@ -58,6 +61,7 @@ public sealed record Start(
     w.Write(IsErrorRedirected);
     WriteProfile(w, Output);
     WriteProfile(w, Error);
+    w.Write(Language);
   });
 
   public static Start Decode(byte[] payload) => Messages.Read(payload, r => {
@@ -74,7 +78,7 @@ public sealed record Start(
 
     return new Start(
         arguments, workingDirectory, environment, r.ReadInt32(), r.ReadBoolean(),
-        r.ReadBoolean(), r.ReadBoolean(), ReadProfile(r), ReadProfile(r));
+        r.ReadBoolean(), r.ReadBoolean(), ReadProfile(r), ReadProfile(r), r.ReadString());
   });
 
   private static int Count(BinaryReader reader) {

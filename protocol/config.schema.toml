@@ -10,3 +10,6 @@ const = 4
 [properties.github_proxy]
 type = "string"
 anyOf = [{ const = "" }, { format = "uri" }]
+
+[properties.language]
+enum = ["en", "zh-Hans", "zh-Hant"]

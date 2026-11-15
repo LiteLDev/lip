@@ -250,6 +250,82 @@ public class ConfigServiceTests {
     Assert.Null(await service.GetGithubProxy());
   }
 
+  // language (protocol/config.toml.md, "User configuration").
+
+  [Theory]
+  [InlineData("en")]
+  [InlineData("zh-Hans")]
+  [InlineData("zh-Hant")]
+  public async Task Language_Set_IsWrittenBesideGithubProxyAndReadBack(string language) {
+    // Arrange
+    (MockFileSystem fs, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
+      [GetConfigPath()] = new("format = 4\ngithub_proxy = \"https://proxy.com\"\n"),
+    });
+
+    // Act
+    await service.Set("language", language);
+
+    // Assert
+    Assert.Equal(
+        $"format = 4\ngithub_proxy = \"https://proxy.com\"\nlanguage = \"{language}\"\n",
+        fs.File.ReadAllText(GetConfigPath()));
+    Assert.Equal(language, await service.Get("language"));
+    Assert.Equal(language, await service.GetLanguage());
+    Assert.Equal(
+        new Dictionary<string, string?> {
+          ["github_proxy"] = "https://proxy.com",
+          ["language"] = language,
+        },
+        await service.List());
+    ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task Language_NotSetOrDeleted_HasNoValue() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = Create([]);
+
+    // Act & Assert
+    Assert.Null(await service.GetLanguage());
+    Assert.Null((await service.List())["language"]);
+    await service.Set("language", "zh-Hans");
+    await service.Delete("language");
+    Assert.Null(await service.Get("language"));
+    Assert.Equal("format = 4\n", fs.File.ReadAllText(GetConfigPath()));
+  }
+
+  [Theory]
+  [InlineData("zh")]
+  [InlineData("zh-CN")]
+  [InlineData("EN")]
+  [InlineData("")]
+  public async Task Language_SetToWhatIsNotALanguage_FailsAndChangesNothing(string value) {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = Create([]);
+
+    // Act & Assert
+    ArgumentException ex =
+        await Assert.ThrowsAsync<ArgumentException>(() => service.Set("language", value));
+    Assert.Contains("en, zh-Hans or zh-Hant", ex.Message);
+    Assert.Contains("lip config delete language", ex.Message);
+    Assert.False(fs.File.Exists(GetConfigPath()));
+  }
+
+  /// A file with a language that is not one is invalid against the schema: every key is absent.
+  [Fact]
+  public async Task Language_InvalidInTheFile_MakesTheFileInvalid() {
+    // Arrange
+    (_, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
+      [GetConfigPath()] = new(
+          "format = 4\ngithub_proxy = \"https://proxy.com\"\nlanguage = \"fr\"\n"),
+    });
+
+    // Act & Assert
+    Assert.Null(await service.GetLanguage());
+    Assert.Null(await service.GetGithubProxy());
+    ui.Verify(u => u.PrintError(It.Is<string>(m => m.Contains("language"))), Times.AtLeastOnce);
+  }
+
   [Fact]
   public async Task Set_UnknownKey_ThrowsAndWritesNothing() {
     // Arrange

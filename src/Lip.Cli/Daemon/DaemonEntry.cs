@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Runtime.InteropServices;
+using Lip.Cli.Servers;
 using Lip.Cli.Tui;
+using Lip.Cli.Tui.I18n;
 using Lip.Core.Infrastructure;
 using Spectre.Console;
 
@@ -47,7 +49,8 @@ public static class DaemonEntry {
           ? Task.Factory.StartNew(
               () => {
                 try {
-                  return LipApp.RunInterface(terminal, invocation.WorkingDirectory);
+                  return LipApp.RunInterface(
+                      terminal, invocation.WorkingDirectory, Languages.Parse(start.Language));
                 }
                 catch (Exception ex) {
                   return ErrorReporter.Report(
@@ -108,7 +111,8 @@ public static class DaemonEntry {
     // A failure is reported once the console is back to its screen.
     try {
       using ConsoleTerminal own = new();
-      return LipApp.RunInterface(own, Environment.CurrentDirectory);
+      return LipApp.RunInterface(
+          own, Environment.CurrentDirectory, Languages.OfThisProcess());
     }
     catch (Exception ex) {
       return ErrorReporter.Report(ex, [], cancelled: false);
@@ -165,7 +169,8 @@ public static class DaemonEntry {
         Console.IsOutputRedirected,
         Console.IsErrorRedirected,
         ConsoleProfile.Of(ConsoleProfile.CreateStandardOutput()),
-        ConsoleProfile.Of(ConsoleProfile.CreateStandardError()));
+        ConsoleProfile.Of(ConsoleProfile.CreateStandardError()),
+        Languages.OfThisProcess() is { } language ? Languages.Code(language) : "");
   }
 
   private static ClientStreams StreamsOf() =>

@@ -4,7 +4,10 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Lip.Cli.Commands;
 using Lip.Cli.Daemon;
+using Lip.Cli.Servers;
 using Lip.Cli.Tui;
+using Lip.Cli.Tui.I18n;
+using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
@@ -402,7 +405,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Arrange
     MockFileSystem fs = new();
     string list = Path.Join(_directory, "state", WorkspaceList.FileName);
-    ConcurrentDictionary<string, TuiApp> apps = new();
+    ConcurrentDictionary<string, App> apps = new();
     _ = Host(InterfaceHost(fs, list, apps, []));
     string a = Path.Join(_directory, "a");
     string b = Path.Join(_directory, "b");
@@ -411,27 +414,26 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Act: two clients attach at once.
     Attached first = Attach(a);
     Attached second = Attach(b);
-    TuiApp appA = await AppOf(apps, a);
-    TuiApp appB = await AppOf(apps, b);
+    App appA = await AppOf(apps, a);
+    App appB = await AppOf(apps, b);
     await WaitFor(appA, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
     await WaitFor(appB, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
 
     // The terminal of a client is resized, and both see the workspace of the other.
     (await first.Writer.Task).Send(FrameType.Resize, ResizeMessage.Encode(210, 33));
     await WaitFor(appA, s => s.Split('\n').Length == 33);
-    first.Press('w', ConsoleKey.W);
-    await WaitFor(appA, s => s.Contains("Workspaces", StringComparison.Ordinal)
-        && s.Contains(a, StringComparison.Ordinal) && s.Contains(b, StringComparison.Ordinal));
-    first.Press('\x1b', ConsoleKey.Escape);
-    first.Press('q', ConsoleKey.Q);
-    second.Press('q', ConsoleKey.Q);
+    IReadOnlyList<string> seen = [];
+    appA.Post(() => seen = appA.Context.Workspaces.Read());
+    await WaitFor(appA, _ => seen.Contains(a) && seen.Contains(b));
+    await Quit(first, appA);
+    await Quit(second, appB);
     ClientOutcome[] outcomes = await Task.WhenAll(first.Outcome, second.Outcome);
 
     // A client attaches later, in another directory.
     Attached third = Attach(c);
-    TuiApp appC = await AppOf(apps, c);
-    await WaitFor(appC, s => s.Contains("w  " + c, StringComparison.Ordinal));
-    third.Press('q', ConsoleKey.Q);
+    App appC = await AppOf(apps, c);
+    await WaitFor(appC, s => s.Contains(c, StringComparison.Ordinal));
+    await Quit(third, appC);
     ClientOutcome last = await third.Outcome;
 
     // Assert
@@ -448,7 +450,7 @@ public sealed class DaemonTests : IAsyncDisposable {
   [Fact]
   public async Task Interface_ClientGone_EndsIt() {
     // Arrange
-    ConcurrentDictionary<string, TuiApp> apps = new();
+    ConcurrentDictionary<string, App> apps = new();
     ConcurrentDictionary<string, Task<int>> runs = new();
     _ = Host(InterfaceHost(new MockFileSystem(), null, apps, runs));
     string directory = Path.Join(_directory, "gone");
@@ -456,7 +458,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     Stream connection = (await _endpoint.TryConnect(TestContext.Current.CancellationToken))!;
     await Client().Greet(connection);
     Frames.Write(connection, FrameType.Start, InterfaceStart(directory).Encode());
-    TuiApp app = await AppOf(apps, directory);
+    App app = await AppOf(apps, directory);
     await WaitFor(app, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
 
     // Act
@@ -472,20 +474,22 @@ public sealed class DaemonTests : IAsyncDisposable {
   private static CarryOutCommand InterfaceHost(
       MockFileSystem fs,
       string? list,
-      ConcurrentDictionary<string, TuiApp> apps,
+      ConcurrentDictionary<string, App> apps,
       ConcurrentDictionary<string, Task<int>> runs) {
     ServerSessions servers = new();
-    return (_, _, invocation, terminal) => {
+    return (_, start, invocation, terminal) => {
       Task<int> run = Task.Factory.StartNew(() => {
-        TuiApp app = new(
-            terminal,
-            (interaction, hookOutput, workspace) =>
-                LipClient.Create(fs, interaction, hookOutput, workspace),
-            new ModCatalogClient((_, _) => Task.FromResult("{\"mods\": []}")),
-            "1.2.3",
-            invocation.WorkingDirectory,
-            workspaces: new WorkspaceList(fs, list),
-            servers: servers);
+        App app = new(new AppOptions {
+          Terminal = terminal,
+          CreateClient = (interaction, hookOutput, workspace) =>
+              LipClient.Create(fs, interaction, hookOutput, workspace),
+          Catalog = new ModCatalogClient((_, _) => Task.FromResult("{}")),
+          Version = "1.2.3",
+          WorkingDirectory = invocation.WorkingDirectory,
+          Workspaces = new WorkspaceList(fs, list),
+          Servers = servers,
+          ClientLanguage = Languages.Parse(start.Language),
+        });
         apps[invocation.WorkingDirectory] = app;
         return app.Run();
       }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
@@ -513,9 +517,17 @@ public sealed class DaemonTests : IAsyncDisposable {
     return new Attached(streams, writer, outcome);
   }
 
-  private static async Task<TuiApp> AppOf(ConcurrentDictionary<string, TuiApp> apps, string key) {
+  /// Quits the interface of a client as the user does: Ctrl+C, then Enter in the dialog that
+  /// asks.
+  private static async Task Quit(Attached client, App app) {
+    client.Press((char)3, ConsoleKey.C, control: true);
+    await WaitFor(app, s => s.Contains("Quit lip?", StringComparison.Ordinal));
+    client.Press((char)13, ConsoleKey.Enter);
+  }
+
+  private static async Task<App> AppOf(ConcurrentDictionary<string, App> apps, string key) {
     for (int i = 0; i < 400; i++) {
-      if (apps.TryGetValue(key, out TuiApp? app)) {
+      if (apps.TryGetValue(key, out App? app)) {
         return app;
       }
 
@@ -525,7 +537,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     throw new TimeoutException($"The daemon never ran the interface in {key}.");
   }
 
-  private static async Task WaitFor(TuiApp app, Func<string, bool> shown) {
+  private static async Task WaitFor(App app, Func<string, bool> shown) {
     for (int i = 0; i < 400; i++) {
       if (shown(app.ScreenText)) {
         return;
@@ -559,7 +571,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     _ = Host(
         (args, _, invocation, _) => RunCommand.RunManaged(
             invocation, args.Contains("--detach"), servers,
-            (interaction, workspace) => Tui.TuiAppTests.CmdClient(
+            (interaction, workspace) => Tui.TestClients.CmdClient(
                 fs, interaction, () => Stream.Null, workspace)),
         runsServers: () => servers.AnyRunning);
     try {
@@ -608,7 +620,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     System.IO.Abstractions.FileSystem fs = new();
     _ = Host((args, _, invocation, _) => RunCommand.RunManaged(
         invocation, args.Contains("--detach"), servers,
-        (interaction, workspace) => Tui.TuiAppTests.CmdClient(
+        (interaction, workspace) => Tui.TestClients.CmdClient(
             fs, interaction, () => Stream.Null, workspace)));
     Streams streams = new("");
 
@@ -681,10 +693,10 @@ public sealed class DaemonTests : IAsyncDisposable {
   /// A client attached to the interface: Press sends a key once the daemon has the command.
   private sealed record Attached(
       Streams Streams, TaskCompletionSource<FrameWriter> Writer, Task<ClientOutcome> Outcome) {
-    public void Press(char character, ConsoleKey key) =>
+    public void Press(char character, ConsoleKey key, bool control = false) =>
         Writer.Task.GetAwaiter().GetResult().Send(
             FrameType.Key,
-            KeyMessage.Encode(new ConsoleKeyInfo(character, key, false, false, false)));
+            KeyMessage.Encode(new ConsoleKeyInfo(character, key, false, false, control)));
   }
 
   /// The standard streams of a client, with input as its standard input.

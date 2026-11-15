@@ -1,5 +1,6 @@
 using System.ComponentModel;
-using Lip.Cli.Tui;
+using Lip.Cli.Servers;
+using Lip.Cli.Workspaces;
 using Lip.Core.Infrastructure;
 using Lip.Core.PublicApi;
 using Spectre.Console;

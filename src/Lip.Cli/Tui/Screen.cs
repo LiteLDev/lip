@@ -73,6 +73,8 @@ public static class Theme {
   public static readonly Style Accent = Style.Of(Color.Cyan, bold: true);
   public static readonly Style Strong = Style.Of(bold: true);
   public static readonly Style Selected = Style.Of(Color.BrightWhite, Color.Blue);
+  // The selected row of a list that does not have the focus.
+  public static readonly Style SelectedInactive = Style.Of(Color.BrightWhite, Color.BrightBlack);
   public static readonly Style Good = Style.Of(Color.Green);
   public static readonly Style Warning = Style.Of(Color.Yellow);
   public static readonly Style Bad = Style.Of(Color.Red, bold: true);
@@ -240,6 +242,10 @@ public static class TextWidth {
 public readonly record struct Rect(int X, int Y, int Width, int Height) {
   public int Right => X + Width;
   public int Bottom => Y + Height;
+
+  /// The rectangle without rows at its top and its bottom.
+  public Rect Shrink(int top = 0, int bottom = 0) =>
+      new(X, Y + top, Width, Math.Max(0, Height - top - bottom));
 
   /// The rectangle inside a border of one cell, with one more column of padding at each side.
   public Rect Inner => new(X + 2, Y + 1, Math.Max(0, Width - 4), Math.Max(0, Height - 2));

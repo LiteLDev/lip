@@ -61,7 +61,8 @@ public class FramesTests {
         IsOutputRedirected: false,
         IsErrorRedirected: true,
         new ConsoleProfile(true, true, 4, true, false, true, 120, 40),
-        new ConsoleProfile(false, false, 0, false, false, false, 80, 24));
+        new ConsoleProfile(false, false, 0, false, false, false, 80, 24),
+        "zh-Hant");
 
     // Act
     Start decoded = Start.Decode(start.Encode());
