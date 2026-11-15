@@ -263,6 +263,10 @@ public sealed class LipClient {
   /// configured (protocol/config.toml.md, "User configuration"), read without writing a file.
   public async Task<string?> GithubProxy() => await _configService.GetGithubProxy(dryRun: true);
 
+  /// The value of language: en, zh-Hans or zh-Hant, or null when it has no value
+  /// (protocol/config.toml.md, "User configuration"), read without writing a file.
+  public async Task<string?> Language() => await _configService.GetLanguage(dryRun: true);
+
   /// Installed packages as "identity@version": explicitly installed ones and dependency packages,
   /// in installation order (protocol/lip-list.md).
   public async Task<(IEnumerable<string> ExplicitInstalled, IEnumerable<string> ImplicitInstalled)> List() {

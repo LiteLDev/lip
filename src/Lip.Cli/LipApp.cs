@@ -1,7 +1,10 @@
 using System.Runtime.InteropServices;
 using Lip.Cli.Commands;
 using Lip.Cli.Daemon;
+using Lip.Cli.Servers;
 using Lip.Cli.Tui;
+using Lip.Cli.Tui.I18n;
+using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
 using Lip.Core.PublicApi;
@@ -35,19 +38,37 @@ public static class LipApp {
 
   /// Runs the interface (protocol/lip-tui.md) on terminal for the current invocation, with the
   /// workspace list of the state directory and the servers of this process, until the user quits
-  /// it; returns the exit code of lip. Throws when the interface fails.
-  public static int RunInterface(ITerminal terminal, string workingDirectory) {
+  /// it; returns the exit code of lip. clientLanguage is the client language, or null when there
+  /// is none. Throws when the interface fails.
+  public static int RunInterface(
+      ITerminal terminal, string workingDirectory, Language? clientLanguage) {
     System.IO.Abstractions.FileSystem fileSystem = new();
-    return new TuiApp(
-        terminal,
-        (interaction, hookOutput, workspace) =>
-            LipClient.Create(fileSystem, interaction, hookOutput, workspace),
-        new ModCatalogClient(),
-        DaemonProcess.Version,
-        workingDirectory,
-        workspaces: WorkspaceList.InStateDirectory(fileSystem),
-        servers: ServerSessions.Shared,
-        githubProbe: new GithubProbe()).Run();
+    return new App(new AppOptions {
+      Terminal = terminal,
+      CreateClient = (interaction, hookOutput, workspace) =>
+          LipClient.Create(fileSystem, interaction, hookOutput, workspace),
+      Catalog = new ModCatalogClient(),
+      Version = DaemonProcess.Version,
+      WorkingDirectory = workingDirectory,
+      Workspaces = WorkspaceList.InStateDirectory(fileSystem),
+      Servers = ServerSessions.Shared,
+      GithubProbe = new GithubProbe(),
+      ClientLanguage = clientLanguage,
+      DaemonStatus = DaemonStatus,
+    }).Run();
+  }
+
+  /// What lip daemon status finds (protocol/lip-daemon.md, "Commands"): null when no daemon
+  /// listens on the endpoint.
+  private static async Task<DaemonState?> DaemonStatus(CancellationToken cancellationToken) {
+    DaemonEndpoint endpoint = DaemonEndpoint.ForCurrentUser();
+    await using Stream? connection = await endpoint.TryConnect(cancellationToken);
+    if (connection is null) {
+      return null;
+    }
+
+    Welcome daemon = await DaemonStatusCommand.Client(endpoint).Greet(connection);
+    return new DaemonState(daemon.Version, daemon.ProcessId, daemon.Commands);
   }
 
   /// Carries out the command for the current invocation and returns its exit code.

@@ -10,8 +10,8 @@ using Lip.Core.Mcmod;
 namespace Lip.Core.Services;
 
 /// Reads and writes the configuration of the two scopes (protocol/config.toml.md): the user
-/// configuration, &lt;Config&gt;/config.toml (config.schema.toml), whose only key is github_proxy,
-/// without a default; and the workspace configuration, .lip/config.toml in the workspace root
+/// configuration, &lt;Config&gt;/config.toml (config.schema.toml), whose keys are github_proxy
+/// and language, both without a default; and the workspace configuration, .lip/config.toml in the workspace root
 /// (workspace-config.schema.toml), whose only key is restart, default "never". Each is a TOML file
 /// (protocol/README.md) with "format" 4 and a mapping of the keys of its scope to their values. A
 /// missing, unreadable or invalid file means every key of its scope is absent: it takes its
@@ -26,6 +26,11 @@ namespace Lip.Core.Services;
 public class ConfigService(
     IFileSystem fileSystem, IUserInteraction userInteraction, Func<string>? workspaceRoot = null) {
   public const string GithubProxyKey = "github_proxy";
+
+  public const string LanguageKey = "language";
+
+  /// The values of language (protocol/config.toml.md, "User configuration").
+  public static readonly IReadOnlyList<string> Languages = ["en", "zh-Hans", "zh-Hant"];
 
   public const string RestartKey = "restart";
 
@@ -47,9 +52,17 @@ public class ConfigService(
       "a URL prefix like https://example.com/, or empty to reach GitHub directly",
       "\"https://example.com/\"");
 
+  private static readonly Key _language = new(
+      LanguageKey, null, value => Languages.Contains(value),
+      "en, zh-Hans or zh-Hant", "\"zh-Hans\"");
+
   private static readonly Key _restart = new(
       RestartKey, RestartNever, value => value is RestartNever or RestartOnFailure,
       $"{RestartNever} or {RestartOnFailure}", $"\"{RestartOnFailure}\"");
+
+  // The changes of a configuration file by this process, one at a time: each reads the file
+  // and writes it whole, and the daemon carries out the commands of several clients at once.
+  private static readonly SemaphoreSlim s_changes = new(1, 1);
 
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;
@@ -59,10 +72,16 @@ public class ConfigService(
   /// Removes the key from the file of its scope, so that it takes its default or has no value.
   public async Task Delete(string key, bool workspace = false) {
     Key configKey = CheckKey(key, workspace);
-    Dictionary<string, string> values = await Load(workspace);
-    RunTrace.Write("config", $"deleting {key}");
-    values.Remove(configKey.Name);
-    await Save(workspace, values);
+    await s_changes.WaitAsync();
+    try {
+      Dictionary<string, string> values = await Load(workspace);
+      RunTrace.Write("config", $"deleting {key}");
+      values.Remove(configKey.Name);
+      await Save(workspace, values);
+    }
+    finally {
+      s_changes.Release();
+    }
   }
 
   /// The value of the key, or null when it has no value.
@@ -75,6 +94,12 @@ public class ConfigService(
   /// configured. A dry run (protocol/lip.md, "Dry run") reads a liprc.json without migrating it.
   public async Task<string?> GetGithubProxy(bool dryRun = false) {
     return ValueOf(_githubProxy, await Load(workspace: false, dryRun));
+  }
+
+  /// The value of language: one of Languages, or null when it has no value. A dry run reads a
+  /// liprc.json without migrating it.
+  public async Task<string?> GetLanguage(bool dryRun = false) {
+    return ValueOf(_language, await Load(workspace: false, dryRun));
   }
 
   /// The value of restart in the workspace configuration of the current directory.
@@ -112,11 +137,17 @@ public class ConfigService(
                   + $" {configKey.Default}."));
     }
 
-    Dictionary<string, string> values = await Load(workspace);
-    // The value is not traced: a proxy URL may carry a token.
-    RunTrace.Write("config", $"setting {key}");
-    values[configKey.Name] = value;
-    await Save(workspace, values);
+    await s_changes.WaitAsync();
+    try {
+      Dictionary<string, string> values = await Load(workspace);
+      // The value is not traced: a proxy URL may carry a token.
+      RunTrace.Write("config", $"setting {key}");
+      values[configKey.Name] = value;
+      await Save(workspace, values);
+    }
+    finally {
+      s_changes.Release();
+    }
   }
 
   /// A configuration key: its default, or null when it has none; whether a string is one of its
@@ -124,7 +155,7 @@ public class ConfigService(
   private sealed record Key(
       string Name, string? Default, Func<string, bool> IsValid, string Expected, string Example);
 
-  private static Key[] KeysOf(bool workspace) => workspace ? [_restart] : [_githubProxy];
+  private static Key[] KeysOf(bool workspace) => workspace ? [_restart] : [_githubProxy, _language];
 
   private static string ScopeName(bool workspace) =>
       workspace ? "the workspace configuration" : "the user configuration";
@@ -148,14 +179,16 @@ public class ConfigService(
       return configKey;
     }
 
-    string keys = string.Join(", ", KeysOf(workspace).Select(k => k.Name));
+    Key[] known = KeysOf(workspace);
+    string keys = (known.Length == 1 ? "whose only key is " : "whose keys are ")
+        + string.Join(" and ", known.Select(k => k.Name));
     string hint = KeysOf(!workspace).Any(k => k.Name == key)
         ? workspace
             ? $" {key} is a key of the user configuration: run the command without --workspace."
             : $" {key} is a key of the workspace configuration: add --workspace."
         : "";
     throw new ArgumentException(
-        $"'{key}' is not a key of {ScopeName(workspace)}, whose only key is {keys}.{hint}");
+        $"'{key}' is not a key of {ScopeName(workspace)}, {keys}.{hint}");
   }
 
   private string PathOf(bool workspace) =>

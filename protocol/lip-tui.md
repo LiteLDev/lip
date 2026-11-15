@@ -14,6 +14,19 @@ lip
 
 The **interface** is what `lip` runs when it is started without an argument and its standard input and its standard output are both terminals ([lip(1), OPTIONS](lip.md#options)). The daemon carries it out ([lip-daemon(1)]). It runs until the user quits it. What it shows, how the user controls it, and what `lip` writes to the terminal meanwhile, are not defined here.
 
+### Language
+
+The **interface language** is the language of the text of the interface itself: English, Simplified Chinese or Traditional Chinese. It is the value of `language` ([config.toml(5), "User configuration"](config.toml.md#user-configuration)) when `language` has a value, read as "GitHub reachability" reads the configuration; otherwise the client language; and English when there is no client language.
+
+The **client language** is that of the first **locale** of the client ([lip-daemon(1)]) that names one:
+
+- on Windows, the name of the display language of the user, such as `zh-CN`;
+- elsewhere, the values of the environment variables `LC_ALL`, `LC_MESSAGES` and `LANG` that are not empty, in this order, each without what follows its first `.` or `@`, such as `zh_CN` for `zh_CN.UTF-8`.
+
+The subtags of a locale are its parts between `-` and `_`, compared ignoring case. A locale whose first subtag is `zh` names Traditional Chinese when none of its other subtags is `Hans` and one of them is `Hant`, `TW`, `HK` or `MO`, and Simplified Chinese otherwise. A locale whose first subtag is `en` names English. Any other locale names no language.
+
+When the user changes `language` in the interface, the interface language follows at once. What a command says, such as its messages and its results, is not in the interface language.
+
 ### Workspaces
 
 The **workspace list** is the JSON file ([README, "Files"](README.md#files)) `workspaces.json` in the state directory ([lip-userspace(7)]): an array of the absolute paths of directories, as strings, in the order they were added. A list that does not exist, or that is not a JSON array, is read as empty; an element that is not a string holding an absolute path, or that names the same directory as an element before it, is left out. The **canonical form** of an absolute path is the path with its `.` and `..` components resolved, on Windows with `/` written as `\`, and without a separator at its end unless it is a root. Two paths name the same directory when their canonical forms are equal, ignoring case on Windows. `lip` writes the canonical forms of the paths, and writes the list atomically ([README, "Files"](README.md#files)).
@@ -119,7 +132,7 @@ A file of the catalogue that cannot be read is not a failure of a command.
 ## FILES
 
 - `workspaces.json` in the state directory: the workspace list ("Workspaces").
-- `config.toml` in the config directory: the user configuration, which "GitHub reachability" may write ([config.toml(5)]).
+- `config.toml` in the config directory: the user configuration, which gives the interface language ("Language"), and which "GitHub reachability" may write ([config.toml(5)]).
 
 ## SEE ALSO
 

@@ -81,7 +81,14 @@ public static class ErrorReporter {
 
   /// Works out why a command failed, and writes the failure report, without telling the user:
   /// for Report, and for the interface (protocol/lip-tui.md), which shows it itself.
-  public static Failure Describe(Exception exception, string[] args, bool cancelled) {
+  public static Failure Describe(Exception exception, string[] args, bool cancelled) =>
+      Describe(exception, args, cancelled, Invocation.Current.WorkingDirectory);
+
+  /// As Describe, with the failure report below workspace instead of the working directory of
+  /// the current invocation: for the interface, whose commands are those of the selected
+  /// workspace. The path of the report is relative to workspace.
+  public static Failure Describe(
+      Exception exception, string[] args, bool cancelled, string workspace) {
     IReadOnlyList<Exception> failures = Unwrap(exception);
 
     if (cancelled && failures.All(f => Chain(f).Any(e => e is OperationCanceledException))) {
@@ -99,7 +106,8 @@ public static class ErrorReporter {
     string details = Redact(exception.ToString());
     try {
       return new Failure(
-          summary, hints, WriteReport(exception, args, summary, hints), null, details,
+          summary, hints, WriteReport(exception, args, summary, hints, workspace), null,
+          details,
           Cancelled: false);
     }
     catch (Exception reportException) {
@@ -282,15 +290,15 @@ public static class ErrorReporter {
           or ObjectDisposedException
           or DivideByZeroException;
 
-  /// Writes the failure report and returns its path relative to the working directory of the
-  /// current invocation.
+  /// Writes the failure report below workspace and returns its path relative to it.
   private static string WriteReport(
       Exception exception,
       string[] args,
       string summary,
-      IReadOnlyList<string> hints) {
+      IReadOnlyList<string> hints,
+      string workspace) {
     Invocation invocation = Invocation.Current;
-    string lipDirectory = Path.Join(invocation.WorkingDirectory, ".lip");
+    string lipDirectory = Path.Join(workspace, ".lip");
     bool created = !Directory.Exists(lipDirectory);
     string logs = Directory.CreateDirectory(Path.Join(lipDirectory, "logs")).FullName;
     if (created && OperatingSystem.IsWindows()) {
@@ -306,7 +314,7 @@ public static class ErrorReporter {
         new FileStream(Path.Join(logs, name), FileMode.CreateNew, FileAccess.Write),
         new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))) {
       writer.NewLine = "\n";
-      writer.Write(Redact(Render(exception, args, summary, hints, now, invocation)));
+      writer.Write(Redact(Render(exception, args, summary, hints, now, invocation, workspace)));
     }
 
     Prune(logs);
@@ -319,7 +327,8 @@ public static class ErrorReporter {
       string summary,
       IReadOnlyList<string> hints,
       DateTimeOffset now,
-      Invocation invocation) {
+      Invocation invocation,
+      string workspace) {
     StringBuilder report = new();
     void Section(string title) => report.Append('\n').Append("== ").Append(title).Append(" ==\n");
     void Field(string name, string? value) =>
@@ -331,7 +340,7 @@ public static class ErrorReporter {
     Field("lip version", Assembly.GetEntryAssembly()?
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
     Field("Command", "lip " + string.Join(' ', args.Select(Quote)));
-    Field("Working directory", invocation.WorkingDirectory);
+    Field("Working directory", workspace);
     Field("OS", RuntimeInformation.OSDescription);
     Field("RID lip runs on", RuntimeInformation.RuntimeIdentifier);
     Field("Architecture", $"OS {RuntimeInformation.OSArchitecture}, process {RuntimeInformation.ProcessArchitecture}");
@@ -367,7 +376,7 @@ public static class ErrorReporter {
 
     Section("Workspace (.lip)");
     try {
-      string lipDirectory = Path.Join(invocation.WorkingDirectory, ".lip");
+      string lipDirectory = Path.Join(workspace, ".lip");
       foreach (string entry in Directory.EnumerateFileSystemEntries(lipDirectory)
           .Order(StringComparer.Ordinal)) {
         string entryName = Path.GetFileName(entry);
