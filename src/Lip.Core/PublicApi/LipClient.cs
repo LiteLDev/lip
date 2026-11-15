@@ -24,6 +24,8 @@ public sealed class LipClient {
   private readonly ConfigService _configService;
   // The service of a command, given whether it is a dry run.
   private readonly Func<bool, Task<McmodService>> _createMcmodService;
+  // The absolute path of the workspace root.
+  private readonly Func<string> _workspaceRoot;
 
   public LipClient(
       IFileSystem fileSystem,
@@ -36,7 +38,8 @@ public sealed class LipClient {
           userInteraction,
           cacheService,
           configService,
-          _ => Task.FromResult(mcmodService)) {
+          _ => Task.FromResult(mcmodService),
+          fileSystem.Directory.GetCurrentDirectory) {
   }
 
   private LipClient(
@@ -44,12 +47,14 @@ public sealed class LipClient {
       IUserInteraction userInteraction,
       ICacheService cacheService,
       ConfigService configService,
-      Func<bool, Task<McmodService>> createMcmodService) {
+      Func<bool, Task<McmodService>> createMcmodService,
+      Func<string> workspaceRoot) {
     _fileSystem = fileSystem;
     _userInteraction = userInteraction;
     _cacheService = cacheService;
     _configService = configService;
     _createMcmodService = createMcmodService;
+    _workspaceRoot = workspaceRoot;
   }
 
   public static LipClient Create(IUserInteraction userInteraction) =>
@@ -63,10 +68,16 @@ public sealed class LipClient {
       Create(fileSystem, userInteraction, hookOutput: null);
 
   /// As above; hook commands write their output to the stream that hookOutput opens for each,
-  /// instead of the standard error of lip.
+  /// instead of the standard error of lip. The workspace is the working directory of the current
+  /// invocation (Invocation): of the file system for this process, otherwise that of the client
+  /// that the invocation is of.
   public static LipClient Create(
       IFileSystem fileSystem, IUserInteraction userInteraction, Func<Stream>? hookOutput) {
-    ConfigService configService = new(fileSystem, userInteraction);
+    Invocation invocation = Invocation.Current;
+    Func<string> workspaceRoot = invocation == Invocation.Process
+        ? fileSystem.Directory.GetCurrentDirectory
+        : () => invocation.WorkingDirectory;
+    ConfigService configService = new(fileSystem, userInteraction, workspaceRoot);
     CacheService cacheService = new(fileSystem, userInteraction);
     return new(
         fileSystem,
@@ -74,7 +85,9 @@ public sealed class LipClient {
         cacheService,
         configService,
         dryRun => CreateMcmodService(
-            fileSystem, userInteraction, cacheService, configService, dryRun, hookOutput));
+            fileSystem, userInteraction, cacheService, configService, dryRun, hookOutput,
+            workspaceRoot),
+        workspaceRoot);
   }
 
   /// The service of the commands that may reach GitHub, which reads github_proxy; for a dry run,
@@ -85,7 +98,8 @@ public sealed class LipClient {
       CacheService cacheService,
       ConfigService configService,
       bool dryRun,
-      Func<Stream>? hookOutput) {
+      Func<Stream>? hookOutput,
+      Func<string> workspaceRoot) {
     FileDownloader fileDownloader = new(userInteraction);
     // An empty github_proxy, like an absent one, means GitHub is reached directly
     // (protocol/config.toml.md, "User configuration").
@@ -108,6 +122,7 @@ public sealed class LipClient {
         archiveProvider,
         new ArchiveReader(),
         new McmodInstaller(fileSystem, commandRunner, userInteraction),
+        workspaceRoot,
         systemPreparer: SystemDependencies.Create(fileSystem, fileDownloader, userInteraction));
   }
 
@@ -144,18 +159,19 @@ public sealed class LipClient {
   /// "lip pkg init"), asking
   /// the user for its package id. Fails when lip.toml exists, or when the user cannot be asked.
   public async Task Init() {
-    string path = PackageFormat.FileName;
-    string directory = _fileSystem.Directory.GetCurrentDirectory();
+    string directory = _workspaceRoot();
+    string name = PackageFormat.FileName;
+    string path = _fileSystem.Path.Join(directory, name);
     if (_fileSystem.Directory.Exists(path)) {
       throw new InvalidOperationException(
-          $"A directory named {path} exists in {directory}, so lip pkg init cannot write {path} "
+          $"A directory named {name} exists in {directory}, so lip pkg init cannot write {name} "
           + $"there. Move or rename that directory and run 'lip pkg init' again.");
     }
 
     if (_fileSystem.File.Exists(path)) {
       throw new InvalidOperationException(
-          $"{path} already exists in {directory}, and lip pkg init does not replace it. To edit "
-          + $"the package, change {path} by hand; to start over, delete {path} and run 'lip pkg "
+          $"{name} already exists in {directory}, and lip pkg init does not replace it. To edit "
+          + $"the package, change {name} by hand; to start over, delete {name} and run 'lip pkg "
           + "init' again.");
     }
 
@@ -178,7 +194,7 @@ public sealed class LipClient {
     };
 
     // Asking may take a while; a lip.toml written meanwhile is not replaced.
-    RunTrace.Write("init", $"writing {path} in {directory} for {id}");
+    RunTrace.Write("init", $"writing {name} in {directory} for {id}");
     Stream stream;
     try {
       stream = _fileSystem.File.Open(path, FileMode.CreateNew);
@@ -186,8 +202,8 @@ public sealed class LipClient {
     catch (IOException ex)
         when (_fileSystem.File.Exists(path) || _fileSystem.Directory.Exists(path)) {
       throw new IOException(
-          $"{path} was created in {directory} by another program while lip was asking, and lip "
-          + $"pkg init does not replace it. Delete {path} and run 'lip pkg init' again to start "
+          $"{name} was created in {directory} by another program while lip was asking, and lip "
+          + $"pkg init does not replace it. Delete {name} and run 'lip pkg init' again to start "
           + "over.", ex);
     }
 
@@ -237,7 +253,7 @@ public sealed class LipClient {
 
   /// The installed mods and their configuration files (protocol/lip-tui.md, "Configuration").
   public async Task<IReadOnlyList<ModConfig>> ListModConfigs() {
-    string root = _fileSystem.Directory.GetCurrentDirectory();
+    string root = _workspaceRoot();
     LockFile? lockFile = await new LockStore(_fileSystem).Load(root);
     return ModConfigs.Find(_fileSystem, root, lockFile);
   }
@@ -282,7 +298,7 @@ public sealed class LipClient {
       throw new ArgumentException($"'{path}' is not a path in the workspace.", nameof(path));
     }
 
-    return _fileSystem.Path.Join(_fileSystem.Directory.GetCurrentDirectory(), path);
+    return _fileSystem.Path.Join(_workspaceRoot(), path);
   }
 
   /// Migrates the tooth.json of format 1, 2 or 3 in the current directory to a lip.toml
@@ -290,20 +306,22 @@ public sealed class LipClient {
   /// missing values. Everything dropped or converted with another meaning is reported as a warning.
   public async Task Migrate() {
     IReadOnlyList<string> notes = await RepositoryMigrator.Migrate(
-        _fileSystem, _fileSystem.Directory.GetCurrentDirectory(), _userInteraction);
+        _fileSystem, _workspaceRoot(), _userInteraction);
 
     foreach (string note in notes) {
       await _userInteraction.PrintWarning(note);
     }
   }
 
-  /// Runs the server of the workspace (protocol/lip-run.md) and returns its exit code. The server
-  /// reads what lip reads from input; it is asked to stop when lip receives SIGINT, SIGTERM or
-  /// SIGHUP, or on Windows a console control signal, none of which then ends lip. inputIsConsole:
-  /// input is an interactive Windows console.
+  /// Runs the server of the workspace (protocol/lip-run.md) for the current invocation
+  /// (Invocation) and returns its exit code. The server reads what lip reads from input; it is
+  /// asked to stop when the invocation receives SIGINT, SIGTERM or SIGHUP, or on Windows a console
+  /// control signal, none of which then ends lip, or when it is abandoned. inputIsConsole: input is
+  /// an interactive Windows console.
   public async Task<int> Run(Stream input, bool inputIsConsole) {
+    Invocation invocation = Invocation.Current;
     return await (await GetMcmodService()).Run(
-        input, inputIsConsole, ServerSession.ListenForSignals, new ProcessProgramStarter());
+        input, inputIsConsole, invocation.ListenForStop, PipedProgramStarter.ForCurrent());
   }
 
   /// Runs the server as Run does, started by starter and asked to stop through listen: for the
@@ -320,7 +338,8 @@ public sealed class LipClient {
     string? githubProxyValue = await _configService.GetGithubProxy();
     Url? githubProxy = string.IsNullOrEmpty(githubProxyValue) ? null : Url.Parse(githubProxyValue);
 #if DEBUG
-    string? releasesUrl = Environment.GetEnvironmentVariable("LIP_SELF_UPDATE_RELEASES_URL");
+    string? releasesUrl =
+        Invocation.Current.GetEnvironmentVariable("LIP_SELF_UPDATE_RELEASES_URL");
 #else
     string? releasesUrl = null;
 #endif
@@ -331,7 +350,12 @@ public sealed class LipClient {
         SelfUpdateHost.Current,
         githubProxy,
         string.IsNullOrEmpty(releasesUrl) ? null : Url.Parse(releasesUrl));
-    return await updater.Run(running, checkOnly);
+    SelfUpdateResult result = await updater.Run(running, checkOnly);
+    if (result.Outcome is SelfUpdateOutcome.Replaced or SelfUpdateOutcome.InstallerStarted) {
+      Invocation.Current.LipReplaced = true;
+    }
+
+    return result;
   }
 
   /// Installs what the programs of the workspace in the current directory need of the system,

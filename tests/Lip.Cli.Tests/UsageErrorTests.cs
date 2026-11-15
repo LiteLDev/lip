@@ -5,9 +5,10 @@ namespace Lip.Cli.Tests;
 
 /// Invocation and usage errors (protocol/lip.md, "Terms"), checked by running lip in an empty
 /// directory: a usage error writes a message and exits with a non-zero code, without a failure
-/// report below .lip/logs.
-public sealed class UsageErrorTests : IDisposable {
+/// report below .lip/logs. The commands are carried out by a daemon (protocol/lip-daemon.md).
+public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture<LipProcess> {
   private readonly string _workspace = Directory.CreateTempSubdirectory("lip-cli-tests-").FullName;
+  private readonly LipProcess _lip = lip;
 
   public void Dispose() {
     Directory.Delete(_workspace, recursive: true);
@@ -352,30 +353,13 @@ public sealed class UsageErrorTests : IDisposable {
   }
 
   private async Task<(int ExitCode, string Stdout, string Stderr)> Run(
-      string[] args, string input, string? configHome = null) {
-    ProcessStartInfo startInfo = new(
-        Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet") {
-      WorkingDirectory = _workspace,
-      RedirectStandardInput = true,
-      RedirectStandardOutput = true,
-      RedirectStandardError = true,
-    };
-    if (configHome is not null) {
+      string[] args, string input, string? configHome = null) =>
       // The config directory is $XDG_CONFIG_HOME/lip, except on Windows.
-      startInfo.Environment["XDG_CONFIG_HOME"] = configHome;
-    }
-
-    startInfo.ArgumentList.Add(Path.Join(AppContext.BaseDirectory, "lip.dll"));
-    foreach (string arg in args) {
-      startInfo.ArgumentList.Add(arg);
-    }
-
-    using Process process = Process.Start(startInfo)!;
-    await process.StandardInput.WriteAsync(input);
-    process.StandardInput.Close();
-    Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-    Task<string> stderr = process.StandardError.ReadToEndAsync();
-    await process.WaitForExitAsync(TestContext.Current.CancellationToken);
-    return (process.ExitCode, await stdout, await stderr);
-  }
+      await _lip.Run(
+          args,
+          _workspace,
+          input,
+          configHome is null
+              ? null
+              : new Dictionary<string, string> { ["XDG_CONFIG_HOME"] = configHome });
 }

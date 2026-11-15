@@ -23,7 +23,8 @@ namespace Lip.Core.Mcmod.Install;
 /// changes of a process that was killed (Recover). Commit appends a "Commit" line; from then on
 /// recovery finishes the operation (deleting the backups) instead of undoing it.
 public sealed class WorkspaceTransaction : IDisposable {
-  private static int s_open;
+  // The invocation whose operation opened the transaction.
+  private readonly Invocation _invocation = Invocation.Current;
 
   private readonly IFileSystem _fs;
   private readonly string _journalPath;
@@ -49,12 +50,12 @@ public sealed class WorkspaceTransaction : IDisposable {
     _root = JournalRoot(fileSystem, journalPath);
     _paths = paths ?? WorkspacePaths.Host;
     _reserved = new(reserved ?? [], _paths.Comparer);
-    Interlocked.Increment(ref s_open);
+    _invocation.TransactionOpened();
   }
 
-  /// Whether a transaction of this process is open, i.e. an operation is changing a workspace:
-  /// ending the process now leaves changes for the next operation to undo.
-  public static bool AnyOpen => Volatile.Read(ref s_open) > 0;
+  /// Whether a transaction of the current invocation is open, i.e. an operation is changing a
+  /// workspace: ending it now leaves changes for the next operation to undo.
+  public static bool AnyOpen => Invocation.Current.AnyTransactionOpen;
 
   #region Changes
 
@@ -229,7 +230,7 @@ public sealed class WorkspaceTransaction : IDisposable {
     _journal = null;
     if (!_disposed) {
       _disposed = true;
-      Interlocked.Decrement(ref s_open);
+      _invocation.TransactionClosed();
     }
   }
 

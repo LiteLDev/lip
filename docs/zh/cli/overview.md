@@ -11,7 +11,7 @@
 
 不带参数运行 `lip` 时输出帮助。
 
-部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md) 和 [`list`](commands/list.md)。[`pkg view`](commands/pkg_view.md) 始终输出 JSON。
+部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md)、[`daemon status`](commands/daemon.md) 和 [`list`](commands/list.md)。[`pkg view`](commands/pkg_view.md) 始终输出 JSON。
 
 [`setup`](commands/setup.md)、[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 向工作区安装平台 `win-x64` 的包，无论 lip 运行在什么系统上（参见[环境](../concepts/lip_toml.md#环境)）；Linux 版服务器是变体 `github.com/LiteLDev/bds#linux`。`setup` 选择工作区的游戏（服务器）和加载器（LeviLamina）；`install` 和 `update` 从不改变它们。lip 只管理服务端工作区。
 
@@ -29,6 +29,11 @@
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。
 
+除 `lip daemon` 外，每个命令都由 lip 的守护进程执行：它是你的用户的一个后台进程，由第一个命令启动；命令的行为与你启动的 `lip` 自己执行时完全相同。命令组 `daemon` 用于查看和停止它：
+
+- [`lip daemon status`](commands/daemon.md)：显示守护进程是否在运行。
+- [`lip daemon stop`](commands/daemon.md)：停止守护进程。
+
 用于开发包的命令，位于命令组 `pkg` 中：
 
 - [`lip pkg init`](commands/pkg_init.md)：为新包创建 `lip.toml`。
@@ -36,4 +41,4 @@
 - [`lip pkg pack`](commands/pkg_pack.md)：把一个目录打包为 ZIP 归档。
 - [`lip pkg view`](commands/pkg_view.md)：显示包的包文件和版本。
 
-`lip pkg --help`、`lip cache --help` 和 `lip config --help` 显示命令组中的命令。lip 早期版本的 `lip init`、`lip pack`、`lip view`、`lip versions` 和 `lip migrate` 现在分别是 `lip pkg init`、`lip pkg pack`、`lip pkg view`（它同时列出版本）和 `lip pkg migrate`。
+`lip pkg --help`、`lip cache --help`、`lip config --help` 和 `lip daemon --help` 显示命令组中的命令。lip 早期版本的 `lip init`、`lip pack`、`lip view`、`lip versions` 和 `lip migrate` 现在分别是 `lip pkg init`、`lip pkg pack`、`lip pkg view`（它同时列出版本）和 `lip pkg migrate`。

@@ -29,7 +29,12 @@ public class PkgPackCommand(IUserInteraction userInteraction) : AsyncCommand<Pkg
 
   public override async Task<int> ExecuteAsync(
       CommandContext context, Settings settings, CancellationToken cancellationToken) {
-    await Packer.WriteArchive(new FileSystem(), settings.Directory ?? ".", settings.Output!);
+    // Relative to the working directory of the invocation (protocol/lip.md, "Working directory").
+    string workingDirectory = Invocation.Current.WorkingDirectory;
+    await Packer.WriteArchive(
+        new FileSystem(),
+        Path.GetFullPath(settings.Directory ?? ".", workingDirectory),
+        Path.GetFullPath(settings.Output!, workingDirectory));
     await _userInteraction.PrintSuccess($"Packed {settings.Output}.");
     return 0;
   }

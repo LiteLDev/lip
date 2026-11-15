@@ -11,7 +11,7 @@ namespace Lip.Core.Services;
 
 /// Reads and writes the configuration of the two scopes (protocol/config.toml.md): the user
 /// configuration, &lt;Config&gt;/config.toml (config.schema.toml), whose only key is github_proxy,
-/// without a default; and the workspace configuration, .lip/config.toml in the current directory
+/// without a default; and the workspace configuration, .lip/config.toml in the workspace root
 /// (workspace-config.schema.toml), whose only key is restart, default "never". Each is a TOML file
 /// (protocol/README.md) with "format" 4 and a mapping of the keys of its scope to their values. A
 /// missing, unreadable or invalid file means every key of its scope is absent: it takes its
@@ -23,7 +23,8 @@ namespace Lip.Core.Services;
 /// liprc.json is deleted (protocol/lip-compatibility.md, "liprc.json"); a dry run reads it the same
 /// way but writes no config.toml and keeps it. Any other liprc.json is kept, and every key has its
 /// default.
-public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
+public class ConfigService(
+    IFileSystem fileSystem, IUserInteraction userInteraction, Func<string>? workspaceRoot = null) {
   public const string GithubProxyKey = "github_proxy";
 
   public const string RestartKey = "restart";
@@ -36,9 +37,10 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   private const string _liprcFormatVersionKey = "format_version";
 
-  private static readonly string _configPath = Path.Join(LipDirectories.Config, "config.toml");
+  // The config directory of the invocation that the service is created for.
+  private readonly string _configPath = Path.Join(LipDirectories.Config, "config.toml");
 
-  private static readonly string _liprcPath = Path.Join(LipDirectories.Config, _liprcFileName);
+  private readonly string _liprcPath = Path.Join(LipDirectories.Config, _liprcFileName);
 
   private static readonly Key _githubProxy = new(
       GithubProxyKey, null, value => value.Length == 0 || IsUri(value),
@@ -51,6 +53,8 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;
+  private readonly Func<string> _workspaceRoot =
+      workspaceRoot ?? fileSystem.Directory.GetCurrentDirectory;
 
   /// Removes the key from the file of its scope, so that it takes its default or has no value.
   public async Task Delete(string key, bool workspace = false) {
@@ -156,7 +160,8 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   private string PathOf(bool workspace) =>
       workspace
-          ? _fileSystem.Path.GetFullPath(_fileSystem.Path.Join(".lip", "config.toml"))
+          ? _fileSystem.Path.GetFullPath(
+              _fileSystem.Path.Join(_workspaceRoot(), ".lip", "config.toml"))
           : _configPath;
 
   /// The keys that the file of the scope gives a value, with their values; none when the file is

@@ -10,7 +10,7 @@ lip - run a LeviLamina server and manage its packages
 lip
 lip (-h | --help)
 lip (-v | --version)
-lip (cache | config | pkg) (-h | --help)
+lip (cache | config | daemon | pkg) (-h | --help)
 lip <command> [<argument>...]
 ```
 
@@ -28,21 +28,24 @@ lip <command> [<argument>...]
 | `run` | [lip-run(1)] |
 | `cache clean` | [lip-cache(1)] |
 | `config get`, `config set`, `config list`, `config delete` | [lip-config(1)] |
+| `daemon status`, `daemon stop` | [lip-daemon(1)] |
 | `pkg init`, `pkg pack`, `pkg view`, `pkg migrate` | [lip-pkg(1)] |
 | `self-update` | [lip-self-update(1)] |
 
-The commands of the command group `pkg` are for developing packages; `self-update` updates `lip` itself; every other command is for running a server.
+The commands of the command group `pkg` are for developing packages; `self-update` updates `lip` itself; the commands of the command group `daemon` manage the daemon; every other command is for running a server.
+
+Every command other than those of the command group `daemon` is carried out by the daemon of the user, as [lip-daemon(1)] defines; this page and the pages of the commands define what is observed from the process started with the command.
 
 ### Terms
 
 - **argument**: One element of the argument list that `lip` is started with, the program name excluded.
 - **command**: An invocation of `lip` with a command name, such as `lip install` or `lip config get`; not a hook command.
-- **command group**: `cache`, `config` or `pkg`, the first word of a command name of two words.
+- **command group**: `cache`, `config`, `daemon` or `pkg`, the first word of a command name of two words.
 - **option**: An argument, or two consecutive arguments, that "Arguments" reads as an option name with or without a value.
 - **flag**: An option that takes no value.
 - **operand**: An argument of a command that is not part of an option.
 - **usage error**: A list of arguments that "Arguments" or OPTIONS rejects.
-- **result**: The data a command is asked for; only `list`, `pkg view`, `config get`, `config list` and `self-update --check` have one.
+- **result**: The data a command is asked for; only `list`, `pkg view`, `config get`, `config list`, `daemon status` and `self-update --check` have one.
 - **message**: Any text other than a result or help (progress, information, warnings, errors, the final success line); its wording is not defined here.
 - **help**: Text describing how to invoke `lip` or a command; its wording is not defined here.
 - **workspace operation**: An operation ([lip-workspace(7)]) that `setup`, `install`, `uninstall` or `update` carries out without `-n` or `--dry-run`.
@@ -137,10 +140,11 @@ With `-n` or `--dry-run`, the command carries out every step that changes nothin
 - No argument: when the standard input and the standard output of `lip` are both terminals, `lip` runs the interface ([lip-tui(1)]); otherwise `lip` writes the help for `lip` to standard output.
 - `-h`, `--help` as the first argument: `lip` writes the help for `lip` to standard output, whatever arguments follow.
 - `-v`, `--version` as the first argument: `lip` writes its version ([SemVer]) followed by a line break to standard output, whatever arguments follow.
+- `--daemon` as the only argument: `lip` runs as the daemon ([lip-daemon(1)]) until it exits; it writes nothing to its standard streams.
 - Any other first argument starting with `-`: the list is a usage error.
-- `lip cache`, `lip config` or `lip pkg`, followed by `-h` or `--help`: `lip` writes the help for the command group to standard output.
+- `lip cache`, `lip config`, `lip daemon` or `lip pkg`, followed by `-h` or `--help`: `lip` writes the help for the command group to standard output.
 
-Each of these exits with code 0, except the usage error, and the interface, which exits as [lip-tui(1), EXIT STATUS](lip-tui.md#exit-status) defines.
+Each of these exits with code 0, except the usage error, the daemon, whose exit code is not defined here, and the interface, which exits as [lip-tui(1), EXIT STATUS](lip-tui.md#exit-status) defines.
 
 ## EXIT STATUS
 
@@ -152,12 +156,13 @@ A command that fails other than on a usage error may write a **failure report**:
 
 ## FILES
 
-- The config directory and the cache directory: [lip-userspace(7)].
+- The config directory, the cache directory and the state directory: [lip-userspace(7)].
+- The endpoint of the daemon: [lip-daemon(1)].
 - `.lip/` in the workspace: [lip-workspace(7), "The .lip directory"](lip-workspace.md#the-lip-directory).
 
 ## SEE ALSO
 
-[lip-tui(1)], [lip-package(7)], [lip-workspace(7)], [lip-userspace(7)], [lip-compatibility(7)]
+[lip-tui(1)], [lip-daemon(1)], [lip-package(7)], [lip-workspace(7)], [lip-userspace(7)], [lip-compatibility(7)]
 
 [lip-setup(1)]: lip-setup.md
 [lip-install(1)]: lip-install.md
@@ -167,6 +172,7 @@ A command that fails other than on a usage error may write a **failure report**:
 [lip-run(1)]: lip-run.md
 [lip-cache(1)]: lip-cache.md
 [lip-config(1)]: lip-config.md
+[lip-daemon(1)]: lip-daemon.md
 [lip-pkg(1)]: lip-pkg.md
 [lip-self-update(1)]: lip-self-update.md
 [lip-tui(1)]: lip-tui.md

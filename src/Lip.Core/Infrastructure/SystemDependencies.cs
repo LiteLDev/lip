@@ -200,6 +200,7 @@ public sealed class SystemProbe : ISystemProbe {
       info.ArgumentList.Add(argument);
     }
 
+    Invocation.Current.ApplyEnvironment(info.Environment);
     foreach ((string name, string value) in start.EnvironmentOverrides) {
       info.Environment[name] = value;
     }
@@ -298,7 +299,7 @@ public sealed class SystemDependencies(
   public static SystemDependencies Create(
       IFileSystem fileSystem, IFileDownloader downloader, IUserInteraction userInteraction) =>
       new(fileSystem, downloader, userInteraction, new SystemProbe(), LipDirectories.Data,
-          Environment.GetEnvironmentVariable);
+          Invocation.Current.GetEnvironmentVariable);
 
   public async Task Prepare(
       string platform, string workspaceRoot, CancellationToken cancellationToken) {

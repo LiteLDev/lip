@@ -76,6 +76,18 @@ Every download has its URL and SHA-256 written into lip, and is checked before i
 
 lip installs them before an operation that runs hook commands, or a `lip setup` of the build `windows`, starts to change the workspace, so that a failure there leaves the workspace as it was, and before `lip run` starts the Windows server. The Linux server needs neither. When everything is installed, this costs a registry lookup.
 
+## Daemon
+
+Every command except [`lip daemon`](../cli/commands/daemon.md) is carried out by the daemon of the user, a `lip` process started with the single argument `--daemon` ([lip-daemon(1)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-daemon.md)). The `lip` you start is its client:
+
+1.  It connects to the daemon: on Windows through the named pipe `\\.\pipe\lip-<SID>`, which only your user can open; on Linux and macOS through the Unix domain socket `$XDG_RUNTIME_DIR/lip/daemon.sock`, or `daemon.sock` in the state directory when `XDG_RUNTIME_DIR` is not set, with the mode `0600` in a directory of mode `0700`.
+2.  When nothing listens, it starts the daemon with its own executable, detached from the terminal and without its standard streams, and connects once the daemon listens. Two clients that start a daemon at the same time end up with one: the second daemon cannot create the endpoint and exits.
+3.  When the daemon is of another version of lip, or runs another executable, as after [`lip self-update`](../cli/commands/self_update.md), the client asks it to exit and starts a new one. A daemon that is carrying out a command keeps running; the client then carries out its command itself.
+4.  It sends the command with its working directory, its environment variables, whether its standard streams are terminals and the size and colors of the terminal. The daemon carries the command out with them, as `lip` would: commands of different clients run side by side, each in its own directory, with its own environment, proxy and failure report.
+5.  The daemon reads the standard input of the client only when the command needs it, such as the input of the server of `lip run`, and sends back what the command and the programs it runs print. Signals that the client receives (Ctrl+C, `SIGTERM`, closing the terminal) are passed on: Ctrl+C cancels and undoes an operation that changes the workspace, and asks the server of `lip run` to stop. When the client goes away while the server runs, the server is asked to stop. The client exits with the exit code of the command.
+
+When the daemon cannot be started or reached, the client says so and carries out the command itself. The daemon exits after it has had no connection for a while, after `lip self-update` replaced lip, or on [`lip daemon stop`](../cli/commands/daemon.md). The interface (`lip` without arguments) runs in the `lip` you start.
+
 ## Notes on the Specification
 
 lip manages server workspaces only: it never determines the side from the workspace, but always uses `server` ([lip(1)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.md#environment), "Environment"). Client workspaces are left to launchers implementing the same protocol, such as LeviLauncher.

@@ -8,10 +8,12 @@ using Spectre.Console.Cli;
 namespace Lip.Cli.Commands;
 
 /// lip self-update (protocol/lip-self-update.md).
-public class SelfUpdateCommand(LipClient lipClient, IUserInteraction userInteraction)
+public class SelfUpdateCommand(
+    LipClient lipClient, IUserInteraction userInteraction, CommandOutput output)
     : AsyncCommand<SelfUpdateCommand.Settings> {
   private readonly LipClient _lipClient = lipClient;
   private readonly IUserInteraction _userInteraction = userInteraction;
+  private readonly CommandOutput _output = output;
 
   public class Settings : CommandSettings {
     [CommandOption("--check")]
@@ -32,7 +34,7 @@ public class SelfUpdateCommand(LipClient lipClient, IUserInteraction userInterac
         break;
       case SelfUpdateOutcome.Available:
         // The result of --check (protocol/lip-self-update.md, OPTIONS).
-        Console.Out.WriteLine(result.Latest!.ToString());
+        _output.Out.WriteLine(result.Latest!.ToString());
         await _userInteraction.PrintInfo(
             $"lip {result.Latest} is available; run 'lip self-update' to install it.");
         break;

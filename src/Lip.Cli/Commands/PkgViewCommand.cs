@@ -4,7 +4,9 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class PkgViewCommand(LipClient lipClient) : AsyncCommand<PkgViewCommand.Settings> {
+public class PkgViewCommand(LipClient lipClient, CommandOutput output)
+    : AsyncCommand<PkgViewCommand.Settings> {
+  private readonly CommandOutput _output = output;
   private readonly LipClient _lipClient = lipClient;
 
   public class Settings : CommandSettings {
@@ -18,7 +20,7 @@ public class PkgViewCommand(LipClient lipClient) : AsyncCommand<PkgViewCommand.S
 
     // Always JSON (protocol/lip-pkg.md, "lip pkg view"), written as is: Spectre.Console would
     // wrap long lines, breaking JSON strings apart.
-    Console.Out.WriteLine(json);
+    _output.Out.WriteLine(json);
 
     return 0;
   }

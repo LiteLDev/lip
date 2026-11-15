@@ -76,6 +76,18 @@ lip 在保存于工作区中 `.lip/state.json` 的状态文件里维护已安装
 
 lip 在会运行钩子命令的操作或构建为 `windows` 的 `lip setup` 开始修改工作区之前安装它们，因此此处的失败会让工作区保持原样；在 `lip run` 启动 Windows 版服务器之前也会这样做。Linux 版服务器两者都不需要。若一切都已安装，这只需查询一次注册表。
 
+## 守护进程
+
+除 [`lip daemon`](../cli/commands/daemon.md) 外，每个命令都由用户的守护进程执行，它是以唯一参数 `--daemon` 启动的 `lip` 进程（[lip-daemon(1)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-daemon.md)）。你启动的 `lip` 是它的客户端：
+
+1.  客户端连接守护进程：在 Windows 上通过只有你的用户能打开的命名管道 `\\.\pipe\lip-<SID>`；在 Linux 和 macOS 上通过 Unix 域套接字 `$XDG_RUNTIME_DIR/lip/daemon.sock`，未设置 `XDG_RUNTIME_DIR` 时为状态目录中的 `daemon.sock`，其模式为 `0600`，所在目录的模式为 `0700`。
+2.  没有进程监听时，客户端用自己的可执行文件启动守护进程，使其脱离终端且不带客户端的标准流，并在守护进程开始监听后连接。两个客户端同时启动守护进程时，最终只有一个：第二个守护进程无法创建端点，随即退出。
+3.  守护进程属于另一个 lip 版本或运行另一个可执行文件时（例如 [`lip self-update`](../cli/commands/self_update.md) 之后），客户端请求它退出并启动新的守护进程。正在执行命令的守护进程会继续运行；此时客户端自己执行它的命令。
+4.  客户端发送命令，以及它的工作目录、环境变量、标准流是否为终端、终端的大小和颜色。守护进程据此执行命令，与 `lip` 自己执行时相同：不同客户端的命令并行执行，各自使用自己的目录、环境、代理和失败报告。
+5.  守护进程只在命令需要时读取客户端的标准输入，例如 `lip run` 的服务器的输入，并把命令及其运行的程序输出的内容发回。客户端收到的信号（Ctrl+C、`SIGTERM`、关闭终端）会被转发：Ctrl+C 取消并撤销正在修改工作区的操作，并请求 `lip run` 的服务器停止。服务器运行时客户端退出，服务器会被请求停止。客户端以命令的退出码退出。
+
+守护进程无法启动或无法连接时，客户端会说明这一点并自己执行命令。守护进程在一段时间没有连接后、在 `lip self-update` 替换了 lip 之后，或执行 [`lip daemon stop`](../cli/commands/daemon.md) 时退出。界面（不带参数的 `lip`）在你启动的 `lip` 中运行。
+
 ## 关于规范的说明
 
 lip 只管理服务端工作区：它从不从工作区判断运行端，而是总是使用 `server`（[lip(1)](https://github.com/LiteLDev/lip/blob/main/protocol/lip.md#environment) "Environment"）。客户端工作区交由实现同一协议的启动器（如 LeviLauncher）处理。

@@ -6,7 +6,9 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
-public class ListCommand(LipClient lipClient) : AsyncCommand<ListCommand.Settings> {
+public class ListCommand(LipClient lipClient, CommandOutput output)
+    : AsyncCommand<ListCommand.Settings> {
+  private readonly CommandOutput _output = output;
   private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
     WriteIndented = true
   };
@@ -25,7 +27,7 @@ public class ListCommand(LipClient lipClient) : AsyncCommand<ListCommand.Setting
     if (settings.Json) {
       // A value tuple has no properties to serialize, so name the two groups explicitly. JSON is
       // written as is: Spectre.Console would wrap long lines, breaking strings apart.
-      Console.Out.WriteLine(JsonSerializer.Serialize(
+      _output.Out.WriteLine(JsonSerializer.Serialize(
           new {
             ExplicitInstalled = packages.ExplicitInstalled,
             ImplicitInstalled = packages.ImplicitInstalled,
@@ -48,8 +50,8 @@ public class ListCommand(LipClient lipClient) : AsyncCommand<ListCommand.Setting
         implicitTree.AddNode("[grey italic]None[/]");
       }
 
-      AnsiConsole.Write(explicitTree);
-      AnsiConsole.Write(implicitTree);
+      _output.Console.Write(explicitTree);
+      _output.Console.Write(implicitTree);
     }
 
     return 0;

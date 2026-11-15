@@ -13,9 +13,12 @@ public interface ICommandRunner {
 }
 
 /// Runs hook commands, writing their standard output and standard error to the stream that
-/// openOutput opens for each command: the standard error of lip when it is not given.
+/// openOutput opens for each command: the standard error of lip when it is not given. They run with
+/// the environment variables of the invocation the runner is created for (Invocation).
 public class CommandRunner(Func<Stream>? openOutput = null) : ICommandRunner {
-  private readonly Func<Stream> _openOutput = openOutput ?? Console.OpenStandardError;
+  private readonly Invocation _invocation = Invocation.Current;
+  private readonly Func<Stream> _openOutput =
+      openOutput ?? Invocation.Current.OpenStandardError;
 
   public async Task Run(string command, string workingDirectory, string platform) {
     using Stream stdErrStream = _openOutput();
@@ -26,7 +29,7 @@ public class CommandRunner(Func<Stream>? openOutput = null) : ICommandRunner {
     ProgramStartInfo start;
     try {
       start = WorkspaceProgram.HookCommand(
-          command, ProgramHost.Current(platform, workingDirectory));
+          command, ProgramHost.For(_invocation, platform, workingDirectory));
     }
     catch (InvalidOperationException ex) {
       RunTrace.Write("hook", $"'{command}' could not be started: {ex.Message}");
@@ -51,10 +54,14 @@ public class CommandRunner(Func<Stream>? openOutput = null) : ICommandRunner {
       cli = start.VerbatimArguments
           ? cli.WithArguments(start.JoinedArguments)
           : cli.WithArguments(start.Arguments);
+      Dictionary<string, string?> environment = new(_invocation.EnvironmentChanges());
+      foreach ((string name, string value) in start.EnvironmentOverrides) {
+        environment[name] = value;
+      }
+
       result = await cli
           .WithWorkingDirectory(start.WorkingDirectory)
-          .WithEnvironmentVariables(start.EnvironmentOverrides.ToDictionary(
-              v => v.Key, string? (v) => v.Value))
+          .WithEnvironmentVariables(environment)
           .WithStandardInputPipe(PipeSource.Null)
           .WithStandardOutputPipe(output)
           .WithStandardErrorPipe(output)

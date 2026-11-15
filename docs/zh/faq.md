@@ -40,8 +40,9 @@ lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<nam
 | 配置（`config.toml`） | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip`（默认 `~/.config/lip`） |
 | 缓存 | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip`（默认 `~/.cache/lip`） |
 | 数据（Linux 和 macOS 上的 Wine） | `%LOCALAPPDATA%\lip\Data` | `$XDG_DATA_HOME/lip`（默认 `~/.local/share/lip`） |
+| 状态（未设置 `XDG_RUNTIME_DIR` 时[守护进程](cli/commands/daemon.md)的套接字） | `%LOCALAPPDATA%\lip\State` | `$XDG_STATE_HOME/lip`（默认 `~/.local/state/lip`） |
 
-缓存可以随时删除，例如使用 `lip cache clean`。数据目录存放 lip 运行服务器所用的 Wine；请仅在没有 lip 命令运行时删除它，lip 在需要时会重新安装 Wine。正在进行的下载会写入缓存中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。
+在 Linux 和 macOS 上，设置了 `XDG_RUNTIME_DIR` 时，守护进程监听 `$XDG_RUNTIME_DIR/lip/daemon.sock`。缓存可以随时删除，例如使用 `lip cache clean`。数据目录存放 lip 运行服务器所用的 Wine；请仅在没有 lip 命令运行时删除它，lip 在需要时会重新安装 Wine。正在进行的下载会写入缓存中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。
 
 ### 安装到一半失败会怎样？
 什么都不会改变。`lip setup`、`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、钩子命令失败或按下 Ctrl+C，它会撤销已做的全部修改，状态文件保持原样。只有包的钩子命令所做的事无法撤销。若 lip 在中途被终止，下一次在该工作区中运行的 `lip setup`、`install`、`uninstall`、`update` 或 `run` 会先处理被中断的操作：若它已保存状态文件，则将其完成，否则将其撤销，并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。

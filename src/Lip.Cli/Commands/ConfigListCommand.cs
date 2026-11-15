@@ -8,7 +8,9 @@ namespace Lip.Cli.Commands;
 
 /// lip config list (protocol/lip-config.md): every key of the scope with its value, or with --json
 /// an object mapping each key to its value as a JSON string, or null when it has none.
-public class ConfigListCommand(LipClient lipClient) : AsyncCommand<ConfigListCommand.Settings> {
+public class ConfigListCommand(LipClient lipClient, CommandOutput output)
+    : AsyncCommand<ConfigListCommand.Settings> {
+  private readonly CommandOutput _output = output;
   private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
     WriteIndented = true
   };
@@ -37,7 +39,7 @@ public class ConfigListCommand(LipClient lipClient) : AsyncCommand<ConfigListCom
     IDictionary<string, string?> config = await _lipClient.ConfigList(settings.Workspace);
 
     if (settings.Json) {
-      Console.Out.WriteLine(JsonSerializer.Serialize(config, _jsonSerializerOptions));
+      _output.Out.WriteLine(JsonSerializer.Serialize(config, _jsonSerializerOptions));
     } else {
       Table table = new();
       table.AddColumn("Key");
@@ -47,7 +49,7 @@ public class ConfigListCommand(LipClient lipClient) : AsyncCommand<ConfigListCom
         table.AddRow(Markup.Escape(kvp.Key), Describe(kvp.Value));
       }
 
-      AnsiConsole.Write(table);
+      _output.Console.Write(table);
     }
 
     return 0;

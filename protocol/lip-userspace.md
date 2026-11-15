@@ -2,7 +2,7 @@
 
 ## NAME
 
-lip-userspace - the per-user directories, the cache, and the data directory
+lip-userspace - the per-user directories, the cache, the data directory, and the state directory
 
 ## DESCRIPTION
 
@@ -13,10 +13,11 @@ lip-userspace - the per-user directories, the cache, and the data directory
 | **config directory** | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` | The user configuration ([config.toml(5)](config.toml.md)). |
 | **cache directory** | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` | The cache. |
 | **data directory** | `%LOCALAPPDATA%\lip\Data` | `$XDG_DATA_HOME/lip` | The system dependencies that `lip` installs ("Data directory"). |
+| **state directory** | `%LOCALAPPDATA%\lip\State` | `$XDG_STATE_HOME/lip` | The files of the daemon ([lip-daemon(1)](lip-daemon.md)) when it has no other daemon directory; their names and content are not defined here. |
 
 On systems other than Windows, an `XDG_*` variable that is unset, empty or not an absolute path takes its [XDG] default.
 
-Besides these directories, `lip` writes only to the workspace it operates on, to paths given as arguments, and to its installation directory as [lip-self-update(1)](lip-self-update.md) defines, never to the system temporary directory. The programs that `lip` runs ([lip-workspace(7), "Running programs"](lip-workspace.md#running-programs)), the installers it runs ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)), and Wine, are exempt.
+Besides these directories and the daemon directory ([lip-daemon(1)](lip-daemon.md)), `lip` writes only to the workspace it operates on, to paths given as arguments, and to its installation directory as [lip-self-update(1)](lip-self-update.md) defines, never to the system temporary directory. The programs that `lip` runs ([lip-workspace(7), "Running programs"](lip-workspace.md#running-programs)), the installers it runs ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)), and Wine, are exempt.
 
 ### Cache
 
@@ -43,8 +44,12 @@ The data directory holds the Wine of `lip` ([lip-workspace(7), "System dependenc
 
 Deleting the data directory while no `lip` process runs loses nothing: `lip` installs the system dependencies again when it needs them.
 
+### State directory
+
+Deleting the state directory while no `lip` process runs loses nothing.
+
 ## SEE ALSO
 
-[lip-cache(1)](lip-cache.md), [lip-self-update(1)](lip-self-update.md), [config.toml(5)](config.toml.md), [lip-workspace(7)](lip-workspace.md)
+[lip-cache(1)](lip-cache.md), [lip-daemon(1)](lip-daemon.md), [lip-self-update(1)](lip-self-update.md), [config.toml(5)](config.toml.md), [lip-workspace(7)](lip-workspace.md)
 
 [XDG]: https://specifications.freedesktop.org/basedir-spec/latest/

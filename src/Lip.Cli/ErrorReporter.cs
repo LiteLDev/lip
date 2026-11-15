@@ -32,45 +32,48 @@ public static class ErrorReporter {
   private const string IssuesUrl = "https://github.com/LiteLDev/lip/issues";
   private const int KeptReports = 20;
 
-  private static readonly IAnsiConsole _console = AnsiConsole.Create(new() {
-    Out = new AnsiConsoleOutput(Console.Error)
-  });
+  /// Reports the failure on the standard error of this process and returns the exit code.
+  public static int Report(Exception exception, string[] args, bool cancelled) =>
+      Report(exception, args, cancelled, ConsoleProfile.CreateStandardError());
 
-  /// Reports the failure and returns the exit code.
-  public static int Report(Exception exception, string[] args, bool cancelled) {
+  /// Reports the failure of a command of the current invocation (Invocation) through console, its
+  /// standard error, and returns the exit code.
+  public static int Report(
+      Exception exception, string[] args, bool cancelled, IAnsiConsole console) {
+    TextWriter error = Invocation.Current.Error;
     // A usage error is fully described by its message; there is nothing to analyze.
     if (exception is CommandAppException or UsageException) {
       if (exception is CommandAppException { Pretty: { } pretty }) {
-        _console.Write(pretty);
+        console.Write(pretty);
       } else {
-        _console.MarkupLine($"[bold red]error:[/] {Markup.Escape(exception.Message)}");
+        console.MarkupLine($"[bold red]error:[/] {Markup.Escape(exception.Message)}");
       }
-      _console.MarkupLine("Run [blue]lip --help[/] to see how to use lip.");
+      console.MarkupLine("Run [blue]lip --help[/] to see how to use lip.");
       return 1;
     }
 
     Failure failure = Describe(exception, args, cancelled);
     if (failure.Cancelled) {
-      _console.MarkupLine("[bold red]Cancelled.[/] Any changes to the workspace were undone.");
+      console.MarkupLine("[bold red]Cancelled.[/] Any changes to the workspace were undone.");
       return 1;
     }
 
     // Written without the console's line wrapping, which would break URLs and paths apart.
-    _console.Markup("[bold red]error:[/] ");
-    Console.Error.WriteLine(failure.Summary);
+    console.Markup("[bold red]error:[/] ");
+    error.WriteLine(failure.Summary);
     foreach (string hint in failure.Hints) {
-      _console.Markup("[yellow]hint:[/] ");
-      Console.Error.WriteLine(hint);
+      console.Markup("[yellow]hint:[/] ");
+      error.WriteLine(hint);
     }
 
     if (failure.ReportPath is { } path) {
-      _console.WriteLine();
-      _console.MarkupLine($"Full report: [blue]{Markup.Escape(path)}[/]");
+      console.WriteLine();
+      console.MarkupLine($"Full report: [blue]{Markup.Escape(path)}[/]");
     } else {
       // The report is lost; show its most important part instead.
-      Console.Error.WriteLine();
-      Console.Error.WriteLine($"Could not write a failure report ({failure.ReportError}). Details:");
-      Console.Error.WriteLine(failure.Details);
+      error.WriteLine();
+      error.WriteLine($"Could not write a failure report ({failure.ReportError}). Details:");
+      error.WriteLine(failure.Details);
     }
 
     return 1;
@@ -279,13 +282,15 @@ public static class ErrorReporter {
           or ObjectDisposedException
           or DivideByZeroException;
 
-  /// Writes the failure report and returns its path relative to the current directory.
+  /// Writes the failure report and returns its path relative to the working directory of the
+  /// current invocation.
   private static string WriteReport(
       Exception exception,
       string[] args,
       string summary,
       IReadOnlyList<string> hints) {
-    string lipDirectory = Path.GetFullPath(".lip");
+    Invocation invocation = Invocation.Current;
+    string lipDirectory = Path.Join(invocation.WorkingDirectory, ".lip");
     bool created = !Directory.Exists(lipDirectory);
     string logs = Directory.CreateDirectory(Path.Join(lipDirectory, "logs")).FullName;
     if (created && OperatingSystem.IsWindows()) {
@@ -295,13 +300,13 @@ public static class ErrorReporter {
     DateTimeOffset now = DateTimeOffset.UtcNow;
     string name = string.Create(
         CultureInfo.InvariantCulture,
-        $"{now:yyyyMMdd'T'HHmmss'Z'}-{Environment.ProcessId}.log");
+        $"{now:yyyyMMdd'T'HHmmss'Z'}-{invocation.ProcessId}.log");
 
     using (StreamWriter writer = new(
         new FileStream(Path.Join(logs, name), FileMode.CreateNew, FileAccess.Write),
         new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))) {
       writer.NewLine = "\n";
-      writer.Write(Redact(Render(exception, args, summary, hints, now)));
+      writer.Write(Redact(Render(exception, args, summary, hints, now, invocation)));
     }
 
     Prune(logs);
@@ -313,7 +318,8 @@ public static class ErrorReporter {
       string[] args,
       string summary,
       IReadOnlyList<string> hints,
-      DateTimeOffset now) {
+      DateTimeOffset now,
+      Invocation invocation) {
     StringBuilder report = new();
     void Section(string title) => report.Append('\n').Append("== ").Append(title).Append(" ==\n");
     void Field(string name, string? value) =>
@@ -325,18 +331,21 @@ public static class ErrorReporter {
     Field("lip version", Assembly.GetEntryAssembly()?
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
     Field("Command", "lip " + string.Join(' ', args.Select(Quote)));
-    Field("Working directory", Environment.CurrentDirectory);
+    Field("Working directory", invocation.WorkingDirectory);
     Field("OS", RuntimeInformation.OSDescription);
     Field("RID lip runs on", RuntimeInformation.RuntimeIdentifier);
     Field("Architecture", $"OS {RuntimeInformation.OSArchitecture}, process {RuntimeInformation.ProcessArchitecture}");
     Field(".NET", RuntimeInformation.FrameworkDescription);
     Field("Config directory", LipDirectories.Config);
     Field("Cache directory", LipDirectories.Cache);
-    Field("Terminal", $"stdin {(Console.IsInputRedirected ? "redirected" : "terminal")},"
-        + $" stdout {(Console.IsOutputRedirected ? "redirected" : "terminal")},"
-        + $" stderr {(Console.IsErrorRedirected ? "redirected" : "terminal")}");
+    Field("Terminal", $"stdin {(invocation.IsInputRedirected ? "redirected" : "terminal")},"
+        + $" stdout {(invocation.IsOutputRedirected ? "redirected" : "terminal")},"
+        + $" stderr {(invocation.IsErrorRedirected ? "redirected" : "terminal")}");
+    Field("Daemon", invocation.InheritsStandardStreams
+        ? "no"
+        : $"process {Environment.ProcessId}");
     foreach (string variable in (string[])["XDG_CONFIG_HOME", "XDG_CACHE_HOME", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"]) {
-      if (Environment.GetEnvironmentVariable(variable) is { } value) {
+      if (invocation.GetEnvironmentVariable(variable) is { } value) {
         Field(variable, value);
       }
     }
@@ -358,7 +367,9 @@ public static class ErrorReporter {
 
     Section("Workspace (.lip)");
     try {
-      foreach (string entry in Directory.EnumerateFileSystemEntries(".lip").Order(StringComparer.Ordinal)) {
+      string lipDirectory = Path.Join(invocation.WorkingDirectory, ".lip");
+      foreach (string entry in Directory.EnumerateFileSystemEntries(lipDirectory)
+          .Order(StringComparer.Ordinal)) {
         string entryName = Path.GetFileName(entry);
         if (entryName == "logs") {
           continue;
@@ -367,7 +378,7 @@ public static class ErrorReporter {
             ? $"{entryName}/\n"
             : $"{entryName} ({new FileInfo(entry).Length} bytes)\n");
       }
-      foreach (string file in Directory.EnumerateFiles(".lip").Order(StringComparer.Ordinal)) {
+      foreach (string file in Directory.EnumerateFiles(lipDirectory).Order(StringComparer.Ordinal)) {
         string fileName = Path.GetFileName(file);
         if (fileName.StartsWith("workspace.", StringComparison.Ordinal) || fileName == "journal") {
           report.Append(CultureInfo.InvariantCulture, $"\n--- {fileName} ---\n")

@@ -32,11 +32,15 @@ public sealed record ProgramHost(
 
   public string? Wine { get; init; }
 
-  /// The host lip runs on, with the Wine of lip in the data directory.
+  /// The host lip runs on for the current invocation, with the Wine of lip in the data directory.
   public static ProgramHost Current(string platform, string workspaceRoot) =>
+      For(Invocation.Current, platform, workspaceRoot);
+
+  /// The host lip runs on for the invocation, whose environment variables the programs get.
+  public static ProgramHost For(Invocation invocation, string platform, string workspaceRoot) =>
       new(
           OperatingSystem.IsWindows(), platform, workspaceRoot,
-          Environment.GetEnvironmentVariable) {
+          invocation.GetEnvironmentVariable) {
         Wine = ManagedWine.Executable(LipDirectories.Data, SystemInfo.Current),
       };
 

@@ -38,6 +38,7 @@ public sealed class ProcessProgramStarter : IProgramStarter {
       }
     }
 
+    Invocation.Current.ApplyEnvironment(info.Environment);
     foreach ((string name, string value) in start.EnvironmentOverrides) {
       info.Environment[name] = value;
     }
@@ -59,11 +60,38 @@ public sealed class ProcessProgramStarter : IProgramStarter {
   }
 }
 
-/// Starts a process whose standard output and standard error lip reads, for the interface
-/// (protocol/lip-tui.md, "Server"): every chunk read from either goes to output, one at a time.
-/// On Windows the process gets a console of its own, without a window, so that nothing it does
-/// to its console reaches the terminal of lip.
-public sealed class PipedProgramStarter(Action<byte[]> output) : IProgramStarter {
+/// Starts a process whose standard output and standard error lip reads: every chunk read from its
+/// standard output goes to output, and from its standard error to error, one at a time. For the
+/// interface (protocol/lip-tui.md, "Server"), both go to one output; for the daemon
+/// (protocol/lip-daemon.md, "Carrying out a command"), to those of the client. On Windows the
+/// process gets a console of its own, without a window, so that nothing it does to its console
+/// reaches the terminal of lip.
+public sealed class PipedProgramStarter(Action<byte[]> output, Action<byte[]> error)
+    : IProgramStarter {
+  public PipedProgramStarter(Action<byte[]> output) : this(output, output) {
+  }
+
+  /// The starter of the programs of the current invocation: one that they inherit the standard
+  /// streams of lip from, or that passes on what they write.
+  public static IProgramStarter ForCurrent() {
+    Invocation invocation = Invocation.Current;
+    if (invocation.InheritsStandardStreams) {
+      return new ProcessProgramStarter();
+    }
+
+    Stream stdout = invocation.OpenStandardOutput();
+    Stream stderr = invocation.OpenStandardError();
+    return new PipedProgramStarter(
+        bytes => {
+          stdout.Write(bytes);
+          stdout.Flush();
+        },
+        bytes => {
+          stderr.Write(bytes);
+          stderr.Flush();
+        });
+  }
+
   public IStartedProgram Start(ProgramStartInfo start) {
     ProcessStartInfo info = new(start.FileName) {
       UseShellExecute = false,
@@ -81,27 +109,26 @@ public sealed class PipedProgramStarter(Action<byte[]> output) : IProgramStarter
       }
     }
 
+    Invocation.Current.ApplyEnvironment(info.Environment);
     foreach ((string name, string value) in start.EnvironmentOverrides) {
       info.Environment[name] = value;
     }
 
     Process process = Process.Start(info)
         ?? throw new InvalidOperationException($"Could not start {start.FileName}.");
-    return new StartedProcess(process, output);
+    return new StartedProcess(process, output, error);
   }
 
   private sealed class StartedProcess : IStartedProgram {
     private readonly Process _process;
-    private readonly Action<byte[]> _output;
     private readonly object _gate = new();
     private readonly Task _pumps;
 
-    public StartedProcess(Process process, Action<byte[]> output) {
+    public StartedProcess(Process process, Action<byte[]> output, Action<byte[]> error) {
       _process = process;
-      _output = output;
       _pumps = Task.WhenAll(
-          Task.Run(() => Pump(process.StandardOutput.BaseStream)),
-          Task.Run(() => Pump(process.StandardError.BaseStream)));
+          Task.Run(() => Pump(process.StandardOutput.BaseStream, output)),
+          Task.Run(() => Pump(process.StandardError.BaseStream, error)));
     }
 
     public Stream StandardInput => _process.StandardInput.BaseStream;
@@ -115,7 +142,7 @@ public sealed class PipedProgramStarter(Action<byte[]> output) : IProgramStarter
 
     public void Dispose() => _process.Dispose();
 
-    private async Task Pump(Stream stream) {
+    private async Task Pump(Stream stream, Action<byte[]> sink) {
       byte[] buffer = new byte[4096];
       try {
         while (true) {
@@ -125,12 +152,12 @@ public sealed class PipedProgramStarter(Action<byte[]> output) : IProgramStarter
           }
 
           lock (_gate) {
-            _output(buffer[..read]);
+            sink(buffer[..read]);
           }
         }
       }
       catch (Exception ex) when (ex is IOException or ObjectDisposedException) {
-        RunTrace.Write("run", $"Cannot read the output of the server: {ex.Message}");
+        RunTrace.Write("run", $"Cannot pass on the output of the server: {ex.Message}");
       }
     }
   }

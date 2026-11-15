@@ -17,6 +17,7 @@ Commands (section 1):
 | [lip-run(1)](lip-run.md) | `lip run` |
 | [lip-cache(1)](lip-cache.md) | `lip cache clean` |
 | [lip-config(1)](lip-config.md) | `lip config get`, `set`, `list` and `delete` |
+| [lip-daemon(1)](lip-daemon.md) | The daemon that carries out the commands, and `lip daemon status` and `stop`. |
 | [lip-pkg(1)](lip-pkg.md) | `lip pkg init`, `pack`, `view` and `migrate` |
 | [lip-self-update(1)](lip-self-update.md) | `lip self-update` |
 | [lip-tui(1)](lip-tui.md) | The interactive interface that `lip` runs without arguments. |
@@ -36,7 +37,7 @@ Concepts (section 7):
 |---|---|
 | [lip-package(7)](lip-package.md) | Archives, packages, sources and resolution. |
 | [lip-workspace(7)](lip-workspace.md) | Workspaces, operations on them, and the programs run in them. |
-| [lip-userspace(7)](lip-userspace.md) | The per-user directories, the cache, and the data directory. |
+| [lip-userspace(7)](lip-userspace.md) | The per-user directories, the cache, the data directory, and the state directory. |
 | [lip-compatibility(7)](lip-compatibility.md) | Reading and migrating the files of formats 1 to 3 and the workspaces of linux-x64, and the packages that `lip` must install. |
 
 ## Conventions
