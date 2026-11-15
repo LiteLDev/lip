@@ -62,8 +62,8 @@ To quit, press `Esc` in the sidebar, or `Ctrl+C` where it does not stop the serv
 
 The Home page lists what a new server needs, in order. Select a step with `↑` and `↓` and press `Enter`; a finished step is checked off.
 
-1. **Create the server.** lip offers the current directory when it has no server yet, or asks for another directory; then it asks for the game version, the build and the loader, one after the other (see [Workspaces](#workspaces)). It then shows what it will install; choose **Apply**, and accept the Minecraft EULA when asked.
-2. **Install mods.** This opens the [Get mods](#get-mods) page: move to a mod, press `Enter`, and choose to install it. Again lip shows what it will do before anything changes.
+1. **Create the server.** lip offers the current directory when it has no server yet, or lets you [choose another folder](#choosing-a-folder-or-a-file); then it asks for the game version and the loader, one after the other (see [Workspaces](#workspaces)). It then shows what it will install; choose **Apply**, and accept the Minecraft EULA when asked.
+2. **Install mods.** This opens the [Get mods](#get-mods) page: move to a mod, press `Enter`, choose to install it, and choose a version. Again lip shows what it will do before anything changes.
 3. **Start the server.** This opens the [Server](#server) page and starts the server. Type server commands in its input line; `Ctrl+C` stops the server. Without a server there is nothing to start, and lip points you back to the first step.
 
 If GitHub cannot be reached from your network, lip asks how to reach it before you get far: see [GitHub proxy](#github-proxy).
@@ -102,14 +102,14 @@ Each workspace has its own server, so servers of several workspaces can run at o
 
 When lip cannot use its daemon and runs the interface itself, the servers it starts are not managed: quitting lip asks them to stop, and lip waits until they have exited.
 
-The other pages stay usable while the server runs. As with `lip run`, the workspace is not locked meanwhile, and changes to packages take effect when the server is started again.
+While the server runs, the interface changes neither the packages nor the game configuration of its workspace: see [While the server runs](#while-the-server-runs).
 
 ### Mods
 
 The Mods page lists the packages installed in the workspace, as [`lip list`](./commands/list.md) does.
 
-- Above the list are the actions that fit the workspace: **Install from source…** always; **Update all** once you have installed mods, and **Get mods**, which opens the [Get mods](#get-mods) page, before that; **New server…** in a workspace without a game. For the first, write the packages as on the command line (see [`lip install`](./commands/install.md)): a package id, a URL, or a ZIP file or a directory on your disk.
-- `Enter` on a mod opens its menu: update it, update it to a version you name (`lip update <package>@<version>`), or uninstall it. The menu of the game and of the loader leads to the [Workspaces](#workspaces) page, where their versions are changed.
+- Above the list are the actions that fit the workspace: **Install from source…** always; **Update all** once you have installed mods, and **Get mods**, which opens the [Get mods](#get-mods) page, before that; **New server…** in a workspace without a game. For the first, type the packages as on the command line (see [`lip install`](./commands/install.md)), such as a package id or a URL, or [browse](#choosing-a-folder-or-a-file) for a ZIP file or a folder on your disk.
+- `Enter` on a mod opens its menu: see its details, update it, update it to a version you name (`lip update <package>@<version>`), or uninstall it. The details are those that the [Get mods](#get-mods) page shows for the mod; when the catalogue of levimc.org has no such mod, or cannot be read, lip says that it has no information about it. The menu of the game and of the loader leads to the [Workspaces](#workspaces) page, where their versions are changed.
 - `Space` checks the mods you installed; the menu then updates or uninstalls all the checked ones at once.
 
 A package that is installed only because another one depends on it can be neither checked nor uninstalled by itself: uninstall what depends on it.
@@ -118,7 +118,22 @@ A package that is installed only because another one depends on it can be neithe
 
 The Get mods page reads the mod catalogue of levimc.org (`https://levimc.org/api/v4/mods/`); nothing of it is kept on disk, and `github_proxy` is not used for it. lip manages servers only, so the list holds the mods that have a build for a server.
 
-The page has a search box, a sort order (relevance, stars, last update, newest), a row that opens the filters (game version, tags, license, dependencies), the list of mods, in which the installed ones are marked, and the details of the selected one. `Enter` on a mod opens its menu: install the latest version, choose a version (or name a branch, a tag or a commit), read the README, or open its page in the browser.
+The page has a search box, a sort order, a row that opens the filters (game version, tags, license, dependencies), the list of mods, and the details of the selected one. Each row of the list shows the downloads, the stars and the date of the last update of the mod, as levimc.org does, and marks an installed mod; downloads that are not known are left out. The sort orders are those of levimc.org:
+
+| Order | The mods come |
+| --- | --- |
+| Relevance | Best match of the search first. |
+| Popularity | Most popular first. The popularity of a mod is computed from its downloads and its stars together, as on levimc.org, so it is neither the order of the downloads nor that of the stars. |
+| Updated | Last updated first. |
+| Newest | Last published first. |
+
+`Enter` on a mod opens its menu: **Install…**, read the README, or open its page in the browser. Installing always goes through choosing a version; there is no way to install "the latest" unseen:
+
+- When the mod has variants, they are tabs on one row at the top, all of them; `←` and `→` change the variant. When the row is too narrow for all of them, it scrolls sideways and marks the side on which more are hidden; it never takes a second row.
+- Below are the versions of the chosen variant that fit the game and the LeviLamina of the workspace, newest first, and only those. When none fits, a line says which game or which LeviLamina rules them out.
+- The last row, **Custom…**, takes a branch, a tag or a commit instead, e.g. `branch:main`.
+
+In a workspace without a server there is nothing that a version could fit: lip says so and offers to create the server first (see [Workspaces](#workspaces)).
 
 ### Game config
 
@@ -134,11 +149,15 @@ The Game config page edits the files of the server at the root of the workspace,
 
 Nothing is written until you choose **Save** at the bottom of the page; **Discard** drops your changes, and leaving the page with unsaved changes asks whether to save them. When a file was changed on disk after lip read it, lip asks before it overwrites it. lip changes only what you changed: in `server.properties`, the lines of the properties you changed, keeping every comment; in a JSON file, the values you changed, keeping the order of its members (comments in a JSON file are not kept).
 
-The server creates `server.properties` when it first starts, so a new workspace may not have it yet; `allowlist.json` and `permissions.json` are created when you save them. Changes take effect when the server is started again.
+The server creates `server.properties` when it first starts, so a new workspace may not have it yet; `allowlist.json` and `permissions.json` are created when you save them. The server reads the three files when it starts.
+
+While the server runs, the page is read-only: you can look through the files, but neither change nor save them (see [While the server runs](#while-the-server-runs)).
 
 ### Mod config
 
-The Mod config page lists the configuration files of the installed mods. A `.json` file opens as a tree: `Enter` opens an object or a list and edits a value, `Space` switches a `true`/`false` value, and `Esc` goes up a level; a list has a row that adds a value, and `Enter` on one of its values offers to remove it. Any other file is shown as it is, to be edited with a text editor. As on the [Game config](#game-config) page, nothing is written until you choose **Save**, and leaving with unsaved changes asks; a file that no longer exists is not created. In a workspace without mods, the page offers **Get mods** instead.
+The Mod config page lists the configuration files of the installed mods. A `.json` file opens as a tree: `Enter` opens an object or a list and edits a value, `Space` switches a `true`/`false` value, and `Esc` goes up a level; a list has a row that adds a value, and `Enter` on one of its values offers to remove it. Any other file is shown as it is, to be edited with a text editor. As on the [Game config](#game-config) page, nothing is written until you choose **Save**, and leaving with unsaved changes asks; a file that no longer exists is not created. Unlike the game configuration, the configuration of a mod can be saved while the server runs; the mod may read it only when the server is next started (see [While the server runs](#while-the-server-runs)).
+
+When no installed mod has a configuration file, the page says that there is no mod to configure, and offers **Get mods** instead. That does not mean that no mod is installed: a mod may have no configuration, or keep it where lip does not look.
 
 The configuration files of a mod are the files in `mods/<mod>/config/`; for a mod without one, the `.json`, `.ini`, `.toml`, `.yml` and `.yaml` files directly in `mods/<mod>/` (but `manifest.json`), and `mods/<mod>/data/config.json`. Most mods create them when the server first starts.
 
@@ -148,19 +167,19 @@ lip remembers the workspaces you used in a list, `workspaces.json` in its state 
 
 The Workspaces page shows the list: which workspace is selected, which no longer exist, and which have a running server.
 
-- Above the list are two actions: **New server…**, and **Add existing folder…**, which takes a directory, absolute or relative to the selected workspace.
+- Above the list are two actions: **New server…**, and **Add existing folder…**, which lets you [choose the folder](#choosing-a-folder-or-a-file).
 - `Enter` on a workspace opens its menu: switch to it, change its game or loader version, or remove it from the list. Removing changes no file in the workspace; the selected workspace cannot be removed. A workspace whose directory no longer exists can only be removed, and the versions of a workspace cannot be changed while its server runs.
 
-A new server is set up in four steps:
+A new server is set up in up to four steps:
 
-1. **The directory of the server**, absolute or relative to the selected workspace. A directory that does not exist is created. When the selected workspace has no server yet, lip first offers that workspace itself.
-2. **The game version**, read from the builds list of the server: the release versions, newest first, then the others.
-3. **The build**: `windows`, the server that LeviLamina and its mods run on (through Wine off Windows), or `linux`, the Linux server without a loader. Only the builds that the version has are offered.
+1. **The folder of the server**, [chosen in the folder browser](#choosing-a-folder-or-a-file). A folder that does not exist yet can be chosen too, and is created. When the selected workspace has no server yet, lip first offers that workspace itself.
+2. **The game version**, read from the builds list of the server: the release versions, newest first, then the others. Each version shows whether a LeviLamina supports it. Mods need LeviLamina, and not every game version has one, so choose a supported version for a server with mods. When lip cannot find out, the list shows the versions without that.
+3. **The build**, only when lip runs on Linux on x64 and the version has both builds: `windows`, the server that LeviLamina and its mods run on (through Wine off Windows), or `linux`, the Linux server without a loader. Everywhere else the Linux server cannot run, so the build is `windows` and lip does not ask; nor does it ask when the version has only one build.
 4. **The loader**, for the `windows` build: the versions of LeviLamina that support the game, newest first, or no loader. lip finds them as [`lip setup`](./commands/setup.md#the-loader) does, which may take a moment.
 
 lip then creates the directory, adds it to the list, selects it, and carries out [`lip setup`](./commands/setup.md) with your choices, e.g. `lip setup --game 1.21.50 --loader levilamina@1.1.0`. `Esc` goes back one step, and in the first step stops, creating nothing. Afterwards the new workspace is the selected row of the list.
 
-Changing the game or the loader of a workspace carries out `lip setup` in it again, with the same choices but the directory; each step starts on what the workspace has now.
+Changing the game or the loader of a workspace carries out `lip setup` in it again, with the same choices but the folder; each step starts on what the workspace has now.
 
 ### Tools
 
@@ -173,7 +192,7 @@ The Tools page is for those who make packages. Each of its rows asks for what it
 | Pack a ZIP archive | [`lip pkg pack`](./commands/pkg_pack.md) |
 | View a package | [`lip pkg view`](./commands/pkg_view.md) |
 
-Paths are absolute or relative to the selected workspace.
+Where a row needs a folder or a file, you [choose it in the folder browser](#choosing-a-folder-or-a-file): packing asks for the folder of the package and then for the file to write. Viewing a package first asks which one: a mod installed in the workspace, chosen from their list; a package that you type as on the command line; or a ZIP file or a folder on your disk.
 
 ### Settings
 
@@ -195,14 +214,51 @@ The interface cannot stop the daemon, because the daemon runs the interface: qui
 Every change to the workspace (installing, updating, uninstalling, setting up) goes the same way:
 
 1. **Preview.** lip carries the command out as a dry run (`--dry-run`) and shows what it would do.
-2. **Apply or Cancel.** Nothing changes until you choose **Apply**. **Cancel** leaves the workspace as it is, so it is also how you only look at what a command would do.
+2. **Apply or Cancel.** Nothing changes until you choose **Apply**. **Cancel** leaves the workspace as it is, so it is also how you only look at what a command would do. When the preview finds that there is nothing to change, e.g. everything is installed already, there is nothing to apply, and the only button is **Close**.
 3. **The license**, when the change sets up the game, e.g. a new server, or installing `LeviLamina` in a workspace without a game (see [`lip setup`](./commands/setup.md)): lip shows the links to the Minecraft EULA and the Microsoft Privacy Policy and asks whether you accept them; nothing changes unless you accept.
 4. **Progress.** `Esc` or `Ctrl+C` cancels the change and undoes what was done so far.
 5. **Result.** What the command said.
 
+Applying does not start over: what the preview read from the network and downloaded (the versions, the package files, the archives) is used as it is, so applying takes only as long as the changes to the workspace do. A new server shares it from its first step on, so the versions that its steps read are not read again either.
+
 When the preview of a setup lists mods that would be uninstalled because they do not work with the new game, choosing **Apply** uninstalls them.
 
 When a command fails, the interface shows the cause, what you can do about it, and the path of the failure report below `.lip/logs` of the workspace, and goes on.
+
+## Choosing a folder or a file
+
+Wherever lip needs a folder or a file, it opens a folder browser, so you never have to type a path: for the folder of a new server and for an existing folder to add ([Workspaces](#workspaces)), for a ZIP file or a folder to install ([Mods](#mods)), and for the folder to pack, the file to write and a package to view ([Tools](#tools)).
+
+The browser starts in the folder of the selected workspace. It has a path bar, the list of what the folder shown holds (`..` first, then its folders, then the files that can be chosen, if any), and buttons.
+
+| Key | Does |
+| --- | --- |
+| `↑`, `↓`, `PgUp`, `PgDn`, `Home`, `End` | Move in the list. |
+| `Enter`, `→` | On a folder, open it. `Enter` on a file chooses it. |
+| `←`, or `Enter` on `..` | Go up one level. Above the top folder of a drive is the list of the drives (on Windows; elsewhere the top is `/`). |
+| `Tab`, `Shift+Tab` | Move between the path bar, the list, the file name (when a file is to be written) and the buttons. |
+| `Esc` | In the path bar, goes back to the list; otherwise closes the browser, choosing nothing. |
+
+- **Select this folder** chooses the folder shown; **Save** chooses the file name typed below the list, in the folder shown.
+- **New folder…** asks for a name and makes a folder of that name in the folder shown.
+- In the path bar you can still type or paste a path and press `Enter` to go there: an absolute path, or one relative to the folder shown.
+
+Folders and files that are hidden, or whose name starts with a dot (such as `.lip`), are not listed; type their path in the path bar to reach them. A folder that lip may not read says so, and you can only go back up.
+
+## While the server runs
+
+While the server of the selected workspace runs, the interface changes neither its packages nor its game configuration:
+
+| What | While the server runs |
+| --- | --- |
+| Installing, updating and uninstalling mods ([Mods](#mods), [Get mods](#get-mods)) | Off. |
+| Setting up or changing the game or the loader ([Workspaces](#workspaces)) | Off. |
+| `server.properties`, `allowlist.json`, `permissions.json` ([Game config](#game-config)) | Read-only. |
+| The configuration files of the mods ([Mod config](#mod-config)) | Can be changed and saved. The server may need a restart before a change takes effect, as the page says. |
+
+What is off stays on the screen, shown as disabled, with the reason: stop the server first. Everything else works as usual, such as browsing the mods of levimc.org, the Tools and the Settings.
+
+This holds whoever started the server: the interface, `lip run --managed`, or a plain [`lip run`](./commands/run.md) in another terminal. It holds for the interface only: the commands `lip install`, `lip update`, `lip uninstall` and `lip setup` are not refused while the server runs (see [Running a Server](../guides/running_server.md#while-the-server-runs)).
 
 ## GitHub proxy
 
