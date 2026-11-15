@@ -127,6 +127,9 @@ public class FileDownloader(IUserInteraction userInteraction) : IFileDownloader 
     string message = $"Could not download {url}: the server answered HTTP {status}{reason}.";
     return status switch {
       // What to check is said by the hint the CLI shows for these status codes.
+      401 or 404 when IsGitHub(url) && url.Path.Contains(
+          "/releases/download/", StringComparison.Ordinal) => message + " GitHub answers this way"
+          + " when the release has no such file, or when the repository is private.",
       401 or 404 when IsGitHub(url) => message + " GitHub answers this way when the repository"
           + " or the file does not exist, or when the repository is private.",
       401 => message + " The server does not allow lip to download this file.",

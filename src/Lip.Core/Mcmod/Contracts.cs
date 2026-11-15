@@ -55,8 +55,19 @@ public record Candidate(
     string manifestFile = PackageFormat.ModManifestFileName;
     RunTrace.Write("install", $"Reading the mod name of {name}@{Package.Version} from the"
         + $" {manifestFile} of its asset of type mcmod ({index}).");
+    ISource source;
     try {
-      ISource source = await Assets[index].Open();
+      source = await Assets[index].Open();
+    }
+    catch (ArchiveUnavailableException ex) {
+      throw new AssetUnavailableException(
+          $"Cannot install {label}: lip could not obtain its asset of type \"mcmod\" ({index}) to"
+          + $" read the mod name from its {manifestFile}.",
+          ex,
+          this);
+    }
+
+    try {
       if (!source.Keys.Contains(manifestFile)) {
         throw new McmodInstallException(
             $"Cannot install {label}: its asset of type \"mcmod\" has no {manifestFile} at the"
@@ -93,6 +104,7 @@ public record Candidate(
     }
     catch (Exception ex) when (ex is ArchiveUnavailableException or FormatException
         or IOException or InvalidDataException) {
+      // The asset was obtained, but its files cannot be read.
       // The resolver keeps this exception, so the reason reaches the user as its cause.
       throw new McmodInstallException(
           $"Cannot install {label}: lip could not read the {manifestFile} of its asset of type"
@@ -143,15 +155,81 @@ public interface IResolver {
 public record PackageRequest(Ref Ref, IVersionConstraint? Range);
 
 /// Thrown when no package set satisfies the requests (protocol/lip-workspace.md, "Valid states").
-public class DependencyResolutionException(string message, Exception? innerException = null)
-    : Exception(message, innerException);
+/// Reasons: why, one line each, organized by which package needs what. Hints: what the user can
+/// do about it, in plain sentences.
+public class DependencyResolutionException(
+    string message,
+    Exception? innerException = null,
+    IReadOnlyList<string>? reasons = null,
+    IReadOnlyList<string>? hints = null) : Exception(message, innerException) {
+  public IReadOnlyList<string> Reasons { get; } = reasons ?? [];
+
+  public IReadOnlyList<string> Hints { get; } = hints ?? [];
+}
 
 /// A solved package set: S in installation order; for every member (by index into Order) the
 /// members satisfying its dependencies; and for every request the member satisfying it.
+/// Notes: for every member (by index into Order), why it is not the newest version its
+/// requirement accepts, or null.
 public record SolvedGraph(
     IReadOnlyList<Candidate> Order,
     IReadOnlyList<IReadOnlyList<int>> Dependencies,
-    IReadOnlyList<int> RequestSatisfiers);
+    IReadOnlyList<int> RequestSatisfiers,
+    IReadOnlyList<string?>? Notes = null);
+
+/// How packages and sources are named in messages: as a package argument names them
+/// (protocol/lip.md, "Package arguments"), so a package of github.com/LiteLDev is named without
+/// that prefix, and with the casing of the source it was resolved for.
+public static class PackageDisplay {
+  /// The name of a candidate, without its version.
+  public static string Name(Candidate candidate) =>
+      Name(candidate.Package.Id, candidate.Package.Variant, candidate.Source);
+
+  /// The name of an installed package, without its version.
+  public static string Name(LockedPackage package) =>
+      Name(package.Id, package.Variant,
+          Ref.TryParse(package.Source, out Ref? source, out _) ? source : null);
+
+  /// The name of a package of an id and variant resolved for a source: the location of the
+  /// source when it is the remote repository of the package id, which keeps its casing.
+  private static string Name(string id, string variant, Ref? source) {
+    if (source is not { Kind: RefKind.Spec } || !PackageNames.AreEqual(source.Target, id)) {
+      return Package.GetIdentity(id, variant);
+    }
+
+    return PackageArguments.Abbreviate(source.Target)
+        + (variant.Length == 0 ? "" : $"#{variant}");
+  }
+
+  /// The name of a candidate with its version, such as "LeviLamina 1.0.0".
+  public static string NameAndVersion(Candidate candidate) =>
+      $"{Name(candidate)} {candidate.Package.Version}";
+
+  /// A source as a package argument names it, with its variant and ref.
+  public static string Name(Ref source) {
+    if (source.Kind != RefKind.Spec) {
+      return source.ToString();
+    }
+
+    return PackageArguments.Abbreviate(source.Target)
+        + (source.Variant.Length == 0 ? "" : $"#{source.Variant}")
+        + (source.GitRef is null ? "" : $"@{source.GitRef}");
+  }
+
+  /// Where to report a problem of a package to its author: the issues page of its repository,
+  /// when its source is a remote repository on github.com; otherwise null.
+  public static string? IssuesUrl(Candidate candidate) {
+    if (candidate.Source.Kind != RefKind.Spec) {
+      return null;
+    }
+
+    string[] segments = candidate.Source.Target.Split('/');
+    return segments.Length >= 3
+        && segments[0].Equals("github.com", StringComparison.OrdinalIgnoreCase)
+            ? $"https://github.com/{segments[1]}/{segments[2]}/issues"
+            : null;
+  }
+}
 
 public record InstallContext(
     string WorkspaceRoot,

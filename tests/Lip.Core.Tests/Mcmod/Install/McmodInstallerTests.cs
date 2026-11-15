@@ -415,7 +415,7 @@ public class McmodInstallerTests {
     SortedDictionary<string, string> before = Snapshot();
 
     // Act
-    McmodInstallException ex = await Assert.ThrowsAsync<McmodInstallException>(
+    AssetUnavailableException ex = await Assert.ThrowsAsync<AssetUnavailableException>(
         () => _installer.Install(candidate, Context()));
 
     // Assert
@@ -1048,7 +1048,8 @@ public class McmodInstallerTests {
     Assert.Equal(3, owned.Count);
     Assert.Equal(before, Snapshot());
     _commandRunner.VerifyNoOtherCalls();
-    _ui.Verify(u => u.PrintInfo(It.Is<string>(s => s.Contains("LegacyMoney.dll"))), Times.Once);
+    // The files are for the run trace; the caller names the package.
+    _ui.Verify(u => u.PrintInfo(It.Is<string>(s => s.Contains("LegacyMoney.dll"))), Times.Never);
   }
 
   // Uninstalling.
@@ -1434,7 +1435,8 @@ public class McmodInstallerTests {
     // Assert
     Assert.Equal(before, Snapshot());
     _commandRunner.VerifyNoOtherCalls();
-    _ui.Verify(u => u.PrintInfo(It.Is<string>(s => s.Contains("Would delete"))), Times.Exactly(3));
+    // The files are for the run trace; the caller names the package.
+    _ui.Verify(u => u.PrintInfo(It.Is<string>(s => s.Contains("Would delete"))), Times.Never);
   }
 
   [Fact]
@@ -1564,7 +1566,7 @@ public class McmodInstallerAssetDownloadTests {
     SortedDictionary<string, string> before = Workspace(h);
 
     // Act & Assert
-    await Assert.ThrowsAsync<McmodInstallException>(
+    await Assert.ThrowsAsync<AssetUnavailableException>(
         () => h.Service.Install(["example.com/a"], _options));
     Assert.Equal(before, Workspace(h));
   }
@@ -1581,7 +1583,7 @@ public class McmodInstallerAssetDownloadTests {
     SortedDictionary<string, string> before = Workspace(h);
 
     // Act & Assert
-    await Assert.ThrowsAsync<McmodInstallException>(
+    await Assert.ThrowsAsync<AssetUnavailableException>(
         () => h.Service.Install(["example.com/a"], _options));
     Assert.Equal(before, Workspace(h));
   }

@@ -241,7 +241,8 @@ public class GraphSolver(IResolver resolver) {
   }
 
   /// An open obligation: a request (Owner null), or a dependency of a member. OwnerLevel is the
-  /// decision level that added the owner, or -1 for requests and pinned owners.
+  /// decision level that added the owner, or -1 for requests and pinned owners. OwnerInstalled:
+  /// whether the owner is an installed package kept as it is.
   private sealed record Requirement(
       ResolveKey Key,
       Candidate? Owner,
@@ -249,7 +250,67 @@ public class GraphSolver(IResolver resolver) {
       int OwnerLevel,
       Ref Ref,
       IVersionConstraint? Range,
-      bool Deferred = false);
+      bool Deferred = false,
+      bool OwnerInstalled = false);
+
+  /// How a candidate clashes with a member, for the hints of a failure.
+  private enum Clash {
+    None,
+
+    /// With a package of the same identity that a request chose.
+    Requested,
+
+    /// With an installed package of the same identity.
+    Installed,
+
+    /// With a package of the same identity that another package needs.
+    Needed,
+
+    /// With a mod of the same mod name.
+    ModName,
+
+    /// With another variant of the server.
+    Server,
+  }
+
+  /// Why candidates of a requirement cannot be chosen. Text: a clause that follows "but", or a
+  /// sentence of its own (Sentence). Primary: whether it is a cause, rather than a consequence of
+  /// other failures. Other: the name of the package clashed with, or of the one that needs it
+  /// (Needed).
+  private sealed record Obstacle(
+      string Text,
+      bool Primary,
+      bool Sentence = false,
+      Clash Clash = Clash.None,
+      string? Other = null);
+
+  /// The failures of one requirement target for one requirer (a package, or the user's
+  /// requests), merged over the versions of both, as the user is told them.
+  private sealed class Conflict(string requirer, bool installed, string target, Ref targetRef) {
+    /// The name of the package that needs the target, or "" for a request.
+    public string Requirer => requirer;
+
+    public bool Installed => installed;
+
+    public string Target => target;
+
+    public Ref TargetRef => targetRef;
+
+    public List<string> RequirerVersions { get; } = [];
+
+    public List<string> Ranges { get; } = [];
+
+    public List<Obstacle> Obstacles { get; } = [];
+
+    public List<string> Diagnostics { get; } = [];
+
+    public bool Unavailable { get; set; }
+
+    /// The newest version of the target that a requested package of its identity blocked.
+    public SemVersion? NewestBlocked { get; set; }
+
+    public bool HasPrimary => Unavailable || Obstacles.Any(o => o.Primary);
+  }
 
   /// The candidate sequence of one Resolve call, produced on demand and shared by every
   /// requirement that resolves the same ref, with the diagnostics of the paths that produced no
@@ -325,7 +386,14 @@ public class GraphSolver(IResolver resolver) {
     }
   }
 
-  private sealed record Member(Candidate Candidate, PackageKey Key, int Level);
+  /// A member of S, with the requirement it was chosen for (null for a pinned candidate) and,
+  /// when it is not the newest candidate of that requirement, why.
+  private sealed record Member(
+      Candidate Candidate,
+      PackageKey Key,
+      int Level,
+      Requirement? ChosenFor = null,
+      string? Note = null);
 
   private sealed class Search(
       IResolver resolver, LipEnvironment environment, IReadOnlyList<Candidate> preferred) {
@@ -344,6 +412,8 @@ public class GraphSolver(IResolver resolver) {
     private const int LevelsPerYield = 128;
     private const int MaxReportedFailures = 10;
     private const int MaxListedReasons = 5;
+    private const int MaxListedVersions = 4;
+    private const int MaxHints = 4;
 
     private readonly Dictionary<ResolveKey, LazySequence> _resolved = [];
     private readonly Dictionary<ResolveKey, Choices> _choices = [];
@@ -352,14 +422,19 @@ public class GraphSolver(IResolver resolver) {
     private readonly List<Requirement> _agenda = [];
 
     /// Candidates proven to fail whatever else is chosen, with the reason.
-    private readonly Dictionary<PackageKey, string> _dead = [];
+    private readonly Dictionary<PackageKey, Obstacle> _dead = [];
 
     /// Decision levels whose member blocked a candidate of a pinned spec ref by its identity.
     private readonly HashSet<int> _pinnedClashes = [];
 
-    private readonly List<string> _failures = [];
-    private readonly List<string> _unresolvable = [];
-    private readonly HashSet<string> _reported = [];
+    /// The failures, by requirer and target, in the order they first arose.
+    private readonly Dictionary<(string Requirer, string Target), Conflict> _conflicts = [];
+    private readonly List<(string Requirer, string Target)> _conflictOrder = [];
+
+    /// The last cause of a failure recorded, as one line, and how many have been recorded: what
+    /// made the subtree of a candidate fail.
+    private string? _lastCause;
+    private int _causeCount;
 
     /// The exceptions behind the failures (e.g. network failures), kept for the failure report.
     private readonly List<Exception> _causes = [];
@@ -383,9 +458,9 @@ public class GraphSolver(IResolver resolver) {
           }
 
           throw Fail($"Installed packages {ShowSource(other.Candidate)} and {ShowSource(candidate)}"
-              + " have the same identity, which the state file .lip/state.json must not"
-              + " record. Uninstall the explicitly installed packages that need them, then install"
-              + " the one you want again.");
+              + " are versions of the same package, which the state file .lip/state.json must"
+              + " not record. Uninstall the explicitly installed packages that need them, then"
+              + " install the one you want again.");
         }
 
         if (IsServer(candidate) && _members.Values.FirstOrDefault(m => IsServer(m.Candidate))
@@ -409,7 +484,7 @@ public class GraphSolver(IResolver resolver) {
         }
 
         _members.Add(key.Identity, new Member(candidate, key, -1));
-        AddEdges(candidate, -1, " (installed)");
+        AddEdges(candidate, -1, installed: true);
       }
 
       HashSet<int>? nogood = await Solve(0, 0);
@@ -417,29 +492,7 @@ public class GraphSolver(IResolver resolver) {
         RunTrace.Write("resolve", $"{_tracedSteps - MaxTracedSteps} more search steps not traced");
       }
       if (nogood is not null) {
-        // Missing dependencies are usually the root cause; among the other failures, the most
-        // recent ones are closest to the requests that finally failed.
-        List<string> lines = [.. _unresolvable, .. Enumerable.Reverse(_failures)];
-        if (lines.Count == 0) {
-          lines.Add("Every combination of versions has two packages of the same identity, or two"
-              + " mods of the same mod name.");
-        }
-
-        RunTrace.Write("resolve", $"No package set found; {lines.Count} reasons recorded");
-        // The exceptions behind the reasons (e.g. network failures) are kept as inner
-        // exceptions, so the failure report and the hints see them.
-        throw new DependencyResolutionException(
-            "Cannot find versions of the requested packages and their dependencies that can"
-            + " all be installed together:"
-            + string.Concat(lines.Take(MaxReportedFailures).Select(l => $"\n  - {l}"))
-            + (lines.Count > MaxReportedFailures
-                ? $"\n  ... and {lines.Count - MaxReportedFailures} more reasons"
-                : ""),
-            _causes.Count switch {
-              0 => null,
-              1 => _causes[0],
-              _ => new AggregateException("The failures behind the reasons above.", _causes),
-            });
+        throw Failure();
       }
 
       // On success the agenda holds exactly the requests and the dependencies of every member,
@@ -469,12 +522,22 @@ public class GraphSolver(IResolver resolver) {
 
       RunTrace.Write("resolve", "Solved; installation order: "
           + string.Join(", ", order.Select(ShowSource)));
+      List<string?> notes = [
+        .. order.Select(c => _members.TryGetValue(PackageKey.Of(c).Identity, out Member? m)
+            ? m.Note
+            : null),
+      ];
+      foreach (string note in notes.OfType<string>()) {
+        RunTrace.Write("resolve", note);
+      }
+
       return new SolvedGraph(
           order,
           [.. order.Select(c => (IReadOnlyList<int>)[
             .. dependencies[PackageKey.Of(c)].Select(d => indexOf[PackageKey.Of(d)]).Distinct(),
           ])],
-          [.. requestSatisfiers.Select(s => s is null ? -1 : indexOf[PackageKey.Of(s)])]);
+          [.. requestSatisfiers.Select(s => s is null ? -1 : indexOf[PackageKey.Of(s)])],
+          notes);
     }
 
     public async Task<Candidate?> RequestCandidate(PackageRequest request, Candidate package) {
@@ -527,8 +590,10 @@ public class GraphSolver(IResolver resolver) {
       // The nogood is the owner (the requirement exists because of it) plus the blame: the
       // levels responsible for each candidate being rejected.
       HashSet<int> blame = [];
-      List<string> blocked = [];
+      List<(Candidate Candidate, Obstacle Obstacle)> blocked = [];
       int failedDeeper = 0;
+      // Why the newest candidate (the first of the sequence) was not chosen, once it failed.
+      string? newestFailed = null;
       _pinnedClashes.Remove(level);
       // A preferred candidate is tried first (as index -1), and not again in its place.
       Candidate? first = choices.Unsatisfiable
@@ -562,7 +627,9 @@ public class GraphSolver(IResolver resolver) {
           break;
         }
 
-        if (await Blocker(candidate, key) is (int blockerLevel, string reason)) {
+        bool newest = i == 0
+            || (i < 0 && await choices.Has(0) && choices.CandidateKeys[0] == key);
+        if (await Blocker(candidate, key) is (int blockerLevel, Obstacle obstacle)) {
           if (blockerLevel >= 0) {
             blame.Add(blockerLevel);
             if (IsPinned(candidate) && _members.TryGetValue(key.Identity, out Member? clash)
@@ -571,15 +638,24 @@ public class GraphSolver(IResolver resolver) {
             }
           }
 
-          TraceStep($"{requirement.Description}: rejected {Show(candidate)}: {reason}");
-          blocked.Add(reason);
+          TraceStep($"{requirement.Description}: rejected {Show(candidate)}: {obstacle.Text}");
+          blocked.Add((candidate, obstacle));
+          if (newest) {
+            newestFailed = obstacle.Sentence
+                ? obstacle.Text
+                : $"{PackageDisplay.NameAndVersion(candidate)} cannot be installed, as"
+                    + $" {obstacle.Text}";
+          }
+
           continue;
         }
 
         TraceStep($"{requirement.Description}: trying {ShowSource(candidate)}");
         int agendaCount = _agenda.Count;
-        _members.Add(key.Identity, new Member(candidate, key, level));
-        AddEdges(candidate, level, "");
+        int causesBefore = _causeCount;
+        string? note = i > 0 ? Note(candidate, choices, newestFailed) : null;
+        _members.Add(key.Identity, new Member(candidate, key, level, requirement, note));
+        AddEdges(candidate, level, installed: false);
 
         HashSet<int>? result = await Solve(index + 1, level + 1);
         if (result is null) {
@@ -589,6 +665,12 @@ public class GraphSolver(IResolver resolver) {
         TraceStep($"{requirement.Description}: {Show(candidate)} did not work out; backtracking");
         _members.Remove(key.Identity);
         _agenda.RemoveRange(agendaCount, _agenda.Count - agendaCount);
+        if (newest) {
+          newestFailed = _causeCount > causesBefore && _lastCause is string cause
+              ? cause
+              : $"{PackageDisplay.NameAndVersion(candidate)} needs packages that cannot be"
+                  + " installed with the others";
+        }
 
         if (!result.Contains(level)) {
           // This choice played no part in the failure; trying others cannot help.
@@ -597,7 +679,10 @@ public class GraphSolver(IResolver resolver) {
 
         result.Remove(level);
         if (result.Count == 0) {
-          _dead[key] = $"{Show(candidate)} needs packages that cannot be installed";
+          _dead[key] = new Obstacle(
+              $"{PackageDisplay.NameAndVersion(candidate)} needs packages that cannot be"
+                  + " installed with the others",
+              Primary: false);
         }
 
         blame.UnionWith(result);
@@ -640,24 +725,36 @@ public class GraphSolver(IResolver resolver) {
 
     /// Returns why a candidate cannot join the current members, with the decision level of the
     /// member responsible (-1 when no member or only fixed ones are), or null when it can.
-    private async Task<(int Level, string Reason)?> Blocker(Candidate candidate, PackageKey key) {
-      if (_dead.TryGetValue(key, out string? dead)) {
+    private async Task<(int Level, Obstacle Obstacle)?> Blocker(
+        Candidate candidate, PackageKey key) {
+      if (_dead.TryGetValue(key, out Obstacle? dead)) {
         return (-1, dead);
       }
 
       if (_members.TryGetValue(key.Identity, out Member? same)) {
-        return (same.Level, $"{ShowSource(candidate)} has the same identity as "
-            + $"{ShowSource(same.Candidate)}{(same.Level < 0 ? " (installed)" : "")}");
+        (Clash clash, string? other, string why) = Why(same);
+        string member = PackageDisplay.NameAndVersion(same.Candidate);
+        // Another package of the same version can only differ in where it comes from.
+        if (same.Key.Version == key.Version) {
+          member += $" from {same.Candidate.Archive.Key}";
+        }
+
+        return (same.Level, new Obstacle($"{member} {why}", Primary: true, Clash: clash,
+            Other: other));
       }
 
       // A workspace holds one package of the server, whatever its variant
       // (protocol/lip-workspace.md, "Valid states", rule 3).
       if (IsServer(candidate) && _members.Values.FirstOrDefault(m => IsServer(m.Candidate))
           is Member server) {
-        return (server.Level, $"{ShowSource(candidate)} and {ShowSource(server.Candidate)}"
-            + (server.Level < 0 ? " (installed)" : "")
-            + $" are both the server {BedrockServer.Repository}, which a workspace holds once;"
-            + " install one variant of it only");
+        string why = Why(server).Text;
+        return (server.Level, new Obstacle(
+            $"{PackageDisplay.NameAndVersion(candidate)} and"
+                + $" {PackageDisplay.NameAndVersion(server.Candidate)}, which {why}, are both the"
+                + $" server {BedrockServer.Repository}, which a workspace holds once",
+            Primary: true,
+            Clash: Clash.Server,
+            Other: PackageDisplay.Name(server.Candidate)));
       }
 
       string? modName;
@@ -666,27 +763,63 @@ public class GraphSolver(IResolver resolver) {
       }
       catch (McmodInstallException ex) {
         // A missing or invalid mod manifest fails whatever the other members are.
-        _dead[key] = ex.Message;
+        Obstacle obstacle = new(ex.Message, Primary: true, Sentence: true);
+        _dead[key] = obstacle;
         AddCause(ex);
-        return (-1, ex.Message);
+        return (-1, obstacle);
       }
 
       if (modName is null) {
         return null;
       }
 
-      (int Level, string Reason)? best = null;
+      (int Level, Obstacle Obstacle)? best = null;
       foreach (Member member in _members.Values) {
         if ((best is null || member.Level < best.Value.Level)
             && await ModName(member.Candidate) is string other
             && PackageNames.AreEqual(modName, other)) {
-          best = (member.Level, $"{ShowSource(candidate)} is a mod of the same mod name"
-              + $" '{modName}' as {ShowSource(member.Candidate)}"
-              + (member.Level < 0 ? " (installed)" : ""));
+          string why = Why(member).Text;
+          best = (member.Level, new Obstacle(
+              $"{PackageDisplay.NameAndVersion(candidate)} is a mod of the same mod name"
+                  + $" '{modName}' as {PackageDisplay.NameAndVersion(member.Candidate)}, which"
+                  + $" {why}",
+              Primary: true,
+              Clash: Clash.ModName,
+              Other: PackageDisplay.Name(member.Candidate)));
         }
       }
 
       return best;
+    }
+
+    /// Why a member is a member, as a clause ("was requested", "is installed" or "is needed by"
+    /// a package), with the kind of clash it makes for another package of its identity and the
+    /// package that needs it.
+    private static (Clash Clash, string? Other, string Text) Why(Member member) {
+      if (member.ChosenFor is not Requirement chosenFor) {
+        return (Clash.Installed, PackageDisplay.NameAndVersion(member.Candidate), "is installed");
+      }
+
+      if (chosenFor.Owner is not Candidate owner) {
+        return (Clash.Requested, PackageDisplay.NameAndVersion(member.Candidate), "was requested");
+      }
+
+      return (Clash.Needed, PackageDisplay.Name(owner),
+          $"is needed by {PackageDisplay.NameAndVersion(owner)}");
+    }
+
+    /// Why a chosen candidate is not the newest candidate of its requirement, or null when it is,
+    /// or the newest is not a newer version.
+    private static string? Note(Candidate chosen, Choices choices, string? newestFailed) {
+      if (newestFailed is null
+          || choices.Candidates.Count == 0
+          || choices.Candidates[0].Package.Version.ComparePrecedenceTo(chosen.Package.Version)
+              <= 0) {
+        return null;
+      }
+
+      return $"{PackageDisplay.NameAndVersion(chosen)} is not the newest version:"
+          + $" {newestFailed}.";
     }
 
     /// Returns the member that satisfies a requirement (protocol/lip-workspace.md, "Valid states":
@@ -854,16 +987,17 @@ public class GraphSolver(IResolver resolver) {
       return null;
     }
 
-    private void AddEdges(Candidate owner, int level, string suffix) {
+    private void AddEdges(Candidate owner, int level, bool installed) {
       foreach (PackageDependency dependency in owner.Package.Entry.Dependencies) {
         _agenda.Add(new Requirement(
             ResolveKey.Of(dependency.Source, dependency.Range),
             owner,
-            $"{Show(owner)}{suffix} requires"
+            $"{Show(owner)}{(installed ? " (installed)" : "")} requires"
                 + $" {ShowRequirement(dependency.Source, dependency.Range)}",
             level,
             dependency.Source,
-            dependency.Range));
+            dependency.Range,
+            OwnerInstalled: installed));
       }
     }
 
@@ -890,55 +1024,134 @@ public class GraphSolver(IResolver resolver) {
       return sequence;
     }
 
+    /// Records why a requirement could not be satisfied: in its conflict (by requirer and
+    /// target), and as the last cause when it has one.
     private void RecordFailure(
         Requirement requirement,
         Choices choices,
-        List<string> blocked,
+        List<(Candidate Candidate, Obstacle Obstacle)> blocked,
         int failedDeeper) {
-      if (choices.Candidates.Count > 0 && blocked.Count == 0 && failedDeeper == 0) {
-        // Skipped: the candidates were already found unsatisfiable for another owner.
-        AddFailure($"{requirement.Description}, but none of its versions can be installed.");
-        return;
-      }
-
+      Conflict? conflict = ConflictOf(requirement);
       if (choices.Candidates.Count == 0) {
         List<ResolveDiagnostic> diagnostics = choices.Sequence.Diagnostics;
-        string line = $"{requirement.Description}, but no version of it is available"
-            + (diagnostics.Count == 0 ? "." : ":")
-            + string.Concat(
-                diagnostics.Take(MaxListedReasons).Select(d => $"\n      - {d.Message}"))
-            + (diagnostics.Count > MaxListedReasons
-                ? $"\n      ... and {diagnostics.Count - MaxListedReasons} more"
-                : "");
-        bool seen = _reported.Contains(line);
-        if (_unresolvable.Count < MaxRecordedFailures && _reported.Add(line)) {
-          _unresolvable.Add(line);
-          foreach (ResolveDiagnostic diagnostic in diagnostics) {
-            if (diagnostic.Cause is Exception cause) {
-              AddCause(cause);
-            }
+        foreach (ResolveDiagnostic diagnostic in diagnostics) {
+          if (conflict is not null && !conflict.Diagnostics.Contains(diagnostic.Message)) {
+            conflict.Diagnostics.Add(diagnostic.Message);
+          }
+
+          if (diagnostic.Cause is Exception cause) {
+            AddCause(cause);
           }
         }
 
-        if (!seen) {
-          TraceStep(line);
+        if (conflict is not null) {
+          conflict.Unavailable = true;
         }
+
+        NoteCause($"{Subject(requirement)}, but no version of it is available");
+        TraceStep($"{requirement.Description}, but no version of it is available");
         return;
       }
 
-      List<string> reasons = [.. blocked.Take(MaxListedReasons)];
-      if (blocked.Count > MaxListedReasons) {
-        reasons.Add($"{blocked.Count - MaxListedReasons} more versions are blocked likewise");
+      List<Obstacle> obstacles = [.. blocked.Select(b => b.Obstacle)];
+      if (blocked.Count == 0 && failedDeeper == 0) {
+        // Skipped: the candidates were already found unsatisfiable for another owner.
+        obstacles.Add(new Obstacle("none of its versions can be installed", Primary: false));
+      } else if (failedDeeper > 0) {
+        obstacles.Add(new Obstacle(
+            "each version of it that fits needs packages that cannot be installed with the"
+                + " others",
+            Primary: false));
       }
 
-      if (failedDeeper > 0) {
-        reasons.Add(failedDeeper == 1
-            ? "1 version needs packages that cannot be installed with it"
-            : $"{failedDeeper} versions need packages that cannot be installed with them");
+      if (conflict is not null) {
+        foreach ((Candidate candidate, Obstacle obstacle) in blocked) {
+          if (obstacle.Clash == Clash.Requested
+              && (conflict.NewestBlocked is not SemVersion newest
+                  || candidate.Package.Version.ComparePrecedenceTo(newest) > 0)) {
+            conflict.NewestBlocked = candidate.Package.Version;
+          }
+        }
+
+        foreach (Obstacle obstacle in obstacles) {
+          if (!conflict.Obstacles.Any(o => o.Text == obstacle.Text)) {
+            conflict.Obstacles.Add(obstacle);
+          }
+        }
       }
 
-      AddFailure($"{requirement.Description}, but no version of it fits: "
-          + $"{string.Join("; ", reasons)}.");
+      List<string> causes = [
+        .. obstacles.Where(o => o.Primary).Select(o => o.Text).Distinct().Take(MaxListedReasons),
+      ];
+      if (causes.Count > 0) {
+        NoteCause($"{Subject(requirement)}, but {string.Join(", and ", causes)}");
+      }
+
+      TraceStep($"{requirement.Description}, but no version of it fits: "
+          + string.Join("; ", obstacles.Select(o => o.Text).Distinct().Take(MaxListedReasons)));
+    }
+
+    /// The conflict of a requirement, with the version of its owner and its range added; null
+    /// once too many conflicts are recorded.
+    private Conflict? ConflictOf(Requirement requirement) {
+      string requirer = requirement.Owner is Candidate owner ? PackageDisplay.Name(owner) : "";
+      string target = PackageDisplay.Name(requirement.Ref);
+      // Installed and other versions of a package are told apart.
+      (string, string) key = (requirement.OwnerInstalled ? $"{requirer} (installed)" : requirer,
+          target);
+      if (!_conflicts.TryGetValue(key, out Conflict? conflict)) {
+        if (_conflicts.Count >= MaxRecordedFailures) {
+          // The most recent failures are closest to the requests that finally failed, and the
+          // missing packages are usually the root cause.
+          int oldest = _conflictOrder.FindIndex(k => !_conflicts[k].Unavailable);
+          if (oldest < 0) {
+            return null;
+          }
+
+          _conflicts.Remove(_conflictOrder[oldest]);
+          _conflictOrder.RemoveAt(oldest);
+        }
+
+        conflict = new Conflict(requirer, requirement.OwnerInstalled, target, requirement.Ref);
+        _conflicts.Add(key, conflict);
+        _conflictOrder.Add(key);
+      }
+
+      if (requirement.Owner is Candidate dependent) {
+        AddDistinct(conflict.RequirerVersions, dependent.Package.Version.ToString());
+      }
+
+      if (requirement.Range is not null || requirement.Owner is not null) {
+        AddDistinct(conflict.Ranges, RangeText(requirement.Range));
+      }
+
+      return conflict;
+    }
+
+    /// A requirement for one version of its owner, such as "X 1.0.0 needs Y >=2.0.0".
+    private static string Subject(Requirement requirement) {
+      string target = PackageDisplay.Name(requirement.Ref);
+      return requirement.Owner is Candidate owner
+          ? $"{PackageDisplay.NameAndVersion(owner)}"
+              + $"{(requirement.OwnerInstalled ? " (installed)" : "")} needs {target}"
+              + $" {RangeText(requirement.Range)}"
+          : $"You requested {target}"
+              + (requirement.Range is null ? "" : $" {RangeText(requirement.Range)}");
+    }
+
+    private static string RangeText(IVersionConstraint? range) =>
+        range is null ? "(any version)" : $"{range}";
+
+    private static void AddDistinct(List<string> list, string item) {
+      if (!list.Contains(item)) {
+        list.Add(item);
+      }
+    }
+
+    /// Notes a cause of a failure, as one line.
+    private void NoteCause(string line) {
+      _lastCause = line;
+      _causeCount++;
     }
 
     /// Keeps an exception behind a failure, once.
@@ -948,17 +1161,130 @@ public class GraphSolver(IResolver resolver) {
       }
     }
 
-    /// Keeps the most recent distinct failures.
-    private void AddFailure(string line) {
-      if (!_reported.Add(line)) {
-        return;
+    /// The exception telling why no package set was found: the conflicts with a cause (or, when
+    /// none has one, every conflict), those of packages that are not available first, as they
+    /// are usually the root cause; with what the user can do about them.
+    private DependencyResolutionException Failure() {
+      List<Conflict> conflicts = [.. _conflictOrder.Select(k => _conflicts[k])];
+      if (conflicts.Any(c => c.HasPrimary)) {
+        conflicts = [.. conflicts.Where(c => c.HasPrimary)];
       }
 
-      if (_failures.Count == MaxRecordedFailures) {
-        _failures.RemoveAt(0);
+      conflicts = [.. conflicts.Where(c => c.Unavailable), .. conflicts.Where(c => !c.Unavailable)];
+      List<string> reasons = [.. conflicts.Select(Render)];
+      if (reasons.Count == 0) {
+        reasons.Add("Every combination of versions has two versions of one package, or two mods"
+            + " of the same mod name.");
       }
 
-      _failures.Add(line);
+      List<string> hints = [.. conflicts.SelectMany(Hints).Distinct().Take(MaxHints)];
+      RunTrace.Write("resolve", $"No package set found; {reasons.Count} reasons recorded");
+      // The exceptions behind the reasons (e.g. network failures) are kept as inner exceptions,
+      // so the failure report and the hints see them.
+      return new DependencyResolutionException(
+          "Cannot find versions of the packages that work together:"
+              + string.Concat(reasons.Take(MaxReportedFailures).Select(r => $"\n  - {r}"))
+              + (reasons.Count > MaxReportedFailures
+                  ? $"\n  ... and {reasons.Count - MaxReportedFailures} more reasons"
+                  : ""),
+          _causes.Count switch {
+            0 => null,
+            1 => _causes[0],
+            _ => new AggregateException("The failures behind the reasons above.", _causes),
+          },
+          reasons,
+          hints);
+    }
+
+    /// A conflict as one reason, such as "X 1.0.0 and 1.1.0 need Y 2.0.0, but Y 3.0.0 was
+    /// requested."
+    private static string Render(Conflict conflict) {
+      string subject;
+      if (conflict.Requirer.Length == 0) {
+        subject = $"You requested {conflict.Target}"
+            + (conflict.Ranges.Count == 0 ? "" : $" {string.Join(" or ", conflict.Ranges)}");
+      } else {
+        List<string> versions = conflict.RequirerVersions;
+        string listed = versions.Count <= MaxListedVersions
+            ? JoinAnd(versions)
+            : $"{string.Join(", ", versions.Take(MaxListedVersions))} and"
+                + $" {versions.Count - MaxListedVersions} more versions";
+        subject = $"{conflict.Requirer} {listed}{(conflict.Installed ? " (installed)" : "")}"
+            + $" {(versions.Count == 1 ? "needs" : "need")} {conflict.Target}"
+            + $" {string.Join(" or ", conflict.Ranges)}";
+      }
+
+      if (conflict.Unavailable) {
+        List<string> diagnostics = conflict.Diagnostics;
+        return $"{subject}, but no version of it is available"
+            + (diagnostics.Count == 0 ? "." : ":")
+            + Bullets(diagnostics);
+      }
+
+      List<Obstacle> obstacles = [.. conflict.Obstacles.Where(o => o.Primary)];
+      if (obstacles.Count == 0) {
+        obstacles = [.. conflict.Obstacles.Take(1)];
+      }
+
+      if (obstacles.Count == 1 && !obstacles[0].Sentence) {
+        return $"{subject}, but {obstacles[0].Text}.";
+      }
+
+      return $"{subject}, but no version of it can be installed:"
+          + Bullets([.. obstacles.Select(o => o.Text)]);
+    }
+
+    private static string Bullets(List<string> items) =>
+        string.Concat(items.Take(MaxListedReasons).Select(d => $"\n      - {d}"))
+        + (items.Count > MaxListedReasons
+            ? $"\n      ... and {items.Count - MaxListedReasons} more"
+            : "");
+
+    private static string JoinAnd(List<string> items) => items.Count <= 1
+        ? string.Join("", items)
+        : $"{string.Join(", ", items.SkipLast(1))} and {items[^1]}";
+
+    /// What the user can do about a conflict.
+    private static IEnumerable<string> Hints(Conflict conflict) {
+      string requirer = conflict.Requirer;
+      string target = conflict.Target;
+      foreach (Obstacle obstacle in conflict.Obstacles.Where(o => o.Primary)) {
+        switch (obstacle.Clash) {
+          case Clash.Requested when requirer.Length > 0:
+            string example = conflict.NewestBlocked is SemVersion version
+                && conflict.TargetRef is { Kind: RefKind.Spec, GitRef: null }
+                    ? $" (such as {target}@{version}, or {target} without a version to let lip"
+                        + " choose one)"
+                    : "";
+            yield return $"To install {requirer}, request a version of {target} that it"
+                + $" supports{example}. Otherwise, do not install {requirer}.";
+            break;
+          case Clash.Installed:
+            yield return requirer.Length == 0
+                ? $"{obstacle.Other} is installed. Request a version that fits it, or uninstall"
+                    + " it first."
+                : $"{obstacle.Other} is installed, but {requirer} needs another version of it."
+                    + $" Install a version of {requirer} that works with it, or uninstall"
+                    + $" {target} first.";
+            break;
+          case Clash.Needed:
+            yield return requirer.Length == 0
+                ? $"{obstacle.Other} needs another version of {target}. Request a version"
+                    + $" that it supports, or do not install {obstacle.Other}."
+                : $"{requirer} and {obstacle.Other} need different versions of {target}, so"
+                    + " they cannot be installed together. Install only one of them, or"
+                    + $" versions of them that work with the same version of {target}.";
+            break;
+          case Clash.Server:
+            yield return $"A workspace holds one variant of the server only: install {target}"
+                + $" or {obstacle.Other}, not both.";
+            break;
+          case Clash.ModName:
+            yield return $"{target} and {obstacle.Other} are mods of the same mod name, so only"
+                + " one of them can be installed.";
+            break;
+        }
+      }
     }
 
     private static DependencyResolutionException Fail(string message) {

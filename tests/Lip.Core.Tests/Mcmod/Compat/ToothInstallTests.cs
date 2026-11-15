@@ -305,7 +305,7 @@ public class ToothInstallTests {
     Candidate candidate = CreateCandidate();
 
     // Act & Assert
-    await Assert.ThrowsAsync<McmodInstallException>(
+    await Assert.ThrowsAsync<AssetUnavailableException>(
         () => _installer.Install(candidate, CreateContext()));
     Assert.False(_fileSystem.Directory.Exists(Workspace("mods")));
     _commandRunner.VerifyNoOtherCalls();

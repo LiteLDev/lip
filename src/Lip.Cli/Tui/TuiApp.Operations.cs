@@ -102,14 +102,19 @@ public sealed partial class TuiApp {
   /// then for real.
   private void PlanAndRun(string title, Func<bool, CancellationToken, Task> operation) {
     Start($"Planning: {title}", token => operation(true, token), plan => {
-      // What would happen to which packages stands out from the files it would touch.
+      // What would happen to which packages ("Dry run: would install X 1.0.0 (N files)") stands
+      // out from the rest of the log, such as what was resolved and downloaded.
       List<StyledLine> lines = [
         .. plan.Log.Select(line =>
             line.PlainText.StartsWith("Dry run:", StringComparison.Ordinal)
                 ? new StyledLine(line.PlainText, Theme.Strong)
                 : line),
       ];
-      if (lines.Count == 0) {
+      string[] packageChanges = [
+        "Dry run: would install", "Dry run: would uninstall", "Dry run: would mark",
+      ];
+      if (!lines.Any(l => packageChanges.Any(
+          c => l.PlainText.StartsWith(c, StringComparison.Ordinal)))) {
         lines.Add(new StyledLine("Nothing would change.", Theme.Muted));
       }
 

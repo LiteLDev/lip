@@ -329,6 +329,29 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_DryRun_NamesEachPackageAndWhyItIsNotTheNewest() {
+    // Arrange: app 2.0.0 needs lib >=1.1.0, but lib 1.0.0 is requested.
+    AddLibAndApp();
+    List<string> infos = [];
+    _ws.Ui.Setup(u => u.PrintInfo(It.IsAny<string>()))
+        .Callback((string message) => infos.Add(message))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([App, $"{Lib}@1.0.0"], _options with { DryRun = true });
+
+    // Assert: protocol/lip-install.md, the messages name the packages; the files they would
+    // write are left to the run trace.
+    Assert.Contains(infos, m => m.StartsWith($"Dry run: would install {Lib} 1.0.0 ("));
+    Assert.Contains(infos, m => m.StartsWith($"Dry run: would install {App} 1.0.0 ("));
+    Assert.Contains(
+        $"  {App} 1.0.0 is not the newest version: {App} 2.0.0 needs {Lib} >=1.1.0, but"
+            + $" {Lib} 1.0.0 was requested.",
+        infos);
+    Assert.DoesNotContain(infos, m => m.StartsWith("Would "));
+  }
+
+  [Fact]
   public async Task Install_DryRun_ChangesNothing() {
     // Arrange
     AddLibAndApp(hook: true);
@@ -468,7 +491,7 @@ public class McmodServiceTests {
   }
 
   [Fact]
-  public async Task Install_FormatThreeTagDeclaresOtherVersion_UsesTagVersionAndWarns() {
+  public async Task Install_FormatThreeTagDeclaresOtherVersion_UsesTagVersionQuietly() {
     // Arrange
     _ws.AddTag(Lib, "2.0.0", new() {
       ["tooth.json"] = WorkspaceHarness.Tooth(Lib, "1.9.0", "lib/lib.dll"),
@@ -481,7 +504,8 @@ public class McmodServiceTests {
     // Assert
     LockedPackage package = Assert.Single((await _ws.Lock()).Packages);
     Assert.Equal("2.0.0", package.Version);
-    Assert.NotEmpty(_ws.Warnings);
+    // A mismatch the package author made is no concern of the user's.
+    Assert.Empty(_ws.Warnings);
   }
 
   [Fact]

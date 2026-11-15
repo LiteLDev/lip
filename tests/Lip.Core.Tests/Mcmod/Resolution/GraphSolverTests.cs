@@ -153,7 +153,10 @@ public class GraphSolverTests {
             [Request($"{server}#windows")], [Package(server, "1.21.0")], s_environment));
 
     // Assert
-    Assert.Contains("(installed)", ex.Message);
+    Assert.Contains("You requested bds#windows, but bds#windows 1.21.0 and bds 1.21.0, which is"
+        + " installed, are both the server", ex.Message);
+    Assert.Contains("A workspace holds one variant of the server only: install bds#windows or bds,"
+        + " not both.", ex.Hints);
   }
 
   [Fact]
@@ -190,8 +193,8 @@ public class GraphSolverTests {
             [Request("github.com/x/x"), Request("https://example.com/x.zip")], [], s_environment));
 
     // Assert
-    Assert.Contains($"{otherId}@1.0.0 (from https://example.com/x.zip@1.0.0) has the same "
-        + "identity as github.com/x/x@1.0.0 (from github.com/x/x@1.0.0)", exception.Message);
+    Assert.Contains("You requested https://example.com/x.zip, but github.com/x/x 1.0.0 from"
+        + " github.com/x/x@1.0.0 was requested.", exception.Message);
   }
 
   [Fact]
@@ -266,9 +269,99 @@ public class GraphSolverTests {
             [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment));
 
     // Assert
-    Assert.Contains("You requested github.com/b/b (any version), but no version of it fits: "
-        + "github.com/b/b@1.0.0 (from github.com/b/b@1.0.0) is a mod of the same mod name 'FOO' "
-        + "as github.com/a/a@1.0.0 (from github.com/a/a@1.0.0).", exception.Message);
+    Assert.Contains("You requested github.com/b/b, but github.com/b/b 1.0.0 is a mod of the same"
+        + " mod name 'FOO' as github.com/a/a 1.0.0, which was requested.", exception.Message);
+    Assert.Contains("github.com/b/b and github.com/a/a are mods of the same mod name, so only one"
+        + " of them can be installed.", exception.Hints);
+  }
+
+  // Messages
+
+  [Fact]
+  public async Task Solve_ModNeedsOtherVersionThanRequested_SaysWhichPackageNeedsWhat() {
+    // Arrange: every version of a mod (whose tooth.json gives its id in lowercase) needs a
+    // LeviLamina other than the requested one.
+    const string CrossBind = "github.com/Maskviva/CrossBind";
+    const string Id = "github.com/maskviva/crossbind";
+    FakeResolver resolver = new();
+    resolver.Add(Package(LeviLamina, "26.60.7", source: $"{LeviLamina}@26.60.7"));
+    resolver.AddVersions(LeviLamina, ["26.60.7", "26.32.0", "26.20.4"]);
+    resolver.Add(Package(Id, "0.2.1", source: CrossBind,
+        dependencies: [Dependency(LeviLamina, "26.32.0")]));
+    resolver.Add(Package(Id, "0.2.0", source: CrossBind,
+        dependencies: [Dependency(LeviLamina, "26.20.4")]));
+    resolver.Add(Package(Id, "0.2.0-fix", source: CrossBind,
+        dependencies: [Dependency(LeviLamina, "26.20.4")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.SolveGraph(
+            [Request($"{LeviLamina}@26.60.7"), Request(CrossBind)], [], s_environment));
+
+    // Assert: one reason for every version of the mod, naming it as it was requested.
+    Assert.Equal(
+        ["github.com/Maskviva/CrossBind 0.2.1, 0.2.0 and 0.2.0-fix need LeviLamina 26.32.0 or"
+            + " 26.20.4, but LeviLamina 26.60.7 was requested."],
+        exception.Reasons);
+    Assert.Equal(
+        "Cannot find versions of the packages that work together:\n  - "
+            + exception.Reasons[0],
+        exception.Message);
+    Assert.Equal(
+        ["To install github.com/Maskviva/CrossBind, request a version of LeviLamina that it"
+            + " supports (such as LeviLamina@26.32.0, or LeviLamina without a version to let lip"
+            + " choose one). Otherwise, do not install github.com/Maskviva/CrossBind."],
+        exception.Hints);
+  }
+
+  [Fact]
+  public async Task Solve_TwoModsNeedDifferentVersions_HintsToInstallOne() {
+    // Arrange
+    FakeResolver resolver = new();
+    resolver.AddVersions(LeviLamina, ["2.0.0", "1.0.0"]);
+    resolver.Add(Package("github.com/a/a", "1.0.0",
+        dependencies: [Dependency(LeviLamina, "2.0.0")]));
+    resolver.Add(Package("github.com/b/b", "1.0.0",
+        dependencies: [Dependency(LeviLamina, "1.0.0")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    DependencyResolutionException exception = await Assert.ThrowsAsync<
+        DependencyResolutionException>(() => solver.SolveGraph(
+            [Request("github.com/a/a"), Request("github.com/b/b")], [], s_environment));
+
+    // Assert
+    Assert.Contains("github.com/b/b 1.0.0 needs LeviLamina 1.0.0, but LeviLamina 2.0.0 is needed"
+        + " by github.com/a/a 1.0.0.", exception.Reasons);
+    Assert.Contains("github.com/b/b and github.com/a/a need different versions of LeviLamina, so"
+        + " they cannot be installed together. Install only one of them, or versions of them"
+        + " that work with the same version of LeviLamina.", exception.Hints);
+  }
+
+  [Fact]
+  public async Task Solve_NewestVersionNeedsOtherDependency_NotesWhyOlderIsChosen() {
+    // Arrange
+    const string Engine = "github.com/LiteLDev/LegacyScriptEngine";
+    FakeResolver resolver = new();
+    resolver.Add(Package(LeviLamina, "26.51.4", source: $"{LeviLamina}@26.51.4"));
+    resolver.AddVersions(LeviLamina, ["26.60.7", "26.51.4"]);
+    resolver.Add(Package(Engine, "0.23.1", dependencies: [Dependency(LeviLamina, ">=26.60.0")]));
+    resolver.Add(Package(Engine, "0.22.4", dependencies: [Dependency(LeviLamina, "<26.60.0")]));
+    GraphSolver solver = new(resolver);
+
+    // Act
+    SolvedGraph graph = await solver.SolveGraph(
+        [Request($"{LeviLamina}@26.51.4"), Request(Engine)], [], s_environment);
+
+    // Assert
+    int engine = Array.IndexOf(Names(graph.Order), $"{Engine}@0.22.4");
+    Assert.NotNull(graph.Notes);
+    Assert.Equal(
+        "LegacyScriptEngine 0.22.4 is not the newest version: LegacyScriptEngine 0.23.1 needs"
+            + " LeviLamina >=26.60.0, but LeviLamina 26.51.4 was requested.",
+        graph.Notes[engine]);
+    Assert.Null(graph.Notes[1 - engine]);
   }
 
   [Fact]
@@ -394,7 +487,7 @@ public class GraphSolverTests {
         DependencyResolutionException>(() => solver.SolveGraph([], [a, b], s_environment));
 
     // Assert
-    Assert.Contains("have the same identity", exception.Message);
+    Assert.Contains("are versions of the same package", exception.Message);
   }
 
   // Installed packages
@@ -413,8 +506,8 @@ public class GraphSolverTests {
             [Request("github.com/x/x")], [installed], s_environment));
 
     // Assert
-    Assert.Contains("github.com/x/x@2.0.0 (from github.com/x/x@2.0.0) has the same identity as "
-        + "github.com/X/x@1.0.0 (from github.com/X/x@1.0.0) (installed)", exception.Message);
+    Assert.Contains("You requested github.com/x/x, but github.com/X/x 1.0.0 is installed.",
+        exception.Message);
   }
 
   [Fact]
@@ -704,8 +797,8 @@ public class GraphSolverTests {
             [Request("github.com/mods/mod")], [], s_environment));
 
     // Assert
-    Assert.Contains($"github.com/mods/mod@1.0.0 requires {LeviLamina} >=99.0.0, but no version of "
-        + "it is available", exception.Message);
+    Assert.Contains("github.com/mods/mod 1.0.0 needs LeviLamina >=99.0.0, but no version of it"
+        + " is available", exception.Message);
   }
 
   [Fact]
@@ -764,8 +857,9 @@ public class GraphSolverTests {
 
     // Assert
     stopwatch.Stop();
-    Assert.Contains("github.com/p/p49@99.0.0 requires github.com/missing/missing *, "
-        + "but no version of it is available", exception.Message);
+    Assert.Contains("  - github.com/p/p49 99.0.0", exception.Message);
+    Assert.Contains("github.com/missing/missing *, but no version of it is available",
+        exception.Message);
     Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed}");
   }
 

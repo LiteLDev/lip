@@ -24,7 +24,11 @@ public class UninstallCommand(LipClient lipClient, IUserInteraction userInteract
         settings.Packages,
         settings.DryRun,
         cancellationToken);
-    await _userInteraction.PrintSuccess("Packages uninstalled successfully.");
+    if (settings.DryRun) {
+      await _userInteraction.PrintInfo("Dry run: nothing was changed.");
+    } else {
+      await _userInteraction.PrintSuccess("Packages uninstalled successfully.");
+    }
     return 0;
   }
 }

@@ -442,7 +442,10 @@ public class McmodService(
       Platform = environment.Platform,
       Packages = [],
     };
-    Resolver resolver = new(_archiveProvider, _archiveReader, Warn);
+    // What the resolver notes about how it reads a package (such as a tooth.json whose version
+    // differs from its tag) is for the run trace, not for the user.
+    Resolver resolver = new(
+        _archiveProvider, _archiveReader, message => RunTrace.Write("resolve", message));
     foreach (LockedPackage package in lockFile.Packages) {
       if (package.Commit is string commit
           && Ref.TryParse(package.Source, out Ref? source, out _)) {
@@ -642,8 +645,6 @@ public class McmodService(
     return new LipEnvironment(McmodSide.Server, Platform);
   }
 
-  private void Warn(string message) => _ui.PrintWarning(message).GetAwaiter().GetResult();
-
   /// Parses package arguments; local paths are relative to the workspace root, which is the
   /// current directory of lip.
   private List<(string, PackageRequest)> ParseRequests(IReadOnlyList<string> packages) {
@@ -777,9 +778,8 @@ public class McmodService(
 
       // In full, with its causes, since only the retry's failure is thrown if the retry fails.
       RunTrace.Write("resolve", "With every installed package kept: " + withInstalled);
-      string reason = withInstalled.Message.Split('\n').Skip(1).FirstOrDefault()
-          ?.Trim(' ', '-', ':', '.')
-          ?? withInstalled.Message.TrimEnd('.');
+      string reason = (withInstalled.Reasons.FirstOrDefault()?.Split('\n')[0]
+          ?? withInstalled.Message).TrimEnd('.', ':');
       await _ui.PrintInfo(
           $"The installed dependency packages do not fit the request ({reason}); choosing their"
           + " versions again.");
@@ -809,7 +809,15 @@ public class McmodService(
       .. graph.RequestSatisfiers.Where(i => i >= 0)
           .Select(i => Fold(graph.Order[i].Package.Identity)),
     ];
-    return new Plan([.. graph.Order.Where((_, i) => needed.Contains(i))], finalExplicit);
+    Dictionary<string, string> notes = new(StringComparer.Ordinal);
+    for (int i = 0; i < graph.Order.Count; i++) {
+      if (needed.Contains(i) && graph.Notes?[i] is string note) {
+        notes[Fold(graph.Order[i].Package.Identity)] = note;
+      }
+    }
+
+    return new Plan(
+        [.. graph.Order.Where((_, i) => needed.Contains(i))], finalExplicit, notes);
   }
 
   #endregion
@@ -825,7 +833,9 @@ public class McmodService(
 
   private sealed record UninstallChange(LockedPackage Package) : Change;
 
-  private sealed record InstallChange(Candidate Candidate, bool Explicit) : Change;
+  /// Note: why the package is not the newest version, or null.
+  private sealed record InstallChange(Candidate Candidate, bool Explicit, string? Note = null)
+      : Change;
 
   /// The changes from the installed packages to the planned package set: uninstalling what
   /// leaves or changes (in reverse installation order), then installing what enters (in
@@ -852,7 +862,8 @@ public class McmodService(
     foreach (Candidate candidate in plan.Members) {
       string key = Fold(candidate.Package.Identity);
       if (!kept.Contains(key)) {
-        changes.Add(new InstallChange(candidate, plan.Explicit.Contains(key)));
+        changes.Add(new InstallChange(
+            candidate, plan.Explicit.Contains(key), plan.Notes.GetValueOrDefault(key)));
       }
     }
 
@@ -907,31 +918,44 @@ public class McmodService(
       options.CancellationToken.ThrowIfCancellationRequested();
       RunTrace.Write("workspace", "Planning " + change switch {
         UninstallChange(LockedPackage p) => $"to uninstall {p.Identity}@{p.Version}",
-        InstallChange(Candidate c, bool e) => $"to install {c.Package.Identity}"
+        InstallChange(Candidate c, bool e, _) => $"to install {c.Package.Identity}"
             + $"@{c.Package.Version} from {c.Archive.Key}{(e ? " (explicit)" : "")}",
         _ => change.GetType().Name,
       });
       switch (change) {
         case UninstallChange(LockedPackage package): {
             string what = $" package '{package.Identity}' version {package.Version}";
+            PackagePlan plan = await _installer.PlanUninstall(
+                package, Context(workspace, options, remaining), view);
             if (options.DryRun) {
-              await _ui.PrintInfo("Dry run: would uninstall" + what);
+              await _ui.PrintInfo($"Dry run: would uninstall {PackageDisplay.Name(package)}"
+                  + $" {package.Version} ({Files(package.Files.Count)})");
             }
 
-            plans.Add(("Uninstalling" + what, await _installer.PlanUninstall(
-                package, Context(workspace, options, remaining), view)));
+            plans.Add(("Uninstalling" + what, plan));
             remaining.Remove(package);
             break;
           }
-        case InstallChange(Candidate candidate, bool isExplicit): {
+        case InstallChange(Candidate candidate, bool isExplicit, _) install: {
             string what = $" package '{candidate.Package.Identity}' version"
                 + $" {candidate.Package.Version} from {candidate.Archive.Key}";
-            if (options.DryRun) {
-              await _ui.PrintInfo("Dry run: would install" + what);
-            }
-
             PackagePlan plan = await _installer.PlanInstall(
                 candidate, Context(workspace, options, remaining), view);
+            if (options.DryRun) {
+              // The files are listed in the run trace only (McmodInstaller.PlanInstall).
+              string from = candidate.Source.Kind == RefKind.Spec
+                  ? ""
+                  : $" from {candidate.Archive.Key}";
+              await _ui.PrintInfo($"Dry run: would install"
+                  + $" {PackageDisplay.NameAndVersion(candidate)}{from}"
+                  + $" ({Files(plan.OwnedFiles.Count)})");
+            }
+
+            if (install.Note is string note) {
+              // In a dry run, it belongs to the line above.
+              await _ui.PrintInfo(options.DryRun ? $"  {note}" : note);
+            }
+
             plans.Add(("Installing" + what, plan));
             installs.Add(plan);
             remaining.Add(Locked(candidate, isExplicit, plan.OwnedFiles));
@@ -1037,6 +1061,8 @@ public class McmodService(
       await _ui.PrintWarning(error.Message);
     }
   }
+
+  private static string Files(int count) => count == 1 ? "1 file" : $"{count} files";
 
   private static LockedPackage Locked(
       Candidate candidate, bool isExplicit, IReadOnlyList<string> files) => new() {
@@ -1188,7 +1214,11 @@ public class McmodService(
       Resolver Resolver,
       GraphSolver Solver);
 
-  /// The new package set in installation order, and the folded identities of its explicitly
-  /// installed members.
-  private sealed record Plan(IReadOnlyList<Candidate> Members, HashSet<string> Explicit);
+  /// The new package set in installation order, the folded identities of its explicitly
+  /// installed members, and, by folded identity, why a member is not the newest version its
+  /// requirement accepts.
+  private sealed record Plan(
+      IReadOnlyList<Candidate> Members,
+      HashSet<string> Explicit,
+      IReadOnlyDictionary<string, string> Notes);
 }

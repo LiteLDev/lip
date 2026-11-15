@@ -151,6 +151,16 @@ public static partial class PackageArguments {
     return location.Contains('/') ? argument : _liteLDevPrefix + argument;
   }
 
+  /// The reverse of the shorthand: the location of a remote repository of LiteLDev without
+  /// "github.com/LiteLDev/" (ignoring ASCII case), as a package argument may name it; any other
+  /// location as it is.
+  public static string Abbreviate(string location) =>
+      location.Length > _liteLDevPrefix.Length
+          && location.StartsWith(_liteLDevPrefix, StringComparison.OrdinalIgnoreCase)
+          && !location.AsSpan(_liteLDevPrefix.Length).Contains('/')
+              ? location[_liteLDevPrefix.Length..]
+              : location;
+
   private static Ref ParseSpec(string text, string argument) {
     Ref reference = ParseRef(text, argument);
     return reference.Kind == RefKind.Spec

@@ -24,7 +24,11 @@ public class UpdateCommand(LipClient lipClient, IUserInteraction userInteraction
         settings.Packages,
         settings.DryRun,
         cancellationToken);
-    await _userInteraction.PrintSuccess("Packages updated successfully.");
+    if (settings.DryRun) {
+      await _userInteraction.PrintInfo("Dry run: nothing was changed.");
+    } else {
+      await _userInteraction.PrintSuccess("Packages updated successfully.");
+    }
     return 0;
   }
 }

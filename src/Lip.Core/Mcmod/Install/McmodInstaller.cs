@@ -18,6 +18,18 @@ namespace Lip.Core.Mcmod.Install;
 public class McmodInstallException(string message, Exception? inner = null)
     : Exception(message, inner);
 
+/// Thrown when an asset of a package cannot be obtained (protocol/lip-workspace.md, "Installing
+/// and uninstalling" step 2). Name and Version: the package, as messages name it. IssuesUrl:
+/// where to report a problem of the package to its author, when known.
+public class AssetUnavailableException(string message, Exception inner, Candidate candidate)
+    : McmodInstallException(message, inner) {
+  public string Name { get; } = PackageDisplay.Name(candidate);
+
+  public string Version { get; } = candidate.Package.Version.ToString();
+
+  public string? IssuesUrl { get; } = PackageDisplay.IssuesUrl(candidate);
+}
+
 /// Thrown when a path of the workspace names more than one existing file or directory, its paths
 /// being case-insensitive (protocol/lip-workspace.md, "Environment and layout"). Names: the names
 /// of those files or directories, which equal each other ignoring case.
@@ -91,10 +103,11 @@ public partial class McmodInstaller(
         mounts.Add((Mount(i), await candidate.Assets[i].Open()));
       }
       catch (ArchiveUnavailableException ex) {
-        throw new McmodInstallException(
+        throw new AssetUnavailableException(
             $"Cannot install {label}: lip could not obtain asset {i}"
             + $" ({DescribeAsset(entry, i)}) of the package, so nothing was changed.",
-            ex);
+            ex,
+            candidate);
       }
     }
 
@@ -111,8 +124,9 @@ public partial class McmodInstaller(
         + $" {plan.Count(w => w.Keep)} existing files matching preserve to keep");
 
     if (context.DryRun) {
+      // The caller tells the user what the package would install; the files are for the trace.
       foreach (PlannedWrite write in plan) {
-        await _ui.PrintInfo(write.Keep
+        RunTrace.Write("install", write.Keep
             ? $"Would keep {write.Target} (preserved)"
             : $"Would write {write.Target}");
       }
@@ -212,11 +226,12 @@ public partial class McmodInstaller(
     }
 
     if (context.DryRun) {
+      // The caller tells the user what the package would uninstall; the files are for the trace.
       foreach (string file in files) {
-        await _ui.PrintInfo($"Would delete {file}");
+        RunTrace.Write("install", $"Would delete {file}");
       }
       foreach (string directory in directories) {
-        await _ui.PrintInfo($"Would delete {directory}/ (if empty after deletion)");
+        RunTrace.Write("install", $"Would delete {directory}/ (if empty after deletion)");
       }
     }
 

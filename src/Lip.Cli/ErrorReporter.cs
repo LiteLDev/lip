@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using Flurl.Http;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
+using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -85,7 +86,7 @@ public static class ErrorReporter {
     }
 
     string summary = Redact(Summarize(failures));
-    List<string> hints = [.. failures.SelectMany(Chain).SelectMany(Hints).Distinct()];
+    List<string> hints = [.. Hints(exception)];
     bool bug = failures.Any(f => Chain(f).Any(IsBug));
     if (bug) {
       hints.Add($"This looks like a bug in lip. Please report it at {IssuesUrl} and attach the"
@@ -161,9 +162,46 @@ public static class ErrorReporter {
     return message.Trim();
   }
 
-  /// What the user can do about an exception.
-  private static IEnumerable<string> Hints(Exception exception) {
+  /// What the user can do about the failures of a command, without the advice to report a bug:
+  /// the hints of the exceptions of each failure and its causes, once each.
+  public static IReadOnlyList<string> Hints(Exception exception) =>
+      [.. Unwrap(exception).SelectMany(FailureHints).Distinct()];
+
+  /// What the user can do about a failure: the hints of the exceptions of its chain. A file of a
+  /// package that is missing where its package file says is a problem of the package, so the
+  /// advice for a mistyped name does not apply then.
+  private static IEnumerable<string> FailureHints(Exception failure) {
+    List<Exception> chain = [.. Chain(failure)];
+    // The missing files of packages: the 404 answers behind each asset that was not obtained.
+    HashSet<Exception> missingFiles = new(ReferenceEqualityComparer.Instance);
+    foreach (AssetUnavailableException asset in chain.OfType<AssetUnavailableException>()) {
+      missingFiles.UnionWith(Chain(asset).Where(IsMissingFile));
+    }
+
+    return chain.SelectMany(e => HintsOf(e, e switch {
+      AssetUnavailableException asset => Chain(asset).Any(IsMissingFile),
+      _ => missingFiles.Contains(e),
+    }));
+  }
+
+  private static bool IsMissingFile(Exception exception) => exception is HttpRequestException {
+    StatusCode: HttpStatusCode.NotFound or HttpStatusCode.Gone
+  };
+
+  /// What the user can do about an exception. assetMissing: whether it is (or is behind) a file
+  /// of a package that the server does not have.
+  private static IEnumerable<string> HintsOf(Exception exception, bool assetMissing) {
     switch (exception) {
+      case AssetUnavailableException asset when assetMissing:
+        yield return $"A file that {asset.Name} {asset.Version} publishes is missing from where"
+            + " its package file says it is, so this version cannot be installed. This is a"
+            + " problem of the package, not of your setup: report it to its author"
+            + (asset.IssuesUrl is { } issues ? $" at {issues}" : "")
+            + $", or request another version, such as '{asset.Name}@<version>'.";
+        break;
+      case HttpRequestException { StatusCode: HttpStatusCode.NotFound or HttpStatusCode.Gone }
+          when assetMissing:
+        break;
       // GitHub answers 401 for a repository that does not exist or is private.
       case HttpRequestException { StatusCode: HttpStatusCode.NotFound or HttpStatusCode.Unauthorized }:
         yield return "The repository or file does not exist, or is private. Check the package"
@@ -201,9 +239,15 @@ public static class ErrorReporter {
       case CannotAskException:
         yield return "Run lip in an interactive terminal.";
         break;
+      case DependencyResolutionException { Hints.Count: > 0 } resolution:
+        foreach (string hint in resolution.Hints) {
+          yield return hint;
+        }
+
+        break;
       case DependencyResolutionException:
-        yield return "If the reasons above are about versions that do not fit together, request"
-            + " other versions.";
+        yield return "Request other versions of the packages named above, or install fewer of"
+            + " them together.";
         break;
       case WorkspaceBusyException:
         break;

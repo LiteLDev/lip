@@ -24,7 +24,11 @@ public class InstallCommand(LipClient lipClient, IUserInteraction userInteractio
         settings.Packages,
         settings.DryRun,
         cancellationToken);
-    await _userInteraction.PrintSuccess("Packages installed successfully.");
+    if (settings.DryRun) {
+      await _userInteraction.PrintInfo("Dry run: nothing was changed.");
+    } else {
+      await _userInteraction.PrintSuccess("Packages installed successfully.");
+    }
     return 0;
   }
 }
