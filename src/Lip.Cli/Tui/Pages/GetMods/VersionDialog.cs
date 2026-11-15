@@ -49,6 +49,7 @@ public sealed class VersionDialog : Dialog {
   public override IReadOnlyList<Hint> Hints => [
     CommonText.HintMove,
     _list.Current.Kind == RowKind.Variant ? CommonText.HintChange : CommonText.HintSelect,
+    .. _list.PageHints,
     CommonText.HintClose,
   ];
 

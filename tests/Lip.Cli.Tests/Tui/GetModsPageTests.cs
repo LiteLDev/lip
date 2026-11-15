@@ -504,6 +504,58 @@ public sealed class GetModsPageTests {
   }
 
   [Fact]
+  public async Task Catalogue_ReadWhileAnotherWorkspaceIsSelected_IsShown() {
+    using ManualResetEventSlim release = new();
+    using TuiHarness tui = Start(catalog: url => {
+      release.Wait(TimeSpan.FromSeconds(30));
+      return Catalog(url);
+    });
+    string other = Path.Join(tui.Root, "other");
+    tui.Fs.AddDirectory(other);
+    try {
+      await tui.GoTo(PageId.GetMods);
+      await tui.WaitFor(CommonText.Loading);
+
+      // The catalogue is of no workspace: what is read of it counts whichever one is
+      // selected when it arrives.
+      Assert.True(await tui.Invoke(() => tui.Context.AddWorkspace(other, out _)));
+      await tui.WaitFor("lip 1.2.3 · " + other);
+      release.Set();
+
+      await tui.WaitFor("Alpha · acme");
+      Assert.DoesNotContain(CommonText.Loading, tui.Screen.Split('\n')[2]);
+    }
+    finally {
+      release.Set();
+    }
+  }
+
+  [Fact]
+  public async Task Tab_GoesRoundTheSearchTheModsAndTheSidebar_AndTheBarNamesTheKeys() {
+    using TuiHarness tui = Start();
+    await tui.GoTo(PageId.GetMods);
+    await tui.WaitFor("Alpha · acme");
+    Assert.Contains("↑↓ Move  Enter Actions  Tab Next  Esc Back", tui.Screen);
+
+    // The details fit: Tab goes on from the mods to the sidebar, and from there to the
+    // search, the first area of the page.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("Enter Results  Tab Next  Esc Back");
+    tui.Type("beta");
+    await tui.WaitUntilGone("Alpha · acme");
+    tui.Press(ConsoleKey.Tab, 3);
+    await tui.WaitFor("Enter Actions  Tab Next  Esc Back");
+
+    // Shift+Tab from the sidebar comes back to the last area: the mods.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor("Enter Actions  Tab Next  Esc Back");
+  }
+
+  [Fact]
   public async Task Details_OnASmallTerminal_AreBelowTheModsAndScroll() {
     using TuiHarness tui = Start(width: 60, height: 16);
     await tui.GoTo(PageId.GetMods);

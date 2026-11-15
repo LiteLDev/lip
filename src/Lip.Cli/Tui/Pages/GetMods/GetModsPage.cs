@@ -108,9 +108,11 @@ public sealed class GetModsPage : Page {
           CommonText.HintNext,
         ],
         Area.List => _list.HasCurrent
-            ? [.. _list.Hints, CommonText.HintActions, CommonText.HintNext]
-            : [.. _list.Hints, CommonText.HintNext],
-        _ => [CommonText.HintScroll, CommonText.HintPage],
+            ? [.. _list.Hints, CommonText.HintActions, CommonText.HintNext, .. _list.PageHints]
+            : [CommonText.HintNext],
+        _ => [
+          CommonText.HintScroll, CommonText.HintNext, CommonText.HintPage, CommonText.HintEnds,
+        ],
       };
     }
   }
@@ -127,6 +129,21 @@ public sealed class GetModsPage : Page {
   }
 
   public override void OnWorkspaceChanged() => LoadInstalled();
+
+  /// Tab from the sidebar goes to the search, and Shift+Tab to the details when they scroll,
+  /// otherwise to the mods.
+  public override void OnTabIn(bool backward) {
+    if (_catalog is null) {
+      return;
+    }
+
+    if (backward) {
+      _area = DetailsScroll && _list.HasCurrent ? Area.Details : Area.List;
+    } else {
+      _area = Area.Controls;
+      _form.Focus = SearchField;
+    }
+  }
 
   /// Reads the file of the selected mod once the selection rested on it for a moment.
   public override void OnTick() {
@@ -153,10 +170,10 @@ public sealed class GetModsPage : Page {
     _loading = true;
     _error = null;
     ModCatalogClient catalog = Context.Catalog;
-    _ = Task.Run(async () => {
-      try {
-        CatalogIndex index = await catalog.GetIndex();
-        Context.Post(() => {
+    // The catalogue is of no workspace: what was read counts whichever one is selected now.
+    Context.Background(
+        () => catalog.GetIndex(),
+        index => {
           _loading = false;
           _catalog = index;
           _loadedAt = Environment.TickCount64;
@@ -166,17 +183,14 @@ public sealed class GetModsPage : Page {
           _detailsFailed.Clear();
           _filters.Build(index);
           SelectMods(keep: true);
-        });
-      }
-      catch (Exception ex) {
-        Context.Post(() => {
+        },
+        ex => {
           _loading = false;
           if (_catalog is null) {
             _error = ex.Message;
           }
-        });
-      }
-    });
+        },
+        anyWorkspace: true);
   }
 
   /// Reads which packages the selected workspace has, for the marks of the mods. The marks of
@@ -216,24 +230,21 @@ public sealed class GetModsPage : Page {
     int generation = _generation;
     Task<CatalogDetail> read = Task.Run(() => catalog.GetDetail(id));
     _detailReads[id] = read;
-    _ = read.ContinueWith(
-        done => {
-          CatalogDetail? detail = done.Exception is null && !done.IsCanceled ? done.Result : null;
-          Context.Post(() => {
-            if (generation != _generation) {
-              return;
-            }
+    void Read(CatalogDetail? detail) {
+      if (generation != _generation) {
+        return;
+      }
 
-            _detailReads.Remove(id);
-            if (detail is null) {
-              _detailsFailed.Add(id);
-            } else {
-              _details[id] = detail;
-              _detailsFailed.Remove(id);
-            }
-          });
-        },
-        TaskScheduler.Default);
+      _detailReads.Remove(id);
+      if (detail is null) {
+        _detailsFailed.Add(id);
+      } else {
+        _details[id] = detail;
+        _detailsFailed.Remove(id);
+      }
+    }
+
+    Context.Background(() => read, Read, _ => Read(null), anyWorkspace: true);
     return read;
   }
 

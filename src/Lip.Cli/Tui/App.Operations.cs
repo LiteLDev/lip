@@ -54,21 +54,23 @@ public sealed partial class App {
   }
 
   /// Does work in the background without a dialog, then calls done, or failed, on the thread of
-  /// the interface; neither is called when another workspace was selected meanwhile.
-  internal void Background<T>(Func<Task<T>> work, Action<T> done, Action<Exception>? failed) {
+  /// the interface. Unless anyWorkspace is set, neither is called when another workspace was
+  /// selected meanwhile: what the work read was of the workspace before.
+  internal void Background<T>(
+      Func<Task<T>> work, Action<T> done, Action<Exception>? failed, bool anyWorkspace) {
     LipClient client = _client;
     _ = Task.Run(async () => {
       try {
         T result = await work();
         Post(() => {
-          if (client == _client) {
+          if (anyWorkspace || client == _client) {
             done(result);
           }
         });
       }
       catch (Exception ex) {
         Post(() => {
-          if (client != _client) {
+          if (!anyWorkspace && client != _client) {
             return;
           }
 

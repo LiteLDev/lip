@@ -3,6 +3,7 @@ using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Settings;
 using Lip.Core.Infrastructure;
+using Lip.Core.PublicApi;
 using Lip.Core.Services;
 using Moq;
 using Semver;
@@ -131,7 +132,7 @@ public sealed class SettingsPageTests {
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(SettingsText.SetProxy);
-    Assert.Contains(SettingsText.ConnectDirectly, tui.Screen);
+    Assert.Contains(CommonText.ConnectDirectly, tui.Screen);
     Assert.Contains(SettingsText.Reset, tui.Screen);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(SettingsText.ProxyUrl);
@@ -143,7 +144,7 @@ public sealed class SettingsPageTests {
 
     tui.Type(Proxy);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(SettingsText.Saved);
+    await tui.WaitFor(CommonText.Saved);
     await Configured(tui, ConfigService.GithubProxyKey, Proxy);
     Assert.Matches($@"{SettingsText.GithubProxy}\s+{Proxy}", tui.Screen);
     Assert.True(await tui.Invoke(() => tui.Context.Idle));
@@ -192,7 +193,7 @@ public sealed class SettingsPageTests {
     await tui.WaitFor(SettingsText.ProxyFailed);
     tui.Press(ConsoleKey.RightArrow);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(SettingsText.Saved);
+    await tui.WaitFor(CommonText.Saved);
     await Configured(tui, ConfigService.GithubProxyKey, "https://bad.test/");
   }
 
@@ -204,10 +205,10 @@ public sealed class SettingsPageTests {
     tui.Press(ConsoleKey.DownArrow);
 
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(SettingsText.ConnectDirectly);
+    await tui.WaitFor(CommonText.ConnectDirectly);
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(SettingsText.Saved);
+    await tui.WaitFor(CommonText.Saved);
     await Configured(tui, ConfigService.GithubProxyKey, "");
     await tui.WaitFor(screen => !screen.Contains(SettingsText.NotSet));
     Assert.Matches($@"{SettingsText.GithubProxy}\s+{SettingsText.Direct}", tui.Screen);
@@ -385,6 +386,71 @@ public sealed class SettingsPageTests {
     Assert.Equal([true], checks);
     Assert.True(await tui.Invoke(() => tui.Context.Idle));
     Assert.DoesNotContain(SettingsText.InstallUpdate, tui.Screen);
+  }
+
+  [Fact]
+  public async Task Updates_AreAskedForWithTheClientOfTheSelectedWorkspace() {
+    List<LipClient> clients = [];
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      SelfUpdate = (client, checkOnly) => {
+        lock (clients) {
+          clients.Add(client);
+        }
+
+        return Task.FromResult(new SelfUpdateResult(
+            checkOnly ? SelfUpdateOutcome.Available : SelfUpdateOutcome.Replaced,
+            SemVersion.Parse("1.3.0")));
+      },
+    });
+    string other = Path.Join(tui.Root, "other");
+    tui.Fs.AddDirectory(other);
+    await tui.GoTo(PageId.Settings);
+    LipClient first = await tui.Invoke(() => tui.Context.Client);
+    tui.Press(ConsoleKey.DownArrow, 4);
+    await tui.WaitFor(SettingsText.CheckUpdatesDetail);
+
+    // The check gets the client that the page read when Enter was pressed.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(SettingsText.UpdateAvailable("1.3.0"));
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(SettingsText.UpdateAvailable("1.3.0"));
+
+    // After another workspace was selected, the installation gets the client of that one.
+    Assert.True(await tui.Invoke(() => tui.Context.AddWorkspace(other, out _)));
+    LipClient second = await tui.Invoke(() => tui.Context.Client);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(SettingsText.InstallUpdateDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(SettingsText.InstallQuestion("1.3.0"));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(SettingsText.Installed("1.3.0"));
+
+    lock (clients) {
+      Assert.Equal(2, clients.Count);
+      Assert.Same(first, clients[0]);
+      Assert.Same(second, clients[1]);
+    }
+  }
+
+  [Fact]
+  public async Task Daemon_AnswerThatComesAfterAnotherWorkspaceWasSelected_IsShown() {
+    TaskCompletionSource<DaemonState?> answer =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      DaemonStatus = _ => answer.Task,
+    });
+    string other = Path.Join(tui.Root, "other");
+    tui.Fs.AddDirectory(other);
+    await tui.GoTo(PageId.Settings);
+    await tui.WaitFor(SettingsText.Daemon);
+    Assert.DoesNotContain("PID 4242", tui.Screen);
+
+    // The daemon is of no workspace: its answer counts whichever one is selected now.
+    Assert.True(await tui.Invoke(() => tui.Context.AddWorkspace(other, out _)));
+    await tui.WaitFor("lip 1.2.3 · " + other);
+    answer.SetResult(new DaemonState("1.2.3", 4242, 1));
+
+    await tui.WaitFor($"{CommonText.ServerRunning} · 1.2.3 · PID 4242");
   }
 
   [Fact]
@@ -572,7 +638,7 @@ public sealed class SettingsPageTests {
     await tui.WaitFor(CommonText.ServerRunning);
     tui.Snapshot("settings-1-language");
     foreach (string label in (string[])[
-      SettingsText.Language, SettingsText.GithubProxy, SettingsText.AutoRestart,
+      SettingsText.Language, SettingsText.GithubProxy, CommonText.AutoRestart,
       SettingsText.ClearCache, SettingsText.CheckUpdates, SettingsText.Daemon,
       SettingsText.About,
     ]) {
@@ -600,7 +666,7 @@ public sealed class SettingsPageTests {
     tui.Snapshot("settings-5-proxy-failed");
     tui.Press(ConsoleKey.RightArrow);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(SettingsText.Saved);
+    await tui.WaitFor(CommonText.Saved);
     tui.Snapshot("settings-6-proxy-saved");
 
     tui.Press(ConsoleKey.DownArrow);

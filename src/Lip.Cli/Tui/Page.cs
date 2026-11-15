@@ -37,6 +37,13 @@ public abstract class Page(AppContext context) {
   /// Ctrl+C asks to quit.
   public virtual bool OnKey(ConsoleKeyInfo key) => false;
 
+  /// Called when Tab, or Shift+Tab when backward is set, brought the focus from the sidebar to
+  /// the page. A page with several focus areas gives the focus to its first one, or to its
+  /// last one when backward is set, so that Tab goes round the sidebar and every area of the
+  /// page. Enter and → in the sidebar do not call it: the focus is then where it was.
+  public virtual void OnTabIn(bool backward) {
+  }
+
   /// Called once, when the interface starts, before anything is drawn.
   public virtual void OnStart() {
   }

@@ -41,8 +41,9 @@ public sealed class FilterDialog : Dialog {
     _list.Current.Kind switch {
       RowKind.Clear => CommonText.HintSelect,
       RowKind.Heading => CommonText.HintOpen,
-      _ => CommonText.HintToggle,
+      _ => CommonText.HintToggleEither,
     },
+    .. _list.PageHints,
     CommonText.HintClose,
   ];
 

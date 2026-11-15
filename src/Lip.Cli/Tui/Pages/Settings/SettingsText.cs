@@ -8,7 +8,6 @@ public static class SettingsText {
 
   // What several rows show.
   public static string Unreadable => L.T("Unreadable", "无法读取", "無法讀取");
-  public static string Saved => L.T("Saved.", "已保存。", "已儲存。");
 
   // The language.
   public static string Language => L.T("Language", "语言", "語言");
@@ -26,7 +25,6 @@ public static class SettingsText {
   public static string NotSet => L.T("Not set", "未设置", "未設定");
   public static string Direct => L.T("Direct", "直连", "直接連線");
   public static string SetProxy => L.T("Set proxy…", "设置代理…", "設定代理伺服器…");
-  public static string ConnectDirectly => L.T("Connect directly", "直接连接", "直接連線");
   public static string Reset => L.T("Reset", "重置", "重設");
   public static string ProxyUrl => L.T("Proxy URL", "代理网址", "代理伺服器網址");
   public static string ProxyPlaceholder => "https://example.com/";
@@ -37,7 +35,6 @@ public static class SettingsText {
   public static string SaveAnyway => L.T("Save anyway", "仍然保存", "仍要儲存");
 
   // The restart policy of the workspace.
-  public static string AutoRestart => L.T("Auto restart", "自动重启", "自動重新啟動");
   public static string AutoRestartDetail =>
       L.T(
           "Restarts the server of this workspace when it crashes.",

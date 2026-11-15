@@ -10,10 +10,8 @@ public static class ServerText {
   // The buttons and the toggle.
   public static string Start => L.T("Start", "启动", "啟動");
   public static string Stop => L.T("Stop", "停止", "停止");
-  public static string AutoRestart => L.T("Auto restart", "自动重启", "自動重新啟動");
   public static string AutoRestartDetail =>
       L.T("Restarts after a crash.", "崩溃后重新启动。", "當機後重新啟動。");
-  public static string NewServer => L.T("New server…", "新建服务器…", "建立伺服器…");
 
   // The state of the server.
   public static string ExitedWith(int code) {

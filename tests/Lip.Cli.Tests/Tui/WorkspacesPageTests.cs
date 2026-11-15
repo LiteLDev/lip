@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Text.RegularExpressions;
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Workspaces;
@@ -112,6 +113,27 @@ public sealed class WorkspacesPageTests {
     await tui.WaitFor("This folder no longer exists.");
     Assert.Contains("↑↓ Move  Enter Actions  Tab Next  Esc Back", tui.Screen);
     tui.Snapshot("workspaces-row");
+  }
+
+  [Fact]
+  public async Task Tab_GoesRoundTheActionsTheListAndTheSidebar() {
+    using TuiHarness tui = Start(out _, Files(false, Alpha));
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(Alpha);
+    Assert.Contains(" ↑↓ Move  Enter Select  Tab Next  Esc Back", tui.Screen);
+
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor(" ↑↓ Move  Enter Actions  Tab Next  Esc Back");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+
+    // From the sidebar Tab starts at the actions, and Shift+Tab at the list.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("Enter Select  Tab Next");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor("Enter Actions  Tab Next");
   }
 
   [Fact]
@@ -261,7 +283,7 @@ public sealed class WorkspacesPageTests {
     // What is not a directory is said, and the dialog stays.
     tui.Type("nowhere");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("Not a directory");
+    await tui.WaitFor("Not a folder");
     tui.Snapshot("workspaces-add-error");
     Assert.Equal([Root], tui.Workspaces.Read());
 
@@ -350,6 +372,15 @@ public sealed class WorkspacesPageTests {
         ],
         Calls(setup()));
     Assert.Equal(directory, tui.WorkspaceOf(await tui.Invoke(() => tui.Context.Client)));
+
+    // The row of the new workspace is selected, and has the focus: Enter opens its menu.
+    await tui.WaitFor("当前工作区。");
+    await tui.WaitFor($"Enter {CommonText.HintActions.Text}");
+    tui.Snapshot("wizard-done");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("更改游戏或加载器版本…");
+    Assert.Contains("─ survival ─", tui.Screen);
+    Assert.DoesNotContain("从列表移除", tui.Screen);
   }
 
   [Fact]
@@ -583,7 +614,7 @@ public sealed class WorkspacesPageTests {
         out Func<FakeServerSetup> setup, Files(false, Alpha), Language.ZhHant);
     await tui.GoTo(PageId.Workspaces);
     await tui.WaitFor(Alpha);
-    Assert.Contains("新增伺服器…", tui.Screen);
+    Assert.Contains("建立伺服器…", tui.Screen);
     Assert.Contains("加入現有資料夾…", tui.Screen);
 
     ToRow(tui, 1);
@@ -620,6 +651,143 @@ public sealed class WorkspacesPageTests {
         Calls(setup()));
   }
 
+  /// A lock file with a game of a version and a variant, and LeviLamina of a version unless
+  /// that is null.
+  private static string State(string game, string variant, string? loader) {
+    static string Package(string id, string variant, string version) => $$"""
+        { "manifest": { "format": 4, "id": "{{id}}", "version": "{{version}}",
+            "variants": { "{{variant}}": [ { "side": "server", "platform": "win-x64" } ] } },
+          "variant": "{{variant}}", "explicit": true,
+          "ref": "{{id}}{{(variant.Length > 0 ? "#" + variant : "")}}@{{version}}", "files": [] }
+        """;
+    string[] packages = [
+      Package("github.com/LiteLDev/bds", variant, game),
+      .. loader is null ? (string[])[] : [Package(GameSetup.LoaderRepository, "", loader)],
+    ];
+    return $$"""
+        { "format": 4, "side": "server", "platform": "win-x64",
+          "packages": [ {{string.Join(", ", packages)}} ] }
+        """;
+  }
+
+  [Theory]
+  // The game, its build and its loader are the ones selected in each step.
+  [InlineData("1.21.40", "", "1.0.0", 3, "1.21.40 Windows True 1.0.0")]
+  // A game without a loader starts on "No loader".
+  [InlineData("1.21.50", "", null, 3, "1.21.50 Windows False ")]
+  // The Linux build, which has no loader to choose.
+  [InlineData("1.21.50", "linux", null, 2, "1.21.50 Linux False ")]
+  // A game version that has no Linux build: the build windows, with the newest loader, since
+  // the Linux build could have none.
+  [InlineData("1.21.40", "linux", null, 3, "1.21.40 Windows True 1.1.0")]
+  // A game version that the builds list does not name any more: the newest one.
+  [InlineData("1.20.0", "", "0.9.0", 3, "1.21.50 Windows True 1.1.0")]
+  public async Task ChangeVersions_StartsOnWhatTheWorkspaceHas(
+      string game, string variant, string? loader, int steps, string request) {
+    MockFileSystem fs = Files(false, Alpha);
+    fs.AddFile(
+        Path.Join(Alpha, ".lip", "state.json"), new MockFileData(State(game, variant, loader)));
+    using TuiHarness tui = Start(out Func<FakeServerSetup> setup, fs);
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(Alpha);
+    ToRow(tui, 1);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(WorkspacesText.ChangeVersions);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    // Act: Enter in each step takes what it starts on.
+    await tui.WaitFor("─ Game version ─");
+    if (game != "1.20.0") {
+      Assert.Matches($@"{Regex.Escape(game)}\s.*{WorkspacesText.Installed}", tui.Screen);
+    }
+
+    tui.Snapshot("change-versions-game");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ Build ─");
+    tui.Press(ConsoleKey.Enter);
+    if (steps == 3) {
+      await tui.WaitFor("─ Loader ─");
+      tui.Snapshot("change-versions-loader");
+      tui.Press(ConsoleKey.Enter);
+    }
+
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+    Assert.Equal([$"{request} dryRun=True acceptEula=False"], Calls(setup()));
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task ChangeVersions_MarksWhatIsInstalled_InEveryLanguageAndSize(
+      Language language, int width, int height) {
+    MockFileSystem fs = Files(false, Alpha);
+    fs.AddFile(
+        Path.Join(Alpha, ".lip", "state.json"), new MockFileData(State("1.21.40", "", "1.0.0")));
+    using TuiHarness tui = Start(out _, fs, language, width, height);
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(tui.Fs.Path.GetFileName(Alpha));
+    ToRow(tui, 1);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(WorkspacesText.ChangeVersions);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    Assert.Contains($"1.21.40  windows  {WorkspacesText.Installed}", tui.Screen);
+    tui.Snapshot("change-game");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Build} ─");
+    tui.Snapshot("change-build");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    tui.Snapshot("change-loader");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+
+    // The workspace was selected for its setup: its row has the selection and the focus.
+    await tui.WaitFor($"Enter {CommonText.HintActions.Text}");
+    Assert.Equal(Alpha, await tui.Invoke(() => tui.Context.Workspace));
+    tui.Snapshot("change-cancelled");
+  }
+
+  [Fact]
+  public async Task ChangeVersions_BackFromTheLoaders_KeepsTheBuildThatWasChosen() {
+    MockFileSystem fs = Files(false, Alpha);
+    fs.AddFile(
+        Path.Join(Alpha, ".lip", "state.json"), new MockFileData(State("1.21.50", "linux", null)));
+    using TuiHarness tui = Start(out Func<FakeServerSetup> setup, fs);
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(Alpha);
+    ToRow(tui, 1);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(WorkspacesText.ChangeVersions);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ Game version ─");
+    tui.Press(ConsoleKey.Enter);
+
+    // The build starts on linux, which the workspace has; the user chooses windows.
+    await tui.WaitFor(WorkspacesText.LinuxDetail);
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(WorkspacesText.WindowsDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("─ Loader ─");
+
+    // Esc goes back to the build, on what the user chose there.
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor(WorkspacesText.WindowsDetail);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor("─ Game version ─");
+    Assert.Empty(Calls(setup()));
+  }
+
   [Fact]
   public async Task ChangeVersions_Cancelled_KeepsTheSelectedWorkspace() {
     using TuiHarness tui = Start(out Func<FakeServerSetup> setup, Files(false, Alpha));
@@ -653,7 +821,7 @@ public sealed class WorkspacesPageTests {
         out Func<FakeServerSetup> setup, Files(false, Alpha, Gone), language, width, height);
     await tui.GoTo(PageId.Workspaces);
     await tui.WaitFor(WorkspacesText.Missing);
-    Assert.Contains(WorkspacesText.NewServer, tui.Screen);
+    Assert.Contains(CommonText.NewServer, tui.Screen);
     Assert.Contains(WorkspacesText.AddFolder, tui.Screen);
     Assert.Contains(WorkspacesText.NewServerDetail, tui.Screen);
     tui.Snapshot("frames-list");

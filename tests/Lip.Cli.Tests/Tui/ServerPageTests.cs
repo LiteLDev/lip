@@ -43,7 +43,7 @@ public sealed class ServerPageTests {
 
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor(_ => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
   }
 
   [Fact]
@@ -77,7 +77,7 @@ public sealed class ServerPageTests {
     });
     string config = Path.Join(tui.Root, ".lip", "config.toml");
     await tui.GoTo(PageId.Server);
-    await tui.WaitFor($"[ ] {ServerText.AutoRestart}");
+    await tui.WaitFor($"[ ] {CommonText.AutoRestart}");
 
     // Act: → chooses the toggle, which then says what it does; Space switches it.
     tui.Press(ConsoleKey.RightArrow);
@@ -85,7 +85,7 @@ public sealed class ServerPageTests {
     Assert.Contains($"Space {CommonText.HintToggle.Text}", LastRow(tui));
     tui.Press(ConsoleKey.Spacebar);
 
-    await tui.WaitFor($"[x] {ServerText.AutoRestart}");
+    await tui.WaitFor($"[x] {CommonText.AutoRestart}");
     await tui.WaitFor(
         _ => tui.Fs.FileExists(config) && tui.Fs.File.ReadAllText(config).Contains("on-failure"),
         "restart = on-failure");
@@ -94,9 +94,9 @@ public sealed class ServerPageTests {
     // Leaving and coming back reads it again; Space switches it off.
     await tui.GoTo(PageId.Home);
     await tui.GoTo(PageId.Server);
-    await tui.WaitFor($"[x] {ServerText.AutoRestart}");
+    await tui.WaitFor($"[x] {CommonText.AutoRestart}");
     tui.Press(ConsoleKey.Spacebar);
-    await tui.WaitFor($"[ ] {ServerText.AutoRestart}");
+    await tui.WaitFor($"[ ] {CommonText.AutoRestart}");
     await tui.WaitFor(
         _ => !tui.Fs.File.ReadAllText(config).Contains("on-failure"), "restart = never");
 
@@ -127,6 +127,9 @@ public sealed class ServerPageTests {
     await tui.WaitUntilGone("line 80.");
     Assert.Contains("line 79.", tui.Screen);
     Assert.Contains($"↑↓ {CommonText.HintScroll.Text}", LastRow(tui));
+    // The bottom bar names every key that scrolls the output.
+    Assert.Contains($"PgUp/PgDn {CommonText.HintPage.Text}", LastRow(tui));
+    Assert.Contains($"Home/End {CommonText.HintEnds.Text}", LastRow(tui));
 
     // What the server writes meanwhile does not move the rows scrolled back to.
     lock (server.Gate) {
@@ -160,7 +163,7 @@ public sealed class ServerPageTests {
     tui.Press(ConsoleKey.Tab);
     await tui.WaitFor(_ => LastRow(tui).Contains($"↑↓ {CommonText.HintScroll.Text}"), "the output");
     tui.Press(ConsoleKey.Tab);
-    await tui.WaitFor(_ => !tui.Context.ContentFocused, "the sidebar");
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
   }
 
   [Theory]
@@ -197,11 +200,18 @@ public sealed class ServerPageTests {
       await tui.WaitFor(_ => LastRow(tui).Contains($"Enter {ServerText.HintSend.Text}"), "Send");
       Assert.Contains($"Ctrl+C {CommonText.HintStop.Text}", LastRow(tui));
       if (width >= 80) {
+        // Esc leaves the input line for the output, and the output for the sidebar; Enter
+        // comes back to the output, and ↓ at its end goes on to the input line.
         tui.Press(ConsoleKey.Escape);
-        await tui.WaitFor(
-            screen => Regex.IsMatch(screen, Regex.Escape(ServerText.Title) + @"\s+●"), "the badge");
+        await tui.WaitUntilGone($"Enter {ServerText.HintSend.Text}");
+        Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
+        Assert.Contains($"[ {ServerText.Stop} ]", tui.Screen);
+        tui.Press(ConsoleKey.Escape);
+        await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+        Assert.Matches(Regex.Escape(ServerText.Title) + @"\s+●", tui.Screen);
         tui.Press(ConsoleKey.Enter);
-        await tui.Settle();
+        tui.Press(ConsoleKey.DownArrow);
+        await tui.WaitFor(_ => LastRow(tui).Contains($"Enter {ServerText.HintSend.Text}"), "Send");
       }
 
       // The server reads the line entered, and ↑ brings it back.
@@ -268,7 +278,7 @@ public sealed class ServerPageTests {
 
       // Shift+Tab goes from the input line to the output, and on to the button.
       tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
-      await tui.WaitFor(_ => LastRow(tui).Contains("↑↓ Scroll"), "the output");
+      await tui.WaitFor(_ => LastRow(tui).Contains("↑↓ Move  Tab Next"), "the output");
       tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
       await tui.WaitFor(_ => LastRow(tui).Contains("Enter Select"), "the button");
       tui.Press(ConsoleKey.Enter);
@@ -292,6 +302,94 @@ public sealed class ServerPageTests {
       await End(servers, root);
     }
   }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task InputLine_IsLeftWithEsc_AndTabGoesRoundTheSidebarAndEveryArea(
+      Language language, int width, int height) {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "The server of the test is cmd.exe.");
+    string root = TestClients.CmdWorkspace();
+    ServerSessions servers = new();
+    try {
+      System.IO.Abstractions.FileSystem fs = new();
+      using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+        CreateClient = (interaction, hookOutput, _) =>
+            TestClients.CmdClient(fs, interaction, hookOutput, root),
+        Servers = servers,
+        Language = language,
+        Width = width,
+        Height = height,
+      });
+      string input = Bar(ServerText.HintSend);
+      // The output scrolls on a small terminal, and does not on a large one.
+      string output = Bar(
+          height < 36 ? CommonText.HintScroll : CommonText.HintMove, CommonText.HintNext,
+          CommonText.HintStop);
+      string button = Bar(CommonText.HintSwitch, CommonText.HintSelect, CommonText.HintNext);
+      await tui.GoTo(PageId.Server);
+      await tui.WaitFor($"[ {ServerText.Start} ]");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor($"[ {ServerText.Stop} ]");
+      await tui.WaitFor(_ => LastRow(tui).Contains(input), "the input line");
+      tui.Type("echo one");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(screen => Regex.IsMatch(screen, @"(?m)│ one\s*│$"), "the echo");
+
+      // ↑ and ↓ on the input line are its history, and nothing else.
+      tui.Press(ConsoleKey.UpArrow, 3);
+      tui.Press(ConsoleKey.DownArrow, 3);
+      await tui.Settle();
+      Assert.Contains(
+          " " + Bar(
+              ServerText.HintSend, ServerText.HintHistory, CommonText.HintNext,
+              CommonText.HintStop, CommonText.HintBack),
+          LastRow(tui));
+      tui.Snapshot("server-focus-input");
+
+      // Esc leaves the input line for the output, where Enter does nothing; from there Esc
+      // goes back to the sidebar.
+      tui.Press(ConsoleKey.Escape);
+      await tui.WaitFor(_ => LastRow(tui).Contains(output), "the output");
+      Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
+      tui.Snapshot("server-focus-output");
+      tui.Press(ConsoleKey.Enter);
+      await tui.Settle();
+      Assert.Contains($"[ {ServerText.Stop} ]", tui.Screen);
+      Assert.Contains("● " + CommonText.ServerRunning, tui.Screen);
+      tui.Press(ConsoleKey.Escape);
+      await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+
+      // Tab goes round: the button and the toggle, the output, the input line, the sidebar.
+      tui.Press(ConsoleKey.Tab);
+      await tui.WaitFor(_ => LastRow(tui).Contains(button), "the button");
+      tui.Snapshot("server-focus-button");
+      tui.Press(ConsoleKey.Tab);
+      await tui.WaitFor(_ => LastRow(tui).Contains(output), "the output");
+      tui.Press(ConsoleKey.Tab);
+      await tui.WaitFor(_ => LastRow(tui).Contains(input), "the input line");
+      tui.Press(ConsoleKey.Tab);
+      await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+
+      // Shift+Tab goes round the other way, to the input line first.
+      tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+      await tui.WaitFor(_ => LastRow(tui).Contains(input), "the input line");
+      tui.Type("exit 0");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor("○ " + ServerText.ExitedWith(0));
+    }
+    finally {
+      await End(servers, root);
+    }
+  }
+
+  /// The hints as the bottom bar shows them, one after the other.
+  private static string Bar(params Hint[] hints) =>
+      string.Join("  ", hints.Select(hint => $"{hint.Key} {hint.Text}"));
 
   /// A file system whose default workspace has a game, and so a server, which is no file.
   private static MockFileSystem WithGame() {

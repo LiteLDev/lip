@@ -7,7 +7,6 @@ public static class WorkspacesText {
   public static string Title => L.T("Workspaces", "工作区", "工作區");
 
   // The action rows above the list.
-  public static string NewServer => L.T("New server…", "新建服务器…", "新增伺服器…");
   public static string NewServerDetail =>
       L.T(
           "Creates a folder and installs the game in it.",
@@ -49,7 +48,7 @@ public static class WorkspacesText {
   public static string Folder => L.T("Folder", "文件夹", "資料夾");
 
   // The new server.
-  public static string NewServerTitle => L.T("New server", "新建服务器", "新增伺服器");
+  public static string NewServerTitle => L.T("New server", "新建服务器", "建立伺服器");
   public static string Here => L.T("This folder", "当前文件夹", "目前的資料夾");
   public static string Elsewhere => L.T("Another folder…", "其他文件夹…", "其他資料夾…");
   public static string ElsewhereDetail =>
@@ -69,6 +68,7 @@ public static class WorkspacesText {
   public static string NoGames =>
       L.T("No game version is available.", "没有可用的游戏版本。", "沒有可用的遊戲版本。");
   public static string Newest => L.T("newest", "最新", "最新");
+  public static string Installed => L.T("installed", "已安装", "已安裝");
   public static string Prerelease => L.T("preview", "预览版", "預覽版");
   public static string Build => L.T("Build", "构建", "組建");
   public static string WindowsDetail =>

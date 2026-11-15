@@ -26,7 +26,9 @@ public sealed class ShellTests {
 
     public override bool CanLeave => !Dirty;
 
-    public override IReadOnlyList<Hint> Hints => [new Hint("Enter", "Act")];
+    public IReadOnlyList<Hint> OwnHints { get; set; } = [new Hint("Enter", "Act")];
+
+    public override IReadOnlyList<Hint> Hints => OwnHints;
 
     public override void Draw(ScreenBuffer screen, Rect area, bool focused) =>
         screen.Write(area.X, area.Y, $"body of {title}" + (focused ? " [focused]" : ""));
@@ -42,6 +44,9 @@ public sealed class ShellTests {
     public override void OnWorkspaceChanged() => Events.Add("workspace");
 
     public override void OnRequest(string request) => Events.Add("request " + request);
+
+    public override void OnTabIn(bool backward) =>
+        Events.Add(backward ? "tab in backward" : "tab in");
 
     public override void ConfirmLeave(Action leave) =>
         Context.Confirm(
@@ -120,6 +125,165 @@ public sealed class ShellTests {
     await tui.WaitFor("body of Gamma [focused]");
     tui.Press(ConsoleKey.Tab);
     await tui.WaitUntilGone("[focused]");
+  }
+
+  [Fact]
+  public async Task Tab_FromTheSidebar_TellsThePageWhichWayItCame_AndEnterDoesNot() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    TestPage page = _pages[PageId.Home];
+
+    // Enter and → give the page the focus where it was.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[focused]");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("[focused]");
+    tui.Press(ConsoleKey.RightArrow);
+    await tui.WaitFor("[focused]");
+    Assert.DoesNotContain(page.Events, e => e.StartsWith("tab in", StringComparison.Ordinal));
+
+    // Tab goes on from the page to the sidebar, and from the sidebar to the first area of
+    // the page; Shift+Tab goes the other way, to its last area.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntilGone("[focused]");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("[focused]");
+    Assert.Equal("tab in", page.Events[^1]);
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitUntilGone("[focused]");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor("[focused]");
+    Assert.Equal("tab in backward", page.Events[^1]);
+  }
+
+  [Fact]
+  public async Task BottomBar_ThatIsTooNarrow_LeavesOutHintsFromTheEnd_ButKeepsEsc() {
+    using TuiHarness tui = Start(new TuiHarnessOptions { Width = 60, Height = 16 });
+    await tui.WaitFor("body of Alpha");
+    _pages[PageId.Home].OwnHints = [
+      new Hint("↑↓", "Move"), new Hint("Enter", "Actions"), new Hint("Tab", "Next"),
+      new Hint("PgUp/PgDn", "Page"), new Hint("Home/End", "Ends"),
+    ];
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[focused]");
+    await tui.Settle();
+
+    // 60 columns have no room for all six: the hints of paging go, and Esc stays.
+    string bar = tui.Screen.Split('\n')[^1];
+    Assert.Equal(" ↑↓ Move  Enter Actions  Tab Next  PgUp/PgDn Page  Esc Back", bar.TrimEnd());
+
+    tui.Resize(120, 36);
+    await tui.WaitFor("Home/End Ends  Esc Back");
+  }
+
+  [Theory]
+  [InlineData(Language.En, 60, 16, 4)]
+  [InlineData(Language.ZhHans, 60, 16, 4)]
+  [InlineData(Language.ZhHant, 60, 16, 4)]
+  [InlineData(Language.En, 120, 36, 3)]
+  [InlineData(Language.ZhHans, 120, 36, 3)]
+  [InlineData(Language.ZhHant, 120, 36, 3)]
+  public async Task Question_OfACommand_IsWrapped_AndShownWhole(
+      Language language, int width, int height, int rowsAtLeast) {
+    using TuiHarness tui = Start(
+        new TuiHarnessOptions { Language = language, Width = width, Height = height });
+    await tui.WaitFor("body of Alpha");
+    const string Question = "What is the package id of the package? It names the repository"
+        + " that the package is published in, such as github.com/owner/repo";
+    string? answer = null;
+
+    await tui.Invoke(() => tui.Context.RunOperation(
+        "Create",
+        _ => tui.InteractionOf(tui.Context.Client).Ask(Question),
+        result => answer = result));
+    string title = $"─ {CommonText.Question} ─";
+    await tui.WaitFor(title);
+    tui.Snapshot("shell-question");
+
+    // The question takes the rows it needs: every word of it is in the dialog, in order,
+    // and the answer is typed below it.
+    string[] screen = tui.Screen.Split('\n');
+    int top = Array.FindIndex(screen, row => row.Contains(title));
+    int left = screen[top].IndexOf("┌" + title, StringComparison.Ordinal);
+    string[] rows = [
+      .. screen.Skip(top + 1)
+          .TakeWhile(row => row[left] == '│')
+          .Select(row => row[(left + 1)..row.IndexOf('│', left + 1)].Trim()),
+    ];
+    Assert.Equal(Question, string.Join(' ', rows.TakeWhile(row => !row.StartsWith('>'))));
+    Assert.True(rows.Length >= rowsAtLeast, tui.Screen);
+    Assert.All(screen, row => Assert.True(row.Length <= width, row));
+    Assert.Contains(
+        $" Enter {CommonText.HintConfirm.Text}  Esc {CommonText.HintCancel.Text}", tui.Screen);
+    tui.Type("github.com/acme/pkg");
+    await tui.WaitFor("> github.com/acme/pkg");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor(_ => answer == "github.com/acme/pkg");
+  }
+
+  [Fact]
+  public async Task Dialogs_NameEveryKeyThatMovesInThem() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    string[]? entered = null;
+
+    // Several fields: ↑, ↓ and Tab go from one to the next, and the bottom bar says so.
+    await tui.Invoke(() => tui.Context.Show(new PromptDialog(
+        "Pack",
+        [new PromptField("Folder", "."), new PromptField("Output file", "", "package.zip")],
+        values => entered = values)));
+    await tui.WaitFor("package.zip");
+    Assert.Contains(" ↑↓/Tab Move  Enter Confirm  Esc Cancel", tui.Screen);
+    tui.Press(ConsoleKey.Tab);
+    tui.Type("a");
+    tui.Press(ConsoleKey.Tab);
+    tui.Type("b");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    tui.Type("c");
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Type("d");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(_ => entered is not null);
+    Assert.Equal([".bd", "ac"], entered!);
+
+    // One field: nothing moves.
+    await tui.Invoke(() => tui.Context.Show(new PromptDialog(
+        "Rename", [new PromptField("Name")], _ => {
+        })));
+    await tui.WaitFor("─ Rename ─");
+    Assert.Contains(" Enter Confirm  Esc Cancel", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("─ Rename ─");
+
+    // Buttons: ← → and Tab go from one to the next.
+    int? chosen = null;
+    await tui.Invoke(() => tui.Context.Show(new ConfirmDialog(
+        "Save", [new StyledLine("Save the changes?")], ["Save", "Discard", "Cancel"],
+        choice => chosen = choice)));
+    await tui.WaitFor("[ Save ] [ Discard ] [ Cancel ]");
+    Assert.Contains(" ←→/Tab Switch  Enter Select  Esc Cancel", tui.Screen);
+    tui.Press(ConsoleKey.Tab);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(_ => chosen == 1);
+
+    // A text that scrolls: every key that scrolls it.
+    await tui.Invoke(() => tui.Context.Show(new ViewerDialog(
+        "README", string.Join('\n', Enumerable.Range(1, 80).Select(i => $"line {i}.")))));
+    await tui.WaitFor("line 1.");
+    Assert.Contains(" ↑↓ Scroll  PgUp/PgDn Page  Home/End Ends  Esc Close", tui.Screen);
+    tui.Press(ConsoleKey.End);
+    await tui.WaitFor("line 80.");
+    tui.Press(ConsoleKey.Home);
+    await tui.WaitFor("line 1.");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("line 1.");
+
+    // A text that fits: none of them.
+    await tui.Invoke(() => tui.Context.Show(new ViewerDialog("README", "One line.")));
+    await tui.WaitFor("One line.");
+    Assert.Contains(" Esc Close", tui.Screen);
+    Assert.DoesNotContain("Scroll", tui.Screen);
   }
 
   [Fact]
@@ -520,7 +684,7 @@ public sealed class ShellTests {
     // What is not a directory is refused.
     string? error = null;
     Assert.False(await tui.Invoke(() => tui.Context.AddWorkspace("missing", out error)));
-    Assert.Equal("Not a directory: " + Path.Join(tui.Root, "missing"), error);
+    Assert.Equal("Not a folder: " + Path.Join(tui.Root, "missing"), error);
 
     // A relative path is of the selected workspace.
     bool switched = false;
@@ -545,6 +709,42 @@ public sealed class ShellTests {
     await tui.WaitFor(screen => screen.Split((char)10)[0].EndsWith("· " + tui.Root));
     await tui.Settle();
     Assert.False(stale);
+  }
+
+  [Fact]
+  public async Task Background_ForAnyWorkspace_CallsBack_AlsoAfterAnotherWorkspaceWasSelected() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    string other = Path.Join(tui.Root, "other");
+    tui.Fs.AddDirectory(other);
+    TaskCompletionSource<int> read = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource<int> failing = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    int? result = null;
+    string? failure = null;
+    bool onInterfaceThread = false;
+    int interfaceThread = await tui.Invoke(() => Environment.CurrentManagedThreadId);
+
+    // Work that is of no workspace, such as reading the workspace list or the catalogue.
+    await tui.Invoke(() => {
+      tui.Context.Background(
+          () => read.Task,
+          value => {
+            result = value;
+            onInterfaceThread = Environment.CurrentManagedThreadId == interfaceThread;
+          },
+          anyWorkspace: true);
+      tui.Context.Background(
+          () => failing.Task, _ => {
+          },
+          exception => failure = exception.Message, anyWorkspace: true);
+    });
+    Assert.True(await tui.Invoke(() => tui.Context.AddWorkspace(other, out _)));
+    await tui.WaitFor("lip 1.2.3 · " + other);
+    read.SetResult(7);
+    failing.SetException(new InvalidOperationException("no list"));
+
+    await tui.WaitFor(_ => result == 7 && failure == "no list");
+    Assert.True(onInterfaceThread);
   }
 
   [Theory]

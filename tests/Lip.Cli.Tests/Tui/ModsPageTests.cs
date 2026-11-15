@@ -119,12 +119,12 @@ public sealed class ModsPageTests {
     using TuiHarness tui = Start(state: null, language, width, height);
 
     await tui.GoTo(PageId.Mods);
-    await tui.WaitFor(ModsText.Empty);
+    await tui.WaitFor(CommonText.NoMods);
     tui.Snapshot("mods-empty");
 
     // Without a game, the first row leads to a new server; the list offers nothing to update.
     string screen = tui.Screen;
-    int newServer = screen.IndexOf(ModsText.NewServer, StringComparison.Ordinal);
+    int newServer = screen.IndexOf(CommonText.NewServer, StringComparison.Ordinal);
     int install = screen.IndexOf(ModsText.InstallFromSource, StringComparison.Ordinal);
     Assert.True(newServer >= 0 && newServer < install, screen);
     Assert.DoesNotContain(ModsText.UpdateAll, screen);
@@ -141,17 +141,17 @@ public sealed class ModsPageTests {
   public async Task Empty_NewServerAndGetMods_LeadToTheirPages() {
     using TuiHarness tui = Start(state: null);
     await tui.GoTo(PageId.Mods);
-    await tui.WaitFor(ModsText.Empty);
+    await tui.WaitFor(CommonText.NoMods);
 
     tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(_ => tui.Context.CurrentPage == PageId.GetMods, "the Get mods page");
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.GetMods, "the Get mods page");
 
     await tui.GoTo(PageId.Mods);
-    await tui.WaitFor(ModsText.Empty);
+    await tui.WaitFor(CommonText.NoMods);
     tui.Press(ConsoleKey.UpArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(_ => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
   }
 
   [Fact]
@@ -161,10 +161,10 @@ public sealed class ModsPageTests {
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(Game);
 
-    Assert.DoesNotContain(ModsText.NewServer, tui.Screen);
+    Assert.DoesNotContain(CommonText.NewServer, tui.Screen);
     Assert.DoesNotContain(ModsText.UpdateAll, tui.Screen);
     Assert.Contains(ModsText.InstallFromSourceDetail, tui.Screen);
-    Assert.DoesNotContain(ModsText.Empty, tui.Screen);
+    Assert.DoesNotContain(CommonText.NoMods, tui.Screen);
   }
 
   [Theory]
@@ -196,6 +196,7 @@ public sealed class ModsPageTests {
         $"{CommonText.HintMove.Key} {CommonText.HintMove.Text}  "
             + $"{CommonText.HintCheck.Key} {CommonText.HintCheck.Text}  "
             + $"{CommonText.HintActions.Key} {CommonText.HintActions.Text}  "
+            + $"{CommonText.HintNext.Key} {CommonText.HintNext.Text}  "
             + $"{CommonText.HintBack.Key} {CommonText.HintBack.Text}",
         screen);
 
@@ -218,6 +219,28 @@ public sealed class ModsPageTests {
     // Tab goes back to the list.
     tui.Press(ConsoleKey.Tab);
     await tui.WaitFor(ModsText.ExplicitDetail);
+  }
+
+  [Fact]
+  public async Task Tab_GoesRoundTheActionsTheListAndTheSidebar() {
+    using TuiHarness tui = Start(Server);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+    await tui.WaitFor("Enter Actions  Tab Next  Esc Back");
+
+    // The list is the last area: Tab goes on to the sidebar, and from there to the actions.
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor(" ↑↓ Move  Enter Select  Tab Next  Esc Back");
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor("Enter Actions  Tab Next  Esc Back");
+
+    // Shift+Tab goes the other way, and from the sidebar to the list.
+    tui.Press(ConsoleKey.Tab, 2, ConsoleModifiers.Shift);
+    await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
+    tui.Press(ConsoleKey.Tab, modifiers: ConsoleModifiers.Shift);
+    await tui.WaitFor("Enter Actions  Tab Next  Esc Back");
   }
 
   [Fact]
@@ -302,7 +325,7 @@ public sealed class ModsPageTests {
     Assert.DoesNotContain(ModsText.Uninstall, tui.Screen);
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor(_ => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
   }
 
   [Theory]
@@ -493,7 +516,7 @@ public sealed class ModsPageTests {
     Assert.DoesNotContain(Alpha, tui.Screen);
     Assert.DoesNotContain("[x]", tui.Screen);
     Assert.Contains(ModsText.Installed(1), tui.Screen);
-    Assert.Contains(ModsText.NewServer, tui.Screen);
+    Assert.Contains(CommonText.NewServer, tui.Screen);
   }
 
   [Fact]
@@ -526,7 +549,7 @@ public sealed class ModsPageTests {
     await tui.WaitUntilGone(CommonText.Loading);
 
     Assert.Contains(ModsText.InstallFromSource, tui.Screen);
-    Assert.DoesNotContain(ModsText.Empty, tui.Screen);
-    Assert.DoesNotContain(ModsText.NewServer, tui.Screen);
+    Assert.DoesNotContain(CommonText.NoMods, tui.Screen);
+    Assert.DoesNotContain(CommonText.NewServer, tui.Screen);
   }
 }

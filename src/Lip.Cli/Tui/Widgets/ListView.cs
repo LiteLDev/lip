@@ -62,6 +62,11 @@ public sealed class ListView<T>(Func<T, StyledLine> render) where T : notnull {
   public IReadOnlyList<Hint> Hints =>
       MultiSelect ? [CommonText.HintMove, CommonText.HintCheck] : [CommonText.HintMove];
 
+  /// The keys that page through the list, while it has more rows than it shows: for the end
+  /// of the hints of the owner, where the bottom bar leaves hints out first.
+  public IReadOnlyList<Hint> PageHints =>
+      _items.Count > _rows ? [CommonText.HintPage, CommonText.HintEnds] : [];
+
   /// Selects the first row that match holds for; false when there is none.
   public bool Select(Func<T, bool> match) {
     for (int i = 0; i < _items.Count; i++) {

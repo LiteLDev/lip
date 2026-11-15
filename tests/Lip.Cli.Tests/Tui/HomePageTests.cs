@@ -334,7 +334,7 @@ public sealed class HomePageTests {
     // selected, so that an Enter meant for something else answers "later".
     Assert.Contains("503", tui.Screen);
     Assert.Contains(HomeText.GithubProxy, tui.Screen);
-    Assert.Contains(HomeText.GithubDirect, tui.Screen);
+    Assert.Contains(CommonText.ConnectDirectly, tui.Screen);
     Assert.Contains(CommonText.Later, tui.Screen);
     Assert.Contains(HomeText.GithubLaterDetail, tui.Screen);
     Assert.Null(await tui.Config.Get(ConfigService.GithubProxyKey));

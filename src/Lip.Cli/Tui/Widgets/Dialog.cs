@@ -63,7 +63,7 @@ public sealed class ConfirmDialog : Dialog {
   }
 
   public override IReadOnlyList<Hint> Hints => [
-    .. _buttons.Length > 1 ? [CommonText.HintSwitch] : (Hint[])[],
+    .. _buttons.Length > 1 ? [CommonText.HintSwitchButtons] : (Hint[])[],
     CommonText.HintSelect,
     .. _viewer.Hints,
     _buttons.Length > 1 ? CommonText.HintCancel : CommonText.HintClose,
@@ -115,8 +115,9 @@ public sealed class ConfirmDialog : Dialog {
 /// one example.
 public sealed record PromptField(string Label, string Value = "", string Placeholder = "");
 
-/// Asks for the values of text fields. Enter confirms, Esc cancels; with several fields, ↑, ↓
-/// and Tab go from field to field.
+/// Asks for the values of text fields. Enter confirms, Esc cancels; with several fields, ↑, ↓,
+/// Tab and Shift+Tab go from field to field. A label that is longer than the dialog is wide,
+/// such as a question of a command, is wrapped.
 public sealed class PromptDialog : Dialog {
   private readonly string _title;
   private readonly Action<string[]> _submit;
@@ -145,14 +146,17 @@ public sealed class PromptDialog : Dialog {
 
   public override IReadOnlyList<Hint> Hints =>
       _rows.Length > 1
-          ? [CommonText.HintMove, CommonText.HintConfirm, CommonText.HintCancel]
+          ? [CommonText.HintMoveFields, CommonText.HintConfirm, CommonText.HintCancel]
           : [CommonText.HintConfirm, CommonText.HintCancel];
 
   public override void Draw(ScreenBuffer screen) {
     int width = Ui.DialogWidth(screen, 76);
     List<string> error = _error is null ? [] : TextWidth.Wrap(_error, width - 4);
+    // A label that is longer than the dialog is wide, such as a question of a command, goes
+    // on in the rows below.
     Rect inner = Ui.DialogFrame(
-        screen, _title, width, _form.Height + 2 + (error.Count > 0 ? error.Count + 1 : 0));
+        screen, _title, width,
+        _form.HeightFor(width - 4) + 2 + (error.Count > 0 ? error.Count + 1 : 0));
     _form.Draw(screen, inner.Shrink(bottom: error.Count > 0 ? error.Count + 1 : 0), true);
     for (int i = 0; i < error.Count; i++) {
       screen.Write(inner.X, inner.Bottom - error.Count + i, error[i], Theme.Bad, inner.Right);
@@ -221,7 +225,7 @@ public sealed class ChoiceDialog : Dialog {
   }
 
   public override IReadOnlyList<Hint> Hints =>
-      [CommonText.HintMove, CommonText.HintSelect, CommonText.HintCancel];
+      [CommonText.HintMove, CommonText.HintSelect, .. _list.PageHints, CommonText.HintCancel];
 
   public override void Draw(ScreenBuffer screen) {
     int width = Ui.DialogWidth(screen, 76);
@@ -351,8 +355,7 @@ public sealed class ViewerDialog : Dialog {
     _viewer.SetText(text);
   }
 
-  public override IReadOnlyList<Hint> Hints =>
-      [CommonText.HintScroll, CommonText.HintPage, CommonText.HintClose];
+  public override IReadOnlyList<Hint> Hints => [.. _viewer.Hints, CommonText.HintClose];
 
   public override void Draw(ScreenBuffer screen) {
     Rect inner = Ui.DialogFrame(screen, _title, screen.Width - 4, screen.Height - 2);

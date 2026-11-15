@@ -51,9 +51,13 @@ public sealed class ModsPage : Page {
 
   public override IReadOnlyList<Hint> Hints =>
       _focus.Index == 1
-          ? _list.HasCurrent && CanCheck(_list.Current)
-              ? [CommonText.HintMove, CommonText.HintCheck, CommonText.HintActions]
-              : [CommonText.HintMove, CommonText.HintActions]
+          ? [
+            CommonText.HintMove,
+            .. _list.HasCurrent && CanCheck(_list.Current) ? [CommonText.HintCheck] : (Hint[])[],
+            CommonText.HintActions,
+            CommonText.HintNext,
+            .. _list.PageHints,
+          ]
           : _focus.Count > 1
               ? [CommonText.HintMove, CommonText.HintSelect, CommonText.HintNext]
               : [CommonText.HintMove, CommonText.HintSelect];
@@ -78,6 +82,10 @@ public sealed class ModsPage : Page {
       PromptInstall();
     }
   }
+
+  /// Tab from the sidebar goes to the action rows, and Shift+Tab to the list when it has rows.
+  public override void OnTabIn(bool backward) =>
+      _focus.Index = backward ? _focus.Count - 1 : 0;
 
   public override void Draw(ScreenBuffer screen, Rect area, bool focused) {
     if (area.Width < 1 || area.Height < 1) {
@@ -260,10 +268,10 @@ public sealed class ModsPage : Page {
 
   private static string Label(ModAction action) =>
       action switch {
-        ModAction.NewServer => ModsText.NewServer,
+        ModAction.NewServer => CommonText.NewServer,
         ModAction.InstallFromSource => ModsText.InstallFromSource,
         ModAction.UpdateAll => ModsText.UpdateAll,
-        _ => ModsText.GetMods,
+        _ => CommonText.GetMods,
       };
 
   private static string Detail(ModAction action) =>
@@ -308,7 +316,7 @@ public sealed class ModsPage : Page {
     }
 
     if (_list.Items.Count == 0) {
-      screen.WriteFit(rect.X, rect.Y, rect.Width, ModsText.Empty, Theme.Muted);
+      screen.WriteFit(rect.X, rect.Y, rect.Width, CommonText.NoMods, Theme.Muted);
       return;
     }
 
