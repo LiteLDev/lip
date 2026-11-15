@@ -347,6 +347,7 @@ Dialogs (`Context.Show(new …)`); each takes every key until it closes:
 | `ChoiceDialog(title, items, chosen, cancel?, selected?)` | Choose one of a list; `ChoiceItem.Detail` is the one-sentence explanation in the details area. |
 | `Menu(title, items)` | The action menu of a row (`Context.ShowMenu`). An item with `Enabled: false` is shown muted and skipped. |
 | `ViewerDialog(title, text or lines)` | A large scrolling text: a README, a JSON text. |
+| `PathPicker.Folder` / `.OpenFile` / `.SaveFile` | A path, from a small file browser: see "Asking for a path". **Never ask for a path with a `PromptDialog`.** |
 | `ProgressDialog` | Shown by `RunOperation`; you do not create it. |
 
 To write your own dialog, derive from `Dialog`: `Hints`, `Draw(screen)` (use
@@ -379,6 +380,79 @@ public override bool OnKey(ConsoleKeyInfo key) {
 
 // Tab from the sidebar starts at the actions, Shift+Tab at the list.
 public override void OnTabIn(bool backward) => _focus.Index = backward ? 1 : 0;
+```
+
+### Asking for a path
+
+Wherever the user gives a path, show a `PathPicker` (`Widgets/PathPicker.cs`, its text in
+`PathPickerText.cs`): a path bar, the list of the folder shown, and buttons. Typing a path stays
+possible, in the bar, but is never the only way.
+
+| Factory | Chooses | Buttons |
+|---|---|---|
+| `PathPicker.Folder(title, start, chosen, cancel?, validate?)` | A folder that exists. | `[ Select this folder ] [ New folder… ] [ Cancel ]`; New folder… asks for a name, creates the folder and shows it. |
+| `PathPicker.Folder(…, mayNotExist: true)` | A folder that exists, or one that lip creates later: nothing is created. | The same; New folder… chooses the folder of that name in the one shown, and a path typed in the bar that does not exist is chosen as it is, unless a name in it is none or a file is in its way. |
+| `PathPicker.OpenFile(title, start, extensions, chosen, cancel?, validate?)` | A file that exists and ends with one of `extensions` (`[".zip"]`, any case; `[]` for every file): Enter on it. | `[ Cancel ]` |
+| `PathPicker.OpenFile(…, orFolder: true)` | Such a file, or the folder shown. | `[ Select this folder ] [ Cancel ]` |
+| `PathPicker.SaveFile(title, start, fileName, extension, chosen, cancel?, validate?)` | The folder shown and the name typed in the field below the list, which starts with `fileName`; `extension` (`".zip"`, `""` for none) is added to a name without it. The file may exist: ask before you overwrite it. | `[ Save ] [ New folder… ] [ Cancel ]` |
+
+- `start` is the folder shown first, usually `Context.Workspace`. When it does not exist, the
+  nearest folder above it that does is shown, and the roots when there is none.
+- `chosen(path)` gets a full path in canonical form (`WorkspaceList.Normalize`: no separator at
+  its end unless it is a root), after the dialog has closed. `cancel()` is called when the user
+  gives up (Esc in the list, the file name or the buttons, or `[ Cancel ]`).
+- `validate(path)` returns one line, in the language of the interface, that says why the path
+  cannot be taken, or null. The dialog shows it and stays open. It runs on the thread of the
+  interface: decide from the path alone, and check the file system after `chosen`, in the
+  background.
+- The list has `..` first, then the folders (with a separator after the name), then the files.
+  Entries whose name starts with a dot (`.lip`) and hidden or system ones are left out; a path
+  to one can still be typed. At most `PathPicker.MaxEntries` folders and as many files of a
+  folder are listed, and a line says so when there are more.
+- Keys: ↑ ↓ PgUp PgDn Home End move; Enter or → opens a folder; Enter on `..` or ← goes up, from
+  a root to the roots (the drives on Windows, `/` elsewhere), with the folder just left
+  selected. Tab and Shift+Tab go round the bar, the list, the file name and the buttons, and
+  so do ↑ and ↓ at the ends of the list. In the bar, Enter goes to the path typed (absolute, or
+  relative to the folder shown; quotes around it are dropped) and Esc goes back to the list.
+- The file system is read in the background through `Context.FileSystem`; while it is, a line
+  says `Reading…` and the list takes no key. A folder that cannot be read says so in one line
+  and is left with `..`.
+
+```csharp
+// New server: the folder may not exist yet, lip setup creates it.
+Context.Show(PathPicker.Folder(
+    WorkspacesText.NewServerFolder, Context.Workspace, folder => AskGame(folder),
+    mayNotExist: true));
+
+// Add an existing folder to the workspace list.
+Context.Show(PathPicker.Folder(WorkspacesText.AddFolder, Context.Workspace, folder => {
+  if (!Context.AddWorkspace(folder, out string? error)) {
+    Context.Message(WorkspacesText.AddFolder, error!, Theme.Bad);
+  }
+}));
+
+// Tools, pack: the folder of the package, then the file to write.
+Context.Show(PathPicker.Folder(ToolsText.PackFolder, Context.Workspace, folder =>
+    Context.Show(PathPicker.SaveFile(
+        ToolsText.PackOutput, folder, "package.zip", ".zip", output => Pack(folder, output)))));
+
+// Mods, install from a source: a local .zip, or the folder of a package.
+Context.Show(PathPicker.OpenFile(
+    ModsText.InstallLocal, Context.Workspace, [".zip"], path => Install(path), orFolder: true));
+
+// Tools, view a package from a local path.
+Context.Show(PathPicker.OpenFile(
+    ToolsText.ViewLocal, Context.Workspace, [".zip"], path => View(path), orFolder: true));
+```
+
+In a test, wait for the folder before pressing keys: the list takes none while it is read.
+
+```csharp
+await tui.WaitFor($"[ {CommonText.Cancel} ]");        // the picker is drawn
+await tui.WaitUntilGone(PathPickerText.Reading);      // and has read its first folder
+tui.Press(ConsoleKey.DownArrow);
+tui.Press(ConsoleKey.Enter);                          // into the first folder
+await tui.WaitFor($"{PathPickerText.Folder}  {path}"); // the path bar; then its entries
 ```
 
 ## Text and languages
