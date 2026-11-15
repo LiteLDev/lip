@@ -151,6 +151,8 @@ export default defineDocsConfig({
   favicon: '/logo.webp',
   project: 'lip',
   contentDir: '.',
+  // How the screenshots of the interface are made: for writers, not a page of the site.
+  exclude: ['SCREENSHOTS.md'],
   repo,
   editLink: `${repo}/edit/main/docs/:path`,
   hostname: 'https://levimc.org',

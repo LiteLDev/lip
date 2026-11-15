@@ -185,6 +185,10 @@ public sealed partial class App {
   /// What the screen shows, as plain text.
   public string ScreenText => _screenText;
 
+  /// The rows of the frame drawn last, each as text with the escape sequences of its styles
+  /// (ScreenBuffer.RowAnsi). For the thread of the interface.
+  public IReadOnlyList<string> ScreenAnsi => [.. _shown];
+
   /// How many keys the interface has handled, and how many times it has drawn the screen: for
   /// tests, which wait for the keys they pressed to show.
   public long KeysHandled => Interlocked.Read(ref _keysHandled);

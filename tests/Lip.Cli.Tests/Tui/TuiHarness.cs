@@ -28,6 +28,9 @@ public sealed class TuiHarnessOptions {
 
   public int Height { get; init; } = 36;
 
+  /// The version of lip that the interface shows.
+  public string Version { get; init; } = "1.2.3";
+
   /// The file system of the workspaces and of the configuration: an empty one when not given.
   /// Fill it before the interface starts for what the interface reads when it starts.
   public MockFileSystem? FileSystem { get; init; }
@@ -122,7 +125,7 @@ public sealed class TuiHarness : IDisposable {
       },
       Catalog = new ModCatalogClient(options.CatalogRequest ?? ((url, _) => Task.FromResult(
           options.Catalog?.Invoke(url) ?? "{\"mods\": []}"))),
-      Version = "1.2.3",
+      Version = options.Version,
       WorkingDirectory = Root,
       DescribeFailure = options.DescribeFailure ?? ((exception, _, cancelled, _) => new Failure(
           exception.Message, ["a hint"], Path.Join(".lip", "logs", "report.log"), null, "",

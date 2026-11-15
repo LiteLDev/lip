@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="688" viewBox="0 0 944 688" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="610" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="609" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="31" y="148" width="117" height="20" fill="#4a5364"/>
+<rect x="175" y="168" width="27" height="20" fill="#4a5364"/>
+<rect x="220" y="168" width="504" height="20" fill="#2563c9"/>
+<rect x="742" y="168" width="162" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H153.13M160.88 78H175M265 78H918.13M175 158H184M742 158H904M175 398H184M742 398H904M220 518H724M25.88 578H153.13M160.88 578H918.13M26.5 77.38V578.63M152.5 77.38V578.63M161.5 77.38V578.63M917.5 77.38V578.63"/>
+<path stroke="#56c8d8" d="M205.88 98H220M310 98H738.13M205.88 558H738.13M206.5 97.38V558.63M737.5 97.38V558.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="193 211 229 247" y="82.5" text-anchor="middle" font-weight="700">取得模組</text>
+<text x="49 67" y="102.5" text-anchor="middle">首頁</text>
+<text x="238 256" y="102.5" text-anchor="middle" fill="#56c8d8" font-weight="700">篩選</text>
+<text x="274" y="102.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">(1)</text>
+<text x="49 67 85" y="122.5" text-anchor="middle">伺服器</text>
+<text x="229 247 265 283" y="122.5" text-anchor="middle">清除篩選</text>
+<text x="49 67" y="142.5" text-anchor="middle">模組</text>
+<text x="224.5" y="142.5" text-anchor="middle" fill="#56c8d8" font-weight="700">▸</text>
+<text x="247 265 283 301" y="142.5" text-anchor="middle" font-weight="700">遊戲版本</text>
+<text x="706" y="142.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="49 67 85 103" y="162.5" text-anchor="middle" fill="#ffffff">取得模組</text>
+<text x="193" y="162.5" textLength="9" lengthAdjust="spacingAndGlyphs" font-weight="700">3</text>
+<text x="224.5" y="162.5" text-anchor="middle" fill="#56c8d8" font-weight="700">▾</text>
+<text x="247 265" y="162.5" text-anchor="middle" font-weight="700">標籤</text>
+<text x="670 688" y="162.5" text-anchor="middle" fill="#9ad17b">已選</text>
+<text x="706" y="162.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">1</text>
+<text x="49 67 85 103" y="182.5" text-anchor="middle">遊戲設定</text>
+<text x="193" y="182.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">G</text>
+<text x="238" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[+]</text>
+<text x="283 301 319" y="182.5" text-anchor="middle" fill="#ffffff">函式庫</text>
+<text x="337" y="182.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#ffffff">/ API</text>
+<text x="706" y="182.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">3</text>
+<text x="746.5" y="182.5" text-anchor="middle" fill="#ffffff">★</text>
+<text x="760" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">231</text>
+<text x="805" y="182.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">2026-10-27</text>
+<text x="49 67 85 103" y="202.5" text-anchor="middle">模組設定</text>
+<text x="193" y="202.5" textLength="9" lengthAdjust="spacingAndGlyphs">M</text>
+<text x="238" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs">[ ]</text>
+<text x="283 301 319 337 355" y="202.5" text-anchor="middle">伺服器管理</text>
+<text x="706" y="202.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="755.5" y="202.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="769" y="202.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">97</text>
+<text x="805" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-11</text>
+<text x="49 67 85" y="222.5" text-anchor="middle">工作區</text>
+<text x="193" y="222.5" textLength="9" lengthAdjust="spacingAndGlyphs">L</text>
+<text x="238" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs">[ ]</text>
+<text x="283 301" y="222.5" text-anchor="middle">經濟</text>
+<text x="706" y="222.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="755.5" y="222.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="769" y="222.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">61</text>
+<text x="805" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-02</text>
+<text x="49 67" y="242.5" text-anchor="middle">工具</text>
+<text x="238" y="242.5" textLength="27" lengthAdjust="spacingAndGlyphs">[ ]</text>
+<text x="283 301 319" y="242.5" text-anchor="middle">最佳化</text>
+<text x="706" y="242.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="49 67" y="262.5" text-anchor="middle">設定</text>
+<text x="238" y="262.5" textLength="126" lengthAdjust="spacingAndGlyphs">[ ] anti-cheat</text>
+<text x="706" y="262.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="238" y="282.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ ] engine</text>
+<text x="706" y="282.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="238" y="302.5" textLength="126" lengthAdjust="spacingAndGlyphs">[ ] protection</text>
+<text x="706" y="302.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="238" y="322.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ ] script</text>
+<text x="706" y="322.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="238" y="342.5" textLength="81" lengthAdjust="spacingAndGlyphs">[ ] world</text>
+<text x="706" y="342.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">1</text>
+<text x="224.5" y="362.5" text-anchor="middle" fill="#56c8d8" font-weight="700">▸</text>
+<text x="247 265 283 301" y="362.5" text-anchor="middle" font-weight="700">授權條款</text>
+<text x="706" y="362.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">2</text>
+<text x="224.5" y="382.5" text-anchor="middle" fill="#56c8d8" font-weight="700">▸</text>
+<text x="247 265 283" y="382.5" text-anchor="middle" font-weight="700">相依於</text>
+<text x="706" y="382.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">3</text>
+<text x="193" y="402.5" textLength="9" lengthAdjust="spacingAndGlyphs" font-weight="700">G</text>
+<text x="175" y="422.5" textLength="27" lengthAdjust="spacingAndGlyphs">A g</text>
+<text x="184" y="442.5" text-anchor="middle" fill="#8b95a7">作</text>
+<text x="184" y="462.5" text-anchor="middle" fill="#8b95a7">下</text>
+<text x="184" y="482.5" text-anchor="middle" fill="#8b95a7">星</text>
+<text x="175" y="502.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
+<text x="184" y="522.5" text-anchor="middle" fill="#8b95a7">最</text>
+<text x="184" y="542.5" text-anchor="middle" fill="#8b95a7">平</text>
+<text x="229 247" y="542.5" text-anchor="middle" fill="#9ad17b">包含</text>
+<text x="652" y="542.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">3</text>
+<text x="679 697 715" y="542.5" text-anchor="middle" fill="#8b95a7">個模組</text>
+<text x="184" y="562.5" text-anchor="middle" fill="#8b95a7">遊</text>
+<text x="899.5" y="562.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="35.5" y="602.5" text-anchor="middle" font-weight="700">↑</text>
+<text x="44.5" y="602.5" text-anchor="middle" font-weight="700">↓</text>
+<text x="67 85" y="602.5" text-anchor="middle" fill="#8b95a7">移動</text>
+<text x="112" y="602.5" textLength="99" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter/Space</text>
+<text x="229 247" y="602.5" text-anchor="middle" fill="#8b95a7">切換</text>
+<text x="274" y="602.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="319 337" y="602.5" text-anchor="middle" fill="#8b95a7">關閉</text>
+</g>
+<rect x="207" y="166" width="530" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<rect x="10.5" y="630.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<rect x="24.5" y="642.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="658.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Space</text>
+</svg>
