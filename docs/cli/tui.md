@@ -17,7 +17,7 @@ Switch tabs with `Tab` and `Shift+Tab`, or with the number of the tab. The botto
 | **1 Packages** | Lists the installed packages; installs, updates and uninstalls them. | [`lip list`](./commands/list.md), [`lip install`](./commands/install.md), [`lip update`](./commands/update.md), [`lip uninstall`](./commands/uninstall.md) |
 | **2 Browse** | Searches, filters and sorts the mods of levimc.org, shows their details, versions and README, and installs them. | [`lip install`](./commands/install.md) |
 | **3 Server** | Runs the server of the workspace in a window, shows what it writes, and sends it the lines you type. | [`lip run`](./commands/run.md) |
-| **4 Settings** | Shows and changes the configuration; cleans the cache. | [`lip config`](./commands/config.md), [`lip cache clean`](./commands/cache_clean.md) |
+| **4 Settings** | Shows and changes the user configuration and the configuration of the workspace; cleans the cache. | [`lip config`](./commands/config.md), [`lip cache clean`](./commands/cache_clean.md) |
 | **5 Develop** | Creates a `lip.toml`, migrates a `tooth.json`, packs a ZIP archive, views a package. | [`lip pkg init`](./commands/pkg_init.md), [`lip pkg migrate`](./commands/pkg_migrate.md), [`lip pkg pack`](./commands/pkg_pack.md), [`lip pkg view`](./commands/pkg_view.md) |
 
 Quit with `q` or `Ctrl+Q`.
@@ -70,7 +70,7 @@ The same keys do the same everywhere:
 | `Esc` | Goes back: closes a dialog, leaves a pane, clears a search. |
 | `Del` | Uninstalls the selected package, or resets the selected setting. |
 
-In the Packages tab, `Enter` on a package lists what can be done with it. In the Settings tab, `→` moves to the cache, where `Enter` cleans it. In the Server tab, `↑` and `↓` scroll while the server does not run, and `Esc` erases the line being typed while it does.
+In the Packages tab, `Enter` on a package lists what can be done with it. In the Settings tab, `Enter` on `github_proxy` with an empty value makes lip connect to GitHub directly, while `Del` removes the key; `→` moves to the cache, where `Enter` cleans it. In the Server tab, `↑` and `↓` scroll while the server does not run, and `Esc` erases the line being typed while it does.
 
 Every list goes around: `↑` on its first row moves to the last, and `↓` on the last to the first.
 

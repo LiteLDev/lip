@@ -86,11 +86,14 @@ public sealed class LipClient {
       bool dryRun,
       Func<Stream>? hookOutput) {
     FileDownloader fileDownloader = new(userInteraction);
+    // An empty github_proxy, like an absent one, means GitHub is reached directly
+    // (protocol/config.toml.md, "User configuration").
     string? githubProxyValue = await configService.GetGithubProxy(dryRun);
-    Url? githubProxy = githubProxyValue is null ? null : Url.Parse(githubProxyValue);
+    Url? githubProxy = string.IsNullOrEmpty(githubProxyValue) ? null : Url.Parse(githubProxyValue);
+    string described = ConfigService.DescribeProxy(githubProxyValue);
     RunTrace.Write("config", githubProxy is null
-        ? "no github_proxy: GitHub is reached directly"
-        : $"GitHub is reached through github_proxy {ConfigService.DescribeProxy(githubProxyValue)}");
+        ? $"github_proxy {described}: GitHub is reached directly"
+        : $"GitHub is reached through github_proxy {described}");
     GitRemoteClient gitRemoteClient = new(githubProxy);
 
     CommandRunner commandRunner = new(hookOutput);
@@ -115,20 +118,24 @@ public sealed class LipClient {
     await _cacheService.Clean();
   }
 
-  public async Task ConfigDelete(string key) {
-    await _configService.Delete(key);
+  /// lip config delete (protocol/lip-config.md); workspace is --workspace.
+  public async Task ConfigDelete(string key, bool workspace = false) {
+    await _configService.Delete(key, workspace);
   }
 
-  public async Task<string> ConfigGet(string key) {
-    return await _configService.Get(key);
+  /// lip config get: the value of the key, or null when it has none.
+  public async Task<string?> ConfigGet(string key, bool workspace = false) {
+    return await _configService.Get(key, workspace);
   }
 
-  public async Task<IDictionary<string, string>> ConfigList() {
-    return await _configService.List();
+  /// lip config list: every key of the scope with its value, null when it has none.
+  public async Task<IDictionary<string, string?>> ConfigList(bool workspace = false) {
+    return await _configService.List(workspace);
   }
 
-  public async Task ConfigSet(string key, string value) {
-    await _configService.Set(key, value);
+  /// lip config set; the value may be empty.
+  public async Task ConfigSet(string key, string value, bool workspace = false) {
+    await _configService.Set(key, value, workspace);
   }
 
   /// Writes a lip.toml with one entry for the server on win-x64 (protocol/lip-pkg.md,

@@ -2,7 +2,8 @@ using Flurl;
 
 namespace Lip.Core.Git;
 
-/// The `github_proxy` configuration key (protocol/config.toml.md).
+/// The `github_proxy` configuration key (protocol/config.toml.md, "User configuration"): a URI
+/// prefix; an empty or absent one is no proxy, passed here as null.
 public static class GithubProxy {
   /// The URL of a github.com request sent through the proxy, or null if no proxy applies.
   public static Url? Rewrite(Url? proxy, Url url) {

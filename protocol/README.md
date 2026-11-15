@@ -24,7 +24,7 @@ File formats (section 5):
 | Page | Describes | Schema |
 |---|---|---|
 | [lip.toml(5)](lip.toml.md) | The package file. | [`lip.schema.toml`](lip.schema.toml) |
-| [config.toml(5)](config.toml.md) | The configuration file. | [`config.schema.toml`](config.schema.toml) |
+| [config.toml(5)](config.toml.md) | The configuration files: of the user, and of a workspace. | [`config.schema.toml`](config.schema.toml), [`workspace-config.schema.toml`](workspace-config.schema.toml) |
 | [state.json(5)](state.json.md) | The state file of a workspace. | [`state.schema.json`](state.schema.json) |
 | [journal(5)](journal.md) | The journal of a workspace, and recovery from it. | |
 

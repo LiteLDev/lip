@@ -17,7 +17,7 @@ lip
 | **1 Packages** | 列出已安装的包；安装、更新、卸载。 | [`lip list`](./commands/list.md)、[`lip install`](./commands/install.md)、[`lip update`](./commands/update.md)、[`lip uninstall`](./commands/uninstall.md) |
 | **2 Browse** | 搜索、筛选、排序 levimc.org 上的模组，查看详情、版本和 README，并安装。 | [`lip install`](./commands/install.md) |
 | **3 Server** | 在窗口里运行工作区的服务器，显示它的输出，并把你输入的行发给它。 | [`lip run`](./commands/run.md) |
-| **4 Settings** | 查看和修改配置；清理缓存。 | [`lip config`](./commands/config.md)、[`lip cache clean`](./commands/cache_clean.md) |
+| **4 Settings** | 查看和修改用户配置与工作区配置；清理缓存。 | [`lip config`](./commands/config.md)、[`lip cache clean`](./commands/cache_clean.md) |
 | **5 Develop** | 创建 `lip.toml`、迁移 `tooth.json`、打包 ZIP、查看包。 | [`lip pkg init`](./commands/pkg_init.md)、[`lip pkg migrate`](./commands/pkg_migrate.md)、[`lip pkg pack`](./commands/pkg_pack.md)、[`lip pkg view`](./commands/pkg_view.md) |
 
 按 `q` 或 `Ctrl+Q` 退出。
@@ -70,7 +70,7 @@ Browse 标签页在第一次打开时读取 levimc.org 的模组目录（`https:
 | `Esc` | 返回：关闭对话框、离开当前栏、清除搜索。 |
 | `Del` | 卸载选中的包，或重置选中的设置。 |
 
-在 Packages 标签页，对包按 `Enter` 会列出可以对它做的操作。在 Settings 标签页，`→` 移到缓存栏，在那里按 `Enter` 清理缓存。在 Server 标签页，服务器未运行时 `↑` 和 `↓` 滚动日志，运行时 `Esc` 清空正在输入的行。
+在 Packages 标签页，对包按 `Enter` 会列出可以对它做的操作。在 Settings 标签页，对 `github_proxy` 按 `Enter` 并留空，会让 lip 直接连接 GitHub，而 `Del` 会移除该键；`→` 移到缓存栏，在那里按 `Enter` 清理缓存。在 Server 标签页，服务器未运行时 `↑` 和 `↓` 滚动日志，运行时 `Esc` 清空正在输入的行。
 
 所有列表都是循环的：在第一行按 `↑` 跳到最后一行，在最后一行按 `↓` 跳到第一行。
 

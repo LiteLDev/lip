@@ -13,10 +13,14 @@ public class ConfigDeleteCommand(LipClient lipClient, IUserInteraction userInter
     [CommandArgument(0, "<KEY>")]
     [Description("The configuration key to delete")]
     public required string Key { get; init; }
+
+    [CommandOption("--workspace")]
+    [Description("Use the configuration of the workspace (.lip/config.toml) instead of the user's")]
+    public bool Workspace { get; init; }
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
-    await _lipClient.ConfigDelete(settings.Key);
+    await _lipClient.ConfigDelete(settings.Key, settings.Workspace);
     await _userInteraction.PrintSuccess($"Config key '{settings.Key}' deleted.");
     return 0;
   }

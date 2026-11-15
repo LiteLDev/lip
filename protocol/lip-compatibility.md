@@ -61,7 +61,7 @@ A workspace operation writes it as its state file ([lip-workspace(7), "Carrying 
 
 ### `liprc.json`
 
-When the config directory has no `config.toml` and has a `liprc.json` that is a JSON object whose `format_version`, when present, is 3, the configuration ([config.toml(5)](config.toml.md)) is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.toml`, then deletes `liprc.json`; a dry run ([lip(1), "Dry run"](lip.md#dry-run)) reads the configuration from `liprc.json` the same way, but writes no `config.toml` and keeps `liprc.json`.
+When the config directory has no `config.toml` and has a `liprc.json` that is a JSON object whose `format_version`, when present, is 3, the user configuration ([config.toml(5)](config.toml.md)) is read from it: `github_proxy` takes the value of its `github_proxy` when that is a string. Before `lip` reads the configuration, it writes this configuration atomically as `config.toml`, then deletes `liprc.json`; a dry run ([lip(1), "Dry run"](lip.md#dry-run)) reads the configuration from `liprc.json` the same way, but writes no `config.toml` and keeps `liprc.json`.
 
 ### `lip pkg migrate`
 

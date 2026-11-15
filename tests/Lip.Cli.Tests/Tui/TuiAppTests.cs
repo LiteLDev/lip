@@ -395,6 +395,49 @@ public sealed class TuiAppTests : IDisposable {
         _fs.File.ReadAllText(_fs.Path.Join(LipDirectories.Config, "config.toml")));
   }
 
+  /// An empty github_proxy is set, not deleted: lip then connects to GitHub directly; Del removes
+  /// it (protocol/config.toml.md, "User configuration").
+  [Fact]
+  public async Task Settings_EditToEmpty_SetsAnEmptyGithubProxyAndDelRemovesIt() {
+    string configPath = _fs.Path.Join(LipDirectories.Config, "config.toml");
+    TuiApp app = Start();
+    _terminal.Type("4");
+    await WaitFor(app, "(not set)");
+
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Set github_proxy");
+    _terminal.Press(ConsoleKey.Enter);
+
+    await WaitFor(app, "(empty: connect to GitHub directly)");
+    Assert.Equal("format = 4\ngithub_proxy = \"\"\n", _fs.File.ReadAllText(configPath));
+
+    _terminal.Press(ConsoleKey.Delete);
+    await WaitFor(app, "(not set)");
+    Assert.Equal("format = 4\n", _fs.File.ReadAllText(configPath));
+  }
+
+  /// The Settings tab shows and edits the workspace configuration, .lip/config.toml, too.
+  [Fact]
+  public async Task Settings_Workspace_RestartIsChosenAndWritten() {
+    TuiApp app = Start();
+    _terminal.Type("4");
+    await WaitFor(app, "Workspace ·");
+    Assert.Contains("never", app.ScreenText);
+
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+    await WaitFor(app, "Set restart");
+    _terminal.Press(ConsoleKey.DownArrow);
+    _terminal.Press(ConsoleKey.Enter);
+
+    await WaitFor(app, screen =>
+        screen.Contains("on-failure", StringComparison.Ordinal)
+            && !screen.Contains("Set restart", StringComparison.Ordinal));
+    Assert.Equal(
+        "format = 4\nrestart = \"on-failure\"\n",
+        _fs.File.ReadAllText(_fs.Path.Join(_root, ".lip", "config.toml")));
+  }
+
   [Fact]
   public async Task Develop_CreateLipToml_AsksForTheIdInTheInterface() {
     TuiApp app = Start();

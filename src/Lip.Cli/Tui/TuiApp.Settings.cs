@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
+using Lip.Core.Services;
 
 namespace Lip.Cli.Tui;
 
@@ -11,7 +12,7 @@ public sealed partial class TuiApp {
       _cacheFocused
           ? [("Enter", "clean the cache"), ("←", "configuration"), ("Tab", "next tab"), ("q", "quit")]
           : [
-            ("Enter", "edit"), ("Del", "reset to default"), ("→", "cache"),
+            ("Enter", "edit"), ("Del", "reset"), ("→", "cache"),
             ("c", "clean the cache"), ("Tab", "next tab"), ("q", "quit"),
           ];
 
@@ -35,19 +36,29 @@ public sealed partial class TuiApp {
     Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
   };
 
-  private List<KeyValuePair<string, string>> _config = [];
+  // The keys of the user configuration, then those of the workspace configuration
+  // (protocol/config.toml.md), with their values: null when a key has none.
+  private List<ConfigRow> _config = [];
   private string? _configError;
   private int _configSelected;
   // Whether the keys of the Settings tab go to its Cache pane.
   private bool _cacheFocused;
   private int _developSelected;
 
+  private sealed record ConfigRow(bool Workspace, string Key, string? Value);
+
   private void LoadConfig() {
     _ = Task.Run(async () => {
       try {
-        IDictionary<string, string> values = await _client.ConfigList();
+        IDictionary<string, string?> user = await _client.ConfigList();
+        IDictionary<string, string?> workspace = await _client.ConfigList(workspace: true);
         Post(() => {
-          _config = [.. values.OrderBy(v => v.Key, StringComparer.Ordinal)];
+          _config = [
+            .. user.OrderBy(v => v.Key, StringComparer.Ordinal)
+                .Select(v => new ConfigRow(false, v.Key, v.Value)),
+            .. workspace.OrderBy(v => v.Key, StringComparer.Ordinal)
+                .Select(v => new ConfigRow(true, v.Key, v.Value)),
+          ];
           _configError = null;
           _configSelected = Math.Clamp(_configSelected, 0, Math.Max(0, _config.Count - 1));
         });
@@ -57,6 +68,17 @@ public sealed partial class TuiApp {
       }
     });
   }
+
+  /// A value as the Settings tab shows it: a key without a value and an empty github_proxy, with
+  /// which lip connects to GitHub directly, are told apart.
+  private static (string Text, Style Style) DescribeValue(ConfigRow row) =>
+      row.Value switch {
+        null => ("(not set)", Theme.Muted),
+        "" when row.Key == ConfigService.GithubProxyKey =>
+            ("(empty: connect to GitHub directly)", Theme.Muted),
+        "" => ("(empty)", Theme.Muted),
+        _ => (row.Value, default),
+      };
 
   private void DrawSettings(Rect body) {
     int configWidth = Math.Max(30, body.Width * 3 / 5);
@@ -68,30 +90,42 @@ public sealed partial class TuiApp {
         "Cache", focused: _cacheFocused);
 
     int keyWidth = Math.Min(24, config.Width / 2);
-    _screen.Write(config.X, config.Y, "Key", Theme.Muted);
-    _screen.Write(config.X + keyWidth, config.Y, "Value", Theme.Muted);
-    for (int i = 0; i < _config.Count && config.Y + 1 + i < config.Bottom - 2; i++) {
-      int y = config.Y + 1 + i;
+    int y = config.Y;
+    for (int i = 0; i < _config.Count && y < config.Bottom; i++) {
+      if (i == 0 || _config[i].Workspace != _config[i - 1].Workspace) {
+        if (i > 0) {
+          y++;
+        }
+
+        string title = _config[i].Workspace
+            ? $"Workspace · {Path.Join(_workspace, ".lip", "config.toml")}"
+            : $"User · {Path.Join(LipDirectories.Config, "config.toml")}";
+        _screen.WriteFit(config.X, y++, config.Width, title, Theme.Muted);
+        if (y >= config.Bottom) {
+          break;
+        }
+      }
+
+      (string text, Style style) = DescribeValue(_config[i]);
       _screen.WriteFit(config.X, y, keyWidth - 1, _config[i].Key);
-      _screen.WriteFit(
-          config.X + keyWidth, y, config.Width - keyWidth,
-          _config[i].Value.Length == 0 ? "(not set)" : _config[i].Value,
-          _config[i].Value.Length == 0 ? Theme.Muted : default);
+      _screen.WriteFit(config.X + keyWidth, y, config.Width - keyWidth, text, style);
       if (i == _configSelected && !_cacheFocused) {
         _screen.Restyle(config.X - 1, y, config.Width + 2, Theme.Selected);
       }
+
+      y++;
     }
 
     if (_configError is { } error) {
-      int y = config.Y + 3;
+      y++;
       foreach (string line in TextWidth.Wrap(error, config.Width)) {
+        if (y >= config.Bottom) {
+          break;
+        }
+
         _screen.Write(config.X, y++, line, Theme.Bad, config.Right);
       }
     }
-
-    _screen.WriteFit(
-        config.X, config.Bottom - 1, config.Width,
-        Path.Join(LipDirectories.Config, "config.toml"), Theme.Muted);
 
     int row = cache.Y;
     foreach (string line in TextWidth.Wrap(
@@ -143,20 +177,38 @@ public sealed partial class TuiApp {
       return;
     }
 
-    (string name, string value) = _config[_configSelected];
+    (bool workspace, string name, string? value) = _config[_configSelected];
     switch (key.Key) {
       case ConsoleKey.Delete:
-        Start($"Reset {name}", _ => _client.ConfigDelete(name), _ => LoadConfig());
+        Start(
+            $"Reset {name}", _ => _client.ConfigDelete(name, workspace), _ => LoadConfig());
+        break;
+      case ConsoleKey.Enter or ConsoleKey.Spacebar when name == ConfigService.RestartKey:
+        string[] choices = [ConfigService.RestartNever, ConfigService.RestartOnFailure];
+        Push(new ListDialog(
+            this, $"Set {name}",
+            [
+              new StyledLine("never: the server is not restarted when it exits"),
+              new StyledLine("on-failure: the server is restarted when it fails"),
+            ],
+            choice => Start(
+                $"Set {name}",
+                _ => _client.ConfigSet(name, choices[choice], workspace),
+                _ => LoadConfig())));
         break;
       case ConsoleKey.Enter or ConsoleKey.Spacebar:
         Push(new PromptDialog(
             this, $"Set {name}",
-            [new PromptField($"The value of {name}; empty resets it to its default", value)],
+            [
+              new PromptField(
+                  name == ConfigService.GithubProxyKey
+                      ? "A URL prefix for GitHub; empty connects to GitHub directly"
+                      : $"The value of {name}",
+                  value ?? ""),
+            ],
             values => Start(
                 $"Set {name}",
-                _ => values[0].Length == 0
-                    ? _client.ConfigDelete(name)
-                    : _client.ConfigSet(name, values[0]),
+                _ => _client.ConfigSet(name, values[0], workspace),
                 _ => LoadConfig())));
         break;
     }

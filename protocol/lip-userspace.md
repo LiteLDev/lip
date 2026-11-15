@@ -10,7 +10,7 @@ lip-userspace - the per-user directories, and the cache
 
 | Directory | Windows | Other | Holds |
 |---|---|---|---|
-| **config directory** | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` | The configuration ([config.toml(5)](config.toml.md)). |
+| **config directory** | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` | The user configuration ([config.toml(5)](config.toml.md)). |
 | **cache directory** | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` | The cache. |
 
 On systems other than Windows, an `XDG_*` variable that is unset, empty or not an absolute path takes its [XDG] default.

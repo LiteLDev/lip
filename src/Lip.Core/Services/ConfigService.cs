@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Lip.Core.Infrastructure;
 using Lip.Core.Json;
 using Lip.Core.Mcmod;
@@ -8,11 +9,13 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Core.Services;
 
-/// Reads and writes the user configuration, &lt;Config&gt;/config.toml: a TOML file
-/// (protocol/README.md) with "format" 4 and a mapping of the configuration keys to their values
-/// (protocol/config.toml.md, config.schema.toml). The only configuration key is github_proxy; an
-/// absent key has its default value, none. A missing, unreadable or invalid config.toml means
-/// every key has its default.
+/// Reads and writes the configuration of the two scopes (protocol/config.toml.md): the user
+/// configuration, &lt;Config&gt;/config.toml (config.schema.toml), whose only key is github_proxy,
+/// without a default; and the workspace configuration, .lip/config.toml in the current directory
+/// (workspace-config.schema.toml), whose only key is restart, default "never". Each is a TOML file
+/// (protocol/README.md) with "format" 4 and a mapping of the keys of its scope to their values. A
+/// missing, unreadable or invalid file means every key of its scope is absent: it takes its
+/// default, or has no value.
 ///
 /// lip v0.x kept the configuration in &lt;Config&gt;/liprc.json. When config.toml is missing and
 /// liprc.json is a JSON object whose format_version, when present, is 3 (lip before February 2026
@@ -21,7 +24,13 @@ namespace Lip.Core.Services;
 /// way but writes no config.toml and keeps it. Any other liprc.json is kept, and every key has its
 /// default.
 public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteraction) {
-  private const string _githubProxyKey = "github_proxy";
+  public const string GithubProxyKey = "github_proxy";
+
+  public const string RestartKey = "restart";
+
+  public const string RestartNever = "never";
+
+  public const string RestartOnFailure = "on-failure";
 
   private const string _liprcFileName = "liprc.json";
 
@@ -31,91 +40,148 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
 
   private static readonly string _liprcPath = Path.Join(LipDirectories.Config, _liprcFileName);
 
+  private static readonly Key _githubProxy = new(
+      GithubProxyKey, null, value => value.Length == 0 || IsUri(value),
+      "a URL prefix like https://example.com/, or empty to reach GitHub directly",
+      "\"https://example.com/\"");
+
+  private static readonly Key _restart = new(
+      RestartKey, RestartNever, value => value is RestartNever or RestartOnFailure,
+      $"{RestartNever} or {RestartOnFailure}", $"\"{RestartOnFailure}\"");
+
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IUserInteraction _userInteraction = userInteraction;
 
-  public async Task Delete(string key) {
-    CheckKey(key);
-    await LoadGithubProxy();
-    RunTrace.Write("config", $"resetting {key} to its default");
-    await SaveConfig(null);
+  /// Removes the key from the file of its scope, so that it takes its default or has no value.
+  public async Task Delete(string key, bool workspace = false) {
+    Key configKey = CheckKey(key, workspace);
+    Dictionary<string, string> values = await Load(workspace);
+    RunTrace.Write("config", $"deleting {key}");
+    values.Remove(configKey.Name);
+    await Save(workspace, values);
   }
 
-  public async Task<string> Get(string key) {
-    CheckKey(key);
-    return await LoadGithubProxy() ?? "";
+  /// The value of the key, or null when it has no value.
+  public async Task<string?> Get(string key, bool workspace = false) {
+    Key configKey = CheckKey(key, workspace);
+    return ValueOf(configKey, await Load(workspace));
   }
 
-  /// The value of github_proxy, or null when it has its default. A dry run (protocol/lip.md,
-  /// "Dry run") reads a liprc.json without migrating it.
+  /// The value of github_proxy: a URI, "" (GitHub is reached directly), or null when it is not
+  /// configured. A dry run (protocol/lip.md, "Dry run") reads a liprc.json without migrating it.
   public async Task<string?> GetGithubProxy(bool dryRun = false) {
-    return await LoadGithubProxy(dryRun);
+    return ValueOf(_githubProxy, await Load(workspace: false, dryRun));
+  }
+
+  /// The value of restart in the workspace configuration of the current directory.
+  public async Task<string> GetRestart() {
+    return ValueOf(_restart, await Load(workspace: true))!;
   }
 
   /// A github_proxy value for the run trace: only its scheme and host, since its user info, path
   /// or query may carry a token.
   public static string DescribeProxy(string? githubProxy) =>
-      githubProxy is null
-          ? "(default: none)"
-          : Uri.TryCreate(githubProxy, UriKind.Absolute, out Uri? uri) && uri.Host != ""
-              ? $"{uri.Scheme}://{uri.Host}/..."
-              : "(a value that is not an absolute URL)";
+      githubProxy switch {
+        null => "(not configured)",
+        "" => "(empty: GitHub is reached directly)",
+        _ when Uri.TryCreate(githubProxy, UriKind.Absolute, out Uri? uri) && uri.Host != "" =>
+            $"{uri.Scheme}://{uri.Host}/...",
+        _ => "(a value that is not an absolute URL)",
+      };
 
-  public async Task<IDictionary<string, string>> List() {
-    return new Dictionary<string, string> { [_githubProxyKey] = await LoadGithubProxy() ?? "" };
+  /// Every key of the scope with its value, null when it has none.
+  public async Task<IDictionary<string, string?>> List(bool workspace = false) {
+    Dictionary<string, string> values = await Load(workspace);
+    return KeysOf(workspace).ToDictionary(key => key.Name, key => ValueOf(key, values));
   }
 
-  /// Fails, changing nothing, when the value is not valid for the key: config.schema.toml requires
-  /// github_proxy to be a URI, and a file with any other value would be invalid.
-  public async Task Set(string key, string value) {
-    CheckKey(key);
-    if (!IsUri(value)) {
+  /// Fails, changing nothing, when the value is not valid for the key: a file with it would be
+  /// invalid against the schema of the scope.
+  public async Task Set(string key, string value, bool workspace = false) {
+    Key configKey = CheckKey(key, workspace);
+    if (!configKey.IsValid(value)) {
       throw new ArgumentException(
-          $"The value is not a URI, so it cannot be the value of {_githubProxyKey}: set a URL"
-          + " prefix like https://example.com/, or run 'lip config delete"
-          + $" {_githubProxyKey}' to reach GitHub directly.");
+          $"'{value}' is not a valid value of {key}: set {configKey.Expected}"
+          + (configKey.Default is null
+              ? $", or run 'lip config delete {key}{Flag(workspace)}' to remove it."
+              : $", or run 'lip config delete {key}{Flag(workspace)}' to reset it to"
+                  + $" {configKey.Default}."));
     }
 
-    await LoadGithubProxy();
+    Dictionary<string, string> values = await Load(workspace);
     // The value is not traced: a proxy URL may carry a token.
     RunTrace.Write("config", $"setting {key}");
-    await SaveConfig(value);
+    values[configKey.Name] = value;
+    await Save(workspace, values);
   }
+
+  /// A configuration key: its default, or null when it has none; whether a string is one of its
+  /// values; and how to describe its values and give one in a TOML file.
+  private sealed record Key(
+      string Name, string? Default, Func<string, bool> IsValid, string Expected, string Example);
+
+  private static Key[] KeysOf(bool workspace) => workspace ? [_restart] : [_githubProxy];
+
+  private static string ScopeName(bool workspace) =>
+      workspace ? "the workspace configuration" : "the user configuration";
+
+  private static string Flag(bool workspace) => workspace ? " --workspace" : "";
+
+  private static string? ValueOf(Key key, Dictionary<string, string> values) =>
+      values.TryGetValue(key.Name, out string? value) ? value : key.Default;
 
   /// Whether a string is a URI (RFC 3986), as the format "uri" of config.schema.toml requires: a
   /// scheme, then ":" and the rest, of the characters a URI may hold. A Windows or Unix path is
   /// not one.
   private static bool IsUri(string value) =>
-      System.Text.RegularExpressions.Regex.IsMatch(
-          value, @"^[A-Za-z][A-Za-z0-9+.-]*:[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]*$")
+      Regex.IsMatch(value, @"^[A-Za-z][A-Za-z0-9+.-]*:[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]*$")
       && Uri.TryCreate(value, UriKind.Absolute, out _);
 
   // An unknown key is a mistake of the user, not of lip: ArgumentException, not
   // KeyNotFoundException, which the CLI reports as a bug.
-  private static void CheckKey(string key) {
-    if (key != _githubProxyKey) {
-      throw new ArgumentException(
-          $"'{key}' is not a configuration key. The only configuration key is "
-          + $"{_githubProxyKey}, a URL prefix through which lip reaches GitHub.");
+  private static Key CheckKey(string key, bool workspace) {
+    if (KeysOf(workspace).FirstOrDefault(k => k.Name == key) is { } configKey) {
+      return configKey;
     }
+
+    string keys = string.Join(", ", KeysOf(workspace).Select(k => k.Name));
+    string hint = KeysOf(!workspace).Any(k => k.Name == key)
+        ? workspace
+            ? $" {key} is a key of the user configuration: run the command without --workspace."
+            : $" {key} is a key of the workspace configuration: add --workspace."
+        : "";
+    throw new ArgumentException(
+        $"'{key}' is not a key of {ScopeName(workspace)}, whose only key is {keys}.{hint}");
   }
 
-  private async Task<string?> LoadGithubProxy(bool dryRun = false) {
-    if (!_fileSystem.File.Exists(_configPath)) {
-      RunTrace.Write("config", $"{_configPath} does not exist");
-      return await MigrateLiprc(dryRun);
+  private string PathOf(bool workspace) =>
+      workspace
+          ? _fileSystem.Path.GetFullPath(_fileSystem.Path.Join(".lip", "config.toml"))
+          : _configPath;
+
+  /// The keys that the file of the scope gives a value, with their values; none when the file is
+  /// missing, unreadable or invalid. A missing user configuration is read from liprc.json.
+  private async Task<Dictionary<string, string>> Load(bool workspace, bool dryRun = false) {
+    string path = PathOf(workspace);
+    if (!_fileSystem.File.Exists(path)) {
+      RunTrace.Write("config", $"{path} does not exist");
+      return workspace ? [] : await MigrateLiprc(dryRun);
     }
 
+    Key[] keys = KeysOf(workspace);
+    string example = string.Join(
+        " and ",
+        [$"'{PackageFormat.FormatKey} = {PackageFormat.Format}'",
+          .. keys.Select(k => $"'{k.Name} = {k.Example}'")]);
     try {
-      RunTrace.Write("config", $"reading {_configPath}");
+      RunTrace.Write("config", $"reading {path}");
       using JsonDocument document =
-          TomlJson.Parse(await _fileSystem.File.ReadAllBytesAsync(_configPath));
+          TomlJson.Parse(await _fileSystem.File.ReadAllBytesAsync(path));
       JsonElement root = document.RootElement;
       if (root.ValueKind != JsonValueKind.Object) {
         throw new InvalidDataException(
-            $"It is not a TOML table of configuration keys to their values, like "
-            + $"'{PackageFormat.FormatKey} = {PackageFormat.Format}' and "
-            + $"'{_githubProxyKey} = \"https://example.com/\"' on separate lines.");
+            $"It is not a TOML table of configuration keys to their values, like {example} on"
+            + " separate lines.");
       }
 
       if (PackageFileParser.Format(root) != PackageFormat.Format) {
@@ -124,52 +190,53 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
             + $"must be '{PackageFormat.FormatKey} = {PackageFormat.Format}'.");
       }
 
-      // Keys that are not configuration keys are ignored, whatever their value.
-      if (!root.TryGetProperty(_githubProxyKey, out JsonElement value)) {
-        return null;
+      // Keys that are not configuration keys of the scope are ignored, whatever their value.
+      Dictionary<string, string> values = [];
+      foreach (Key key in keys) {
+        if (!root.TryGetProperty(key.Name, out JsonElement value)) {
+          continue;
+        }
+
+        if (value.ValueKind != JsonValueKind.String || !key.IsValid(value.GetString()!)) {
+          throw new InvalidDataException(
+              $"Its field {key.Name} is not valid; it must be {key.Expected}.");
+        }
+
+        values[key.Name] = value.GetString()!;
       }
 
-      string? githubProxy = value.ValueKind == JsonValueKind.String
-          ? value.GetString()
-          : throw new InvalidDataException(
-              $"Its field {_githubProxyKey} is not a single text value; it must be a URL "
-              + "prefix like https://example.com/.");
-      if (!IsUri(githubProxy!)) {
-        throw new InvalidDataException(
-            $"Its field {_githubProxyKey} is not a URI; it must be a URL prefix like "
-            + "https://example.com/.");
+      if (!workspace) {
+        RunTrace.Write(
+            "config",
+            $"{GithubProxyKey} = {DescribeProxy(values.GetValueOrDefault(GithubProxyKey))}");
       }
 
-      RunTrace.Write("config", $"{_githubProxyKey} = {DescribeProxy(githubProxy)}");
-      return githubProxy;
+      return values;
     }
     catch (Exception ex) {
-      RunTrace.Write("config", $"cannot read {_configPath}: {ex}");
+      RunTrace.Write("config", $"cannot read {path}: {ex}");
+      string key = keys[0].Name;
       await _userInteraction.PrintError(
-          $"Cannot read the configuration file {_configPath}: {ex.Message}");
+          $"Cannot read the configuration file {path}: {ex.Message}");
       await _userInteraction.PrintInfo(
-          $"lip continues with the default configuration (no {_githubProxyKey}). Fix the file "
-          + $"so that it is TOML with the lines "
-          + $"'{PackageFormat.FormatKey} = {PackageFormat.Format}' and "
-          + $"'{_githubProxyKey} = \"https://example.com/\"', or run "
-          + $"'lip config set {_githubProxyKey} <URL>' or 'lip config delete {_githubProxyKey}' "
-          + "to rewrite it.");
+          $"lip continues as if the file were empty. Fix the file so that it is TOML with the"
+          + $" lines {example}, or run 'lip config set {key} <VALUE>{Flag(workspace)}' or"
+          + $" 'lip config delete {key}{Flag(workspace)}' to rewrite it.");
 
-      return null;
+      return [];
     }
   }
 
   /// Migrates liprc.json to config.toml (protocol/lip-compatibility.md, "liprc.json"). Returns the
-  /// github_proxy it holds; null when it holds none, or when there is no liprc.json or it is not
-  /// one that Section 4 reads, which is kept. A dry run only reads it: it writes no config.toml
-  /// and keeps liprc.json.
-  private async Task<string?> MigrateLiprc(bool dryRun) {
+  /// keys it gives a value; none when there is no liprc.json or it is not one that Section 4
+  /// reads, which is kept. A dry run only reads it: it writes no config.toml and keeps liprc.json.
+  private async Task<Dictionary<string, string>> MigrateLiprc(bool dryRun) {
     if (!_fileSystem.File.Exists(_liprcPath)) {
       RunTrace.Write("config", $"{_liprcPath} does not exist either; using the defaults");
-      return null;
+      return [];
     }
 
-    string? githubProxy;
+    Dictionary<string, string> values = [];
     try {
       RunTrace.Write("config", $"reading the lip v0.x configuration file {_liprcPath}");
       using JsonDocument document = JsonDocument.Parse(
@@ -183,66 +250,79 @@ public class ConfigService(IFileSystem fileSystem, IUserInteraction userInteract
             + "the only lip v0.x configuration that lip can convert.");
       }
 
-      githubProxy = root.TryGetProperty(_githubProxyKey, out JsonElement value)
-          && value.ValueKind == JsonValueKind.String
-          ? value.GetString()
-          : null;
+      if (root.TryGetProperty(GithubProxyKey, out JsonElement value)
+          && value.ValueKind == JsonValueKind.String) {
+        values[GithubProxyKey] = value.GetString()!;
+      }
     }
     catch (Exception ex) {
       RunTrace.Write("config", $"cannot read {_liprcPath}: {ex}");
       await _userInteraction.PrintError(
           $"Cannot read the lip v0.x configuration file {_liprcPath}: {ex.Message}");
       await _userInteraction.PrintInfo(
-          $"lip continues with the default configuration (no {_githubProxyKey}) and keeps "
-          + $"{_liprcPath} as it is. Run 'lip config set {_githubProxyKey} <URL>' to write "
+          $"lip continues with the default configuration (no {GithubProxyKey}) and keeps "
+          + $"{_liprcPath} as it is. Run 'lip config set {GithubProxyKey} <URL>' to write "
           + $"{_configPath}, or delete {_liprcPath} if you no longer need it.");
 
-      return null;
+      return [];
     }
 
-    RunTrace.Write("config", $"{_githubProxyKey} = {DescribeProxy(githubProxy)}");
+    RunTrace.Write(
+        "config",
+        $"{GithubProxyKey} = {DescribeProxy(values.GetValueOrDefault(GithubProxyKey))}");
     if (dryRun) {
       RunTrace.Write("config", $"dry run: keeping {_liprcPath} and writing no {_configPath}");
-      return githubProxy;
+      return values;
     }
 
-    await SaveConfig(githubProxy);
+    await Save(workspace: false, values);
     RunTrace.Write("config", $"deleting {_liprcPath}");
     _fileSystem.File.Delete(_liprcPath);
     await _userInteraction.PrintInfo(
         $"Converted the lip v0.x configuration file {_liprcPath} to {_configPath}.");
 
-    return githubProxy;
+    return values;
   }
 
-  /// Writes config.toml atomically (protocol/config.toml.md, protocol/README.md): with "format",
-  /// without the keys at their default; the whole content goes to a uniquely named .tmp file in
-  /// the config directory, which is then renamed over config.toml.
-  private async Task SaveConfig(string? githubProxy) {
-    JsonObject values = new() { [PackageFormat.FormatKey] = PackageFormat.Format };
-    if (githubProxy is not null) {
-      values[_githubProxyKey] = githubProxy;
+  /// Writes the file of the scope atomically (protocol/config.toml.md, protocol/README.md): with
+  /// "format", without the keys at their default; the whole content goes to a uniquely named .tmp
+  /// file in the same directory, which is then renamed over the file. Writing the workspace
+  /// configuration creates .lip, hidden on Windows (protocol/lip-workspace.md, "The .lip
+  /// directory"), when it is missing.
+  private async Task Save(bool workspace, Dictionary<string, string> values) {
+    string path = PathOf(workspace);
+    string directory = _fileSystem.Path.GetDirectoryName(path)!;
+    JsonObject document = new() { [PackageFormat.FormatKey] = PackageFormat.Format };
+    foreach (Key key in KeysOf(workspace)) {
+      if (values.TryGetValue(key.Name, out string? value) && value != key.Default) {
+        document[key.Name] = value;
+      }
     }
 
-    string tempPath = Path.Join(LipDirectories.Config, $"{Guid.NewGuid():N}.tmp");
+    string tempPath = _fileSystem.Path.Join(directory, $"{Guid.NewGuid():N}.tmp");
     try {
-      RunTrace.Write("config", $"writing {tempPath}");
-      using (Stream writeStream = _fileSystem.CreateFileWithDirectory(tempPath))
-      using (StreamWriter writer = new(writeStream)) {
-        await writer.WriteAsync(TomlJson.Serialize(values));
+      bool created = !_fileSystem.Directory.Exists(directory);
+      _fileSystem.Directory.CreateDirectory(directory);
+      if (workspace && created) {
+        _fileSystem.SetHidden(directory, true);
       }
 
-      RunTrace.Write("config", $"renaming {tempPath} to {_configPath}");
-      _fileSystem.File.Move(tempPath, _configPath, overwrite: true);
+      RunTrace.Write("config", $"writing {tempPath}");
+      using (Stream writeStream = _fileSystem.File.Create(tempPath))
+      using (StreamWriter writer = new(writeStream)) {
+        await writer.WriteAsync(TomlJson.Serialize(document));
+      }
+
+      RunTrace.Write("config", $"renaming {tempPath} to {path}");
+      _fileSystem.File.Move(tempPath, path, overwrite: true);
     }
     catch (IOException ex) {
       throw new IOException(
-          $"Cannot write the configuration file {_configPath}; it was not changed.", ex);
+          $"Cannot write the configuration file {path}; it was not changed.", ex);
     }
     catch (UnauthorizedAccessException ex) {
       throw new UnauthorizedAccessException(
-          $"lip is not allowed to write the configuration file {_configPath}; it was not "
-          + "changed.", ex);
+          $"lip is not allowed to write the configuration file {path}; it was not changed.", ex);
     }
     finally {
       if (_fileSystem.File.Exists(tempPath)) {

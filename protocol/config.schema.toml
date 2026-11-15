@@ -9,4 +9,4 @@ const = 4
 
 [properties.github_proxy]
 type = "string"
-format = "uri"
+anyOf = [{ const = "" }, { format = "uri" }]

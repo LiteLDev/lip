@@ -6,6 +6,8 @@ using Spectre.Console.Cli;
 
 namespace Lip.Cli.Commands;
 
+/// lip config get (protocol/lip-config.md): the value of a key, or with --json the value as a JSON
+/// string, or null when the key has no value.
 public class ConfigGetCommand(LipClient lipClient) : AsyncCommand<ConfigGetCommand.Settings> {
   private readonly LipClient _lipClient = lipClient;
 
@@ -14,13 +16,17 @@ public class ConfigGetCommand(LipClient lipClient) : AsyncCommand<ConfigGetComma
     [Description("The configuration key to get")]
     public required string Key { get; init; }
 
+    [CommandOption("--workspace")]
+    [Description("Use the configuration of the workspace (.lip/config.toml) instead of the user's")]
+    public bool Workspace { get; init; }
+
     [CommandOption("--json")]
     [Description("Output as JSON")]
     public bool Json { get; init; }
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
-    string value = await _lipClient.ConfigGet(settings.Key);
+    string? value = await _lipClient.ConfigGet(settings.Key, settings.Workspace);
 
     if (settings.Json) {
       Console.Out.WriteLine(JsonSerializer.Serialize(value));
@@ -29,7 +35,7 @@ public class ConfigGetCommand(LipClient lipClient) : AsyncCommand<ConfigGetComma
       table.AddColumn("Key");
       table.AddColumn("Value");
 
-      table.AddRow(Markup.Escape(settings.Key), Markup.Escape(value));
+      table.AddRow(Markup.Escape(settings.Key), ConfigListCommand.Describe(value));
 
       AnsiConsole.Write(table);
     }

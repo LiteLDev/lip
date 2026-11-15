@@ -1,6 +1,6 @@
 # 管理配置
 
-lip 支持配置全局设置，以影响其与远程服务的交互方式。
+lip 有两类配置：用户配置，包含影响 lip 与远程服务交互方式的设置；工作区配置，包含一个工作区的设置。在 `lip config` 命令后加上 `--workspace`，即可使用当前目录中工作区的配置。
 
 ## 查看配置
 
@@ -8,6 +8,7 @@ lip 支持配置全局设置，以影响其与远程服务的交互方式。
 
 ```sh
 lip config list
+lip config list --workspace
 ```
 
 查看某个键的值：
@@ -31,11 +32,14 @@ lip config set <KEY> <VALUE>
 
 ### 常见配置
 
-- `github_proxy`：GitHub 请求使用的代理 URL。
+- `github_proxy`（用户）：GitHub 请求使用的代理 URL，或空字符串表示直接连接 GitHub。
+- `restart`（工作区）：`never` 或 `on-failure`，工作区的服务器退出时是否重启。
 
 示例：
 ```sh
 lip config set github_proxy https://mirror.ghproxy.com/
+lip config set github_proxy ""
+lip config set restart on-failure --workspace
 ```
 
 ## 删除配置

@@ -248,6 +248,64 @@ public sealed class UsageErrorTests : IDisposable {
   private Task<(int ExitCode, string Stdout, string Stderr)> Run(params string[] args) =>
       Run(args, "");
 
+  /// protocol/lip-config.md: an empty value is an operand, not a missing one; an empty
+  /// github_proxy is written and read back as "", and a deleted one has no value, null in JSON.
+  [Fact]
+  public async Task Config_EmptyGithubProxy_IsSetAndToldApartFromNoValue() {
+    // On Windows the config directory is the known folder RoamingAppData, which no environment
+    // variable redirects: the test would write the configuration of the user.
+    Assert.SkipWhen(
+        OperatingSystem.IsWindows(), "The config directory cannot be redirected on Windows.");
+
+    // Arrange
+    string configHome = Path.Join(_workspace, "config-home");
+    string configPath = Path.Join(configHome, "lip", "config.toml");
+
+    // Act & Assert
+    Assert.Equal(0, (await Run(["config", "set", "github_proxy", ""], "", configHome)).ExitCode);
+    Assert.Equal("format = 4\ngithub_proxy = \"\"\n", File.ReadAllText(configPath));
+    Assert.Equal(
+        "\"\"",
+        (await Run(["config", "get", "github_proxy", "--json"], "", configHome)).Stdout.Trim());
+
+    Assert.Equal(0, (await Run(["config", "delete", "github_proxy"], "", configHome)).ExitCode);
+    Assert.Equal("format = 4\n", File.ReadAllText(configPath));
+    (int exitCode, string stdout, _) = await Run(["config", "list", "--json"], "", configHome);
+    Assert.Equal(0, exitCode);
+    using JsonDocument list = JsonDocument.Parse(stdout);
+    Assert.Equal(JsonValueKind.Null, list.RootElement.GetProperty("github_proxy").ValueKind);
+  }
+
+  /// protocol/lip-config.md: with --workspace, the keys are those of .lip/config.toml.
+  [Fact]
+  public async Task Config_Workspace_WritesLipConfigToml() {
+    // Arrange
+    string configHome = Path.Join(_workspace, "config-home");
+
+    // Act & Assert
+    Assert.Equal(
+        0,
+        (await Run(["config", "set", "restart", "on-failure", "--workspace"], "", configHome))
+            .ExitCode);
+    Assert.Equal(
+        "format = 4\nrestart = \"on-failure\"\n",
+        File.ReadAllText(Path.Join(_workspace, ".lip", "config.toml")));
+    Assert.Equal(
+        "\"on-failure\"",
+        (await Run(["config", "get", "--workspace", "restart", "--json"], "", configHome))
+            .Stdout.Trim());
+
+    (int invalid, _, string invalidError) =
+        await Run(["config", "set", "restart", "always", "--workspace"], "", configHome);
+    (int otherScope, _, string otherScopeError) = await Run(
+        ["config", "set", "github_proxy", "https://x.example/", "--workspace"], "", configHome);
+    Assert.NotEqual(0, invalid);
+    Assert.Contains("on-failure", invalidError);
+    Assert.NotEqual(0, otherScope);
+    Assert.Contains("without --workspace", otherScopeError);
+    Assert.False(Directory.Exists(Path.Join(configHome, "lip")));
+  }
+
   // The interface needs terminals (protocol/lip-tui.md); the standard streams here are pipes.
   [Fact]
   public async Task NoArgument_NotOnATerminal_WritesHelp() {
@@ -259,7 +317,8 @@ public sealed class UsageErrorTests : IDisposable {
     Assert.Equal("", stderr);
   }
 
-  private async Task<(int ExitCode, string Stdout, string Stderr)> Run(string[] args, string input) {
+  private async Task<(int ExitCode, string Stdout, string Stderr)> Run(
+      string[] args, string input, string? configHome = null) {
     ProcessStartInfo startInfo = new(
         Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet") {
       WorkingDirectory = _workspace,
@@ -267,6 +326,11 @@ public sealed class UsageErrorTests : IDisposable {
       RedirectStandardOutput = true,
       RedirectStandardError = true,
     };
+    if (configHome is not null) {
+      // The config directory is $XDG_CONFIG_HOME/lip, except on Windows.
+      startInfo.Environment["XDG_CONFIG_HOME"] = configHome;
+    }
+
     startInfo.ArgumentList.Add(Path.Join(AppContext.BaseDirectory, "lip.dll"));
     foreach (string arg in args) {
       startInfo.ArgumentList.Add(arg);

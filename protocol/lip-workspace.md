@@ -140,12 +140,15 @@ An operation succeeds or fails as a whole.
 | `journal` | The journal ([journal(5)]). |
 | `logs` | The directory of failure reports ([lip(1), EXIT STATUS](lip.md#exit-status)). |
 | `wine` | The Wine prefix that "Running programs" names. |
+| `config.toml` | The workspace configuration ([config.toml(5)]). |
 
 On Windows `.lip` should have the hidden attribute. Its other entries are not defined here, and an implementation must not read meaning into them.
 
 Creating `.lip` and `.lip/lock` is not a change, and an operation that fails early ("Atomicity", rule 1) may leave them.
 
 Creating `.lip/logs` and writing or deleting below it is not a change, and any process may do so at any time. Neither is anything that Wine does below `.lip/wine`.
+
+Creating `.lip` and writing `.lip/config.toml` ([config.toml(5)]) is not a change, is not part of an operation, and does not take the workspace lock.
 
 ### Workspace lock
 
@@ -177,6 +180,7 @@ When step 9 fails to rename the file, the implementation replaces the journal by
 [lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-uninstall(1)](lip-uninstall.md), [lip-update(1)](lip-update.md), [lip-run(1)](lip-run.md), [state.json(5)], [journal(5)], [lip-package(7)](lip-package.md)
 
 [lip.toml(5)]: lip.toml.md
+[config.toml(5)]: config.toml.md
 [state.json(5)]: state.json.md
 [journal(5)]: journal.md
 [CreateFileW]: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew

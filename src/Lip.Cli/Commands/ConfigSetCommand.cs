@@ -17,10 +17,14 @@ public class ConfigSetCommand(LipClient lipClient, IUserInteraction userInteract
     [CommandArgument(1, "<VALUE>")]
     [Description("The value to set")]
     public required string Value { get; init; }
+
+    [CommandOption("--workspace")]
+    [Description("Use the configuration of the workspace (.lip/config.toml) instead of the user's")]
+    public bool Workspace { get; init; }
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken) {
-    await _lipClient.ConfigSet(settings.Key, settings.Value);
+    await _lipClient.ConfigSet(settings.Key, settings.Value, settings.Workspace);
     await _userInteraction.PrintSuccess($"Config key '{settings.Key}' set to '{settings.Value}'.");
     return 0;
   }

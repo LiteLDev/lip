@@ -42,7 +42,7 @@ public class ConfigServiceTests {
     var result = await service.List();
 
     // Assert
-    Assert.Equal("", result["github_proxy"]);
+    Assert.Null(result["github_proxy"]);
     Assert.False(fs.File.Exists(configPath));
   }
 
@@ -54,7 +54,7 @@ public class ConfigServiceTests {
     });
 
     // Act
-    string result = await service.Get("github_proxy");
+    string? result = await service.Get("github_proxy");
 
     // Assert
     Assert.Equal("https://proxy.com", result);
@@ -71,8 +71,7 @@ public class ConfigServiceTests {
   [InlineData("format = 4\ngithub_proxy = [\"unclosed\"\n")]
   [InlineData("format = 4\nformat = 4\n")]
   [InlineData("[[format]]\n")]
-  // config.schema.toml: github_proxy has the format "uri".
-  [InlineData("format = 4\ngithub_proxy = \"\"\n")]
+  // config.schema.toml: github_proxy is empty or has the format "uri".
   [InlineData("format = 4\ngithub_proxy = \"example.com/mirror\"\n")]
   [InlineData("format = 4\ngithub_proxy = \"https://example.com/a b\"\n")]
   public async Task Get_InvalidFile_PrintsErrorAndReturnsDefault(string toml) {
@@ -82,10 +81,10 @@ public class ConfigServiceTests {
     });
 
     // Act
-    string result = await service.Get("github_proxy");
+    string? result = await service.Get("github_proxy");
 
     // Assert
-    Assert.Equal("", result);
+    Assert.Null(result);
     ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Once);
   }
 
@@ -97,10 +96,10 @@ public class ConfigServiceTests {
     });
 
     // Act
-    string result = await service.Get("github_proxy");
+    string? result = await service.Get("github_proxy");
 
     // Assert
-    Assert.Equal("", result);
+    Assert.Null(result);
     ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
 
@@ -123,7 +122,6 @@ public class ConfigServiceTests {
   /// config.schema.toml: github_proxy has the format "uri", so a value that is not a URI would
   /// make config.toml invalid.
   [Theory]
-  [InlineData("")]
   [InlineData("true")]
   [InlineData("1.0")]
   [InlineData("example.com/mirror")]
@@ -172,7 +170,7 @@ public class ConfigServiceTests {
 
     // Assert
     Assert.Equal("format = 4\n", fs.File.ReadAllText(configPath));
-    Assert.Equal("", await service.Get("github_proxy"));
+    Assert.Null(await service.Get("github_proxy"));
   }
 
   /// protocol/config.toml.md: the file is written atomically, through a .tmp file in the config
@@ -203,7 +201,7 @@ public class ConfigServiceTests {
     // Act & Assert
     ArgumentException ex =
         await Assert.ThrowsAsync<ArgumentException>(() => service.Get("go_module_proxy"));
-    Assert.Contains("'go_module_proxy' is not a configuration key", ex.Message);
+    Assert.Contains("'go_module_proxy' is not a key of the user configuration", ex.Message);
     Assert.Contains("github_proxy", ex.Message);
   }
 
@@ -216,7 +214,7 @@ public class ConfigServiceTests {
     });
 
     // Act
-    string result = await service.Get("github_proxy");
+    string? result = await service.Get("github_proxy");
 
     // Assert
     Assert.Equal("https://proxy.com", result);
@@ -235,7 +233,7 @@ public class ConfigServiceTests {
     });
 
     // Act
-    string result = await service.Get("github_proxy");
+    string? result = await service.Get("github_proxy");
 
     // Assert
     Assert.Equal("https://proxy.com", result);
@@ -272,7 +270,7 @@ public class ConfigServiceTests {
     });
 
     // Act
-    IDictionary<string, string> result = await service.List();
+    IDictionary<string, string?> result = await service.List();
 
     // Assert
     Assert.Equal("https://proxy.com", result["github_proxy"]);
@@ -298,7 +296,7 @@ public class ConfigServiceTests {
     });
 
     // Act
-    IDictionary<string, string> result = await service.List();
+    IDictionary<string, string?> result = await service.List();
 
     // Assert
     Assert.Equal("https://proxy.com", result["github_proxy"]);
@@ -321,10 +319,10 @@ public class ConfigServiceTests {
     });
 
     // Act
-    IDictionary<string, string> result = await service.List();
+    IDictionary<string, string?> result = await service.List();
 
     // Assert
-    Assert.Equal("", result["github_proxy"]);
+    Assert.Null(result["github_proxy"]);
     Assert.False(fs.File.Exists(GetLiprcPath()));
     Assert.Equal("format = 4\n", fs.File.ReadAllText(GetConfigPath()));
   }
@@ -342,19 +340,19 @@ public class ConfigServiceTests {
     });
 
     // Act
-    IDictionary<string, string> result = await service.List();
+    IDictionary<string, string?> result = await service.List();
 
     // Assert
-    Assert.Equal("", result["github_proxy"]);
+    Assert.Null(result["github_proxy"]);
     Assert.Equal(json, fs.File.ReadAllText(GetLiprcPath()));
     Assert.False(fs.File.Exists(GetConfigPath()));
   }
 
   [Theory]
   [InlineData("format = 4\ngithub_proxy = \"https://toml.com\"\n", "https://toml.com")]
-  [InlineData("github_proxy = \"https://toml.com\"\n", "")]
+  [InlineData("github_proxy = \"https://toml.com\"\n", null)]
   public async Task List_ConfigTomlAndLiprcJson_ReadsConfigTomlAndKeepsLiprc(
-      string toml, string expected) {
+      string toml, string? expected) {
     // Arrange: liprc.json is read only when there is no config.toml, even an invalid one.
     (MockFileSystem fs, _, ConfigService service) = Create(new() {
       [GetConfigPath()] = new(toml),
@@ -362,7 +360,7 @@ public class ConfigServiceTests {
     });
 
     // Act
-    IDictionary<string, string> result = await service.List();
+    IDictionary<string, string?> result = await service.List();
 
     // Assert
     Assert.Equal(expected, result["github_proxy"]);
@@ -426,5 +424,184 @@ public class ConfigServiceTests {
     // Assert
     Assert.False(fs.File.Exists(GetLiprcPath()));
     Assert.Equal("format = 4\ngithub_proxy = \"https://new.com\"\n", fs.File.ReadAllText(GetConfigPath()));
+  }
+
+  // An empty github_proxy (protocol/config.toml.md, "User configuration").
+
+  /// An empty github_proxy is configured: it is written, and read back as "", not as no value.
+  [Fact]
+  public async Task Set_EmptyGithubProxy_WritesItAndReadsItBackAsEmpty() {
+    // Arrange
+    (MockFileSystem fs, Mock<IUserInteraction> ui, ConfigService service) = Create(new() {
+      [GetConfigPath()] = new("format = 4\ngithub_proxy = \"https://proxy.com\"\n"),
+    });
+
+    // Act
+    await service.Set("github_proxy", "");
+
+    // Assert
+    Assert.Equal("format = 4\ngithub_proxy = \"\"\n", fs.File.ReadAllText(GetConfigPath()));
+    Assert.Equal("", await service.Get("github_proxy"));
+    Assert.Equal("", await service.GetGithubProxy());
+    Assert.Equal("", (await service.List())["github_proxy"]);
+    ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
+  public async Task Delete_EmptyGithubProxy_RemovesItSoThatItHasNoValue() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = Create(new() {
+      [GetConfigPath()] = new("format = 4\ngithub_proxy = \"\"\n"),
+    });
+
+    // Act
+    await service.Delete("github_proxy");
+
+    // Assert
+    Assert.Equal("format = 4\n", fs.File.ReadAllText(GetConfigPath()));
+    Assert.Null(await service.GetGithubProxy());
+  }
+
+  [Fact]
+  public async Task List_LiprcJsonWithEmptyGithubProxy_MigratesItAsEmpty() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = Create(new() {
+      [GetLiprcPath()] = new("""{ "format_version": 3, "github_proxy": "" }"""),
+    });
+
+    // Act
+    IDictionary<string, string?> result = await service.List();
+
+    // Assert
+    Assert.Equal("", result["github_proxy"]);
+    Assert.Equal("format = 4\ngithub_proxy = \"\"\n", fs.File.ReadAllText(GetConfigPath()));
+  }
+
+  // The workspace configuration, .lip/config.toml (protocol/config.toml.md, "Workspace
+  // configuration").
+
+  private static readonly string _workspace = OperatingSystem.IsWindows() ? @"C:\ws" : "/ws";
+
+  private static readonly string _workspaceConfigPath =
+      Path.Join(_workspace, ".lip", "config.toml");
+
+  private static (MockFileSystem Fs, Mock<IUserInteraction> Ui, ConfigService Service)
+      CreateInWorkspace(Dictionary<string, MockFileData> files) {
+    MockFileSystem fs = new(files, _workspace);
+    Mock<IUserInteraction> ui = new();
+    return (fs, ui, new ConfigService(fs, ui.Object));
+  }
+
+  [Fact]
+  public async Task Workspace_NoFile_RestartIsNeverAndNothingIsWritten() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = CreateInWorkspace([]);
+
+    // Act
+    IDictionary<string, string?> result = await service.List(workspace: true);
+
+    // Assert
+    Assert.Equal(new Dictionary<string, string?> { ["restart"] = "never" }, result);
+    Assert.Equal("never", await service.GetRestart());
+    Assert.False(fs.Directory.Exists(Path.Join(_workspace, ".lip")));
+  }
+
+  [Fact]
+  public async Task Workspace_Set_WritesLipConfigTomlAtomically() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = CreateInWorkspace([]);
+
+    // Act
+    await service.Set("restart", "on-failure", workspace: true);
+
+    // Assert
+    Assert.Equal(
+        "format = 4\nrestart = \"on-failure\"\n", fs.File.ReadAllText(_workspaceConfigPath));
+    Assert.Equal([_workspaceConfigPath], fs.Directory.GetFiles(Path.Join(_workspace, ".lip")));
+    Assert.Equal("on-failure", await service.Get("restart", workspace: true));
+    Assert.Equal("on-failure", await service.GetRestart());
+    Assert.False(fs.File.Exists(GetConfigPath()));
+  }
+
+  /// The keys at their default are not written.
+  [Fact]
+  public async Task Workspace_SetDefaultOrDelete_LeavesOnlyFormat() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = CreateInWorkspace(new() {
+      [_workspaceConfigPath] = new("format = 4\nrestart = \"on-failure\"\n"),
+    });
+
+    // Act
+    await service.Set("restart", "never", workspace: true);
+    string afterSet = fs.File.ReadAllText(_workspaceConfigPath);
+    await service.Set("restart", "on-failure", workspace: true);
+    await service.Delete("restart", workspace: true);
+
+    // Assert
+    Assert.Equal("format = 4\n", afterSet);
+    Assert.Equal("format = 4\n", fs.File.ReadAllText(_workspaceConfigPath));
+    Assert.Equal("never", await service.Get("restart", workspace: true));
+  }
+
+  [Theory]
+  [InlineData("")]
+  [InlineData("always")]
+  [InlineData("Never")]
+  public async Task Workspace_SetInvalidRestart_FailsAndChangesNothing(string value) {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = CreateInWorkspace([]);
+
+    // Act & Assert
+    ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(
+        () => service.Set("restart", value, workspace: true));
+    Assert.Contains("on-failure", ex.Message);
+    Assert.False(fs.Directory.Exists(Path.Join(_workspace, ".lip")));
+  }
+
+  /// Each scope has its own keys: a key of the other scope is not one.
+  [Fact]
+  public async Task KeyOfTheOtherScope_FailsNamingTheScope() {
+    // Arrange
+    (MockFileSystem fs, _, ConfigService service) = CreateInWorkspace([]);
+
+    // Act & Assert
+    ArgumentException toWorkspace = await Assert.ThrowsAsync<ArgumentException>(
+        () => service.Set("github_proxy", "https://proxy.com", workspace: true));
+    ArgumentException toUser =
+        await Assert.ThrowsAsync<ArgumentException>(() => service.Get("restart"));
+    Assert.Contains("without --workspace", toWorkspace.Message);
+    Assert.Contains("add --workspace", toUser.Message);
+    Assert.False(fs.Directory.Exists(Path.Join(_workspace, ".lip")));
+    Assert.False(fs.File.Exists(GetConfigPath()));
+  }
+
+  [Theory]
+  [InlineData("restart = \"on-failure\"\n")]
+  [InlineData("format = 4\nrestart = \"always\"\n")]
+  [InlineData("format = 4\nrestart = 1\n")]
+  public async Task Workspace_InvalidFile_PrintsErrorAndRestartIsNever(string toml) {
+    // Arrange
+    (_, Mock<IUserInteraction> ui, ConfigService service) = CreateInWorkspace(new() {
+      [_workspaceConfigPath] = new(toml),
+    });
+
+    // Act
+    string result = await service.GetRestart();
+
+    // Assert
+    Assert.Equal("never", result);
+    ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task Workspace_UnknownKey_IsIgnored() {
+    // Arrange
+    (_, Mock<IUserInteraction> ui, ConfigService service) = CreateInWorkspace(new() {
+      [_workspaceConfigPath] = new("format = 4\nfoo = [1]\nrestart = \"on-failure\"\n"),
+    });
+
+    // Act & Assert
+    Assert.Equal("on-failure", await service.GetRestart());
+    ui.Verify(u => u.PrintError(It.IsAny<string>()), Times.Never);
   }
 }
