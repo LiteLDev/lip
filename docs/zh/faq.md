@@ -1,54 +1,176 @@
 # 常见问题
 
-### 什么是 `lip.toml`？
-`lip.toml` 是 lip 包的包文件：它给出包 ID、版本，以及针对每个变体、运行端和平台的依赖、要放置的文件、要安装的 mod 和要运行的命令。参见 [lip.toml](concepts/lip_toml.md)。
+新用户最常问的问题，每个都有简短的回答，并附上详细说明所在的页面。
 
-### 还能安装带有 `tooth.json` 的 lip v0.x 包吗？
-**可以。** lip 仍会读取格式版本 1 到 3 的 `tooth.json`：它针对工作区的运行端和平台把每个文件读取为包文件，并像其他包一样安装，放置的文件与以前相同，因此已有的包仍可使用。lip 不再写入 `tooth.json`；请使用 [`lip pkg migrate`](cli/commands/pkg_migrate.md) 把你的包转换为 `lip.toml`。lip v0.x 的工作区（带有 `tooth_lock.json`）和 `liprc.json` 会被自动迁移。
+## 关于 lip
 
-### `lip install` 会更新 `lip.toml` 吗？
-**不会。** 运行 `lip install <package>` 会把包安装到工作区，并更新[状态文件](concepts/lockfiles.md)来记录状态，但**不会**修改任何 `lip.toml`。如果你希望依赖长期保留在包的要求中，需要手动把它加入你的 `lip.toml` 的 `deps`。
+### lip 是做什么的？
 
-### lip 能安装客户端 mod 吗？
-不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
+lip 在一个文件夹里安装 Minecraft 基岩版服务器，安装和更新它的模组，并运行它。你可以通过终端里的界面使用它，也可以通过命令使用它。见 [lip 是什么](intro/what_is_lip.md)。
 
-### 可以在 Linux 上运行服务器吗？
-**可以。** 在任何系统上，lip 都安装平台 `win-x64` 的包，在 Linux 和 macOS 上通过 Wine 运行其钩子命令和服务器，Wine 由 lip 自行下载并配置。Linux 版服务器 `github.com/LiteLDev/bds#linux` 无需 Wine 即可运行，但也不能带 LeviLamina：用 `lip setup --game <version> --build linux` 设置它，`lip run` 会在 x64 的 Linux 上启动它。参见[运行服务器](guides/running_server.md#linux-版服务器)。
+### 它只能用于 LeviLamina 吗？
 
-### 为什么我仓库的某个标签不是版本？
-只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。不过，仍可用 git 引用安装任意标签、分支或提交，例如 `lip install github.com/user/repo@tag:1.2.3` 或 `@branch:main`；此时包的版本是其 `lip.toml` 声明的 `version`。参见 [git 引用](cli/commands/install.md#git-引用)。
+不是，不过它是为此而做的。lip 安装的模组是 LeviLamina 模组，LeviLamina 也是 lip 唯一会安装的加载器。你也可以运行不带加载器的原版服务器：Windows 版用 `lip setup --game <version> --no-loader`，Linux 版用 `--build linux`。见[选择构建和加载器](guides/server_from_commands.md#选择构建和加载器)。
 
-### 如何安装磁盘上的包？
-用根部带有 `lip.toml` 的目录或 ZIP 文件的路径运行 `lip install`，例如 `lip install ../MyTool` 或 `lip install ./package.zip`。状态文件会记录该路径：卸载不需要它，`lip update` 会重新读取它。
+### lip 能安装客户端模组吗？
 
-### 如何升级 lip 自身？
-运行 [`lip self-update`](cli/commands/self_update.md)。它在 GitHub 上找到最新的 Release，并按 `lip` 的安装方式安装：使用新版 `.msi`（Windows 会请求你的允许），或在原地替换便携压缩包的文件。`lip self-update --check` 只打印新版本号。如果你是通过旧的 `futrime.lip` winget 包或 npm 安装的 `lip`，请先卸载，再按[安装](intro/installation.md)中的方式重新安装。
+不能。lip 只管理服务器。游戏客户端的模组由 LeviLauncher 这样的启动器管理，它们读取的是同样的包。
 
-### lip 需要安装 git 吗？
-不需要。lip 使用内置客户端通过 HTTPS 访问 git 仓库，无需安装 `git` 命令行工具。详见[内部机制](guides/internal_mechanism.md#包解析)。
+### 它能在哪些系统上运行？
+
+Windows、x64 的 Linux，以及 macOS。在 Linux 和 macOS 上，lip 通过它自己下载的 Wine 运行 Windows 服务器。没有 arm64 Linux 版的 lip。见 [Linux 与 macOS](guides/linux_macos.md#什么系统能运行什么)。
+
+### 需要 git、Wine 或别的东西吗？
+
+不需要。lip 自己与 git 仓库通信，并在需要时下载游戏、加载器、Wine 和 Microsoft Visual C++ Redistributable。见[内部机制](concepts/internals.md#git-客户端)。
+
+### 有繁体中文吗？
+
+有。界面有英语、简体中文和繁体中文，并跟随系统语言。想自己选择，可以用设置页面，或者 `lip config set language zh-Hant`。这份文档也有这三种语言。命令在终端里输出的内容始终是英语。见 [language](guides/configuration.md#language)。
+
+## 使用 lip
+
+### 可以不用界面吗？
+
+可以。界面做的每一件事都是一条命令：`lip setup`、`lip install`、`lip update`、`lip uninstall`、`lip run`、`lip config`。从[用命令管理服务器](guides/server_from_commands.md)开始。这些命令也能在没人回答问题的脚本里使用：见那一页的 `--accept-eula`。
+
+### 反过来呢：一定要学命令吗？
+
+不用。只输入 `lip`、后面什么都不加，然后使用界面即可。见[第一个服务器](intro/first_server.md)。
+
+### 关掉终端后服务器会停止吗？
+
+取决于你是怎么启动它的。
+
+- **在界面里启动的：** 不会。退出界面或关掉终端后，它继续运行。
+- **用 `lip run --managed` 启动的：** 不会。关掉终端只是让你脱离它。
+- **用普通的 `lip run` 启动的：** 会。lip 会请服务器停止，并等它退出。
+
+前两种情况下，服务器运行在 lip 的后台进程里。用界面或 `lip run --managed` 就能回到它那里。见[让服务器持续运行](guides/server_from_commands.md#让服务器持续运行)。
+
+### 怎么停止在后台运行的服务器？
+
+打开界面，在服务器页面选择“停止”。或者在服务器文件夹里运行 `lip run --managed` 接入它，再按 Ctrl+C。
+
+### 机器重启后服务器会自动启动吗？
+
+不会。lip 不会在系统启动时启动任何东西。需要这样做时，请让系统的服务管理器在服务器文件夹里运行 `lip run`。
+
+### lip 能重启崩溃的服务器吗？
+
+能。在服务器页面打开“自动重启”，或者运行 `lip config set restart on-failure --workspace`。见[崩溃后自动重启](guides/server_from_commands.md#崩溃后自动重启)。
+
+### 服务器运行时能安装或更新模组吗？
+
+在界面里不能：它会请你先停止服务器。用命令可以，服务器下次启动时才会用上更改。在 Windows 上，这样的命令可能因为运行中的服务器打开着某个文件而失败；这时 lip 会撤销它做过的更改。见[服务器运行时更改包](guides/server_from_commands.md#服务器运行时更改包)。
+
+### 能运行多个服务器吗？
+
+能，每个服务器一个单独的文件夹，并在各自的 `server.properties` 里设置不同的端口。一个文件夹同一时间只运行一个服务器。界面在[工作区](interface/workspaces.md)页面保存着你的服务器文件夹列表。
+
+### 两个人能管理同一个服务器吗？
+
+以这台机器上**同一个用户**的身份登录的两个人共享一切：两人在界面里看到的是同一个运行中的服务器，谁都可以停止它或更改模组。lip 保证两次更改不会同时进行：后来的那次会立刻失败，稍后重试即可。
+
+这台机器上的两个**不同用户**不共享 lip 的后台进程。只要文件权限允许，两人都能更改文件夹里的包。但其中一人启动的服务器，对另一人来说是“在此界面之外运行”：看得到，却不能停止，也不能向它输入。
+
+lip 自己没有网络访问功能。要管理另一台机器上的服务器，请登录那台机器（例如通过 SSH），在那里运行 lip。
+
+### 怎么更新 lip？
+
+运行 `lip self-update`，或者使用设置页面的“检查更新”。`lip self-update --check` 只告诉你有没有新版本。见[安装](intro/installation.md)。
+
+### 怎么更改服务器的 Minecraft 版本？
+
+在服务器文件夹里再运行一次 `lip setup --game <version>`，或者使用界面的工作区页面。模组会换成能配合新游戏的版本。见[更改游戏版本](guides/server_from_commands.md#更改游戏版本)。
+
+## 文件
+
+### 我的世界和设置在哪里？
+
+在服务器文件夹里，就在游戏放它们的地方。lip 不会移动它们。
+
+| 内容 | 在服务器文件夹里的位置 |
+| --- | --- |
+| 世界 | `worlds/` |
+| 游戏的设置 | `server.properties`、`allowlist.json`、`permissions.json` |
+| 模组，通常还有它的设置 | `mods/<名字>/` |
+
+界面在[游戏配置](interface/game_config.md)和[模组配置](interface/mod_config.md)页面编辑这些设置。
+
+### `.lip` 文件夹是什么？
+
+lip 对这个服务器文件夹的记录：安装了哪些包、工作区设置、失败报告，以及 Linux 和 macOS 上的 Wine 前缀。在 Windows 上它是隐藏的。别去动它；移动服务器时，让它跟着文件夹一起走。见[文件和目录](reference/files.md)。
+
+### lip 在服务器文件夹之外还存了什么？
+
+四个属于每个用户的目录：你的设置、下载缓存、lip 的 Wine，以及界面的工作区列表。
+
+| 内容 | Windows | Linux 和 macOS |
+| --- | --- | --- |
+| 设置 | `%APPDATA%\lip` | `~/.config/lip` |
+| 缓存 | `%LOCALAPPDATA%\lip\Cache` | `~/.cache/lip` |
+| 数据：lip 为运行服务器而安装的东西，例如它的 Wine | `%LOCALAPPDATA%\lip\Data` | `~/.local/share/lip` |
+| 状态：工作区列表 | `%LOCALAPPDATA%\lip\State` | `~/.local/state/lip` |
+
+缓存随时可以用 `lip cache clean` 删除。lip 不往系统的临时目录里写任何东西。见[用户目录](concepts/how_lip_works.md#用户目录)。
+
+### 更改游戏版本会删掉我的世界吗？
+
+不会。`worlds/`、`server.properties`、`allowlist.json` 和 `permissions.json` 都会保留。游戏自身的一些文件夹，例如根目录下的 `resource_packs/` 和 `behavior_packs/`，会被删除后重新写入。见[保留什么删除什么](guides/server_from_commands.md#保留什么删除什么)。
+
+### 怎么把服务器搬到另一个文件夹或另一台机器？
+
+停止服务器，把整个文件夹（包括 `.lip`）移动或复制过去。然后在新位置运行 lip。在新机器上，第一次启动时 lip 会重新安装服务器需要的系统组件。
+
+## 包
+
+### 包从哪里来？
+
+来自公开的 git 仓库，多数在 GitHub 上。没有中央仓库。包用它的仓库地址来指定，例如 `github.com/LiteLDev/LegacyScriptEngine`。界面的获取模组页面列出的是 [levimc.org](https://levimc.org) 上的模组。见[指定一个包](guides/managing_packages.md#指定一个包)。
+
+### 怎么安装磁盘上的包？
+
+把根目录下有 `lip.toml` 的 ZIP 文件或文件夹的路径交给 `lip install`，例如 `lip install ./my-mod.zip`。见[磁盘上的 ZIP 文件或文件夹](guides/managing_packages.md#磁盘上的-zip-文件或文件夹)。
 
 ### lip 支持私有仓库吗？
-目前不支持。lip 通过 HTTPS 匿名获取包，不使用 `git` 命令行工具或其凭据管理器，因此只能从公开仓库安装。
 
-### lip 会把安装的包放在哪里？
-lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<name>/`，`<name>` 为其 LeviLamina `manifest.json` 中的 `name`；文件包按其 `lip.toml` 的规定放置文件。
+不支持。lip 下载时不登录，所以只能用公开仓库。
 
-工作区的[状态文件](concepts/lockfiles.md)是其中的 `.lip/state.json`；操作锁（`.lip/lock`）和日志（`.lip/journal`）位于它旁边。lip 自己的其他文件保存在遵循平台惯例的用户目录中：
+### 为什么我仓库里的某个标签不算版本？
 
-| 内容 | Windows | Linux / macOS |
-| --- | --- | --- |
-| 配置（`config.toml`） | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip`（默认 `~/.config/lip`） |
-| 缓存 | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip`（默认 `~/.cache/lip`） |
-| 数据（Linux 和 macOS 上的 Wine） | `%LOCALAPPDATA%\lip\Data` | `$XDG_DATA_HOME/lip`（默认 `~/.local/share/lip`） |
-| 状态（未设置 `XDG_RUNTIME_DIR` 时[守护进程](cli/commands/daemon.md)的套接字） | `%LOCALAPPDATA%\lip\State` | `$XDG_STATE_HOME/lip`（默认 `~/.local/state/lip`） |
+只有名为 `v` 加完整版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签不是。不过任何标签、分支或提交都可以安装：`lip install github.com/user/repo@tag:1.2.3`。见 [git 仓库](guides/managing_packages.md#git-仓库)。
 
-在 Linux 和 macOS 上，设置了 `XDG_RUNTIME_DIR` 时，守护进程监听 `$XDG_RUNTIME_DIR/lip/daemon.sock`。缓存可以随时删除，例如使用 `lip cache clean`。数据目录存放 lip 运行服务器所用的 Wine；请仅在没有 lip 命令运行时删除它，lip 在需要时会重新安装 Wine。正在进行的下载会写入缓存中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。
+### 还能安装为 lip v0.x 制作的、带 `tooth.json` 的包吗？
 
-### 安装到一半失败会怎样？
-什么都不会改变。`lip setup`、`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、钩子命令失败或按下 Ctrl+C，它会撤销已做的全部修改，状态文件保持原样。只有包的钩子命令所做的事无法撤销。若 lip 在中途被终止，下一次在该工作区中运行的 `lip setup`、`install`、`uninstall`、`update` 或 `run` 会先处理被中断的操作：若它已保存状态文件，则将其完成，否则将其撤销，并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。
+能。lip 能读取它们，并像其他包一样安装。lip v0.x 的服务器文件夹和配置，会在 lip 第一次处理它们时自动转换。包的作者可以用 `lip pkg migrate` 转换自己的包：见[迁移包](authors/migrating_packages.md)。
 
-### 可以同时运行两个 lip 命令吗？
-不能作用于同一个工作区：一个 `lip setup`、`install`、`uninstall` 或 `update` 正在修改某个工作区时，对该工作区的另一个此类命令会立即失败，并提示另一个 lip 命令正在修改该工作区。作用于不同工作区的命令，以及只读取的命令（如 `lip list` 或 `lip pkg view`），随时都可以运行。[`lip run`](cli/commands/run.md) 启动的服务器不会占用工作区：服务器运行期间你可以安装、更新和卸载包，这些改动在服务器下次启动时生效。
+### `lip.toml` 是什么？
 
-### 命令失败了，如何查明原因？
-lip 会输出出了什么问题、每一层原因，以及你可以怎么做。除非错误出在命令行本身，它还会在当前目录的 `.lip/logs/` 中写入一份失败报告，并输出其路径。报告包含 lip 关于这次失败所知的一切：lip 版本、命令、系统、工作区状态、包含每一层原因和堆栈跟踪的完整错误，以及本次运行的跟踪记录（网络请求、git 操作、缓存使用、版本解析、文件改动和钩子命令的输出）。URL 中的凭据会被隐去。lip 保留最新的 20 份报告。[报告问题](https://github.com/LiteLDev/lip/issues)时请附上该报告。
+描述一个包的文件：它的名字、版本、依赖什么，以及安装哪些文件。只有制作包时才需要它。见 [lip.toml](concepts/lip_toml.md)。
+
+### `lip install` 会修改我的 `lip.toml` 吗？
+
+不会。`lip install` 把包安装到服务器文件夹里，并记录在 `.lip` 中。它从不写 `lip.toml`。
+
+## 出问题的时候
+
+### 命令失败了，去哪里找原因？
+
+先看 lip 输出的 `error:` 和 `hint:` 两行。更多细节在服务器文件夹的 `.lip/logs/` 里的失败报告中；lip 会输出它的路径。见[读懂失败信息](guides/troubleshooting.md#读懂失败信息)。
+
+### 安装到一半失败了会怎样？
+
+不会留下做了一半的东西。会更改服务器文件夹的命令，要么做完全部工作，要么什么都不做：失败时，或者你按下 Ctrl+C 时，lip 会撤销它做过的更改。如果 lip 自己被杀掉，那个文件夹里的下一条命令会先把事情理顺。见[操作](concepts/how_lip_works.md#操作)。
+
+### 这里 GitHub 很慢或被屏蔽，怎么办？
+
+设置 GitHub 代理，或者使用你的网络代理。见 [GitHub 很慢或被屏蔽时](guides/configuration.md#github-很慢或被屏蔽时)。
+
+### 能同时运行两条 lip 命令吗？
+
+能，只要是在不同的服务器文件夹里。在同一个文件夹里，同一时间只能有一条命令更改它：第二条会立刻失败，等第一条结束后再运行。只读的命令（例如 `lip list`）随时可用。见[另一个 lip 正在更改工作区](guides/troubleshooting.md#另一个-lip-正在更改工作区)。
+
+### 后台一直在运行的那个 lip 进程是什么？
+
+守护进程。它执行你的命令，并让你的托管服务器持续运行。没有工作 10 分钟后它会自己退出，除非它正在运行服务器。`lip daemon status` 可以查看它，`lip daemon stop` 可以在它空闲时结束它。见[守护进程和客户端](concepts/how_lip_works.md#守护进程和客户端)。
