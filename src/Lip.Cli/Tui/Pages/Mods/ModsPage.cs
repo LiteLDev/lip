@@ -4,7 +4,6 @@ using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
 using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
-using Semver;
 
 namespace Lip.Cli.Tui.Pages.Mods;
 
@@ -35,13 +34,62 @@ internal sealed class CatalogueWait(Action cancelled) : Dialog {
   }
 }
 
+/// An action menu that follows the server of the selected workspace while it is open: when
+/// the server starts or stops, the menu is made again where it is, with the same action
+/// highlighted, so that what it offers, and what it says of what it does not offer, is true
+/// when an action is chosen. make gets this dialog, which an action closes before it is
+/// carried out, and whether the server runs.
+internal sealed class ServerMenu(Func<ServerMenu, bool, Menu> make) : Dialog {
+  // The menu as it was made last, whether the server ran then, and the keys that moved its
+  // highlight since it was opened.
+  private readonly List<ConsoleKeyInfo> _moves = [];
+  private Menu? _menu;
+  private bool _running;
+
+  public override IReadOnlyList<Hint> Hints => Current().Hints;
+
+  public override void Draw(ScreenBuffer screen) => Current().Draw(screen);
+
+  public override void OnKey(ConsoleKeyInfo key) {
+    if (key.Key == ConsoleKey.Escape) {
+      Close();
+      return;
+    }
+
+    Menu menu = Current();
+    if (key.Key is ConsoleKey.UpArrow or ConsoleKey.DownArrow) {
+      _moves.Add(key);
+    }
+
+    menu.OnKey(key);
+  }
+
+  /// The menu for the server as it is now.
+  private Menu Current() {
+    bool running = Context.ServerRunning;
+    if (_menu is null || running != _running) {
+      _running = running;
+      _menu = make(this, running);
+      // Every action of these menus can be chosen or says why not, so ↑ and ↓ stop at each
+      // of them, and the same keys lead to the same action.
+      foreach (ConsoleKeyInfo move in _moves) {
+        _menu.OnKey(move);
+      }
+    }
+
+    return _menu;
+  }
+}
+
 /// The Mods page: the installed packages of the selected workspace, with lip install, lip
 /// update and lip uninstall (protocol/lip-install.md, lip-update.md, lip-uninstall.md,
 /// lip-list.md). Action rows stand above the list; Enter on a package opens its action menu,
 /// which acts on the checked packages when there are any. While the server of the workspace
-/// runs, what changes the workspace is shown disabled, and a line says so.
+/// runs, what changes the workspace is shown disabled, and a line says so; a menu that is open
+/// when the server starts or stops is made again.
 public sealed class ModsPage : Page {
-  // The rows that the details area takes: a rule, a title, and a sentence of up to two rows.
+  // The rows that the details area takes: a rule, a title, and two rows for a sentence, or
+  // for a sentence and the source of a package.
   private const int DetailRows = 4;
   // After how long the catalogue is read again when details are asked for, in milliseconds: as
   // on the Get mods page.
@@ -231,9 +279,7 @@ public sealed class ModsPage : Page {
           _loaded = true;
           _error = null;
           // The mods that the user installed, then their dependencies, then the server.
-          _list.Items = [
-            .. packages.OrderBy(p => IsSystem(p) ? 2 : p.Explicit ? 0 : 1),
-          ];
+          _list.Items = InstalledPackage.Listed(packages);
           Refresh();
           if (first) {
             // With mods, the list is what the page is about; without, the first action row,
@@ -262,7 +308,7 @@ public sealed class ModsPage : Page {
     // The mods that the user installed: what lip update without operands updates.
     bool mods = _list.Items.Any(CanCheck);
     List<ModAction> actions = [];
-    if (read && !_list.Items.Any(IsGame)) {
+    if (read && !_list.Items.Any(p => p.IsGame)) {
       // A workspace without a game needs one before any mod.
       actions.Add(ModAction.NewServer);
     }
@@ -286,19 +332,9 @@ public sealed class ModsPage : Page {
     }
   }
 
-  private static string Location(InstalledPackage package) => package.Identity.Split('#')[0];
-
-  /// Whether the package is the game (protocol/lip-setup.md, "Terms").
-  private static bool IsGame(InstalledPackage package) =>
-      BedrockServer.IsRepository(Location(package));
-
-  /// Whether the package is the loader.
-  private static bool IsLoader(InstalledPackage package) =>
-      GameSetup.IsLoaderRepository(Location(package));
-
-  /// Whether the package is the game or the loader, which lip setup installs and lip update
-  /// refuses.
-  private static bool IsSystem(InstalledPackage package) => IsGame(package) || IsLoader(package);
+  /// Whether the package is the game or the loader (protocol/lip-setup.md, "Terms"), which lip
+  /// setup installs and lip update refuses.
+  private static bool IsSystem(InstalledPackage package) => package.IsGame || package.IsLoader;
 
   /// Whether the package is a mod that the user installed.
   private static bool CanCheck(InstalledPackage package) =>
@@ -330,16 +366,16 @@ public sealed class ModsPage : Page {
       };
 
   private static string Detail(InstalledPackage package) =>
-      IsGame(package) ? ModsText.GameDetail
-          : IsLoader(package) ? ModsText.LoaderDetail
+      package.IsGame ? ModsText.GameDetail
+          : package.IsLoader ? ModsText.LoaderDetail
           : package.Explicit ? ModsText.ExplicitDetail
           : ModsText.DependencyDetail;
 
-  /// A row of the list: the identity and the version in columns, muted for a dependency.
+  /// A row of the list: the identity and the version in columns, muted for a dependency. An
+  /// identity that is too long is cut in its middle, so that its name stays.
   private StyledLine Row(InstalledPackage package) {
     Style style = package.Explicit ? default : Theme.Muted;
-    string name = TextWidth.Fit(package.Identity, _nameWidth);
-    return new StyledLine(name + new string(' ', _nameWidth - TextWidth.Of(name) + 2), style)
+    return new StyledLine(PackageCells.PadMiddle(package.Identity, _nameWidth) + "  ", style)
         .Add(TextWidth.Fit(package.Version, _versionWidth), style);
   }
 
@@ -386,10 +422,12 @@ public sealed class ModsPage : Page {
   }
 
   /// The details area: what has the focus, an action row or a package, and one sentence about
-  /// it.
+  /// it; for a package that is not of the version tags of its repository, its source too: the
+  /// local path, the URL, or the branch, tag or commit.
   private void DrawDetails(ScreenBuffer screen, Rect rect) {
     StyledLine title;
     string detail;
+    string? source = null;
     Style style = Theme.Muted;
     if (_focus.Index == 0 && _actions.HasCurrent) {
       title = new StyledLine(Label(_actions.Current).TrimEnd('…'), Theme.Strong);
@@ -402,18 +440,39 @@ public sealed class ModsPage : Page {
     } else if (_focus.Index == 1 && _list.HasCurrent) {
       InstalledPackage package = _list.Current;
       int room = Math.Max(1, rect.Width - TextWidth.Of(package.Version) - 2);
-      title = new StyledLine(TextWidth.Fit(package.Identity, room), Theme.Strong)
+      title = new StyledLine(PackageCells.FitMiddle(package.Identity, room), Theme.Strong)
           .Add("  " + package.Version);
       detail = Detail(package);
+      source = package.SourceNote;
     } else {
       return;
     }
 
     screen.Write(rect.X, rect.Y, new string('─', rect.Width), Theme.Border);
     screen.Write(rect.X, rect.Y + 1, title, rect.Right);
+    // The last row is that of the source, when the package has one to show; the sentence is
+    // then cut to the row that is left.
+    int bottom = source is null ? rect.Bottom : rect.Bottom - 1;
+    int rows = Math.Max(0, bottom - (rect.Y + 2));
     List<string> lines = TextWidth.Wrap(detail, rect.Width);
-    for (int i = 0; i < lines.Count && rect.Y + 2 + i < rect.Bottom; i++) {
+    if (rows > 0 && lines.Count > rows) {
+      // What has no row ends the last one in an ellipsis.
+      lines[rows - 1] = TextWidth.Fit(string.Join(' ', lines.Skip(rows - 1)), rect.Width);
+    }
+
+    for (int i = 0; i < lines.Count && i < rows; i++) {
       screen.Write(rect.X, rect.Y + 2 + i, lines[i], style, rect.Right);
+    }
+
+    if (source is not null && bottom >= rect.Y + 2) {
+      string label = ModsText.Source + "  ";
+      int room = rect.Width - TextWidth.Of(label);
+      if (room > 0) {
+        screen.Write(
+            rect.X, bottom,
+            new StyledLine(label, Theme.Muted).Add(PackageCells.FitMiddle(source, room)),
+            rect.Right);
+      }
     }
   }
 
@@ -430,7 +489,7 @@ public sealed class ModsPage : Page {
         PromptInstall();
         break;
       case ModAction.UpdateAll:
-        Update([], ModsText.UpdateAll);
+        UpdateAll();
         break;
       case ModAction.GetMods:
         Context.Navigate(PageId.GetMods);
@@ -439,47 +498,81 @@ public sealed class ModsPage : Page {
   }
 
   /// The action menu of the selected package, or of the checked ones when there are any. What
-  /// changes the workspace cannot be chosen while its server runs, and says why.
+  /// changes the workspace cannot be chosen while its server runs, and says why; the menu
+  /// follows the server while it is open.
   private void ShowActions() {
-    bool running = Context.ServerRunning;
-    MenuItem Change(string label, Action run) =>
-        new(label, run, Enabled: !running, Reason: running ? CommonText.StopServerFirst : null);
-
-    if (_list.Checked.Count > 0) {
-      // In the order of the list.
-      string[] identities = [.. _list.Targets.Select(p => p.Identity)];
-      Context.ShowMenu(
-          ModsText.Checked(identities.Length),
-          Change(
-              ModsText.UpdateChecked(identities.Length),
-              () => Update(identities, ModsText.UpdateChecked(identities.Length))),
-          Change(
-              ModsText.UninstallChecked(identities.Length),
-              () => Uninstall(identities, ModsText.UninstallChecked(identities.Length))),
-          new MenuItem(ModsText.UncheckAll, _list.Checked.Clear));
-      return;
-    }
-
+    // What the menu acts on is what the list has now: the menu takes every key until it
+    // closes.
     InstalledPackage package = _list.Current;
+    InstalledPackage[] targets = _list.Checked.Count > 0 ? [.. _list.Targets] : [];
+    Context.Show(new ServerMenu((menu, running) => Actions(menu, running, package, targets)));
+  }
+
+  /// The action menu of a package, or of the checked ones when there are any, as it is while
+  /// the server of the workspace runs or does not. Each action closes the menu that shows it.
+  private Menu Actions(
+      ServerMenu shown, bool running, InstalledPackage package, InstalledPackage[] targets) {
+    MenuItem Item(string label, Action run, string? reason = null) =>
+        new(
+            label,
+            () => {
+              shown.Close();
+              run();
+            },
+            Enabled: reason is null, Reason: reason);
+    MenuItem Change(string label, Action run, string? reason = null) =>
+        Item(label, run, reason ?? (running ? CommonText.StopServerFirst : null));
+
     string identity = package.Identity;
-    List<MenuItem> items = [new MenuItem(ModsText.Details, () => ShowDetails(identity))];
-    if (IsSystem(package)) {
-      // lip update refuses the game and the loader: lip setup changes them.
-      items.Add(new MenuItem(ModsText.GoToWorkspaces, () => Context.Navigate(PageId.Workspaces)));
+    string title;
+    List<MenuItem> items;
+    if (targets.Length > 0) {
+      // In the order of the list. lip update takes the source of each, and lip uninstall its
+      // identity.
+      string[] sources = [.. targets.Select(p => p.UpdateArgument).Distinct()];
+      string[] identities = [.. targets.Select(p => p.Identity)];
+      title = ModsText.Checked(targets.Length);
+      items = [
+        // Of the row that is highlighted, which may be none of the checked ones.
+        Item(ModsText.DetailsOf(Cells.BareName(identity)), () => ShowDetails(identity)),
+        Change(
+            ModsText.UpdateChecked(targets.Length),
+            () => Update(sources, ModsText.UpdateChecked(targets.Length))),
+        Change(
+            ModsText.UninstallChecked(targets.Length),
+            () => Uninstall(identities, ModsText.UninstallChecked(targets.Length))),
+        Item(ModsText.UncheckAll, _list.Checked.Clear),
+      ];
     } else {
-      // Updating a dependency makes it explicitly installed, which the plan says.
-      items.Add(Change(
-          ModsText.Update, () => Update([identity], ModsText.UpdateOperation(identity))));
-      items.Add(Change(ModsText.UpdateTo, () => PromptUpdateTo(identity)));
-      if (package.Explicit) {
-        // lip uninstall refuses a dependency: it leaves with what needs it.
+      title = identity;
+      items = [Item(ModsText.Details, () => ShowDetails(identity))];
+      if (IsSystem(package)) {
+        // lip update refuses the game and the loader: lip setup changes them.
+        items.Add(Item(ModsText.GoToWorkspaces, () => Context.Navigate(PageId.Workspaces)));
+      } else {
+        // By the source that the state file records, not by the identity, which would name the
+        // version tags of a repository: a package of a URL or of a local path has none, and a
+        // package of a branch, a tag or a commit would be moved back to them
+        // (protocol/lip-update.md). A package of the version tags, or of one version, moves
+        // to the highest version that fits. Updating a dependency makes it explicitly
+        // installed, which the plan says.
         items.Add(Change(
-            ModsText.Uninstall,
-            () => Uninstall([identity], ModsText.UninstallOperation(identity))));
+            ModsText.Update,
+            () => Update([package.UpdateArgument], ModsText.UpdateOperation(identity))));
+        // Only a repository has other versions to name.
+        items.Add(Change(
+            ModsText.UpdateTo, () => PromptUpdateTo(package),
+            package.Repository is null ? ModsText.UpdateToNeedsRepository : null));
+        if (package.Explicit) {
+          // lip uninstall refuses a dependency: it leaves with what needs it.
+          items.Add(Change(
+              ModsText.Uninstall,
+              () => Uninstall([identity], ModsText.UninstallOperation(identity))));
+        }
       }
     }
 
-    Context.ShowMenu(identity, [.. items]);
+    return new Menu(title, items);
   }
 
   /// Shows what the catalogue says of a package, as the Get mods page does. The catalogue is
@@ -604,16 +697,24 @@ public sealed class ModsPage : Page {
             arguments, run.DryRun, run.Token, run.AcceptEula, confirmed: true, run.Session));
   }
 
-  /// Asks for the ref of lip update package@ref, then updates the package to it.
-  private void PromptUpdateTo(string identity) =>
-      Context.Show(new PromptDialog(
-          ModsText.UpdateToTitle,
-          [new PromptField(identity + "@", "", ModsText.RefPlaceholder)],
-          values => {
-            string argument = $"{identity}@{RefOf(values[0])}";
-            Update([argument], ModsText.UpdateOperation(argument));
-          },
-          validate: values => RefOf(values[0]) is null ? ModsText.RefInvalid : null));
+  /// Asks for the ref of lip update package@ref, then updates the package to it: the
+  /// repository of its source, with the variant, at the ref. The server may have started since
+  /// the menu was made.
+  private void PromptUpdateTo(InstalledPackage package) {
+    if (package.Repository is not { } repository
+        || Context.RefuseWhileServerRuns(ModsText.UpdateToTitle)) {
+      return;
+    }
+
+    Context.Show(new PromptDialog(
+        ModsText.UpdateToTitle,
+        [new PromptField(repository + "@", "", ModsText.RefPlaceholder)],
+        values => {
+          string argument = $"{repository}@{RefOf(values[0])}";
+          Update([argument], ModsText.UpdateOperation(argument));
+        },
+        validate: values => RefOf(values[0]) is null ? ModsText.RefInvalid : null));
+  }
 
   /// What follows the @ of a package argument, as the user wrote it with or without the @: a
   /// version, or branch:, tag: or rev: with a name (protocol/lip-package.md, "Sources"); null
@@ -624,17 +725,16 @@ public sealed class ModsPage : Page {
       value = value[1..];
     }
 
-    if (value.Any(char.IsWhiteSpace)) {
-      return null;
-    }
+    return GitRef.TryParse(value, out GitRef? gitRef, out _) ? gitRef.ToString() : null;
+  }
 
-    foreach (string kind in (string[])["branch:", "tag:", "rev:"]) {
-      if (value.StartsWith(kind, StringComparison.Ordinal)) {
-        return value.Length > kind.Length ? value : null;
-      }
-    }
-
-    return SemVersion.TryParse(value, SemVersionStyles.Strict, out _) ? value : null;
+  /// Updates every mod that the user installed as Update updates one, which lip update
+  /// without operands does not: it keeps a mod that was installed at one version there.
+  private void UpdateAll() {
+    LipClient client = Context.Client;
+    Context.PlanAndRun(
+        ModsText.UpdateAll, run => client.UpdateMods(run.DryRun, run.Token, run.Session),
+        _list.Checked.Clear);
   }
 
   private void Update(IReadOnlyList<string> arguments, string title) {

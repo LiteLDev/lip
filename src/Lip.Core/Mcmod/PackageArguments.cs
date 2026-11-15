@@ -70,6 +70,14 @@ public static partial class PackageArguments {
     return new PackageRequest(spec, null);
   }
 
+  /// The package argument that names a source, the reverse of Parse: a URL and a remote
+  /// repository as they are written, a local path as its absolute path, each with its variant
+  /// after '#'.
+  public static string Of(Ref source) =>
+      source.Kind == RefKind.File
+          ? source.LocalPath + (source.Variant == "" ? "" : $"#{source.Variant}")
+          : source.ToString();
+
   /// Why an argument with a URI scheme other than https is no package.
   private static string SchemeReason(string scheme) =>
       scheme.Equals("file", StringComparison.OrdinalIgnoreCase)

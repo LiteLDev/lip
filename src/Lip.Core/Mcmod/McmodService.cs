@@ -36,9 +36,6 @@ public sealed record OperationResult(bool Changes, bool OnlyStateFile = false) {
   public static OperationResult Changed { get; } = new(true);
 }
 
-/// One package of the state file, as listed to the user.
-public record InstalledPackage(string Identity, string Version, bool Explicit);
-
 /// The workspace operations: install, uninstall, update and list (protocol/lip-workspace.md,
 /// protocol/lip.md).
 ///
@@ -376,6 +373,36 @@ public partial class McmodService(
         workspace, options, plan with { Members = members }));
   }
 
+  /// Updates every mod that the user installed, as the interface means it: lip update
+  /// (protocol/lip-update.md) with the package argument of each explicitly installed package
+  /// but the game and the loader (InstalledPackage.UpdateArgument), so that a mod installed at
+  /// one version moves to the highest version that fits, which lip update without operands
+  /// would keep. As that form does, a package whose source is a local path that no longer
+  /// exists is kept as it is, and a warning says so.
+  public async Task<OperationResult> UpdateMods(OperationOptions options) {
+    List<string> arguments = [];
+    foreach (InstalledPackage package in await List()) {
+      if (!package.Explicit || package.IsGame || package.IsLoader) {
+        continue;
+      }
+
+      if (package.Origin is { Kind: RefKind.File } source && !_fs.File.Exists(source.LocalPath)
+          && !_fs.Directory.Exists(source.LocalPath)) {
+        await _ui.PrintWarning(
+            $"Keeping package '{package.Identity}' as it is: {source.LocalPath}, which it was"
+            + " installed from, does not exist any more.");
+        continue;
+      }
+
+      if (!arguments.Contains(package.UpdateArgument)) {
+        arguments.Add(package.UpdateArgument);
+      }
+    }
+
+    // Without arguments, lip update would be the form without operands.
+    return arguments.Count == 0 ? OperationResult.Unchanged : await Update(arguments, options);
+  }
+
   /// The packages of the state file (protocol/lip-list.md). The state file derived from a
   /// tooth_lock.json is only read, for the environment a workspace operation would give it,
   /// without the commits it would record, which are not listed.
@@ -385,7 +412,11 @@ public partial class McmodService(
         ?? await ReadToothLock(root, DetermineEnvironment(null), resolveCommits: false);
     return [
       .. (lockFile?.Packages ?? [])
-          .Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit)),
+          .Select(p => new InstalledPackage(p.Identity, p.Version, p.Explicit) {
+            Variant = p.Variant,
+            Source = p.Source,
+            Commit = p.Commit,
+          }),
     ];
   }
 
