@@ -10,11 +10,12 @@
 <g shape-rendering="crispEdges">
 <rect x="202" y="88" width="702" height="20" fill="#4a5364"/>
 <rect x="31" y="128" width="144" height="20" fill="#4a5364"/>
-<rect x="58" y="328" width="81" height="20" fill="#2563c9"/>
+<rect x="796" y="248" width="108" height="20" fill="#4a5364"/>
+<rect x="166" y="308" width="81" height="20" fill="#2563c9"/>
 </g>
 <g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
-<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M256 78H918.13M202 418H904M25.88 498H180.13M187.88 498H918.13M26.5 77.38V498.63M179.5 77.38V208M179.5 368V498.63M188.5 77.38V208M188.5 368V498.63M917.5 77.38V498.63"/>
-<path stroke="#56c8d8" d="M43.88 218H58M463 218H900.13M43.88 358H900.13M44.5 217.38V358.63M899.5 217.38V358.63"/>
+<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M256 78H918.13M202 418H904M25.88 498H180.13M187.88 498H918.13M26.5 77.38V498.63M179.5 77.38V208M179.5 348V498.63M188.5 77.38V208M188.5 348V498.63M917.5 77.38V498.63"/>
+<path stroke="#56c8d8" d="M151.88 218H166M571 218H792.13M151.88 338H792.13M152.5 217.38V338.63M791.5 217.38V338.63"/>
 </g>
 <g fill="#d8dee9">
 <text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
@@ -32,19 +33,26 @@
 <text x="832" y="162.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Version</text>
 <text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
 <text x="202" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
-<text x="238" y="182.5" textLength="378" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyScriptEngine#lua</text>
-<text x="832" y="182.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.13.1</text>
+<text x="238" y="182.5" textLength="270" lengthAdjust="spacingAndGlyphs">github.com/GroupMountain/GMLIB</text>
+<text x="832" y="182.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.6.0</text>
 <text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
 <text x="202" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
-<text x="238" y="202.5" textLength="270" lengthAdjust="spacingAndGlyphs">github.com/GroupMountain/GMLIB</text>
-<text x="832" y="202.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.6.0</text>
-<text x="67" y="222.5" textLength="387" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Update github.com/LiteLDev/LegacyRemoteCall</text>
-<text x="58" y="242.5" textLength="441" lengthAdjust="spacingAndGlyphs">Resolving github.com/LiteLDev/LegacyRemoteCall...</text>
-<text x="58" y="262.5" textLength="756" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would mark package 'github.com/LiteLDev/LegacyRemoteCall' version 0.13.0 as</text>
-<text x="58" y="282.5" textLength="189" lengthAdjust="spacingAndGlyphs" font-weight="700">explicitly installed.</text>
-<text x="58" y="302.5" textLength="423" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Only lip's record of the packages would change.</text>
-<text x="58" y="342.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Apply ]</text>
-<text x="148" y="342.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ Cancel ]</text>
+<text x="238" y="202.5" textLength="279" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyMoney</text>
+<text x="832" y="202.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.16.1</text>
+<text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="175" y="222.5" textLength="387" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Update github.com/LiteLDev/LegacyRemoteCall</text>
+<text x="832" y="222.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.13.1</text>
+<text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="166" y="242.5" textLength="261" lengthAdjust="spacingAndGlyphs">Resolving LegacyRemoteCall...</text>
+<text x="832" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.8.1</text>
+<text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="166" y="262.5" textLength="612" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would mark LegacyRemoteCall 0.13.0 as explicitly installed.</text>
+<text x="832" y="262.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">0.13.0</text>
+<text x="166" y="282.5" textLength="423" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Only lip's record of the packages would change.</text>
+<text x="832" y="282.5" textLength="63" lengthAdjust="spacingAndGlyphs">1.26.60</text>
+<text x="832" y="302.5" textLength="63" lengthAdjust="spacingAndGlyphs">26.60.3</text>
+<text x="166" y="322.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Apply ]</text>
+<text x="256" y="322.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ Cancel ]</text>
 <text x="202" y="442.5" textLength="324" lengthAdjust="spacingAndGlyphs" font-weight="700">github.com/LiteLDev/LegacyRemoteCall</text>
 <text x="544" y="442.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.13.0</text>
 <text x="202" y="462.5" textLength="351" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Installed because another mod needs it.</text>
@@ -57,6 +65,6 @@
 <text x="292" y="522.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
 <text x="328" y="522.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Cancel</text>
 </g>
-<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V534H16zM37 205H907V371H37z"/>
-<rect x="54" y="286" width="431" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V534H16zM145 205H799V351H145z"/>
+<rect x="162" y="266" width="431" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
 </svg>

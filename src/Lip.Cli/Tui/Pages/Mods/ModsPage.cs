@@ -84,7 +84,8 @@ internal sealed class ServerMenu(Func<ServerMenu, bool, Menu> make) : Dialog {
 
 /// The Mods page: the installed packages of the selected workspace, with lip install, lip
 /// update and lip uninstall (protocol/lip-install.md, lip-update.md, lip-uninstall.md,
-/// lip-list.md). Action rows stand above the list; Enter on a package opens its action menu,
+/// lip-list.md). The list is in the order of InstalledPackage.Listed, which no operation
+/// changes. Action rows stand above the list; Enter on a package opens its action menu,
 /// which acts on the checked packages when there are any. While the server of the workspace
 /// runs, what changes the workspace is shown disabled, and a line says so; a menu that is open
 /// when the server starts or stops is made again.
@@ -272,8 +273,15 @@ public sealed class ModsPage : Page {
           bool first = !_loaded;
           _loaded = true;
           _error = null;
-          // The mods that the user installed, then their dependencies, then the server.
+          // The mods that the user installed, then their dependencies, then the server, each
+          // by identity: a package stays where it is whatever was installed or uninstalled,
+          // and the highlight stays on the package it was on while that is still installed.
+          string? highlighted = _list.HasCurrent ? _list.Current.Identity : null;
           _list.Items = InstalledPackage.Listed(packages);
+          if (highlighted is not null) {
+            _list.Select(p => p.Identity == highlighted);
+          }
+
           Refresh();
           if (first) {
             // With mods, the list is what the page is about; without, the first action row,
@@ -531,7 +539,7 @@ public sealed class ModsPage : Page {
         Item(ModsText.DetailsOf(Cells.BareName(identity)), () => ShowDetails(identity)),
         Change(
             ModsText.UpdateChecked(targets.Length),
-            () => Update(sources, ModsText.UpdateChecked(targets.Length))),
+            () => Update(sources, ModsText.UpdateChecked(targets.Length), newest: true)),
         Change(
             ModsText.UninstallChecked(targets.Length),
             () => Uninstall(identities, ModsText.UninstallChecked(targets.Length))),
@@ -552,7 +560,8 @@ public sealed class ModsPage : Page {
         // installed, which the plan says.
         items.Add(Change(
             ModsText.Update,
-            () => Update([package.UpdateArgument], ModsText.UpdateOperation(identity))));
+            () => Update(
+                [package.UpdateArgument], ModsText.UpdateOperation(identity), newest: true)));
         // Only a repository has other versions to name.
         items.Add(Change(
             ModsText.UpdateTo, () => PromptUpdateTo(package),
@@ -700,7 +709,7 @@ public sealed class ModsPage : Page {
         [new PromptField(repository + "@", "", ModsText.RefPlaceholder)],
         values => {
           string argument = $"{repository}@{RefOf(values[0])}";
-          Update([argument], ModsText.UpdateOperation(argument));
+          Update([argument], ModsText.UpdateOperation(argument), newest: false);
         },
         validate: values => RefOf(values[0]) is null ? ModsText.RefInvalid : null));
   }
@@ -722,15 +731,36 @@ public sealed class ModsPage : Page {
   private void UpdateAll() {
     LipClient client = Context.Client;
     Context.PlanAndRun(
-        ModsText.UpdateAll, run => client.UpdateMods(run.DryRun, run.Token, run.Session),
+        ModsText.UpdateAll,
+        run => Newest(client.UpdateMods(run.DryRun, run.Token, run.Session)),
         _list.Checked.Clear);
   }
 
-  private void Update(IReadOnlyList<string> arguments, string title) {
+  /// Updates the packages that the arguments name. newest: the update is to the newest
+  /// version that fits, as Update and Update all mean it, and not to a version or a ref
+  /// that the user named.
+  private void Update(IReadOnlyList<string> arguments, string title, bool newest) {
     LipClient client = Context.Client;
     Context.PlanAndRun(
-        title, run => client.Update(arguments, run.DryRun, run.Token, run.Session),
+        title,
+        run => {
+          Task<OperationResult> update =
+              client.Update(arguments, run.DryRun, run.Token, run.Session);
+          return newest ? Newest(update) : update;
+        },
         _list.Checked.Clear);
+  }
+
+  /// The result of an update to the newest version that fits. The interface asks for it
+  /// without the version that a mod was installed at (InstalledPackage.UpdateArgument), so
+  /// for a mod that is at its newest version already, lip would do nothing but record that
+  /// source in place of the one with the version. That is nothing that the user asked for
+  /// or would see, so such an update has nothing to carry out: its plan says that nothing
+  /// would change, however often it is asked for, and the record stays as it is. An update
+  /// to a version that the user names is carried out as it is, the record included.
+  private static async Task<OperationResult> Newest(Task<OperationResult> update) {
+    OperationResult result = await update;
+    return result.OnlySources ? OperationResult.Unchanged : result;
   }
 
   private void Uninstall(IReadOnlyList<string> identities, string title) {

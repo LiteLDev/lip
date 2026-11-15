@@ -418,8 +418,13 @@ public sealed class ServerPageTests {
     Assert.DoesNotContain(CommonText.ServerStopped, tui.Screen);
     Assert.EndsWith("● " + CommonText.ServerRunning, tui.Screen.Split('\n')[0]);
 
-    // The button is disabled: the bar names no Enter, and Enter starts nothing.
+    // The button is disabled: the bar names no Enter, and Enter starts nothing. It looks
+    // disabled though it has the focus: muted, and never as a button that can be pressed.
     Assert.Equal(" " + Bar(CommonText.HintSwitch, CommonText.HintBack), LastRow(tui));
+    Style start = await tui.StyleOf($"[ {ServerText.Start} ]");
+    Assert.Equal(Theme.Muted with { Underline = true }, start);
+    Assert.NotEqual(Theme.Selected.Bg, start.Bg);
+    Assert.NotEqual(Theme.SelectedInactive.Bg, start.Bg);
     tui.Press(ConsoleKey.Enter);
     tui.Press(ConsoleKey.Spacebar);
     await tui.Settle();
@@ -438,6 +443,7 @@ public sealed class ServerPageTests {
     await tui.WaitFor(_ => LastRow(tui).Contains(
         Bar(CommonText.HintSwitch, CommonText.HintToggleEither, CommonText.HintBack)),
         "the toggle");
+    Assert.Equal(Theme.Muted, await tui.StyleOf($"[ {ServerText.Start} ]"));
     tui.Press(ConsoleKey.DownArrow);
     await tui.Settle();
     Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
@@ -454,6 +460,109 @@ public sealed class ServerPageTests {
     await tui.WaitFor("○ " + CommonText.ServerStopped);
     await tui.WaitFor(ServerText.NoOutput);
     Assert.DoesNotContain(ServerText.RunningElsewhere, tui.Screen);
+  }
+
+  /// A system preparer that waits until it is released, or fails.
+  private sealed class HeldPreparer : Lip.Core.Infrastructure.ISystemPreparer {
+    public TaskCompletionSource Release { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource Asked { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async Task Prepare(
+        string platform, string workspaceRoot, CancellationToken cancellationToken) {
+      Asked.TrySetResult();
+      await Release.Task;
+    }
+  }
+
+  /// From Start until lip run has started the server, while it prepares the system
+  /// (protocol/lip-run.md, step 6), the server is starting, not running: the page, its mark in
+  /// the sidebar and the top bar say so.
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task Start_SaysStarting_UntilTheServerProcessRuns(Language language) {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "The server of the test is cmd.exe.");
+    string root = TestClients.CmdWorkspace();
+    ServerSessions servers = new();
+    HeldPreparer preparer = new();
+    try {
+      System.IO.Abstractions.FileSystem fs = new();
+      using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+        Language = language,
+        CreateClient = (interaction, hookOutput, _) =>
+            TestClients.CmdClient(fs, interaction, hookOutput, root, preparer),
+        Servers = servers,
+      });
+      await tui.GoTo(PageId.Server);
+      await tui.WaitFor($"[ {ServerText.Start} ]");
+
+      // Act: Start, with the system still being prepared.
+      tui.Press(ConsoleKey.Enter);
+      await preparer.Asked.Task.WaitAsync(
+          TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+      // Assert: starting, in the page and in the top bar; nothing says that it runs.
+      await tui.WaitFor("● " + CommonText.ServerStarting);
+      Assert.EndsWith("● " + CommonText.ServerStarting, tui.Screen.Split('\n')[0]);
+      Assert.DoesNotContain("● " + CommonText.ServerRunning, tui.Screen);
+      Assert.Equal(Theme.Warning, await tui.StyleOf("● " + CommonText.ServerStarting));
+      Assert.Contains($"[ {ServerText.Stop} ]", tui.Screen);
+      WorkspaceServer server = servers.Find(tui.Root)!;
+      Assert.True(server is { Running: true, Starting: true });
+      tui.Snapshot("server-starting");
+
+      // The process runs: the page says Running, with the time since then.
+      preparer.Release.SetResult();
+      await tui.WaitFor("● " + CommonText.ServerRunning + " · 00:00:0");
+      Assert.DoesNotContain(CommonText.ServerStarting, tui.Screen);
+      Assert.False(server.Starting);
+
+      tui.Type("exit 0");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor("○ " + ServerText.ExitedWith(0));
+    }
+    finally {
+      TestClients.Remove(root, servers);
+    }
+  }
+
+  /// A failure before the server starts is shown as a failure, and the server is not left
+  /// starting.
+  [Fact]
+  public async Task Start_ThatFailsWhileStarting_IsShownAsAFailure_AndIsNotStartingAnyMore() {
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "The server of the test is cmd.exe.");
+    string root = TestClients.CmdWorkspace();
+    ServerSessions servers = new();
+    HeldPreparer preparer = new();
+    try {
+      System.IO.Abstractions.FileSystem fs = new();
+      using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+        CreateClient = (interaction, hookOutput, _) =>
+            TestClients.CmdClient(fs, interaction, hookOutput, root, preparer),
+        Servers = servers,
+      });
+      await tui.GoTo(PageId.Server);
+      await tui.WaitFor("[ Start ]");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor("● Starting");
+
+      preparer.Release.SetException(
+          new InvalidOperationException("The Visual C++ runtime cannot be installed."));
+
+      await tui.WaitFor("Start server · Failed");
+      Assert.Contains("The Visual C++ runtime cannot be installed.", tui.Screen);
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor("○ Stopped");
+      Assert.DoesNotContain("Starting", tui.Screen.Split('\n')[0]);
+      Assert.True(servers.Find(tui.Root) is { Running: false, Starting: false });
+    }
+    finally {
+      TestClients.Remove(root, servers);
+    }
   }
 
   [Fact]

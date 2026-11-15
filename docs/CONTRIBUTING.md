@@ -10,6 +10,7 @@ The site is built by levimc-kit, which `pnpm install` fetches into `docs/kit/`. 
 ```
 pnpm install --frozen-lockfile
 pnpm typecheck      # docs.config.ts
+pnpm test           # the converter of scripts/zh-hant.mjs (scripts/zh-hant.test.mjs)
 pnpm build          # writes zh-Hant/, then dist/
 pnpm linkcheck      # every link, anchor and picture of dist/
 pnpm dev            # the site on a local server, rebuilt as you edit
@@ -63,6 +64,8 @@ So, in a Simplified Chinese page:
   Do not write it as code: code is kept as it is.
 - When a Traditional page reads wrong, add the word to `scripts/zh-hant-terms.mjs`, and build again. A word that
   maps to itself keeps a longer word whole (`包含` is not `包`, 套件, and `含`).
+- When the script itself converts something wrongly, or keeps what it should convert, add a case to
+  `scripts/zh-hant.test.mjs` with the fix; `pnpm test` runs the cases.
 - The labels of the tabs and the sidebar in Traditional Chinese are written by hand, in `LABELS['zh-Hant']` of
   `docs.config.ts`.
 

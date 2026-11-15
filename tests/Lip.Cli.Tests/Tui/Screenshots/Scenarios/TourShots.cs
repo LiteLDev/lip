@@ -97,7 +97,7 @@ public sealed class TourShots(ShotRun run) {
                 "焦点在页面里：页面的边框和名字变亮。", "焦點在頁面裡：頁面的邊框和名字變亮。"),
             Side.Right),
         Note.Callout(
-            2, At.Row(Catalogue.ScriptEngine),
+            2, At.Row(Catalogue.Gmlib),
             shot.T(
                 "The highlighted row is what Enter and Space act on.",
                 "高亮的这一行就是 Enter 和 Space 的操作对象。", "反白的這一列就是 Enter 和 Space 的操作對象。")),
@@ -151,7 +151,7 @@ public sealed class TourShots(ShotRun run) {
     await tui.WaitFor(CommonText.Cancelled);
     await shot.Capture(
         "tour-05-cancelled",
-        Note.Focus(At.Panel($"{WorkspacesText.SetUpTitle} · {CommonText.Failed}")),
+        Note.Focus(At.Panel($"{WorkspacesText.SetUpTitle} · {CommonText.CancelledWord}")),
         Note.Box(At.Text(CommonText.Cancelled)),
         Note.Keys("Enter"));
   }

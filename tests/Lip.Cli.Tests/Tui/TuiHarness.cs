@@ -298,6 +298,17 @@ public sealed class TuiHarness : IDisposable {
     Assert.Fail($"The interface never reached {what}:{NewLine}{Screen}");
   }
 
+  /// The style of the first cell of the first place where the screen shows the text, once
+  /// every key pressed so far is handled and drawn.
+  public async Task<Style> StyleOf(string text) {
+    await Settle();
+    IReadOnlyList<string> rows = await Invoke(() => App.ScreenAnsi);
+    Screenshots.Frame frame = Screenshots.Frame.Parse(rows);
+    Screenshots.CellRect at = frame.Find(text)
+        ?? throw new InvalidOperationException($"The screen does not show '{text}':\n{Screen}");
+    return frame[at.X, at.Y].Style;
+  }
+
   /// Runs get on the thread of the interface and returns what it returns.
   public Task<T> Invoke<T>(Func<T> get) {
     TaskCompletionSource<T> result = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -540,10 +551,12 @@ public static class TestClients {
     return root;
   }
 
-  /// The client of the workspace at root, which prepares no system. Its user configuration is
-  /// a directory of the test, not that of the user who runs the tests.
+  /// The client of the workspace at root, which prepares no system unless a preparer is
+  /// given. Its user configuration is a directory of the test, not that of the user who runs
+  /// the tests.
   public static LipClient CmdClient(
-      FileSystem fs, IUserInteraction interaction, Func<Stream> hookOutput, string root) =>
+      FileSystem fs, IUserInteraction interaction, Func<Stream> hookOutput, string root,
+      ISystemPreparer? systemPreparer = null) =>
       new(
           fs, interaction, new CacheService(fs, interaction),
           new ConfigService(
@@ -552,7 +565,7 @@ public static class TestClients {
               fs, interaction, new LockStore(fs), Mock.Of<IArchiveProvider>(),
               new ArchiveReader(),
               new McmodInstaller(fs, new CommandRunner(hookOutput), interaction),
-              workspaceRoot: () => root));
+              workspaceRoot: () => root, systemPreparer: systemPreparer));
 }
 
 /// The server setup of the tests: two games, the newest of them for Linux too, and two

@@ -38,7 +38,7 @@
 <text x="49 67 85" y="222.5" text-anchor="middle" fill="#ffffff">工作区</text>
 <text x="49 67" y="242.5" text-anchor="middle">工具</text>
 <text x="49 67" y="262.5" text-anchor="middle">设置</text>
-<text x="184 202 220 238 256 274 292 310 328 346 364 382 400 418" y="422.5" text-anchor="middle" fill="#8b95a7">添加一个已有服务器的文件夹。</text>
+<text x="184 202 220 238 256 274 292 310 328 346 364 382 400 418 436 454 472 490 508 526 544 562 580 598" y="422.5" text-anchor="middle" fill="#8b95a7">把已有的文件夹加入列表，里面有没有服务器都可以。</text>
 <text x="35.5" y="482.5" text-anchor="middle" font-weight="700">↑</text>
 <text x="44.5" y="482.5" text-anchor="middle" font-weight="700">↓</text>
 <text x="67 85" y="482.5" text-anchor="middle" fill="#8b95a7">移动</text>

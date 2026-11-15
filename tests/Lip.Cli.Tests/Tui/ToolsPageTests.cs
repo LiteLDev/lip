@@ -673,8 +673,10 @@ public sealed class ToolsPageTests {
       await tui.WaitFor(ToolsText.ViewAbout);
     }
 
-    // The local folder: the line below the list says where the package is from.
+    // The local folder: the line below the list says where the package is from. The mods are
+    // listed by identity: Alpha, the long one, the tool; then the game.
     await List();
+    tui.Press(ConsoleKey.DownArrow, 2);
     await tui.WaitFor($"{tool}@1.2.3 · {local}");
     // An identity that is longer than its column keeps its start and its end.
     Assert.Matches(@"github\.com/some-\S*…\S*-name#cuda  10\.20\.30", tui.Screen);
@@ -687,7 +689,6 @@ public sealed class ToolsPageTests {
 
     // The branch: the commit that was installed of it.
     await List();
-    tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor($"{Alpha}@1.2.0 · branch:main");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"\"id\": \"{Alpha}\"");
@@ -697,7 +698,7 @@ public sealed class ToolsPageTests {
 
     // The long identity: the line below the list has it in full.
     await List();
-    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor($"{longId}#cuda@10.20.30");
     await Frames(tui, "tools-view-installed-long");
     tui.Press(ConsoleKey.Escape);

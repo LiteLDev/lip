@@ -120,8 +120,7 @@
 <text x="175" y="502.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
 <text x="265" y="502.5" textLength="342" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyScriptEngine</text>
 <text x="184 202 220 238" y="522.5" text-anchor="middle" fill="#8b95a7">最新版本</text>
-<text x="274 292 310" y="522.5" text-anchor="middle">載入中</text>
-<text x="323.5" y="522.5" text-anchor="middle">…</text>
+<text x="265" y="522.5" textLength="99" lengthAdjust="spacingAndGlyphs">0.13.2 #lua</text>
 <text x="184 202" y="542.5" text-anchor="middle" fill="#8b95a7">平台</text>
 <text x="265" y="542.5" textLength="63" lengthAdjust="spacingAndGlyphs">win-x64</text>
 <text x="184 202" y="562.5" text-anchor="middle" fill="#8b95a7">遊戲</text>

@@ -179,10 +179,10 @@ Press `Esc` or `Ctrl+C` to cancel. lip writes `Cancelling…`:
 
 Then lip undoes what it had done so far, so your folder is as it was before, and says so:
 
-![A dialog that says "Cancelled. Changes were undone.", with a Close button.](/screenshots/en/tour-05-cancelled.svg)
+![A dialog titled "Set up server · Cancelled" that says "Cancelled. Changes were undone.", with a Close button.](/screenshots/en/tour-05-cancelled.svg)
 
 ::: info
-This dialog is titled "Failed" and has a red frame, as a failure has. Nothing went wrong: the line "Cancelled. Changes were undone." is what counts.
+A change that you cancelled did not fail. Its dialog has "Cancelled" in its title and the frame of any other dialog, not the red frame of a failure.
 :::
 
 ### 4. The result

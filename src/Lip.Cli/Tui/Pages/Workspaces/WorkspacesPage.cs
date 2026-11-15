@@ -236,7 +236,7 @@ public sealed class WorkspacesPage : Page {
     string mark = entry.Missing ? WorkspacesText.Missing
         : running ? WorkspacesText.ServerRunning : "";
     int room = _rowWidth - 2 - (mark.Length > 0 ? TextWidth.Of(mark) + 2 : 0);
-    string path = FitEnd(entry.Path, room);
+    string path = TextWidth.FitEnd(entry.Path, room);
     StyledLine line = new StyledLine()
         .Add(current ? "● " : "  ", Theme.Good)
         .Add(path, current ? Theme.Strong : default);
@@ -269,7 +269,7 @@ public sealed class WorkspacesPage : Page {
             ? current ? WorkspacesText.CurrentRunningDetail : WorkspacesText.RunningDetail
         : current ? WorkspacesText.CurrentDetail
         : "";
-    return [FitEnd(entry.Path, width), TextWidth.Fit(state, width)];
+    return [TextWidth.FitEnd(entry.Path, width), TextWidth.Fit(state, width)];
   }
 
   /// Whether the workspace is the selected one. Both paths are in canonical form.
@@ -363,25 +363,4 @@ public sealed class WorkspacesPage : Page {
   /// The name of the directory at a path, or the path when it has none, as a root.
   private string Name(string path) =>
       Context.FileSystem.Path.GetFileName(path) is { Length: > 0 } name ? name : path;
-
-  /// The text cut to at most width columns, keeping its end, after an ellipsis when it was
-  /// cut: the end of a path says the most.
-  private static string FitEnd(string text, int width) {
-    if (TextWidth.Of(text) <= width) {
-      return text;
-    }
-
-    if (width <= 0) {
-      return "";
-    }
-
-    List<Rune> runes = [.. text.EnumerateRunes()];
-    int used = 0;
-    int first = runes.Count;
-    while (first > 0 && used + TextWidth.Of(runes[first - 1]) <= width - 1) {
-      used += TextWidth.Of(runes[--first]);
-    }
-
-    return "…" + string.Concat(runes.Skip(first).Select(r => r.ToString()));
-  }
 }

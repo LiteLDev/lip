@@ -36,7 +36,9 @@ Press `Enter` on **Start** to start it.
 
 ### Running
 
-The state changes at once when you press Start. There is no separate "starting" state: the server counts as running from the moment lip launches it, while it still loads its world and its mods.
+When you press Start, the state is `● Starting` until the program of the server runs. That is usually a moment. It takes longer when lip first has to prepare the system for the server, such as the Visual C++ runtime on Windows or Wine on Linux and macOS. When that fails, lip shows the failure, and the state is `○ Stopped` again.
+
+Then the state is `● Running`. The server counts as running from the moment its program runs, while it still loads its world and its mods.
 
 ![The Server page right after Start. The state says "Running · 00:00:01", the button is now Stop, the output has one gray line, and the input line has appeared.](/screenshots/en/server-05-just-started.svg)
 

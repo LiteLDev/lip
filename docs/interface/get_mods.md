@@ -187,7 +187,7 @@ Installing always goes through choosing a version. lip shows only the versions t
 
 4. Choose **Apply**. When lip is done, it shows what it did.
 
-   ![The result: two lines that start with "Installing package", then "✓ Done."](/screenshots/en/get-mods-27-install-result.svg)
+   ![The result: two lines that start with "Installing", then "✓ Done."](/screenshots/en/get-mods-27-install-result.svg)
 
 5. Press `Enter`. The mod now has a `✓` in the list, and so has what was installed with it.
 

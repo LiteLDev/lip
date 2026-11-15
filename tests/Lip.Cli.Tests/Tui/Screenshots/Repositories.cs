@@ -55,8 +55,7 @@ public static class Repositories {
   /// Makes the state file of the selected workspace say what lip would have written of the
   /// mods of the catalogue, so that lip plans for them what it would plan for a real server:
   /// each has the dependencies of its package file, the files that the state file names
-  /// exist, and a mod that was installed at a version is of the commit of that version, by a
-  /// source that names its variant.
+  /// exist, and a mod that was installed at a version is of the commit of that version.
   private static World Reconcile(World world) {
     string path = Path.Join(world.Workspace, ".lip", "state.json");
     if (!world.Fs.FileExists(path)) {
@@ -85,11 +84,9 @@ public static class Repositories {
       }
 
       package["manifest"]!["variants"]![variant]![0]!["deps"] = deps;
-      if (package["ref"]!.GetValue<string>() == $"{id}@{version}") {
+      if (package["ref"]!.GetValue<string>()
+          == World.Source(new Installed(id, version, Variant: variant))) {
         package["commit"] = CommitOf(id, version);
-        if (variant.Length > 0) {
-          package["ref"] = $"{id}#{variant}@{version}";
-        }
       }
     }
 

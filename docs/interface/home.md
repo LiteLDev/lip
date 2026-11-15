@@ -21,7 +21,7 @@ The upper part of the page says what the workspace, the folder that lip works on
 | Game | The version of the Minecraft server in the folder, or "Not installed". |
 | Loader | LeviLamina and its version, or "None". Mods need the loader. |
 | Mods | How many mods you installed. Mods that were installed only because another mod needs them are not counted, and neither are the game and the loader. |
-| Server | "Stopped", or `●` and "Running". Right after you ask the server to stop it says "Stopping", and while lip waits to start a crashed server again it says "Restarting". |
+| Server | "Stopped", or `●` and "Running". From Start until the program of the server runs it says "Starting". Right after you ask the server to stop it says "Stopping", and while lip waits to start a crashed server again it says "Restarting". |
 
 For a moment after the page opens, the rows show `…` while lip reads the folder.
 

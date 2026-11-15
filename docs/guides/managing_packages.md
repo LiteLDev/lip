@@ -185,7 +185,7 @@ lip removes the files the package installed. Then it removes every dependency th
 Things to know:
 
 - **Only packages you asked for can be uninstalled.** A dependency goes away when the packages that need it do.
-- **A package that others still need stays**, as a dependency. lip says so: `Package '<name>' is still required by other packages; keeping it as a dependency.`
+- **A package that others still need stays**, as a dependency. lip says so: `<name> is still required by other packages; keeping it as a dependency.`
 - **Files you may have edited are kept** when the package says so. For example, uninstalling the game keeps `server.properties`. See [What is kept and what is deleted](server_from_commands.md#what-is-kept-and-what-is-deleted).
 - **The game and the loader can be uninstalled** like any package. A workspace without a game has no server to run.
 

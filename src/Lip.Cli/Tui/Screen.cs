@@ -170,6 +170,32 @@ public static class TextWidth {
     return builder.Append('…').ToString();
   }
 
+  /// The text cut to its last width columns, starting with an ellipsis when it was cut: the end
+  /// of a path says more than its start.
+  public static string FitEnd(string text, int width) {
+    if (Of(text) <= width) {
+      return text;
+    }
+
+    if (width <= 0) {
+      return "";
+    }
+
+    int start = text.Length;
+    int used = 1;
+    foreach (Rune rune in text.EnumerateRunes().Reverse()) {
+      int w = Of(rune);
+      if (used + w > width) {
+        break;
+      }
+
+      used += w;
+      start -= rune.Utf16SequenceLength;
+    }
+
+    return "…" + text[start..];
+  }
+
   // What does not start a line, and what does not end one, where a line is broken between
   // two characters and not at a space.
   private const string NotAtStart = "，。、；：！？）」』》〉】”’…—,.;:!?)]}%";
@@ -187,17 +213,30 @@ public static class TextWidth {
       && !(second.IsBmp && NotAtStart.Contains((char)second.Value))
       && !(first.IsBmp && NotAtEnd.Contains((char)first.Value));
 
+  // What a word that is longer than a line is broken after, where it has any: the marks
+  // between the parts of an identity, a path, a URL or a file name.
+  private const string SoftBreaks = "/\\.-_#@";
+
+  private static readonly Rune _blank = new(' ');
+
+  /// Whether a word that is longer than a line may be broken between two of its characters:
+  /// after a mark that separates its parts, and not inside a run of them, as in "://".
+  private static bool SoftBreakBetween(Rune first, Rune second) =>
+      first.IsBmp && SoftBreaks.Contains((char)first.Value)
+      && !(second.IsBmp && SoftBreaks.Contains((char)second.Value));
+
   /// The text as lines of at most width columns, broken at spaces where there are any, and
   /// before or after a character that is two columns wide, as Chinese text is broken, but not
   /// before a mark that closes or after one that opens. A word that is longer than a line is
-  /// broken where the line ends.
+  /// broken after the marks between its parts (/ \ . - _ # @) where it has any, and where the
+  /// line ends otherwise, never inside a character.
   public static List<string> Wrap(string text, int width) {
     List<string> lines = [];
     width = Math.Max(1, width);
     foreach (string paragraph in text.Replace("\r", "", StringComparison.Ordinal).Split('\n')) {
       StringBuilder line = new();
       int used = 0;
-      foreach ((string unit, bool spaced) in Units(paragraph.Replace('\t', ' '))) {
+      foreach ((string unit, bool spaced) in Units(paragraph.Replace('\t', ' '), width)) {
         int w = Of(unit);
         bool space = spaced && used > 0;
         if (used > 0 && used + (space ? 1 : 0) + w > width) {
@@ -214,7 +253,7 @@ public static class TextWidth {
 
         foreach (Rune rune in unit.EnumerateRunes()) {
           int rw = Of(rune);
-          if (used + rw > width) {
+          if (used > 0 && used + rw > width) {
             lines.Add(line.ToString());
             line.Clear();
             used = 0;
@@ -233,16 +272,19 @@ public static class TextWidth {
 
   /// The parts of a paragraph that a line is not broken inside of unless it must be, each
   /// with whether a space is before it: the words, and in a word each character that is two
-  /// columns wide, with the marks that stay with it.
-  private static IEnumerable<(string Unit, bool Spaced)> Units(string paragraph) {
+  /// columns wide, with the marks that stay with it. A word that is longer than width columns
+  /// is given as its parts, each ending with the mark that follows it.
+  private static IEnumerable<(string Unit, bool Spaced)> Units(string paragraph, int width) {
     bool first = true;
     foreach (string word in paragraph.Split(' ')) {
       StringBuilder unit = new();
       bool spaced = !first;
+      bool parts = Of(word) > width;
       first = false;
       Rune? before = null;
       foreach (Rune rune in word.EnumerateRunes()) {
-        if (before is { } last && BreaksBetween(last, rune)) {
+        if (before is { } last
+            && (BreaksBetween(last, rune) || (parts && SoftBreakBetween(last, rune)))) {
           yield return (unit.ToString(), spaced);
           unit.Clear();
           spaced = false;
@@ -256,32 +298,138 @@ public static class TextWidth {
     }
   }
 
-  /// A styled line as rows of at most width columns.
+  /// A styled line as rows of at most width columns, broken as Wrap breaks a text: at a
+  /// space, which then ends the row and is not shown; at a character that is two columns
+  /// wide; in a word that is longer than a row after the marks between its parts; and where
+  /// the row ends otherwise, never inside a character. The spaces at the start of the line
+  /// are kept, and a tab of a line that is broken is a space. A line that fits is its one
+  /// row, as it is.
   public static List<StyledLine> Wrap(StyledLine line, int width) {
-    List<StyledLine> rows = [new StyledLine()];
     width = Math.Max(1, width);
-    int used = 0;
+    // Most lines fit, and are the row as they are.
+    int columns = 0;
     foreach (Span span in line.Spans) {
-      StringBuilder part = new();
+      columns += Of(span.Text);
+    }
+
+    if (columns <= width) {
+      return [line];
+    }
+
+    List<(Rune Rune, int Width, Style Style)> cells = [];
+    foreach (Span span in line.Spans) {
       foreach (Rune rune in span.Text.EnumerateRunes()) {
-        int w = Of(rune);
-        if (used + w > width) {
-          rows[^1].Add(part.ToString(), span.Style);
-          part.Clear();
-          rows.Add(new StyledLine());
-          used = 0;
-        }
-
-        part.Append(rune.ToString());
-        used += w;
-      }
-
-      if (part.Length > 0) {
-        rows[^1].Add(part.ToString(), span.Style);
+        Rune shown = rune.Value == 9 ? _blank : rune;
+        cells.Add((shown, Of(shown), span.Style));
       }
     }
 
+    List<StyledLine> rows = [];
+    int start = 0;
+    while (start < cells.Count) {
+      // The cells that fit, with what takes no column after them.
+      int end = start;
+      int used = 0;
+      while (end < cells.Count && used + cells[end].Width <= width) {
+        used += cells[end].Width;
+        end++;
+      }
+
+      end = Math.Max(end, start + 1);
+      while (end < cells.Count && cells[end].Width == 0) {
+        end++;
+      }
+
+      int next = end;
+      if (end < cells.Count && cells[end].Rune == _blank) {
+        next = end + 1;
+      } else if (end < cells.Count) {
+        (end, next) = BreakBefore(cells, start, end, width);
+      }
+
+      StyledLine row = new();
+      for (int i = start; i < end;) {
+        int run = i;
+        StringBuilder text = new();
+        while (run < end && cells[run].Style == cells[i].Style) {
+          text.Append(cells[run].Rune.ToString());
+          run++;
+        }
+
+        row.Add(text.ToString(), cells[i].Style);
+        i = run;
+      }
+
+      rows.Add(row);
+      start = next;
+    }
+
     return rows;
+  }
+
+  /// Where the row of the cells from start that ends before the cell at end, which goes on in
+  /// a word, is broken instead: the cell that the row ends before, and the cell that the next
+  /// row starts at. That is the last space of the row, or the last place between two wide
+  /// characters, unless the word after it is longer than a row and has a mark between its
+  /// parts in this row: then after the last such mark. A row is never left with spaces only.
+  private static (int End, int Next) BreakBefore(
+      List<(Rune Rune, int Width, Style Style)> cells, int start, int end, int width) {
+    int content = start;
+    while (content < end && cells[content].Rune == _blank) {
+      content++;
+    }
+
+    (int End, int Next)? word = null;
+    int soft = -1;
+    for (int at = end; at > content; at--) {
+      Rune before = cells[at - 1].Rune;
+      Rune after = cells[at].Rune;
+      if (after == _blank) {
+        continue;
+      }
+
+      if (before == _blank) {
+        // The space ends the row; the spaces before it go with it.
+        int last = at - 1;
+        while (last > content && cells[last - 1].Rune == _blank) {
+          last--;
+        }
+
+        word = (last, at);
+        break;
+      }
+
+      if (BreaksBetween(before, after)) {
+        word = (at, at);
+        break;
+      }
+
+      if (soft < 0 && SoftBreakBetween(before, after)) {
+        soft = at;
+      }
+    }
+
+    if (word is not { } found) {
+      return soft >= 0 ? (soft, soft) : (end, end);
+    }
+
+    if (soft < 0) {
+      return found;
+    }
+
+    // The word that the next row would start with, up to its next space or wide character.
+    int columns = 0;
+    for (int i = found.Next; i < cells.Count && columns <= width; i++) {
+      bool ends = cells[i].Rune == _blank
+          || (i > found.Next && BreaksBetween(cells[i - 1].Rune, cells[i].Rune));
+      if (ends) {
+        break;
+      }
+
+      columns += cells[i].Width;
+    }
+
+    return columns > width ? (soft, soft) : found;
   }
 }
 

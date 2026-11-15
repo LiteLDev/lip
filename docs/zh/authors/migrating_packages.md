@@ -15,7 +15,7 @@ git add lip.toml tooth.json
 git commit -m "Migrate tooth.json to lip.toml"
 ```
 
-它写入由 `tooth.json` 转换而来的 `lip.toml`，然后删除 `tooth.json`。在界面中，[工具](../interface/tools.md)页的**迁移 tooth.json** 对所选工作区做同样的事，并在界面中提问。`lip.toml` 已存在，或 `tooth.json` 不存在或不是 lip 能读取的格式 1、2 或 3 的 `tooth.json` 时，命令会失败，且不做任何修改。
+它写入由 `tooth.json` 转换而来的 `lip.toml`，然后删除 `tooth.json`。在界面中，[工具](../interface/tools.md)页的**迁移 tooth.json** 对当前工作区做同样的事，并在界面中提问。`lip.toml` 已存在，或 `tooth.json` 不存在或不是 lip 能读取的格式 1、2 或 3 的 `tooth.json` 时，命令会失败，且不做任何修改。
 
 ### 询问
 

@@ -35,7 +35,7 @@ public class DaemonStatusCommand(CommandOutput output) : AsyncCommand<DaemonStat
         result["pid"] = daemon.ProcessId;
       }
 
-      _output.Out.WriteLine(result.ToJsonString());
+      _output.Out.WriteLine(result.ToJsonString(CliJsonContext.Compact));
     } else {
       _output.Out.WriteLine(daemon is null
           ? "The daemon of lip does not run."

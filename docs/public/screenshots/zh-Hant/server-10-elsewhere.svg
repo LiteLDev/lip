@@ -9,7 +9,6 @@
 <rect x="10.5" y="10.5" width="923" height="369" rx="9.5" fill="none" stroke="#3d4454"/>
 <g shape-rendering="crispEdges">
 <rect x="31" y="108" width="117" height="20" fill="#4a5364"/>
-<rect x="175" y="108" width="72" height="20" fill="#4a5364"/>
 </g>
 <g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
 <path stroke="#8b95a7" d="M25.88 78H153.13M25.88 338H153.13M26.5 77.38V338.63M152.5 77.38V338.63"/>
@@ -27,9 +26,10 @@
 <text x="202 220 238 256 274 292 310 328" y="102.5" text-anchor="middle" fill="#9ad17b">在此介面之外執行</text>
 <text x="49 67 85" y="122.5" text-anchor="middle" fill="#ffffff">伺服器</text>
 <text x="134.5" y="122.5" text-anchor="middle" fill="#ffffff">●</text>
-<text x="175" y="122.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[</text>
-<text x="202 220" y="122.5" text-anchor="middle" fill="#ffffff">啟動</text>
-<text x="238" y="122.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">]</text>
+<text x="175" y="122.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[</text>
+<text x="202 220" y="122.5" text-anchor="middle" fill="#8b95a7">啟動</text>
+<text x="238" y="122.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">]</text>
+<path d="M175 125.5H247" fill="none" stroke="#8b95a7"/>
 <text x="265" y="122.5" textLength="27" lengthAdjust="spacingAndGlyphs">[ ]</text>
 <text x="310 328 346 364 382 400" y="122.5" text-anchor="middle">自動重新啟動</text>
 <text x="49 67" y="142.5" text-anchor="middle">模組</text>

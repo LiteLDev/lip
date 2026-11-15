@@ -296,6 +296,15 @@ public class McmodServiceRunTests : IDisposable {
     FileNotFoundException ex = await Assert.ThrowsAsync<FileNotFoundException>(Run);
     Assert.Contains(Path.GetFileName(ServerPath), ex.Message);
     Assert.Empty(_started);
+    // What brings the file back: not a setup of the same versions here, which installs
+    // nothing, but a copy from a folder set up with them.
+    Assert.DoesNotContain("uninstalling", ex.Message);
+    Assert.Contains("setting up the same versions here does not bring the file back", ex.Message);
+    Assert.Contains(
+        _linux
+            ? "'lip setup --game 1.0.0 --build linux --no-loader' in an empty folder"
+            : "'lip setup --game 1.0.0 --loader levilamina@1.0.0' in an empty folder",
+        ex.Message);
   }
 
   [Fact]

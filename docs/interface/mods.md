@@ -25,7 +25,7 @@ The header of the list, `Installed (7)`, counts every row, the game and the load
 `↑` on the first mod goes to the action rows, and `↓` on the last action row goes back to the list. `Tab` also goes from the action rows to the list.
 
 ::: info
-After you install, update or uninstall something, the order of your mods may change. lip lists them in the order in which it last installed them.
+The order of the list does not change when you install, update or uninstall something. Each group is sorted by name, and the highlight stays on the mod it was on.
 :::
 
 ### The details area
@@ -225,19 +225,17 @@ To keep a mod at one version, do not update it. There is no way to pin a mod so 
 
 ### When there is nothing newer
 
-When a mod is already at its newest version, the plan says "Nothing would change." and has only a **Close** button:
+When a mod is already at its newest version, there is nothing to apply: the plan says "Nothing would change." and has only a **Close** button. That holds however often you choose Update, also for a mod that Get mods installed at the version you picked.
 
 ![The plan of an update that changes nothing: "Nothing would change.", with a Close button.](/screenshots/en/mods-30-up-to-date.svg)
 
 Two plans say instead that only lip's record would change. No file of your server changes in either case, and you can apply or cancel them as you like.
 
-The first is the first Update of a mod that Get mods installed and that is already the newest. lip had written down the version that you picked. It now writes down that the mod follows the newest version:
-
-![The plan says only "Only lip's record of the packages would change.", with the buttons Apply and Cancel.](/screenshots/en/mods-29-newest-first-time.svg)
+The first is **Update to version…** with the version that the mod already has. lip then writes down that you want this version.
 
 The second is an Update of a dependency. lip then counts the dependency as one of your mods: it moves up into your mods, gets a box, and can be uninstalled.
 
-![The plan: "would mark package 'github.com/LiteLDev/LegacyRemoteCall' version 0.13.0 as explicitly installed." and "Only lip's record of the packages would change."](/screenshots/en/plan-03-record-only.svg)
+![The plan: "would mark LegacyRemoteCall 0.13.0 as explicitly installed." and "Only lip's record of the packages would change."](/screenshots/en/plan-03-record-only.svg)
 
 ## Uninstalling
 
@@ -252,7 +250,7 @@ The second is an Update of a dependency. lip then counts the dependency as one o
 
 4. Choose **Apply**.
 
-   ![The result: "Uninstalling package 'github.com/LiteLDev/LegacyMoney' version 0.16.1", then "✓ Done."](/screenshots/en/mods-35-uninstall-result.svg)
+   ![The result: "Uninstalling LegacyMoney 0.16.1", then "✓ Done."](/screenshots/en/mods-35-uninstall-result.svg)
 
 Uninstalling removes the files that the mod installed. Files that the mod made while the server ran, such as its configuration or its data, may stay in its folder below `mods`.
 

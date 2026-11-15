@@ -11,6 +11,9 @@ namespace Lip.Cli.Tui.Pages.Workspaces;
 /// The choices of a setup, one dialog after the other (protocol/lip-tui.md, "New server"): for a
 /// new server the directory, then the game version, the build and the loader; then lip creates
 /// the directory, adds it to the workspace list, selects it, and sets it up as lip setup does.
+/// When the setup is then not carried out, because the user does not apply it or declines the
+/// license, or because it fails, the directory stays and is listed, which the wizard says,
+/// with how to go on.
 /// For a workspace of the list, the same choices without the directory. Esc in a step goes back
 /// to the step before it, and in the first step ends the wizard, which then changed nothing;
 /// what a step offers that cannot be read is said, and the wizard is back at the step before.
@@ -476,7 +479,10 @@ internal sealed class ServerWizard(
               ? WorkspacesText.SetUpBuildTitle(GameSetup.Name(request.Build))
               : WorkspacesText.SetUpTitle,
           run => setup.Setup(client, request, run),
-          session: target.Flow.Session);
+          session: target.Flow.Session,
+          // The folder of a new server is there and listed by now (protocol/lip-tui.md, "New
+          // server"): the user is told so, and how to go on, when the setup is not carried out.
+          notApplied: target.Create ? NotSetUp : null);
     }
 
     if (!target.Create) {
@@ -498,6 +504,17 @@ internal sealed class ServerWizard(
       context.Message(Title(target), error!, Theme.Bad);
     }
   }
+
+  /// Says that the folder of a new server stays and is listed though nothing was installed.
+  private void NotSetUp() =>
+      context.Show(new ConfirmDialog(
+          WorkspacesText.NewServerTitle,
+          [
+            new StyledLine(WorkspacesText.NotSetUp),
+            new StyledLine(),
+            new StyledLine(WorkspacesText.NotSetUpNext, Theme.Muted),
+          ],
+          [CommonText.Close]));
 
   private static string Title(Target target) =>
       target.Create ? WorkspacesText.NewServerTitle : WorkspacesText.SetUpTitle;

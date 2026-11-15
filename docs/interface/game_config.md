@@ -74,7 +74,7 @@ A property with a fixed set of values, such as `gamemode`, opens a list.
 
 Any other property opens a field with its value. Type the new value and press `Enter`; `Esc` closes the field without a change.
 
-A number must be a whole number. When the file gives a range, the field names it, and a value outside it is not taken: the field stays open and says why.
+A number must be a whole number. When the file gives a range or a least value, the field names it, and a value outside it is not taken: the field stays open and says why. A property that the file describes as a positive integer, such as `max-players`, takes neither 0 nor a negative number, and `view-distance` takes nothing below 5.
 
 ![The field of server-port, labelled "Value (1–65535)", holds 70000. Below it the message "Enter an integer from 1 to 65535." is shown.](/screenshots/en/game-config-08-number.svg)
 

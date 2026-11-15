@@ -597,12 +597,48 @@ public sealed class ShellTests {
     // Another operation does not start meanwhile.
     Assert.False(await tui.Invoke(() => tui.Context.RunOperation("Other", _ => Task.CompletedTask)));
 
+    // A cancelled operation did not fail: its dialog says that it was cancelled, in the
+    // colors of a message, not in those of a failure.
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitFor("Download · Failed");
+    await tui.WaitFor("Download · Cancelled");
     Assert.Contains("Cancelled. Changes were undone.", tui.Screen);
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+    Assert.DoesNotContain(CommonText.Error + ":", tui.Screen);
+    Assert.Equal(default, await tui.StyleOf("Cancelled. Changes were undone."));
+    Assert.Equal(
+        Theme.Accent with { Bold = false }, await tui.StyleOf("┌─ Download · Cancelled"));
+    tui.Snapshot("shell-cancelled");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitUntilGone("Download · Failed");
+    await tui.WaitUntilGone("Download · Cancelled");
     Assert.True(await tui.Invoke(() => tui.Context.Idle));
+  }
+
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task RunOperation_ThatFails_IsShownAsAFailure_UnlikeOneThatIsCancelled(
+      Language language) {
+    using TuiHarness tui = Start(new TuiHarnessOptions { Language = language });
+    await tui.WaitFor("body of Alpha");
+
+    await tui.Invoke(() => tui.Context.RunOperation(
+        "Download", _ => throw new InvalidOperationException("No such file.")));
+    await tui.WaitFor($"Download · {CommonText.Failed}");
+    Assert.Equal(Theme.Bad, await tui.StyleOf($"┌─ Download · {CommonText.Failed}"));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"Download · {CommonText.Failed}");
+
+    await tui.Invoke(() => tui.Context.RunOperation(
+        "Download", async token => await Task.Delay(Timeout.Infinite, token), cancellable: true));
+    await tui.WaitFor($"Esc {CommonText.HintCancel.Text}");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor($"Download · {CommonText.CancelledWord}");
+    Assert.Contains(CommonText.Cancelled, tui.Screen);
+    Assert.Equal(
+        Theme.Accent with { Bold = false },
+        await tui.StyleOf($"┌─ Download · {CommonText.CancelledWord}"));
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
   }
 
   [Fact]
@@ -753,6 +789,130 @@ public sealed class ShellTests {
     Assert.Equal(["dryRun=True acceptEula=False", "dryRun=True acceptEula=False"], calls);
     Assert.DoesNotContain("workspace", _pages[PageId.Home].Events);
     Assert.True(await tui.Invoke(() => tui.Context.Idle));
+  }
+
+  /// What a flow did before its operation is said when the user does not apply the plan, or
+  /// declines the license: notApplied is called for both, and for nothing else.
+  [Fact]
+  public async Task PlanAndRun_NotApplied_IsCalledForACancelledPlanAndADeclinedLicenseOnly() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    List<string> calls = [];
+    int notApplied = 0;
+
+    // Esc in the plan.
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: true), notApplied: () => notApplied++));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("[ Apply ]");
+    Assert.Equal(1, notApplied);
+
+    // The license declined.
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: true), notApplied: () => notApplied++));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[ Accept ] [ Decline ]");
+    tui.Press(ConsoleKey.RightArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("[ Accept ]");
+    Assert.Equal(2, notApplied);
+
+    // Applied and accepted, and a plan that has nothing to apply.
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Alpha", Operation(tui, calls, setup: true), notApplied: () => notApplied++));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("[ Accept ] [ Decline ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("✓ Done.");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("✓ Done.");
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Update", Operation(calls, OperationResult.Unchanged), notApplied: () => notApplied++));
+    await tui.WaitFor(CommonText.NothingWouldChange);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(CommonText.NothingWouldChange);
+    Assert.Equal(2, notApplied);
+
+    // A dry run that fails, and an operation that fails after its plan was applied: what the
+    // caller says follows the failure, once that is closed.
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Beta", _ => throw new InvalidOperationException("No network."),
+        notApplied: () => {
+          notApplied++;
+          tui.Context.Message("Note", "The folder stays.");
+        }));
+    await tui.WaitFor($"Install Beta · {CommonText.Failed}");
+    Assert.Equal(2, notApplied);
+    Assert.DoesNotContain("The folder stays.", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(CommonText.Failed);
+    await tui.WaitFor("The folder stays.");
+    Assert.Equal(3, notApplied);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone("The folder stays.");
+
+    await tui.Invoke(() => tui.Context.PlanAndRun(
+        "Install Beta",
+        run => run.DryRun
+            ? Task.FromResult(OperationResult.Changed)
+            : throw new InvalidOperationException("The disk is full."),
+        notApplied: () => notApplied++));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    Assert.Equal(3, notApplied);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"Install Beta · {CommonText.Failed}");
+    Assert.Equal(3, notApplied);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(CommonText.Failed);
+    Assert.Equal(4, notApplied);
+  }
+
+  /// The result of an operation does not say again what its plan said, such as what was
+  /// resolved; a warning is said again.
+  [Fact]
+  public async Task PlanAndRun_TheResult_DoesNotRepeatTheLinesOfThePlan() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+
+    await tui.Invoke(() => tui.Context.PlanAndRun("Update Alpha", async run => {
+      IUserInteraction interaction = tui.InteractionOf(tui.Context.Client);
+      await interaction.PrintInfo("Resolving Alpha...");
+      await interaction.PrintWarning("Alpha is deprecated.");
+      await interaction.PrintInfo(
+          run.DryRun ? "Dry run: would install Alpha 1.3.0 (2 files)" : "Installing Alpha 1.3.0");
+      return OperationResult.Changed;
+    }));
+    await tui.WaitFor("[ Apply ] [ Cancel ]");
+    Assert.Contains("Resolving Alpha...", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("✓ Done.");
+    Assert.Contains("Installing Alpha 1.3.0", tui.Screen);
+    Assert.Contains("⚠ Alpha is deprecated.", tui.Screen);
+    Assert.DoesNotContain("Resolving Alpha...", tui.Screen);
+    Assert.DoesNotContain("Dry run:", tui.Screen);
+  }
+
+  /// A plan in which lip would only record another source for a package is a change of the
+  /// state file, and is offered as one (protocol/lip-tui.md, "Commands"): what it means for
+  /// the user is for the page that asked for the operation to say.
+  [Fact]
+  public async Task PlanAndRun_APlanThatOnlyRecordsAnotherSource_IsOfferedAsAChangeOfTheRecord() {
+    using TuiHarness tui = Start();
+    await tui.WaitFor("body of Alpha");
+    List<string> calls = [];
+    OperationResult sources = new(Changes: true, OnlyStateFile: true, OnlySources: true);
+
+    await tui.Invoke(() => tui.Context.PlanAndRun("Update", Operation(calls, sources)));
+    await tui.WaitFor(CommonText.OnlyRecordChanges);
+    Assert.Contains($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("✓ " + CommonText.Done);
+    Assert.Equal(["dryRun=True", "dryRun=False"], calls);
   }
 
   [Fact]
@@ -1347,6 +1507,9 @@ public sealed class ShellTests {
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor("● Stopping");
       Assert.Contains("body of Beta [focused]", tui.Screen);
+      // The bottom bar says what the interface waits for, until it quits.
+      Assert.EndsWith(CommonText.StoppingServers, tui.Screen.Split('\n')[^1]);
+      Assert.Equal(Theme.Warning, await tui.StyleOf(CommonText.StoppingServers));
       Assert.False(tui.Run.IsCompleted);
       server.Send("exit 7");
 

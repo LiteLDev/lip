@@ -12,11 +12,6 @@ namespace Lip.Cli.Commands;
 public class ConfigListCommand(LipClient lipClient, CommandOutput output)
     : AsyncCommand<ConfigListCommand.Settings> {
   private readonly CommandOutput _output = output;
-  private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
-    WriteIndented = true,
-    TypeInfoResolver = CliJsonContext.Default,
-  };
-
   private readonly LipClient _lipClient = lipClient;
 
   public class Settings : CommandSettings {
@@ -43,8 +38,7 @@ public class ConfigListCommand(LipClient lipClient, CommandOutput output)
     if (settings.Json) {
       _output.Out.WriteLine(JsonSerializer.Serialize(
           config,
-          (JsonTypeInfo<IDictionary<string, string?>>)_jsonSerializerOptions.GetTypeInfo(
-              typeof(IDictionary<string, string?>))));
+          CliJsonContext.TypeInfo<IDictionary<string, string?>>(CliJsonContext.Indented)));
     } else {
       Table table = new();
       table.AddColumn("Key");

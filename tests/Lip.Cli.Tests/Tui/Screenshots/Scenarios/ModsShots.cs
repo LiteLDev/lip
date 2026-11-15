@@ -16,6 +16,9 @@ public sealed class ModsShots(ShotRun run) {
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(ScriptEngine);
 
+    // The third of the mods, which are listed by identity.
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ScriptEngine + "  0.13.1");
     await shot.Capture(
         "mods-01-list",
         Note.Callout(
@@ -44,6 +47,8 @@ public sealed class ModsShots(ShotRun run) {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("README");
     await tui.WaitFor("LGPL-3.0");
+    // The file of the mod is read after the dialog opens.
+    await tui.WaitUntilGone(CommonText.Loading);
     await shot.Capture("mods-03-details");
   }
 
@@ -54,6 +59,8 @@ public sealed class ModsShots(ShotRun run) {
     TuiHarness tui = shot.Tui;
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(ScriptEngine);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ScriptEngine + "  0.13.1");
     await tui.SetServerRunning(true);
 
     tui.Press(ConsoleKey.Enter);
@@ -76,8 +83,10 @@ public sealed class ModsShots(ShotRun run) {
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(ScriptEngine);
 
-    // Uninstall LegacyMoney: its dependency, which nothing else needs, goes with it.
-    tui.Press(ConsoleKey.DownArrow, 3);
+    // Uninstall LegacyMoney, the second mod: its dependency, which nothing else needs, goes
+    // with it.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(Catalogue.Money + "  0.16.1");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.Uninstall);
     tui.Press(ConsoleKey.DownArrow, 3);

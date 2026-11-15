@@ -19,7 +19,9 @@ public static class Worlds {
           .File("server.properties", Properties);
 
   /// A server that has been played on: mods with their files, the files of the game, and
-  /// two more workspaces in the workspace list, one of them without a server. With
+  /// two more workspaces in the workspace list, one of them without a server. The Mods page
+  /// lists the mods by identity: GMLIB, LegacyMoney, LegacyScriptEngine#lua, LeviOptimize;
+  /// then the dependency LegacyRemoteCall, the game and LeviLamina. With
   /// configurable set, the Mod config page lists the mods (Installed.Mod); without it, lip
   /// can plan to uninstall them.
   public static World Survival(

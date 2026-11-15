@@ -106,6 +106,81 @@ public class ScreenTests {
     Assert.Equal(expected, string.Join('|', TextWidth.Wrap(text, width)));
   }
 
+  /// A word that is longer than a line, such as the identity of a mod, a URL or a path, is
+  /// broken after the marks between its parts, not in the middle of a name; a word that fits
+  /// a line stays whole; and only a word without such a mark is cut where the line ends.
+  [Theory]
+  [InlineData(
+      "github.com/LiteLDev/LegacyScriptEngine", 20, "github.com/LiteLDev/|LegacyScriptEngine")]
+  [InlineData("github.com/LiteLDev/LegacyScriptEngine#lua", 14,
+      "github.com/|LiteLDev/|LegacyScriptEn|gine#lua")]
+  [InlineData("ID github.com/acme/Alpha", 16, "ID github.com/|acme/Alpha")]
+  [InlineData("see https://example.com/a/b", 12, "see https://|example.com/|a/b")]
+  [InlineData(@"D:\servers\survival\mods", 12, @"D:\servers\|survival\|mods")]
+  [InlineData("levilamina-release-windows-x64.zip", 16, "levilamina-|release-windows-|x64.zip")]
+  [InlineData("user_name@example.com", 12, "user_name@|example.com")]
+  [InlineData("a short.word fits", 10, "a|short.word|fits")]
+  [InlineData("version 1.26.60 here", 12, "version|1.26.60 here")]
+  public void Wrap_BreaksALongWordAfterTheMarksBetweenItsParts(
+      string text, int width, string expected) {
+    List<string> lines = TextWidth.Wrap(text, width);
+
+    Assert.Equal(expected, string.Join('|', lines));
+    Assert.All(lines, line => Assert.True(TextWidth.Of(line) <= width));
+    // The styled line is broken at the same places.
+    Assert.Equal(
+        expected,
+        string.Join('|', TextWidth.Wrap(new StyledLine(text), width).Select(row => row.PlainText)));
+  }
+
+  /// What a server writes is wrapped as text is: at spaces and after the marks of a long
+  /// word, with its styles and its indentation kept, and never inside a character that is
+  /// two columns wide or one that is two UTF-16 code units.
+  [Fact]
+  public void Wrap_OfAStyledLine_BreaksAtWords_KeepsStyles_AndNeverSplitsACharacter() {
+    StyledLine line = new StyledLine("[INFO] ", Theme.Good)
+        .Add("Loaded the mod github.com/LiteLDev/LegacyMoney", Theme.Strong);
+
+    List<StyledLine> rows = TextWidth.Wrap(line, 24);
+
+    Assert.Equal(
+        ["[INFO] Loaded the mod", "github.com/LiteLDev/", "LegacyMoney"],
+        rows.Select(row => row.PlainText));
+    Assert.Equal(
+        [new Span("[INFO] ", Theme.Good), new Span("Loaded the mod", Theme.Strong)], rows[0].Spans);
+    Assert.Equal([new Span("LegacyMoney", Theme.Strong)], rows[2].Spans);
+
+    // Indentation is kept, and a row is never left with spaces only.
+    Assert.Equal(
+        ["    at Some.Method", "in file.cs"],
+        TextWidth.Wrap(new StyledLine("    at Some.Method in file.cs"), 18)
+            .Select(row => row.PlainText));
+    Assert.Equal(
+        ["    abcdefgh", "ij"],
+        TextWidth.Wrap(new StyledLine("    abcdefghij"), 12).Select(row => row.PlainText));
+
+    // Wide characters and surrogate pairs: each row holds whole characters of at most the
+    // width, and together they are the line.
+    foreach (string text in (string[])["伺服器已啟動完成", "a伺服器已啟動", "😀😀😀😀😀", "ab😀cd😀ef", "好👍🏽好"]) {
+      for (int width = 1; width <= 7; width++) {
+        List<string> wrapped = [
+          .. TextWidth.Wrap(new StyledLine(text), width).Select(row => row.PlainText),
+        ];
+        Assert.Equal(text, string.Concat(wrapped));
+        Assert.All(wrapped, row => {
+          Assert.True(TextWidth.Of(row) <= Math.Max(2, width), $"'{row}' at {width}");
+          Assert.False(char.IsLowSurrogate(row[0]), $"'{text}' at {width}");
+          Assert.False(char.IsHighSurrogate(row[^1]), $"'{text}' at {width}");
+        });
+        Assert.Equal(
+            text,
+            string.Concat(TextWidth.Wrap(text, width)));
+      }
+    }
+
+    Assert.Equal([""], TextWidth.Wrap(new StyledLine(), 10).Select(row => row.PlainText));
+  }
+
   [Fact]
   public void AnsiLog_SgrSequences_StyleTheTextAndOthersAreDropped() {
     AnsiLog log = new();

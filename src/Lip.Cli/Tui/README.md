@@ -46,7 +46,21 @@ page, the bottom bar, and the dialogs. A page draws only inside `area`.
   size you are given; never assume 120×36.
 - Write with `screen.WriteFit(x, y, width, text, style)` whenever the text may be longer than
   its room, and measure with `TextWidth.Of`, never `string.Length`: CJK characters take two
-  columns.
+  columns. What is cut shows an ellipsis: `TextWidth.Fit` at its end, `TextWidth.FitEnd` at its
+  start (a path), `PackageCells.FitMiddle` in its middle (an identity). A mark that belongs to
+  the row, such as `●` for unsaved changes, is never cut off: fit the text to the room that
+  the mark leaves.
+- Wrap text with `TextWidth.Wrap`, for a `string` or a `StyledLine`: it breaks at spaces and
+  between Chinese characters, a word that is longer than a line after the marks between its
+  parts (`/ \ . - _ # @`), and never inside a character.
+- A button that does nothing now looks disabled also while it has the focus: muted, never as
+  one that can be pressed. `ButtonRow` skips a disabled button and draws it muted; a page
+  that draws its own button underlines the muted one that has the focus
+  (`Theme.Muted with { Underline = true }`), as the Server page does. A `Menu` marks the
+  disabled row that the highlight is on with a gray bar, and says why below the rows.
+- A list keeps its order and its highlight when it is read again: order the rows by what
+  they are (`InstalledPackage.Listed` orders packages by identity), and select the row that
+  was highlighted again (`ListView.Select`).
 
 ## Interaction rules
 
@@ -90,7 +104,8 @@ These hold on every page. Tests enforce some of them; reviewers check the rest.
     that acts is left out.
 - Every workspace operation goes through `Context.PlanAndRun`: preview (dry run) →
   `[Apply] [Cancel]` → the license when needed → progress → result. Cancel is "preview only".
-  A plan that would change nothing has only `[Close]`.
+  A plan that would change nothing has only `[Close]`. An operation that the user cancels
+  ends in a dialog titled `… · Cancelled`, in the colors of a message, not of a failure.
 - While the server of the selected workspace runs, nothing changes the workspace: no setup,
   install, uninstall or update, and no saving of `server.properties`, `allowlist.json` or
   `permissions.json` (`protocol/lip-tui.md`, "Commands", "Configuration"). See "While the
@@ -256,7 +271,7 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 | Member | |
 |---|---|
 | `Servers` | The `ServerSessions` of the process: the servers that this process runs. |
-| `Server` | The `WorkspaceServer` of the selected workspace that this process runs (null when none ever ran): `Running`, `Restarting`, `Stopping`, `ExitCode`, `StartedAt`, `LastLines(n)`, `Send(line)`, `Stop()`. |
+| `Server` | The `WorkspaceServer` of the selected workspace that this process runs (null when none ever ran): `Running`, `Starting` (lip run has not started the program of the server yet: say "Starting", not "Running"), `Restarting`, `Stopping`, `ExitCode`, `StartedAt`, `LastLines(n)`, `Send(line)`, `Stop()`. |
 | `ServerRunning` | Whether the server of the selected workspace runs: `Server` runs, **or another lip runs it** (a plain `lip run`, another daemon), which holds `.lip/server.lock`. |
 | `ServerRunsElsewhere` | Whether another lip runs the server of the selected workspace: `ServerRunning` without a `Server` that runs. The Server page then says so, and offers neither to start it nor its output. |
 | `IsServerRunning(workspace)` | The same as `ServerRunning` for any workspace of the workspace list. |
@@ -328,7 +343,7 @@ Context.ShowMenu(
 | `Background(…, anyWorkspace: true)` | The same for work that is of no workspace (the workspace list, the catalogue, the user configuration, the daemon, the GitHub check): its callbacks are called whatever is selected by then. |
 | `RunOperation(title, action, succeeded?, cancellable?)` | Runs a command with a progress dialog; then `succeeded(operation)`, or the failure dialog. Returns false when another operation runs. `operation.Log` holds what the command said. |
 | `RunOperation<T>(title, action, succeeded, cancellable?)` | The same for a command with a result. |
-| `PlanAndRun(title, run => …, done?, session?)` | The standard flow of a workspace operation. `run` is an `OperationRun`: `DryRun`, `AcceptEula`, `Token`, `Session`; return what the command returns, an `OperationResult`. Pass `run.Session` on, and `confirmed: true` where `LipClient` has it. |
+| `PlanAndRun(title, run => …, done?, session?, notApplied?)` | The standard flow of a workspace operation. `run` is an `OperationRun`: `DryRun`, `AcceptEula`, `Token`, `Session`; return what the command returns, an `OperationResult`. Pass `run.Session` on, and `confirmed: true` where `LipClient` has it. `notApplied` is called when the operation is not carried out: the plan cancelled, the license declined, or the dry run or the operation failed or cancelled, once the user closed the dialog that says so. Say then what a flow did before the operation, as the new server wizard does for the folder it created. |
 | `ShowResult(title, operation, done?)` | The messages of a finished operation, ending with `✓ done`. |
 | `ShowFailure(title, exception, cancelled?, log?)` | The failure dialog; the report goes to `.lip/logs` of the selected workspace. |
 
@@ -372,9 +387,15 @@ lock, reads the state file and solves again, so what it does is right for the wo
 is then. **Always pass `run.Session` on**; without it the operation repeats the whole dry run.
 
 The command returns an `OperationResult` (`Lip.Core.Mcmod`): `Changes` (whether anything
-changes, or would) and `OnlyStateFile` (nothing but what lip records of the packages).
+changes, or would), `OnlyStateFile` (nothing but what lip records of the packages) and
+`OnlySources` (of that, nothing but the sources recorded for packages that stay as they are).
 Return it from the operation: when the dry run says that nothing would change, the plan has
-only `[Close]`. Do not look at the lines of the log for that.
+only `[Close]`. Do not look at the lines of the log for that. Where a page asks for an
+operation that the user did not word, it decides what counts as a change: Update on the Mods
+page means the newest version that fits, so a result that is `OnlySources` is nothing to
+carry out there (`ModsPage.Newest`).
+The result of the operation does not show again the lines that its plan showed, such as what
+was resolved.
 
 A flow that reads something before its operation holds one session from its first read to
 the end, so that the operation reads nothing twice. The new server wizard does:
@@ -424,7 +445,7 @@ include its `Hints` in yours.
 | `ChoiceRow` | One of several options, drawn `‹ value ›`. `Selected`. | ← → and Space |
 | `ToggleRow` | On or off, drawn `[x]`. `On`. | Space |
 | `TextField` | The bare text field, for a search box or an input line. | as `TextRow` |
-| `TextViewer` | Scrolling text: `SetText(string)` or `Lines` (styled). Wraps at spaces, keeps indentation. `ScrollToEnd()`. `Hints` are empty unless it scrolls. | ↑ ↓ PgUp PgDn Home End while `Scrollable` |
+| `TextViewer` | Scrolling text: `SetText(string)` or `Lines` (styled). Wraps as `TextWidth.Wrap` does, keeps indentation. `ScrollToEnd()`. `Hints` are empty unless it scrolls. | ↑ ↓ PgUp PgDn Home End while `Scrollable` |
 | `FocusRing(count)` | Which area of the page has the focus. | Tab / Shift+Tab (false at the ends) |
 | `Panes.Columns(area, left)`, `Panes.Rows(area, top)` | Split an area in two. | — |
 | `Ui.Panel(screen, rect, title, focused)` | A titled box inside the page; returns its inside. | — |
@@ -642,6 +663,7 @@ public async Task Uninstall_AsksForThePlan_ThenRemovesThePackage() {
 | `WaitFor(text)`, `WaitUntilGone(text)`, `WaitFor(predicate)` | Wait for the screen (15 s). Use these for anything that runs in the background. |
 | `Settle()` | Waits until every key pressed so far is handled and drawn. Use it before asserting that something did *not* happen, and before `Invoke` when keys are still on their way. |
 | `Screen` | The screen as text, one row per line, without trailing spaces. |
+| `StyleOf(text)` | The style of the first cell of the first place where the screen shows the text: to assert that something is drawn as disabled, as a failure, or as neither. |
 | `GoTo(page)` | Goes to a page through the sidebar and waits until its content has the focus. |
 | `Invoke(func)` | Runs code on the thread of the interface (to read page or context state). |
 | `Text(() => XxxText.Y)` | A text in the language of the interface, wherever it is called. |

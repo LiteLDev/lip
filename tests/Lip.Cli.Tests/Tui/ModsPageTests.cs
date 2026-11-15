@@ -343,6 +343,57 @@ public sealed class ModsPageTests {
     Assert.Contains(Alpha, Installed(tui));
   }
 
+  /// The list has the mods by identity, whatever the order of the state file, which every
+  /// operation changes; and after an operation the highlight is on the package it was on.
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHant)]
+  public async Task List_IsByIdentity_AndTheHighlightStaysOnItsPackageAfterAnOperation(
+      Language language) {
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true),
+            Package(Beta, "0.3.1", true), Package(Alpha, "1.2.0", true)),
+        language);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+    string screen = tui.Screen;
+    int[] rows = [
+      screen.IndexOf("[ ] " + Alpha, StringComparison.Ordinal),
+      screen.IndexOf("[ ] " + Beta, StringComparison.Ordinal),
+      screen.IndexOf("[ ] " + Delta, StringComparison.Ordinal),
+      screen.IndexOf("    " + Game, StringComparison.Ordinal),
+    ];
+    Assert.DoesNotContain(-1, rows);
+    Assert.Equal(rows.Order(), rows);
+
+    // Alpha is checked, and the highlight goes to Delta, the third row.
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(Delta + "  3.0.0");
+
+    // Act: the checked mod, Alpha, is uninstalled.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UninstallChecked(1));
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Apply} ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Ok} ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"[ {CommonText.Ok} ]");
+
+    // Assert: Delta is the second row now, and still the highlighted one.
+    await tui.WaitFor(ModsText.Installed(3));
+    Assert.DoesNotContain(Alpha, tui.Screen);
+    Assert.Contains(Delta + "  3.0.0", tui.Screen);
+    Assert.DoesNotContain(Beta + "  0.3.1", tui.Screen);
+    Assert.Equal(Theme.Selected, await tui.StyleOf("[ ] " + Delta));
+    Assert.True(
+        tui.Screen.IndexOf("[ ] " + Beta, StringComparison.Ordinal)
+            < tui.Screen.IndexOf("[ ] " + Delta, StringComparison.Ordinal));
+  }
+
   [Fact]
   public async Task Uninstall_Applied_RemovesThePackage_AndReadsTheListAgain() {
     using TuiHarness tui = Start(Server, Language.ZhHans);
@@ -573,6 +624,17 @@ public sealed class ModsPageTests {
     Assert.Contains($"Open({BetaUrl})", Asked());
     Assert.DoesNotContain($"ListVersions({Beta})", Asked());
 
+    // One version, as Get mods installs: the update asks for the version tags of the
+    // repository, of which the highest that fits is installed, not for that version again.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(Delta + "  3.0.0");
+    Assert.Contains(ModsText.ExplicitDetail, tui.Screen);
+    Assert.DoesNotContain(ModsText.Source + "  ", tui.Screen);
+    tui.Snapshot("mods-source-version");
+    await UpdateAndClose(tui);
+    Assert.Contains($"ListVersions({Delta})", Asked());
+    Assert.DoesNotContain($"ResolveGitRef({Delta}, 3.0.0)", Asked());
+
     // A local folder: it is read again.
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(Gamma + "  0.1.0");
@@ -585,17 +647,114 @@ public sealed class ModsPageTests {
     await UpdateAndClose(tui);
     Assert.Equal([_local], OpenedPaths().Distinct());
     Assert.DoesNotContain($"ListVersions({Gamma})", Asked());
+  }
 
-    // One version, as Get mods installs: the update asks for the version tags of the
-    // repository, of which the highest that fits is installed, not for that version again.
-    tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor(Delta + "  3.0.0");
-    Assert.Contains(ModsText.ExplicitDetail, tui.Screen);
-    Assert.DoesNotContain(ModsText.Source + "  ", tui.Screen);
-    tui.Snapshot("mods-source-version");
-    await UpdateAndClose(tui);
+  private const string Commit = "0123456789abcdef0123456789abcdef01234567";
+
+  /// Gives the archives the repository of Delta, whose only version is the one installed, at
+  /// the commit that the state file records; and writes the state file as lip writes it, so
+  /// that an operation that changes nothing leaves it with the value it has.
+  private async Task WithDelta(TuiHarness tui) {
+    LockStore store = new(tui.Fs);
+    await store.Save(tui.Root, (await store.Load(tui.Root))!);
+    string folder = Path.Join(Path.GetPathRoot(tui.Root), "archives", "delta");
+    tui.Fs.AddFile(
+        Path.Join(folder, "lip.toml"),
+        new MockFileData($$"""
+            format = 4
+            id = "{{Delta}}"
+            version = "3.0.0"
+
+            [[variants.""]]
+            side = "server"
+            platform = "win-x64"
+
+            """));
+    ArchiveHandle Handle() => new(
+        $"{Delta}@v3.0.0", new Lip.Core.Sources.DirectorySource(tui.Fs, folder), Commit);
+    _archives.Setup(a => a.ListVersions(Delta)).ReturnsAsync([
+      new SpecVersion(Semver.SemVersion.Parse("3.0.0"), "v3.0.0"),
+    ]);
+    _archives.Setup(a => a.OpenVersion(Delta, It.IsAny<SpecVersion>())).ReturnsAsync(Handle);
+    _archives.Setup(a => a.ResolveGitRef(Delta, It.IsAny<GitRef>())).ReturnsAsync(Commit);
+    _archives.Setup(a => a.OpenCommit(Delta, Commit)).ReturnsAsync(Handle);
+  }
+
+  /// Update means the newest version that fits. A mod that was installed at one version, as
+  /// Get mods installs, and is at its newest version: lip would only record that it was
+  /// asked for without that version, which is nothing to confirm. The plan says that nothing
+  /// would change, and has nothing to apply, however often Update is chosen; the state file
+  /// stays as it is.
+  [Theory]
+  [InlineData(Language.En, false)]
+  [InlineData(Language.ZhHans, false)]
+  [InlineData(Language.ZhHant, true)]
+  public async Task Update_OfAModAtItsNewestVersion_HasNothingToApply_HoweverOftenItIsAsked(
+      Language language, bool all) {
+    using TuiHarness tui = Start(
+        State(Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true, $"{Delta}@3.0.0")),
+        language);
+    await WithDelta(tui);
+    string state = Installed(tui);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Delta);
+
+    for (int i = 0; i < 2; i++) {
+      if (all) {
+        // Update all, the action row above the list.
+        tui.Press(ConsoleKey.UpArrow);
+        await tui.WaitFor(ModsText.UpdateAllDetail);
+        tui.Press(ConsoleKey.Enter);
+      } else {
+        tui.Press(ConsoleKey.Enter);
+        await tui.WaitFor(ModsText.UpdateTo);
+        tui.Press(ConsoleKey.DownArrow);
+        tui.Press(ConsoleKey.Enter);
+      }
+
+      await tui.WaitFor(CommonText.NothingWouldChange);
+      Assert.Contains($"[ {CommonText.Close} ]", tui.Screen);
+      Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+      Assert.DoesNotContain(CommonText.OnlyRecordChanges, tui.Screen);
+      Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+      tui.Snapshot("mods-update-newest");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitUntilGone(CommonText.NothingWouldChange);
+      if (all) {
+        tui.Press(ConsoleKey.DownArrow);
+        await tui.WaitFor(Delta + "  3.0.0");
+      }
+    }
+
     Assert.Contains($"ListVersions({Delta})", Asked());
-    Assert.DoesNotContain($"ResolveGitRef({Delta}, 3.0.0)", Asked());
+    Assert.Equal(state, Installed(tui));
+  }
+
+  /// Update to version… is what the user named: for a mod that is at that version, and of
+  /// the version tags, the plan says that only the record would change, and applying it
+  /// records the version.
+  [Fact]
+  public async Task UpdateTo_TheInstalledVersion_OffersToRecordIt() {
+    using TuiHarness tui = Start(
+        State(Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true)));
+    await WithDelta(tui);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Delta);
+
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Delta + "@");
+    tui.Type("3.0.0");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor(CommonText.OnlyRecordChanges);
+    Assert.Contains($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]", tui.Screen);
+    Assert.DoesNotContain($"\"ref\": \"{Delta}@3.0.0\"", Installed(tui));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("✓ " + CommonText.Done);
+    Assert.Contains($"{Delta}@3.0.0", Installed(tui));
   }
 
   /// The checked mods are updated as each is by itself: one installed at a version leaves it

@@ -70,7 +70,10 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
   public override StyledLine? Badge =>
       Context.Server is { Running: true } server
-          ? new StyledLine("●", server.Restarting || server.Stopping ? Theme.Warning : Theme.Good)
+          ? new StyledLine(
+              "●",
+              server.Starting || server.Restarting || server.Stopping
+                  ? Theme.Warning : Theme.Good)
           : Context.ServerRunsElsewhere ? new StyledLine("●", Theme.Good)
           : null;
 
@@ -94,7 +97,13 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       switch (_focus) {
         case Area.Controls:
           hints.Add(CommonText.HintSwitch);
-          hints.Add(_control == 0 ? CommonText.HintSelect : CommonText.HintToggleEither);
+          if (_control == 1) {
+            hints.Add(CommonText.HintToggleEither);
+          } else if (Context.Server is not { Running: true, Stopping: true }) {
+            // The button does nothing while lip is asked to stop for the server.
+            hints.Add(CommonText.HintSelect);
+          }
+
           break;
         case Area.Log:
           // Output that does not scroll leaves ↑ and ↓ to go to the areas above and below.
@@ -552,6 +561,11 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       return ("● " + CommonText.ServerStopping, Theme.Warning);
     }
 
+    if (server.Starting) {
+      // lip run has not started the server yet: it prepares the system first.
+      return ("● " + CommonText.ServerStarting, Theme.Warning);
+    }
+
     TimeSpan up = TimeSpan.FromMilliseconds(
         Math.Max(0, Environment.TickCount64 - server.StartedAt));
     string time = string.Create(
@@ -567,9 +581,10 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     int y = area.Y + 1;
     bool chosen = focused && _focus == Area.Controls;
     bool running = server?.Running == true;
-    // A button that does nothing now is muted, and still shows where the focus is.
-    Style button = elsewhere ? (_control == 0 && chosen ? Theme.SelectedInactive : Theme.Muted)
-        : running && server!.Stopping ? Theme.Muted
+    // A button that does nothing now is muted, also while it has the focus: the underline
+    // alone shows where the focus is, so that it never looks like one that can be pressed.
+    Style disabled = _control == 0 && chosen ? Theme.Muted with { Underline = true } : Theme.Muted;
+    Style button = elsewhere || (running && server!.Stopping) ? disabled
         : _control != 0 ? default
         : chosen ? Theme.Selected
         : Theme.Strong;

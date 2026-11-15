@@ -10,7 +10,7 @@
 <g shape-rendering="crispEdges">
 <rect x="202" y="108" width="702" height="20" fill="#4a5364"/>
 <rect x="31" y="128" width="144" height="20" fill="#4a5364"/>
-<rect x="202" y="168" width="702" height="20" fill="#4a5364"/>
+<rect x="202" y="208" width="702" height="20" fill="#4a5364"/>
 <rect x="220" y="288" width="9" height="20" fill="#d8dee9"/>
 </g>
 <g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
@@ -32,20 +32,20 @@
 <text x="202" y="162.5" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Installed (7)</text>
 <text x="832" y="162.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Version</text>
 <text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
-<text x="202" y="182.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ ] github.com/LiteLDev/LegacyScriptEngine#lua</text>
-<text x="832" y="182.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">0.13.1</text>
+<text x="202" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
+<text x="238" y="182.5" textLength="270" lengthAdjust="spacingAndGlyphs">github.com/GroupMountain/GMLIB</text>
+<text x="832" y="182.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.6.0</text>
 <text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
 <text x="202" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
-<text x="238" y="202.5" textLength="270" lengthAdjust="spacingAndGlyphs">github.com/GroupMountain/GMLIB</text>
-<text x="832" y="202.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.6.0</text>
+<text x="238" y="202.5" textLength="279" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyMoney</text>
+<text x="832" y="202.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.16.1</text>
 <text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
-<text x="202" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
-<text x="238" y="222.5" textLength="288" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LeviOptimize</text>
-<text x="832" y="222.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.8.1</text>
+<text x="202" y="222.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ ] github.com/LiteLDev/LegacyScriptEngine#lua</text>
+<text x="832" y="222.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">0.13.1</text>
 <text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
 <text x="202" y="242.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
-<text x="238" y="242.5" textLength="279" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyMoney</text>
-<text x="832" y="242.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.16.1</text>
+<text x="238" y="242.5" textLength="288" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LeviOptimize</text>
+<text x="832" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.8.1</text>
 <text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
 <text x="157" y="262.5" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Update to version</text>
 <text x="832" y="262.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">0.13.0</text>

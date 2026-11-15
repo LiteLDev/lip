@@ -7,7 +7,7 @@ After this page you can read what lip tells you when a command fails, find its f
 When a command fails, lip writes three things to the terminal:
 
 ```text
-error: There is no server to run: 'D:\servers\survival\bedrock_server_mod.exe' is not a file, though the workspace has the game bds 1.26.60 with a loader. It may have been deleted or moved by hand; restore it, or install the game again by uninstalling it and setting it up.
+error: There is no server to run: 'D:\servers\survival\bedrock_server_mod.exe' is not a file, though the workspace has the game bds 1.26.60 with a loader. It may have been deleted or moved by hand. lip does not install a package again that is installed in the same version, so setting up the same versions here does not bring the file back. Restore it from a backup, or run 'lip setup --game 1.26.60 --loader levilamina@26.60.3' in an empty folder and copy the file from there.
 
 Full report: .lip\logs\20261114T201502Z-4120.log
 ```
@@ -127,7 +127,7 @@ In the interface, the Server page shows **Running outside this interface** for a
 
 **`There is no server to run: '…' is not a file`**
 
-The folder is set up, but the program of the server is gone. It may have been deleted or moved by hand, or removed by security software. Restore it from a backup. Without a backup, the reliable way is a new folder: set up the server there, install your mods, and copy `worlds/`, `server.properties`, `allowlist.json`, `permissions.json` and the settings of your mods over from the old folder.
+The folder is set up, but the program of the server is gone. It may have been deleted or moved by hand, or removed by security software. Setting up the same versions again in this folder does not bring it back: lip does not install a package again that is installed in the same version. Restore the file from a backup. Without a backup, run the `lip setup` command that the message names in an empty folder, and copy the missing file from there into this folder. You can also move to that new folder instead: install your mods there, and copy `worlds/`, `server.properties`, `allowlist.json`, `permissions.json` and the settings of your mods over from the old folder.
 
 **`The game of this workspace is the Linux server … which lip runs only on Linux on x64.`**
 

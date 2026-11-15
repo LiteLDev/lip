@@ -9,11 +9,13 @@
 <rect x="10.5" y="10.5" width="923" height="529" rx="9.5" fill="none" stroke="#3d4454"/>
 <g shape-rendering="crispEdges">
 <rect x="31" y="148" width="144" height="20" fill="#4a5364"/>
-<rect x="58" y="348" width="54" height="20" fill="#2563c9"/>
+<rect x="202" y="228" width="27" height="20" fill="#4a5364"/>
+<rect x="715" y="228" width="189" height="20" fill="#4a5364"/>
+<rect x="247" y="308" width="54" height="20" fill="#2563c9"/>
 </g>
 <g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
-<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M292 78H918.13M202 158H211M409 158H904M25.88 498H180.13M187.88 498H918.13M26.5 77.38V498.63M179.5 77.38V188M179.5 388V498.63M188.5 77.38V188M188.5 388V498.63M917.5 77.38V498.63"/>
-<path stroke="#56c8d8" d="M43.88 198H58M490 198H900.13M43.88 378H900.13M44.5 197.38V378.63M899.5 197.38V378.63"/>
+<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M292 78H918.13M202 158H211M409 158H904M202 338H211M715 338H904M25.88 498H180.13M187.88 498H918.13M26.5 77.38V498.63M179.5 77.38V498.63M188.5 77.38V498.63M917.5 77.38V498.63"/>
+<path stroke="#56c8d8" d="M232.88 218H247M679 218H711.13M232.88 338H711.13M233.5 217.38V338.63M710.5 217.38V338.63"/>
 </g>
 <g fill="#d8dee9">
 <text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
@@ -45,15 +47,54 @@
 <text x="746.5" y="182.5" text-anchor="middle" fill="#e5c07b">★</text>
 <text x="760" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">412</text>
 <text x="805" y="182.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-08</text>
-<text x="67" y="202.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Install github.com/LiteLDev/LegacyMoney@0.16.1</text>
-<text x="58" y="222.5" textLength="459" lengthAdjust="spacingAndGlyphs">Resolving github.com/LiteLDev/LegacyMoney@0.16.1...</text>
-<text x="58" y="242.5" textLength="693" lengthAdjust="spacingAndGlyphs">Installing package 'github.com/LiteLDev/LegacyRemoteCall' version 0.13.0 from</text>
-<text x="58" y="262.5" textLength="396" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyRemoteCall@v0.13.0</text>
-<text x="58" y="282.5" textLength="648" lengthAdjust="spacingAndGlyphs">Installing package 'github.com/LiteLDev/LegacyMoney' version 0.16.1 from</text>
-<text x="58" y="302.5" textLength="342" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyMoney@0.16.1</text>
-<text x="62.5" y="322.5" text-anchor="middle" fill="#9ad17b">✓</text>
-<text x="76" y="322.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">Done.</text>
-<text x="58" y="362.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ OK ]</text>
+<text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="220" y="202.5" textLength="108" lengthAdjust="spacingAndGlyphs">LeviOptimize</text>
+<text x="341.5" y="202.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="355" y="202.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLDev</text>
+<text x="665.5" y="202.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="679" y="202.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">143k</text>
+<text x="746.5" y="202.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">286</text>
+<text x="805" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-02</text>
+<text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="220" y="222.5" textLength="9" lengthAdjust="spacingAndGlyphs">G</text>
+<text x="256" y="222.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Install github.com/LiteLDev/LegacyMoney@0.16.1</text>
+<text x="746.5" y="222.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">231</text>
+<text x="805" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-27</text>
+<text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="206.5" y="242.5" text-anchor="middle" fill="#ffffff">✓</text>
+<text x="220" y="242.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">L</text>
+<text x="247" y="242.5" textLength="306" lengthAdjust="spacingAndGlyphs">Installing LegacyRemoteCall 0.13.0</text>
+<text x="746.5" y="242.5" text-anchor="middle" fill="#ffffff">★</text>
+<text x="760" y="242.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">164</text>
+<text x="805" y="242.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">2026-10-19</text>
+<text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="220" y="262.5" textLength="9" lengthAdjust="spacingAndGlyphs">P</text>
+<text x="247" y="262.5" textLength="261" lengthAdjust="spacingAndGlyphs">Installing LegacyMoney 0.16.1</text>
+<text x="746.5" y="262.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="262.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">152</text>
+<text x="805" y="262.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-05</text>
+<text x="220" y="282.5" textLength="9" lengthAdjust="spacingAndGlyphs">L</text>
+<text x="251.5" y="282.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="265" y="282.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">Done.</text>
+<text x="746.5" y="282.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="282.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">118</text>
+<text x="805" y="282.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-09-30</text>
+<text x="220" y="302.5" textLength="9" lengthAdjust="spacingAndGlyphs">M</text>
+<text x="755.5" y="302.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="769" y="302.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">97</text>
+<text x="805" y="302.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-11</text>
+<text x="206.5" y="322.5" text-anchor="middle" fill="#9ad17b">✓</text>
+<text x="220" y="322.5" textLength="9" lengthAdjust="spacingAndGlyphs">L</text>
+<text x="247" y="322.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ OK ]</text>
+<text x="755.5" y="322.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="769" y="322.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">61</text>
+<text x="805" y="322.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-02</text>
+<text x="220" y="342.5" textLength="9" lengthAdjust="spacingAndGlyphs" font-weight="700">L</text>
+<text x="202" y="362.5" textLength="297" lengthAdjust="spacingAndGlyphs">An economy core with a simple API</text>
+<text x="202" y="382.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Author</text>
+<text x="301" y="382.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">LiteLDev</text>
 <text x="202" y="402.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Downloads</text>
 <text x="301" y="402.5" textLength="54" lengthAdjust="spacingAndGlyphs">81,422</text>
 <text x="202" y="422.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Stars</text>
@@ -70,7 +111,7 @@
 <text x="157" y="522.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
 <text x="193" y="522.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Close</text>
 </g>
-<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V534H16zM37 185H907V391H37z"/>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V534H16zM226 205H718V351H226z"/>
 <rect x="10.5" y="550.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
 <rect x="24.5" y="562.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
 <text x="32" y="578.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>

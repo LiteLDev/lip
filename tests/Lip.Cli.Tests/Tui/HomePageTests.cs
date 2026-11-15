@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Text.RegularExpressions;
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Home;
@@ -271,7 +272,10 @@ public sealed class HomePageTests {
       await tui.WaitFor(HomeText.InstallModsDetail);
       await tui.Invoke(() => tui.Context.StartServer("Start server"));
       await tui.WaitFor($"✓ 3  {HomeText.StartServer}");
-      Assert.Matches($@"{HomeText.Server}\s+● {CommonText.ServerRunning}", tui.Screen);
+      // It says Starting until lip run has started the server.
+      await tui.WaitFor(
+          screen => Regex.IsMatch(screen, $@"{HomeText.Server}\s+● {CommonText.ServerRunning}"),
+          "the running server");
 
       tui.Press(ConsoleKey.DownArrow);
       await tui.WaitFor(HomeText.OpenServerDetail);

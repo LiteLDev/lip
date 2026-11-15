@@ -105,7 +105,7 @@ lip config set restart on-failure --workspace
 | --- | --- | --- |
 | 语言 | `language` | `lip config set language <value>`；**跟随系统**即 `lip config delete language`。 |
 | GitHub 代理 | `github_proxy` | `lip config set github_proxy <URI>`；**直连**设置为空字符串；**重置**即 `lip config delete github_proxy`。 |
-| 自动重启 | 所选工作区的 `restart` | 打开时为 `lip config set restart on-failure --workspace`，关闭时为 `never`。 |
+| 自动重启 | 当前工作区的 `restart` | 打开时为 `lip config set restart on-failure --workspace`，关闭时为 `never`。 |
 
 当你回答界面关于如何连接 GitHub 的询问时，界面也会写入 `github_proxy`：填写代理则设置为该 URI，**直接连接**设置为空字符串，**以后再说**不做任何更改。
 

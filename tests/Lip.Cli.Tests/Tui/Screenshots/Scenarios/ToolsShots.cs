@@ -82,20 +82,6 @@ public sealed class ToolsShots(ShotRun run) {
     await tui.WaitUntilGone(PathPickerText.Reading);
   }
 
-  /// The message of a failure followed by those of its causes that add something, as the
-  /// summary of ErrorReporter.Describe has them, which writes a report to the disk.
-  private static string WithCauses(Exception exception) {
-    string shown = "";
-    for (Exception? cause = exception; cause is not null; cause = cause.InnerException) {
-      string message = cause.Message.Trim();
-      if (message.Length > 0 && !shown.Contains(message, StringComparison.Ordinal)) {
-        shown += shown.Length == 0 ? message : $"\n  caused by: {message}";
-      }
-    }
-
-    return shown;
-  }
-
   /// The two rows of the status area that say whether the workspace has a lip.toml and a
   /// tooth.json: the rows of what the first and the second say, which may be the same word.
   private static Target Files(string lipToml, string toothJson) =>
@@ -386,10 +372,6 @@ public sealed class ToolsShots(ShotRun run) {
   [ClassData(typeof(AllLanguages))]
   public async Task Failure(Language language) {
     World world = Mod(language).File("tooth.json", ToothWithoutVersion);
-    // As lip describes a failure: its message, then the messages of its causes.
-    world.DescribeFailure = (exception, _, cancelled, _) => new Failure(
-        WithCauses(exception), ErrorReporter.Hints(exception),
-        Path.Join(".lip", "logs", "20261114T201502Z-4120.log"), null, "", cancelled);
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
     await tui.GoTo(PageId.Tools);

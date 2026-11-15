@@ -116,8 +116,7 @@
 <text x="202" y="502.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
 <text x="301" y="502.5" textLength="342" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyScriptEngine</text>
 <text x="202" y="522.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Latest</text>
-<text x="301" y="522.5" textLength="63" lengthAdjust="spacingAndGlyphs">Loading</text>
-<text x="368.5" y="522.5" text-anchor="middle">…</text>
+<text x="301" y="522.5" textLength="99" lengthAdjust="spacingAndGlyphs">0.13.2 #lua</text>
 <text x="202" y="542.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Platform</text>
 <text x="301" y="542.5" textLength="63" lengthAdjust="spacingAndGlyphs">win-x64</text>
 <text x="202" y="562.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Game</text>

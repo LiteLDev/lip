@@ -55,6 +55,10 @@ public static class GameConfigText {
   public static string Value => L.T("Value", "值", "值");
   public static string ValueBetween(long min, long max) =>
       L.T($"Value ({min}–{max})", $"值（{min}–{max}）", $"值（{min}–{max}）");
+  public static string ValueAtLeast(long min) =>
+      L.T($"Value ({min} or more)", $"值（不小于 {min}）", $"值（不小於 {min}）");
+  public static string ValueAtMost(long max) =>
+      L.T($"Value ({max} or less)", $"值（不大于 {max}）", $"值（不大於 {max}）");
   public static string NotAnInteger => L.T("Enter an integer.", "请输入整数。", "請輸入整數。");
   public static string NotBetween(long min, long max) =>
       L.T(
@@ -66,6 +70,11 @@ public static class GameConfigText {
           $"Enter an integer of at least {min}.",
           $"请输入不小于 {min} 的整数。",
           $"請輸入不小於 {min} 的整數。");
+  public static string NotAtMost(long max) =>
+      L.T(
+          $"Enter an integer of at most {max}.",
+          $"请输入不大于 {max} 的整数。",
+          $"請輸入不大於 {max} 的整數。");
   public static string NotOneLine => L.T("Enter one line.", "只能输入一行。", "只能輸入一行。");
 
   // The players.

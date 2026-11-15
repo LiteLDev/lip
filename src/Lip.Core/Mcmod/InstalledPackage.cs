@@ -79,9 +79,16 @@ public record InstalledPackage(string Identity, string Version, bool Explicit) {
       };
 
   /// The packages as the interface lists them: the mods that the user installed, then the
-  /// dependency packages, then the game and the loader, each group in installation order.
+  /// dependency packages, then the game, then the loader; within each group by identity,
+  /// ignoring case. The order does not depend on that of the state file, which an operation
+  /// changes, so a package stays where it is while others come and go.
   public static IReadOnlyList<InstalledPackage> Listed(IEnumerable<InstalledPackage> packages) =>
-      [.. packages.OrderBy(p => p.IsGame || p.IsLoader ? 2 : p.Explicit ? 0 : 1)];
+      [
+        .. packages
+            .OrderBy(p => p.IsGame ? 2 : p.IsLoader ? 3 : p.Explicit ? 0 : 1)
+            .ThenBy(p => p.Identity, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(p => p.Identity, StringComparer.Ordinal),
+      ];
 
   private string Location => Identity.Split('#')[0];
 

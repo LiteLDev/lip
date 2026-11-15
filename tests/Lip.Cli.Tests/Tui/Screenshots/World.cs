@@ -32,6 +32,11 @@ public sealed class World {
 
   public const string Game = "github.com/LiteLDev/bds";
   public const string Loader = "github.com/LiteLDev/LeviLamina";
+
+  /// The game and LeviLamina as the messages of lip name them: as a package argument does
+  /// (PackageDisplay).
+  public const string GameName = "bds";
+  public const string LoaderName = "LeviLamina";
   public const string GameVersion = "1.26.60";
   public const string LoaderVersion = "26.60.3";
 
@@ -119,11 +124,12 @@ public sealed class World {
   /// Makes the client of a workspace: a real one over Archives unless set.
   public Func<IUserInteraction, Func<Stream>, string, LipClient>? CreateClient { get; set; }
 
-  /// Describes a failure: with the hints that lip gives, and a report that is not written.
+  /// Describes a failure as lip does (ErrorReporter.Describe): its message with those of its
+  /// causes, the hints that lip gives, and a report that is named and not written.
   public Func<Exception, string[], bool, string, Failure> DescribeFailure { get; set; } =
-      (exception, _, cancelled, _) => new Failure(
-          exception.Message, ErrorReporter.Hints(exception),
-          Path.Join(".lip", "logs", "20261114T201502Z-4120.log"), null, "", cancelled);
+      (exception, _, cancelled, _) => ErrorReporter.Describe(
+          exception, cancelled,
+          (_, _) => Path.Join(".lip", "logs", "20261114T201502Z-4120.log"));
 
   /// Writes the state file of a workspace, the selected one unless given.
   public World Install(params Installed[] packages) => InstallIn(Workspace, packages);
@@ -207,6 +213,12 @@ public sealed class World {
               new McmodInstaller(Fs, new CommandRunner(hookOutput), interaction),
               workspaceRoot: () => root));
 
+  /// The source that the state file records for a package that was installed at its version
+  /// (protocol/state.json.md): its repository, with its variant, at the version.
+  public static string Source(Installed package) =>
+      package.Id + (package.Variant.Length == 0 ? "" : $"#{package.Variant}")
+          + $"@{package.Version}";
+
   private static string State(Installed package) {
     string commit = package.Id == Game
         ? ""
@@ -221,7 +233,7 @@ public sealed class World {
               { "side": "server", "platform": "win-x64"{{assets}} } ] } },
           "variant": "{{package.Variant}}",
           "explicit": {{(package.Explicit ? "true" : "false")}},
-          "ref": "{{package.Id}}@{{package.Version}}", {{commit}}"files": [{{files}}] }
+          "ref": "{{Source(package)}}", {{commit}}"files": [{{files}}] }
         """;
   }
 }
@@ -270,10 +282,10 @@ public sealed class SetupOfShots(TuiHarness harness, World world) : IServerSetup
 
     if (run.DryRun) {
       await ui.PrintInfo(
-          $"Dry run: would install {World.Game} {request.Game} (3 files)");
+          $"Dry run: would install {World.GameName} {request.Game} (3 files)");
       if (request.Loader) {
         await ui.PrintInfo(
-            $"Dry run: would install {World.Loader} {loader} (12 files)");
+            $"Dry run: would install {World.LoaderName} {loader} (12 files)");
       }
 
       await ui.PrintInfo(
@@ -301,9 +313,9 @@ public sealed class SetupOfShots(TuiHarness harness, World world) : IServerSetup
       await Release;
     }
 
-    await ui.PrintInfo($"Installing package '{World.Game}' version {request.Game}.");
+    await ui.PrintInfo($"Installing {World.GameName} {request.Game}");
     if (request.Loader) {
-      await ui.PrintInfo($"Installing package '{World.Loader}' version {loader}.");
+      await ui.PrintInfo($"Installing {World.LoaderName} {loader}");
     }
 
     world.InstallIn(

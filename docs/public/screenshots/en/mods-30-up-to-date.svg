@@ -10,12 +10,12 @@
 <g shape-rendering="crispEdges">
 <rect x="202" y="108" width="702" height="20" fill="#4a5364"/>
 <rect x="31" y="128" width="144" height="20" fill="#4a5364"/>
-<rect x="202" y="168" width="702" height="20" fill="#4a5364"/>
-<rect x="274" y="308" width="81" height="20" fill="#2563c9"/>
+<rect x="202" y="208" width="702" height="20" fill="#4a5364"/>
+<rect x="229" y="308" width="81" height="20" fill="#2563c9"/>
 </g>
 <g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
 <path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M256 78H918.13M202 418H904M25.88 498H180.13M187.88 498H918.13M26.5 77.38V498.63M179.5 77.38V498.63M188.5 77.38V498.63M917.5 77.38V498.63"/>
-<path stroke="#56c8d8" d="M259.88 238H274M625 238H675.13M259.88 338H675.13M260.5 237.38V338.63M674.5 237.38V338.63"/>
+<path stroke="#56c8d8" d="M214.88 238H229M688 238H720.13M214.88 338H720.13M215.5 237.38V338.63M719.5 237.38V338.63"/>
 </g>
 <g fill="#d8dee9">
 <text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
@@ -32,39 +32,35 @@
 <text x="202" y="162.5" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Installed (7)</text>
 <text x="832" y="162.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Version</text>
 <text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
-<text x="202" y="182.5" textLength="306" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ ] github.com/GroupMountain/GMLIB</text>
-<text x="832" y="182.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#ffffff">1.6.0</text>
+<text x="202" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
+<text x="238" y="182.5" textLength="270" lengthAdjust="spacingAndGlyphs">github.com/GroupMountain/GMLIB</text>
+<text x="832" y="182.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.6.0</text>
 <text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
 <text x="202" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
 <text x="238" y="202.5" textLength="279" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyMoney</text>
 <text x="832" y="202.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.16.1</text>
 <text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
-<text x="202" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
-<text x="238" y="222.5" textLength="378" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyScriptEngine#lua</text>
-<text x="832" y="222.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.13.2</text>
+<text x="202" y="222.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ ] github.com/LiteLDev/LegacyScriptEngine#lua</text>
+<text x="832" y="222.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">0.13.2</text>
 <text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
-<text x="202" y="242.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
-<text x="238" y="242.5" textLength="18" lengthAdjust="spacingAndGlyphs">gi</text>
-<text x="283" y="242.5" textLength="333" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Update github.com/GroupMountain/GMLIB</text>
+<text x="202" y="242.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[</text>
+<text x="238" y="242.5" textLength="441" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Update github.com/LiteLDev/LegacyScriptEngine#lua</text>
 <text x="832" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.8.1</text>
 <text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
-<text x="238" y="262.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">gi</text>
-<text x="274" y="262.5" textLength="387" lengthAdjust="spacingAndGlyphs">Resolving github.com/GroupMountain/GMLIB...</text>
+<text x="229" y="262.5" textLength="315" lengthAdjust="spacingAndGlyphs">Resolving LegacyScriptEngine#lua...</text>
 <text x="832" y="262.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">0.13.0</text>
-<text x="238" y="282.5" textLength="18" lengthAdjust="spacingAndGlyphs">gi</text>
-<text x="274" y="282.5" textLength="189" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Nothing would change.</text>
+<text x="229" y="282.5" textLength="189" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Nothing would change.</text>
 <text x="832" y="282.5" textLength="63" lengthAdjust="spacingAndGlyphs">1.26.60</text>
-<text x="238" y="302.5" textLength="18" lengthAdjust="spacingAndGlyphs">gi</text>
 <text x="832" y="302.5" textLength="63" lengthAdjust="spacingAndGlyphs">26.60.3</text>
-<text x="274" y="322.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Close ]</text>
-<text x="202" y="442.5" textLength="270" lengthAdjust="spacingAndGlyphs" font-weight="700">github.com/GroupMountain/GMLIB</text>
-<text x="490" y="442.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.6.0</text>
+<text x="229" y="322.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Close ]</text>
+<text x="202" y="442.5" textLength="378" lengthAdjust="spacingAndGlyphs" font-weight="700">github.com/LiteLDev/LegacyScriptEngine#lua</text>
+<text x="598" y="442.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.13.2</text>
 <text x="202" y="462.5" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Installed by you.</text>
 <text x="31" y="522.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
 <text x="85" y="522.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Select</text>
 <text x="157" y="522.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
 <text x="193" y="522.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Close</text>
 </g>
-<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V534H16zM253 225H682V351H253z"/>
-<rect x="270" y="266" width="197" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V534H16zM208 225H727V351H208z"/>
+<rect x="225" y="266" width="197" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
 </svg>

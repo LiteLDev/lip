@@ -775,6 +775,147 @@ public sealed class WorkspacesPageTests {
     Assert.Equal(Root, await tui.Invoke(() => tui.Context.Workspace));
   }
 
+  /// A new server whose plan is not applied, or whose license is declined: the folder was
+  /// created, added to the list and selected by then (protocol/lip-tui.md, "New server"), and
+  /// nothing is installed. The wizard says so, and how to go on, instead of closing silently.
+  [Theory]
+  [InlineData(Language.En, true)]
+  [InlineData(Language.ZhHans, true)]
+  [InlineData(Language.ZhHant, true)]
+  [InlineData(Language.En, false)]
+  [InlineData(Language.ZhHant, false)]
+  public async Task NewServer_NotAppliedOrLicenseDeclined_SaysWhatStays_AndHowToGoOn(
+      Language language, bool decline) {
+    using TuiHarness tui = Start(out Func<FakeServerSetup> setup, language: language);
+    string directory = Path.Join(Root, "survival");
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(CommonText.NewServer);
+    tui.Press(ConsoleKey.Enter);
+    await NewFolder(tui, "survival");
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+
+    // Act: Esc in the plan, or Apply and then Decline.
+    if (decline) {
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor($"[ {CommonText.Accept} ] [ {CommonText.Decline} ]");
+      tui.Press(ConsoleKey.RightArrow);
+      tui.Press(ConsoleKey.Enter);
+    } else {
+      tui.Press(ConsoleKey.Escape);
+    }
+
+    // Assert: a dialog says what happened and what to do next; nothing was set up.
+    await tui.WaitFor(WorkspacesText.NotSetUp);
+    Assert.Contains($"─ {WorkspacesText.NewServerTitle} ─", tui.Screen);
+    Assert.Contains(WorkspacesText.ChangeVersions, tui.Screen);
+    Assert.Contains($"[ {CommonText.Close} ]", tui.Screen);
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+    tui.Snapshot("wizard-not-set-up");
+    Assert.True(tui.Fs.Directory.Exists(directory));
+    Assert.Equal([Root, directory], tui.Workspaces.Read());
+    Assert.Equal(directory, await tui.Invoke(() => tui.Context.Workspace));
+    Assert.Equal(["1.21.50 Windows True 1.1.0 dryRun=True acceptEula=False"], Calls(setup()));
+
+    // The folder is the selected row, whose menu has what the dialog names.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(WorkspacesText.NotSetUp);
+    await tui.WaitFor("● " + directory);
+    await tui.WaitFor($"Enter {CommonText.HintActions.Text}");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ survival ─");
+    Assert.Contains(WorkspacesText.ChangeVersions, tui.Screen);
+  }
+
+  /// A setup of a new server that fails leaves the folder too: the failure is shown, and once
+  /// it is closed, what stays and how to go on.
+  [Fact]
+  public async Task NewServer_WhoseSetupFails_ShowsTheFailure_ThenWhatStays() {
+    using TuiHarness tui = Start(out _, wrap: fake => new FailingSetup(fake));
+    string directory = Path.Join(Root, "survival");
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(CommonText.NewServer);
+    tui.Press(ConsoleKey.Enter);
+    await NewFolder(tui, "survival");
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"{WorkspacesText.SetUpTitle} · {CommonText.Failed}");
+    Assert.Contains("The builds list cannot be read.", tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitUntilGone(CommonText.Failed);
+    await tui.WaitFor(WorkspacesText.NotSetUp);
+    Assert.True(tui.Fs.Directory.Exists(directory));
+    Assert.Equal([Root, directory], tui.Workspaces.Read());
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(WorkspacesText.NotSetUp);
+    Assert.True(await tui.Invoke(() => tui.Context.Idle));
+  }
+
+  /// A server setup whose setup fails.
+  private sealed class FailingSetup(FakeServerSetup setup) : IServerSetup {
+    public Task<IReadOnlyList<GameVersion>> GameVersions(
+        LipClient client, OperationSession? session = null) =>
+        setup.GameVersions(client, session);
+
+    public Task<IReadOnlyList<SemVersion>> LoaderVersions(
+        LipClient client, SemVersion game, CancellationToken cancellationToken,
+        OperationSession? session = null) =>
+        setup.LoaderVersions(client, game, cancellationToken, session);
+
+    public Task<OperationResult> Setup(LipClient client, SetupRequest request, OperationRun run) =>
+        throw new InvalidOperationException("The builds list cannot be read.");
+  }
+
+  /// A workspace of the list whose setup is not applied is as it was: nothing is said.
+  [Fact]
+  public async Task ChangeVersions_NotApplied_SaysNothing() {
+    using TuiHarness tui = Start(out Func<FakeServerSetup> setup);
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor("● " + Root);
+    ToRow(tui, 0);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(WorkspacesText.ChangeVersions);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
+
+    tui.Press(ConsoleKey.Escape);
+
+    await tui.WaitUntilGone($"[ {CommonText.Apply} ]");
+    await tui.Settle();
+    Assert.DoesNotContain(WorkspacesText.NotSetUp, tui.Screen);
+    Assert.True(await tui.Invoke(() => tui.Context.Idle));
+  }
+
+  /// "Add existing folder…" takes any folder that exists (protocol/lip-tui.md, "Workspaces"),
+  /// and its sentence does not say that the folder must hold a server.
+  [Theory]
+  [InlineData(Language.En, "with or without a server", "holds a server")]
+  [InlineData(Language.ZhHans, "有没有服务器都可以", "已有服务器的文件夹")]
+  [InlineData(Language.ZhHant, "有沒有伺服器都可以", "已有伺服器的資料夾")]
+  public async Task AddFolder_ItsSentence_SaysThatAnyFolderIsTaken(
+      Language language, string says, string not) {
+    using TuiHarness tui = Start(out _, language: language);
+    await tui.GoTo(PageId.Workspaces);
+    await tui.WaitFor(WorkspacesText.AddFolder);
+
+    tui.Press(ConsoleKey.DownArrow);
+
+    await tui.WaitFor(WorkspacesText.AddFolderDetail);
+    Assert.Contains(says, WorkspacesText.AddFolderDetail);
+    Assert.DoesNotContain(not, tui.Screen);
+  }
+
   [Fact]
   public async Task NewServer_BackToTheFolder_KeepsThePathOfAFolderNotYetCreated_InChinese() {
     using TuiHarness tui = Start(out Func<FakeServerSetup> setup, language: Language.ZhHans);

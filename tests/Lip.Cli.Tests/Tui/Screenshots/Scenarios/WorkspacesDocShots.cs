@@ -274,6 +274,14 @@ public sealed class WorkspacesDocShots(ShotRun run) {
         "new-server-15-eula-decline",
         Note.Focus(At.Panel(CommonText.EulaTitle)),
         Note.Box(At.Button(CommonText.Decline)));
+
+    // lip then says what stays, and how to go on.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(WorkspacesText.NotSetUp);
+    await shot.Capture(
+        "new-server-18-not-set-up",
+        Note.Focus(At.Panel(WorkspacesText.NewServerTitle)),
+        Note.Keys("Enter"));
   }
 
   /// The steps that only Linux on x64 has. The picture is made on Windows, as all are: the
@@ -333,8 +341,8 @@ public sealed class WorkspacesDocShots(ShotRun run) {
     World world = Worlds.Survival(language, height: 24);
     world.ServerSetup = harness => new SetupOfVersions(harness, new SetupOfShots(harness, world)) {
       Plan = [
-        $"Dry run: would uninstall {World.Loader} {World.LoaderVersion} (12 files)",
-        $"Dry run: would install {World.Loader} 26.60.2 (12 files)",
+        $"Dry run: would uninstall {World.LoaderName} {World.LoaderVersion} (12 files)",
+        $"Dry run: would install {World.LoaderName} 26.60.2 (12 files)",
       ],
     };
     using Shot shot = run.Start(world);
@@ -389,9 +397,9 @@ public sealed class WorkspacesDocShots(ShotRun run) {
         .Install(new Installed(World.Game, World.GameVersion, Variant: "linux"));
     world.ServerSetup = harness => new SetupOfVersions(harness, new SetupOfShots(harness, world)) {
       Plan = [
-        $"Dry run: would uninstall {World.Game}#linux {World.GameVersion} (3 files)",
-        $"Dry run: would install {World.Game} {World.GameVersion} (3 files)",
-        $"Dry run: would install {World.Loader} {World.LoaderVersion} (12 files)",
+        $"Dry run: would uninstall {World.GameName}#linux {World.GameVersion} (3 files)",
+        $"Dry run: would install {World.GameName} {World.GameVersion} (3 files)",
+        $"Dry run: would install {World.LoaderName} {World.LoaderVersion} (12 files)",
         GameSetup.EulaDryRunMessage + $" ({GameSetup.EulaUrl}) and the Privacy Policy"
             + $" ({GameSetup.PrivacyPolicyUrl}), and download the game.",
       ],

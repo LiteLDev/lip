@@ -204,6 +204,100 @@ public class InstalledPackageTests {
     Assert.Equal("2", _ws.Fs.File.ReadAllText(_ws.Path("lib/lib.dll")));
   }
 
+  /// A mod that was installed at one version, which is the highest: its update, as the
+  /// interface asks for it, would change nothing but the source that the state file records,
+  /// which the result says, so that the interface need not ask the user to confirm it.
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Update_OfAModInstalledAtItsHighestVersion_WouldOnlyRecordAnotherSource(
+      bool all) {
+    // Arrange
+    _ws.AddTag(Lib, "1.0.0", LibFiles("1.0.0", "1"));
+    await _ws.Service.Install([$"{Lib}@1.0.0"], _options);
+    _ws.Restart();
+    InstalledPackage package = await Listed();
+    string state = _ws.Fs.File.ReadAllText(_ws.LockPath);
+
+    // Act
+    OperationResult plan = all
+        ? await _ws.Service.UpdateMods(_options with { DryRun = true })
+        : await _ws.Service.Update([package.UpdateArgument], _options with { DryRun = true });
+
+    // Assert
+    Assert.Equal(
+        new OperationResult(Changes: true, OnlyStateFile: true, OnlySources: true), plan);
+    Assert.Equal(state, _ws.Fs.File.ReadAllText(_ws.LockPath));
+    Assert.Equal($"{Lib}@1.0.0", (await Listed()).Source);
+  }
+
+  /// One plan and its result name a package one way: as a package argument names it, so a
+  /// package of github.com/LiteLDev by its short name in every line, and any other by its
+  /// identity; and the operation says "Installing" of what its dry run said "would install".
+  [Fact]
+  public async Task Messages_OfAPlanAndOfItsResult_NameEachPackageOneWay() {
+    // Arrange
+    const string Money = "github.com/LiteLDev/Money";
+    _ws.AddTag(Money, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          Money, "1.0.0", WorkspaceHarness.SelfAsset("money.dll", "money/money.dll")),
+      ["money.dll"] = "money",
+    });
+    _ws.AddTag(Lib, "1.0.0", LibFiles("1.0.0", "1"));
+
+    // Act
+    await _ws.Service.Install([Money, Lib], _options with { DryRun = true });
+    List<string> plan = [.. _ws.Infos];
+    _ws.Infos.Clear();
+    await _ws.Service.Install([Money, Lib], _options);
+    List<string> result = [.. _ws.Infos];
+    _ws.Infos.Clear();
+    await _ws.Service.Uninstall([Money], _options with { DryRun = true });
+    await _ws.Service.Uninstall([Money], _options);
+
+    // Assert
+    Assert.Contains("Resolving Money...", plan);
+    Assert.Contains($"Resolving {Lib}...", plan);
+    Assert.Contains("Dry run: would install Money 1.0.0 (1 file)", plan);
+    Assert.Contains($"Dry run: would install {Lib} 1.0.0 (1 file)", plan);
+    Assert.Contains(" Installing Money 1.0.0".TrimStart(), result);
+    Assert.Contains($"Installing {Lib} 1.0.0", result);
+    Assert.Contains("Dry run: would uninstall Money 1.0.0 (1 file)", _ws.Infos);
+    Assert.Contains("Uninstalling Money 1.0.0", _ws.Infos);
+    Assert.All(
+        [.. plan, .. result, .. _ws.Infos],
+        line => {
+          Assert.DoesNotContain(Money, line);
+          Assert.DoesNotContain("package '", line);
+        });
+  }
+
+  /// lip pkg view writes JSON that reads as the package file does: only what JSON requires
+  /// is escaped.
+  [Fact]
+  public async Task View_WritesRangesAndOtherTextAsTheyAre() {
+    // Arrange
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          Lib, "1.0.0",
+          """
+          "deps": { "example.com/dep": ">=1.0.0 <2.0.0" },
+          "assets": [ { "type": "self",
+            "place": [ { "src": "a&b+c 中文.dll", "dest": "x/a.dll" } ] } ]
+          """),
+    });
+
+    // Act
+    string json = await _ws.Service.View(Lib);
+
+    // Assert
+    Assert.Contains("\">=1.0.0 <2.0.0\"", json);
+    Assert.Contains("a&b+c 中文.dll", json);
+    Assert.DoesNotContain("\\u", json);
+    JsonNode result = JsonNode.Parse(json)!;
+    Assert.Equal(["manifest", "versions"], result.AsObject().Select(m => m.Key));
+  }
+
   [Fact]
   public async Task UpdateMods_KeepsAModWhoseLocalPathIsGone_AndUpdatesTheOthers() {
     // Arrange: a mod of a local path, one of a branch and one of a URL.
@@ -324,27 +418,31 @@ public class InstalledPackageTests {
 
   [Fact]
   public void Listed_PutsTheModsOfTheUserFirst_ThenDependencies_ThenTheGameAndTheLoader() {
-    // Arrange: in installation order.
+    // Arrange: in an installation order, and in another, as after an update of a mod.
     InstalledPackage[] packages = [
+      new("example.com/other-dependency", "1.0.0", false),
+      new("github.com/liteldev/levilamina", "1.0.0", true),
+      new("example.com/Second", "1.0.0", true),
       new("example.com/dependency", "1.0.0", false),
       new("github.com/LiteLDev/bds#linux", "1.21.0", true),
       new("example.com/first", "1.0.0", true),
-      new("github.com/liteldev/levilamina", "1.0.0", true),
-      new("example.com/second", "1.0.0", true),
+      new("example.com/third", "1.0.0", true),
     ];
+    InstalledPackage[] reordered = [.. packages.Reverse()];
 
     // Act
     IReadOnlyList<InstalledPackage> listed = InstalledPackage.Listed(packages);
 
-    // Assert
+    // Assert: each group by identity, ignoring case, whatever the order of the state file.
     Assert.Equal(
         [
-          "example.com/first", "example.com/second", "example.com/dependency",
+          "example.com/first", "example.com/Second", "example.com/third",
+          "example.com/dependency", "example.com/other-dependency",
           "github.com/LiteLDev/bds#linux", "github.com/liteldev/levilamina",
         ],
         listed.Select(p => p.Identity));
+    Assert.Equal(listed, InstalledPackage.Listed(reordered));
     Assert.Equal(
-        [(false, false), (false, false), (false, false), (true, false), (false, true)],
-        listed.Select(p => (p.IsGame, p.IsLoader)));
+        [(true, false), (false, true)], listed.TakeLast(2).Select(p => (p.IsGame, p.IsLoader)));
   }
 }
