@@ -17,8 +17,15 @@ CLI on PATH. HTTP responses are cached under ``--cache`` (default: a
 ``lip-compat-survey`` directory in the system temp dir) so re-runs are cheap
 and deterministic; pass ``--refresh`` to ignore the cache.
 
+``--prune`` surveys nothing new. It reads the ``corpus.json`` that is there, lists the tags of
+every repository in it again, removes the entries whose tag ``v<version>``, or whose root
+``tooth.json`` at that tag, is gone upstream (the repository was deleted, made private or replaced
+by another one, or its tags were deleted or made again), and writes ``corpus.json`` and
+``README.md`` again. Use it when upstream deleted something and a full survey, which would also
+drop what the sources no longer list, is not wanted. It needs ``git`` only.
+
 Usage:
-  python survey.py [--cache DIR] [--refresh] [--jobs N]
+  python survey.py [--cache DIR] [--refresh] [--jobs N] [--prune]
 """
 
 from __future__ import annotations
@@ -447,7 +454,11 @@ def main() -> int:
     ap.add_argument("--refresh", action="store_true", help="ignore cached responses")
     ap.add_argument("--jobs", type=int, default=16)
     ap.add_argument("--out", type=Path, default=Path(__file__).resolve().parent)
+    ap.add_argument("--prune", action="store_true",
+                    help="only remove the entries of the existing corpus.json whose tag is gone upstream")
     args = ap.parse_args()
+    if args.prune:
+        return prune(args)
 
     token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True).stdout.strip()
     if not token:
@@ -848,6 +859,68 @@ def main() -> int:
     return 0
 
 
+def prune(args: argparse.Namespace) -> int:
+    """Removes the entries of the existing corpus whose tag, or tooth.json at it, is gone upstream."""
+    path = args.out / "corpus.json"
+    corpus = json.loads(path.read_text(encoding="utf-8"))
+    repos = sorted({e["package"].split("#")[0] for e in corpus["entries"]})
+    with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        listed = dict(zip(repos, pool.map(
+            lambda repo: ls_remote_tags(args.cache, args.refresh, f"https://{repo}.git"), repos)))
+    # A repository that could not be reached says nothing about its tags.
+    unreachable = [repo for repo, (_, err, _) in listed.items() if err == "timeout"]
+    if unreachable:
+        raise SystemExit("timed out listing the tags of: " + ", ".join(unreachable))
+
+    http = Http(args.cache, args.refresh, "")
+
+    def tooth_url(e: dict) -> str:
+        path = e["package"].split("#")[0]
+        repo = "/".join((corpus["packages"][path]["canonical"] or path).split("/")[1:3])
+        return f"{RAW}/{repo}/refs/tags/{urllib.parse.quote('v' + e['version'])}/tooth.json"
+
+    def survives(e: dict) -> bool:
+        path = e["package"].split("#")[0]
+        if f"v{e['version']}" not in listed[path][2]:
+            return False
+        if not (e["tooth_json_at_tag"] and path.startswith("github.com/")):
+            return True
+        status = http.request(tooth_url(e)).status
+        if status not in (200, 404):
+            # Neither there nor gone: says nothing about the file.
+            raise SystemExit(f"HTTP {status} reading {tooth_url(e)}")
+        return status == 200
+
+    with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        alive = list(pool.map(survives, corpus["entries"]))
+    kept = [e for e, ok in zip(corpus["entries"], alive) if ok]
+    removed = [e for e, ok in zip(corpus["entries"], alive) if not ok]
+    for e in removed:
+        print(f"removed {e['package']}@{e['version']}", file=sys.stderr)
+    # The packages that lost every entry they had.
+    emptied = ({e["package"].split("#")[0] for e in removed}
+               - {e["package"].split("#")[0] for e in kept})
+    old = corpus["counts"]
+    pruned: dict = {}
+    for key, value in corpus.items():
+        if key == "pruned_at":
+            continue
+        pruned[key] = value
+        if key == "generated_at" and (removed or "pruned_at" in corpus):
+            pruned["pruned_at"] = (
+                dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+                if removed else corpus["pruned_at"])
+    pruned["entries"] = kept
+    pruned["packages"] = {k: v for k, v in corpus["packages"].items() if k not in emptied}
+    pruned["counts"] = counts(
+        kept, pruned["packages"], old["liteldev_repos_total"], old["liteldev_repos_non_fork"],
+        old["liteldev_repos_with_tooth_json"])
+    path.write_text(dump_corpus(pruned), encoding="utf-8", newline="\n")
+    (args.out / "README.md").write_text(render_readme(pruned), encoding="utf-8", newline="\n")
+    print(f"removed {len(removed)} entries, kept {len(kept)}", file=sys.stderr)
+    return 0
+
+
 def dump_corpus(corpus: dict) -> str:
     """Pretty top level, one line per package / entry (keeps the file small and diff-friendly)."""
     def one(v) -> str:
@@ -937,6 +1010,10 @@ def render_readme(corpus: dict) -> str:
     a("`python tests/Lip.Core.RegressionTests/Compatibility/survey.py` instead.")
     a("")
     a(f"Generated at: `{corpus['generated_at']}`")
+    if "pruned_at" in corpus:
+        a("")
+        a(f"Pruned at: `{corpus['pruned_at']}` (`survey.py --prune`): the entries whose tag, or whose")
+        a("`tooth.json` at the tag, was gone upstream by then were removed, and the numbers below count what is left.")
     a("")
     a("## What is checked")
     a("")
