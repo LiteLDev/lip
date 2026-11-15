@@ -116,6 +116,8 @@ jobs:
 
   test:
     runs-on: ${{ matrix.runs-on }}
+    # The tests take minutes. A test that never ends must not hold a runner for hours.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -133,4 +135,6 @@ jobs:
         with:
           dotnet-version: 10
 
-      - run: dotnet test
+      # When no test ends within ten minutes, the tests that were running are named and the
+      # job fails.
+      - run: dotnet test --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type none
