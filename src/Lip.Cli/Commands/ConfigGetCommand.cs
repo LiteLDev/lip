@@ -31,7 +31,8 @@ public class ConfigGetCommand(LipClient lipClient, CommandOutput output)
     string? value = await _lipClient.ConfigGet(settings.Key, settings.Workspace);
 
     if (settings.Json) {
-      _output.Out.WriteLine(JsonSerializer.Serialize(value, CliJsonContext.Default.String));
+      _output.Out.WriteLine(JsonSerializer.Serialize(
+          value, CliJsonContext.TypeInfo<string?>(CliJsonContext.Compact)));
     } else {
       Table table = new();
       table.AddColumn("Key");

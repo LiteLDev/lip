@@ -60,6 +60,10 @@ public sealed class ModsPageTests {
   private Func<string, string> _catalogue = url =>
       url == ModCatalogClient.BaseUrl + "index.json" ? Catalogue : AlphaFile;
 
+  // The request for a URL of the catalogue, whose token is cancelled when the request is
+  // abandoned; used in place of _catalogue by a test that sets it.
+  private Func<string, CancellationToken, Task<string>>? _catalogueRequest;
+
   public ModsPageTests() {
     ArchiveUnavailableException nothing = new("The archives of the test have nothing.");
     _archives.Setup(a => a.ListVersions(It.IsAny<string>())).ReturnsAsync([]);
@@ -75,13 +79,35 @@ public sealed class ModsPageTests {
   /// The start of a sentence of the details area, which is wrapped where the page is narrow.
   private static string StartOf(string sentence) => sentence[..Math.Min(sentence.Length, 10)];
 
-  /// An installed package without files; all but the game are of a commit of a repository.
-  private static string Package(string id, string version, bool isExplicit) => $$"""
+  /// An installed package without files. All but the game are of a commit of a repository,
+  /// and of its version tags unless a source is given; a source that is no repository has no
+  /// commit.
+  private static string Package(
+      string id, string version, bool isExplicit, string? source = null) => $$"""
       { "manifest": { "format": 4, "id": "{{id}}", "version": "{{version}}",
           "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } },
         "variant": "", "explicit": {{(isExplicit ? "true" : "false")}},
-        "ref": "{{id}}@{{version}}", {{(id == Game ? "" : CommitField)}}"files": [] }
+        "ref": "{{source ?? (id == Game ? $"{id}@{version}" : id)}}", {{(
+            id == Game || source?.Contains("://", StringComparison.Ordinal) == true
+                ? "" : CommitField)}}"files": [] }
       """;
+
+  /// A folder of the file system of the test, which a package was installed from.
+  private static readonly string _local =
+      OperatingSystem.IsWindows() ? @"C:\packages\gamma" : "/packages/gamma";
+
+  private const string Gamma = "github.com/acme/Gamma";
+  private const string Delta = "github.com/acme/Delta";
+  private const string BetaUrl = "https://example.com/beta.zip";
+
+  /// Mods of a branch, of a URL, of a local folder and of one version, a dependency and the
+  /// game.
+  private static readonly string _sourced = State(
+      Package(Lib, "2.0.0", false), Package(Game, "1.21.0", true),
+      Package(Alpha, "1.2.0", true, $"{Alpha}@branch:main"),
+      Package(Beta, "0.3.1", true, BetaUrl),
+      Package(Gamma, "0.1.0", true, Ref.FromFile(_local).ToString()),
+      Package(Delta, "3.0.0", true, $"{Delta}@3.0.0"));
 
   private static string State(params string[] packages) => $$"""
       { "format": 4, "side": "server", "platform": "win-x64",
@@ -102,12 +128,15 @@ public sealed class ModsPageTests {
       fs.AddFile(StatePath(TuiHarness.DefaultRoot), new MockFileData(state));
     }
 
+    fs.AddDirectory(_local);
+
     return TuiHarness.Start(new TuiHarnessOptions {
       Language = language,
       Width = width,
       Height = height,
       FileSystem = fs,
       Catalog = url => _catalogue(url),
+      CatalogRequest = _catalogueRequest,
       CreateClient = (interaction, hookOutput, workspace) => new LipClient(
           fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
           new McmodService(
@@ -314,6 +343,57 @@ public sealed class ModsPageTests {
     Assert.Contains(Alpha, Installed(tui));
   }
 
+  /// The list has the mods by identity, whatever the order of the state file, which every
+  /// operation changes; and after an operation the highlight is on the package it was on.
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHant)]
+  public async Task List_IsByIdentity_AndTheHighlightStaysOnItsPackageAfterAnOperation(
+      Language language) {
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true),
+            Package(Beta, "0.3.1", true), Package(Alpha, "1.2.0", true)),
+        language);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+    string screen = tui.Screen;
+    int[] rows = [
+      screen.IndexOf("[ ] " + Alpha, StringComparison.Ordinal),
+      screen.IndexOf("[ ] " + Beta, StringComparison.Ordinal),
+      screen.IndexOf("[ ] " + Delta, StringComparison.Ordinal),
+      screen.IndexOf("    " + Game, StringComparison.Ordinal),
+    ];
+    Assert.DoesNotContain(-1, rows);
+    Assert.Equal(rows.Order(), rows);
+
+    // Alpha is checked, and the highlight goes to Delta, the third row.
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(Delta + "  3.0.0");
+
+    // Act: the checked mod, Alpha, is uninstalled.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UninstallChecked(1));
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Apply} ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Ok} ]");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"[ {CommonText.Ok} ]");
+
+    // Assert: Delta is the second row now, and still the highlighted one.
+    await tui.WaitFor(ModsText.Installed(3));
+    Assert.DoesNotContain(Alpha, tui.Screen);
+    Assert.Contains(Delta + "  3.0.0", tui.Screen);
+    Assert.DoesNotContain(Beta + "  0.3.1", tui.Screen);
+    Assert.Equal(Theme.Selected, await tui.StyleOf("[ ] " + Delta));
+    Assert.True(
+        tui.Screen.IndexOf("[ ] " + Beta, StringComparison.Ordinal)
+            < tui.Screen.IndexOf("[ ] " + Delta, StringComparison.Ordinal));
+  }
+
   [Fact]
   public async Task Uninstall_Applied_RemovesThePackage_AndReadsTheListAgain() {
     using TuiHarness tui = Start(Server, Language.ZhHans);
@@ -397,7 +477,9 @@ public sealed class ModsPageTests {
     await tui.WaitFor(ModsText.UninstallChecked(2));
     tui.Snapshot("mods-checked-menu");
     Assert.DoesNotContain(ModsText.UpdateTo, tui.Screen);
-    tui.Press(ConsoleKey.DownArrow);
+    // The first action shows the details of the row that is highlighted.
+    Assert.Contains(ModsText.DetailsOf("Lib"), tui.Screen);
+    tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Apply} ]");
     tui.Snapshot("mods-checked-plan");
@@ -484,6 +566,412 @@ public sealed class ModsPageTests {
     Assert.Contains(Asked(), call => call.Contains(Alpha, StringComparison.Ordinal));
   }
 
+  /// Opens the menu of the highlighted mod and chooses Update, whose dry run fails, since the
+  /// archives of the test have nothing; then closes the failure.
+  private static async Task UpdateAndClose(TuiHarness tui) {
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains(CommonText.Failed, tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"[ {CommonText.Close} ]");
+  }
+
+  /// protocol/lip-update.md: the request of a package is made again by its source. Its
+  /// identity names the version tags of a repository, which a package of a URL or of a local
+  /// path has none of, and which a package of a branch would be moved back to.
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 120, 36)]
+  [InlineData(Language.ZhHant, 120, 36)]
+  [InlineData(Language.En, 60, 16)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Update_AsksAgainForTheSourceThatTheModWasInstalledFrom(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(_sourced, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    // A branch: the details area names it, and the update stays on it.
+    await tui.WaitFor($"{ModsText.Source}  branch:main");
+    Assert.Contains(ModsText.ExplicitDetail, tui.Screen);
+    tui.Snapshot("mods-source-branch");
+    await UpdateAndClose(tui);
+    Assert.Contains($"ResolveGitRef({Alpha}, branch:main)", Asked());
+    Assert.DoesNotContain($"ListVersions({Alpha})", Asked());
+
+    // A URL: it has no other versions to name, which the menu says; it is downloaded again.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor($"{ModsText.Source}  {BetaUrl}");
+    tui.Snapshot("mods-source-url");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ModsText.UpdateToNeedsRepository);
+    Assert.DoesNotContain(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-source-url-menu");
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(ModsText.UpdateToNeedsRepository, tui.Screen);
+    Assert.DoesNotContain(ModsText.UpdateToTitle + " ", tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ModsText.UpdateToNeedsRepository);
+    await UpdateAndClose(tui);
+    Assert.Contains($"Forget({BetaUrl})", Asked());
+    Assert.Contains($"Open({BetaUrl})", Asked());
+    Assert.DoesNotContain($"ListVersions({Beta})", Asked());
+
+    // One version, as Get mods installs: the update asks for the version tags of the
+    // repository, of which the highest that fits is installed, not for that version again.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(Delta + "  3.0.0");
+    Assert.Contains(ModsText.ExplicitDetail, tui.Screen);
+    Assert.DoesNotContain(ModsText.Source + "  ", tui.Screen);
+    tui.Snapshot("mods-source-version");
+    await UpdateAndClose(tui);
+    Assert.Contains($"ListVersions({Delta})", Asked());
+    Assert.DoesNotContain($"ResolveGitRef({Delta}, 3.0.0)", Asked());
+
+    // A local folder: it is read again.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(Gamma + "  0.1.0");
+    if (width >= 120) {
+      Assert.Contains($"{ModsText.Source}  {_local}", tui.Screen);
+    }
+
+    tui.Snapshot("mods-source-local");
+    Assert.Empty(OpenedPaths());
+    await UpdateAndClose(tui);
+    Assert.Equal([_local], OpenedPaths().Distinct());
+    Assert.DoesNotContain($"ListVersions({Gamma})", Asked());
+  }
+
+  private const string Commit = "0123456789abcdef0123456789abcdef01234567";
+
+  /// Gives the archives the repository of Delta, whose only version is the one installed, at
+  /// the commit that the state file records; and writes the state file as lip writes it, so
+  /// that an operation that changes nothing leaves it with the value it has.
+  private async Task WithDelta(TuiHarness tui) {
+    LockStore store = new(tui.Fs);
+    await store.Save(tui.Root, (await store.Load(tui.Root))!);
+    string folder = Path.Join(Path.GetPathRoot(tui.Root), "archives", "delta");
+    tui.Fs.AddFile(
+        Path.Join(folder, "lip.toml"),
+        new MockFileData($$"""
+            format = 4
+            id = "{{Delta}}"
+            version = "3.0.0"
+
+            [[variants.""]]
+            side = "server"
+            platform = "win-x64"
+
+            """));
+    ArchiveHandle Handle() => new(
+        $"{Delta}@v3.0.0", new Lip.Core.Sources.DirectorySource(tui.Fs, folder), Commit);
+    _archives.Setup(a => a.ListVersions(Delta)).ReturnsAsync([
+      new SpecVersion(Semver.SemVersion.Parse("3.0.0"), "v3.0.0"),
+    ]);
+    _archives.Setup(a => a.OpenVersion(Delta, It.IsAny<SpecVersion>())).ReturnsAsync(Handle);
+    _archives.Setup(a => a.ResolveGitRef(Delta, It.IsAny<GitRef>())).ReturnsAsync(Commit);
+    _archives.Setup(a => a.OpenCommit(Delta, Commit)).ReturnsAsync(Handle);
+  }
+
+  /// Update means the newest version that fits. A mod that was installed at one version, as
+  /// Get mods installs, and is at its newest version: lip would only record that it was
+  /// asked for without that version, which is nothing to confirm. The plan says that nothing
+  /// would change, and has nothing to apply, however often Update is chosen; the state file
+  /// stays as it is.
+  [Theory]
+  [InlineData(Language.En, false)]
+  [InlineData(Language.ZhHans, false)]
+  [InlineData(Language.ZhHant, true)]
+  public async Task Update_OfAModAtItsNewestVersion_HasNothingToApply_HoweverOftenItIsAsked(
+      Language language, bool all) {
+    using TuiHarness tui = Start(
+        State(Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true, $"{Delta}@3.0.0")),
+        language);
+    await WithDelta(tui);
+    string state = Installed(tui);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Delta);
+
+    for (int i = 0; i < 2; i++) {
+      if (all) {
+        // Update all, the action row above the list.
+        tui.Press(ConsoleKey.UpArrow);
+        await tui.WaitFor(ModsText.UpdateAllDetail);
+        tui.Press(ConsoleKey.Enter);
+      } else {
+        tui.Press(ConsoleKey.Enter);
+        await tui.WaitFor(ModsText.UpdateTo);
+        tui.Press(ConsoleKey.DownArrow);
+        tui.Press(ConsoleKey.Enter);
+      }
+
+      await tui.WaitFor(CommonText.NothingWouldChange);
+      Assert.Contains($"[ {CommonText.Close} ]", tui.Screen);
+      Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+      Assert.DoesNotContain(CommonText.OnlyRecordChanges, tui.Screen);
+      Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+      tui.Snapshot("mods-update-newest");
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitUntilGone(CommonText.NothingWouldChange);
+      if (all) {
+        tui.Press(ConsoleKey.DownArrow);
+        await tui.WaitFor(Delta + "  3.0.0");
+      }
+    }
+
+    Assert.Contains($"ListVersions({Delta})", Asked());
+    Assert.Equal(state, Installed(tui));
+  }
+
+  /// Update to version… is what the user named: for a mod that is at that version, and of
+  /// the version tags, the plan says that only the record would change, and applying it
+  /// records the version.
+  [Fact]
+  public async Task UpdateTo_TheInstalledVersion_OffersToRecordIt() {
+    using TuiHarness tui = Start(
+        State(Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true)));
+    await WithDelta(tui);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Delta);
+
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Delta + "@");
+    tui.Type("3.0.0");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor(CommonText.OnlyRecordChanges);
+    Assert.Contains($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]", tui.Screen);
+    Assert.DoesNotContain($"\"ref\": \"{Delta}@3.0.0\"", Installed(tui));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("✓ " + CommonText.Done);
+    Assert.Contains($"{Delta}@3.0.0", Installed(tui));
+  }
+
+  /// The checked mods are updated as each is by itself: one installed at a version leaves it
+  /// for the version tags.
+  [Fact]
+  public async Task Checked_UpdateOfModsInstalledAtOneVersion_AsksForTheirVersionTags() {
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true), Package(Alpha, "1.2.0", true, $"{Alpha}@1.2.0"),
+            Package(Beta, "0.3.1", true, $"{Beta}@0.3.1")),
+        Language.ZhHant);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModsText.Checked(2));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateChecked(2));
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains($"ListVersions({Alpha})", Asked());
+    Assert.DoesNotContain(
+        Asked(), call => call.StartsWith("ResolveGitRef(", StringComparison.Ordinal));
+  }
+
+  /// Update all updates each mod as Update does, and keeps a mod whose local path is gone,
+  /// which the plan says.
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task UpdateAll_KeepsAModWhoseLocalPathIsGone_AndSaysSo(
+      Language language, int width, int height) {
+    string gone = OperatingSystem.IsWindows() ? @"C:\gone" : "/gone";
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true),
+            Package(Gamma, "0.1.0", true, Ref.FromFile(gone).ToString())),
+        language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Gamma);
+
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(StartOf(ModsText.UpdateAllDetail));
+    tui.Press(ConsoleKey.Enter);
+
+    // Nothing would change, so the plan can only be closed.
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    await tui.WaitFor("Keeping package");
+    tui.Snapshot("mods-update-all-gone");
+    Assert.DoesNotContain(CommonText.Failed, tui.Screen);
+    Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+    Assert.Empty(OpenedPaths());
+    Assert.DoesNotContain(
+        Asked(), call => call.StartsWith("ListVersions(", StringComparison.Ordinal));
+  }
+
+  /// Update all asks for the version tags of a mod that was installed at one version, which
+  /// lip update without operands would keep there, and for the branch of a mod of a branch.
+  [Fact]
+  public async Task UpdateAll_UpdatesAModInstalledAtOneVersion_AndNeverTheGame() {
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true), Package(Delta, "3.0.0", true, $"{Delta}@3.0.0")),
+        Language.ZhHans);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Delta);
+
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(ModsText.UpdateAllDetail);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains($"ListVersions({Delta})", Asked());
+    Assert.DoesNotContain(Asked(), call => call.Contains(Game, StringComparison.Ordinal));
+  }
+
+  [Fact]
+  public async Task UpdateTo_OfAModOfABranch_NamesItsRepositoryAtTheRef() {
+    using TuiHarness tui = Start(_sourced, Language.ZhHant);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(Alpha + "@");
+    // A commit that is not written in full is no ref.
+    tui.Type("rev:0123");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.RefInvalid);
+    tui.Press(ConsoleKey.Backspace, 8);
+    tui.Type("tag:nightly");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains(ModsText.UpdateOperation($"{Alpha}@tag:nightly"), tui.Screen);
+    Assert.Contains($"ResolveGitRef({Alpha}, tag:nightly)", Asked());
+    Assert.DoesNotContain($"ResolveGitRef({Alpha}, branch:main)", Asked());
+  }
+
+  [Fact]
+  public async Task Checked_UpdateAsksForTheSourceOfEach() {
+    using TuiHarness tui = Start(_sourced, Language.ZhHans);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Spacebar);
+    await tui.WaitFor(ModsText.Checked(2));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateChecked(2));
+    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains(
+        $"{CommonText.Preview} · {ModsText.UpdateChecked(2)} · {CommonText.Failed}", tui.Screen);
+    Assert.Contains($"Forget({BetaUrl})", Asked());
+    Assert.Contains($"ResolveGitRef({Alpha}, branch:main)", Asked());
+    Assert.DoesNotContain(
+        Asked(), call => call.StartsWith("ListVersions(", StringComparison.Ordinal));
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Checked_DetailsAreThoseOfTheHighlightedRow(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+
+    // Alpha is checked, and the dependency is highlighted.
+    tui.Press(ConsoleKey.Spacebar);
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ModsText.DependencyDetail);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.DetailsOf("Lib"));
+    Assert.Contains(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-checked-details");
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor("一个依赖库");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone("一个依赖库");
+    // The check stays.
+    Assert.Contains("[x] " + Alpha, tui.Screen);
+    Assert.Empty(Asked());
+  }
+
+  [Theory]
+  [InlineData(Language.En, 120, 36)]
+  [InlineData(Language.ZhHans, 60, 16)]
+  [InlineData(Language.ZhHant, 60, 16)]
+  public async Task Menu_ThatIsOpenWhenTheServerStopsOrStarts_IsMadeAgain(
+      Language language, int width, int height) {
+    using TuiHarness tui = Start(Server, language, width, height);
+    await tui.GoTo(PageId.Mods);
+    await tui.WaitFor(Alpha);
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(ModsText.ServerRuns);
+
+    // The menu says why Update cannot be chosen.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(CommonText.StopServerFirst);
+
+    // The server stops: the menu stays open, says so no more, and Update, which is still
+    // highlighted, can be chosen.
+    await tui.SetServerRunning(false);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    Assert.Contains(ModsText.UpdateTo, tui.Screen);
+    Assert.Contains(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-menu-server-stopped");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"[ {CommonText.Close} ]");
+    Assert.Contains($"ListVersions({Alpha})", Asked());
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone($"[ {CommonText.Close} ]");
+    int asked = Asked().Count;
+
+    // The server starts while the menu is open, with Uninstall highlighted: the menu says why
+    // that cannot be chosen, and Enter changes nothing.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ModsText.UpdateTo);
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.Settle();
+    Assert.DoesNotContain(CommonText.StopServerFirst, tui.Screen);
+    await tui.SetServerRunning(true);
+    await tui.WaitFor(CommonText.StopServerFirst);
+    Assert.Contains(ModsText.UpdateTo, tui.Screen);
+    Assert.DoesNotContain(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Snapshot("mods-menu-server-started");
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(ModsText.UpdateTo, tui.Screen);
+    Assert.DoesNotContain($"[ {CommonText.Apply} ]", tui.Screen);
+    Assert.Equal(asked, Asked().Count);
+    Assert.Contains(Alpha, Installed(tui));
+
+    // The highlight is where it was: one step on is Details, which can be chosen.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitUntilGone(CommonText.StopServerFirst);
+    Assert.Contains(HintOf(CommonText.HintSelect), tui.Screen);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ModsText.UpdateTo);
+  }
+
   [Fact]
   public async Task UpdateAll_UpdatesEveryMod() {
     using TuiHarness tui = Start(Server);
@@ -498,9 +986,8 @@ public sealed class ModsPageTests {
     tui.Snapshot("mods-update-all");
     Assert.Contains(
         $"{CommonText.Preview} · {ModsText.UpdateAll} · {CommonText.Failed}", tui.Screen);
-    // The update began with the first mod, whose archive the test does not have.
-    Assert.Contains(
-        Asked(), call => call.StartsWith($"OpenCommit({Alpha},", StringComparison.Ordinal));
+    // The update began with the first mod, whose repository has no version in the test.
+    Assert.Contains($"ListVersions({Alpha})", Asked());
   }
 
   [Theory]
@@ -807,18 +1294,20 @@ public sealed class ModsPageTests {
   [InlineData(Language.En, 60, 16)]
   [InlineData(Language.ZhHans, 60, 16)]
   [InlineData(Language.ZhHant, 60, 16)]
-  public async Task Details_WaitForTheCatalogue_AndEscGivesUp(
+  public async Task Details_WaitForTheCatalogue_AndEscAbandonsTheRequest(
       Language language, int width, int height) {
-    using ManualResetEventSlim arrives = new();
+    TaskCompletionSource arrives = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource abandoned = new(TaskCreationOptions.RunContinuationsAsynchronously);
     int reads = 0;
-    _catalogue = url => {
-      if (url == ModCatalogClient.BaseUrl + "index.json") {
-        Interlocked.Increment(ref reads);
-        arrives.Wait(TimeSpan.FromSeconds(30));
-        return Catalogue;
+    _catalogueRequest = async (url, token) => {
+      if (url != ModCatalogClient.BaseUrl + "index.json") {
+        return AlphaFile;
       }
 
-      return AlphaFile;
+      Interlocked.Increment(ref reads);
+      token.Register(() => abandoned.TrySetResult());
+      await arrives.Task.WaitAsync(token);
+      return Catalogue;
     };
     using TuiHarness tui = Start(Server, language, width, height);
     try {
@@ -833,32 +1322,40 @@ public sealed class ModsPageTests {
       Assert.Contains($" {HintOf(CommonText.HintCancel)}", tui.Screen);
       Assert.DoesNotContain(CommonText.HintSelect.Text, tui.Screen);
 
-      // Esc gives up: nothing is shown when the catalogue arrives.
+      // Esc gives up, and the request is abandoned: nothing is shown, and nothing is said of
+      // a catalogue that cannot be read.
       tui.Press(ConsoleKey.Escape);
       await tui.WaitUntilGone(ModsText.ReadingCatalogue);
+      await abandoned.Task.WaitAsync(
+          TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+      await tui.Settle();
+      Assert.DoesNotContain(ModsText.CatalogueUnreadable, tui.Screen);
+      Assert.Contains("[ ] " + Alpha, tui.Screen);
 
-      // Asked again meanwhile, the same read answers.
+      // Asked again, the catalogue is read again, and shown when it arrives.
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor(ModsText.UpdateTo);
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor(ModsText.ReadingCatalogue);
+      await tui.WaitUntil(() => Volatile.Read(ref reads) == 2, "the catalogue");
+      arrives.SetResult();
+      await tui.WaitFor("An economy core");
       tui.Press(ConsoleKey.Escape);
-      await tui.WaitUntilGone(ModsText.ReadingCatalogue);
-      arrives.Set();
-      await tui.WaitUntil(() => Volatile.Read(ref reads) == 1, "the catalogue");
-      await tui.Settle();
-      Assert.DoesNotContain("An economy core", tui.Screen);
-      Assert.Contains("[ ] " + Alpha, tui.Screen);
+      await tui.WaitUntilGone("An economy core");
 
-      // What arrived is kept for the next time.
+      // What arrived is kept, by the catalogue that every page shares, for the next time.
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor(ModsText.UpdateTo);
       tui.Press(ConsoleKey.Enter);
       await tui.WaitFor("An economy core");
-      Assert.Equal(1, Volatile.Read(ref reads));
+      Assert.Equal(2, Volatile.Read(ref reads));
+      Assert.Same(
+          await tui.Context.Catalog.GetIndex(TestContext.Current.CancellationToken),
+          await tui.Context.Catalog.GetIndex(TestContext.Current.CancellationToken));
+      Assert.Equal(2, Volatile.Read(ref reads));
     }
     finally {
-      arrives.Set();
+      arrives.TrySetResult();
     }
   }
 
@@ -928,9 +1425,15 @@ public sealed class ModsPageTests {
     await tui.WaitFor(ModsText.UncheckAll);
     tui.Snapshot("mods-running-checked");
     Assert.Contains(select, tui.Screen);
-    tui.Press(ConsoleKey.UpArrow);
-    await tui.WaitFor(CommonText.StopServerFirst);
-    tui.Press(ConsoleKey.Enter);
+    foreach (string action in (string[])[ModsText.UpdateChecked(1), ModsText.UninstallChecked(1)]) {
+      Assert.Contains(action, tui.Screen);
+      tui.Press(ConsoleKey.DownArrow);
+      await tui.WaitFor(CommonText.StopServerFirst);
+      tui.Press(ConsoleKey.Enter);
+      await tui.Settle();
+      Assert.DoesNotContain(select, tui.Screen);
+    }
+
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitUntilGone(CommonText.StopServerFirst);
     tui.Press(ConsoleKey.Enter);

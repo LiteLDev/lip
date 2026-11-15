@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="590" viewBox="0 0 944 590" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="490" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="489" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="31" y="148" width="9" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H40M904 78H918.13M25.88 458H40M904 458H918.13M26.5 77.38V458.63M917.5 77.38V458.63"/>
+<path stroke="#56c8d8" d="M43.88 78H58M121 78H900.13M43.88 458H900.13M44.5 77.38V458.63M899.5 77.38V458.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="67" y="82.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">PLand</text>
+<text x="58" y="102.5" textLength="63" lengthAdjust="spacingAndGlyphs"># PLand</text>
+<text x="67 85 103 121 139 157 175 193 211" y="142.5" text-anchor="middle">功能强大的领地系统</text>
+<text x="220" y="142.5" textLength="9" lengthAdjust="spacingAndGlyphs">.</text>
+<text x="58" y="182.5" textLength="90" lengthAdjust="spacingAndGlyphs">## Install</text>
+<text x="58" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs">```</text>
+<text x="58" y="242.5" textLength="342" lengthAdjust="spacingAndGlyphs">lip install github.com/engsr6982/PLand</text>
+<text x="58" y="262.5" textLength="27" lengthAdjust="spacingAndGlyphs">```</text>
+<text x="31" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="67" y="482.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Close</text>
+</g>
+<circle cx="135" cy="98" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="135" y="102.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<rect x="10.5" y="510.5" width="923" height="69" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<circle cx="32" cy="529" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="32" y="533.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<text x="52" y="533.5" textLength="265.2" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">The README, as the author wrote it</text>
+<rect x="24.5" y="544.5" width="38.4" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="560.5" textLength="23.4" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Esc</text>
+</svg>

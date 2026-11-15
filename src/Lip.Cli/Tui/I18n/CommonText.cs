@@ -25,11 +25,14 @@ public static class CommonText {
   public static string ConnectDirectly => L.T("Connect directly", "直接连接", "直接連線");
   public static string NoMods => L.T("No mods yet.", "还没有模组。", "還沒有模組。");
   public static string Saved => L.T("Saved.", "已保存。", "已儲存。");
-  public static string SavedWhileRunning =>
+
+  /// Asked before a file is saved that changed on the disk since it was read, with Overwrite.
+  public static string ChangedOnDisk =>
       L.T(
-          "Saved. Restart the server to apply.",
-          "已保存，重启服务器后生效。",
-          "已儲存，重新啟動伺服器後生效。");
+          "Changed on disk since it was read. Overwrite?",
+          "读取之后，磁盘上的文件已被修改。要覆盖吗？",
+          "讀取之後，磁碟上的檔案已被修改。要覆寫嗎？");
+  public static string Overwrite => L.T("Overwrite", "覆盖", "覆寫");
   public static string DiscardTitle => L.T("Discard changes", "放弃更改", "捨棄變更");
   public static string DiscardQuestion =>
       L.T("Discard the changes?", "要放弃更改吗？", "要捨棄變更嗎？");
@@ -66,6 +69,7 @@ public static class CommonText {
           "请将终端放大到 60×16。按 Ctrl+C 退出。",
           "請將終端機放大到 60×16。按 Ctrl+C 結束。");
   public static string ServerRunning => L.T("Running", "运行中", "執行中");
+  public static string ServerStarting => L.T("Starting", "正在启动", "正在啟動");
   public static string ServerRestarting => L.T("Restarting", "正在重启", "正在重新啟動");
   public static string ServerStopping => L.T("Stopping", "正在停止", "正在停止");
   public static string ServerStopped => L.T("Stopped", "未运行", "未執行");
@@ -106,6 +110,7 @@ public static class CommonText {
           "只會更新 lip 的安裝紀錄。");
   public static string Cancelled =>
       L.T("Cancelled. Changes were undone.", "已取消，更改已撤销。", "已取消，變更已復原。");
+  public static string CancelledWord => L.T("Cancelled", "已取消", "已取消");
   public static string Failed => L.T("Failed", "失败", "失敗");
   public static string Error => L.T("error", "错误", "錯誤");
   public static string HintWord => L.T("hint", "提示", "提示");

@@ -187,6 +187,8 @@ public sealed class ModDetailsDialog : Dialog {
   private readonly CatalogMod _mod;
   private readonly ModDetails _details = new();
   private readonly ButtonRow _buttons;
+  // Abandons the request for the file of the mod once the dialog is closed.
+  private readonly CancellationTokenSource _closed = new();
   private CatalogDetail? _detail;
   private bool _failed;
   private bool _reading;
@@ -200,7 +202,13 @@ public sealed class ModDetailsDialog : Dialog {
         new Button(() => ModDetailsText.OpenInBrowser, () => Context.OpenUrl(_mod.Url)) {
           Enabled = () => _mod.Url.Length > 0,
         },
-        new Button(() => CommonText.Close, Close));
+        new Button(() => CommonText.Close, Leave));
+  }
+
+  /// Closes the dialog: nothing waits for the file of the mod any more.
+  private void Leave() {
+    _closed.Cancel();
+    Close();
   }
 
   public override IReadOnlyList<Hint> Hints => [
@@ -219,7 +227,7 @@ public sealed class ModDetailsDialog : Dialog {
 
   public override void OnKey(ConsoleKeyInfo key) {
     if (key.Key == ConsoleKey.Escape) {
-      Close();
+      Leave();
       return;
     }
 
@@ -250,8 +258,9 @@ public sealed class ModDetailsDialog : Dialog {
     _reading = true;
     ModCatalogClient catalog = Context.Catalog;
     string id = _mod.Id;
+    CancellationToken closed = _closed.Token;
     Context.Background(
-        () => catalog.GetDetail(id), detail => _detail = detail, _ => _failed = true,
+        () => catalog.GetDetail(id, closed), detail => _detail = detail, _ => _failed = true,
         anyWorkspace: true);
   }
 

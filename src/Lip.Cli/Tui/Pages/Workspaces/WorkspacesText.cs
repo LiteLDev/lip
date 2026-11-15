@@ -15,9 +15,9 @@ public static class WorkspacesText {
   public static string AddFolder => L.T("Add existing folder…", "添加已有文件夹…", "加入現有資料夾…");
   public static string AddFolderDetail =>
       L.T(
-          "Adds a folder that already holds a server.",
-          "添加一个已有服务器的文件夹。",
-          "加入已有伺服器的資料夾。");
+          "Adds a folder that exists to the list, with or without a server.",
+          "把已有的文件夹加入列表，里面有没有服务器都可以。",
+          "將現有的資料夾加入清單，裡面有沒有伺服器都可以。");
 
   // The list.
   public static string Empty => L.T("No workspaces.", "没有工作区。", "沒有工作區。");
@@ -62,6 +62,19 @@ public static class WorkspacesText {
           "資料夾不存在時會自動建立。");
   public static string IsFile => L.T("That is a file", "这是一个文件", "這是一個檔案");
   public static string InvalidPath => L.T("Not a valid path", "路径无效", "路徑無效");
+
+  /// Said when the plan of the setup of a new server is cancelled, or the license declined:
+  /// what the wizard did before, and how to go on.
+  public static string NotSetUp =>
+      L.T(
+          "Nothing was installed. The folder stays, and is in the list of workspaces.",
+          "没有安装任何内容。文件夹会保留，并已加入工作区列表。",
+          "沒有安裝任何內容。資料夾會保留，並已加入工作區清單。");
+  public static string NotSetUpNext =>
+      L.T(
+          $"To set it up, choose \"{ChangeVersions}\" in its menu on this page.",
+          $"要继续安装，请在此页它的菜单中选择“{ChangeVersions}”。",
+          $"要繼續安裝，請在此頁它的選單中選擇「{ChangeVersions}」。");
   public static string CannotCreate =>
       L.T("Cannot create the folder", "无法创建文件夹", "無法建立資料夾");
 
@@ -120,4 +133,21 @@ public static class WorkspacesText {
           "没有支持此游戏版本的 LeviLamina。",
           "沒有支援此遊戲版本的 LeviLamina。");
   public static string SetUpTitle => L.T("Set up server", "安装服务器", "安裝伺服器");
+
+  /// The title of the plan of a setup that changes the build of the workspace, which names
+  /// the build that it sets up.
+  public static string SetUpBuildTitle(string build) =>
+      L.T($"Switch to {build}", $"改用 {build} 构建", $"改用 {build} 組建");
+
+  /// Said in the game version step for a workspace of the build linux on a system where lip
+  /// does not run it.
+  public static string LinuxNotHere =>
+      L.T(
+          "This workspace has the linux build, which does not run on this system. The setup"
+              + " replaces it with the windows build.",
+          "此工作区使用 linux 构建，它无法在本系统上运行。安装时会改用 windows 构建。",
+          "此工作區使用 linux 組建，它無法在本系統上執行。安裝時會改用 windows 組建。");
+  public static string Back => L.T("Back", "返回", "返回");
+  public static string BackDetail =>
+      L.T("Go back and choose again.", "返回重新选择。", "返回重新選擇。");
 }

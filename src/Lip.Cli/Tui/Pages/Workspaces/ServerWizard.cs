@@ -11,6 +11,9 @@ namespace Lip.Cli.Tui.Pages.Workspaces;
 /// The choices of a setup, one dialog after the other (protocol/lip-tui.md, "New server"): for a
 /// new server the directory, then the game version, the build and the loader; then lip creates
 /// the directory, adds it to the workspace list, selects it, and sets it up as lip setup does.
+/// When the setup is then not carried out, because the user does not apply it or declines the
+/// license, or because it fails, the directory stays and is listed, which the wizard says,
+/// with how to go on.
 /// For a workspace of the list, the same choices without the directory. Esc in a step goes back
 /// to the step before it, and in the first step ends the wizard, which then changed nothing;
 /// what a step offers that cannot be read is said, and the wizard is back at the step before.
@@ -20,6 +23,19 @@ namespace Lip.Cli.Tui.Pages.Workspaces;
 /// is not asked for when the game version has one such build only. Nothing is set up in a
 /// directory whose server runs. Everything that a wizard reads and carries out is in one
 /// session, so that nothing is read twice.
+///
+/// A workspace of the build linux on a system where lip does not run the Linux server: the
+/// build linux is not offered there (protocol/lip-tui.md, "New server", step 2), and a setup
+/// of the build windows is what lip setup defines for any workspace
+/// (protocol/lip-setup.md, "Setting up": the game of the other build is uninstalled). So the
+/// wizard goes on with the build windows, and says so before the user chooses: in the game
+/// version step, and in the title of the plan, which names the build whenever the setup
+/// changes it.
+///
+/// Whether a game version has a LeviLamina is read from the catalogue, for the list of the
+/// game versions; which versions of LeviLamina fit is found as a setup finds them, for the
+/// loader step. The two may disagree. The loader step is the one that counts: when it finds
+/// none, it says so, and offers to go on without a loader or to go back.
 ///
 /// workspaceSelected is called once the wizard selected the workspace that it then sets up.
 internal sealed class ServerWizard(
@@ -132,7 +148,7 @@ internal sealed class ServerWizard(
           WorkspacesText.NewServerTitle,
           start,
           // Back from the game versions, the browser shows the folder that was chosen, or the
-          // nearest one above it that exists.
+          // nearest one above it that exists with the path of the chosen one in its bar.
           folder => ReadGames(
               new Target(folder, Create: true, flow), () => AskDirectory(flow, folder, back)),
           back,
@@ -327,7 +343,11 @@ internal sealed class ServerWizard(
         ],
         chosen => ChooseBuild(choices, chosen, null),
         choices.Back,
-        selected));
+        selected,
+        // The build linux of the workspace is not offered here: said before anything is chosen.
+        choices.Target.Has?.Build == GameBuild.Linux && !runsLinuxServer()
+            ? WorkspacesText.LinuxNotHere
+            : null));
   }
 
   /// Asks for the build of the game version at an index, unless one only can be chosen on
@@ -378,25 +398,41 @@ internal sealed class ServerWizard(
         back);
   }
 
+  /// The versions of LeviLamina that fit the game version, then "No loader". When none fits,
+  /// whatever the list of the game versions said, the step says so and offers "No loader" or
+  /// to go back, which Esc does too.
   private void ChooseLoader(
-      Target target, SemVersion game, IReadOnlyList<SemVersion> loaders, Action back) =>
-      context.Show(new ChoiceDialog(
-          WorkspacesText.Loader,
-          [
-            .. loaders.Select((v, i) => new ChoiceItem(
-                new StyledLine()
-                    .Add($"LeviLamina {v}", Theme.Strong)
-                    .Add(i == 0 ? "  " + WorkspacesText.Newest : "", Theme.Good),
-                WorkspacesText.LoaderDetail)),
-            new ChoiceItem(
-                WorkspacesText.NoLoader,
-                loaders.Count == 0 ? WorkspacesText.NoLoaderFits : WorkspacesText.NoLoaderDetail),
-          ],
-          chosen => Finish(target, chosen < loaders.Count
-              ? new SetupRequest(game, GameBuild.Windows, Loader: true, loaders[chosen])
-              : new SetupRequest(game, GameBuild.Windows, Loader: false)),
-          back,
-          LoaderOf(target, loaders)));
+      Target target, SemVersion game, IReadOnlyList<SemVersion> loaders, Action back) {
+    bool none = loaders.Count == 0;
+    List<ChoiceItem> items = [
+      .. loaders.Select((v, i) => new ChoiceItem(
+          new StyledLine()
+              .Add($"LeviLamina {v}", Theme.Strong)
+              .Add(i == 0 ? "  " + WorkspacesText.Newest : "", Theme.Good),
+          WorkspacesText.LoaderDetail)),
+      new ChoiceItem(WorkspacesText.NoLoader, WorkspacesText.NoLoaderDetail),
+    ];
+    if (none) {
+      items.Add(new ChoiceItem(WorkspacesText.Back, WorkspacesText.BackDetail));
+    }
+
+    context.Show(new ChoiceDialog(
+        WorkspacesText.Loader,
+        items,
+        chosen => {
+          if (chosen < loaders.Count) {
+            Finish(
+                target, new SetupRequest(game, GameBuild.Windows, Loader: true, loaders[chosen]));
+          } else if (chosen == loaders.Count) {
+            Finish(target, new SetupRequest(game, GameBuild.Windows, Loader: false));
+          } else {
+            back();
+          }
+        },
+        back,
+        LoaderOf(target, loaders),
+        none ? WorkspacesText.NoLoaderFits : null));
+  }
 
   /// The row of the loaders that the dialog starts on: the loader that the workspace has, or
   /// "No loader" when it has a game of the build windows without one; otherwise the newest
@@ -438,8 +474,15 @@ internal sealed class ServerWizard(
       IServerSetup setup = context.ServerSetup;
       // A server that started meanwhile is seen there, and the setup is refused.
       context.PlanAndRun(
-          WorkspacesText.SetUpTitle, run => setup.Setup(client, request, run),
-          session: target.Flow.Session);
+          // A setup that changes the build of the workspace names the build it sets up.
+          target.Has?.Build is { } has && has != request.Build
+              ? WorkspacesText.SetUpBuildTitle(GameSetup.Name(request.Build))
+              : WorkspacesText.SetUpTitle,
+          run => setup.Setup(client, request, run),
+          session: target.Flow.Session,
+          // The folder of a new server is there and listed by now (protocol/lip-tui.md, "New
+          // server"): the user is told so, and how to go on, when the setup is not carried out.
+          notApplied: target.Create ? NotSetUp : null);
     }
 
     if (!target.Create) {
@@ -461,6 +504,17 @@ internal sealed class ServerWizard(
       context.Message(Title(target), error!, Theme.Bad);
     }
   }
+
+  /// Says that the folder of a new server stays and is listed though nothing was installed.
+  private void NotSetUp() =>
+      context.Show(new ConfirmDialog(
+          WorkspacesText.NewServerTitle,
+          [
+            new StyledLine(WorkspacesText.NotSetUp),
+            new StyledLine(),
+            new StyledLine(WorkspacesText.NotSetUpNext, Theme.Muted),
+          ],
+          [CommonText.Close]));
 
   private static string Title(Target target) =>
       target.Create ? WorkspacesText.NewServerTitle : WorkspacesText.SetUpTitle;

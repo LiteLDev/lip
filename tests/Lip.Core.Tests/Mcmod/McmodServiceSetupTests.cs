@@ -214,7 +214,8 @@ public class McmodServiceSetupTests {
     OperationResult record = await _ws.Service.Setup(
         new SetupRequest(_new, GameBuild.Windows, Loader: true),
         new OperationOptions(DryRun: true));
-    Assert.Equal(new OperationResult(Changes: true, OnlyStateFile: true), record);
+    Assert.Equal(
+        new OperationResult(Changes: true, OnlyStateFile: true, OnlySources: true), record);
 
     // A mod to install: packages would change.
     OperationResult install = await _ws.Service.Install(
@@ -682,6 +683,45 @@ public class McmodServiceSetupTests {
     Dictionary<string, LockedPackage> packages = await Packages();
     Assert.Equal("1.20.0", packages[Bds].Version);
     Assert.Equal("1.0.0", packages[LeviLamina].Version);
+  }
+
+  /// What the interface means by Update (InstalledPackage.UpdateArgument): a mod installed at
+  /// one version moves to the highest version that fits the loader as it is, not to one that
+  /// needs another loader.
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Update_OfAModAtOneVersion_MovesItToTheHighestVersionThatFitsTheLoader(
+      bool all) {
+    // Arrange: the old game with LeviLamina 1.0.0. The mod has 0.8.0 and 0.9.0 for it, and
+    // 1.0.0 for LeviLamina 2.
+    await _ws.Service.Setup(new SetupRequest(_old, GameBuild.Windows, Loader: true), _accept);
+    AddMod(Mod, "Mod", "0.8.0", "1.*");
+    _ws.Restart();
+    await _ws.Service.Install([$"{Mod}@0.8.0"], new OperationOptions());
+    InstalledPackage installed = (await _ws.Service.List()).Single(p => p.Identity == Mod);
+    CannotAsk();
+
+    // Act
+    OperationResult plan = all
+        ? await _ws.Service.UpdateMods(new OperationOptions(DryRun: true))
+        : await _ws.Service.Update([installed.UpdateArgument], new OperationOptions(DryRun: true));
+    OperationResult result = all
+        ? await _ws.Service.UpdateMods(new OperationOptions())
+        : await _ws.Service.Update([installed.UpdateArgument], new OperationOptions());
+    OperationResult again = all
+        ? await _ws.Service.UpdateMods(new OperationOptions(DryRun: true))
+        : await _ws.Service.Update([installed.UpdateArgument], new OperationOptions(DryRun: true));
+
+    // Assert
+    Assert.Equal(Mod, installed.UpdateArgument);
+    Assert.Equal((OperationResult.Changed, OperationResult.Changed), (plan, result));
+    Dictionary<string, LockedPackage> packages = await Packages();
+    Assert.Equal(("0.9.0", Mod), (packages[Mod].Version, packages[Mod].Source));
+    Assert.Equal("1.20.0", packages[Bds].Version);
+    Assert.Equal("1.0.0", packages[LeviLamina].Version);
+    // The highest version that fits is installed: nothing would change.
+    Assert.Equal(OperationResult.Unchanged, again);
   }
 
   #endregion

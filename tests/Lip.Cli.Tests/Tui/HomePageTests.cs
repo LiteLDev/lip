@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Text.RegularExpressions;
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Home;
@@ -271,7 +272,10 @@ public sealed class HomePageTests {
       await tui.WaitFor(HomeText.InstallModsDetail);
       await tui.Invoke(() => tui.Context.StartServer("Start server"));
       await tui.WaitFor($"✓ 3  {HomeText.StartServer}");
-      Assert.Matches($@"{HomeText.Server}\s+● {CommonText.ServerRunning}", tui.Screen);
+      // It says Starting until lip run has started the server.
+      await tui.WaitFor(
+          screen => Regex.IsMatch(screen, $@"{HomeText.Server}\s+● {CommonText.ServerRunning}"),
+          "the running server");
 
       tui.Press(ConsoleKey.DownArrow);
       await tui.WaitFor(HomeText.OpenServerDetail);
@@ -282,15 +286,7 @@ public sealed class HomePageTests {
       await tui.WaitUntilGone($"● {CommonText.ServerRunning}");
     }
     finally {
-      for (int i = 0; i < 40; i++) {
-        try {
-          Directory.Delete(root, recursive: true);
-          break;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-          await Task.Delay(50, TestContext.Current.CancellationToken);
-        }
-      }
+      TestClients.Remove(root);
     }
   }
 
@@ -325,20 +321,36 @@ public sealed class HomePageTests {
   }
 
   [Fact]
+  public async Task Github_NotReached_PreselectsAProxy_SoThatEnterAloneLeadsToIt() {
+    using TuiHarness tui = Start(probe: new Probe(503), language: Language.ZhHant);
+    await tui.WaitFor(HomeText.GithubTitle);
+
+    // The answer that a user who does not reach GitHub needs is the selected one.
+    await tui.WaitFor(HomeText.GithubProxyDetail);
+    Assert.DoesNotContain(HomeText.GithubLaterDetail, tui.Screen);
+
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"page Settings, request {PageRequest.GithubProxy}");
+    Assert.Null(await tui.Config.Get(ConfigService.GithubProxyKey));
+  }
+
+  [Fact]
   public async Task Github_NotReached_Later_ChangesNothing_AndIsAskedOnce() {
     Probe probe = new(503);
     using TuiHarness tui = Start(probe: probe);
     await tui.WaitFor(HomeText.GithubTitle);
 
-    // The question says why, and offers the three answers; the one that changes nothing is
-    // selected, so that an Enter meant for something else answers "later".
+    // The question says why, and offers the three answers.
     Assert.Contains("503", tui.Screen);
     Assert.Contains(HomeText.GithubProxy, tui.Screen);
     Assert.Contains(CommonText.ConnectDirectly, tui.Screen);
     Assert.Contains(CommonText.Later, tui.Screen);
-    Assert.Contains(HomeText.GithubLaterDetail, tui.Screen);
     Assert.Null(await tui.Config.Get(ConfigService.GithubProxyKey));
 
+    // ↑ from the first answer goes round to the last one, "later".
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(HomeText.GithubLaterDetail);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone(HomeText.GithubTitle);
     await Ticks(tui);
@@ -368,7 +380,7 @@ public sealed class HomePageTests {
     using TuiHarness tui = Start(probe: new Probe(503));
     await tui.WaitFor(HomeText.GithubTitle);
 
-    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(HomeText.GithubDirectDetail);
     tui.Press(ConsoleKey.Enter);
 
@@ -383,7 +395,6 @@ public sealed class HomePageTests {
     using TuiHarness tui = Start(probe: new Probe(503));
     await tui.WaitFor(HomeText.GithubTitle);
 
-    tui.Press(ConsoleKey.UpArrow, 2);
     await tui.WaitFor(HomeText.GithubProxyDetail);
     tui.Press(ConsoleKey.Enter);
 
@@ -404,7 +415,6 @@ public sealed class HomePageTests {
     await tui.WaitFor(HomeText.GithubTitle);
 
     // The user asks for a proxy, and then stays on the page with the changes.
-    tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(HomeText.GithubProxyDetail);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("Discard the changes?");
@@ -413,7 +423,6 @@ public sealed class HomePageTests {
     // The question is not lost: this time the user discards the changes.
     await tui.WaitFor(HomeText.GithubTitle);
     Assert.Contains("page Workspaces", tui.Screen);
-    tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(HomeText.GithubProxyDetail);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("Discard the changes?");
@@ -473,12 +482,13 @@ public sealed class HomePageTests {
     // The overview is read in the background, and shows "…" until it is.
     await tui.WaitFor(
         screen => !string.Join('\n', screen.Split('\n')[1..^1]).Contains('…'), "the overview");
+    await tui.WaitFor(HomeText.GithubProxyDetail);
     tui.Snapshot("home-github");
     AssertFits(tui);
-    tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor(HomeText.GithubProxyDetail);
-    tui.Snapshot("home-github-proxy");
-    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(HomeText.GithubLaterDetail);
+    tui.Snapshot("home-github-later");
+    tui.Press(ConsoleKey.DownArrow, 2);
     await tui.WaitFor(HomeText.GithubDirectDetail);
     tui.Snapshot("home-github-direct");
     tui.Press(ConsoleKey.Enter);

@@ -43,12 +43,6 @@ public static class GameConfigText {
           "服务器运行期间无法保存更改。",
           "伺服器執行期間無法儲存變更。");
   public static string SaveTitle => L.T("Save game config", "保存游戏配置", "儲存遊戲設定");
-  public static string ChangedOnDisk =>
-      L.T(
-          "Changed on disk since it was read. Overwrite?",
-          "读取之后，磁盘上的文件已被修改。要覆盖吗？",
-          "讀取之後，磁碟上的檔案已被修改。要覆寫嗎？");
-  public static string Overwrite => L.T("Overwrite", "覆盖", "覆寫");
 
   // A property.
   public static string Edit => L.T("Edit…", "编辑…", "編輯…");
@@ -61,6 +55,10 @@ public static class GameConfigText {
   public static string Value => L.T("Value", "值", "值");
   public static string ValueBetween(long min, long max) =>
       L.T($"Value ({min}–{max})", $"值（{min}–{max}）", $"值（{min}–{max}）");
+  public static string ValueAtLeast(long min) =>
+      L.T($"Value ({min} or more)", $"值（不小于 {min}）", $"值（不小於 {min}）");
+  public static string ValueAtMost(long max) =>
+      L.T($"Value ({max} or less)", $"值（不大于 {max}）", $"值（不大於 {max}）");
   public static string NotAnInteger => L.T("Enter an integer.", "请输入整数。", "請輸入整數。");
   public static string NotBetween(long min, long max) =>
       L.T(
@@ -72,6 +70,11 @@ public static class GameConfigText {
           $"Enter an integer of at least {min}.",
           $"请输入不小于 {min} 的整数。",
           $"請輸入不小於 {min} 的整數。");
+  public static string NotAtMost(long max) =>
+      L.T(
+          $"Enter an integer of at most {max}.",
+          $"请输入不大于 {max} 的整数。",
+          $"請輸入不大於 {max} 的整數。");
   public static string NotOneLine => L.T("Enter one line.", "只能输入一行。", "只能輸入一行。");
 
   // The players.

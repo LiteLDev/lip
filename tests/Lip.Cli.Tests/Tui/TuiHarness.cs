@@ -28,6 +28,9 @@ public sealed class TuiHarnessOptions {
 
   public int Height { get; init; } = 36;
 
+  /// The version of lip that the interface shows.
+  public string Version { get; init; } = "1.2.3";
+
   /// The file system of the workspaces and of the configuration: an empty one when not given.
   /// Fill it before the interface starts for what the interface reads when it starts.
   public MockFileSystem? FileSystem { get; init; }
@@ -41,6 +44,10 @@ public sealed class TuiHarnessOptions {
 
   /// The text of the file of the catalogue at a URL: an empty catalogue when not given.
   public Func<string, string>? Catalog { get; init; }
+
+  /// The same, for a test that answers a request later, or that looks at whether the request
+  /// was abandoned, which cancels the token: used in place of Catalog when given.
+  public Func<string, CancellationToken, Task<string>>? CatalogRequest { get; init; }
 
   /// The reachability check of GitHub: not made when not given. new GithubProbe(send) fakes
   /// the request.
@@ -116,9 +123,9 @@ public sealed class TuiHarness : IDisposable {
 
         return client;
       },
-      Catalog = new ModCatalogClient((url, _) => Task.FromResult(
-          options.Catalog?.Invoke(url) ?? "{\"mods\": []}")),
-      Version = "1.2.3",
+      Catalog = new ModCatalogClient(options.CatalogRequest ?? ((url, _) => Task.FromResult(
+          options.Catalog?.Invoke(url) ?? "{\"mods\": []}"))),
+      Version = options.Version,
       WorkingDirectory = Root,
       DescribeFailure = options.DescribeFailure ?? ((exception, _, cancelled, _) => new Failure(
           exception.Message, ["a hint"], Path.Join(".lip", "logs", "report.log"), null, "",
@@ -291,6 +298,17 @@ public sealed class TuiHarness : IDisposable {
     Assert.Fail($"The interface never reached {what}:{NewLine}{Screen}");
   }
 
+  /// The style of the first cell of the first place where the screen shows the text, once
+  /// every key pressed so far is handled and drawn.
+  public async Task<Style> StyleOf(string text) {
+    await Settle();
+    IReadOnlyList<string> rows = await Invoke(() => App.ScreenAnsi);
+    Screenshots.Frame frame = Screenshots.Frame.Parse(rows);
+    Screenshots.CellRect at = frame.Find(text)
+        ?? throw new InvalidOperationException($"The screen does not show '{text}':\n{Screen}");
+    return frame[at.X, at.Y].Style;
+  }
+
   /// Runs get on the thread of the interface and returns what it returns.
   public Task<T> Invoke<T>(Func<T> get) {
     TaskCompletionSource<T> result = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -377,6 +395,14 @@ public sealed class TuiHarness : IDisposable {
 
   public void Dispose() {
     Terminal.Dispose();
+    // An interface that is not managed ends only once its servers have exited, and the
+    // servers that the harness made are of no one else: a test that failed before it ended
+    // its server would keep the harness waiting, and the files of the server locked. The
+    // server of a test is cmd.exe, which exits when it reads "exit".
+    if (!_options.ManagedServers || _options.Servers is null) {
+      TestClients.EndServers(Servers);
+    }
+
     try {
       Run.Wait(TimeSpan.FromSeconds(30));
     }
@@ -407,10 +433,116 @@ public sealed class TuiHarness : IDisposable {
 
 /// The clients and the workspaces of the tests that run a real program as the server.
 public static class TestClients {
+  private const string Prefix = "lip-tui-test-";
+
+  // The workspaces that CmdWorkspace made and Remove has not deleted: the only directories
+  // that Remove deletes.
+  private static readonly HashSet<string> _roots = new(StringComparer.OrdinalIgnoreCase);
+
+  /// Ends the servers of the tests that still run: cmd.exe exits when it reads "exit". Waits
+  /// a few seconds for them, and never fails.
+  public static void EndServers(ServerSessions servers) {
+    IReadOnlyList<WorkspaceServer> running = servers.Running();
+    foreach (WorkspaceServer server in running) {
+      server.Send("exit");
+    }
+
+    for (int i = 0; i < 100 && running.Any(server => server.Running); i++) {
+      Thread.Sleep(50);
+    }
+  }
+
+  /// Deletes a workspace that CmdWorkspace made, whatever the test left of it: it ends the
+  /// servers given, kills the server of the workspace when it still runs, which is the copy
+  /// of cmd.exe in it and no other process, and deletes the directory, trying again while a
+  /// file of it is locked. It deletes nothing that CmdWorkspace did not make, and takes no
+  /// cancellation token: it is for the finally block of a test, which runs after a timeout too.
+  public static void Remove(string root, ServerSessions? servers = null) {
+    lock (_roots) {
+      if (!_roots.Contains(root)) {
+        throw new ArgumentException(
+            $"{root} is not a workspace that CmdWorkspace made: nothing was deleted.",
+            nameof(root));
+      }
+    }
+
+    if (servers is not null) {
+      EndServers(servers);
+    }
+
+    for (int attempt = 0; attempt < 50; attempt++) {
+      KillServer(root);
+      try {
+        if (Directory.Exists(root)) {
+          Directory.Delete(root, recursive: true);
+        }
+
+        lock (_roots) {
+          _roots.Remove(root);
+        }
+
+        return;
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        // A file is still locked: the process that was killed is on its way out, or lip
+        // run is about to let go of the server lock.
+        Thread.Sleep(100);
+      }
+    }
+  }
+
+  /// Deletes every workspace that CmdWorkspace made and that is still there.
+  private static void RemoveAll() {
+    string[] roots;
+    lock (_roots) {
+      roots = [.. _roots];
+    }
+
+    foreach (string root in roots) {
+      try {
+        Remove(root);
+      }
+      catch (Exception) {
+        // The process ends: there is no one to tell.
+      }
+    }
+  }
+
+  /// Kills the processes whose program is the server of the workspace at root, and waits for
+  /// them to exit.
+  private static void KillServer(string root) {
+    string program = Path.Join(root, WorkspaceProgram.WindowsServerFileName);
+    foreach (System.Diagnostics.Process process in System.Diagnostics.Process.GetProcessesByName(
+        Path.GetFileNameWithoutExtension(program))) {
+      using (process) {
+        try {
+          if (string.Equals(
+              process.MainModule?.FileName, program, StringComparison.OrdinalIgnoreCase)) {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(5000);
+          }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException
+            or System.ComponentModel.Win32Exception or NotSupportedException) {
+          // It exited meanwhile, or it is a process of someone else that cannot be looked at.
+        }
+      }
+    }
+  }
+
   /// A workspace on the disk whose server, a game of the build windows without a loader, is
   /// cmd.exe, which runs the lines it reads and exits when it reads "exit". Windows only.
   public static string CmdWorkspace() {
-    string root = Directory.CreateTempSubdirectory("lip-tui-test-").FullName;
+    string root = Directory.CreateTempSubdirectory(Prefix).FullName;
+    lock (_roots) {
+      if (_roots.Count == 0) {
+        // What a test left behind, because it was aborted, goes when the tests end.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => RemoveAll();
+      }
+
+      _roots.Add(root);
+    }
+
     File.Copy(
         Path.Join(Environment.SystemDirectory, "cmd.exe"),
         Path.Join(root, WorkspaceProgram.WindowsServerFileName));
@@ -419,10 +551,12 @@ public static class TestClients {
     return root;
   }
 
-  /// The client of the workspace at root, which prepares no system. Its user configuration is
-  /// a directory of the test, not that of the user who runs the tests.
+  /// The client of the workspace at root, which prepares no system unless a preparer is
+  /// given. Its user configuration is a directory of the test, not that of the user who runs
+  /// the tests.
   public static LipClient CmdClient(
-      FileSystem fs, IUserInteraction interaction, Func<Stream> hookOutput, string root) =>
+      FileSystem fs, IUserInteraction interaction, Func<Stream> hookOutput, string root,
+      ISystemPreparer? systemPreparer = null) =>
       new(
           fs, interaction, new CacheService(fs, interaction),
           new ConfigService(
@@ -431,7 +565,7 @@ public static class TestClients {
               fs, interaction, new LockStore(fs), Mock.Of<IArchiveProvider>(),
               new ArchiveReader(),
               new McmodInstaller(fs, new CommandRunner(hookOutput), interaction),
-              workspaceRoot: () => root));
+              workspaceRoot: () => root, systemPreparer: systemPreparer));
 }
 
 /// The server setup of the tests: two games, the newest of them for Linux too, and two

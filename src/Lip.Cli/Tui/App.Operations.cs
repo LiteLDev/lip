@@ -18,13 +18,15 @@ public sealed partial class App {
 
   /// Runs a command in the background, showing its progress; then calls succeeded, or shows
   /// why it failed, unless failed, when given, says that it took care of the failure. One
-  /// command runs at a time: false, and nothing runs, while another does.
+  /// command runs at a time: false, and nothing runs, while another does. failureClosed is
+  /// called once the user closed the dialog that says why the command failed.
   internal bool RunOperation(
       string title,
       Func<CancellationToken, Task> action,
       Action<Operation>? succeeded,
       bool cancellable,
-      Func<Exception, bool>? failed = null) {
+      Func<Exception, bool>? failed = null,
+      Action? failureClosed = null) {
     if (_operation is not null) {
       return false;
     }
@@ -48,7 +50,9 @@ public sealed partial class App {
         if (failure is null) {
           succeeded?.Invoke(operation);
         } else if (failed?.Invoke(failure) != true) {
-          ShowFailure(title, failure, operation.Cancel.IsCancellationRequested, operation.Log);
+          ShowFailure(
+              title, failure, operation.Cancel.IsCancellationRequested, operation.Log,
+              failureClosed);
         }
       });
     });
@@ -87,9 +91,12 @@ public sealed partial class App {
   }
 
   /// Shows why a command failed, with what to do about it and the failure report, which is
-  /// written below the selected workspace.
+  /// written below the selected workspace. A command that the user cancelled did not fail: its
+  /// dialog says that it was cancelled, in the colors of any other message. closed is called
+  /// once the user closed the dialog.
   internal void ShowFailure(
-      string title, Exception exception, bool cancelled, IReadOnlyList<StyledLine> log) {
+      string title, Exception exception, bool cancelled, IReadOnlyList<StyledLine> log,
+      Action? closed = null) {
     Failure failure = _describeFailure(exception, ["(interface)", title], cancelled, _workspace);
     List<StyledLine> lines = [.. log.TakeLast(200)];
     if (lines.Count > 0) {
@@ -97,28 +104,32 @@ public sealed partial class App {
     }
 
     if (failure.Cancelled) {
-      lines.Add(new StyledLine(CommonText.Cancelled, Theme.Bad));
-    } else {
-      string mark = CommonText.Error + ": ";
-      foreach (string line in failure.Summary.Split('\n')) {
-        lines.Add(new StyledLine().Add(mark, Theme.Bad).Add(line.TrimEnd('\r')));
-        mark = new string(' ', TextWidth.Of(mark));
-      }
-
-      foreach (string hint in failure.Hints) {
-        lines.Add(new StyledLine().Add(CommonText.HintWord + ": ", Theme.Warning).Add(hint));
-      }
-
-      lines.Add(new StyledLine());
-      lines.Add(failure.ReportPath is { } path
-          ? new StyledLine().Add(CommonText.FullReport + ": ", Theme.Muted)
-              .Add(_workspaces.FileSystem.Path.Join(_workspace, path), Theme.Accent)
-          : new StyledLine($"{CommonText.NoReport}: {failure.ReportError}", Theme.Muted));
+      // The user asked for it: it is no failure, and is not shown as one.
+      lines.Add(new StyledLine(CommonText.Cancelled));
+      Show(new ConfirmDialog(
+          $"{title} · {CommonText.CancelledWord}", lines, [CommonText.Close],
+          _ => closed?.Invoke(), fromEnd: true));
+      return;
     }
 
+    string mark = CommonText.Error + ": ";
+    foreach (string line in failure.Summary.Split('\n')) {
+      lines.Add(new StyledLine().Add(mark, Theme.Bad).Add(line.TrimEnd('\r')));
+      mark = new string(' ', TextWidth.Of(mark));
+    }
+
+    foreach (string hint in failure.Hints) {
+      lines.Add(new StyledLine().Add(CommonText.HintWord + ": ", Theme.Warning).Add(hint));
+    }
+
+    lines.Add(new StyledLine());
+    lines.Add(failure.ReportPath is { } path
+        ? new StyledLine().Add(CommonText.FullReport + ": ", Theme.Muted)
+            .Add(_workspaces.FileSystem.Path.Join(_workspace, path), Theme.Accent)
+        : new StyledLine($"{CommonText.NoReport}: {failure.ReportError}", Theme.Muted));
     Show(new ConfirmDialog(
-        $"{title} · {CommonText.Failed}", lines, [CommonText.Close], border: Theme.Bad,
-        fromEnd: true));
+        $"{title} · {CommonText.Failed}", lines, [CommonText.Close], _ => closed?.Invoke(),
+        border: Theme.Bad, fromEnd: true));
   }
 
   /// Shows what a command told the user, once it succeeded.
@@ -133,12 +144,15 @@ public sealed partial class App {
   /// preview only, and a plan that would change nothing cannot be applied. Both are carried
   /// out in one session, a new one when none is given. Nothing is carried out while the
   /// server of the selected workspace runs. done is called once the operation succeeded and
-  /// its result is shown.
+  /// its result is shown; notApplied once the operation is not carried out: the user cancelled
+  /// the plan or declined the license, or closed the dialog that says that the dry run or the
+  /// operation failed or was cancelled, or that the server runs.
   internal void PlanAndRun(
       string title,
       Func<OperationRun, Task<OperationResult>> operation,
       Action? done,
-      OperationSession? session) {
+      OperationSession? session,
+      Action? notApplied = null) {
     if (RefuseWhileServerRuns(title)) {
       return;
     }
@@ -158,8 +172,12 @@ public sealed partial class App {
         return false;
       }
 
-      _serverLocksHeld.Add(workspace);
-      ShowServerRuns(title);
+      if (_servers.Find(workspace)?.Running != true) {
+        // Another lip runs it: the interface knows before it next looks.
+        _serverLocksHeld.Add(workspace);
+      }
+
+      ShowServerRuns(title, notApplied);
       return true;
     }
 
@@ -188,13 +206,17 @@ public sealed partial class App {
             await operation(new OperationRun(shared, DryRun: false, acceptEula, token));
           }, result => {
             WorkspaceChanged();
+            // What the plan said already, such as what was resolved, is not said again.
+            HashSet<string> said = [.. plan.Log.Select(line => line.PlainText)];
+            result.Log.RemoveAll(line => Repeats(said, line));
             ShowResult(title, result, CommonText.Done);
             done?.Invoke();
-          }, cancellable: true, ServerRuns);
+          }, cancellable: true, ServerRuns, notApplied);
 
       Show(new ConfirmDialog(
           title, lines, [CommonText.Apply, CommonText.Cancel], choice => {
             if (choice != 0) {
+              notApplied?.Invoke();
               return;
             }
 
@@ -218,10 +240,12 @@ public sealed partial class App {
                 answer => {
                   if (answer == 0) {
                     Run(acceptEula: true);
+                  } else {
+                    notApplied?.Invoke();
                   }
                 }));
           }));
-    }, cancellable: true, ServerRuns);
+    }, cancellable: true, ServerRuns, notApplied);
   }
 
   /// A line of the log of a dry run, as the plan shows it: what the operation would do ("Dry
@@ -235,6 +259,15 @@ public sealed partial class App {
         : text.StartsWith(DryRunMark, StringComparison.Ordinal)
             ? new StyledLine(text, Theme.Strong)
             : line;
+  }
+
+  /// Whether a line of the log of an operation says again what a line of the log of its dry
+  /// run said: the same text, which is neither a warning nor an error, nor what a hook
+  /// command wrote.
+  private static bool Repeats(HashSet<string> plan, StyledLine line) {
+    string text = line.PlainText;
+    return line.Spans.Count == 1 && line.Spans[0].Style == default(Style)
+        && text.Trim().Length > 0 && plan.Contains(text);
   }
 
   /// The server of the workspace of an operation runs, so the operation is not carried out.

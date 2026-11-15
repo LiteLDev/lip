@@ -442,6 +442,16 @@ public sealed class LipClient {
         new OperationOptions(dryRun, cancellationToken));
   }
 
+  /// Updates every mod that the user installed, each to the highest version that fits, or as
+  /// its branch, tag, commit, URL or local path is now (McmodService.UpdateMods): what the
+  /// interface means by updating all. session: the session of the command, if it has one.
+  public async Task<OperationResult> UpdateMods(
+      bool dryRun,
+      CancellationToken cancellationToken = default,
+      OperationSession? session = null) {
+    return await (await GetMcmodService(dryRun, session)).UpdateMods(
+        new OperationOptions(dryRun, cancellationToken));
+  }
 
   /// The result of lip pkg view as JSON (protocol/lip-pkg.md, "lip pkg view"): the package file
   /// of the first archive the package argument names, and the versions of its remote repository.

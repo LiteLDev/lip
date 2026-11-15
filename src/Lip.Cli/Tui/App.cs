@@ -101,7 +101,8 @@ public sealed partial class App {
   private readonly WorkspaceList _workspaces;
   private readonly ServerSessions _servers;
   private readonly Func<string, bool> _serverLockHeld;
-  // The workspaces whose server lock was held when the interface last looked.
+  // The workspaces whose server another lip ran when the interface last looked: their server
+  // lock was held, and not by a server of this process.
   private HashSet<string> _serverLocksHeld = new(WorkspaceList.PathComparer);
   private bool _serverLocksPending;
   // Whether to look again once the look that is pending is done: something changed since.
@@ -183,6 +184,10 @@ public sealed partial class App {
 
   /// What the screen shows, as plain text.
   public string ScreenText => _screenText;
+
+  /// The rows of the frame drawn last, each as text with the escape sequences of its styles
+  /// (ScreenBuffer.RowAnsi). For the thread of the interface.
+  public IReadOnlyList<string> ScreenAnsi => [.. _shown];
 
   /// How many keys the interface has handled, and how many times it has drawn the screen: for
   /// tests, which wait for the keys they pressed to show.
@@ -666,10 +671,27 @@ public sealed partial class App {
       || _serverLocksHeld.Contains(workspace)
       || _serverLocksHeld.Contains(_workspaces.Normalize(workspace));
 
+  /// Whether another lip runs the server of a workspace, as the interface last saw it: its
+  /// server lock is held, and this process has no server that runs for it. Such a server is
+  /// known to run and no more: the interface can neither stop it nor read what it writes.
+  internal bool ServerRunsElsewhere(string workspace) =>
+      _servers.Find(workspace)?.Running != true
+      && (_serverLocksHeld.Contains(workspace)
+          || _serverLocksHeld.Contains(_workspaces.Normalize(workspace)));
+
   /// Whether the server of a workspace runs now. For any thread but that of the interface:
   /// it looks at the server lock.
   internal bool ServerRunsNow(string workspace) =>
       _servers.Find(workspace)?.Running == true || ServerLockHeld(workspace);
+
+  /// Whether another lip holds the server lock of a workspace now. A server of this process
+  /// holds the lock too, from after it is taken to run until before it is taken to have
+  /// stopped: so the lock counts only when no such server runs before and after the look. For
+  /// any thread.
+  private bool LockHeldElsewhere(string workspace) =>
+      _servers.Find(workspace)?.Running != true
+      && ServerLockHeld(workspace)
+      && _servers.Find(workspace)?.Running != true;
 
   private bool ServerLockHeld(string workspace) {
     try {
@@ -697,7 +719,7 @@ public sealed partial class App {
       HashSet<string> held = new(WorkspaceList.PathComparer);
       try {
         // The selected workspace is not kept waiting for the others, which may be slow.
-        bool selectedHeld = ServerLockHeld(selected);
+        bool selectedHeld = LockHeldElsewhere(selected);
         if (selectedHeld) {
           held.Add(selected);
         }
@@ -724,7 +746,7 @@ public sealed partial class App {
 
         foreach (string workspace in listed) {
           if (!WorkspaceList.PathComparer.Equals(workspace, selected)
-              && ServerLockHeld(workspace)) {
+              && LockHeldElsewhere(workspace)) {
             held.Add(workspace);
           }
         }
@@ -754,10 +776,12 @@ public sealed partial class App {
     return true;
   }
 
-  private void ShowServerRuns(string title) =>
+  /// Says that the server of the selected workspace runs; closed is called once the user
+  /// closed the dialog.
+  private void ShowServerRuns(string title, Action? closed = null) =>
       Show(new ConfirmDialog(
           title, [new StyledLine(CommonText.StopServerFirst, Theme.Warning)],
-          [CommonText.Close]));
+          [CommonText.Close], _ => closed?.Invoke()));
 
   /// Starts the server of the selected workspace unless it runs: its managed server, or, when
   /// lip itself carries out the interface, a server that this process runs
@@ -845,6 +869,7 @@ public sealed partial class App {
         ? IsServerRunning(_workspace) ? (CommonText.ServerRunning, Theme.Good) : null
         : server.Restarting ? (CommonText.ServerRestarting, Theme.Warning)
         : server.Stopping ? (CommonText.ServerStopping, Theme.Warning)
+        : server.Starting ? (CommonText.ServerStarting, Theme.Warning)
         : (CommonText.ServerRunning, Theme.Good);
     int right = _screen.Width - 1;
     if (state is { } shown) {
@@ -854,33 +879,7 @@ public sealed partial class App {
     }
 
     x = _screen.Write(x, 0, " · ", Theme.Border);
-    _screen.Write(x, 0, FitEnd(_workspace, right - x), Theme.Muted);
-  }
-
-  /// The text cut to its last width columns, starting with an ellipsis when it was cut: the end
-  /// of a path says more than its start.
-  private static string FitEnd(string text, int width) {
-    if (TextWidth.Of(text) <= width) {
-      return text;
-    }
-
-    if (width <= 1) {
-      return "";
-    }
-
-    int start = text.Length;
-    int used = 1;
-    foreach (Rune rune in text.EnumerateRunes().Reverse()) {
-      int w = TextWidth.Of(rune);
-      if (used + w > width) {
-        break;
-      }
-
-      used += w;
-      start -= rune.Utf16SequenceLength;
-    }
-
-    return "…" + text[start..];
+    _screen.Write(x, 0, TextWidth.FitEnd(_workspace, right - x), Theme.Muted);
   }
 
   private void DrawSidebar(Rect rect) {
@@ -942,41 +941,78 @@ public sealed partial class App {
         : [.. hints, CommonText.HintBack];
   }
 
+  /// Whether a hint is of a key that acts on what is selected (Enter, Space, Ctrl+C) and not
+  /// of one that only moves: the bottom bar keeps these where it has no room for every hint.
+  private static bool Acts(Hint hint) =>
+      hint.Key.Split('/').Any(key =>
+          key is "Enter" or "Space" || key.StartsWith("Ctrl+", StringComparison.Ordinal));
+
+  /// The bottom bar: the hints at the left, the toast at the right. A hint is shown whole or
+  /// not at all, in the order it was given. Where they do not all fit, the last one, which is
+  /// that of Esc, stays, then those of the keys that act, and the others are left out from the
+  /// end. The toast has at most half of the bar, and less where Esc and the keys that act need
+  /// it: it is cut, to as little as ten columns, before one of them is left out.
   private void DrawBottomBar() {
     int y = _screen.Height - 1;
-    int limit = _screen.Width - 1;
-    if (_toast is { } toast) {
-      string text = TextWidth.Fit(toast.Text, Math.Max(10, _screen.Width / 2));
-      limit -= TextWidth.Of(text);
-      _screen.Write(limit, y, text, toast.Kind switch {
+    int room = _screen.Width - 2;
+    IReadOnlyList<Hint> hints = CurrentHints();
+    bool[] shown = new bool[hints.Count];
+    int used = 0;
+    bool Take(int index, int within) {
+      Hint hint = hints[index];
+      int columns = TextWidth.Of(hint.Key) + 1 + TextWidth.Of(hint.Text) + (used > 0 ? 2 : 0);
+      if (used + columns > within) {
+        return false;
+      }
+
+      used += columns;
+      return shown[index] = true;
+    }
+
+    if (hints.Count > 0) {
+      Take(hints.Count - 1, room);
+    }
+
+    // What a toast is never cut below, and the two columns between it and the hints.
+    const int least = 10;
+    // While the interface waits for its servers to stop before it quits, it says so in place
+    // of any other message, whichever page is shown.
+    (string Text, ToastKind Kind, long At)? shownToast = _quitOnceStopped
+        ? (CommonText.StoppingServers, ToastKind.Warning, 0)
+        : _toast;
+    int kept = shownToast is null ? 0 : least + 2;
+    for (int i = 0; i < hints.Count - 1; i++) {
+      if (Acts(hints[i]) && !Take(i, room - kept)) {
+        break;
+      }
+    }
+
+    if (shownToast is { } toast) {
+      int most = Math.Min(
+          Math.Max(least, _screen.Width / 2), room - used - (used > 0 ? 2 : 0));
+      string text = TextWidth.Fit(toast.Text, Math.Max(least, most));
+      int columns = TextWidth.Of(text);
+      _screen.Write(_screen.Width - 1 - columns, y, text, toast.Kind switch {
         ToastKind.Good => Theme.Good,
         ToastKind.Warning => Theme.Warning,
         ToastKind.Bad => Theme.Bad,
         _ => Theme.Accent,
       });
-      limit -= 2;
+      room -= columns + 2;
     }
 
-    // A hint is shown whole or not at all. Where they do not all fit, the last one, which is
-    // that of Esc, stays, and the ones before it are left out from the end.
-    IReadOnlyList<Hint> hints = CurrentHints();
-    static int Columns(Hint hint) => TextWidth.Of(hint.Key) + 1 + TextWidth.Of(hint.Text);
-    int reserved = hints.Count > 1 ? Columns(hints[^1]) + 2 : 0;
+    for (int i = 0; i < hints.Count - 1; i++) {
+      if (!shown[i] && !Take(i, room)) {
+        break;
+      }
+    }
+
     int x = 1;
     for (int i = 0; i < hints.Count; i++) {
-      bool last = i == hints.Count - 1;
-      if (x + Columns(hints[i]) + (last ? 0 : reserved) > limit) {
-        if (last) {
-          break;
-        }
-
-        // On to the last one.
-        i = hints.Count - 2;
-        continue;
+      if (shown[i]) {
+        x = _screen.Write(x, y, hints[i].Key, Theme.Strong);
+        x = _screen.Write(x + 1, y, hints[i].Text, Theme.Muted) + 2;
       }
-
-      x = _screen.Write(x, y, hints[i].Key, Theme.Strong);
-      x = _screen.Write(x + 1, y, hints[i].Text, Theme.Muted) + 2;
     }
   }
 

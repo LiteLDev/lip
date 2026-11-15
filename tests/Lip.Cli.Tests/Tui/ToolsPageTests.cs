@@ -69,12 +69,15 @@ public sealed class ToolsPageTests {
     await tui.WaitUntilGone(PathPickerText.Reading);
   }
 
-  /// An installed package without files.
-  private static string Package(string id, string variant, string version, bool isExplicit) => $$"""
+  /// An installed package without files, of its version unless another source is given.
+  private static string Package(
+      string id, string variant, string version, bool isExplicit, string? source = null,
+      string? commit = null) => $$"""
       { "manifest": { "format": 4, "id": "{{id}}", "version": "{{version}}",
           "variants": { "{{variant}}": [ { "side": "server", "platform": "win-x64" } ] } },
         "variant": "{{variant}}", "explicit": {{(isExplicit ? "true" : "false")}},
-        "ref": "{{id}}@{{version}}", "files": [] }
+        "ref": "{{source ?? $"{id}@{version}"}}", {{(
+            commit is null ? "" : $"\"commit\": \"{commit}\", ")}}"files": [] }
       """;
 
   /// The bytes of a ZIP archive that holds a package file.
@@ -230,21 +233,43 @@ public sealed class ToolsPageTests {
     Assert.Contains(ToolsText.InitAbout, tui.Screen);
   }
 
-  [Fact]
-  public async Task Init_LipTomlExists_ShowsTheFailure_AndKeepsTheFile() {
+  [Theory]
+  [InlineData(Language.En, "lip.toml already exists here.")]
+  [InlineData(Language.ZhHans, "这里已有 lip.toml。")]
+  [InlineData(Language.ZhHant, "這裡已有 lip.toml。")]
+  public async Task Init_LipTomlExists_IsDisabledWithTheReason_UntilTheFileIsGone(
+      Language language, string reason) {
     MockFileSystem fs = new();
     fs.AddFile(InRoot("lip.toml"), new MockFileData("mine"));
-    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { FileSystem = fs });
+    using TuiHarness tui = TuiHarness.Start(
+        new TuiHarnessOptions { Language = language, FileSystem = fs });
     await tui.GoTo(PageId.Tools);
-    await tui.WaitFor(ToolsText.Found);
 
+    // The action is disabled: the reason is below its sentence, and Enter does nothing.
+    await tui.WaitFor(reason);
+    Assert.Equal(reason, ToolsText.Exists("lip.toml"));
+    Assert.Contains(ToolsText.InitAbout, tui.Screen);
+    Assert.DoesNotContain($"Enter {CommonText.HintSelect.Text}", tui.Screen);
+    await Frames(tui, "tools-init-disabled");
     tui.Press(ConsoleKey.Enter);
-
-    await tui.WaitFor("lip.toml already exists");
-    await Frames(tui, "tools-init-failure");
+    await tui.Settle();
+    Assert.DoesNotContain(CommonText.Question, tui.Screen);
     Assert.Equal("mine", fs.File.ReadAllText(InRoot("lip.toml")));
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone("lip.toml already exists");
+
+    // An action that the files do not concern can be chosen.
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor(ToolsText.PackAbout);
+    Assert.DoesNotContain(reason, tui.Screen);
+    Assert.Contains($"Enter {CommonText.HintSelect.Text}", tui.Screen);
+    tui.Press(ConsoleKey.UpArrow, 2);
+    await tui.WaitFor(reason);
+
+    // The file is deleted outside the interface: the action can be chosen again.
+    fs.File.Delete(InRoot("lip.toml"));
+    await tui.WaitUntilGone(reason);
+    await tui.WaitFor($"Enter {CommonText.HintSelect.Text}");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.Question);
   }
 
   [Fact]
@@ -272,16 +297,51 @@ public sealed class ToolsPageTests {
     Assert.Matches($@"tooth\.json\s+{ToolsText.Missing}", tui.Screen);
   }
 
+  [Theory]
+  [InlineData(Language.En, "There is no tooth.json here.")]
+  [InlineData(Language.ZhHans, "这里没有 tooth.json。")]
+  [InlineData(Language.ZhHant, "這裡沒有 tooth.json。")]
+  public async Task Migrate_WithoutToothJson_IsDisabledWithTheReason_UntilTheFileIsThere(
+      Language language, string reason) {
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { Language = language });
+    await tui.GoTo(PageId.Tools);
+    await tui.WaitFor(ToolsText.Missing);
+    Assert.DoesNotContain(reason, tui.Screen);
+
+    // The action is disabled: the reason is below its sentence, and Enter does nothing.
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(reason);
+    Assert.Equal(reason, ToolsText.NoFile("tooth.json"));
+    Assert.Contains(ToolsText.MigrateAbout, tui.Screen);
+    tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
+    Assert.Contains(reason, tui.Screen);
+    Assert.False(tui.Fs.File.Exists(InRoot("lip.toml")));
+
+    // The file is written outside the interface: the action can be chosen.
+    tui.Fs.File.WriteAllText(InRoot("tooth.json"), Tooth);
+    await tui.WaitUntilGone(reason);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(CommonText.Question);
+  }
+
   [Fact]
-  public async Task Migrate_WithoutToothJson_ShowsTheFailure() {
-    using TuiHarness tui = TuiHarness.Start();
+  public async Task Migrate_LipTomlExists_IsDisabledWithTheReason() {
+    MockFileSystem fs = new();
+    fs.AddFile(InRoot("lip.toml"), new MockFileData("mine"));
+    fs.AddFile(InRoot("tooth.json"), new MockFileData(Tooth));
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { FileSystem = fs });
     await tui.GoTo(PageId.Tools);
 
     tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor(ToolsText.MigrateAbout);
+    await tui.WaitFor(ToolsText.Exists("lip.toml"));
     tui.Press(ConsoleKey.Enter);
+    await tui.Settle();
 
-    await tui.WaitFor("There is no tooth.json");
-    Assert.False(tui.Fs.File.Exists(InRoot("lip.toml")));
+    Assert.DoesNotContain(CommonText.Question, tui.Screen);
+    Assert.Equal("mine", fs.File.ReadAllText(InRoot("lip.toml")));
+    Assert.True(fs.File.Exists(InRoot("tooth.json")));
   }
 
   [Theory]
@@ -545,6 +605,116 @@ public sealed class ToolsPageTests {
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone("\"manifest\"");
     Assert.Contains(ToolsText.ViewAbout, tui.Screen);
+  }
+
+  /// A package is shown as it is installed: by the source that the state file records. Its
+  /// identity and version name it only when it is of the version tags of a repository.
+  [Theory]
+  [InlineData(Language.En)]
+  [InlineData(Language.ZhHans)]
+  [InlineData(Language.ZhHant)]
+  public async Task View_InstalledMod_OfALocalPathABranchOrTheGame_ShowsWhatIsInstalled(
+      Language language) {
+    const string tool = "github.com/test/tool";
+    const string longId = "github.com/some-organisation/a-long-repository-name";
+    string local = Path.Join(_package, "local");
+    string branch = Path.Join(_package, "branch");
+    MockFileSystem fs = new();
+    fs.AddFile(
+        InRoot(Path.Join(".lip", "state.json")),
+        new MockFileData($$"""
+            { "format": 4, "side": "server", "platform": "win-x64", "packages": [
+              {{Package(Game, "", "1.21.0", true)}},
+              {{Package(tool, "", "1.2.3", true, Ref.FromFile(local).ToString())}},
+              {{Package(Alpha, "", "1.2.0", true, $"{Alpha}@branch:main", Commit)}},
+              {{Package(longId, "cuda", "10.20.30", true, $"{longId}#cuda", Commit)}} ] }
+            """));
+    fs.AddFile(Path.Join(local, "lip.toml"), new MockFileData(LipToml));
+    fs.AddFile(
+        Path.Join(branch, "lip.toml"),
+        new MockFileData(LipToml.Replace(tool, Alpha, StringComparison.Ordinal)));
+    // The archives of the test: the local folder, and the commit of the branch that is
+    // installed. The branch itself is not asked for: it may have moved on.
+    Mock<IArchiveProvider> archives = new(MockBehavior.Strict);
+    archives.Setup(a => a.Open(It.Is<Ref>(r => r.Kind == RefKind.File && r.LocalPath == local)))
+        .ReturnsAsync(new ArchiveHandle("local", new DirectorySource(fs, local)));
+    archives.Setup(a => a.ListVersions(Alpha)).ReturnsAsync([]);
+    archives.Setup(a => a.ResolveGitRef(Alpha, It.Is<GitRef>(r => r.ToString() == "rev:" + Commit)))
+        .ReturnsAsync(Commit);
+    archives.Setup(a => a.OpenCommit(Alpha, Commit))
+        .ReturnsAsync(new ArchiveHandle("branch", new DirectorySource(fs, branch)));
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      Language = language,
+      FileSystem = fs,
+      CreateClient = (interaction, hookOutput, workspace) => new LipClient(
+          fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
+          new McmodService(
+              fs, interaction, new LockStore(fs), archives.Object, new ArchiveReader(),
+              new McmodInstaller(fs, new CommandRunner(hookOutput), interaction),
+              workspaceRoot: () => workspace,
+              downloadServerBuilds: () => Task.FromResult(
+                  """{ "server/win-x64": ["1.21.0.03", "1.20.0.01"] }"""))),
+    });
+    await tui.GoTo(PageId.Tools);
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(ToolsText.ViewAbout);
+
+    async Task List() {
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(ToolsText.ViewInstalledAbout);
+      tui.Press(ConsoleKey.Enter);
+      await tui.WaitFor(Titled(ToolsText.ViewInstalledTitle));
+      await tui.WaitFor(Game);
+    }
+
+    async Task Close() {
+      tui.Press(ConsoleKey.Escape);
+      await tui.WaitUntilGone("\"manifest\"");
+      await tui.WaitFor(ToolsText.ViewAbout);
+    }
+
+    // The local folder: the line below the list says where the package is from. The mods are
+    // listed by identity: Alpha, the long one, the tool; then the game.
+    await List();
+    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.WaitFor($"{tool}@1.2.3 · {local}");
+    // An identity that is longer than its column keeps its start and its end.
+    Assert.Matches(@"github\.com/some-\S*…\S*-name#cuda  10\.20\.30", tui.Screen);
+    await Frames(tui, "tools-view-installed-sources");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"\"id\": \"{tool}\"");
+    // The title is the folder: what it holds now is shown.
+    Assert.Contains(Titled(local), tui.Screen);
+    await Close();
+
+    // The branch: the commit that was installed of it.
+    await List();
+    await tui.WaitFor($"{Alpha}@1.2.0 · branch:main");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"\"id\": \"{Alpha}\"");
+    Assert.Contains(Titled($"{Alpha}@1.2.0"), tui.Screen);
+    archives.Verify(a => a.OpenCommit(Alpha, Commit), Times.Once);
+    await Close();
+
+    // The long identity: the line below the list has it in full.
+    await List();
+    tui.Press(ConsoleKey.DownArrow);
+    await tui.WaitFor($"{longId}#cuda@10.20.30");
+    await Frames(tui, "tools-view-installed-long");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor(ToolsText.ViewInstalledAbout);
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone(ToolsText.ViewInstalledAbout);
+
+    // The game, which is in no archive, at its version.
+    await List();
+    tui.Press(ConsoleKey.DownArrow, 3);
+    await tui.WaitFor($"{Game}@1.21.0");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"\"id\": \"{Game}\"");
+    Assert.Contains("\"version\": \"1.21.0\"", tui.Screen);
+    Assert.Contains(Titled($"{Game}@1.21.0"), tui.Screen);
+    await Close();
   }
 
   [Theory]

@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="754" viewBox="0 0 944 754" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="610" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="609" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="481" y="128" width="405" height="20" fill="#4a5364"/>
+<rect x="193" y="148" width="252" height="20" fill="#2563c9"/>
+<rect x="31" y="188" width="117" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H153.13M466.88 98H481M544 98H900.13M481 498H886M466.88 558H900.13M25.88 578H153.13M26.5 77.38V578.63M152.5 77.38V578.63M467.5 97.38V558.63M899.5 97.38V558.63"/>
+<path stroke="#56c8d8" d="M160.88 78H175M265 78H918.13M178.88 98H193M247 98H459.13M178.88 558H459.13M160.88 578H918.13M161.5 77.38V578.63M179.5 97.38V558.63M458.5 97.38V558.63M917.5 77.38V578.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="193 211 229 247" y="82.5" text-anchor="middle" fill="#56c8d8" font-weight="700">模组配置</text>
+<text x="49 67" y="102.5" text-anchor="middle">主页</text>
+<text x="211 229" y="102.5" text-anchor="middle" fill="#56c8d8" font-weight="700">文件</text>
+<text x="490" y="102.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">GMLIB</text>
+<text x="49 67 85" y="122.5" text-anchor="middle">服务器</text>
+<text x="193" y="122.5" textLength="216" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">legacy-script-engine-lua</text>
+<text x="481" y="122.5" textLength="162" lengthAdjust="spacingAndGlyphs" font-weight="700">config/config.json</text>
+<text x="49 67" y="142.5" text-anchor="middle">模组</text>
+<text x="193" y="142.5" textLength="144" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LegacyRemoteCall</text>
+<text x="481" y="142.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#ffffff">version</text>
+<text x="625" y="142.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">2</text>
+<text x="49 67 85 103" y="162.5" text-anchor="middle">获取模组</text>
+<text x="193" y="162.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#ffffff">GMLIB</text>
+<text x="251.5" y="162.5" text-anchor="middle" fill="#ffffff">·</text>
+<text x="265" y="162.5" textLength="162" lengthAdjust="spacingAndGlyphs" fill="#ffffff">config/config.json</text>
+<text x="481" y="162.5" textLength="72" lengthAdjust="spacingAndGlyphs">language</text>
+<text x="625" y="162.5" textLength="63" lengthAdjust="spacingAndGlyphs">&quot;en_US&quot;</text>
+<text x="49 67 85 103" y="182.5" text-anchor="middle">游戏配置</text>
+<text x="193" y="182.5" textLength="108" lengthAdjust="spacingAndGlyphs">LeviOptimize</text>
+<text x="314.5" y="182.5" text-anchor="middle">·</text>
+<text x="332.5" y="182.5" text-anchor="middle">…</text>
+<text x="337" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">config.json</text>
+<text x="481" y="182.5" textLength="126" lengthAdjust="spacingAndGlyphs">placeholderApi</text>
+<text x="625" y="182.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">[x] true</text>
+<text x="49 67 85 103" y="202.5" text-anchor="middle" fill="#ffffff">模组配置</text>
+<text x="193" y="202.5" textLength="99" lengthAdjust="spacingAndGlyphs">LegacyMoney</text>
+<text x="305.5" y="202.5" text-anchor="middle">·</text>
+<text x="319" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">money.json</text>
+<text x="49 67 85" y="222.5" text-anchor="middle">工作区</text>
+<text x="193" y="222.5" textLength="99" lengthAdjust="spacingAndGlyphs">LegacyMoney</text>
+<text x="305.5" y="222.5" text-anchor="middle">·</text>
+<text x="319" y="222.5" textLength="99" lengthAdjust="spacingAndGlyphs">ranking.yml</text>
+<text x="49 67" y="242.5" text-anchor="middle">工具</text>
+<text x="49 67" y="262.5" text-anchor="middle">设置</text>
+<text x="490 508 526 544 562 580 598 616 634 652 670 688" y="522.5" text-anchor="middle" fill="#8b95a7">此版本号由模组自行维护。</text>
+<text x="481" y="542.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[</text>
+<text x="508 526" y="542.5" text-anchor="middle" fill="#8b95a7">保存</text>
+<text x="544" y="542.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">]</text>
+<text x="562" y="542.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[</text>
+<text x="589 607" y="542.5" text-anchor="middle" fill="#8b95a7">放弃</text>
+<text x="625" y="542.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">]</text>
+<text x="35.5" y="602.5" text-anchor="middle" font-weight="700">↑</text>
+<text x="44.5" y="602.5" text-anchor="middle" font-weight="700">↓</text>
+<text x="67 85" y="602.5" text-anchor="middle" fill="#8b95a7">移动</text>
+<text x="112" y="602.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="175 193" y="602.5" text-anchor="middle" fill="#8b95a7">打开</text>
+<text x="220" y="602.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Tab</text>
+<text x="265 283 301" y="602.5" text-anchor="middle" fill="#8b95a7">下一项</text>
+<text x="328" y="602.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="373 391" y="602.5" text-anchor="middle" fill="#8b95a7">返回</text>
+</g>
+<circle cx="170" cy="158" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="170" y="162.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<circle cx="170" cy="118" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="170" y="122.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">2</text>
+<circle cx="683.5" cy="74" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="683.5" y="78.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">3</text>
+<rect x="10.5" y="630.5" width="923" height="113" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<circle cx="32" cy="649" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="32" y="653.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<text x="59.8 75.4 91 106.6 122.2 137.8 153.4 169 184.6 200.2 215.8 231.4 247 262.6 278.2 293.8 309.4 325 340.6 356.2 371.8 387.4 403 418.6 434.2" y="653.5" text-anchor="middle" font-size="13" fill="#d8dee9">一个文件：模组名，后面是文件在模组文件夹里的路径。</text>
+<circle cx="32" cy="671" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="32" y="675.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">2</text>
+<text x="59.8 75.4 91 106.6 122.2 137.8 153.4 169 184.6 200.2" y="675.5" text-anchor="middle" font-size="13" fill="#d8dee9">没有配置文件的模组。</text>
+<circle cx="32" cy="693" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="32" y="697.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">3</text>
+<text x="59.8 75.4 91 106.6 122.2 137.8" y="697.5" text-anchor="middle" font-size="13" fill="#d8dee9">选中的文件。</text>
+<rect x="24.5" y="708.5" width="25" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="37" y="724.5" text-anchor="middle" font-size="13" font-weight="700" fill="#d8dee9">↑</text>
+<rect x="58.5" y="708.5" width="25" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="71" y="724.5" text-anchor="middle" font-size="13" font-weight="700" fill="#d8dee9">↓</text>
+<rect x="92.5" y="708.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="100" y="724.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>

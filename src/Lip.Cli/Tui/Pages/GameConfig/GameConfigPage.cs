@@ -359,10 +359,10 @@ public sealed partial class GameConfigPage : Page {
             Context.Show(new ConfirmDialog(
                 GameConfigText.SaveTitle,
                 [
-                  new StyledLine(GameConfigText.ChangedOnDisk),
+                  new StyledLine(CommonText.ChangedOnDisk),
                   .. conflicts.Select(name => new StyledLine(name, Theme.Muted)),
                 ],
-                [GameConfigText.Overwrite, CommonText.Cancel],
+                [CommonText.Overwrite, CommonText.Cancel],
                 choice => {
                   if (choice == 0) {
                     Save(then, overwrite: true);

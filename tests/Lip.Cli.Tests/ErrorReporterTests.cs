@@ -73,6 +73,75 @@ public class ErrorReporterTests {
     Assert.Contains("Check the package name", Assert.Single(hints));
   }
 
+  /// A failure report holds the journal of the workspace, which says what an operation was
+  /// doing, and names the other entries of .lip without their content: the protocol defines
+  /// no file there whose name starts with "workspace." (protocol/lip-workspace.md, "The .lip
+  /// directory").
+  [Fact]
+  public void Describe_TheReport_HoldsTheJournal_AndNoOtherFileOfTheLipDirectory() {
+    // Arrange
+    string workspace = Directory.CreateTempSubdirectory("lip-report-test-").FullName;
+    try {
+      Directory.CreateDirectory(Path.Join(workspace, ".lip"));
+      File.WriteAllText(Path.Join(workspace, ".lip", "journal"), "JOURNAL-MARK");
+      File.WriteAllText(Path.Join(workspace, ".lip", "workspace.json"), "LEFTOVER-MARK");
+      File.WriteAllText(Path.Join(workspace, ".lip", "state.json"), "STATE-MARK");
+
+      // Act
+      Failure failure = ErrorReporter.Describe(
+          new InvalidOperationException("It broke."), ["install", "x"], cancelled: false,
+          workspace);
+
+      // Assert
+      string report = File.ReadAllText(Path.Join(workspace, failure.ReportPath));
+      Assert.Contains("--- journal ---", report);
+      Assert.Contains("JOURNAL-MARK", report);
+      Assert.Contains("workspace.json (13 bytes)", report);
+      Assert.DoesNotContain("--- workspace.json ---", report);
+      Assert.DoesNotContain("LEFTOVER-MARK", report);
+      Assert.DoesNotContain("STATE-MARK", report);
+    }
+    finally {
+      Directory.Delete(workspace, recursive: true);
+    }
+  }
+
+  /// A failure is described the same way whoever writes its report: the message of the
+  /// failure, then those of its causes, the hints, and the path that the writer gives. A
+  /// command that the user cancelled has no report.
+  [Fact]
+  public void Describe_WithAWriterOfTheReport_SummarizesTheCauses_AndWritesNothingItself() {
+    // Arrange
+    InvalidOperationException failure = new(
+        "Cannot migrate tooth.json.",
+        new FormatException("The version is missing.", new IOException("Disk error.")));
+    List<(string Summary, IReadOnlyList<string> Hints)> written = [];
+
+    // Act
+    Failure described = ErrorReporter.Describe(failure, cancelled: false, (summary, hints) => {
+      written.Add((summary, hints));
+      return "report.log";
+    });
+    Failure cancelled = ErrorReporter.Describe(
+        new OperationCanceledException(), cancelled: true, (_, _) => {
+          written.Add(("", []));
+          return "never.log";
+        });
+
+    // Assert
+    Assert.Equal(
+        "Cannot migrate tooth.json.\n  caused by: The version is missing."
+            + "\n  caused by: Disk error.",
+        described.Summary);
+    Assert.Equal(
+        ("report.log", null, false),
+        (described.ReportPath, described.ReportError, described.Cancelled));
+    (string summary, IReadOnlyList<string> hints) = Assert.Single(written);
+    Assert.Equal((described.Summary, described.Hints), (summary, hints));
+    Assert.True(cancelled.Cancelled);
+    Assert.Null(cancelled.ReportPath);
+  }
+
   /// The interface reports the failure of a command below the workspace that is selected in
   /// it, not below the directory that lip was started in.
   [Fact]

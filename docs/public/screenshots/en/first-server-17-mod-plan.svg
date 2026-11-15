@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="688" viewBox="0 0 944 688" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="610" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="609" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="31" y="148" width="144" height="20" fill="#4a5364"/>
+<rect x="202" y="168" width="702" height="20" fill="#4a5364"/>
+<rect x="238" y="348" width="81" height="20" fill="#2563c9"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M292 78H918.13M202 158H211M400 158H904M202 398H211M337 398H904M25.88 578H180.13M187.88 578H918.13M26.5 77.38V578.63M179.5 77.38V578.63M188.5 77.38V578.63M917.5 77.38V578.63"/>
+<path stroke="#56c8d8" d="M223.88 258H238M670 258H711.13M223.88 378H711.13M224.5 257.38V378.63M710.5 257.38V378.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="211" y="82.5" textLength="72" lengthAdjust="spacingAndGlyphs" font-weight="700">Get mods</text>
+<text x="40" y="102.5" textLength="36" lengthAdjust="spacingAndGlyphs">Home</text>
+<text x="220" y="102.5" textLength="54" lengthAdjust="spacingAndGlyphs">Search</text>
+<text x="301" y="102.5" textLength="45" lengthAdjust="spacingAndGlyphs">optim</text>
+<text x="40" y="122.5" textLength="54" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="220" y="122.5" textLength="36" lengthAdjust="spacingAndGlyphs">Sort</text>
+<text x="305.5" y="122.5" text-anchor="middle">‹</text>
+<text x="319" y="122.5" textLength="81" lengthAdjust="spacingAndGlyphs">Relevance</text>
+<text x="413.5" y="122.5" text-anchor="middle">›</text>
+<text x="40" y="142.5" textLength="36" lengthAdjust="spacingAndGlyphs">Mods</text>
+<text x="220" y="142.5" textLength="63" lengthAdjust="spacingAndGlyphs">Filters</text>
+<text x="301" y="142.5" textLength="36" lengthAdjust="spacingAndGlyphs">None</text>
+<text x="40" y="162.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Get mods</text>
+<text x="220" y="162.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">1 mod</text>
+<text x="278.5" y="162.5" text-anchor="middle" font-weight="700">·</text>
+<text x="296.5" y="162.5" text-anchor="middle" font-weight="700">✓</text>
+<text x="310" y="162.5" textLength="81" lengthAdjust="spacingAndGlyphs" font-weight="700">Installed</text>
+<text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
+<text x="220" y="182.5" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#ffffff">LeviOptimize</text>
+<text x="341.5" y="182.5" text-anchor="middle" fill="#ffffff">·</text>
+<text x="355" y="182.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">LiteLDev</text>
+<text x="665.5" y="182.5" text-anchor="middle" fill="#ffffff">↓</text>
+<text x="679" y="182.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#ffffff">143k</text>
+<text x="746.5" y="182.5" text-anchor="middle" fill="#ffffff">★</text>
+<text x="760" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">286</text>
+<text x="805" y="182.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">2026-11-02</text>
+<text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="247" y="262.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Install github.com/LiteLDev/LeviOptimize@1.8.1</text>
+<text x="238" y="282.5" textLength="279" lengthAdjust="spacingAndGlyphs">Resolving LeviOptimize@1.8.1...</text>
+<text x="238" y="302.5" textLength="459" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would install LeviOptimize 1.8.1 (5 files)</text>
+<text x="238" y="322.5" textLength="369" lengthAdjust="spacingAndGlyphs" font-weight="700">Dry run: would create the directory mods/</text>
+<text x="238" y="362.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Apply ]</text>
+<text x="328" y="362.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ Cancel ]</text>
+<text x="220" y="402.5" textLength="108" lengthAdjust="spacingAndGlyphs" font-weight="700">LeviOptimize</text>
+<text x="202" y="422.5" textLength="405" lengthAdjust="spacingAndGlyphs">A performance optimization mod for LeviLamina</text>
+<text x="202" y="442.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Author</text>
+<text x="301" y="442.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">LiteLDev</text>
+<text x="202" y="462.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Downloads</text>
+<text x="301" y="462.5" textLength="63" lengthAdjust="spacingAndGlyphs">142,877</text>
+<text x="202" y="482.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Stars</text>
+<text x="301" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">286</text>
+<text x="202" y="502.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
+<text x="301" y="502.5" textLength="288" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LeviOptimize</text>
+<text x="202" y="522.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Latest</text>
+<text x="301" y="522.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.8.1</text>
+<text x="202" y="542.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Platform</text>
+<text x="301" y="542.5" textLength="63" lengthAdjust="spacingAndGlyphs">win-x64</text>
+<text x="202" y="562.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Game</text>
+<text x="301" y="562.5" textLength="63" lengthAdjust="spacingAndGlyphs">1.26.60</text>
+<text x="899.5" y="562.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="35.5" y="602.5" text-anchor="middle" font-weight="700">←</text>
+<text x="44.5" y="602.5" text-anchor="middle" font-weight="700">→</text>
+<text x="49" y="602.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">/Tab</text>
+<text x="94" y="602.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Switch</text>
+<text x="166" y="602.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="220" y="602.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Select</text>
+<text x="292" y="602.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="328" y="602.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Cancel</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V614H16zM217 245H718V391H217z"/>
+<rect x="234" y="346" width="89" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<rect x="10.5" y="630.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<rect x="24.5" y="642.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="658.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>

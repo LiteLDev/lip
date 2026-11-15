@@ -38,10 +38,11 @@ public sealed record PropertyType(
         }
 
         if (number < (Min ?? long.MinValue) || number > (Max ?? long.MaxValue)) {
-          return Max is null
-              ? string.Create(CultureInfo.InvariantCulture, $"The value is at least {Min}.")
-              : string.Create(
-                  CultureInfo.InvariantCulture, $"The value is an integer from {Min} to {Max}.");
+          string? min = Min?.ToString(CultureInfo.InvariantCulture);
+          string? max = Max?.ToString(CultureInfo.InvariantCulture);
+          return max is null ? $"The value is an integer, at least {min}."
+              : min is null ? $"The value is an integer, at most {max}."
+              : $"The value is an integer from {min} to {max}.";
         }
 
         return null;
@@ -212,15 +213,33 @@ public sealed partial class ServerProperties {
     }
 
     if (IntegerRegex().IsMatch(allowed)) {
-      return new PropertyType(
-          PropertyKind.Integer, [],
-          allowed.Contains("non-negative", StringComparison.OrdinalIgnoreCase) ? 0 : null);
+      // The least value is the one that the line names ("equal to 5 or greater"); otherwise
+      // 0 for a non-negative integer and for a positive one that may also be 0 ("or 0 to
+      // disable limits", "If set to 0"), and 1 for any other positive integer.
+      // A comment may say what 0 does in another line than the one of the allowed values
+      // ("If set to 0 or removed then it will use as many as possible").
+      bool zero = NonNegativeRegex().IsMatch(allowed) || comment.Any(OrZeroRegex().IsMatch);
+      long? min = AtLeastRegex().Match(allowed) is { Success: true } least
+          ? Number(least.Groups[1].Success ? least.Groups[1].Value : least.Groups[2].Value)
+          : zero ? 0
+          : PositiveRegex().IsMatch(allowed) ? 1
+          : null;
+      long? max = AtMostRegex().Match(allowed) is { Success: true } most
+          ? Number(most.Groups[1].Value)
+          : null;
+      return new PropertyType(PropertyKind.Integer, [], min, max);
     }
 
     return PropertyType.Text;
   }
 
-  private static long Number(string text) => long.Parse(text, CultureInfo.InvariantCulture);
+  /// The number of a comment; null for one that is too large for the type, which then
+  /// bounds nothing.
+  private static long? Number(string text) =>
+      long.TryParse(
+          text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long number)
+          ? number
+          : null;
 
   [GeneratedRegex(@"^Allowed values:(.*)$", RegexOptions.IgnoreCase)]
   private static partial Regex AllowedRegex();
@@ -244,4 +263,25 @@ public sealed partial class ServerProperties {
   // greater."; not "A positive integer ..., or "unlimited"", which has a quoted choice.
   [GeneratedRegex(@"\binteger\b", RegexOptions.IgnoreCase)]
   private static partial Regex IntegerRegex();
+
+  [GeneratedRegex(@"\bnon-negative\b", RegexOptions.IgnoreCase)]
+  private static partial Regex NonNegativeRegex();
+
+  [GeneratedRegex(@"(?<!non-)\bpositive\b", RegexOptions.IgnoreCase)]
+  private static partial Regex PositiveRegex();
+
+  // "..., or 0 to disable limits", "If set to 0 or removed then ...".
+  [GeneratedRegex(@"\b(?:or|set to)\s+0\b", RegexOptions.IgnoreCase)]
+  private static partial Regex OrZeroRegex();
+
+  // "at least 5", "equal to 5 or greater".
+  [GeneratedRegex(
+      @"\bat least\s+(-?\d+)\b|(-?\d+)\s+or\s+(?:greater|more|higher|above)\b",
+      RegexOptions.IgnoreCase)]
+  private static partial Regex AtLeastRegex();
+
+  // "no greater than 2147483647", "at most 8".
+  [GeneratedRegex(
+      @"\b(?:no (?:greater|more|higher) than|at most)\s+(-?\d+)\b", RegexOptions.IgnoreCase)]
+  private static partial Regex AtMostRegex();
 }

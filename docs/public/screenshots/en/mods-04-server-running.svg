@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="949" height="680" viewBox="0 0 949 680" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="60" width="924" height="610" rx="10" fill="#1a1d24"/>
+<path d="M10 90V70a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V90z" fill="#272b35"/>
+<circle cx="28" cy="75" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="75" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="75" r="5.5" fill="#28c840"/>
+<text x="472" y="79.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="60.5" width="923" height="609" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="202" y="158" width="702" height="20" fill="#4a5364"/>
+<rect x="31" y="178" width="144" height="20" fill="#4a5364"/>
+<rect x="202" y="278" width="702" height="20" fill="#4a5364"/>
+<rect x="256" y="338" width="432" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 128H180.13M187.88 128H202M256 128H918.13M265 408H679M202 548H904M25.88 628H180.13M187.88 628H918.13M26.5 127.38V628.63M179.5 127.38V628.63M188.5 127.38V628.63M917.5 127.38V628.63"/>
+<path stroke="#56c8d8" d="M250.88 308H265M661 308H693.13M250.88 448H693.13M251.5 307.38V448.63M692.5 307.38V448.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="112.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="112.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="112.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="836.5" y="112.5" text-anchor="middle" fill="#9ad17b">●</text>
+<text x="850" y="112.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#9ad17b">Running</text>
+<text x="211" y="132.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">Mods</text>
+<text x="40" y="152.5" textLength="36" lengthAdjust="spacingAndGlyphs">Home</text>
+<text x="202" y="152.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">The server is running. Stop it to change mods.</text>
+<text x="40" y="172.5" textLength="54" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="161.5" y="172.5" text-anchor="middle" fill="#9ad17b">●</text>
+<text x="202" y="172.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Install from source</text>
+<text x="377.5" y="172.5" text-anchor="middle" fill="#ffffff">…</text>
+<text x="40" y="192.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Mods</text>
+<text x="202" y="192.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Update all</text>
+<text x="40" y="212.5" textLength="72" lengthAdjust="spacingAndGlyphs">Get mods</text>
+<text x="40" y="232.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
+<text x="202" y="232.5" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Installed (7)</text>
+<text x="832" y="232.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Version</text>
+<text x="40" y="252.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="202" y="252.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
+<text x="238" y="252.5" textLength="270" lengthAdjust="spacingAndGlyphs">github.com/GroupMountain/GMLIB</text>
+<text x="832" y="252.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.6.0</text>
+<text x="40" y="272.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="202" y="272.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
+<text x="238" y="272.5" textLength="279" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyMoney</text>
+<text x="832" y="272.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.16.1</text>
+<text x="40" y="292.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="202" y="292.5" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ ] github.com/LiteLDev/LegacyScriptEngine#lua</text>
+<text x="832" y="292.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">0.13.1</text>
+<text x="40" y="312.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="202" y="312.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
+<text x="238" y="312.5" textLength="9" lengthAdjust="spacingAndGlyphs">g</text>
+<text x="274" y="312.5" textLength="378" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">github.com/LiteLDev/LegacyScriptEngine#lua</text>
+<text x="832" y="312.5" textLength="45" lengthAdjust="spacingAndGlyphs">1.8.1</text>
+<text x="238" y="332.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">g</text>
+<text x="265" y="332.5" textLength="63" lengthAdjust="spacingAndGlyphs">Details</text>
+<text x="832" y="332.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">0.13.0</text>
+<text x="238" y="352.5" textLength="9" lengthAdjust="spacingAndGlyphs">g</text>
+<text x="265" y="352.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Update</text>
+<text x="832" y="352.5" textLength="63" lengthAdjust="spacingAndGlyphs">1.26.60</text>
+<text x="238" y="372.5" textLength="9" lengthAdjust="spacingAndGlyphs">g</text>
+<text x="265" y="372.5" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Update to version</text>
+<text x="422.5" y="372.5" text-anchor="middle" fill="#8b95a7">…</text>
+<text x="832" y="372.5" textLength="63" lengthAdjust="spacingAndGlyphs">26.60.3</text>
+<text x="265" y="392.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Uninstall</text>
+<text x="265" y="432.5" textLength="198" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">Stop the server first.</text>
+<text x="202" y="572.5" textLength="378" lengthAdjust="spacingAndGlyphs" font-weight="700">github.com/LiteLDev/LegacyScriptEngine#lua</text>
+<text x="598" y="572.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.13.1</text>
+<text x="202" y="592.5" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Installed by you.</text>
+<text x="35.5" y="652.5" text-anchor="middle" font-weight="700">↑</text>
+<text x="44.5" y="652.5" text-anchor="middle" font-weight="700">↓</text>
+<text x="58" y="652.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Move</text>
+<text x="112" y="652.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="148" y="652.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Close</text>
+</g>
+<rect x="252" y="416" width="440" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<path d="M872.5 32L872.5 87" fill="none" stroke="#1a1d24" stroke-width="4" stroke-opacity="0.6" stroke-linecap="round"/>
+<path d="M872.5 32L872.5 87" fill="none" stroke="#ffa94d" stroke-width="2" stroke-linecap="round"/>
+<path d="M872.5 94L868 84L877 84z" fill="#ffa94d" stroke="#1a1d24" stroke-width="1" stroke-linejoin="round"/>
+<rect x="806" y="10" width="133" height="22" rx="6" fill="#ffa94d"/>
+<text x="814" y="25.5" textLength="117" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#1a1d24">The server runs</text>
+</svg>

@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="590" viewBox="0 0 1160 590" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="1140" height="490" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H1140a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="580" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="1139" height="489" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="31" y="148" width="117" height="20" fill="#4a5364"/>
+<rect x="175" y="168" width="513" height="20" fill="#4a5364"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H153.13M175 158H184M373 158H688M706 158H715M895 158H1120M25.88 458H153.13M26.5 77.38V458.63M152.5 77.38V458.63"/>
+<path stroke="#56c8d8" d="M160.88 78H175M265 78H1134.13M160.88 458H1134.13M161.5 77.38V458.63M1133.5 77.38V458.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="193 211 229 247" y="82.5" text-anchor="middle" fill="#56c8d8" font-weight="700">取得模組</text>
+<text x="49 67" y="102.5" text-anchor="middle">首頁</text>
+<text x="202 220" y="102.5" text-anchor="middle">搜尋</text>
+<text x="256 274" y="102.5" text-anchor="middle" fill="#8b95a7">經濟</text>
+<text x="49 67 85" y="122.5" text-anchor="middle">伺服器</text>
+<text x="175" y="122.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">&gt;</text>
+<text x="202 220" y="122.5" text-anchor="middle" font-weight="700">排序</text>
+<text x="251.5" y="122.5" text-anchor="middle" fill="#56c8d8" font-weight="700">‹</text>
+<text x="274 292" y="122.5" text-anchor="middle" fill="#56c8d8" font-weight="700">熱度</text>
+<text x="314.5" y="122.5" text-anchor="middle" fill="#56c8d8" font-weight="700">›</text>
+<text x="49 67" y="142.5" text-anchor="middle">模組</text>
+<text x="202 220" y="142.5" text-anchor="middle">篩選</text>
+<text x="256" y="142.5" text-anchor="middle">無</text>
+<text x="49 67 85 103" y="162.5" text-anchor="middle" fill="#ffffff">取得模組</text>
+<text x="193" y="162.5" textLength="9" lengthAdjust="spacingAndGlyphs" font-weight="700">8</text>
+<text x="220 238 256" y="162.5" text-anchor="middle" font-weight="700">個模組</text>
+<text x="278.5" y="162.5" text-anchor="middle" font-weight="700">·</text>
+<text x="296.5" y="162.5" text-anchor="middle" font-weight="700">✓</text>
+<text x="319 337 355" y="162.5" text-anchor="middle" font-weight="700">已安裝</text>
+<text x="724" y="162.5" textLength="162" lengthAdjust="spacingAndGlyphs" font-weight="700">LegacyScriptEngine</text>
+<text x="49 67 85 103" y="182.5" text-anchor="middle">遊戲設定</text>
+<text x="193" y="182.5" textLength="162" lengthAdjust="spacingAndGlyphs" fill="#ffffff">LegacyScriptEngine</text>
+<text x="368.5" y="182.5" text-anchor="middle" fill="#ffffff">·</text>
+<text x="382" y="182.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Lite</text>
+<text x="422.5" y="182.5" text-anchor="middle" fill="#ffffff">…</text>
+<text x="449.5" y="182.5" text-anchor="middle" fill="#ffffff">↓</text>
+<text x="463" y="182.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#ffffff">186k</text>
+<text x="530.5" y="182.5" text-anchor="middle" fill="#ffffff">★</text>
+<text x="544" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">412</text>
+<text x="589" y="182.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">2026-11-08</text>
+<text x="706" y="182.5" textLength="387" lengthAdjust="spacingAndGlyphs">A plugin engine for running LLSE plugins on</text>
+<text x="49 67 85 103" y="202.5" text-anchor="middle">模組設定</text>
+<text x="193" y="202.5" textLength="108" lengthAdjust="spacingAndGlyphs">LeviOptimize</text>
+<text x="314.5" y="202.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="328" y="202.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLDev</text>
+<text x="449.5" y="202.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="463" y="202.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">143k</text>
+<text x="530.5" y="202.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="544" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">286</text>
+<text x="589" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-02</text>
+<text x="706" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">LeviLamina</text>
+<text x="49 67 85" y="222.5" text-anchor="middle">工作區</text>
+<text x="193" y="222.5" textLength="45" lengthAdjust="spacingAndGlyphs">GMLIB</text>
+<text x="251.5" y="222.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="265" y="222.5" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">GroupMountain</text>
+<text x="440.5" y="222.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="454" y="222.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">97.3k</text>
+<text x="530.5" y="222.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="544" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">231</text>
+<text x="589" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-27</text>
+<text x="49 67" y="242.5" text-anchor="middle">工具</text>
+<text x="193" y="242.5" textLength="99" lengthAdjust="spacingAndGlyphs">LegacyMoney</text>
+<text x="305.5" y="242.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="319" y="242.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLDev</text>
+<text x="440.5" y="242.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="454" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">81.4k</text>
+<text x="530.5" y="242.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="544" y="242.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">164</text>
+<text x="589" y="242.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-19</text>
+<text x="715 733" y="242.5" text-anchor="middle" fill="#8b95a7">作者</text>
+<text x="796" y="242.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">LiteLDev</text>
+<text x="49 67" y="262.5" text-anchor="middle">設定</text>
+<text x="193" y="262.5" textLength="144" lengthAdjust="spacingAndGlyphs">LegacyRemoteCall</text>
+<text x="350.5" y="262.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="364" y="262.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLD</text>
+<text x="422.5" y="262.5" text-anchor="middle" fill="#8b95a7">…</text>
+<text x="449.5" y="262.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="463" y="262.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">171k</text>
+<text x="539.5" y="262.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="553" y="262.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">61</text>
+<text x="589" y="262.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-02</text>
+<text x="715 733 751 769" y="262.5" text-anchor="middle" fill="#8b95a7">下載次數</text>
+<text x="796" y="262.5" textLength="63" lengthAdjust="spacingAndGlyphs">186,240</text>
+<text x="193" y="282.5" textLength="45" lengthAdjust="spacingAndGlyphs">PLand</text>
+<text x="251.5" y="282.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="265" y="282.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">engsr6982</text>
+<text x="440.5" y="282.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="454" y="282.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">63.9k</text>
+<text x="530.5" y="282.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="544" y="282.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">152</text>
+<text x="589" y="282.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-05</text>
+<text x="715 733" y="282.5" text-anchor="middle" fill="#8b95a7">星號</text>
+<text x="796" y="282.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">412</text>
+<text x="193" y="302.5" textLength="117" lengthAdjust="spacingAndGlyphs">LeviAntiCheat</text>
+<text x="323.5" y="302.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="337" y="302.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLDev</text>
+<text x="440.5" y="302.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="454" y="302.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">44.2k</text>
+<text x="530.5" y="302.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="544" y="302.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">118</text>
+<text x="589" y="302.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-09-30</text>
+<text x="706" y="302.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
+<text x="796" y="302.5" textLength="180" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/</text>
+<text x="193" y="322.5" textLength="126" lengthAdjust="spacingAndGlyphs">MoreDimensions</text>
+<text x="332.5" y="322.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="346" y="322.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLDev</text>
+<text x="440.5" y="322.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="454" y="322.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">29.7k</text>
+<text x="539.5" y="322.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="553" y="322.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">97</text>
+<text x="589" y="322.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-11</text>
+<text x="796" y="322.5" textLength="162" lengthAdjust="spacingAndGlyphs">LegacyScriptEngine</text>
+<text x="715 733 751 769" y="342.5" text-anchor="middle" fill="#8b95a7">最新版本</text>
+<text x="796" y="342.5" textLength="99" lengthAdjust="spacingAndGlyphs">0.13.2 #lua</text>
+<text x="715 733" y="362.5" text-anchor="middle" fill="#8b95a7">平台</text>
+<text x="796" y="362.5" textLength="63" lengthAdjust="spacingAndGlyphs">win-x64</text>
+<text x="715 733" y="382.5" text-anchor="middle" fill="#8b95a7">遊戲</text>
+<text x="796" y="382.5" textLength="63" lengthAdjust="spacingAndGlyphs">1.26.60</text>
+<text x="715 733" y="402.5" text-anchor="middle" fill="#8b95a7">標籤</text>
+<text x="796" y="402.5" textLength="126" lengthAdjust="spacingAndGlyphs" fill="#c792ea">engine, script</text>
+<text x="715 733 751 769" y="422.5" text-anchor="middle" fill="#8b95a7">授權條款</text>
+<text x="796" y="422.5" textLength="72" lengthAdjust="spacingAndGlyphs">LGPL-3.0</text>
+<text x="715 733" y="442.5" text-anchor="middle" fill="#8b95a7">相依</text>
+<text x="796" y="442.5" textLength="171" lengthAdjust="spacingAndGlyphs">LeviLamina 26.60.*,</text>
+<text x="1115.5" y="442.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="35.5" y="482.5" text-anchor="middle" font-weight="700">↑</text>
+<text x="44.5" y="482.5" text-anchor="middle" font-weight="700">↓</text>
+<text x="67 85" y="482.5" text-anchor="middle" fill="#8b95a7">移動</text>
+<text x="116.5" y="482.5" text-anchor="middle" font-weight="700">←</text>
+<text x="125.5" y="482.5" text-anchor="middle" font-weight="700">→</text>
+<text x="148 166" y="482.5" text-anchor="middle" fill="#8b95a7">變更</text>
+<text x="193" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Tab</text>
+<text x="238 256 274" y="482.5" text-anchor="middle" fill="#8b95a7">下一項</text>
+<text x="301" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="346 364" y="482.5" text-anchor="middle" fill="#8b95a7">返回</text>
+</g>
+<rect x="243" y="106" width="80" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<circle cx="351" cy="258" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="351" y="262.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<rect x="10.5" y="510.5" width="1139" height="69" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<circle cx="32" cy="529" r="10" fill="#ffa94d" stroke="#1a1d24" stroke-width="1.5"/>
+<text x="32" y="533.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">1</text>
+<text x="59.8 75.4 91 106.6" y="533.5" text-anchor="middle" font-size="13" fill="#d8dee9">星號只有</text>
+<text x="122.2" y="533.5" textLength="15.6" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">61</text>
+<text x="145.6 161.2 176.8 192.4 208 223.6" y="533.5" text-anchor="middle" font-size="13" fill="#d8dee9">，但下載次數</text>
+<text x="239.2" y="533.5" textLength="31.2" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">17.1</text>
+<text x="286 301.6 317.2 332.8" y="533.5" text-anchor="middle" font-size="13" fill="#d8dee9">萬：排在</text>
+<text x="348.4" y="533.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" fill="#d8dee9">PLand</text>
+<text x="403 418.6" y="533.5" text-anchor="middle" font-size="13" fill="#d8dee9">前面</text>
+<rect x="24.5" y="544.5" width="25" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="37" y="560.5" text-anchor="middle" font-size="13" font-weight="700" fill="#d8dee9">←</text>
+<rect x="58.5" y="544.5" width="25" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="71" y="560.5" text-anchor="middle" font-size="13" font-weight="700" fill="#d8dee9">→</text>
+</svg>

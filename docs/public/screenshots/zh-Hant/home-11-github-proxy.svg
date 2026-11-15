@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="578" viewBox="0 0 944 578" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="60" width="924" height="450" rx="10" fill="#1a1d24"/>
+<path d="M10 90V70a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V90z" fill="#272b35"/>
+<circle cx="28" cy="75" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="75" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="75" r="5.5" fill="#28c840"/>
+<text x="472" y="79.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="60.5" width="923" height="449" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="175" y="158" width="729" height="20" fill="#4a5364"/>
+<rect x="31" y="298" width="99" height="20" fill="#4a5364"/>
+<rect x="400" y="298" width="9" height="20" fill="#d8dee9"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 128H153.13M160.88 128H175M229 128H918.13M814 288H904M25.88 468H153.13M160.88 468H918.13M26.5 127.38V468.63M152.5 127.38V258M152.5 338V468.63M161.5 127.38V258M161.5 338V468.63M917.5 127.38V468.63"/>
+<path stroke="#56c8d8" d="M133.88 268H148M319 268H810.13M133.88 328H810.13M134.5 267.38V328.63M809.5 267.38V328.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="112.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="112.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="112.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="193 211" y="132.5" text-anchor="middle" font-weight="700">設定</text>
+<text x="49 67" y="152.5" text-anchor="middle">首頁</text>
+<text x="193 211" y="152.5" text-anchor="middle">語言</text>
+<text x="364 382 400 418" y="152.5" text-anchor="middle">跟隨系統</text>
+<text x="49 67 85" y="172.5" text-anchor="middle">伺服器</text>
+<text x="184" y="172.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">GitHub</text>
+<text x="256 274 292 310 328" y="172.5" text-anchor="middle" fill="#ffffff">代理伺服器</text>
+<text x="364 382 400" y="172.5" text-anchor="middle" fill="#ffffff">未設定</text>
+<text x="49 67" y="192.5" text-anchor="middle">模組</text>
+<text x="193 211 229 247 265 283" y="192.5" text-anchor="middle">自動重新啟動</text>
+<text x="355" y="192.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
+<text x="400" y="192.5" text-anchor="middle">關</text>
+<text x="49 67 85 103" y="212.5" text-anchor="middle">取得模組</text>
+<text x="193 211 229 247" y="212.5" text-anchor="middle">清除快取</text>
+<text x="355" y="212.5" textLength="342" lengthAdjust="spacingAndGlyphs">C:\Users\Steve\AppData\Local\lip\Cache</text>
+<text x="49 67 85 103" y="232.5" text-anchor="middle">遊戲設定</text>
+<text x="193 211 229 247" y="232.5" text-anchor="middle">檢查更新</text>
+<text x="355" y="232.5" textLength="54" lengthAdjust="spacingAndGlyphs">0.41.0</text>
+<text x="49 67 85 103" y="252.5" text-anchor="middle">模組設定</text>
+<text x="193 211 229 247" y="252.5" text-anchor="middle">常駐程式</text>
+<text x="364 382 400" y="252.5" text-anchor="middle" fill="#8b95a7">未執行</text>
+<text x="49 67 85" y="272.5" text-anchor="middle">工作區</text>
+<text x="157" y="272.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">GitHub</text>
+<text x="229 247 265 283 301" y="272.5" text-anchor="middle" fill="#56c8d8" font-weight="700">代理伺服器</text>
+<text x="49 67" y="292.5" text-anchor="middle">工具</text>
+<text x="157 175 193 211 229 247 265" y="292.5" text-anchor="middle" font-weight="700">代理伺服器網址</text>
+<text x="49 67" y="312.5" text-anchor="middle" fill="#ffffff">設定</text>
+<text x="148" y="312.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">&gt;</text>
+<text x="166" y="312.5" textLength="234" lengthAdjust="spacingAndGlyphs">https://proxy.example.com/</text>
+<text x="31" y="492.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="94 112" y="492.5" text-anchor="middle" fill="#8b95a7">確認</text>
+<text x="139" y="492.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="184 202" y="492.5" text-anchor="middle" fill="#8b95a7">取消</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 92H928V504H16zM127 255H817V341H127z"/>
+<path d="M202 32L202 107" fill="none" stroke="#1a1d24" stroke-width="4" stroke-opacity="0.6" stroke-linecap="round"/>
+<path d="M202 32L202 107" fill="none" stroke="#ffa94d" stroke-width="2" stroke-linecap="round"/>
+<path d="M202 114L197.5 104L206.5 104z" fill="#ffa94d" stroke="#1a1d24" stroke-width="1" stroke-linejoin="round"/>
+<rect x="108.2" y="10" width="187.6" height="22" rx="6" fill="#ffa94d"/>
+<text x="116.2" y="25.5" textLength="23.4" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#1a1d24">lip</text>
+<text x="155.2 170.8 186.4 202 217.6 233.2 248.8 264.4 280" y="25.5" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d24">跳到了「設定」頁面</text>
+<rect x="10.5" y="520.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<rect x="24.5" y="532.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="548.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>

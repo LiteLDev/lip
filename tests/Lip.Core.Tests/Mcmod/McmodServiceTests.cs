@@ -320,11 +320,12 @@ public class McmodServiceTests {
         .Returns(Task.CompletedTask);
 
     // Act
-    await _ws.Service.Install([Lib], _options with { DryRun = true });
+    OperationResult plan = await _ws.Service.Install([Lib], _options with { DryRun = true });
 
     // Assert: protocol/lip-install.md, a dry run reports the packages it would mark as explicitly
-    // installed.
-    Assert.Contains(infos, m => m.StartsWith($"Dry run: would mark package '{Lib}'"));
+    // installed. That is more than another source to record.
+    Assert.Contains($"Dry run: would mark {Lib} 1.1.0 as explicitly installed.", infos);
+    Assert.Equal(new OperationResult(Changes: true, OnlyStateFile: true), plan);
     Assert.False((await _ws.Lock()).Packages.Single(p => p.Id == Lib).Explicit);
   }
 
