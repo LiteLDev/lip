@@ -1,6 +1,6 @@
 # Interactive Interface
 
-Run `lip` without arguments in a terminal to open the interactive interface: every command of lip, the mods of [levimc.org/mods](https://levimc.org/mods/), and the server of the workspace, in one full-screen program.
+Run `lip` without arguments in a terminal to open the interactive interface: a full-screen program that sets up a server, installs the mods of [levimc.org/mods](https://levimc.org/mods/), runs the server and edits its configuration, with the arrow keys and `Enter`.
 
 ```shell
 lip
@@ -10,36 +10,198 @@ The interface works on one workspace at a time, the current directory at first (
 
 Like the commands, the interface runs in the [daemon](../guides/internal_mechanism.md#daemon) of lip; the `lip` you start shows it and passes on your keys. You can open it in several terminals at once.
 
-## Workspaces
+## Layout
 
-The top line shows the selected workspace. Every tab works on it: the packages, the server, the configuration files and the commands of the Develop tab are those of the selected workspace.
+```
+ lip 1.2.3 · D:\servers\survival                           ● Running
+┌────────────────┐┌─ Home ──────────────────────────────────────────┐
+│ Home           ││                                                 │
+│ Server       ● ││                                                 │
+│ Mods           ││                                                 │
+│ Get mods       ││                    the page                     │
+│ Game config    ││                                                 │
+│ Mod config     ││                                                 │
+│ Workspaces     ││                                                 │
+│ Tools          ││                                                 │
+│ Settings       ││                                                 │
+└────────────────┘└─────────────────────────────────────────────────┘
+ ↑↓ Move  Enter Open  Esc Quit
+```
 
-lip remembers the workspaces you used in a list, `workspaces.json` in its state directory (`%LOCALAPPDATA%\lip\State` on Windows, `$XDG_STATE_HOME/lip` elsewhere). When the interface opens, the current directory is added to the list, if it is not there yet, and selected. Press `w` to open the list:
+| Part | Shows |
+| --- | --- |
+| Top line | The version of lip, the selected workspace, and whether its server runs. |
+| Sidebar | The nine [pages](#pages). The Server entry is marked while the server runs. |
+| Page | The page selected in the sidebar. Questions, menus and progress open as dialogs above it. |
+| Bottom line | The keys that work right now, each with a word or two. It changes as you move. |
+
+The focus is either in the sidebar or in the page. In the sidebar, `↑` and `↓` show one page after the other, and `Enter` moves into the page shown; `Esc` moves back to the sidebar.
+
+The interface needs a terminal of at least 60 columns and 16 rows; in a smaller one it asks you to enlarge the terminal, and the only key that works is `Ctrl+C`, which quits without asking. In a terminal narrower than 80 columns, the sidebar shrinks to one symbol per page while you are in a page, and shows the names again when you move back to it.
+
+## Keys
+
+The same keys do the same on every page:
 
 | Key | Does |
 | --- | --- |
-| `↑`, `↓`, `Enter` | Select a workspace. |
-| `a` | Adds a directory, absolute or relative to the selected workspace, and selects it. The directory must exist. |
-| `n` | Sets up a new server (see [New server](#new-server)). |
-| `d`, `Del` | Removes the selected workspace from the list. No file in it changes. The workspace that is selected cannot be removed. |
-| `Esc` | Closes the list. |
+| `↑`, `↓` | Move in a list or a menu. |
+| `←`, `→` | Move between the sidebar and the page, between panes or buttons side by side; change the value of an option. |
+| `Enter` | Opens or carries out what is selected. On a row of a list, opens the menu of what can be done with it. |
+| `Space` | Checks a row where several can be chosen; switches an option on or off. |
+| `Esc` | Goes back one level: from a dialog to the page, from the page to the sidebar. In the sidebar, asks whether to quit. |
+| `Tab`, `Shift+Tab` | Move to the next or the previous area. |
+| `PgUp`, `PgDn`, `Home`, `End` | Page through a list or a text. |
+| `Ctrl+C` | On the [Server](#server) page while the server runs, stops the server. On any other page and in the sidebar, asks whether to quit. While a change is applied, cancels it. |
 
-The list is kept between runs of lip, and shared by the interfaces open at the same time. A workspace that no longer exists is marked as missing.
+There are no letter shortcuts. Everything you can do is a row or a button on the screen that the arrow keys reach, and letters are only typed where a text field has the focus, such as a search box or the input line of the server.
 
-## New server
+To quit, press `Esc` in the sidebar, or `Ctrl+C` where it does not stop the server, and confirm. A running server keeps running (see [Server](#server)).
 
-You can set up a server from nothing without leaving the interface. In a workspace without a game, the Packages tab says so: press `n` there, or in the list of workspaces (`w`). lip then asks, one dialog after the other:
+## Your first server in three steps
 
-1. **The directory of the server**, absolute or relative to the selected workspace. In a workspace without a game, that workspace is offered. A directory that does not exist is created.
-2. **The game version**, read from the builds list of the server: the release versions, newest first, then the versions of a single build (`1.21.50-patch.2`).
+The Home page lists what a new server needs, in order. Select a step with `↑` and `↓` and press `Enter`; a finished step is checked off.
+
+1. **Create the server.** lip asks for the directory of the server, the game version, the build and the loader, one after the other (see [Workspaces](#workspaces)). It then shows what it will install; choose **Apply**, and accept the Minecraft EULA when asked.
+2. **Install mods.** This opens the [Get mods](#get-mods) page: move to a mod, press `Enter`, and choose to install it. Again lip shows what it will do before anything changes.
+3. **Start the server.** This opens the [Server](#server) page and starts the server. Type server commands in its input line; `Ctrl+C` stops the server.
+
+If GitHub cannot be reached from your network, lip asks how to reach it before you get far: see [GitHub proxy](#github-proxy).
+
+## Pages
+
+| Page | Does | Commands |
+| --- | --- | --- |
+| [Home](#home) | Shows the state of the workspace and the next step to take. | |
+| [Server](#server) | Starts and stops the server, shows what it writes, and sends it what you type. | [`lip run`](./commands/run.md), [`lip config`](./commands/config.md) |
+| [Mods](#mods) | Lists the installed packages; installs, updates and uninstalls them. | [`lip list`](./commands/list.md), [`lip install`](./commands/install.md), [`lip update`](./commands/update.md), [`lip uninstall`](./commands/uninstall.md) |
+| [Get mods](#get-mods) | Searches, filters and sorts the mods of levimc.org, and installs them. | [`lip install`](./commands/install.md) |
+| [Game config](#game-config) | Edits `server.properties`, `allowlist.json` and `permissions.json`. | |
+| [Mod config](#mod-config) | Edits the configuration files of the installed mods. | |
+| [Workspaces](#workspaces) | Switches between workspaces, sets up a new server, changes the game or the loader of one. | [`lip setup`](./commands/setup.md) |
+| [Tools](#tools) | Creates a `lip.toml`, migrates a `tooth.json`, packs a ZIP archive, views a package. | [`lip pkg init`](./commands/pkg_init.md), [`lip pkg migrate`](./commands/pkg_migrate.md), [`lip pkg pack`](./commands/pkg_pack.md), [`lip pkg view`](./commands/pkg_view.md) |
+| [Settings](#settings) | Language, GitHub proxy, cache, updates of lip, state of the daemon. | [`lip config`](./commands/config.md), [`lip cache clean`](./commands/cache_clean.md), [`lip self-update`](./commands/self_update.md), [`lip daemon status`](./commands/daemon.md) |
+
+Every page works on the selected workspace, which the top line shows.
+
+### Home
+
+The Home page shows the state of the selected workspace and the three steps of a new server: create the server, install mods, start the server. Steps that are done are checked off; `Enter` on a step goes straight to it (see [Your first server in three steps](#your-first-server-in-three-steps)).
+
+### Server
+
+The Server page shows whether the server of the selected workspace runs, waits to be restarted, or with which code it exited; a button that starts or stops it; what the server writes; and an input line.
+
+- Starting the server starts it as a managed server, as [`lip run --managed --detach`](./commands/run.md#managed-servers) does: the daemon of lip runs it, and it keeps running after you quit lip or close its terminal. Open lip again, or run `lip run --managed` in the workspace, to see it again.
+- While the server runs, what you type in the input line is sent to the server with `Enter`.
+- Stopping the server, with the button or with `Ctrl+C`, sends it the line `stop`.
+- The restart option says whether a server that crashes is started again; it is the `restart` key of the workspace, as `lip config set restart on-failure --workspace` sets it (see [`lip run`](./commands/run.md#restarting)).
+
+Each workspace has its own server, so servers of several workspaces can run at once; the [Workspaces](#workspaces) page marks the workspaces whose server runs. Interfaces open in several terminals, and `lip run --managed`, share the servers: each shows the server of its selected workspace, whoever started it.
+
+When lip cannot use its daemon and runs the interface itself, the servers it starts are not managed: quitting lip asks them to stop, and lip waits until they have exited.
+
+The other pages stay usable while the server runs. As with `lip run`, the workspace is not locked meanwhile, and changes to packages take effect when the server is started again.
+
+### Mods
+
+The Mods page lists the packages installed in the workspace, as [`lip list`](./commands/list.md) does.
+
+- Above the list are two actions: installing from a source, and updating everything. For the first, write the packages as on the command line (see [`lip install`](./commands/install.md)): a package id, a URL, or a ZIP file or a directory on your disk.
+- `Enter` on a package opens its menu: update it, update it to a version you name (`lip update <package>@<version>`), or uninstall it.
+- `Space` checks packages; the menu then acts on all the checked ones at once.
+
+A package that is installed only because another one depends on it cannot be uninstalled by itself: uninstall what depends on it.
+
+### Get mods
+
+The Get mods page reads the mod catalogue of levimc.org (`https://levimc.org/api/v4/mods/`); nothing of it is kept on disk, and `github_proxy` is not used for it. lip manages servers only, so the list holds the mods that have a build for a server.
+
+The page has a search box, a sort order, a pane of filters, the list of mods, and the details of the selected one. `Enter` on a mod opens its menu: install the latest version, choose a version, read the README, or open its page in the browser.
+
+### Game config
+
+The Game config page edits the files of the server at the root of the workspace, in three sections:
+
+| File | Holds |
+| --- | --- |
+| `server.properties` | The properties of the server. |
+| `allowlist.json` | The players allowed on the server. |
+| `permissions.json` | The permission of each player. |
+
+`Enter` edits the selected entry, and `Space` switches a `true`/`false` value. Adding and removing a player are rows of the list.
+
+Nothing is written until you save; leaving the page with unsaved changes asks whether to save them. lip changes only what you changed: in `server.properties`, the lines of the properties you changed, keeping every comment; in a JSON file, the values you changed, keeping the order of its members (comments in a JSON file are not kept).
+
+The server creates `server.properties` when it first starts, so a new workspace may not have it yet; `allowlist.json` and `permissions.json` are created when you save them. Changes take effect when the server is started again.
+
+### Mod config
+
+The Mod config page lists the configuration files of the installed mods. A `.json` file opens as a tree whose values you edit; any other file is shown as it is, to be edited with a text editor. Saving works as on the [Game config](#game-config) page.
+
+The configuration files of a mod are the files in `mods/<mod>/config/`; for a mod without one, the `.json`, `.ini`, `.toml`, `.yml` and `.yaml` files directly in `mods/<mod>/` (but `manifest.json`), and `mods/<mod>/data/config.json`. Most mods create them when the server first starts.
+
+### Workspaces
+
+lip remembers the workspaces you used in a list, `workspaces.json` in its state directory (`%LOCALAPPDATA%\lip\State` on Windows, `$XDG_STATE_HOME/lip` elsewhere). When the interface opens, the current directory is added to the list, if it is not there yet, and selected. The list is kept between runs of lip, and shared by the interfaces open at the same time.
+
+The Workspaces page shows the list: which workspace is selected, which no longer exist, and which have a running server.
+
+- Above the list are two actions: setting up a new server, and adding an existing directory, absolute or relative to the selected workspace.
+- `Enter` on a workspace opens its menu: switch to it, change its game or loader version, or remove it from the list. Removing changes no file in the workspace; the selected workspace cannot be removed.
+
+A new server is set up in four steps:
+
+1. **The directory of the server**, absolute or relative to the selected workspace. A directory that does not exist is created.
+2. **The game version**, read from the builds list of the server: the release versions, newest first, then the others.
 3. **The build**: `windows`, the server that LeviLamina and its mods run on (through Wine off Windows), or `linux`, the Linux server without a loader. Only the builds that the version has are offered.
 4. **The loader**, for the `windows` build: the versions of LeviLamina that support the game, newest first, or no loader. lip finds them as [`lip setup`](./commands/setup.md#the-loader) does, which may take a moment.
 
-Once you have chosen, lip creates the directory, adds it to the workspace list, selects it, and carries out [`lip setup`](./commands/setup.md) with your choices, e.g. `lip setup --game 1.21.50 --loader levilamina@1.1.0`: it shows the plan, and, once you choose **Apply**, asks whether you accept the Minecraft EULA. `Esc` in any of the dialogs before the last choice stops, creating nothing.
+lip then creates the directory, adds it to the list, selects it, and carries out [`lip setup`](./commands/setup.md) with your choices, e.g. `lip setup --game 1.21.50 --loader levilamina@1.1.0`. `Esc` before the last choice stops, creating nothing.
 
-When the server is set up, start it in the **3 Server** tab, and install mods from **2 Browse**.
+Changing the game or the loader of a workspace carries out `lip setup` in it again, with the same choices but the directory.
 
-## GitHub reachability
+### Tools
+
+The Tools page is for those who make packages. Each of its rows asks for what its command needs and shows the result:
+
+| Row | Command |
+| --- | --- |
+| Create a `lip.toml` | [`lip pkg init`](./commands/pkg_init.md) |
+| Migrate a `tooth.json` | [`lip pkg migrate`](./commands/pkg_migrate.md) |
+| Pack a ZIP archive | [`lip pkg pack`](./commands/pkg_pack.md) |
+| View a package | [`lip pkg view`](./commands/pkg_view.md) |
+
+Paths are absolute or relative to the selected workspace.
+
+### Settings
+
+| Row | Does | Command |
+| --- | --- | --- |
+| Language | Chooses the language of the interface, or follows the system (see [Languages](#languages)). | `lip config set language <value>`, `lip config delete language` |
+| GitHub proxy | Sets, tests or removes the proxy through which lip reaches GitHub (see [GitHub proxy](#github-proxy)). | `lip config set github_proxy <URI>` |
+| Cache | Cleans the cache. | [`lip cache clean`](./commands/cache_clean.md) |
+| Updates | Checks whether a newer lip is released, and installs it. | [`lip self-update --check`](./commands/self_update.md), [`lip self-update`](./commands/self_update.md) |
+| Daemon | Shows the state of the daemon of lip. | [`lip daemon status`](./commands/daemon.md) |
+| Version | Shows the version of lip. | `lip --version` |
+
+The interface cannot stop the daemon, because the daemon runs the interface: quit the interface and run [`lip daemon stop`](./commands/daemon.md).
+
+## Preview and Apply
+
+Every change to the workspace (installing, updating, uninstalling, setting up) goes the same way:
+
+1. **Preview.** lip carries the command out as a dry run (`--dry-run`) and shows what it would do.
+2. **Apply or Cancel.** Nothing changes until you choose **Apply**. **Cancel** leaves the workspace as it is, so it is also how you only look at what a command would do.
+3. **The license**, when the change sets up the game, e.g. a new server, or installing `LeviLamina` in a workspace without a game (see [`lip setup`](./commands/setup.md)): lip shows the links to the Minecraft EULA and the Microsoft Privacy Policy and asks whether you accept them; nothing changes unless you accept.
+4. **Progress.** `Esc` or `Ctrl+C` cancels the change and undoes what was done so far.
+5. **Result.** What the command said.
+
+When the preview of a setup lists mods that would be uninstalled because they do not work with the new game, choosing **Apply** uninstalls them.
+
+When a command fails, the interface shows the cause, what you can do about it, and the path of the failure report below `.lip/logs` of the workspace, and goes on.
+
+## GitHub proxy
 
 lip downloads LeviLamina and most mods from GitHub. When the interface opens and `github_proxy` is not set (not even to an empty value, see [Configuration](./configuration.md)), lip checks in the background whether it reaches GitHub, while you use the interface: it requests `https://github.com/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack` and waits up to 10 seconds for an answer.
 
@@ -47,107 +209,27 @@ When GitHub does not answer, the interface asks how to reach it:
 
 | Choice | Does |
 | --- | --- |
-| **Set a proxy** | Asks for the URL prefix of a GitHub proxy, tests it with the same request through it, and saves it as `github_proxy` when it works. When it does not, you can enter another one or save it anyway. |
-| **Connect directly** | Sets `github_proxy` to an empty value: lip connects to GitHub directly, and does not check or ask again. |
-| **Later** | Changes nothing; lip checks again when the interface next opens. |
+| A proxy | Asks for the URL prefix of a GitHub proxy, tests it with the same request through it, and saves it as `github_proxy` when it works. When it does not, you can still keep it. |
+| Direct | Sets `github_proxy` to an empty value: lip connects to GitHub directly, and does not check or ask again. |
+| Later | Changes nothing; lip checks again when the interface next opens. |
 
-lip does not suggest any proxy itself. You can change `github_proxy` at any time in the **5 Settings** tab or with [`lip config`](./commands/config.md); once it is set, the check does not happen.
+lip does not suggest any proxy itself. You can change `github_proxy` at any time on the [Settings](#settings) page or with [`lip config`](./commands/config.md); once it is set, the check does not happen.
 
-## Tabs
+## Languages
 
-Switch tabs with `Tab` and `Shift+Tab`, or with the number of the tab. The bottom line of the screen always lists the keys of what is shown.
+The interface is in English, Simplified Chinese or Traditional Chinese. Choose one on the [Settings](#settings) page; the screen changes at once. The choice is the `language` key of the user configuration (see [Configuration](./configuration.md)):
 
-| Tab | Does | Commands |
-| --- | --- | --- |
-| **1 Packages** | Lists the installed packages; installs, updates and uninstalls them. | [`lip list`](./commands/list.md), [`lip install`](./commands/install.md), [`lip update`](./commands/update.md), [`lip uninstall`](./commands/uninstall.md) |
-| **2 Browse** | Searches, filters and sorts the mods of levimc.org, shows their details, versions and README, and installs them. | [`lip install`](./commands/install.md) |
-| **3 Server** | Runs the server of the workspace in a window, shows what it writes, and sends it the lines you type. | [`lip run`](./commands/run.md) |
-| **4 Config** | Shows and edits `server.properties`, `allowlist.json`, `permissions.json` and the configuration files of the installed mods. | |
-| **5 Settings** | Shows and changes the user configuration and the configuration of the workspace; cleans the cache. | [`lip config`](./commands/config.md), [`lip cache clean`](./commands/cache_clean.md) |
-| **6 Develop** | Creates a `lip.toml`, migrates a `tooth.json`, packs a ZIP archive, views a package. | [`lip pkg init`](./commands/pkg_init.md), [`lip pkg migrate`](./commands/pkg_migrate.md), [`lip pkg pack`](./commands/pkg_pack.md), [`lip pkg view`](./commands/pkg_view.md) |
-
-Quit with `q` or `Ctrl+Q`. `w` opens the list of workspaces.
-
-## Installing, updating and uninstalling
-
-Every change to the workspace is planned first: lip carries it out as a dry run (`--dry-run`) and shows what it would do. Nothing changes until you choose **Apply**.
-
-While the change is applied, `Ctrl+C` cancels it and undoes what was done so far. When a command fails, the interface shows the cause, what you can do about it, and the path of the failure report below `.lip/logs`, and goes on.
-
-In the install dialog of the Packages tab (`i`), the packages are written as on the command line (see [`lip install`](./commands/install.md)), separated by spaces.
-
-When an installation sets up the game, e.g. installing `LeviLamina` in a new workspace (see [`lip setup`](./commands/setup.md)), lip asks in a dialog, once you choose **Apply**, whether you accept the Minecraft EULA and the Microsoft Privacy Policy, and shows their links; nothing changes unless you accept. When the plan of such an installation lists mods that would be uninstalled because they do not work with the new game, choosing **Apply** uninstalls them.
-
-## Browsing mods
-
-The Browse tab reads the mod catalogue of levimc.org (`https://levimc.org/api/v4/mods/`) when it is first opened; nothing of it is kept on disk, and `github_proxy` is not used for it. lip manages servers only, so the list holds the mods that have a build for a server.
-
-| Key | Does |
+| Value | Language |
 | --- | --- |
-| `/` | Searches by name, id, author, tag and description. `↑` and `↓` go on to the mods found; `Esc` clears the search. |
-| `s` | Changes the order: relevance, stars, last update, newest. |
-| `←` | Moves to the Filters pane; `→` or `Esc` moves back. |
-| `Enter` | Installs the selected mod: asks which variant and version. |
-| `r` | Shows its README. |
-| `o` | Opens its page in the browser. |
-| `R` | Reads the catalogue again. |
+| `en` | English |
+| `zh-Hans` | Simplified Chinese |
+| `zh-Hant` | Traditional Chinese |
 
-The Filters pane has a section for each kind of filter: game version, tags, other tags, license and dependencies. A section shows its heading only until you press `Enter` on it; a heading says how many of its rows are chosen.
+```shell
+lip config set language zh-Hans
+lip config delete language
+```
 
-| Key | Does |
-| --- | --- |
-| `Enter`, `Space` | On a heading: shows or hides the rows of the section. On a row: includes it. |
-| `←` | On a row: goes to the heading of its section and hides its rows. |
-| `x` | Excludes the selected row, when it is a tag or a dependency. |
-| `c` | Clears every filter. |
-| `→`, `Esc` | Moves back to the mods. |
+When `language` is not set, the interface follows the system: the display language of your user on Windows; elsewhere the first of the environment variables `LC_ALL`, `LC_MESSAGES` and `LANG` that names a language. A Chinese locale of Taiwan, Hong Kong or Macao, or one marked `Hant`, gives Traditional Chinese, unless it is marked `Hans`; any other Chinese locale gives Simplified Chinese. With any other language, the interface is in English.
 
-The list then holds the mods that run on one of the included game versions, carry every included tag and none of the excluded ones, are under one of the included license families, and depend on every included package and on no excluded one. The tags and the license families are those of levimc.org/mods.
-
-`Enter` on a mod opens one dialog for the variant and the version to install. `←` and `→` change the variant, among those with a build for a server. Below it are the latest version and each version of the catalogue that has the variant. `c` asks for a custom version instead: what follows the `@` of a package, that is a version, `branch:<name>`, `tag:<name>` or `rev:<commit>`. The plan of the installation is shown next, as for every change.
-
-## Keys
-
-The same keys do the same everywhere:
-
-| Key | Does |
-| --- | --- |
-| `↑`, `↓` | Select a row. |
-| `←`, `→` | Move between the panes of a tab, the buttons of a dialog, or the variants of a mod. |
-| `Enter`, `Space` | Act on what is selected: open the actions of a package, install a mod, edit a setting, run an action, choose a button. |
-| `Esc` | Goes back: closes a dialog, leaves a pane, clears a search. |
-| `Del` | Uninstalls the selected package, resets the selected setting, removes the selected player, or undoes the change of the selected property. |
-
-In the Packages tab, `Enter` on a package lists what can be done with it. In the Settings tab, `Enter` on `github_proxy` with an empty value makes lip connect to GitHub directly, while `Del` removes the key; `→` moves to the cache, where `Enter` cleans it. In the Server tab, `↑` and `↓` scroll while the server does not run, and `Esc` erases the line being typed while it does.
-
-Every list goes around: `↑` on its first row moves to the last, and `↓` on the last to the first.
-
-## Configuring the server and the mods
-
-The Config tab lists the configuration files of the workspace on the left, and shows the entries of the selected one on the right. `Enter` or `→` moves to the entries; `Esc` or `←` moves back.
-
-| File | Is edited as |
-| --- | --- |
-| `server.properties` | Its properties, with the comment of the selected one below. `Enter` toggles a `true`/`false` property, lists the allowed values of a property that has a few, and asks for any other value; an integer is checked. `Del` undoes the change. |
-| `allowlist.json` | The players allowed on the server. `a` adds one by name and, optionally, xuid; `Enter` sets whether the player may join a full server; `Del` removes the player. |
-| `permissions.json` | The permission of each player, by xuid. `a` adds a player; `Enter` chooses `operator`, `member` or `visitor`; `Del` removes the player. |
-| A `.json` file of a mod | A tree: `Enter` opens an object or an array and edits a value (a `true`/`false` value toggles), `Esc` goes back up. In an array, `a` adds a value and `Del` removes one. The top-level `version` of a mod's file is not edited: the mod keeps it up to date. |
-| Any other file of a mod | Shown as it is; edit it with a text editor. |
-
-The configuration files of a mod are the files in `mods/<mod>/config/`; for a mod without one, the `.json`, `.ini`, `.toml`, `.yml` and `.yaml` files directly in `mods/<mod>/` (but `manifest.json`), and `mods/<mod>/data/config.json`.
-
-Nothing is written until you press `s`, which saves the selected file. lip changes only what you changed: in `server.properties`, the lines of the properties you changed, keeping every comment; in a JSON file, the values you changed, keeping the order of its members (comments in a JSON file are not kept). Leaving the file, the tab or lip with unsaved changes asks whether to save them. `r` reads the files again.
-
-The server and most mods create their configuration files when the server first starts, so a new workspace may not have them yet; `allowlist.json` and `permissions.json` are created when you save them. Changes take effect when the server is started again: when it runs, restart it in the Server tab.
-
-## Running the server
-
-In the Server tab, `Enter` starts the server of the selected workspace as a managed server, as [`lip run --managed --detach`](./commands/run.md#managed-servers) does: the daemon of lip runs it, and it keeps running after you quit lip or close its terminal. What the server writes is shown in the window; `PgUp` and `PgDn` scroll back. While the server runs, what you type is a line for the server, sent with `Enter`; `↑` and `↓` recall earlier lines.
-
-`Ctrl+C` asks the server to stop, by sending it the line `stop`. Quitting lip, or closing its terminal, leaves the server running: open lip again, or run `lip run --managed` in the workspace, to see it again. The title of the Server tab tells whether the server runs, waits to be restarted (with `restart = "on-failure"`, see [`lip run`](./commands/run.md#restarting)), or with which code it exited.
-
-Each workspace has its own server, so servers of several workspaces can run at once: select another workspace to start or see its server; the workspace list (`w`) marks the workspaces whose server runs. Interfaces open in several terminals at once, and `lip run --managed`, share the servers: each shows the server of its selected workspace, whoever started it, and can send it lines or stop it.
-
-When lip cannot use its daemon and runs the interface itself, the servers it starts are not managed: quitting lip asks them to stop, and lip waits until they have exited.
-
-The other tabs stay usable while the server runs. As with `lip run`, the workspace is not locked meanwhile, and changes to packages take effect when the server is started again.
+Only the text of the interface itself is translated. What a command says, such as the lines of a preview, its messages and its errors, is shown in English, as on the command line.

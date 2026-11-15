@@ -39,7 +39,7 @@ lip does not remember the answer: it asks every time a setup installs or changes
 lip setup --game 1.21.0 --accept-eula
 ```
 
-In the [interactive interface](../cli/tui.md), lip asks in a dialog when an installation sets up the game.
+In the [interactive interface](../cli/tui.md#preview-and-apply), lip asks in a dialog when a change sets up the game.
 
 ### Changing the Game Version
 
@@ -154,6 +154,6 @@ A workspace that an earlier lip created with `--platform linux-x64` keeps workin
 - **Exit code**: `lip run` exits with the exit code of the server (of `wine`, through Wine), or 128 + n when signal n ends it on Linux or macOS (e.g. 137 for `SIGKILL`), so a script or service manager that restarts the server on failure can use it.
 - **Restarting**: To have lip restart a server that crashes (exits with a non-zero code), set `lip config set restart on-failure --workspace`. lip then waits 5 seconds and starts it again, at most 5 times within 10 minutes; a server you stopped, or that exits with code 0, is not restarted. See [`lip run`](../cli/commands/run.md#restarting).
 - **One server per workspace**: A second `lip run` in a workspace whose server runs fails at once, whether the server was started by `lip run`, the interface or the daemon.
-- **Keeping it running**: `lip run --managed` has the daemon of lip run the server, so that it keeps running when you close the terminal; `lip run --managed` again attaches to it, and `lip run --managed --detach` starts it without attaching. The [interface](../cli/tui.md#running-the-server) runs its servers this way. See [Managed Servers](../cli/commands/run.md#managed-servers).
+- **Keeping it running**: `lip run --managed` has the daemon of lip run the server, so that it keeps running when you close the terminal; `lip run --managed` again attaches to it, and `lip run --managed --detach` starts it without attaching. The [interface](../cli/tui.md#server) runs its servers this way. See [Managed Servers](../cli/commands/run.md#managed-servers).
 - **Changing packages**: lip does not lock the workspace while the server runs. You can run `lip install`, `lip update`, `lip uninstall` or `lip setup` in the same workspace from another terminal; the server sees the changes when you start it again. If a file cannot be replaced or deleted because the running server has it open, as can happen on Windows, the operation fails and is undone, leaving the workspace as it was; stop the server and run the command again.
 - **Interrupted operations**: `lip run` first completes or undoes an operation that was interrupted, as any operation does, and fails at once if another lip command is changing the workspace at that moment.

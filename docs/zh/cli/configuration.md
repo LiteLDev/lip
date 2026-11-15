@@ -25,6 +25,7 @@ github_proxy = "https://proxy.example.com"
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `github_proxy` | `string?` | 无 | lip 如何访问 GitHub 进行 git 请求与下载（发布资源）。URI，例如 `https://proxy.example.com/`：lip 通过该代理发送请求，代理请求失败时直接向 `github.com` 重试。空字符串（`lip config set github_proxy ""`）：lip 直接连接 GitHub。未设置（`lip config delete github_proxy`）：lip 同样直接连接 GitHub，但该键视为未配置。`lip config set` 会拒绝其他值，含有其他值的 `config.toml` 无效，此时所有键取默认值。 |
+| `language` | `"en"`、`"zh-Hans"` 或 `"zh-Hant"` | 无 | [交互界面](tui.md#语言)的语言：英文、简体中文或繁体中文。未设置（`lip config delete language`）：界面跟随系统的语言，系统语言既不是英文也不是中文时使用英文。命令始终以英文输出。 |
 
 包直接从其 git 仓库解析和下载，无需配置任何包注册表或模块代理。
 
@@ -45,4 +46,4 @@ restart = "on-failure"
 
 ## 管理方式
 
-使用 [`lip config`](commands/config.md) 或[交互界面](tui.md)的 Settings 标签页管理配置值。
+使用 [`lip config`](commands/config.md) 或[交互界面](tui.md)管理配置值：用户配置在其[设置](tui.md#设置)页面，`restart` 在其[服务器](tui.md#服务器)页面。

@@ -33,12 +33,14 @@ lip config set <KEY> <VALUE>
 ### 常见配置
 
 - `github_proxy`（用户）：GitHub 请求使用的代理 URL，或空字符串表示直接连接 GitHub。
+- `language`（用户）：`en`、`zh-Hans` 或 `zh-Hant`，[交互界面](../cli/tui.md#语言)的语言。未设置时，界面跟随系统的语言。
 - `restart`（工作区）：`never` 或 `on-failure`，工作区的服务器以非零退出码退出时 [`lip run`](../cli/commands/run.md#重启) 是否重启它。
 
 示例：
 ```sh
 lip config set github_proxy https://mirror.ghproxy.com/
 lip config set github_proxy ""
+lip config set language zh-Hans
 lip config set restart on-failure --workspace
 ```
 

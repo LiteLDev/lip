@@ -9,7 +9,7 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 | `-h, --help` | Show help for `lip` or for a command (e.g. `lip install --help`). |
 | `-v, --version` | Print the version of `lip`. |
 
-`lip` without arguments prints help.
+`lip` without arguments opens the [interactive interface](tui.md) when it runs in a terminal, and prints help otherwise (in a script or a pipe).
 
 Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md), [`daemon status`](commands/daemon.md) and [`list`](commands/list.md). [`pkg view`](commands/pkg_view.md) always prints JSON.
 

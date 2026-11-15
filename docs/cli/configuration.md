@@ -25,6 +25,7 @@ A `liprc.json` of lip v0.x in the same directory, when there is no `config.toml`
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `github_proxy` | `string?` | none | How lip reaches GitHub for git requests and downloads (release assets). A URI, such as `https://proxy.example.com/`: lip sends them through this proxy, and if a proxied request fails, retries it against `github.com` directly. An empty string (`lip config set github_proxy ""`): lip connects to GitHub directly. Not set (`lip config delete github_proxy`): lip connects to GitHub directly too, but the key counts as not configured. `lip config set` rejects any other value, and a `config.toml` holding another value is invalid, so every key takes its default. |
+| `language` | `"en"`, `"zh-Hans"` or `"zh-Hant"` | none | The language of the [interactive interface](tui.md#languages): English, Simplified Chinese or Traditional Chinese. Not set (`lip config delete language`): the interface follows the language of your system, and is in English when that is neither English nor Chinese. Commands always write in English. |
 
 Packages are resolved and downloaded directly from their git repositories, so no package registry or module proxy needs to be configured.
 
@@ -45,4 +46,4 @@ restart = "on-failure"
 
 ## Management
 
-Use [`lip config`](commands/config.md) to manage configuration values, or the Settings tab of the [interactive interface](tui.md).
+Use [`lip config`](commands/config.md) to manage configuration values, or the [interactive interface](tui.md): its [Settings](tui.md#settings) page for the user configuration, and its [Server](tui.md#server) page for `restart`.
