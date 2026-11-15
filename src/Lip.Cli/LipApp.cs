@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using Lip.Cli.Commands;
 using Lip.Cli.Daemon;
+using Lip.Cli.Tui;
+using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
 using Lip.Core.PublicApi;
 using Spectre.Console;
@@ -29,6 +31,22 @@ public static class LipApp {
     using IDisposable signals = Signals.Listen(Invocation.Process.Signal);
     return await Run(
         args, ConsoleProfile.CreateStandardOutput(), ConsoleProfile.CreateStandardError());
+  }
+
+  /// Runs the interface (protocol/lip-tui.md) on terminal for the current invocation, with the
+  /// workspace list of the state directory and the servers of this process, until the user quits
+  /// it; returns the exit code of lip. Throws when the interface fails.
+  public static int RunInterface(ITerminal terminal, string workingDirectory) {
+    System.IO.Abstractions.FileSystem fileSystem = new();
+    return new TuiApp(
+        terminal,
+        (interaction, hookOutput, workspace) =>
+            LipClient.Create(fileSystem, interaction, hookOutput, workspace),
+        new ModCatalogClient(),
+        DaemonProcess.Version,
+        workingDirectory,
+        workspaces: WorkspaceList.InStateDirectory(fileSystem),
+        servers: ServerSessions.Shared).Run();
   }
 
   /// Carries out the command for the current invocation and returns its exit code.

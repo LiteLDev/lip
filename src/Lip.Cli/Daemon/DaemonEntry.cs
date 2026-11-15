@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Runtime.InteropServices;
+using Lip.Cli.Tui;
 using Lip.Core.Infrastructure;
 using Spectre.Console;
 
@@ -38,12 +39,81 @@ public static class DaemonEntry {
     }
   }
 
-  /// Carries out the command of a client in the daemon, writing as its consoles would.
-  public static Task<int> CarryOut(string[] arguments, Start start, Invocation invocation) =>
-      LipApp.Run(
-          arguments,
-          start.Output.CreateConsole(invocation.Out),
-          start.Error.CreateConsole(invocation.Error));
+  /// Carries out the command of a client in the daemon, writing as its consoles would; without
+  /// arguments, on a terminal, the interface (protocol/lip-tui.md), on the terminal of the client.
+  public static Task<int> CarryOut(
+      string[] arguments, Start start, Invocation invocation, ClientTerminal terminal) =>
+      RunsInterface(arguments, start.IsInputRedirected, start.IsOutputRedirected)
+          ? Task.Factory.StartNew(
+              () => {
+                try {
+                  return LipApp.RunInterface(terminal, invocation.WorkingDirectory);
+                }
+                catch (Exception ex) {
+                  return ErrorReporter.Report(
+                      ex, [], cancelled: false, start.Error.CreateConsole(invocation.Error));
+                }
+              },
+              CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)
+          : LipApp.Run(
+              arguments,
+              start.Output.CreateConsole(invocation.Out),
+              start.Error.CreateConsole(invocation.Error));
+
+  /// Whether lip runs the interface: without an argument, when its standard input and its
+  /// standard output are both terminals (protocol/lip.md, OPTIONS).
+  public static bool RunsInterface(
+      string[] arguments, bool inputRedirected, bool outputRedirected) =>
+      arguments.Length == 0 && !inputRedirected && !outputRedirected;
+
+  /// Has the daemon carry out the interface on the console of this process, and returns the exit
+  /// code; when it cannot, runs the interface in this process (protocol/lip-daemon.md,
+  /// "Fallback").
+  public static async Task<int> RunInterfaceClient() {
+    DaemonClient client = new(
+        DaemonEndpoint.ForCurrentUser(), DaemonProcess.Version, DaemonProcess.Executable,
+        DaemonProcess.Start);
+    ClientOutcome outcome;
+    // What reaches standard error while the alternate screen is shown is written once the
+    // console is back to its screen, where the user can read it.
+    MemoryStream error = new();
+    StringWriter errorText = new();
+    // The console is switched to the alternate screen before its streams are taken, so that they
+    // write UTF-8.
+    using (ConsoleTerminal terminal = new()) {
+      ClientStreams streams = StreamsOf() with { Error = error, ErrorText = errorText };
+      using (Signals.Listen(client.Signal)) {
+        outcome = await client.Run(StartOf([]), streams, TerminalInput.Start);
+      }
+    }
+
+    await Console.Error.WriteAsync(errorText.ToString());
+    await Console.Error.FlushAsync();
+    using (Stream standardError = Console.OpenStandardError()) {
+      standardError.Write(error.ToArray());
+    }
+
+    if (outcome.ExitCode is int code) {
+      return code;
+    }
+
+    if (outcome.Signal is PosixSignal ended) {
+      await Console.Out.FlushAsync();
+      return Signals.EndBy(ended);
+    }
+
+    await Console.Error.WriteLineAsync(
+        $"lip could not have its daemon run the interface ({outcome.Fallback}); it runs it"
+        + " itself.");
+    // A failure is reported once the console is back to its screen.
+    try {
+      using ConsoleTerminal own = new();
+      return LipApp.RunInterface(own, Environment.CurrentDirectory);
+    }
+    catch (Exception ex) {
+      return ErrorReporter.Report(ex, [], cancelled: false);
+    }
+  }
 
   /// Has the daemon carry out the command of this process, and returns the exit code; when it
   /// cannot, carries the command out in this process (protocol/lip-daemon.md, "Fallback").

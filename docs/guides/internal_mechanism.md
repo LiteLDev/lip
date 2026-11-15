@@ -78,7 +78,7 @@ lip installs them before an operation that runs hook commands, or a `lip setup` 
 
 ## Daemon
 
-Every command except [`lip daemon`](../cli/commands/daemon.md) is carried out by the daemon of the user, a `lip` process started with the single argument `--daemon` ([lip-daemon(1)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-daemon.md)). The `lip` you start is its client:
+Every command except [`lip daemon`](../cli/commands/daemon.md), and the [interface](../cli/tui.md), are carried out by the daemon of the user, a `lip` process started with the single argument `--daemon` ([lip-daemon(1)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-daemon.md)). The `lip` you start is its client:
 
 1.  It connects to the daemon: on Windows through the named pipe `\\.\pipe\lip-<SID>`, which only your user can open; on Linux and macOS through the Unix domain socket `$XDG_RUNTIME_DIR/lip/daemon.sock`, or `daemon.sock` in the state directory when `XDG_RUNTIME_DIR` is not set, with the mode `0600` in a directory of mode `0700`.
 2.  When nothing listens, it starts the daemon with its own executable, detached from the terminal and without its standard streams, and connects once the daemon listens. Two clients that start a daemon at the same time end up with one: the second daemon cannot create the endpoint and exits.
@@ -86,7 +86,9 @@ Every command except [`lip daemon`](../cli/commands/daemon.md) is carried out by
 4.  It sends the command with its working directory, its environment variables, whether its standard streams are terminals and the size and colors of the terminal. The daemon carries the command out with them, as `lip` would: commands of different clients run side by side, each in its own directory, with its own environment, proxy and failure report.
 5.  The daemon reads the standard input of the client only when the command needs it, such as the input of the server of `lip run`, and sends back what the command and the programs it runs print. Signals that the client receives (Ctrl+C, `SIGTERM`, closing the terminal) are passed on: Ctrl+C cancels and undoes an operation that changes the workspace, and asks the server of `lip run` to stop. When the client goes away while the server runs, the server is asked to stop. The client exits with the exit code of the command.
 
-When the daemon cannot be started or reached, the client says so and carries out the command itself. The daemon exits after it has had no connection for a while, after `lip self-update` replaced lip, or on [`lip daemon stop`](../cli/commands/daemon.md). The interface (`lip` without arguments) runs in the `lip` you start.
+The interface (`lip` without arguments) is carried out the same way. The daemon draws it, and the client writes what it draws to the terminal; the client reads the keys you press and passes them on, with the size of the terminal whenever it changes. Every terminal in which you open the interface gets its own, while the list of workspaces (`workspaces.json` in the state directory) and the servers started from the interface are kept by the daemon and shared by all of them. When you quit the interface, or close its terminal, the servers it started are asked to stop.
+
+When the daemon cannot be started or reached, the client says so and carries out the command, or the interface, itself. The daemon exits after it has had no connection for a while, after `lip self-update` replaced lip, or on [`lip daemon stop`](../cli/commands/daemon.md).
 
 ## Notes on the Specification
 

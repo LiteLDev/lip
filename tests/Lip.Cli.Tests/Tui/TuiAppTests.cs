@@ -62,23 +62,31 @@ public sealed class TuiAppTests : IDisposable {
   private readonly FakeTerminal _terminal = new();
   private readonly MockFileSystem _fs = new(new Dictionary<string, MockFileData>(), _root);
   private readonly List<Task<int>> _runs = [];
+  private readonly ServerSessions _servers = new();
+  private readonly string _workspaceList = Path.Join(
+      OperatingSystem.IsWindows() ? @"C:\state" : "/state", WorkspaceList.FileName);
 
   public void Dispose() {
     _terminal.Dispose();
     Task.WaitAll([.. _runs], TimeSpan.FromSeconds(30));
   }
 
-  private TuiApp Start(Func<IUserInteraction, Func<Stream>, LipClient>? createClient = null) {
+  private TuiApp Start(
+      Func<IUserInteraction, Func<Stream>, string, LipClient>? createClient = null,
+      FakeTerminal? terminal = null,
+      string? workingDirectory = null) {
     TuiApp app = new(
-        _terminal,
-        createClient ?? ((interaction, hookOutput) =>
-            LipClient.Create(_fs, interaction, hookOutput)),
+        terminal ?? _terminal,
+        createClient ?? ((interaction, hookOutput, workspace) =>
+            LipClient.Create(_fs, interaction, hookOutput, workspace)),
         new ModCatalogClient((url, _) => Task.FromResult(
             url == ModCatalogClient.BaseUrl + "index.json" ? Index : Detail)),
         "1.2.3",
-        _root,
+        workingDirectory ?? _root,
         (exception, _, cancelled) =>
-            new Failure(exception.Message, ["a hint"], "report.log", null, "", cancelled));
+            new Failure(exception.Message, ["a hint"], "report.log", null, "", cancelled),
+        new WorkspaceList(_fs, _workspaceList),
+        _servers);
     _runs.Add(Task.Run(app.Run));
     return app;
   }
@@ -97,6 +105,114 @@ public sealed class TuiAppTests : IDisposable {
 
   private static Task WaitFor(TuiApp app, string text) =>
       WaitFor(app, screen => screen.Contains(text, StringComparison.Ordinal));
+
+  [Fact]
+  public async Task Start_AddsTheWorkingDirectoryToTheWorkspaceListOnce() {
+    // Arrange
+    string other = Path.Join(_root, "other");
+    _fs.AddDirectory(other);
+    new WorkspaceList(_fs, _workspaceList).Add(other);
+
+    // Act
+    TuiApp app = Start();
+    await WaitFor(app, "No package is installed in this workspace.");
+    _terminal.Type("q");
+    await _runs[0].WaitAsync(TestContext.Current.CancellationToken);
+    using FakeTerminal again = new();
+    TuiApp second = Start(terminal: again);
+    await WaitFor(second, "No package is installed in this workspace.");
+
+    // Assert
+    Assert.Equal([other, _root], new WorkspaceList(_fs, _workspaceList).Read());
+    Assert.Contains("w  " + _root, second.ScreenText);
+  }
+
+  [Fact]
+  public async Task Workspaces_AddedAndSelected_AreWhatTheTabsOperateOn() {
+    // Arrange
+    string other = Path.Join(_root, "other");
+    _fs.AddFile(Path.Join(other, ".lip", "state.json"), new MockFileData("""
+        { "format": 4, "side": "server", "platform": "win-x64", "packages": [ {
+          "manifest": { "format": 4, "id": "github.com/LiteLDev/bds", "version": "1.21.0",
+            "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } },
+          "variant": "", "explicit": true, "ref": "github.com/LiteLDev/bds@1.21.0",
+          "files": [] } ] }
+        """));
+    List<string> clients = [];
+    TuiApp app = Start((interaction, hookOutput, workspace) => {
+      lock (clients) {
+        clients.Add(workspace);
+      }
+
+      return LipClient.Create(_fs, interaction, hookOutput, workspace);
+    });
+    await WaitFor(app, "No package is installed in this workspace.");
+
+    // Act: a relative path is of the selected workspace.
+    _terminal.Type("w");
+    await WaitFor(app, "Workspaces");
+    _terminal.Type("a");
+    await WaitFor(app, "Add a workspace");
+    _terminal.Type("other");
+    _terminal.Press(ConsoleKey.Enter);
+
+    // Assert
+    await WaitFor(app, "github.com/LiteLDev/bds");
+    Assert.Contains("w  " + other, app.ScreenText);
+    Assert.Equal([_root, other], new WorkspaceList(_fs, _workspaceList).Read());
+    lock (clients) {
+      Assert.Equal([_root, other], clients);
+    }
+
+    // Act: back to the first one, from the list.
+    _terminal.Type("w");
+    await WaitFor(app, "● " + other);
+    _terminal.Press(ConsoleKey.UpArrow);
+    _terminal.Press(ConsoleKey.Enter);
+
+    // Assert
+    await WaitFor(app, "No package is installed in this workspace.");
+    Assert.Contains("w  " + _root, app.ScreenText);
+  }
+
+  [Fact]
+  public async Task Workspaces_Remove_TakesAWorkspaceOffTheListOnly() {
+    // Arrange
+    string other = Path.Join(_root, "other");
+    _fs.AddFile(Path.Join(other, "lip.toml"), new MockFileData("format = 4\n"));
+    new WorkspaceList(_fs, _workspaceList).Add(other);
+    TuiApp app = Start();
+    await WaitFor(app, "No package is installed in this workspace.");
+
+    // Act: the selected workspace stays; the other one goes.
+    _terminal.Type("w");
+    await WaitFor(app, "● " + _root);
+    _terminal.Type("d");
+    await WaitFor(app, "cannot be removed");
+    _terminal.Press(ConsoleKey.UpArrow);
+    _terminal.Type("d");
+
+    // Assert
+    await WaitFor(app, "no file in it changed");
+    Assert.Equal([_root], new WorkspaceList(_fs, _workspaceList).Read());
+    Assert.Equal("format = 4\n", _fs.File.ReadAllText(Path.Join(other, "lip.toml")));
+  }
+
+  [Fact]
+  public async Task Workspaces_AddingWhatIsNotADirectory_IsRefused() {
+    TuiApp app = Start();
+    await WaitFor(app, "No package is installed in this workspace.");
+
+    _terminal.Type("w");
+    await WaitFor(app, "Workspaces");
+    _terminal.Type("a");
+    await WaitFor(app, "Add a workspace");
+    _terminal.Type("missing");
+    _terminal.Press(ConsoleKey.Enter);
+
+    await WaitFor(app, "is not a directory.");
+    Assert.Equal([_root], new WorkspaceList(_fs, _workspaceList).Read());
+  }
 
   [Fact]
   public async Task Start_EmptyWorkspace_ShowsThePackagesTab() {
@@ -499,7 +615,7 @@ public sealed class TuiAppTests : IDisposable {
             "files": [] } ] }
           """);
       FileSystem fs = new();
-      TuiApp app = Start((interaction, hookOutput) => new LipClient(
+      TuiApp app = Start((interaction, hookOutput, _) => new LipClient(
           fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),
           new McmodService(
               fs, interaction, new LockStore(fs), Mock.Of<IArchiveProvider>(),

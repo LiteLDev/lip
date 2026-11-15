@@ -32,6 +32,10 @@ public enum FrameType : byte {
   Terminate = 12,
   /// Daemon: it is exiting and does not carry out the command; the client starts a new daemon.
   Refused = 13,
+  /// Client: a key that the user pressed in the interface (KeyMessage).
+  Key = 14,
+  /// Client: the size of its terminal, in columns and rows (two 32-bit counts).
+  Resize = 15,
 }
 
 /// A frame read from a connection.

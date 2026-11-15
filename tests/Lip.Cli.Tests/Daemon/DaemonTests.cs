@@ -1,9 +1,13 @@
+using System.Collections.Concurrent;
 using System.IO.Abstractions.TestingHelpers;
 using System.Runtime.InteropServices;
 using System.Text;
 using Lip.Cli.Daemon;
+using Lip.Cli.Tui;
+using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod.Install;
+using Lip.Core.PublicApi;
 
 namespace Lip.Cli.Tests.Daemon;
 
@@ -48,7 +52,7 @@ public sealed class DaemonTests : IAsyncDisposable {
   [Fact]
   public async Task Command_WritesToTheClientAndExitsWithItsCode() {
     // Arrange
-    _ = Host(async (args, _, invocation) => {
+    _ = Host(async (args, _, invocation, _) => {
       await invocation.Out.WriteAsync($"out {string.Join(',', args)}\n");
       await invocation.Error.WriteAsync("err\n");
       invocation.OpenStandardOutput().Write("raw"u8);
@@ -69,7 +73,7 @@ public sealed class DaemonTests : IAsyncDisposable {
   [Fact]
   public async Task Command_ReadsTheStandardInputOfTheClientOnlyAsItNeedsIt() {
     // Arrange
-    _ = Host(async (_, _, invocation) => {
+    _ = Host(async (_, _, invocation, _) => {
       using StreamReader reader = new(invocation.OpenStandardInput());
       string first = (await reader.ReadLineAsync())!;
       string rest = await reader.ReadToEndAsync();
@@ -91,7 +95,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Arrange
     TaskCompletionSource bothStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     int started = 0;
-    _ = Host(async (_, _, invocation) => {
+    _ = Host(async (_, _, invocation, _) => {
       if (Interlocked.Increment(ref started) == 2) {
         bothStarted.SetResult();
       }
@@ -128,7 +132,7 @@ public sealed class DaemonTests : IAsyncDisposable {
   public async Task Interruption_WhileAnOperationChangesTheWorkspace_CancelsIt() {
     // Arrange
     TaskCompletionSource changing = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    _ = Host(async (_, _, invocation) => {
+    _ = Host(async (_, _, invocation, _) => {
       MockFileSystem fs = new();
       using WorkspaceTransaction transaction = new(fs, "/w/.lip/journal");
       changing.SetResult();
@@ -159,7 +163,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Arrange
     TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
     TaskCompletionSource<bool> abandoned = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    _ = Host(async (_, _, invocation) => {
+    _ = Host(async (_, _, invocation, _) => {
       running.SetResult();
       try {
         await Task.Delay(Timeout.Infinite, invocation.Cancellation);
@@ -190,7 +194,7 @@ public sealed class DaemonTests : IAsyncDisposable {
   public async Task StopRequest_WhileTheServerRuns_IsPassedOnAndTheCommandGoesOn() {
     // Arrange
     TaskCompletionSource listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    _ = Host(async (_, _, invocation) => {
+    _ = Host(async (_, _, invocation, _) => {
       TaskCompletionSource stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
       using (invocation.ListenForStop(() => stopped.TrySetResult())) {
         listening.SetResult();
@@ -216,7 +220,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Arrange
     TaskCompletionSource listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
     TaskCompletionSource stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    _ = Host(async (_, _, invocation) => {
+    _ = Host(async (_, _, invocation, _) => {
       using (invocation.ListenForStop(() => stopped.TrySetResult())) {
         listening.SetResult();
         await stopped.Task;
@@ -242,7 +246,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     int starts = 0;
     DaemonClient client = new(_endpoint, Version, Executable, () => {
       starts++;
-      _ = Host((_, _, _) => Task.FromResult(5));
+      _ = Host((_, _, _, _) => Task.FromResult(5));
       return null;
     });
 
@@ -257,9 +261,9 @@ public sealed class DaemonTests : IAsyncDisposable {
   [Fact]
   public async Task DaemonOfAnotherVersion_IsReplaced() {
     // Arrange
-    Task old = Host((_, _, _) => Task.FromResult(1), version: "0.9.0");
+    Task old = Host((_, _, _, _) => Task.FromResult(1), version: "0.9.0");
     DaemonClient client = new(_endpoint, Version, Executable, () => {
-      _ = Host((_, _, _) => Task.FromResult(2));
+      _ = Host((_, _, _, _) => Task.FromResult(2));
       return null;
     });
 
@@ -276,7 +280,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Arrange
     TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
     TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    _ = Host(async (_, _, _) => {
+    _ = Host(async (_, _, _, _) => {
       running.SetResult();
       await release.Task;
       return 0;
@@ -310,12 +314,12 @@ public sealed class DaemonTests : IAsyncDisposable {
   [Fact]
   public async Task SecondDaemon_CannotListenOnTheEndpoint() {
     // Arrange
-    _ = Host((_, _, _) => Task.FromResult(0));
+    _ = Host((_, _, _, _) => Task.FromResult(0));
 
     // Act & Assert
     await Assert.ThrowsAsync<EndpointInUseException>(() => new DaemonHost(
         _endpoint, Version, Executable, TimeSpan.FromMinutes(1),
-        (_, _, _) => Task.FromResult(0)).Run());
+        (_, _, _, _) => Task.FromResult(0)).Run());
   }
 
   [Fact]
@@ -323,7 +327,7 @@ public sealed class DaemonTests : IAsyncDisposable {
     // Arrange
     TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
     TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    Task host = Host(async (_, _, _) => {
+    Task host = Host(async (_, _, _, _) => {
       running.SetResult();
       await release.Task;
       return 0;
@@ -352,7 +356,7 @@ public sealed class DaemonTests : IAsyncDisposable {
   [Fact]
   public async Task Idle_DaemonExits() {
     // Arrange & Act
-    Task host = Host((_, _, _) => Task.FromResult(0), idle: TimeSpan.FromMilliseconds(100));
+    Task host = Host((_, _, _, _) => Task.FromResult(0), idle: TimeSpan.FromMilliseconds(100));
 
     // Assert
     await host.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
@@ -389,6 +393,149 @@ public sealed class DaemonTests : IAsyncDisposable {
     Assert.Equal("", usage.OutputText.ToString());
   }
 
+  /// The interface, which the daemon carries out on the terminal of each client that attaches,
+  /// with a workspace list that they share and that outlives them (protocol/lip-tui.md,
+  /// "Workspaces").
+  [Fact]
+  public async Task Interface_OfClientsAttachedAtOnceAndLater_SharesTheWorkspaceList() {
+    // Arrange
+    MockFileSystem fs = new();
+    string list = Path.Join(_directory, "state", WorkspaceList.FileName);
+    ConcurrentDictionary<string, TuiApp> apps = new();
+    _ = Host(InterfaceHost(fs, list, apps, []));
+    string a = Path.Join(_directory, "a");
+    string b = Path.Join(_directory, "b");
+    string c = Path.Join(_directory, "c");
+
+    // Act: two clients attach at once.
+    Attached first = Attach(a);
+    Attached second = Attach(b);
+    TuiApp appA = await AppOf(apps, a);
+    TuiApp appB = await AppOf(apps, b);
+    await WaitFor(appA, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
+    await WaitFor(appB, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
+
+    // The terminal of a client is resized, and both see the workspace of the other.
+    (await first.Writer.Task).Send(FrameType.Resize, ResizeMessage.Encode(210, 33));
+    await WaitFor(appA, s => s.Split('\n').Length == 33);
+    first.Press('w', ConsoleKey.W);
+    await WaitFor(appA, s => s.Contains("Workspaces", StringComparison.Ordinal)
+        && s.Contains(a, StringComparison.Ordinal) && s.Contains(b, StringComparison.Ordinal));
+    first.Press('\x1b', ConsoleKey.Escape);
+    first.Press('q', ConsoleKey.Q);
+    second.Press('q', ConsoleKey.Q);
+    ClientOutcome[] outcomes = await Task.WhenAll(first.Outcome, second.Outcome);
+
+    // A client attaches later, in another directory.
+    Attached third = Attach(c);
+    TuiApp appC = await AppOf(apps, c);
+    await WaitFor(appC, s => s.Contains("w  " + c, StringComparison.Ordinal));
+    third.Press('q', ConsoleKey.Q);
+    ClientOutcome last = await third.Outcome;
+
+    // Assert
+    Assert.All([.. outcomes, last], o => Assert.Equal(0, o.ExitCode));
+    Assert.Contains("lip 1.2.3", first.Streams.OutputText.ToString());
+    Assert.Contains("\x1b[", first.Streams.OutputText.ToString());
+    IReadOnlyList<string> workspaces = new WorkspaceList(fs, list).Read();
+    Assert.Equal(3, workspaces.Count);
+    Assert.Equal(new HashSet<string>([a, b]), new HashSet<string>(workspaces.Take(2)));
+    Assert.Equal(c, workspaces[2]);
+  }
+
+  /// A client that is gone ends the interface that the daemon carries out for it.
+  [Fact]
+  public async Task Interface_ClientGone_EndsIt() {
+    // Arrange
+    ConcurrentDictionary<string, TuiApp> apps = new();
+    ConcurrentDictionary<string, Task<int>> runs = new();
+    _ = Host(InterfaceHost(new MockFileSystem(), null, apps, runs));
+    string directory = Path.Join(_directory, "gone");
+    Directory.CreateDirectory(directory);
+    Stream connection = (await _endpoint.TryConnect(TestContext.Current.CancellationToken))!;
+    await Client().Greet(connection);
+    Frames.Write(connection, FrameType.Start, InterfaceStart(directory).Encode());
+    TuiApp app = await AppOf(apps, directory);
+    await WaitFor(app, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
+
+    // Act
+    await connection.DisposeAsync();
+
+    // Assert
+    Assert.Equal(0, await runs[directory].WaitAsync(
+        TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+  }
+
+  /// Carries out the interface for each client, with the workspace list at list (in memory when
+  /// null) of fs, as DaemonEntry.CarryOut does with that of the state directory.
+  private static CarryOutCommand InterfaceHost(
+      MockFileSystem fs,
+      string? list,
+      ConcurrentDictionary<string, TuiApp> apps,
+      ConcurrentDictionary<string, Task<int>> runs) {
+    ServerSessions servers = new();
+    return (_, _, invocation, terminal) => {
+      Task<int> run = Task.Factory.StartNew(() => {
+        TuiApp app = new(
+            terminal,
+            (interaction, hookOutput, workspace) =>
+                LipClient.Create(fs, interaction, hookOutput, workspace),
+            new ModCatalogClient((_, _) => Task.FromResult("{\"mods\": []}")),
+            "1.2.3",
+            invocation.WorkingDirectory,
+            workspaces: new WorkspaceList(fs, list),
+            servers: servers);
+        apps[invocation.WorkingDirectory] = app;
+        return app.Run();
+      }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+      runs[invocation.WorkingDirectory] = run;
+      return run;
+    };
+  }
+
+  private static Start InterfaceStart(string directory) {
+    ConsoleProfile terminal = new(true, true, 3, true, false, true, 200, 30);
+    return new Start(
+        [], directory, [], Environment.ProcessId, false, false, false, terminal, terminal);
+  }
+
+  private Attached Attach(string directory) {
+    Directory.CreateDirectory(directory);
+    Start start = InterfaceStart(directory);
+    Streams streams = new("");
+    TaskCompletionSource<FrameWriter> writer = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    Task<ClientOutcome> outcome = Client().Run(start, streams.Client, w => {
+      writer.TrySetResult(w);
+      return new MemoryStream();
+    });
+    return new Attached(streams, writer, outcome);
+  }
+
+  private static async Task<TuiApp> AppOf(ConcurrentDictionary<string, TuiApp> apps, string key) {
+    for (int i = 0; i < 400; i++) {
+      if (apps.TryGetValue(key, out TuiApp? app)) {
+        return app;
+      }
+
+      await Task.Delay(25, TestContext.Current.CancellationToken);
+    }
+
+    throw new TimeoutException($"The daemon never ran the interface in {key}.");
+  }
+
+  private static async Task WaitFor(TuiApp app, Func<string, bool> shown) {
+    for (int i = 0; i < 400; i++) {
+      if (shown(app.ScreenText)) {
+        return;
+      }
+
+      await Task.Delay(25, TestContext.Current.CancellationToken);
+    }
+
+    Assert.Fail("The screen never showed what was waited for:\n" + app.ScreenText);
+  }
+
   private DaemonClient Client() => new(_endpoint, Version, Executable, () => "not started");
 
   private Task Host(CarryOutCommand run, string version = Version, TimeSpan? idle = null) {
@@ -408,6 +555,15 @@ public sealed class DaemonTests : IAsyncDisposable {
     return new Start(
         args, directory, [.. variables.Select(v => new KeyValuePair<string, string>(v.Name, v.Value))],
         Environment.ProcessId, true, true, true, _redirected, _redirected);
+  }
+
+  /// A client attached to the interface: Press sends a key once the daemon has the command.
+  private sealed record Attached(
+      Streams Streams, TaskCompletionSource<FrameWriter> Writer, Task<ClientOutcome> Outcome) {
+    public void Press(char character, ConsoleKey key) =>
+        Writer.Task.GetAwaiter().GetResult().Send(
+            FrameType.Key,
+            KeyMessage.Encode(new ConsoleKeyInfo(character, key, false, false, false)));
   }
 
   /// The standard streams of a client, with input as its standard input.

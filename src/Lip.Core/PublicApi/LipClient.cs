@@ -72,11 +72,22 @@ public sealed class LipClient {
   /// invocation (Invocation): of the file system for this process, otherwise that of the client
   /// that the invocation is of.
   public static LipClient Create(
-      IFileSystem fileSystem, IUserInteraction userInteraction, Func<Stream>? hookOutput) {
+      IFileSystem fileSystem, IUserInteraction userInteraction, Func<Stream>? hookOutput) =>
+      Create(fileSystem, userInteraction, hookOutput, workspace: null);
+
+  /// As above, with workspace, an absolute path, as the workspace root when it is given: the
+  /// workspace that the interface selected (protocol/lip-tui.md, "Workspaces").
+  public static LipClient Create(
+      IFileSystem fileSystem,
+      IUserInteraction userInteraction,
+      Func<Stream>? hookOutput,
+      string? workspace) {
     Invocation invocation = Invocation.Current;
-    Func<string> workspaceRoot = invocation == Invocation.Process
-        ? fileSystem.Directory.GetCurrentDirectory
-        : () => invocation.WorkingDirectory;
+    Func<string> workspaceRoot = workspace is not null
+        ? () => workspace
+        : invocation == Invocation.Process
+            ? fileSystem.Directory.GetCurrentDirectory
+            : () => invocation.WorkingDirectory;
     ConfigService configService = new(fileSystem, userInteraction, workspaceRoot);
     CacheService cacheService = new(fileSystem, userInteraction);
     return new(

@@ -101,6 +101,37 @@ public sealed record Start(
           reader.ReadBoolean(), reader.ReadBoolean(), reader.ReadInt32(), reader.ReadInt32());
 }
 
+/// The payload of Key: a key that the user pressed, as Console.ReadKey reads it.
+public static class KeyMessage {
+  public static byte[] Encode(ConsoleKeyInfo key) => Messages.Write(w => {
+    w.Write((ushort)key.KeyChar);
+    w.Write((int)key.Key);
+    w.Write((int)key.Modifiers);
+  });
+
+  public static ConsoleKeyInfo Decode(byte[] payload) => Messages.Read(payload, r => {
+    char character = (char)r.ReadUInt16();
+    ConsoleKey key = (ConsoleKey)r.ReadInt32();
+    ConsoleModifiers modifiers = (ConsoleModifiers)r.ReadInt32();
+    return new ConsoleKeyInfo(
+        character, key,
+        shift: modifiers.HasFlag(ConsoleModifiers.Shift),
+        alt: modifiers.HasFlag(ConsoleModifiers.Alt),
+        control: modifiers.HasFlag(ConsoleModifiers.Control));
+  });
+}
+
+/// The payload of Resize: the columns and the rows of the terminal of the client.
+public static class ResizeMessage {
+  public static byte[] Encode(int width, int height) => Messages.Write(w => {
+    w.Write(width);
+    w.Write(height);
+  });
+
+  public static (int Width, int Height) Decode(byte[] payload) =>
+      Messages.Read(payload, r => (r.ReadInt32(), r.ReadInt32()));
+}
+
 /// Writing and reading payloads.
 public static class Messages {
   public const byte StandardOutput = 1;

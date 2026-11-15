@@ -4,8 +4,10 @@ using Lip.Core.Infrastructure;
 namespace Lip.Cli.Daemon;
 
 /// Carries out a command for a client: the arguments, with Invocation.Current the client's, and
-/// the consoles of its standard output and standard error. Returns the exit code.
-public delegate Task<int> CarryOutCommand(string[] arguments, Start start, Invocation invocation);
+/// the consoles of its standard output and standard error; or the interface, on terminal, the
+/// terminal of the client. Returns the exit code.
+public delegate Task<int> CarryOutCommand(
+    string[] arguments, Start start, Invocation invocation, ClientTerminal terminal);
 
 /// The daemon (protocol/lip-daemon.md): listens on the endpoint, and carries out the command of
 /// each client that connects, side by side, until it has had no connection for idleTimeout, or is
@@ -196,6 +198,7 @@ public sealed class DaemonHost(
     }
 
     ConnectionInput input = new(writer);
+    ClientTerminal terminal = new(writer, start.Output.Width, start.Output.Height);
     ConnectionOutputStream output = new(writer, Messages.StandardOutput);
     ConnectionOutputStream error = new(writer, Messages.StandardError);
     Invocation invocation = new(start.WorkingDirectory, environment) {
@@ -211,12 +214,13 @@ public sealed class DaemonHost(
     };
 
     try {
-      Task reading = Task.Run(() => Read(connection, writer, input, invocation, done.Task));
+      Task reading = Task.Run(
+          () => Read(connection, writer, input, terminal, invocation, done.Task));
       int code;
       try {
         code = await Task.Run(async () => {
           Invocation.Use(invocation);
-          return await run([.. start.Arguments], start, invocation);
+          return await run([.. start.Arguments], start, invocation, terminal);
         });
       }
       catch (Exception ex) {
@@ -230,6 +234,8 @@ public sealed class DaemonHost(
     }
     finally {
       done.TrySetResult();
+      // The interface reads no more keys.
+      terminal.End();
       lock (_gate) {
         _commands.Remove(done.Task);
         if (invocation.LipReplaced && !_closing) {
@@ -244,12 +250,14 @@ public sealed class DaemonHost(
     }
   }
 
-  /// Passes on the standard input and the signals of the client until it is gone or the command
-  /// is done; a client that goes first abandons the command.
+  /// Passes on the standard input, the keys, the size of the terminal and the signals of the
+  /// client until it is gone or the command is done; a client that goes first abandons the
+  /// command.
   private static async Task Read(
       Stream connection,
       FrameWriter writer,
       ConnectionInput input,
+      ClientTerminal terminal,
       Invocation invocation,
       Task done) {
     // What the signals make lip do is traced for the client.
@@ -267,6 +275,13 @@ public sealed class DaemonHost(
           case { Type: FrameType.Input } frame:
             input.Receive(frame.Payload);
             break;
+          case { Type: FrameType.Key } frame:
+            terminal.Key(KeyMessage.Decode(frame.Payload));
+            break;
+          case { Type: FrameType.Resize } frame:
+            (int width, int height) = ResizeMessage.Decode(frame.Payload);
+            terminal.Resize(width, height);
+            break;
           case { Type: FrameType.Signal } frame:
             PosixSignal signal = (PosixSignal)Messages.ReadInt32(frame.Payload);
             if (!invocation.Signal(signal)) {
@@ -274,6 +289,7 @@ public sealed class DaemonHost(
               writer.Send(FrameType.Terminate, Messages.Int32((int)signal));
               writer.Close();
               input.End();
+              terminal.End();
               invocation.Abandon();
               return;
             }
@@ -288,6 +304,7 @@ public sealed class DaemonHost(
         RunTrace.Write("daemon", "The client is gone: the command is abandoned");
         writer.Close();
         input.End();
+        terminal.End();
         invocation.Abandon();
       }
     }

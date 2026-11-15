@@ -16,7 +16,7 @@ lip daemon stop [-h | --help]
 ### Terms
 
 - **daemon**: A `lip` process started with the single argument `--daemon` ([lip(1), OPTIONS](lip.md#options)). It carries out the commands of other `lip` processes of the same user.
-- **client**: A `lip` process started with a command ([lip(1), "Terms"](lip.md#terms)) other than a command of the command group `daemon`.
+- **client**: A `lip` process started with a command ([lip(1), "Terms"](lip.md#terms)) other than a command of the command group `daemon`, or one that runs the interface ([lip-tui(1)](lip-tui.md)). What this page says of a command holds for the interface too.
 - **endpoint**: Where the daemon of a user is reached:
   - on Windows, the named pipe `\\.\pipe\lip-<SID>`, where `<SID>` is the security identifier of the user in its string form, such as `S-1-5-21-1004336348-1177238915-682003330-1001`;
   - elsewhere, the Unix domain socket `daemon.sock` in the **daemon directory**: `$XDG_RUNTIME_DIR/lip` when `XDG_RUNTIME_DIR` is set to an absolute path, otherwise the state directory ([lip-userspace(7)](lip-userspace.md)).
@@ -45,12 +45,13 @@ The daemon carries out the command as lip(1) and the page of the command define,
 - What `lip` reads from its standard input, the daemon reads from the standard input of the client, only when it needs the bytes, and in their order.
 - What `lip` writes to its standard output and to its standard error, the client writes there, in the order the daemon writes it. The output of the programs that the command runs ([lip-workspace(7), "Running programs"](lip-workspace.md#running-programs)) is written so too, the standard output of a program to standard output and its standard error to standard error.
 - Whether a standard stream of `lip` is a terminal, and the size of the terminal, are those of the client.
+- For the interface, the client reads the keys that the user presses on its terminal, and passes them on to the interface in their order; the interface also follows the size of the terminal of the client as it changes. What the interface writes to the terminal, the client writes to its standard output. How the client sets up its terminal for this is not defined here.
 - The signals and the console control signals that the client receives are received by `lip`: they interrupt it as lip(1), "Workspace operations" defines, and ask it to stop as lip-run(1), "Stopping" defines. When they would end `lip` at once, the client ends at once, as that signal ends a process, and the command is **abandoned**.
 - The client exits with the exit code of the command.
 
-When the client ends before the command does, `lip` is asked to stop ([lip-run(1), "Stopping"](lip-run.md#stopping)) while the server of `lip run` runs; otherwise the command is abandoned.
+When the client ends before the command does, `lip` is asked to stop ([lip-run(1), "Stopping"](lip-run.md#stopping)) while the server of `lip run`, or a server that the interface started ([lip-tui(1), "Server"](lip-tui.md#server)), runs; otherwise the command is abandoned.
 
-Commands that a daemon carries out for different clients are, to each other, carried out by different processes: for example, each finds the workspace lock that the other takes held by another process ([lip-workspace(7), "Workspace lock"](lip-workspace.md#workspace-lock)).
+Commands that a daemon carries out for different clients are, to each other, carried out by different processes: for example, each finds the workspace lock that the other takes held by another process ([lip-workspace(7), "Workspace lock"](lip-workspace.md#workspace-lock)). The interfaces that a daemon carries out are the exception for their servers, which they share ([lip-tui(1), "Server"](lip-tui.md#server)).
 
 An abandoned command writes nothing more to the client, and ends as soon as it can: a workspace operation that changes the workspace is cancelled and undone ([lip-workspace(7), "Atomicity"](lip-workspace.md#atomicity), rule 2); any other command changes nothing more.
 
@@ -95,4 +96,4 @@ The commands of the command group `daemon` are carried out by the process that t
 
 ## SEE ALSO
 
-[lip(1)](lip.md), [lip-run(1)](lip-run.md), [lip-self-update(1)](lip-self-update.md), [lip-userspace(7)](lip-userspace.md)
+[lip(1)](lip.md), [lip-run(1)](lip-run.md), [lip-self-update(1)](lip-self-update.md), [lip-tui(1)](lip-tui.md), [lip-userspace(7)](lip-userspace.md)

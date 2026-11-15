@@ -6,7 +6,24 @@ Run `lip` without arguments in a terminal to open the interactive interface: eve
 lip
 ```
 
-The workspace is the current directory, as for every command. When the standard input or the standard output of lip is not a terminal (in a script or a pipe), `lip` without arguments writes its help instead.
+The interface works on one workspace at a time, the current directory at first (see [Workspaces](#workspaces)). When the standard input or the standard output of lip is not a terminal (in a script or a pipe), `lip` without arguments writes its help instead.
+
+Like the commands, the interface runs in the [daemon](../guides/internal_mechanism.md#daemon) of lip; the `lip` you start shows it and passes on your keys. You can open it in several terminals at once.
+
+## Workspaces
+
+The top line shows the selected workspace. Every tab works on it: the packages, the server, the configuration files and the commands of the Develop tab are those of the selected workspace.
+
+lip remembers the workspaces you used in a list, `workspaces.json` in its state directory (`%LOCALAPPDATA%\lip\State` on Windows, `$XDG_STATE_HOME/lip` elsewhere). When the interface opens, the current directory is added to the list, if it is not there yet, and selected. Press `w` to open the list:
+
+| Key | Does |
+| --- | --- |
+| `↑`, `↓`, `Enter` | Select a workspace. |
+| `a` | Adds a directory, absolute or relative to the selected workspace, and selects it. The directory must exist. |
+| `d`, `Del` | Removes the selected workspace from the list. No file in it changes. The workspace that is selected cannot be removed. |
+| `Esc` | Closes the list. |
+
+The list is kept between runs of lip, and shared by the interfaces open at the same time. A workspace that no longer exists is marked as missing.
 
 ## Tabs
 
@@ -21,7 +38,7 @@ Switch tabs with `Tab` and `Shift+Tab`, or with the number of the tab. The botto
 | **5 Settings** | Shows and changes the user configuration and the configuration of the workspace; cleans the cache. | [`lip config`](./commands/config.md), [`lip cache clean`](./commands/cache_clean.md) |
 | **6 Develop** | Creates a `lip.toml`, migrates a `tooth.json`, packs a ZIP archive, views a package. | [`lip pkg init`](./commands/pkg_init.md), [`lip pkg migrate`](./commands/pkg_migrate.md), [`lip pkg pack`](./commands/pkg_pack.md), [`lip pkg view`](./commands/pkg_view.md) |
 
-Quit with `q` or `Ctrl+Q`.
+Quit with `q` or `Ctrl+Q`. `w` opens the list of workspaces.
 
 ## Installing, updating and uninstalling
 
@@ -97,8 +114,10 @@ The server and most mods create their configuration files when the server first 
 
 ## Running the server
 
-In the Server tab, `Enter` starts the server of the workspace as [`lip run`](./commands/run.md) does. What the server writes is shown in the window; `PgUp` and `PgDn` scroll back. While the server runs, what you type is a line for the server, sent with `Enter`; `↑` and `↓` recall earlier lines.
+In the Server tab, `Enter` starts the server of the selected workspace as [`lip run`](./commands/run.md) does. What the server writes is shown in the window; `PgUp` and `PgDn` scroll back. While the server runs, what you type is a line for the server, sent with `Enter`; `↑` and `↓` recall earlier lines.
 
-`Ctrl+C` asks the server to stop, by sending it the line `stop`. Quitting lip while the server runs does the same, and lip waits until the server has exited.
+`Ctrl+C` asks the server to stop, by sending it the line `stop`. Quitting lip while servers you started run does the same for each of them, and lip waits until they have exited. Closing the terminal does too.
+
+Each workspace has its own server, so servers of several workspaces can run at once: select another workspace to start or see its server. Interfaces open in several terminals at once share the servers: each shows the server of its selected workspace, and can send it lines or stop it.
 
 The other tabs stay usable while the server runs. As with `lip run`, the workspace is not locked meanwhile, and changes to packages take effect when the server is started again.

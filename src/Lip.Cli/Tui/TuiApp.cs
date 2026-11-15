@@ -22,10 +22,18 @@ public sealed partial class TuiApp {
   ];
 
   private readonly ITerminal _terminal;
-  private readonly LipClient _client;
+  private readonly Func<IUserInteraction, Func<Stream>, string, LipClient> _createClient;
+  private readonly Interaction _interaction;
+  private readonly Func<Stream> _hookOutput;
   private readonly ModCatalogClient _catalogClient;
   private readonly string _version;
-  private readonly string _workspace;
+  private readonly WorkspaceList _workspaces;
+  private readonly ServerSessions _servers;
+  private readonly StopListener _listenForStop;
+  // The client of the selected workspace.
+  private LipClient _client;
+  // The selected workspace (protocol/lip-tui.md, "Workspaces").
+  private string _workspace;
   private readonly Func<Exception, string[], bool, Failure> _describeFailure;
   private readonly BlockingCollection<Action> _events = new();
   private readonly List<Dialog> _dialogs = [];
@@ -36,25 +44,50 @@ public sealed partial class TuiApp {
   private bool _quit;
   private StyledLine? _status;
 
-  /// createClient makes the client of the interface from its user interaction and from what
-  /// opens the stream that a hook command writes its output to. describeFailure works out why
-  /// a command failed and writes the failure report: ErrorReporter.Describe when not given.
+  /// createClient makes the client of the interface for a workspace, an absolute path, from its
+  /// user interaction and from what opens the stream that a hook command writes its output to.
+  /// workingDirectory, the working directory of lip, is added to the workspace list, which is
+  /// kept in memory when not given, and selected. servers are the servers of the process:
+  /// ServerSessions.Shared when not given. describeFailure works out why a command failed and
+  /// writes the failure report: ErrorReporter.Describe when not given.
+  ///
+  /// The servers that the interface starts are asked to stop when lip is (protocol/lip-run.md,
+  /// "Stopping"): through the current invocation (Invocation) when the daemon carries out the
+  /// interface for a client, otherwise through the signals of this process.
   public TuiApp(
       ITerminal terminal,
-      Func<IUserInteraction, Func<Stream>, LipClient> createClient,
+      Func<IUserInteraction, Func<Stream>, string, LipClient> createClient,
       ModCatalogClient catalogClient,
       string version,
-      string workspace,
-      Func<Exception, string[], bool, Failure>? describeFailure = null) {
+      string workingDirectory,
+      Func<Exception, string[], bool, Failure>? describeFailure = null,
+      WorkspaceList? workspaces = null,
+      ServerSessions? servers = null) {
     _describeFailure = describeFailure ?? ErrorReporter.Describe;
     _terminal = terminal;
+    _createClient = createClient;
     _catalogClient = catalogClient;
     _version = version;
-    _workspace = workspace;
-    _client = createClient(
-        new Interaction(this),
-        () => new LineSinkStream((line, transient) =>
-            Post(() => AddHookLine(new StyledLine("│ " + line, Theme.Muted), transient))));
+    _workspaces = workspaces ?? new WorkspaceList(new System.IO.Abstractions.FileSystem(), null);
+    _servers = servers ?? ServerSessions.Shared;
+    Invocation invocation = Invocation.Current;
+    _listenForStop = invocation == Invocation.Process
+        ? ServerSession.ListenForSignals
+        : invocation.ListenForStop;
+    _interaction = new Interaction(this);
+    _hookOutput = () => new LineSinkStream((line, transient) =>
+        Post(() => AddHookLine(new StyledLine("│ " + line, Theme.Muted), transient)));
+
+    // The working directory of lip is added to the list and selected.
+    _workspace = _workspaces.Normalize(workingDirectory);
+    try {
+      _workspace = _workspaces.Add(_workspace);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      _status = new StyledLine($"Could not write the workspace list: {ex.Message}", Theme.Bad);
+    }
+
+    _client = createClient(_interaction, _hookOutput, _workspace);
   }
 
   /// What the screen shows, as plain text.
@@ -65,17 +98,31 @@ public sealed partial class TuiApp {
     Thread reader = new(ReadKeys) { IsBackground = true, Name = "lip keys" };
     reader.Start();
     using Timer timer = new(_ => Post(Tick), null, 250, 250);
-    LoadPackages();
-    Render();
-    while (!_quit) {
-      Action? next = _events.Take();
-      do {
-        next();
-      } while (!_quit && _events.TryTake(out next));
-
-      if (!_quit) {
-        Render();
+    // Only a change that this interface shows or waits for draws the screen again.
+    void Changed(WorkspaceServer server) {
+      if (_quitOnceStopped || ReferenceEquals(server.Owner, this)
+          || WorkspaceList.PathComparer.Equals(server.Workspace, _workspace)) {
+        Post(ServersChanged);
       }
+    }
+
+    _servers.Changed += Changed;
+    try {
+      LoadPackages();
+      Render();
+      while (!_quit) {
+        Action? next = _events.Take();
+        do {
+          next();
+        } while (!_quit && _events.TryTake(out next));
+
+        if (!_quit) {
+          Render();
+        }
+      }
+    }
+    finally {
+      _servers.Changed -= Changed;
     }
 
     return 0;
@@ -146,17 +193,20 @@ public sealed partial class TuiApp {
     for (int i = 0; i < _tabs.Length; i++) {
       Style style = i == _tab ? Theme.Accent with { Underline = true } : Theme.Muted;
       x = _screen.Write(x, 0, $"{i + 1} {_tabs[i]}", style);
-      if (i == ServerTab && _serverRunning) {
+      if (i == ServerTab && ServerRunning) {
         x = _screen.Write(x, 0, " ●", Theme.Good);
       }
 
       x += 2;
     }
 
-    int room = _screen.Width - x - 1;
+    // The selected workspace, which w changes.
+    int room = _screen.Width - x - 5;
     if (room > 8) {
       string path = TextWidth.Fit(_workspace, room);
-      _screen.Write(_screen.Width - 1 - TextWidth.Of(path), 0, path, Theme.Muted);
+      int at = _screen.Width - 1 - TextWidth.Of(path);
+      _screen.Write(at - 3, 0, "w", Theme.Strong);
+      _screen.Write(at, 0, path, Theme.Muted);
     }
 
     int y = _screen.Height - 1;
@@ -226,7 +276,7 @@ public sealed partial class TuiApp {
     }
 
     // Keys that a text being typed does not take.
-    bool typing = (_tab == BrowseTab && _searching) || (_tab == ServerTab && _serverRunning);
+    bool typing = (_tab == BrowseTab && _searching) || (_tab == ServerTab && ServerRunning);
     if (!typing && !control) {
       if (key.KeyChar >= '1' && key.KeyChar < '1' + _tabs.Length) {
         SwitchTab(key.KeyChar - '1');
@@ -237,9 +287,14 @@ public sealed partial class TuiApp {
         RequestQuit();
         return;
       }
+
+      if (key.KeyChar == 'w') {
+        OpenWorkspaces();
+        return;
+      }
     }
 
-    if (control && key.Key == ConsoleKey.C && !(_tab == ServerTab && _serverRunning)) {
+    if (control && key.Key == ConsoleKey.C && !(_tab == ServerTab && ServerRunning)) {
       RequestQuit();
       return;
     }
@@ -299,7 +354,7 @@ public sealed partial class TuiApp {
       return;
     }
 
-    if (!_serverRunning) {
+    if (_servers.RunningFor(this).Count == 0) {
       _quit = true;
       return;
     }

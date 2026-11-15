@@ -82,4 +82,18 @@ public class FramesTests {
     Assert.Equal(welcome, Welcome.Decode(welcome.Encode()));
     Assert.Throws<InvalidDataException>(() => Welcome.Decode([1]));
   }
+
+  [Fact]
+  public void KeyAndResize_RoundTrip() {
+    // Arrange
+    ConsoleKeyInfo key = new('Q', ConsoleKey.Q, shift: true, alt: false, control: true);
+    ConsoleKeyInfo arrow = new('\0', ConsoleKey.UpArrow, shift: false, alt: true, control: false);
+
+    // Act & Assert
+    Assert.Equal(key, KeyMessage.Decode(KeyMessage.Encode(key)));
+    Assert.Equal(arrow, KeyMessage.Decode(KeyMessage.Encode(arrow)));
+    Assert.Equal((132, 43), ResizeMessage.Decode(ResizeMessage.Encode(132, 43)));
+    Assert.Throws<InvalidDataException>(() => KeyMessage.Decode([1, 0]));
+    Assert.Throws<InvalidDataException>(() => ResizeMessage.Decode([1, 0, 0, 0]));
+  }
 }

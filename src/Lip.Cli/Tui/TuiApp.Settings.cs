@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.Text.Json;
 using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
+using Lip.Core.PublicApi;
 using Lip.Core.Services;
 
 namespace Lip.Cli.Tui;
@@ -48,11 +49,17 @@ public sealed partial class TuiApp {
   private sealed record ConfigRow(bool Workspace, string Key, string? Value);
 
   private void LoadConfig() {
+    // What is read for a workspace that is no longer selected is dropped.
+    LipClient client = _client;
     _ = Task.Run(async () => {
       try {
-        IDictionary<string, string?> user = await _client.ConfigList();
-        IDictionary<string, string?> workspace = await _client.ConfigList(workspace: true);
+        IDictionary<string, string?> user = await client.ConfigList();
+        IDictionary<string, string?> workspace = await client.ConfigList(workspace: true);
         Post(() => {
+          if (client != _client) {
+            return;
+          }
+
           _config = [
             .. user.OrderBy(v => v.Key, StringComparer.Ordinal)
                 .Select(v => new ConfigRow(false, v.Key, v.Value)),
@@ -64,7 +71,11 @@ public sealed partial class TuiApp {
         });
       }
       catch (Exception ex) {
-        Post(() => _configError = ex.Message);
+        Post(() => {
+          if (client == _client) {
+            _configError = ex.Message;
+          }
+        });
       }
     });
   }

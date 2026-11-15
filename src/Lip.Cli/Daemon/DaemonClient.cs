@@ -48,7 +48,11 @@ public sealed class DaemonClient(
       && writer.Send(FrameType.Signal, Messages.Int32((int)signal));
 
   /// Has the daemon carry out the command (protocol/lip-daemon.md, "Carrying out a command").
-  public async Task<ClientOutcome> Run(Start start, ClientStreams streams) {
+  /// For the interface, attach starts passing on the keys and the size of the terminal of the
+  /// client with the writer of the connection, once the command is sent, until what it returns is
+  /// disposed; a key read for a daemon that then refuses the command is lost.
+  public async Task<ClientOutcome> Run(
+      Start start, ClientStreams streams, Func<FrameWriter, IDisposable>? attach = null) {
     // A daemon that is exiting refuses the command, and the next attempt starts a new one.
     for (int attempt = 0; attempt < 3; attempt++) {
       Stream? connection;
@@ -65,7 +69,7 @@ public sealed class DaemonClient(
       }
 
       await using (connection) {
-        if (await Carry(connection, start, streams) is { } outcome) {
+        if (await Carry(connection, start, streams, attach) is { } outcome) {
           return outcome;
         }
       }
@@ -186,7 +190,10 @@ public sealed class DaemonClient(
 
   /// The outcome of the command, or null when the daemon refused it because it exits.
   private async Task<ClientOutcome?> Carry(
-      Stream connection, Start start, ClientStreams streams) {
+      Stream connection,
+      Start start,
+      ClientStreams streams,
+      Func<FrameWriter, IDisposable>? attach) {
     FrameWriter writer = new(connection);
     if (!writer.Send(FrameType.Start, start.Encode())) {
       return new ClientOutcome(null, null, "the daemon closed the connection");
@@ -194,6 +201,7 @@ public sealed class DaemonClient(
 
     Volatile.Write(ref _writer, writer);
     InputPump input = new(streams, writer);
+    using IDisposable? attached = attach?.Invoke(writer);
     try {
       while (true) {
         Frame? next;

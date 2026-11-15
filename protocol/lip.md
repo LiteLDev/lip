@@ -34,7 +34,7 @@ lip <command> [<argument>...]
 
 The commands of the command group `pkg` are for developing packages; `self-update` updates `lip` itself; the commands of the command group `daemon` manage the daemon; every other command is for running a server.
 
-Every command other than those of the command group `daemon` is carried out by the daemon of the user, as [lip-daemon(1)] defines; this page and the pages of the commands define what is observed from the process started with the command.
+Every command other than those of the command group `daemon`, and the interface ([lip-tui(1)]), are carried out by the daemon of the user, as [lip-daemon(1)] defines; this page and the pages of the commands define what is observed from the process started with the command.
 
 ### Terms
 

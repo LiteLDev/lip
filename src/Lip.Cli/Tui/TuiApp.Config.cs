@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Lip.Core.Config;
+using Lip.Core.PublicApi;
 
 namespace Lip.Cli.Tui;
 
@@ -59,9 +60,11 @@ public sealed partial class TuiApp {
   }
 
   private void LoadConfigFiles() {
+    // What is read for a workspace that is no longer selected is dropped.
+    LipClient client = _client;
     _ = Task.Run(async () => {
       try {
-        IReadOnlyList<ModConfig> mods = await _client.ListModConfigs();
+        IReadOnlyList<ModConfig> mods = await client.ListModConfigs();
         List<ConfigFileItem> files = [
           new("Game · server.properties", ServerProperties.FileName, ConfigFileKind.Properties),
           new("Game · allowlist.json", PlayerLists.AllowlistFileName, ConfigFileKind.Allowlist),
@@ -84,10 +87,18 @@ public sealed partial class TuiApp {
           }
         }
 
-        Post(() => ConfigFilesLoaded(files, null));
+        Post(() => {
+          if (client == _client) {
+            ConfigFilesLoaded(files, null);
+          }
+        });
       }
       catch (Exception ex) {
-        Post(() => ConfigFilesLoaded([], ex.Message));
+        Post(() => {
+          if (client == _client) {
+            ConfigFilesLoaded([], ex.Message);
+          }
+        });
       }
     });
   }
@@ -198,7 +209,7 @@ public sealed partial class TuiApp {
     Start($"Save {path}", _ => _client.WriteConfigFile(path, text), _ => {
       document.MarkSaved(text);
       _status = new StyledLine(
-          _serverRunning
+          ServerRunning
               ? $"Saved {path}. The server is running: it takes effect after a restart."
               : $"Saved {path}.",
           Theme.Good);
@@ -255,10 +266,10 @@ public sealed partial class TuiApp {
     int footer = area.Bottom - 1;
     _screen.WriteFit(
         area.X, footer, area.Width,
-        _serverRunning
+        ServerRunning
             ? "The server is running: saved changes take effect when it is started again."
             : "Saved changes take effect when the server is next started.",
-        _serverRunning ? Theme.Warning : Theme.Muted);
+        ServerRunning ? Theme.Warning : Theme.Muted);
 
     if (_configDocument is not { } document) {
       if (_configDocumentItem is not null) {

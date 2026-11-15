@@ -1,5 +1,6 @@
 using Lip.Core.Catalog;
 using Lip.Core.Mcmod;
+using Lip.Core.PublicApi;
 
 namespace Lip.Cli.Tui;
 
@@ -18,10 +19,16 @@ public sealed partial class TuiApp {
   private int _packageTop;
 
   private void LoadPackages() {
+    // What is read for a workspace that is no longer selected is dropped.
+    LipClient client = _client;
     _ = Task.Run(async () => {
       try {
-        IReadOnlyList<InstalledPackage> packages = await _client.ListPackages();
+        IReadOnlyList<InstalledPackage> packages = await client.ListPackages();
         Post(() => {
+          if (client != _client) {
+            return;
+          }
+
           _installed = [.. packages.OrderByDescending(p => p.Explicit)];
           _installedError = null;
           _installedLoaded = true;
@@ -30,6 +37,10 @@ public sealed partial class TuiApp {
       }
       catch (Exception ex) {
         Post(() => {
+          if (client != _client) {
+            return;
+          }
+
           _installed = [];
           _installedError = ex.Message;
           _installedLoaded = true;

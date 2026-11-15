@@ -1,26 +1,23 @@
 using System.Globalization;
-using Lip.Core.Infrastructure;
 
 namespace Lip.Cli.Tui;
 
 /// The Server tab: lip run (protocol/lip-tui.md, "Server"). The output of the server is shown
 /// as it is written; the lines the user enters go to its standard input.
 public sealed partial class TuiApp {
-  private readonly AnsiLog _serverLog = new();
   private readonly TextField _serverLine = new();
   private readonly List<string> _serverHistory = [];
-  private QueueInputStream? _serverInput;
-  private volatile Action? _serverStop;
-  private bool _serverRunning;
-  private bool _serverStopping;
   private bool _quitOnceStopped;
-  private long _serverStartedAt;
-  private int? _serverExitCode;
   private int _serverScroll;
   private int _serverHistoryAt;
 
+  /// The server of the selected workspace.
+  private WorkspaceServer Server => _servers.For(_workspace);
+
+  private bool ServerRunning => _servers.Find(_workspace)?.Running == true;
+
   private (string, string)[] ServerHints() =>
-      _serverRunning
+      ServerRunning
           ? [
             ("Enter", "send to the server"), ("↑/↓", "earlier lines"), ("Esc", "erase"),
             ("Ctrl+C", "stop the server"), ("PgUp/PgDn", "scroll"), ("Tab", "next tab"),
@@ -28,93 +25,54 @@ public sealed partial class TuiApp {
           : [("Enter", "start the server"), ("↑/↓", "scroll"), ("Tab", "next tab"), ("q", "quit")];
 
   private void StartServer() {
-    if (_serverRunning) {
-      return;
-    }
-
-    QueueInputStream input = new();
-    _serverInput = input;
-    _serverRunning = true;
-    _serverStopping = false;
-    _serverStartedAt = Environment.TickCount64;
-    _serverExitCode = null;
     _serverScroll = 0;
-    _serverLog.AddLine(new StyledLine("── starting the server ──", Theme.Muted));
-    PipedProgramStarter starter = new(bytes => Post(() => _serverLog.Append(bytes)));
-    StopListener listen = stop => {
-      IDisposable signals = ServerSession.ListenForSignals(stop);
-      _serverStop = stop;
-      // The user may have asked to stop before the server could be.
-      Post(() => {
-        if (_serverStopping) {
-          stop();
-        }
-      });
-      return signals;
-    };
-    _ = Task.Run(async () => {
-      try {
-        int exitCode = await _client.Run(input, listen, starter);
-        Post(() => ServerExited(input, exitCode, null));
-      }
-      catch (Exception ex) {
-        Post(() => ServerExited(input, null, ex));
-      }
-    });
+    Server.Start(
+        this, _client, _listenForStop,
+        failure => Post(() => {
+          if (!_quitOnceStopped) {
+            ShowFailure("Run the server", failure, cancelled: false, []);
+          }
+        }));
   }
 
-  private void ServerExited(QueueInputStream input, int? exitCode, Exception? failure) {
-    input.Complete();
-    _serverInput = null;
-    _serverStop = null;
-    _serverRunning = false;
-    _serverStopping = false;
-    _serverExitCode = exitCode;
-    _serverLog.AddLine(new StyledLine(
-        exitCode is int code
-            ? string.Create(
-                CultureInfo.InvariantCulture, $"── the server exited with code {code} ──")
-            : "── the server did not start ──",
-        Theme.Muted));
-    if (_quitOnceStopped) {
+  /// Something about a server changed: the screen is drawn again, and the interface quits once
+  /// the servers it asked to stop have exited.
+  private void ServersChanged() {
+    if (_quitOnceStopped && _servers.RunningFor(this).Count == 0) {
       _quit = true;
-    } else if (failure is not null) {
-      ShowFailure("Run the server", failure, cancelled: false, []);
     }
   }
 
-  /// Asks the server to stop: it reads the line "stop" (protocol/lip-run.md, "Stopping").
-  private void StopServer() {
-    if (!_serverRunning || _serverStopping) {
-      return;
-    }
+  /// Asks the server of the selected workspace to stop: it reads the line "stop"
+  /// (protocol/lip-run.md, "Stopping").
+  private void StopServer() => Server.Stop();
 
-    _serverStopping = true;
-    _serverLog.AddLine(new StyledLine("── asking the server to stop ──", Theme.Muted));
-    _serverStop?.Invoke();
-  }
-
-  /// Quits the interface: at once without a server, otherwise once the server it asks to stop
-  /// has exited.
+  /// Quits the interface: at once when it runs no server, otherwise once the servers that it
+  /// started, which it asks to stop, have exited (protocol/lip-tui.md, "Server").
   private void QuitOnceServerStopped() {
-    if (!_serverRunning) {
+    IReadOnlyList<WorkspaceServer> running = _servers.RunningFor(this);
+    if (running.Count == 0) {
       _quit = true;
       return;
     }
 
     _quitOnceStopped = true;
     _tab = ServerTab;
-    StopServer();
+    foreach (WorkspaceServer server in running) {
+      server.Stop();
+    }
   }
 
   private void DrawServer(Rect body) {
+    WorkspaceServer? server = _servers.Find(_workspace);
+    bool running = server?.Running == true;
     string state;
-    if (_serverRunning) {
-      TimeSpan up = TimeSpan.FromMilliseconds(Environment.TickCount64 - _serverStartedAt);
-      state = (_serverStopping ? "stopping" : "running")
+    if (running) {
+      TimeSpan up = TimeSpan.FromMilliseconds(Environment.TickCount64 - server!.StartedAt);
+      state = (server.Stopping ? "stopping" : "running")
           + string.Create(CultureInfo.InvariantCulture, $" · up {up:hh\\:mm\\:ss}");
     } else {
-      state = _serverExitCode is int code
+      state = server?.ExitCode is int code
           ? string.Create(CultureInfo.InvariantCulture, $"exited with code {code}")
           : "not running";
     }
@@ -129,9 +87,12 @@ public sealed partial class TuiApp {
     // The rows of the last lines, as many as the scrolling needs.
     List<StyledLine> shown = [];
     int wanted = rows + _serverScroll;
-    for (int i = _serverLog.Lines.Count - 1; i >= 0 && shown.Count < wanted; i--) {
-      StyledLine line = _serverLog.Lines[i];
-      if (i == _serverLog.Lines.Count - 1 && line.Spans.Count == 0) {
+    // A line takes one row at least: the lines that may be shown are copied, and wrapped once
+    // the server may write again.
+    List<StyledLine> lines = server?.LastLines(wanted + 1) ?? [];
+    for (int i = lines.Count - 1; i >= 0 && shown.Count < wanted; i--) {
+      StyledLine line = lines[i];
+      if (i == lines.Count - 1 && line.Spans.Count == 0) {
         continue;
       }
 
@@ -150,7 +111,7 @@ public sealed partial class TuiApp {
 
     int y = area.Bottom - 1;
     _screen.Write(area.X, y - 1, new string('─', area.Width), Theme.Border);
-    if (_serverRunning) {
+    if (running) {
       _screen.Write(area.X, y, "> ", Theme.Accent);
       _serverLine.Draw(_screen, area.X + 2, y, area.Width - 2, focused: true);
     } else {
@@ -180,7 +141,7 @@ public sealed partial class TuiApp {
         return;
     }
 
-    if (!_serverRunning) {
+    if (!ServerRunning) {
       switch (key.Key) {
         case ConsoleKey.Enter or ConsoleKey.Spacebar:
           StartServer();
@@ -219,8 +180,7 @@ public sealed partial class TuiApp {
         return;
       case ConsoleKey.Enter:
         string line = _serverLine.Value;
-        _serverInput?.Send(line + "\n");
-        _serverLog.AddLine(new StyledLine().Add("> ", Theme.Accent).Add(line, Theme.Strong));
+        Server.Send(line);
         if (line.Length > 0) {
           _serverHistory.Remove(line);
           _serverHistory.Add(line);

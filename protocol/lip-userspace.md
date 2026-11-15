@@ -13,7 +13,7 @@ lip-userspace - the per-user directories, the cache, the data directory, and the
 | **config directory** | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` | The user configuration ([config.toml(5)](config.toml.md)). |
 | **cache directory** | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` | The cache. |
 | **data directory** | `%LOCALAPPDATA%\lip\Data` | `$XDG_DATA_HOME/lip` | The system dependencies that `lip` installs ("Data directory"). |
-| **state directory** | `%LOCALAPPDATA%\lip\State` | `$XDG_STATE_HOME/lip` | The files of the daemon ([lip-daemon(1)](lip-daemon.md)) when it has no other daemon directory; their names and content are not defined here. |
+| **state directory** | `%LOCALAPPDATA%\lip\State` | `$XDG_STATE_HOME/lip` | The workspace list of the interface ([lip-tui(1), "Workspaces"](lip-tui.md#workspaces)), and the files of the daemon ([lip-daemon(1)](lip-daemon.md)) when it has no other daemon directory, whose names and content are not defined here. |
 
 On systems other than Windows, an `XDG_*` variable that is unset, empty or not an absolute path takes its [XDG] default.
 
@@ -46,10 +46,10 @@ Deleting the data directory while no `lip` process runs loses nothing: `lip` ins
 
 ### State directory
 
-Deleting the state directory while no `lip` process runs loses nothing.
+Deleting the state directory while no `lip` process runs loses nothing but the workspace list.
 
 ## SEE ALSO
 
-[lip-cache(1)](lip-cache.md), [lip-daemon(1)](lip-daemon.md), [lip-self-update(1)](lip-self-update.md), [config.toml(5)](config.toml.md), [lip-workspace(7)](lip-workspace.md)
+[lip-cache(1)](lip-cache.md), [lip-daemon(1)](lip-daemon.md), [lip-self-update(1)](lip-self-update.md), [lip-tui(1)](lip-tui.md), [config.toml(5)](config.toml.md), [lip-workspace(7)](lip-workspace.md)
 
 [XDG]: https://specifications.freedesktop.org/basedir-spec/latest/
