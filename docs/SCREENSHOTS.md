@@ -194,14 +194,14 @@ picture by its path below `public`, with a leading slash, whatever folder the pa
 |---|---|
 | `docs/**/*.md` (English) | `/screenshots/en/<name>.svg` |
 | `docs/zh/**/*.md` (Simplified Chinese) | `/screenshots/zh-Hans/<name>.svg` |
-| `docs/zh-Hant/**/*.md` (Traditional Chinese, when a page has its own file) | `/screenshots/zh-Hant/<name>.svg` |
+| `docs/zh-Hant/**/*.md` (Traditional Chinese, written by `scripts/zh-hant.mjs`) | `/screenshots/zh-Hant/<name>.svg` |
 
 - Always write the alternative text: one sentence in the language of the page that says what
   the picture shows and what matters in it, for whoever cannot see it.
-- The Traditional Chinese site is converted from the Simplified pages, and the conversion
-  leaves the paths of pictures as they are: a converted page shows the `zh-Hans` picture, with
-  the interface in Simplified Chinese. A page that needs the Traditional interface in its
-  pictures needs its own file in `docs/zh-Hant/`.
+- Nobody writes the Traditional Chinese pages: `scripts/zh-hant.mjs` makes them from the
+  Simplified pages before every build, and writes `/screenshots/zh-Hant/` for
+  `/screenshots/zh-Hans/` in them, so a Traditional page shows the interface in Traditional
+  Chinese. See [CONTRIBUTING.md](CONTRIBUTING.md), "The three languages".
 - The picture is a dark terminal window with its own background, on the light and on the dark
   theme of the site alike.
 - `pnpm build` and `pnpm linkcheck` in `docs/` fail on a path that names no file.
