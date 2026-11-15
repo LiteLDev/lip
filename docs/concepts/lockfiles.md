@@ -42,7 +42,7 @@ The state file is a JSON file described by the JSON Schema [`state.schema.json`]
 *   **`platform`**: The platform of the workspace, a [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog).
 *   **`packages`**: The installed packages, in installation order: a package comes after the packages that satisfy its dependencies.
 
-`side` and `platform` are always present and never `null`; a state file without them is invalid. A workspace without a state file gets its environment from its first `install`, `uninstall` or `update` (see [`lip install`](../cli/commands/install.md)).
+`side` and `platform` are always present and never `null`; a state file without them is invalid. A workspace without a state file gets its environment from its first `setup`, `install`, `uninstall` or `update` (see [`lip install`](../cli/commands/install.md)).
 
 ### Package Entry
 
@@ -53,7 +53,7 @@ Each package is recorded with exactly these members:
 *   **`explicit`**:
     *   `true`: The package was explicitly installed by the user (e.g., `lip install <package>`).
     *   `false`: The package was installed as a dependency of another package.
-*   **`ref`**: What the package was installed from: the argument given to `lip install` or `lip update` (e.g. `github.com/user/repo`, `github.com/user/repo#lua@branch:main` or an `https://` URL; a local path is recorded as the `file:` URI of its absolute path), or, for a dependency, the key of the dependency. [`lip update`](../cli/commands/update.md) requests it again.
+*   **`ref`**: What the package was installed from: the argument given to `lip install` or `lip update` (e.g. `github.com/user/repo`, `github.com/user/repo#lua@branch:main` or an `https://` URL; a local path is recorded as the `file:` URI of its absolute path), the source that [`lip setup`](../cli/commands/setup.md) installed the game or the loader from (e.g. `github.com/LiteLDev/bds@1.21.0`), or, for a dependency, the key of the dependency. [`lip update`](../cli/commands/update.md) requests it again.
 *   **`commit`**: Only for a package from a git repository: the commit its archive was at, in lowercase hexadecimal. A package from a URL or a local path has no `commit`.
 *   **`files`**: The files the package owns, relative to the workspace root and `/`-separated.
 
@@ -108,13 +108,13 @@ The state file of lip v0.39.x, also of format 4, named the side `platform` and t
 
 ## Workspaces of linux-x64
 
-Earlier versions of lip installed packages for other platforms than `win-x64` with `--platform`. lip reads a state file that records the platform `linux-x64` as one of `win-x64`, in which `github.com/LiteLDev/bds` is its variant `github.com/LiteLDev/bds#linux`, the Linux server, which the next `install`, `uninstall` or `update` records so. A state file of `linux-x64` that records any other package fails every command that reads it, with a message naming that package: install the packages again in a new workspace. A state file that records another platform fails `install`, `uninstall`, `update` and `run`.
+Earlier versions of lip installed packages for other platforms than `win-x64` with `--platform`. lip reads a state file that records the platform `linux-x64` as one of `win-x64`, in which `github.com/LiteLDev/bds` is its variant `github.com/LiteLDev/bds#linux`, the Linux server, which the next `setup`, `install`, `uninstall` or `update` records so. A state file of `linux-x64` that records any other package fails every command that reads it, with a message naming that package: install the packages again in a new workspace. A state file that records another platform fails `setup`, `install`, `uninstall`, `update` and `run`.
 
 ## Workspaces of lip v0.x
 
 A workspace of lip v0.37.0 and earlier has a `tooth_lock.json` of format version 3 in its root instead of a state file. lip migrates it automatically:
 
 *   `lip list` reads it as the state file it stands for, without changing it.
-*   The next `lip install`, `lip uninstall` or `lip update` writes that state file as `.lip/state.json` and deletes `tooth_lock.json`.
+*   The next `lip setup`, `lip install`, `lip uninstall` or `lip update` writes that state file as `.lip/state.json` and deletes `tooth_lock.json`.
 
 Each package keeps its variant, whether it was explicitly installed, and the files below the workspace that it owns; its `ref` is its package id (with `#<variant>`), and its `commit` is looked up from the version tag `v<version>` of its repository. When that commit cannot be looked up, the command fails. Packages whose `tooth.json` lip cannot read for the environment of the workspace are dropped.

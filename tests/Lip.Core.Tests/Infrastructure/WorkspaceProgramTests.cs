@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod;
 
 namespace Lip.Core.Tests.Infrastructure;
 
@@ -7,6 +8,7 @@ namespace Lip.Core.Tests.Infrastructure;
 /// combination of the system lip runs on and the platform of the environment.
 public class WorkspaceProgramTests {
   private const string Root = "/srv/ws";
+  private const string ModServer = "bedrock_server_mod.exe";
   private const string Hook =
       "IF EXIST bedrock_server.exe (DEL bedrock_server.exe.bak) ELSE (REN bedrock_server.exe.bak bedrock_server.exe)";
 
@@ -118,7 +120,7 @@ public class WorkspaceProgramTests {
 
     // Act & Assert
     InvalidOperationException ex =
-        Assert.Throws<InvalidOperationException>(() => WorkspaceProgram.Server(host));
+        Assert.Throws<InvalidOperationException>(() => WorkspaceProgram.Server(host, ModServer));
     Assert.Contains("no Wine", ex.Message);
   }
 
@@ -159,7 +161,7 @@ public class WorkspaceProgramTests {
   [Fact]
   public void Server_WindowsPlatformOnWindows_RunsTheServerItself() {
     // Act
-    ProgramStartInfo start = WorkspaceProgram.Server(Host(true, "win-x64"));
+    ProgramStartInfo start = WorkspaceProgram.Server(Host(true, "win-x64"), ModServer);
 
     // Assert
     Assert.Equal(Path.Join(Root, "bedrock_server_mod.exe"), start.FileName);
@@ -171,7 +173,7 @@ public class WorkspaceProgramTests {
   [Fact]
   public void Server_WindowsPlatformElsewhere_RunsTheServerThroughWine() {
     // Act
-    ProgramStartInfo start = WorkspaceProgram.Server(Host(false, "win-x64"));
+    ProgramStartInfo start = WorkspaceProgram.Server(Host(false, "win-x64"), ModServer);
 
     // Assert
     Assert.Equal(_managedWine, start.FileName);
@@ -188,7 +190,7 @@ public class WorkspaceProgramTests {
   [InlineData(false)]
   public void Server_OtherPlatform_RunsTheServerItself(bool isWindows) {
     // Act
-    ProgramStartInfo start = WorkspaceProgram.Server(Host(isWindows, "linux-x64"));
+    ProgramStartInfo start = WorkspaceProgram.Server(Host(isWindows, "linux-x64"), ModServer);
 
     // Assert
     Assert.Equal(Path.Join(Root, "bedrock_server_mod.exe"), start.FileName);
@@ -202,7 +204,7 @@ public class WorkspaceProgramTests {
     ProgramStartInfo start = WorkspaceProgram.Server(Host(false, "win-x64", new() {
       ["WINEPREFIX"] = "/home/u/.wine",
       ["WINEDEBUG"] = "",
-    }));
+    }), ModServer);
 
     // Assert: an empty WINEDEBUG is set, so it is kept.
     Assert.Empty(start.EnvironmentOverrides);
@@ -214,11 +216,46 @@ public class WorkspaceProgramTests {
     ProgramStartInfo start = WorkspaceProgram.Server(Host(false, "win-x64", new() {
       ["WINEPREFIX"] = "",
       ["WINEDEBUG"] = "warn+all",
-    }));
+    }), ModServer);
 
     // Assert
     Assert.Equal(
         new Dictionary<string, string> { ["WINEPREFIX"] = WinePrefix },
         start.EnvironmentOverrides);
+  }
+
+  [Theory]
+  [InlineData(true, GameBuild.Windows, "bedrock_server_mod.exe")]
+  [InlineData(false, GameBuild.Windows, "bedrock_server.exe")]
+  [InlineData(false, GameBuild.Linux, "bedrock_server")]
+  public void ServerFile_IsChosenByTheLoaderAndTheBuild(
+      bool loader, GameBuild build, string expected) {
+    // protocol/lip-run.md, DESCRIPTION.
+    Assert.Equal(expected, WorkspaceProgram.ServerFile(loader, build));
+  }
+
+  [Theory]
+  [InlineData(true)]
+  [InlineData(false)]
+  public void LinuxServer_RunsItItselfWithLdLibraryPath(bool isWindows) {
+    // Act: whatever Wine the host has (protocol/lip-run.md).
+    ProgramStartInfo start = WorkspaceProgram.LinuxServer(Host(isWindows, "win-x64"));
+
+    // Assert
+    Assert.Equal(Path.Join(Root, "bedrock_server"), start.FileName);
+    Assert.Empty(start.Arguments);
+    Assert.Equal(Root, start.WorkingDirectory);
+    Assert.Equal(
+        new Dictionary<string, string> { ["LD_LIBRARY_PATH"] = "." }, start.EnvironmentOverrides);
+  }
+
+  [Fact]
+  public void LinuxServer_LdLibraryPathSet_KeepsIt() {
+    // Act
+    ProgramStartInfo start = WorkspaceProgram.LinuxServer(
+        Host(false, "win-x64", new() { ["LD_LIBRARY_PATH"] = "/opt/lib" }));
+
+    // Assert
+    Assert.Empty(start.EnvironmentOverrides);
   }
 }

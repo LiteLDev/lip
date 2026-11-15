@@ -196,13 +196,29 @@ public sealed class LipClient {
     }
   }
 
+  /// lip install (protocol/lip-install.md). acceptEula: --accept-eula, for an install carried out
+  /// as a setup; confirmed: the user confirmed the plan that its dry run showed (the interface).
   public async Task Install(
       IEnumerable<string> packages,
       bool dryRun,
-      CancellationToken cancellationToken = default) {
+      CancellationToken cancellationToken = default,
+      bool acceptEula = false,
+      bool confirmed = false) {
     await (await GetMcmodService(dryRun)).Install(
         [.. packages],
-        new OperationOptions(dryRun, cancellationToken));
+        new OperationOptions(dryRun, cancellationToken, acceptEula, confirmed));
+  }
+
+  /// lip setup (protocol/lip-setup.md). acceptEula: --accept-eula; confirmed: the user confirmed
+  /// the plan that its dry run showed (the interface).
+  public async Task Setup(
+      SetupRequest request,
+      bool dryRun,
+      CancellationToken cancellationToken = default,
+      bool acceptEula = false,
+      bool confirmed = false) {
+    await (await GetMcmodService(dryRun)).Setup(
+        request, new OperationOptions(dryRun, cancellationToken, acceptEula, confirmed));
   }
 
   /// Installed packages as "identity@version": explicitly installed ones and dependency packages,

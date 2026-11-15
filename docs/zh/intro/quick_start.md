@@ -6,13 +6,31 @@
 
 开始前请确保你已[安装 lip](installation.md)。lip 不需要安装 `git`。
 
-## 安装包
+## 设置服务器
 
-在服务端的根目录（即工作区）中运行 lip。使用 `install` 命令并跟上包 ID 即可安装包，也可用 `@` 指定版本，例如 `github.com/LiteLDev/LeviLamina@1.0.0`。
+在服务端的根目录（即工作区，例如一个新的空目录）中运行 lip。首先设置服务器：某个游戏版本的 Bedrock Dedicated Server，以 LeviLamina 为加载器：
 
 ```shell
-lip install github.com/LiteLDev/LeviLamina
+lip setup --game 1.21.0
 ```
+
+这会安装支持游戏 1.21.0 的最新 LeviLamina。如果想改用 LeviLamina 支持的最新游戏，请安装 LeviLamina：
+
+```shell
+lip install LeviLamina
+```
+
+在下载游戏之前，lip 会给出 Minecraft 最终用户许可协议和 Microsoft 隐私声明的链接，并询问你是否接受：输入 `yes`。在脚本中 lip 无法询问，请加上 `--accept-eula`。参见 [`lip setup`](../cli/commands/setup.md)。
+
+## 安装包
+
+使用 `install` 命令并跟上包 ID 即可安装包（例如 mod），也可用 `@` 指定版本，例如 `github.com/LiteLDev/LegacyScriptEngine#lua@1.0.0`。
+
+```shell
+lip install github.com/LiteLDev/LegacyScriptEngine#lua
+```
+
+mod 需要服务器：在还没有游戏的工作区中，`lip install` 安装 mod 会失败，并请你先运行 `lip setup`。
 
 `lip` 支持从多种来源安装（包括 Git 仓库、URL，以及磁盘上的 ZIP 文件和目录）。安装时会：
 - 下载到本地缓存；
@@ -21,11 +39,11 @@ lip install github.com/LiteLDev/LeviLamina
 
 lip 只管理服务端工作区。客户端 mod 由 LeviLauncher 等启动器管理。
 
-在任何系统上，lip 都安装平台 `win-x64` 的包。在 Linux 和 macOS 上，它通过 Wine 运行这些包的钩子命令和服务器。Linux 版服务器是 `github.com/LiteLDev/bds#linux`，需要你自行启动，因为 `lip run` 无法启动它。参见[运行服务器](../guides/running_server.md#linux-版服务器)。
+在任何系统上，lip 都安装平台 `win-x64` 的包。在 Linux 和 macOS 上，它通过 Wine 运行这些包的钩子命令和服务器。不带 LeviLamina 的 Linux 版服务器用 `lip setup --game <version> --build linux` 设置，`lip run` 在 x64 的 Linux 上启动它。参见[运行服务器](../guides/running_server.md#linux-版服务器)。
 
 ## 运行服务器
 
-安装 LeviLamina 之后，在工作区中启动服务器：
+设置好服务器之后，在工作区中启动它：
 
 ```shell
 lip run
@@ -56,17 +74,17 @@ lip pkg view github.com/LiteLDev/LeviLamina
 使用 `update` 命令将包更新到新版本。
 
 ```shell
-lip update github.com/LiteLDev/LeviLamina
+lip update github.com/LiteLDev/LegacyScriptEngine#lua
 ```
 
-如需切换到某个特定版本（包括更旧的版本），请用 `@` 指定，例如 `lip update github.com/LiteLDev/LeviLamina@1.0.0`。这会把该包固定在该版本，直到你用不带 `@` 的路径更新它。不带参数运行 `lip update` 会更新所有你显式安装的包。
+如需切换到某个特定版本（包括更旧的版本），请用 `@` 指定，例如 `lip update github.com/LiteLDev/LegacyScriptEngine#lua@1.0.0`。这会把该包固定在该版本，直到你用不带 `@` 的路径更新它。不带参数运行 `lip update` 会更新所有你显式安装的包，游戏和 LeviLamina 除外：如需改变它们的版本，请再次运行 `lip setup`，例如 `lip setup --game 1.21.50`。
 
 ## 卸载包
 
 从项目中移除包及其安装的文件：
 
 ```shell
-lip uninstall github.com/LiteLDev/LeviLamina
+lip uninstall github.com/LiteLDev/LegacyScriptEngine#lua
 ```
 
 ## 配置

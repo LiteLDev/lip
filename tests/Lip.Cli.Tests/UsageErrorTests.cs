@@ -107,6 +107,25 @@ public sealed class UsageErrorTests : IDisposable {
     Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
   }
 
+  /// The values of the options of lip setup (protocol/lip-setup.md, OPTIONS).
+  [Theory]
+  [InlineData("--game", "setup")]
+  [InlineData("--game", "setup", "-n")]
+  [InlineData("not a version", "setup", "--game", "v1.21.0")]
+  [InlineData("not a build", "setup", "--game", "1.21.0", "--build", "bsd")]
+  [InlineData("not a loader", "setup", "--game", "1.21.0", "--loader", "fabric")]
+  [InlineData("not a loader", "setup", "--game", "1.21.0", "--loader", "levilamina@latest")]
+  [InlineData("cannot be given together", "setup", "--game", "1.21.0", "--loader", "levilamina",
+      "--no-loader")]
+  public async Task SetupOptionValue_IsUsageError(string expected, params string[] args) {
+    (int exitCode, string stdout, string stderr) = await Run(args);
+
+    Assert.NotEqual(0, exitCode);
+    Assert.Equal("", stdout);
+    Assert.Contains(expected, stderr);
+    Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
+  }
+
   [Theory]
   [InlineData("config")]
   [InlineData("cache")]
@@ -127,6 +146,7 @@ public sealed class UsageErrorTests : IDisposable {
   [InlineData("--version")]
   [InlineData("-v")]
   [InlineData("install", "--help")]
+  [InlineData("setup", "--help")]
   [InlineData("config", "--help")]
   [InlineData("pkg", "--help")]
   [InlineData("pkg", "-h")]
@@ -213,22 +233,31 @@ public sealed class UsageErrorTests : IDisposable {
     // Assert
     Assert.NotEqual(0, exitCode);
     Assert.Equal("", stdout);
-    Assert.Contains("bedrock_server_mod.exe", stderr);
+    Assert.Contains("lip setup", stderr);
   }
 
   /// protocol/lip-run.md, "Standard streams" and EXIT STATUS: the server reads the standard input
   /// of lip, and lip exits with the exit code of the server, without a failure report.
   [Fact]
   public async Task Run_Server_ReadsInputAndGivesItsExitCode() {
-    // Arrange: a server that exits with the code it reads.
-    string server = Path.Join(_workspace, "bedrock_server_mod.exe");
-    if (OperatingSystem.IsWindows()) {
+    Assert.SkipUnless(
+        OperatingSystem.IsWindows() || OperatingSystem.IsLinux()
+            && System.Runtime.InteropServices.RuntimeInformation.OSArchitecture
+                == System.Runtime.InteropServices.Architecture.X64,
+        "lip runs a server of the test without Wine on Windows and on Linux on x64 only.");
+    // Arrange: a server that exits with the code it reads; on Windows, LeviLamina's server of
+    // the Windows game, elsewhere the Linux game (protocol/lip-run.md).
+    bool windows = OperatingSystem.IsWindows();
+    string server = Path.Join(_workspace, windows ? "bedrock_server_mod.exe" : "bedrock_server");
+    Directory.CreateDirectory(Path.Join(_workspace, ".lip"));
+    File.WriteAllText(Path.Join(_workspace, ".lip", "state.json"), $$"""
+        { "format": 4, "side": "server", "platform": "win-x64", "packages": [
+          {{Installed("github.com/LiteLDev/bds", windows ? "" : "linux")}}
+          {{(windows ? ", " + Installed("github.com/LiteLDev/LeviLamina", "") : "")}} ] }
+        """);
+    if (windows) {
       File.Copy(Path.Join(Environment.SystemDirectory, "cmd.exe"), server);
     } else {
-      Directory.CreateDirectory(Path.Join(_workspace, ".lip"));
-      File.WriteAllText(
-          Path.Join(_workspace, ".lip", "state.json"),
-          """{ "format": 4, "side": "server", "platform": "linux-x64", "packages": [] }""");
       File.WriteAllText(server, "#!/bin/sh\nread l\nexit ${l#exit }\n");
       File.SetUnixFileMode(
           server, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
@@ -242,6 +271,13 @@ public sealed class UsageErrorTests : IDisposable {
     Assert.DoesNotContain("error", stderr);
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip", "logs")));
   }
+
+  /// An entry of the state file for a package of an id and variant, without files.
+  private static string Installed(string id, string variant) => $$"""
+      { "manifest": { "format": 4, "id": "{{id}}", "version": "1.0.0",
+          "variants": { "{{variant}}": [ { "side": "server", "platform": "win-x64" } ] } },
+        "variant": "{{variant}}", "explicit": true, "ref": "{{id}}", "files": [] }
+      """;
 
   private Task<(int ExitCode, string Stdout, string Stderr)> Run(params string[] args) =>
       Run(args, "");

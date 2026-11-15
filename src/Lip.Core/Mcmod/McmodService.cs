@@ -11,10 +11,16 @@ using Semver;
 namespace Lip.Core.Mcmod;
 
 /// Options shared by the workspace operations. Cancelling the token stops an operation; one that
-/// has started changing the workspace undoes its changes first.
+/// has started changing the workspace undoes its changes first. AcceptEula: the user accepts the
+/// license of the game (protocol/lip-setup.md, "The license"), so a setup does not ask for it.
+/// Confirmed: the user confirmed the plan of the operation, as its dry run showed it (the
+/// interface, protocol/lip-tui.md), so a setup does not ask whether to uninstall the packages it
+/// leaves out.
 public record OperationOptions(
     bool DryRun = false,
-    CancellationToken CancellationToken = default);
+    CancellationToken CancellationToken = default,
+    bool AcceptEula = false,
+    bool Confirmed = false);
 
 /// One package of the state file, as listed to the user.
 public record InstalledPackage(string Identity, string Version, bool Explicit);
@@ -51,7 +57,9 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// Before an operation that runs hook commands starts to change the workspace, and before lip run
 /// starts the server, systemPreparer prepares the system for the platform
 /// (protocol/lip-workspace.md, "System dependencies"); without it, nothing is prepared.
-public class McmodService(
+/// downloadServerBuilds downloads the builds list of the server (protocol/lip-package.md, "The
+/// server"); without it, from its URL.
+public partial class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
     LockStore lockStore,
@@ -59,7 +67,8 @@ public class McmodService(
     IArchiveReader archiveReader,
     McmodInstaller installer,
     Func<string>? workspaceRoot = null,
-    ISystemPreparer? systemPreparer = null) {
+    ISystemPreparer? systemPreparer = null,
+    Func<Task<string>>? downloadServerBuilds = null) {
   private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
 
   /// The state file as the user sees it from the workspace root.
@@ -75,17 +84,71 @@ public class McmodService(
       workspaceRoot ?? fileSystem.Directory.GetCurrentDirectory;
   private readonly WorkspaceLayout _layout = new(fileSystem, userInteraction);
   private readonly ISystemPreparer? _systemPreparer = systemPreparer;
+  private readonly Func<Task<string>>? _downloadServerBuilds = downloadServerBuilds;
 
   public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
     using WorkspaceMutex? mutex = await BeginOperation(options);
     Workspace workspace = await OpenWorkspace(options);
     List<(string Argument, PackageRequest Request)> requests = ParseRequests(packages);
 
+    // Arguments that name the server or the loader make the install a setup
+    // (protocol/lip-install.md, "Setting up").
+    if (requests.Any(r => GameSetup.NamesServer(r.Request.Ref)
+        || GameSetup.NamesLoader(r.Request.Ref))) {
+      SetupRequest setup = await SetupFromArguments(workspace, requests);
+      await SetUp(workspace, setup, [
+        .. requests.Where(r => !GameSetup.NamesServer(r.Request.Ref)
+            && !GameSetup.NamesLoader(r.Request.Ref)),
+      ], options);
+      return;
+    }
+
+    (List<Candidate> candidates, Dictionary<string, Candidate> requested, List<string> unpinned) =
+        await InstallRequests(workspace, requests);
+    if (GameSetup.Game(workspace.Lock) is null) {
+      for (int i = 0; i < candidates.Count; i++) {
+        RequireGame([requests[i].Argument], candidates[i]);
+      }
+    }
+
+    Plan plan;
+    try {
+      plan = await MakePlan(
+          workspace,
+          [.. requests.Select(r => r.Request)],
+          unpinned: unpinned,
+          explicitIdentities: ExplicitIdentities(workspace.Lock),
+          pinnedAs: requested,
+          keep: GameAndLoader(workspace));
+    }
+    catch (DependencyResolutionException ex) {
+      throw WithGameHint(workspace, ex, "lip install");
+    }
+
+    CheckGameAndLoader(workspace, packages, plan);
+    await Execute(workspace, options, await Changes(workspace, options, plan));
+  }
+
+  /// The candidates of the package arguments of lip install, failing when one is already
+  /// explicitly installed; by folded identity, the installed dependency package each one that
+  /// satisfies its request is pinned as; and the identities of those that do not, which are
+  /// chosen again (protocol/lip-install.md).
+  private async Task<(List<Candidate>, Dictionary<string, Candidate>, List<string>)>
+      InstallRequests(
+          Workspace workspace, List<(string Argument, PackageRequest Request)> requests) {
     List<Candidate> candidates = await RequestedCandidates(workspace, requests);
     for (int i = 0; i < candidates.Count; i++) {
       string identity = candidates[i].Package.Identity;
       if (workspace.Lock.Packages.FirstOrDefault(
           p => p.Explicit && SameIdentity(p.Identity, identity)) is { } installed) {
+        if (BedrockServer.IsRepository(installed.Id)
+            || GameSetup.IsLoaderRepository(installed.Id)) {
+          throw new InvalidOperationException(
+              $"Cannot install '{requests[i].Argument}': '{identity}' is already installed"
+              + $" (version {installed.Version}) as the game or the loader of the server. To"
+              + " change it, run 'lip setup --game <version>' (see 'lip setup --help').");
+        }
+
         throw new InvalidOperationException(
             $"Cannot install '{requests[i].Argument}': package '{identity}' is already explicitly"
             + $" installed (version {installed.Version}). To change its version, run"
@@ -114,12 +177,7 @@ public class McmodService(
       }
     }
 
-    await Execute(workspace, options, await Changes(workspace, options, await MakePlan(
-        workspace,
-        [.. requests.Select(r => r.Request)],
-        unpinned: unpinned,
-        explicitIdentities: ExplicitIdentities(workspace.Lock),
-        pinnedAs: requested)));
+    return (candidates, requested, unpinned);
   }
 
   public async Task Uninstall(IReadOnlyList<string> packages, OperationOptions options) {
@@ -178,6 +236,12 @@ public class McmodService(
       // a URL downloaded again and a local path with its current content.
       requests = [];
       foreach (LockedPackage package in workspace.Lock.Packages.Where(p => p.Explicit)) {
+        // The game and the loader stay as they are (protocol/lip-update.md).
+        if (GameAndLoader(workspace).Any(i => SameIdentity(i, package.Identity))) {
+          RunTrace.Write("workspace", $"Keeping {package.Identity}, the game or the loader");
+          continue;
+        }
+
         Ref source = ParseRecordedSource(package);
         if (source.Kind == RefKind.File && !_fs.File.Exists(source.LocalPath)
             && !_fs.Directory.Exists(source.LocalPath)) {
@@ -192,6 +256,15 @@ public class McmodService(
       }
     } else {
       requests = ParseRequests(packages);
+      foreach ((string argument, PackageRequest request) in requests) {
+        if (request.Ref.Kind == RefKind.Spec && (BedrockServer.IsRepository(request.Ref.Target)
+            || GameSetup.IsLoaderRepository(request.Ref.Target))) {
+          throw new InvalidOperationException(
+              $"lip update does not change the game or the loader of the server, and '{argument}'"
+              + " names one of them. To change them, run 'lip setup --game <version>' (see 'lip"
+              + " setup --help').");
+        }
+      }
     }
 
     // A URL is downloaded again (protocol/lip-workspace.md, "Operations" "Updating").
@@ -230,18 +303,27 @@ public class McmodService(
       requested.Add(requests[i].Request);
     }
 
-    Plan plan = await MakePlan(
-        workspace,
-        requested,
-        unpinned: [.. identities, .. replaced],
-        explicitIdentities: [
-          .. ExplicitIdentities(workspace.Lock)
-              .Where(e => !replaced.Any(r => SameIdentity(r, e))),
-        ],
-        // A requested package gets its earliest candidate that Section 3 allows, so the
-        // installed dependency packages keep their versions only where they fit it
-        // (protocol/lip-workspace.md, "Operations" "Updating", protocol/lip-update.md).
-        preferDependencyPackages: true);
+    Plan plan;
+    try {
+      plan = await MakePlan(
+          workspace,
+          requested,
+          unpinned: [.. identities, .. replaced],
+          explicitIdentities: [
+            .. ExplicitIdentities(workspace.Lock)
+                .Where(e => !replaced.Any(r => SameIdentity(r, e))),
+          ],
+          // A requested package gets its earliest candidate that Section 3 allows, so the
+          // installed dependency packages keep their versions only where they fit it
+          // (protocol/lip-workspace.md, "Operations" "Updating", protocol/lip-update.md).
+          preferDependencyPackages: true,
+          keep: GameAndLoader(workspace));
+    }
+    catch (DependencyResolutionException ex) {
+      throw WithGameHint(workspace, ex, "lip update");
+    }
+
+    CheckGameAndLoader(workspace, packages, plan);
 
     // The source a requested package is recorded with: an installed package that its recorded
     // source gives again is not replaced, so it keeps that source even when another request
@@ -288,7 +370,7 @@ public class McmodService(
   }
 
   /// lip run (protocol/lip-run.md): takes the workspace lock, recovers an interrupted operation,
-  /// releases the lock, then runs the server, bedrock_server_mod.exe at the workspace root, for the
+  /// releases the lock, then runs the server that the game and the loader choose, for the
   /// environment of protocol/lip.md, "Environment", and returns its exit code.
   /// The server reads the bytes read from input, and the line "stop" when lip is first asked to
   /// stop (listen); inputIsConsole when input is an interactive Windows console. Throws when a
@@ -303,30 +385,46 @@ public class McmodService(
     }
 
     LipEnvironment environment = DetermineEnvironment(lockFile);
-    string server = _fs.Path.Join(root, WorkspaceProgram.ServerFileName);
+    // The server is chosen by the game and the loader (protocol/lip-run.md).
+    if (GameSetup.Game(lockFile) is not { } game) {
+      throw new InvalidOperationException(
+          "There is no server to run: this workspace has no game. Set it up first, e.g. with"
+          + " 'lip setup --game <version>' (see 'lip setup --help'), or with 'lip install"
+          + " LeviLamina' for the newest game that LeviLamina supports.");
+    }
+
+    GameBuild build = GameSetup.BuildOf(game);
+    bool loader = GameSetup.Loader(lockFile) is not null;
+    string fileName = WorkspaceProgram.ServerFile(loader, build);
+    string server = _fs.Path.Join(root, fileName);
+    bool linuxServer = fileName == WorkspaceProgram.LinuxServerFileName;
+    if (linuxServer && !WorkspaceProgram.RunsLinuxServer) {
+      throw new InvalidOperationException(
+          $"The game of this workspace is the Linux server {PackageDisplay.Name(game)}"
+          + $" {game.Version}, which lip runs only on Linux on x64. Run it there, or set up the"
+          + " Windows server with 'lip setup --game <version> --build windows'.");
+    }
+
     if (!_fs.File.Exists(server)) {
-      bool linuxServer = lockFile?.Packages.Any(p => p.Variant == BedrockServer.LinuxVariant
-          && BedrockServer.IsRepository(p.Id)) ?? false;
       throw new FileNotFoundException(
-          $"There is no server to run: '{server}' is not a file."
-          + (linuxServer
-              ? " The workspace holds the Linux server"
-                + $" {BedrockServer.Repository}#{BedrockServer.LinuxVariant}, which lip run does"
-                + $" not run; start it yourself, e.g. with './{BedrockServer.LinuxExecutable}'."
-              : " Install the server first, e.g. with"
-                + " 'lip install github.com/LiteLDev/LeviLamina'."),
+          $"There is no server to run: '{server}' is not a file, though the workspace has the"
+          + $" game {PackageDisplay.Name(game)} {game.Version}"
+          + (loader ? " with a loader" : "") + ". It may have been deleted or moved by hand;"
+          + " restore it, or install the game again by uninstalling it and setting it up.",
           server);
     }
 
-    if (_systemPreparer is not null) {
+    if (!linuxServer && _systemPreparer is not null) {
       await _systemPreparer.Prepare(environment.Platform, root, CancellationToken.None);
     }
 
     ProgramHost host = ProgramHost.Current(environment.Platform, root);
-    bool throughWine = WorkspaceProgram.RunsThroughWine(host);
+    bool throughWine = !linuxServer && WorkspaceProgram.RunsThroughWine(host);
     string program = throughWine ? host.Wine ?? "Wine" : server;
     try {
-      ProgramStartInfo start = WorkspaceProgram.Server(host);
+      ProgramStartInfo start = linuxServer
+          ? WorkspaceProgram.LinuxServer(host)
+          : WorkspaceProgram.Server(host, fileName);
       return await ServerSession.Run(starter, start, input, inputIsConsole, listen);
     }
     catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
@@ -410,7 +508,8 @@ public class McmodService(
   /// lip pkg view of the server, whose packages lip defines itself (protocol/lip-package.md,
   /// "The server"): the package file of the version named, or of the highest one.
   private async Task<string> ViewServer(string package, Ref source) {
-    BedrockServer server = await new Resolver(_archiveProvider, _archiveReader).Server();
+    BedrockServer server = await new Resolver(
+        _archiveProvider, _archiveReader, downloadServerBuilds: _downloadServerBuilds).Server();
     SemVersion? version = source.GitRef switch {
       null => server.ReleaseVersions.FirstOrDefault(),
       { Kind: GitRefKind.Version } gitRef => server.Versions.FirstOrDefault(
@@ -465,7 +564,10 @@ public class McmodService(
     // What the resolver notes about how it reads a package (such as a tooth.json whose version
     // differs from its tag) is for the run trace, not for the user.
     Resolver resolver = new(
-        _archiveProvider, _archiveReader, message => RunTrace.Write("resolve", message));
+        _archiveProvider,
+        _archiveReader,
+        message => RunTrace.Write("resolve", message),
+        _downloadServerBuilds);
     foreach (LockedPackage package in lockFile.Packages) {
       if (package.Commit is string commit
           && Ref.TryParse(package.Source, out Ref? source, out _)) {
@@ -760,16 +862,19 @@ public class McmodService(
   /// that fails, solves them again with only the explicitly installed packages pinned, trying
   /// the installed versions of the dependency packages first. With preferDependencyPackages,
   /// the dependency packages are only tried first from the start, so that they give way to the
-  /// requested packages' earlier candidates.
+  /// requested packages' earlier candidates. The installed packages of the identities of keep
+  /// stay pinned throughout, like the explicitly installed ones.
   private async Task<Plan> MakePlan(
       Workspace workspace,
       IReadOnlyList<PackageRequest> requests,
       IReadOnlyCollection<string> unpinned,
       IReadOnlyCollection<string> explicitIdentities,
       IReadOnlyDictionary<string, Candidate>? pinnedAs = null,
-      bool preferDependencyPackages = false) {
+      bool preferDependencyPackages = false,
+      IReadOnlyCollection<string>? keep = null) {
     HashSet<string> unpinnedSet = [.. unpinned.Select(Fold)];
     HashSet<string> explicitSet = [.. explicitIdentities.Select(Fold)];
+    HashSet<string> keepSet = [.. (keep ?? []).Select(Fold)];
 
     List<Candidate> pinnedAll = [
       .. workspace.Lock.Packages
@@ -780,7 +885,8 @@ public class McmodService(
     List<Candidate> pinnedExplicit = [];
     List<Candidate> preferred = [];
     foreach (Candidate candidate in pinnedAll) {
-      (explicitSet.Contains(Fold(candidate.Package.Identity)) ? pinnedExplicit : preferred)
+      string identity = Fold(candidate.Package.Identity);
+      (explicitSet.Contains(identity) || keepSet.Contains(identity) ? pinnedExplicit : preferred)
           .Add(candidate);
     }
 
@@ -923,7 +1029,13 @@ public class McmodService(
   /// in one transaction and writes the state file last. A failure while applying (or
   /// cancellation) undoes every change and leaves the state file as it was
   /// (protocol/lip-workspace.md, "Atomicity"). In a dry run, reports the plans instead.
-  private async Task Execute(Workspace workspace, OperationOptions options, ChangeSet changeSet) {
+  /// With prepareSystem, the system is prepared even when no hook command runs
+  /// (protocol/lip-setup.md, "Order").
+  private async Task Execute(
+      Workspace workspace,
+      OperationOptions options,
+      ChangeSet changeSet,
+      bool prepareSystem = false) {
     // The changes are planned against the layout an operation that changes the workspace makes
     // first; it is checked and made only when the operation may change the workspace
     // (protocol/lip-workspace.md, "Environment and layout"). Paths are compared as the
@@ -1010,7 +1122,7 @@ public class McmodService(
 
     // The system is prepared before anything changes, so that a failure is an early one
     // (protocol/lip-workspace.md, "Carrying out an operation", step 5).
-    if (hooksRun && _systemPreparer is not null) {
+    if ((hooksRun || prepareSystem) && _systemPreparer is not null) {
       await _systemPreparer.Prepare(
           workspace.Environment.Platform, workspace.Root, options.CancellationToken);
     }

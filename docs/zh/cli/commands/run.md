@@ -10,27 +10,37 @@ lip run
 
 ## 说明
 
-不带参数地运行工作区（当前目录）根部的 `bedrock_server_mod.exe`，以工作区为工作目录，并等待它退出。请先安装服务器，例如用 `lip install github.com/LiteLDev/LeviLamina`；参见[运行服务器](../../guides/running_server.md)。
+不带参数地运行工作区（当前目录）根部的服务器，以工作区为工作目录，并等待它退出。请先用 [`lip setup`](setup.md) 设置服务器，例如 `lip setup --game 1.21.0`；参见[运行服务器](../../guides/running_server.md)。
+
+服务器是工作区的游戏和加载器（参见 [`lip setup`](setup.md#游戏与加载器)）所对应的文件：
+
+| 工作区装有 | 服务器 | 运行方式 |
+| --- | --- | --- |
+| LeviLamina | `bedrock_server_mod.exe` | 在 Windows 上由 lip 运行，在其他系统上通过 Wine 运行 |
+| 无加载器，Windows 版服务器 | `bedrock_server.exe` | 在 Windows 上由 lip 运行，在其他系统上通过 Wine 运行 |
+| 无加载器，Linux 版服务器 | `bedrock_server` | 由 lip 运行，仅限 x64 的 Linux |
+
+lip 运行 Linux 版服务器时，若环境变量 `LD_LIBRARY_PATH` 未设置或为空，则将其设为 `.`，使服务器能找到其旁边的库。
 
 启动服务器之前，`lip run` 会：
 
 1. 若另一个 lip 命令（如 `lip install`）正在修改该工作区，立即失败；
 2. 像 `lip install` 一样，完成或撤销被中断的操作（参见[内部机制](../../guides/internal_mechanism.md#工作区状态)）；
-3. 若 `bedrock_server_mod.exe` 不是文件，则失败；
-4. 对以 `win` 开头的平台，安装服务器需要而系统缺少的组件：Linux 和 macOS 上的 Wine，以及 Microsoft Visual C++ 可再发行组件包（参见[系统依赖](../../guides/internal_mechanism.md#系统依赖)）。
+3. 若工作区没有游戏（此时提示使用 `lip setup`）、服务器是 Linux 版服务器而 lip 不在 x64 的 Linux 上运行，或服务器不是文件，则失败；
+4. 对 Windows 版服务器 `bedrock_server_mod.exe` 和 `bedrock_server.exe`，安装服务器需要而系统缺少的组件：Linux 和 macOS 上的 Wine，以及 Microsoft Visual C++ 可再发行组件包（参见[系统依赖](../../guides/internal_mechanism.md#系统依赖)）。Linux 版服务器两者都不需要。
 
 服务器运行期间工作区不会被锁定：你可以在另一个终端中对同一工作区运行 `lip install`、`lip uninstall` 和 `lip update`。它们的改动在服务器下次启动时生效。
 
 ### Wine
 
-当 lip 不在 Windows 上运行时，由于工作区[环境](../../concepts/lip_toml.md#环境)的平台是 `win-x64`，服务器通过 [Wine](https://www.winehq.org/) 运行：lip 运行它安装在数据目录中的 Wine 的 `wine`，从不运行在 `PATH` 中找到的，以 `bedrock_server_mod.exe` 的绝对路径为其唯一参数，并设置以下环境变量：
+当 lip 不在 Windows 上运行时，由于工作区[环境](../../concepts/lip_toml.md#环境)的平台是 `win-x64`，Windows 版服务器通过 [Wine](https://www.winehq.org/) 运行：lip 运行它安装在数据目录中的 Wine 的 `wine`，从不运行在 `PATH` 中找到的，以服务器文件的绝对路径为其唯一参数，并设置以下环境变量：
 
 | 变量 | 值 |
 | --- | --- |
 | `WINEPREFIX` | 未设置或为空时：工作区中 `.lip/wine` 的绝对路径。前缀不存在时由 Wine 创建。 |
 | `WINEDEBUG` | 未设置时：`-all`，即关闭 Wine 的调试输出。 |
 
-其他情况下，lip 直接运行服务器。
+其他情况下，以及对 Linux 版服务器，lip 直接运行服务器。
 
 ### 输入与输出
 
@@ -47,6 +57,6 @@ lip run
 ## 示例
 
 ```shell
-lip install github.com/LiteLDev/LeviLamina
+lip setup --game 1.21.0
 lip run
 ```

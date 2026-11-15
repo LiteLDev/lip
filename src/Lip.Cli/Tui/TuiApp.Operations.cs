@@ -1,3 +1,5 @@
+using Lip.Core.Mcmod;
+
 namespace Lip.Cli.Tui;
 
 public sealed partial class TuiApp {
@@ -100,8 +102,14 @@ public sealed partial class TuiApp {
 
   /// A workspace operation: first as a dry run, whose messages are the plan the user confirms,
   /// then for real.
-  private void PlanAndRun(string title, Func<bool, CancellationToken, Task> operation) {
-    Start($"Planning: {title}", token => operation(true, token), plan => {
+  private void PlanAndRun(string title, Func<bool, CancellationToken, Task> operation) =>
+      PlanAndRun(title, (dryRun, _, token) => operation(dryRun, token));
+
+  /// A workspace operation that may be a setup (protocol/lip-setup.md): when its dry run says
+  /// that it would ask the user to accept the license of the game, the interface asks for it
+  /// once the user applies the plan, and runs the operation with the answer (acceptEula).
+  private void PlanAndRun(string title, Func<bool, bool, CancellationToken, Task> operation) {
+    Start($"Planning: {title}", token => operation(true, false, token), plan => {
       // What would happen to which packages ("Dry run: would install X 1.0.0 (N files)") stands
       // out from the rest of the log, such as what was resolved and downloaded.
       List<StyledLine> lines = [
@@ -118,15 +126,42 @@ public sealed partial class TuiApp {
         lines.Add(new StyledLine("Nothing would change.", Theme.Muted));
       }
 
+      bool asksForLicense = plan.Log.Any(l => l.PlainText.StartsWith(
+          GameSetup.EulaDryRunMessage, StringComparison.Ordinal));
+      void Run(bool acceptEula) =>
+          Start(title, token => operation(false, acceptEula, token), done => {
+            LoadPackages();
+            ShowResult(title, done, "Done.");
+          }, cancellable: true);
+
       Push(new MessageDialog(this, title, lines, ["Apply", "Cancel"], choice => {
         if (choice != 0) {
           return;
         }
 
-        Start(title, token => operation(false, token), done => {
-          LoadPackages();
-          ShowResult(title, done, "Done.");
-        }, cancellable: true);
+        if (!asksForLicense) {
+          Run(acceptEula: false);
+          return;
+        }
+
+        // The license of the game, asked in the interface (protocol/lip-tui.md, "Commands").
+        Push(new MessageDialog(
+            this, "Minecraft EULA",
+            [
+              new StyledLine("The Minecraft server is available under the Minecraft End User"
+                  + " License Agreement and the Microsoft Privacy Policy:"),
+              new StyledLine(),
+              new StyledLine(GameSetup.EulaUrl, Theme.Accent),
+              new StyledLine(GameSetup.PrivacyPolicyUrl, Theme.Accent),
+              new StyledLine(),
+              new StyledLine("Read them, then accept them to install the server."),
+            ],
+            ["Accept", "Decline"],
+            answer => {
+              if (answer == 0) {
+                Run(acceptEula: true);
+              }
+            }));
       }));
     }, cancellable: true);
   }

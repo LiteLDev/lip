@@ -118,6 +118,9 @@ app.Configure(config => {
         .WithDescription("Migrates the tooth.json in the current directory to lip.toml");
   });
 
+  config.AddCommand<SetupCommand>("setup")
+      .WithDescription("Sets up the game and the loader of the server");
+
   config.AddCommand<InstallCommand>("install")
       .WithDescription("Installs packages");
 

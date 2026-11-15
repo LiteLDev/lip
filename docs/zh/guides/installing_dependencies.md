@@ -32,7 +32,7 @@ lip install github.com/user/repo@1.0.0
 如需试用尚未发布的改动，可安装分支的头、任意标签或某个提交：
 
 ```sh
-lip install github.com/LiteLDev/LeviLamina@branch:main
+lip install github.com/user/repo@branch:main
 lip install github.com/user/repo@tag:nightly
 lip install github.com/user/repo@rev:0123456789abcdef0123456789abcdef01234567
 ```

@@ -36,10 +36,10 @@ public class LipClientTests {
     get {
       TheoryData<List<string>> data = new();
       data.Add(new List<string> { "github.com/LiteLDev/MoreDimensions@0.13.0" });
-      data.Add(new List<string> { "github.com/LiteLDev/LegacyScriptEngine@0.17.13" });
+      data.Add(new List<string> { "github.com/LiteLDev/LeviLamina@1.9.7", "github.com/LiteLDev/LegacyScriptEngine@0.17.5" });
       data.Add(new List<string> { "github.com/LiteLDev/LeviLamina@1.9.9" });
       data.Add(new List<string> { "github.com/LiteLDev/LeviLamina@1.9.9", "github.com/LiteLDev/LegacyScriptEngine@0.17.13" });
-      data.Add(new List<string> { "github.com/LiteLDev/LegacyScriptEngine@0.17.13", "github.com/LiteLDev/MoreDimensions@0.13.0" });
+      data.Add(new List<string> { "github.com/LiteLDev/LeviLamina@1.9.7", "github.com/LiteLDev/LegacyScriptEngine@0.17.5", "github.com/LiteLDev/MoreDimensions@0.13.0" });
       return data;
     }
   }
@@ -53,7 +53,8 @@ public class LipClientTests {
 
     LipClient lipClient = LipClient.Create(userInteraction);
 
-    await lipClient.Install(packages, dryRun: false);
+    // Packages with LeviLamina set up the game, whose license the test accepts.
+    await lipClient.Install(packages, dryRun: false, acceptEula: true);
   }
 
   public static TheoryData<(List<WorkflowBaseStep> Steps, List<string> FinalExplicitPackages)> ComplexWorkflow_OnWinX64_DoesNotThrowData =>
@@ -109,7 +110,7 @@ public class LipClientTests {
     foreach (var step in testCase.Steps) {
       switch (step) {
         case WorkflowInstallStep installStep:
-          await lipClient.Install(installStep.Packages, dryRun: false);
+          await lipClient.Install(installStep.Packages, dryRun: false, acceptEula: true);
           break;
 
         case WorkflowUninstallStep uninstallStep:
@@ -128,7 +129,12 @@ public class LipClientTests {
     (IEnumerable<string>? explicitPackages, var _) = await lipClient.List();
 
     Assert.NotNull(explicitPackages);
-    Assert.Equal(testCase.FinalExplicitPackages.Order(), explicitPackages.Order());
+    // The game that installing LeviLamina set up is explicitly installed too.
+    Assert.Equal(
+        testCase.FinalExplicitPackages.Order(),
+        explicitPackages
+            .Where(p => !p.StartsWith("github.com/LiteLDev/bds@", StringComparison.Ordinal))
+            .Order());
   }
 
   private static IUserInteraction CreateMockUserInteraction() {

@@ -486,9 +486,18 @@ public sealed class TuiAppTests : IDisposable {
     string root = Directory.CreateTempSubdirectory("lip-tui-test-").FullName;
     try {
       // cmd.exe runs the lines it reads, and exits when it reads "exit".
+      // The server of a game of the build windows without a loader (protocol/lip-run.md).
       File.Copy(
           Path.Join(Environment.SystemDirectory, "cmd.exe"),
-          Path.Join(root, WorkspaceProgram.ServerFileName));
+          Path.Join(root, WorkspaceProgram.WindowsServerFileName));
+      Directory.CreateDirectory(Path.Join(root, ".lip"));
+      File.WriteAllText(Path.Join(root, ".lip", "state.json"), """
+          { "format": 4, "side": "server", "platform": "win-x64", "packages": [ {
+            "manifest": { "format": 4, "id": "github.com/LiteLDev/bds", "version": "1.21.0",
+              "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } },
+            "variant": "", "explicit": true, "ref": "github.com/LiteLDev/bds@1.21.0",
+            "files": [] } ] }
+          """);
       FileSystem fs = new();
       TuiApp app = Start((interaction, hookOutput) => new LipClient(
           fs, interaction, new CacheService(fs, interaction), new ConfigService(fs, interaction),

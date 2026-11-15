@@ -10,7 +10,7 @@ namespace Lip.Core.Tests.Mcmod;
 public class McmodServiceAtomicityTests {
   private static readonly OperationOptions _options = new();
 
-  private WorkspaceHarness _ws = new();
+  private WorkspaceHarness _ws = new(withGame: true);
 
   private static string Hooks(string stage, params string[] commands) =>
       $"\"hooks\": {{ \"{stage}\": [{string.Join(", ", commands.Select(c => $"\"{c}\""))}] }}";
@@ -223,13 +223,12 @@ public class McmodServiceAtomicityTests {
     await Assert.ThrowsAsync<McmodInstallException>(
         () => _ws.Service.Install(["a.zip"], _options));
     Assert.Equal(before, WorkspaceSnapshot());
-    Assert.False(_ws.Fs.File.Exists(_ws.LockPath));
   }
 
   /// Installs Demo 1.0.0, then makes the update to Demo 2.0.0 fail at the n-th file creation or
   /// move; returns whether the update failed.
   private async Task<bool> UpdateFailingAt(int n) {
-    _ws = new WorkspaceHarness();
+    _ws = new WorkspaceHarness(withGame: true);
     _ws.AddFile("plugins/Old/Old.dll", "old");
     _ws.AddFile("plugins/loose.txt", "loose");
     AddMod("demo.zip", "Demo", "1.0.0", Hooks("pre_uninstall", "pre"), new() {
@@ -272,7 +271,8 @@ public class McmodServiceAtomicityTests {
     Assert.Equal("dll 2", _ws.Fs.File.ReadAllText(_ws.Path("mods/Demo/Demo.dll")));
     Assert.Equal("user", _ws.Fs.File.ReadAllText(_ws.Path("mods/Demo/config.json")));
     Assert.False(_ws.Exists("mods/Demo/data/b.txt"));
-    Assert.Equal("2.0.0", Assert.Single((await _ws.Lock()).Packages).Version);
+    Assert.Equal(
+        "2.0.0", (await _ws.Lock()).Packages.Single(p => p.Identity == Id("Demo")).Version);
     Assert.DoesNotContain(_ws.Fs.AllFiles, f => f.EndsWith(".bak", StringComparison.Ordinal));
   }
 
@@ -379,7 +379,9 @@ public class McmodServiceAtomicityTests {
 
     // Assert
     Assert.Equal(before, _ws.Snapshot());
-    Assert.Equal(Id("Base"), Assert.Single((await _ws.Lock()).Packages).Identity);
+    Assert.Equal(
+        [Id("Base"), BedrockServer.Repository],
+        (await _ws.Lock()).Packages.Select(p => p.Identity).Order(StringComparer.Ordinal));
     _ws.Ui.Verify(u => u.PrintWarning(It.Is<string>(
         s => s.Contains("was interrupted") && s.Contains("undid its 7 changes"))));
   }
@@ -435,8 +437,11 @@ public class McmodServiceAtomicityTests {
 
   [Fact]
   public async Task DryRun_NewWorkspace_CreatesNoLipDirectory() {
-    // Arrange
-    AddMod("base.zip", "Base");
+    // Arrange: a package that is not a mod, which a workspace without a game can install.
+    _ws = new WorkspaceHarness();
+    AddPackage(
+        "base.zip", "Base", "1.0.0", WorkspaceHarness.SelfAsset("Base.dll", "Base.dll"),
+        new() { ["Base.dll"] = "base" });
 
     // Act
     await _ws.Service.Install(["base.zip"], _options with { DryRun = true });

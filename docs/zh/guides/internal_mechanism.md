@@ -4,14 +4,14 @@
 
 ## 流程
 
-`lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：
+`lip setup`、`lip install`、`lip uninstall` 和 `lip update` 执行相同的步骤：
 
 1. **状态文件**：从 `.lip/state.json` 加载该工作区的状态。没有该文件的工作区没有已安装的包，除非它有 lip v0.x 的 `tooth_lock.json`，此时改为读取后者（参见 [lip v0.x 的工作区](../concepts/lockfiles.md#lip-v0-x-的工作区)）。
 2. **环境**：确定运行端和平台（参见[环境](../concepts/lip_toml.md#环境)）。
 3. **解析器**：把每个来源转换为一个候选序列：它所指向的归档，最新版本在前，每个都带有所请求变体在该环境下的条目。
 4. **依赖图求解器**：为每个请求和每个依赖各选出一个候选，使每个身份只出现一次，且没有两个 mod 的 mod 名称相同。
 5. **规划**：规划按安装顺序的逆序卸载离开集合的包、再按依赖优先的顺序安装进入集合的包，每一步都基于之前各步完成后的工作区。规划会下载所有要写入的归档和资源，并检查一切可能失败的情形：文件所有权、`preserve`、路径、放置规则的 `src`、mod 的 LeviLamina `manifest.json` 中的 mod 名称，以及（当操作写入或删除文件时）`mods` 是否为链接。早期格式的 `tooth.json` 在解析时已被完整地转换为包文件（参见[早期格式](../concepts/lip_toml.md#早期格式)），因此所有包都由同一个安装器处理，且只按 `lip.toml` 的规则处理。
-6. **执行**：当操作要为 Windows 平台运行钩子命令时，先安装它们需要的系统组件（参见[系统依赖](#系统依赖)）。当操作写入或删除文件时，若 `mods` 不存在则创建它（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的钩子与文件修改。匹配 `preserve` 的文件是否保留，取决于即将写入它时（在此之前的钩子命令运行之后）它是否存在；包只拥有它实际写入的文件。
+6. **执行**：当操作要为 Windows 平台运行钩子命令，或要设置 Windows 版服务器时，先安装它们需要的系统组件（参见[系统依赖](#系统依赖)）。当操作写入或删除文件时，若 `mods` 不存在则创建它（参见[安装依赖](installing_dependencies.md#仅限服务端工作区)），然后运行规划好的钩子与文件修改。匹配 `preserve` 的文件是否保留，取决于即将写入它时（在此之前的钩子命令运行之后）它是否存在；包只拥有它实际写入的文件。
 7. **状态文件**：所有步骤成功之后，保存一次状态文件。
 
 操作要么全部完成，要么全部不做（[lip-workspace(7)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-workspace.md#atomicity) "Atomicity"）。第 6 步之前的任何失败都不会修改工作区。执行时某一步失败（文件无法写入、钩子命令以非零码退出，或按下 Ctrl+C），lip 会撤销该操作的全部修改，状态文件保持原样。钩子命令所做的事无法撤销：`post_install` 或 `pre_uninstall` 命令失败时，操作同样失败并撤销 lip 的文件修改，但已运行命令的效果不会被撤销。
@@ -62,19 +62,19 @@ lip 在保存于工作区中 `.lip/state.json` 的状态文件里维护已安装
 
 下面的日志和工作区锁与状态文件一起保存在 `.lip` 中，因此随工作区移动：移动或复制后的工作区会带走被中断的操作，日志中记录的是相对于工作区的路径。它们的格式定义在 [`protocol/journal.md`](https://github.com/LiteLDev/lip/blob/main/protocol/journal.md) 和 [`protocol/lip-workspace.md`](https://github.com/LiteLDev/lip/blob/main/protocol/lip-workspace.md#workspace-lock) 中，其他程序也可以参与。
 
-- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次在该工作区中运行的 `lip install`、`uninstall`、`update` 或 `run` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存状态文件的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
-- **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。[`lip run`](../cli/commands/run.md) 只在启动服务器之前持有该锁。
+- **日志**：操作修改工作区期间，lip 在做出每项修改之前，先把它记录到 `.lip/journal` 中。若 lip 被终止，下一次在该工作区中运行的 `lip setup`、`install`、`uninstall`、`update` 或 `run` 会先读取日志：撤销被中断的操作（恢复备份）并报告；若该操作已进行到保存状态文件的阶段，则删除备份以完成它。试运行（dry run）不获取锁，只报告日志的存在。
+- **同一时间只有一个操作**：操作期间独占打开 `.lip/lock`（在 Linux 和 macOS 上为独占 `flock`；该文件会保留）。对同一工作区的第二个 `lip setup`、`install`、`uninstall` 或 `update` 会立即失败，并提示"Another process is changing the workspace"；请在第一个操作结束后重新运行。[`lip run`](../cli/commands/run.md) 只在启动服务器之前持有该锁。
 
 ## 系统依赖
 
-平台以 `win` 开头的工作区中的程序（钩子命令和服务器）需要系统提供两样东西，由 lip 自行安装（[lip-workspace(7)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-workspace.md#system-dependencies) "System dependencies"）：
+平台以 `win` 开头的工作区中的程序（钩子命令和 Windows 版服务器，无论是否带 LeviLamina）需要系统提供两样东西，由 lip 自行安装（[lip-workspace(7)](https://github.com/LiteLDev/lip/blob/main/protocol/lip-workspace.md#system-dependencies) "System dependencies"）：
 
 - **Wine**，在 Linux 和 macOS 上：lip 的版本指定的一个 Wine 构建，只下载一次，解压到数据目录的 `wine/` 中，由所有工作区共用：x64 的 Linux 上为 [Kron4ek/Wine-Builds](https://github.com/Kron4ek/Wine-Builds)（`amd64-wow64`），macOS 上为 [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds)（`wine-devel`），在 arm64 上由 Rosetta 2 运行。lip 从不运行其他的 `wine`，例如 `PATH` 中的。
 - **Microsoft Visual C++ 可再发行组件包**（x64）：当注册表中 `HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64` 下没有值 `Installed` = 1 时，lip 下载 `vc_redist.x64.exe` 并以 `/install /quiet /norestart` 运行它：在 Windows 上以管理员身份运行，可能弹出用户账户控制提示；在其他系统上通过 Wine 在工作区的 Wine 前缀中运行，并用 `wine reg query` 读取该前缀的注册表。
 
 每个下载的 URL 和 SHA-256 都写在 lip 中，使用前会先校验：SHA-256 不符的下载会失败，既不会被解压也不会被运行。下载写入数据目录，用完即删除；Wine 先解压到一个 `.tmp` 目录，再重命名到位，因此不会运行解压到一半的构建。同时进行安装的多个 lip 进程通过数据目录中的 `lock` 文件相互等待。
 
-lip 在会运行钩子命令的操作开始修改工作区之前安装它们，因此此处的失败会让工作区保持原样；在 `lip run` 启动服务器之前也会这样做。若一切都已安装，这只需查询一次注册表。
+lip 在会运行钩子命令的操作或构建为 `windows` 的 `lip setup` 开始修改工作区之前安装它们，因此此处的失败会让工作区保持原样；在 `lip run` 启动 Windows 版服务器之前也会这样做。Linux 版服务器两者都不需要。若一切都已安装，这只需查询一次注册表。
 
 ## 关于规范的说明
 

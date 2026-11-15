@@ -49,7 +49,7 @@ public class PackageInstallTests {
 
   [Fact]
   public async Task Install_McmodWithModDependency_InstallsBothAsTheyAre() {
-    WorkspaceHarness h = new();
+    WorkspaceHarness h = new(withGame: true);
     h.AddDownload("https://example.com/base.mcmod", WorkspaceHarness.Mcmod("Base"));
     h.AddDownload(
         "https://example.com/top.mcmod",
@@ -77,7 +77,9 @@ public class PackageInstallTests {
     Assert.True(h.Exists("mods/Base/Base.dll"));
 
     LockFile lockFile = await h.Lock();
-    Assert.Equal(["example.com/base", "example.com/top"], lockFile.Packages.Select(p => p.Id));
+    Assert.Equal(
+        ["example.com/base", "example.com/top", BedrockServer.Repository],
+        lockFile.Packages.Select(p => p.Id));
   }
 
   [Fact]
@@ -100,7 +102,7 @@ public class PackageInstallTests {
 
   [Fact]
   public async Task Install_TwoModsOfOneModName_Fails() {
-    WorkspaceHarness h = new();
+    WorkspaceHarness h = new(withGame: true);
     h.AddDownload("https://example.com/x.mcmod", WorkspaceHarness.Mcmod("Same"));
     h.AddDownload("https://example.com/y.mcmod", WorkspaceHarness.Mcmod("same"));
     foreach ((string id, string url) in new[] {

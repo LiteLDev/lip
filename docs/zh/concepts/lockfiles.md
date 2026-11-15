@@ -42,7 +42,7 @@
 *   **`platform`**：工作区的平台，一个 [.NET RID](https://learn.microsoft.com/dotnet/core/rid-catalog)。
 *   **`packages`**：已安装的包，按安装顺序排列：一个包排在满足其依赖的包之后。
 
-`side` 和 `platform` 总是存在且从不为 `null`；缺少它们的状态文件无效。没有状态文件的工作区从其第一次 `install`、`uninstall` 或 `update` 获得环境（参见 [`lip install`](../cli/commands/install.md)）。
+`side` 和 `platform` 总是存在且从不为 `null`；缺少它们的状态文件无效。没有状态文件的工作区从其第一次 `setup`、`install`、`uninstall` 或 `update` 获得环境（参见 [`lip install`](../cli/commands/install.md)）。
 
 ### 包条目
 
@@ -53,7 +53,7 @@
 *   **`explicit`**：
     *   `true`：该包由用户显式安装（例如 `lip install <package>`）。
     *   `false`：该包作为另一个包的依赖安装。
-*   **`ref`**：包的安装来源：传给 `lip install` 或 `lip update` 的参数（例如 `github.com/user/repo`、`github.com/user/repo#lua@branch:main` 或 `https://` URL；本地路径记录为其绝对路径的 `file:` URI），对于依赖则是该依赖的键。[`lip update`](../cli/commands/update.md) 会再次请求它。
+*   **`ref`**：包的安装来源：传给 `lip install` 或 `lip update` 的参数（例如 `github.com/user/repo`、`github.com/user/repo#lua@branch:main` 或 `https://` URL；本地路径记录为其绝对路径的 `file:` URI），[`lip setup`](../cli/commands/setup.md) 安装游戏或加载器所用的来源（例如 `github.com/LiteLDev/bds@1.21.0`），对于依赖则是该依赖的键。[`lip update`](../cli/commands/update.md) 会再次请求它。
 *   **`commit`**：仅用于来自 git 仓库的包：其归档所在的提交，以小写十六进制表示。来自 URL 或本地路径的包没有 `commit`。
 *   **`files`**：包拥有的文件，相对于工作区根目录，以 `/` 分隔。
 
@@ -108,13 +108,13 @@ lip v0.39.x 的状态文件同样是格式 4，但在其根部以及每个记录
 
 ## linux-x64 的工作区
 
-早期版本的 lip 曾通过 `--platform` 为 `win-x64` 以外的平台安装包。lip 把记录平台 `linux-x64` 的状态文件当作 `win-x64` 的状态文件读取，其中的 `github.com/LiteLDev/bds` 是其变体 `github.com/LiteLDev/bds#linux`，即 Linux 版服务器，下一次 `install`、`uninstall` 或 `update` 会如此记录它。记录了其他任何包的 `linux-x64` 状态文件会使读取它的每条命令失败，并给出指明该包的消息：请在新工作区中重新安装这些包。记录其他平台的状态文件会使 `install`、`uninstall`、`update` 和 `run` 失败。
+早期版本的 lip 曾通过 `--platform` 为 `win-x64` 以外的平台安装包。lip 把记录平台 `linux-x64` 的状态文件当作 `win-x64` 的状态文件读取，其中的 `github.com/LiteLDev/bds` 是其变体 `github.com/LiteLDev/bds#linux`，即 Linux 版服务器，下一次 `setup`、`install`、`uninstall` 或 `update` 会如此记录它。记录了其他任何包的 `linux-x64` 状态文件会使读取它的每条命令失败，并给出指明该包的消息：请在新工作区中重新安装这些包。记录其他平台的状态文件会使 `setup`、`install`、`uninstall`、`update` 和 `run` 失败。
 
 ## lip v0.x 的工作区
 
 lip v0.37.0 及更早版本的工作区在其根目录中有一个格式版本 3 的 `tooth_lock.json`，而没有状态文件。lip 会自动迁移它：
 
 *   `lip list` 把它读作它所代表的状态文件，不做修改。
-*   下一次 `lip install`、`lip uninstall` 或 `lip update` 把该状态文件写为 `.lip/state.json`，并删除 `tooth_lock.json`。
+*   下一次 `lip setup`、`lip install`、`lip uninstall` 或 `lip update` 把该状态文件写为 `.lip/state.json`，并删除 `tooth_lock.json`。
 
 每个包保留其变体、是否显式安装，以及它拥有的、位于工作区之下的文件；其 `ref` 为其包 ID（加上 `#<variant>`），其 `commit` 从其仓库的版本标签 `v<version>` 查得。无法查得该提交时，命令会失败。lip 无法针对工作区环境读取其 `tooth.json` 的包会被丢弃。

@@ -10,27 +10,37 @@ lip run
 
 ## Description
 
-Runs `bedrock_server_mod.exe` at the root of the workspace (the current directory), without arguments, with the workspace as its working directory, and waits until it exits. Install the server first, e.g. with `lip install github.com/LiteLDev/LeviLamina`; see [Running a Server](../../guides/running_server.md).
+Runs the server at the root of the workspace (the current directory), without arguments, with the workspace as its working directory, and waits until it exits. Set up the server first with [`lip setup`](setup.md), e.g. `lip setup --game 1.21.0`; see [Running a Server](../../guides/running_server.md).
+
+The server is the file that the game and the loader of the workspace (see [`lip setup`](setup.md#the-game-and-the-loader)) call for:
+
+| The workspace has | Server | Run |
+| --- | --- | --- |
+| LeviLamina | `bedrock_server_mod.exe` | by lip on Windows, through Wine elsewhere |
+| No loader, and the Windows server | `bedrock_server.exe` | by lip on Windows, through Wine elsewhere |
+| No loader, and the Linux server | `bedrock_server` | by lip, only on Linux on x64 |
+
+lip runs the Linux server with the environment variable `LD_LIBRARY_PATH` set to `.` when it is unset or empty, so that the server finds the libraries beside it.
 
 Before it starts the server, `lip run`:
 
 1. fails at once if another lip command, such as `lip install`, is changing the workspace;
 2. completes or undoes an operation that was interrupted, as `lip install` would (see [Internal Mechanism](../../guides/internal_mechanism.md#workspace-state));
-3. fails if `bedrock_server_mod.exe` is not a file; and
-4. for a platform that starts with `win`, installs what the server needs of the system when it is missing: Wine on Linux and macOS, and the Microsoft Visual C++ Redistributable (see [System Dependencies](../../guides/internal_mechanism.md#system-dependencies)).
+3. fails if the workspace has no game (pointing to `lip setup`), if the server is the Linux server and lip does not run on Linux on x64, or if the server is not a file; and
+4. for the Windows servers, `bedrock_server_mod.exe` and `bedrock_server.exe`, installs what the server needs of the system when it is missing: Wine on Linux and macOS, and the Microsoft Visual C++ Redistributable (see [System Dependencies](../../guides/internal_mechanism.md#system-dependencies)). The Linux server needs neither.
 
 The workspace is not locked while the server runs: you can run `lip install`, `lip uninstall` and `lip update` in the same workspace from another terminal. Their changes take effect when the server is started again.
 
 ### Wine
 
-When lip does not run on Windows, as the platform of the workspace [environment](../../concepts/lip_toml.md#environment) is `win-x64`, the server is run through [Wine](https://www.winehq.org/): lip runs the `wine` of the Wine it installed in its data directory, never one found through `PATH`, with the absolute path of `bedrock_server_mod.exe` as its only argument and these environment variables:
+When lip does not run on Windows, as the platform of the workspace [environment](../../concepts/lip_toml.md#environment) is `win-x64`, a Windows server is run through [Wine](https://www.winehq.org/): lip runs the `wine` of the Wine it installed in its data directory, never one found through `PATH`, with the absolute path of the server file as its only argument and these environment variables:
 
 | Variable | Value |
 | --- | --- |
 | `WINEPREFIX` | When it is unset or empty: the absolute path of `.lip/wine` in the workspace. Wine creates the prefix when it is missing. |
 | `WINEDEBUG` | When it is unset: `-all`, which silences the debug output of Wine. |
 
-Otherwise, lip runs the server itself.
+Otherwise, and for the Linux server, lip runs the server itself.
 
 ### Input and Output
 
@@ -47,6 +57,6 @@ When the server was started, `lip run` exits with the exit code of the server (o
 ## Examples
 
 ```shell
-lip install github.com/LiteLDev/LeviLamina
+lip setup --game 1.21.0
 lip run
 ```

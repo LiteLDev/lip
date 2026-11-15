@@ -13,7 +13,7 @@
 不能。lip 只管理服务端工作区。客户端工作区由 LeviLauncher 等启动器管理，它们读取同样的包。
 
 ### 可以在 Linux 上运行服务器吗？
-**可以。** 在任何系统上，lip 都安装平台 `win-x64` 的包，在 Linux 和 macOS 上通过 Wine 运行其钩子命令和服务器，Wine 由 lip 自行下载并配置。单独的 Linux 版服务器是 `github.com/LiteLDev/bds#linux`；`lip run` 无法启动它，需要你自行启动。参见[运行服务器](guides/running_server.md#linux-版服务器)。
+**可以。** 在任何系统上，lip 都安装平台 `win-x64` 的包，在 Linux 和 macOS 上通过 Wine 运行其钩子命令和服务器，Wine 由 lip 自行下载并配置。Linux 版服务器 `github.com/LiteLDev/bds#linux` 无需 Wine 即可运行，但也不能带 LeviLamina：用 `lip setup --game <version> --build linux` 设置它，`lip run` 会在 x64 的 Linux 上启动它。参见[运行服务器](guides/running_server.md#linux-版服务器)。
 
 ### 为什么我仓库的某个标签不是版本？
 只有名称恰为 `v` 加 [SemVer 2.0.0](https://semver.org/) 版本号的标签（例如 `v1.2.3`）才是版本。`v1.2` 或 `1.2.3` 这样的标签会被忽略。不过，仍可用 git 引用安装任意标签、分支或提交，例如 `lip install github.com/user/repo@tag:1.2.3` 或 `@branch:main`；此时包的版本是其 `lip.toml` 声明的 `version`。参见 [git 引用](cli/commands/install.md#git-引用)。
@@ -44,10 +44,10 @@ lip 会将包文件**直接安装到你的工作区**。mod 安装到 `mods/<nam
 缓存可以随时删除，例如使用 `lip cache clean`。数据目录存放 lip 运行服务器所用的 Wine；请仅在没有 lip 命令运行时删除它，lip 在需要时会重新安装 Wine。正在进行的下载会写入缓存中的 `.tmp` 文件，完成后再重命名到位；lip 不向系统临时目录写入任何内容。
 
 ### 安装到一半失败会怎样？
-什么都不会改变。`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、钩子命令失败或按下 Ctrl+C，它会撤销已做的全部修改，状态文件保持原样。只有包的钩子命令所做的事无法撤销。若 lip 在中途被终止，下一次在该工作区中运行的 `lip install`、`uninstall`、`update` 或 `run` 会先处理被中断的操作：若它已保存状态文件，则将其完成，否则将其撤销，并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。
+什么都不会改变。`lip setup`、`lip install`、`lip uninstall` 和 `lip update` 要么全部完成，要么全部不做，其安装或移除的依赖也包含在内：lip 在改动工作区之前先完成所有检查和下载；若文件无法写入、钩子命令失败或按下 Ctrl+C，它会撤销已做的全部修改，状态文件保持原样。只有包的钩子命令所做的事无法撤销。若 lip 在中途被终止，下一次在该工作区中运行的 `lip setup`、`install`、`uninstall`、`update` 或 `run` 会先处理被中断的操作：若它已保存状态文件，则将其完成，否则将其撤销，并告知你。参见[内部机制](guides/internal_mechanism.md#工作区状态)。
 
 ### 可以同时运行两个 lip 命令吗？
-不能作用于同一个工作区：一个 `lip install`、`uninstall` 或 `update` 正在修改某个工作区时，对该工作区的另一个此类命令会立即失败，并提示另一个 lip 命令正在修改该工作区。作用于不同工作区的命令，以及只读取的命令（如 `lip list` 或 `lip pkg view`），随时都可以运行。[`lip run`](cli/commands/run.md) 启动的服务器不会占用工作区：服务器运行期间你可以安装、更新和卸载包，这些改动在服务器下次启动时生效。
+不能作用于同一个工作区：一个 `lip setup`、`install`、`uninstall` 或 `update` 正在修改某个工作区时，对该工作区的另一个此类命令会立即失败，并提示另一个 lip 命令正在修改该工作区。作用于不同工作区的命令，以及只读取的命令（如 `lip list` 或 `lip pkg view`），随时都可以运行。[`lip run`](cli/commands/run.md) 启动的服务器不会占用工作区：服务器运行期间你可以安装、更新和卸载包，这些改动在服务器下次启动时生效。
 
 ### 命令失败了，如何查明原因？
 lip 会输出出了什么问题、每一层原因，以及你可以怎么做。除非错误出在命令行本身，它还会在当前目录的 `.lip/logs/` 中写入一份失败报告，并输出其路径。报告包含 lip 关于这次失败所知的一切：lip 版本、命令、系统、工作区状态、包含每一层原因和堆栈跟踪的完整错误，以及本次运行的跟踪记录（网络请求、git 操作、缓存使用、版本解析、文件改动和钩子命令的输出）。URL 中的凭据会被隐去。lip 保留最新的 20 份报告。[报告问题](https://github.com/LiteLDev/lip/issues)时请附上该报告。

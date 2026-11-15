@@ -21,10 +21,12 @@ When an operand names no installed package, the command fails.
 
 Every named package must be explicitly installed; otherwise the command fails. The named packages stop being explicitly installed. Each package that no remaining explicitly installed package needs is uninstalled; the others stay installed.
 
+The game and the loader ([lip-setup(1), "Terms"](lip-setup.md#terms)) are uninstalled as any other package. A workspace whose game is uninstalled has no game.
+
 ## OPTIONS
 
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would uninstall or mark no longer explicitly installed.
 
 ## SEE ALSO
 
-[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-workspace(7)](lip-workspace.md)
+[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-setup(1)](lip-setup.md), [lip-workspace(7)](lip-workspace.md)

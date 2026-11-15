@@ -10,7 +10,7 @@ lip-compatibility - the files of formats 1 to 3, workspaces of linux-x64, and th
 
 ### Packages
 
-`lip` must install the git archive at the highest version tag ([lip-package(7), "Remote repositories"](lip-package.md#remote-repositories)) of each remote repository below, with every variant in every environment that variant applies to, and with its dependencies:
+`lip` must install the git archive at the highest version tag ([lip-package(7), "Remote repositories"](lip-package.md#remote-repositories)) of each remote repository below, with every variant in every environment that variant applies to, and with its dependencies, by `lip install` in a workspace that has no game ([lip-setup(1), "Terms"](lip-setup.md#terms)): `github.com/LiteLDev/LeviLamina` alone, and each other one together with `github.com/LiteLDev/LeviLamina`:
 
 - `github.com/LiteLDev/LeviLamina`
 - `github.com/LiteLDev/LegacyScriptEngine`

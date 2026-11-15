@@ -9,6 +9,7 @@ Commands (section 1):
 | Page | Describes |
 |---|---|
 | [lip(1)](lip.md) | Invoking `lip`: arguments, output, exit status, package arguments, workspace operations. |
+| [lip-setup(1)](lip-setup.md) | `lip setup` |
 | [lip-install(1)](lip-install.md) | `lip install` |
 | [lip-uninstall(1)](lip-uninstall.md) | `lip uninstall` |
 | [lip-update(1)](lip-update.md) | `lip update` |

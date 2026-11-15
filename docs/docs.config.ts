@@ -77,7 +77,7 @@ const LABELS: Record<'root' | 'zh', Labels> = {
   },
 };
 
-const COMMANDS = ['cache_clean', 'config', 'install', 'list', 'pkg_init', 'pkg_migrate', 'pkg_pack', 'pkg_view', 'run', 'self_update', 'uninstall', 'update'];
+const COMMANDS = ['cache_clean', 'config', 'install', 'list', 'pkg_init', 'pkg_migrate', 'pkg_pack', 'pkg_view', 'run', 'self_update', 'setup', 'uninstall', 'update'];
 
 /** The sections of one locale (`p`: its URL prefix, '/' or '/zh/'); zh-Hant is converted from zh by the kit. */
 const nav = (p: string, t: Labels): NavEntry[] => [

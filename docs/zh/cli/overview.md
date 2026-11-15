@@ -13,7 +13,7 @@
 
 部分命令支持 `--json`，以 JSON 格式输出结果：[`config get`](commands/config.md)、[`config list`](commands/config.md) 和 [`list`](commands/list.md)。[`pkg view`](commands/pkg_view.md) 始终输出 JSON。
 
-[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 向工作区安装平台 `win-x64` 的包，无论 lip 运行在什么系统上（参见[环境](../concepts/lip_toml.md#环境)）；Linux 版服务器是变体 `github.com/LiteLDev/bds#linux`。lip 只管理服务端工作区。
+[`setup`](commands/setup.md)、[`install`](commands/install.md)、[`uninstall`](commands/uninstall.md) 和 [`update`](commands/update.md) 向工作区安装平台 `win-x64` 的包，无论 lip 运行在什么系统上（参见[环境](../concepts/lip_toml.md#环境)）；Linux 版服务器是变体 `github.com/LiteLDev/bds#linux`。`setup` 选择工作区的游戏（服务器）和加载器（LeviLamina）；`install` 和 `update` 从不改变它们。lip 只管理服务端工作区。
 
 ## 命令
 
@@ -25,6 +25,7 @@
 - [`lip list`](commands/list.md)：列出已安装包。
 - [`lip run`](commands/run.md)：运行工作区的服务器。
 - [`lip self-update`](commands/self_update.md)：把 lip 自身更新到最新发布的版本。
+- [`lip setup`](commands/setup.md)：选择工作区的游戏和加载器。
 - [`lip uninstall`](commands/uninstall.md)：卸载包。
 - [`lip update`](commands/update.md)：更新包。
 

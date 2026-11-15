@@ -596,8 +596,8 @@ public sealed partial class TuiApp {
   }
 
   private void InstallMod(string package) =>
-      PlanAndRun($"Install {package}", (dryRun, token) =>
-          _client.Install([package], dryRun, token));
+      PlanAndRun($"Install {package}", (dryRun, acceptEula, token) =>
+          _client.Install([package], dryRun, token, acceptEula, confirmed: true));
 
   private void OpenInBrowser(string url) {
     try {

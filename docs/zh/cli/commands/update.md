@@ -33,7 +33,9 @@ lip update [PACKAGES] [options]
 
 不带参数时，若某个包的来源现在给出另一身份的包（例如 `lip.toml` 的 `id` 已改变的 ZIP 文件），则该包会被这个包替换，后者成为显式安装的包。若此时两个来源给出同一身份的包，或某个来源给出与保持不变的包同一身份的包，除非一个包能同时满足两者，否则更新失败。
 
-如需把从 git 引用安装的包改回正式发布的版本，请用其不带 git 引用的仓库路径更新，例如 `lip update github.com/LiteLDev/LeviLamina`。
+如需把从 git 引用安装的包改回正式发布的版本，请用其不带 git 引用的仓库路径更新，例如 `lip update github.com/user/repo`。
+
+`lip update` 从不改变游戏或加载器（参见 [`lip setup`](setup.md#游戏与加载器)）。不带参数时，它保持它们不变；指向 `github.com/LiteLDev/bds` 或 `github.com/LiteLDev/LeviLamina` 的参数会让命令在做任何改动之前失败，并提示使用 `lip setup`。若其他包无法在游戏和加载器保持不变的情况下更新，命令会失败。如需改变游戏或 LeviLamina 的版本，请运行 [`lip setup`](setup.md)。
 
 ## 选项
 

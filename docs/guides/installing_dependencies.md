@@ -32,7 +32,7 @@ To select a variant, append `#<variant>` to the path, e.g. `github.com/user/repo
 To try unreleased changes, install the head of a branch, any tag, or a commit:
 
 ```sh
-lip install github.com/LiteLDev/LeviLamina@branch:main
+lip install github.com/user/repo@branch:main
 lip install github.com/user/repo@tag:nightly
 lip install github.com/user/repo@rev:0123456789abcdef0123456789abcdef01234567
 ```

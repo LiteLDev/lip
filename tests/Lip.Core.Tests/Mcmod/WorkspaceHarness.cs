@@ -21,7 +21,8 @@ namespace Lip.Core.Tests.Mcmod;
 /// resolver, solver, installers and lock store) over a fake git remote whose repositories are
 /// directories of the mock file system.
 internal sealed class WorkspaceHarness {
-  public WorkspaceHarness() {
+  /// With withGame, the workspace has a game (AddGame).
+  public WorkspaceHarness(bool withGame = false) {
     Root = OperatingSystem.IsWindows() ? @"C:\ws" : "/ws";
     Fs = new MockFileSystem(new Dictionary<string, MockFileData>(), currentDirectory: Root);
     Fs.AddDirectory(Root);
@@ -31,7 +32,9 @@ internal sealed class WorkspaceHarness {
     Git = new FakeGitRemote();
     CommandRunner = new Mock<ICommandRunner>();
     Ui = new Mock<IUserInteraction>();
-    Ui.Setup(u => u.PrintInfo(It.IsAny<string>())).Returns(Task.CompletedTask);
+    Ui.Setup(u => u.PrintInfo(It.IsAny<string>()))
+        .Callback((string message) => Infos.Add(message))
+        .Returns(Task.CompletedTask);
     Ui.Setup(u => u.PrintWarning(It.IsAny<string>()))
         .Callback((string message) => Warnings.Add(message))
         .Returns(Task.CompletedTask);
@@ -40,7 +43,18 @@ internal sealed class WorkspaceHarness {
     LockStore = new LockStore(Fs);
     SetUpDownloader();
     Restart();
+    if (withGame) {
+      AddGame();
+    }
   }
+
+  /// The builds list of the server (protocol/lip-package.md, "The server"); when null, it cannot
+  /// be obtained.
+  public string? ServerBuilds { get; set; }
+
+  private Task<string> DownloadServerBuilds() => ServerBuilds is { } builds
+      ? Task.FromResult(builds)
+      : throw new ArchiveUnavailableException("The test has no builds list of the server.");
 
   /// Starts over with a new archive provider and service, as a new lip process does, so that
   /// tags added since are seen.
@@ -55,7 +69,8 @@ internal sealed class WorkspaceHarness {
         new ArchiveReader(),
         new McmodInstaller(Faults, CommandRunner.Object, Ui.Object),
         workspaceRoot: () => Root,
-        systemPreparer: SystemPreparer.Object);
+        systemPreparer: SystemPreparer.Object,
+        downloadServerBuilds: DownloadServerBuilds);
   }
 
   /// Prepares the system for programs (protocol/lip-workspace.md, "System dependencies"); does
@@ -114,6 +129,8 @@ internal sealed class WorkspaceHarness {
 
   public List<string> Warnings { get; } = [];
 
+  public List<string> Infos { get; } = [];
+
   public CacheService Cache { get; }
 
   public ArchiveProvider ArchiveProvider { get; private set; }
@@ -160,6 +177,21 @@ internal sealed class WorkspaceHarness {
 
     return snapshot;
   }
+
+  /// The version of the game that AddGame installs.
+  public const string GameVersion = "1.21.0";
+
+  /// Records in the state file the game GameVersion of the build windows, installed with no
+  /// file, so that mods can be installed (protocol/lip-install.md, "The game and the loader").
+  /// Replaces the state file.
+  public void AddGame() => AddFile(".lip/state.json", $$"""
+      { "format": 4, "side": "server", "platform": "{{Platform}}", "packages": [ {
+        "manifest": {
+          "format": 4, "id": "{{BedrockServer.Repository}}", "version": "{{GameVersion}}",
+          "variants": { "": [ { "side": "server", "platform": "{{Platform}}" } ] } },
+        "variant": "", "explicit": true, "ref": "{{BedrockServer.Repository}}@{{GameVersion}}",
+        "files": [] } ] }
+      """);
 
   /// The state file. Throws when there is none.
   public async Task<LockFile> Lock() =>

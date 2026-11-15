@@ -120,7 +120,7 @@ public sealed partial class TuiApp {
     }
 
     Rect area = Panel(
-        _screen, body, $"{WorkspaceProgram.ServerFileName} — {state}", focused: true);
+        _screen, body, $"Server — {state}", focused: true);
     int rows = area.Height - 2;
     if (rows < 1) {
       return;

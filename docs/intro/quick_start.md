@@ -6,13 +6,31 @@ This guide will help you get started with `lip`, covering basic usage for managi
 
 Before proceeding, ensure that you have [installed lip](installation.md). lip does not require `git` to be installed.
 
-## Installing Packages
+## Setting Up the Server
 
-Run lip in the root directory of your server (the workspace). To install a package, use the `install` command followed by the package id. You can specify a version using the `@` symbol, e.g. `github.com/LiteLDev/LeviLamina@1.0.0`.
+Run lip in the root directory of your server (the workspace), e.g. a new empty directory. First set up the server: the Bedrock Dedicated Server of a game version, with LeviLamina as its loader:
 
 ```shell
-lip install github.com/LiteLDev/LeviLamina
+lip setup --game 1.21.0
 ```
+
+This installs the newest LeviLamina that supports the game 1.21.0. To take the newest game that LeviLamina supports instead, install LeviLamina:
+
+```shell
+lip install LeviLamina
+```
+
+Before it downloads the game, lip shows the links to the Minecraft End User License Agreement and the Microsoft Privacy Policy, and asks whether you accept them: type `yes`. In a script, where lip cannot ask, add `--accept-eula`. See [`lip setup`](../cli/commands/setup.md).
+
+## Installing Packages
+
+To install a package, such as a mod, use the `install` command followed by the package id. You can specify a version using the `@` symbol, e.g. `github.com/LiteLDev/LegacyScriptEngine#lua@1.0.0`.
+
+```shell
+lip install github.com/LiteLDev/LegacyScriptEngine#lua
+```
+
+Mods need the server: in a workspace that has no game yet, `lip install` of a mod fails and asks you to run `lip setup` first.
 
 `lip` supports installing from various sources, including Git repositories, URLs, and ZIP files and directories on your disk. When you install a package:
 - It is downloaded to the local cache.
@@ -21,11 +39,11 @@ lip install github.com/LiteLDev/LeviLamina
 
 lip manages server workspaces only. Client mods are managed by launchers such as LeviLauncher.
 
-lip installs the packages of the platform `win-x64`, on every system. On Linux and macOS, it runs their hook commands and the server through Wine. The Linux server is `github.com/LiteLDev/bds#linux`, which you start yourself, as `lip run` cannot start it. See [Running a Server](../guides/running_server.md#the-linux-server).
+lip installs the packages of the platform `win-x64`, on every system. On Linux and macOS, it runs their hook commands and the server through Wine. The Linux server, without LeviLamina, is set up with `lip setup --game <version> --build linux`, and `lip run` starts it on Linux on x64. See [Running a Server](../guides/running_server.md#the-linux-server).
 
 ## Running the Server
 
-Once LeviLamina is installed, start the server in the workspace:
+Once the server is set up, start it in the workspace:
 
 ```shell
 lip run
@@ -56,17 +74,17 @@ lip pkg view github.com/LiteLDev/LeviLamina
 To update a package to a newer version, use the `update` command.
 
 ```shell
-lip update github.com/LiteLDev/LeviLamina
+lip update github.com/LiteLDev/LegacyScriptEngine#lua
 ```
 
-To change to a specific version, including an older one, add it with `@`, e.g. `lip update github.com/LiteLDev/LeviLamina@1.0.0`. This pins the package to that version until you update it by its path without `@`. Running `lip update` without arguments updates every package you installed explicitly.
+To change to a specific version, including an older one, add it with `@`, e.g. `lip update github.com/LiteLDev/LegacyScriptEngine#lua@1.0.0`. This pins the package to that version until you update it by its path without `@`. Running `lip update` without arguments updates every package you installed explicitly, except the game and LeviLamina: to change their versions, run `lip setup` again, e.g. `lip setup --game 1.21.50`.
 
 ## Uninstalling Packages
 
 To remove a package and the files it installed from your project:
 
 ```shell
-lip uninstall github.com/LiteLDev/LeviLamina
+lip uninstall github.com/LiteLDev/LegacyScriptEngine#lua
 ```
 
 ## Configuration

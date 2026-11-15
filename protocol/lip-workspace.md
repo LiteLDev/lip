@@ -41,7 +41,7 @@ A **program** is a command line that `lip` runs in a workspace: a hook command, 
 
 A program runs with the workspace as working directory and with the environment variables of `lip`. A program that cannot be started is a failure.
 
-When the platform of the environment is a Windows platform and `lip` does not run on Windows, the program is run by [Wine]: `lip` runs the `wine` program of the Wine of `lip` ("System dependencies"), never another one, with these arguments: for a hook command, `cmd`, `/s`, `/c` and the string, as one argument; for the server, the absolute path of `bedrock_server_mod.exe`. Wine passes them to the Windows program as one command line, writing each `"` of an argument as `\"`, which `cmd` reads as it is; a hook command whose string contains `"` should therefore not be run by Wine. `lip` sets for `wine`:
+When the platform of the environment is a Windows platform and `lip` does not run on Windows, the program is run by [Wine]: `lip` runs the `wine` program of the Wine of `lip` ("System dependencies"), never another one, with these arguments: for a hook command, `cmd`, `/s`, `/c` and the string, as one argument; for the server, the absolute path of its file ([lip-run(1)](lip-run.md)). Wine passes them to the Windows program as one command line, writing each `"` of an argument as `\"`, which `cmd` reads as it is; a hook command whose string contains `"` should therefore not be run by Wine. `lip` sets for `wine`:
 
 | Variable | Value |
 |---|---|

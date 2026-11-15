@@ -22,6 +22,8 @@ lip uninstall <PACKAGES> [options]
 
 不再被任何显式安装的包需要的依赖也会被卸载。仍被其他包需要的包会保留，并改为依赖。
 
+[`lip setup`](setup.md) 安装的游戏和加载器与其他包一样卸载，例如 `lip uninstall github.com/LiteLDev/LeviLamina`。游戏被卸载后，工作区就没有游戏了：在安装 mod 或运行服务器之前，请再用 `lip setup` 设置它。
+
 ## 选项
 
 | 选项 | 说明 |

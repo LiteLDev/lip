@@ -63,8 +63,27 @@ public sealed record ProgramHost(
 /// Running programs in a workspace (protocol/lip-workspace.md, "Running programs"): hook commands
 /// and the server (protocol/lip-run.md).
 public static class WorkspaceProgram {
-  /// The server, at the workspace root (protocol/lip-run.md).
-  public const string ServerFileName = "bedrock_server_mod.exe";
+  /// The server of a workspace with a loader, at the workspace root (protocol/lip-run.md).
+  public const string ModServerFileName = "bedrock_server_mod.exe";
+
+  /// The Windows server of a workspace without a loader (protocol/lip-run.md).
+  public const string WindowsServerFileName = "bedrock_server.exe";
+
+  /// The Linux server (protocol/lip-run.md).
+  public const string LinuxServerFileName = "bedrock_server";
+
+  /// The file of the server that the game and the loader choose (protocol/lip-run.md):
+  /// bedrock_server_mod.exe with a loader, otherwise that of the build.
+  public static string ServerFile(bool loader, Mcmod.GameBuild build) =>
+      loader ? ModServerFileName
+      : build == Mcmod.GameBuild.Linux ? LinuxServerFileName
+      : WindowsServerFileName;
+
+  /// Whether lip runs the Linux server here: on Linux on x64 only (protocol/lip-run.md).
+  public static bool RunsLinuxServer =>
+      OperatingSystem.IsLinux()
+      && System.Runtime.InteropServices.RuntimeInformation.OSArchitecture
+          == System.Runtime.InteropServices.Architecture.X64;
 
   /// A platform that starts with "win" (protocol/lip-workspace.md, "Terms").
   public static bool IsWindowsPlatform(string platform) =>
@@ -101,11 +120,24 @@ public static class WorkspaceProgram {
     return Start(host, "cmd", ["/s", "/c", command]);
   }
 
-  /// The server, bedrock_server_mod.exe at the workspace root, without arguments
+  /// A Windows server, the file of the name at the workspace root, without arguments
   /// (protocol/lip-run.md). Throws InvalidOperationException when Wine is needed and the system
   /// has no Wine of lip.
-  public static ProgramStartInfo Server(ProgramHost host) =>
-      Start(host, Path.Join(host.WorkspaceRoot, ServerFileName), []);
+  public static ProgramStartInfo Server(ProgramHost host, string fileName) =>
+      Start(host, Path.Join(host.WorkspaceRoot, fileName), []);
+
+  /// The Linux server, bedrock_server at the workspace root, run by lip itself without
+  /// arguments, with LD_LIBRARY_PATH "." when it is unset or empty (protocol/lip-run.md).
+  public static ProgramStartInfo LinuxServer(ProgramHost host) {
+    Dictionary<string, string> environment = new(StringComparer.Ordinal);
+    if (string.IsNullOrEmpty(host.GetEnvironmentVariable("LD_LIBRARY_PATH"))) {
+      environment["LD_LIBRARY_PATH"] = ".";
+    }
+
+    return new ProgramStartInfo(
+        Path.Join(host.WorkspaceRoot, LinuxServerFileName), [], VerbatimArguments: false,
+        host.WorkspaceRoot, environment);
+  }
 
   /// The Windows program fileName with the arguments, run by Wine when the platform is a Windows
   /// platform and lip does not run on Windows, otherwise by lip itself, with the workspace as

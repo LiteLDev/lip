@@ -187,8 +187,9 @@ public sealed partial class TuiApp {
             return;
           }
 
-          PlanAndRun($"Install {string.Join(' ', arguments)}", (dryRun, token) =>
-              _client.Install(arguments, dryRun, token));
+          // The plan the user applies confirms what a setup uninstalls.
+          PlanAndRun($"Install {string.Join(' ', arguments)}", (dryRun, acceptEula, token) =>
+              _client.Install(arguments, dryRun, token, acceptEula, confirmed: true));
         }));
   }
 }

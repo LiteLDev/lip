@@ -33,7 +33,9 @@ Without arguments, every explicitly installed package is requested again by the 
 
 Without arguments, a package whose source now gives a package of another identity (e.g. a ZIP file whose `lip.toml` now has another `id`) is replaced by that package, which becomes explicitly installed. When two sources then give packages of the same identity, or a source gives a package of the identity of a package kept as it is, the update fails unless one package satisfies both.
 
-To move a package installed from a git ref back to released versions, update it by its plain repository path, e.g. `lip update github.com/LiteLDev/LeviLamina`.
+To move a package installed from a git ref back to released versions, update it by its plain repository path, e.g. `lip update github.com/user/repo`.
+
+`lip update` never changes the game or the loader (see [`lip setup`](setup.md#the-game-and-the-loader)). Without arguments, it keeps them as they are; an argument that names `github.com/LiteLDev/bds` or `github.com/LiteLDev/LeviLamina` fails the command before anything changes, pointing to `lip setup`. When the other packages cannot be updated with the game and the loader as they are, the command fails. To change the version of the game or of LeviLamina, run [`lip setup`](setup.md).
 
 ## Options
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Installs LeviLamina into a new workspace with the lip given as the first argument, runs the
+# Sets up the newest game that LeviLamina supports, with LeviLamina, in a new workspace with the
+# lip given as the first argument (lip install LeviLamina is carried out as lip setup), runs the
 # server with lip run until it has started, asks it to stop, and fails unless LeviLamina was
 # loaded, the server started, and lip run exited with 0.
 set -uo pipefail
@@ -8,7 +9,7 @@ lip=$1
 workspace=$(mktemp -d)
 cd "$workspace" || exit 1
 
-"$lip" install github.com/LiteLDev/LeviLamina || exit 1
+"$lip" install github.com/LiteLDev/LeviLamina --accept-eula || exit 1
 
 : > server.log
 # Writes the line stop once the server has started or exited, or after ten minutes.

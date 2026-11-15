@@ -20,6 +20,7 @@ lip <command> [<argument>...]
 
 | Command name | Page |
 |---|---|
+| `setup` | [lip-setup(1)] |
 | `install` | [lip-install(1)] |
 | `uninstall` | [lip-uninstall(1)] |
 | `update` | [lip-update(1)] |
@@ -44,7 +45,7 @@ The commands of the command group `pkg` are for developing packages; `self-updat
 - **result**: The data a command is asked for; only `list`, `pkg view`, `config get`, `config list` and `self-update --check` have one.
 - **message**: Any text other than a result or help (progress, information, warnings, errors, the final success line); its wording is not defined here.
 - **help**: Text describing how to invoke `lip` or a command; its wording is not defined here.
-- **workspace operation**: An operation ([lip-workspace(7)]) that `install`, `uninstall` or `update` carries out without `-n` or `--dry-run`.
+- **workspace operation**: An operation ([lip-workspace(7)]) that `setup`, `install`, `uninstall` or `update` carries out without `-n` or `--dry-run`.
 
 ### Arguments
 
@@ -112,7 +113,7 @@ A package argument is made into the request (source, range) whose range matches 
 
 ### Environment
 
-`lip` manages only workspaces whose side is `"server"`. The environment of `install`, `uninstall`, `update` and `run` is:
+`lip` manages only workspaces whose side is `"server"`. The environment of `setup`, `install`, `uninstall`, `update` and `run` is:
 
 - side: `"server"`. When the state file records another side, the command fails.
 - platform: `"win-x64"`, whatever system `lip` runs on. A state file that records the platform `"linux-x64"` is read as [lip-compatibility(7), "Workspaces of linux-x64"](lip-compatibility.md#workspaces-of-linux-x64) defines. When the state file records a platform other than these two, the command fails.
@@ -158,6 +159,7 @@ A command that fails other than on a usage error may write a **failure report**:
 
 [lip-tui(1)], [lip-package(7)], [lip-workspace(7)], [lip-userspace(7)], [lip-compatibility(7)]
 
+[lip-setup(1)]: lip-setup.md
 [lip-install(1)]: lip-install.md
 [lip-uninstall(1)]: lip-uninstall.md
 [lip-update(1)]: lip-update.md

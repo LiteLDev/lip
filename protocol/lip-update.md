@@ -20,10 +20,12 @@ Without operands, `lip update` updates every explicitly installed package as lip
 
 A package is replaced only as lip-workspace(7), "Operations" defines. Dependency packages are updated only as far as [lip-workspace(7), "Valid states"](lip-workspace.md#valid-states) requires. Updating a package installed from a source with a ref, by giving that source without the ref, moves the package back to the version tags.
 
+`lip update` keeps the game and the loader ([lip-setup(1), "Terms"](lip-setup.md#terms)) as they are, and installs, uninstalls and replaces no package of them: without operands, it does not request them again; an operand whose source is a remote repository whose location is `github.com/LiteLDev/bds` or `github.com/LiteLDev/LeviLamina`, compared ASCII case-insensitively, fails the command before anything changes, and its message should name `lip setup`. When the requests cannot be satisfied with the game and the loader as they are, the command fails.
+
 ## OPTIONS
 
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would install, uninstall or mark explicitly installed.
 
 ## SEE ALSO
 
-[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-workspace(7)](lip-workspace.md)
+[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-setup(1)](lip-setup.md), [lip-workspace(7)](lip-workspace.md)

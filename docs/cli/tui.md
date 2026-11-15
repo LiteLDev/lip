@@ -31,6 +31,8 @@ While the change is applied, `Ctrl+C` cancels it and undoes what was done so far
 
 In the install dialog of the Packages tab (`i`), the packages are written as on the command line (see [`lip install`](./commands/install.md)), separated by spaces.
 
+When an installation sets up the game, e.g. installing `LeviLamina` in a new workspace (see [`lip setup`](./commands/setup.md)), lip asks in a dialog, once you choose **Apply**, whether you accept the Minecraft EULA and the Microsoft Privacy Policy, and shows their links; nothing changes unless you accept. When the plan of such an installation lists mods that would be uninstalled because they do not work with the new game, choosing **Apply** uninstalls them.
+
 ## Browsing mods
 
 The Browse tab reads the mod catalogue of levimc.org (`https://levimc.org/api/v4/mods/`) when it is first opened; nothing of it is kept on disk, and `github_proxy` is not used for it. lip manages servers only, so the list holds the mods that have a build for a server.
@@ -95,7 +97,7 @@ The server and most mods create their configuration files when the server first 
 
 ## Running the server
 
-In the Server tab, `Enter` starts `bedrock_server_mod.exe` as [`lip run`](./commands/run.md) does. What the server writes is shown in the window; `PgUp` and `PgDn` scroll back. While the server runs, what you type is a line for the server, sent with `Enter`; `↑` and `↓` recall earlier lines.
+In the Server tab, `Enter` starts the server of the workspace as [`lip run`](./commands/run.md) does. What the server writes is shown in the window; `PgUp` and `PgDn` scroll back. While the server runs, what you type is a line for the server, sent with `Enter`; `↑` and `↓` recall earlier lines.
 
 `Ctrl+C` asks the server to stop, by sending it the line `stop`. Quitting lip while the server runs does the same, and lip waits until the server has exited.
 

@@ -14,6 +14,11 @@ public class InstallCommand(LipClient lipClient, IUserInteraction userInteractio
     [Description("The packages to install: path[[#variant]][[@version]], path[[#variant]]@branch:<name>, @tag:<name> or @rev:<commit>, an https:// URL of a .zip file, or a local .zip file or directory")]
     public required string[] Packages { get; init; }
 
+    [CommandOption("--accept-eula")]
+    [Description("Accept the Minecraft EULA and the Privacy Policy without being asked, when the"
+        + " packages include LeviLamina or the server and so set up the game")]
+    public bool AcceptEula { get; init; }
+
     [CommandOption("-n|--dry-run")]
     [Description("Run without making any changes")]
     public bool DryRun { get; init; }
@@ -23,7 +28,8 @@ public class InstallCommand(LipClient lipClient, IUserInteraction userInteractio
     await _lipClient.Install(
         settings.Packages,
         settings.DryRun,
-        cancellationToken);
+        cancellationToken,
+        settings.AcceptEula);
     if (settings.DryRun) {
       await _userInteraction.PrintInfo("Dry run: nothing was changed.");
     } else {

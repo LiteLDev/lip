@@ -13,7 +13,7 @@ The `lip` CLI is the primary interface for managing packages. It provides comman
 
 Some commands accept `--json` to print their result as JSON: [`config get`](commands/config.md), [`config list`](commands/config.md) and [`list`](commands/list.md). [`pkg view`](commands/pkg_view.md) always prints JSON.
 
-[`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) install the packages of the platform `win-x64` into the workspace, whatever system lip runs on (see [Environment](../concepts/lip_toml.md#environment)); the Linux server is the variant `github.com/LiteLDev/bds#linux`. lip manages server workspaces only.
+[`setup`](commands/setup.md), [`install`](commands/install.md), [`uninstall`](commands/uninstall.md) and [`update`](commands/update.md) install the packages of the platform `win-x64` into the workspace, whatever system lip runs on (see [Environment](../concepts/lip_toml.md#environment)); the Linux server is the variant `github.com/LiteLDev/bds#linux`. `setup` chooses the game (the server) and the loader (LeviLamina) of the workspace; `install` and `update` never change them. lip manages server workspaces only.
 
 ## Commands
 
@@ -25,6 +25,7 @@ Commands for running a server:
 -   [`lip list`](commands/list.md): List installed packages.
 -   [`lip run`](commands/run.md): Run the server of the workspace.
 -   [`lip self-update`](commands/self_update.md): Update lip itself to its latest release.
+-   [`lip setup`](commands/setup.md): Choose the game and the loader of the workspace.
 -   [`lip uninstall`](commands/uninstall.md): Uninstall packages.
 -   [`lip update`](commands/update.md): Update packages.
 

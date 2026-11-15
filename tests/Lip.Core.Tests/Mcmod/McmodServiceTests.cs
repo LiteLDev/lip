@@ -1231,6 +1231,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_InstalledPackageWhoseTagMoved_IsKeptWithItsRecordedPackageFile() {
     // Arrange: mod a is installed; its tag then moves to a package file whose mod is named B.
+    _ws.AddGame();
     AddMod("example.com/a", "A");
     await _ws.Service.Install(["example.com/a"], _options);
     _ws.AddDownload("https://example.com/moved.mcmod", WorkspaceHarness.Mcmod("B"));
@@ -1641,6 +1642,7 @@ public class McmodServiceTests {
   [Fact]
   public async Task Install_ModWithDependency_WritesItsManifestAsItIs() {
     // Arrange
+    _ws.AddGame();
     AddMod("example.com/base", "Base");
     AddMod("example.com/top", "Top", """ "deps": { "example.com/base": "^1.0.0" }, """);
 

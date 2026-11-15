@@ -11,7 +11,7 @@ public class WorkspaceLayoutTests {
 
   private static readonly OperationOptions s_options = new();
 
-  private readonly WorkspaceHarness _ws = new();
+  private readonly WorkspaceHarness _ws = new(withGame: true);
 
   /// The mod Demo: a package of format 4 with an asset of type "mcmod" holding Demo.dll.
   private void AddMod() {
@@ -43,7 +43,7 @@ public class WorkspaceLayoutTests {
     Assert.True(_ws.Exists("mods/Demo/Demo.dll"));
     Assert.False(_ws.Fs.Directory.Exists(_ws.Path("plugins")));
     Assert.All(
-        Assert.Single((await _ws.Lock()).Packages).Files,
+        (await _ws.Lock()).Packages.Single(p => p.Id != BedrockServer.Repository).Files,
         f => Assert.StartsWith("mods/Demo/", f));
   }
 
@@ -111,7 +111,9 @@ public class WorkspaceLayoutTests {
 
     // Assert
     Assert.Equal("lib", _ws.Fs.File.ReadAllText(_ws.Path("plugins/lib/lib.dll")));
-    Assert.Equal(["plugins/lib/lib.dll"], Assert.Single((await _ws.Lock()).Packages).Files);
+    Assert.Equal(
+        ["plugins/lib/lib.dll"],
+        (await _ws.Lock()).Packages.Single(p => p.Id != BedrockServer.Repository).Files);
   }
 
   // A workspace for a Windows platform where lip does not run on Windows: its paths are
@@ -132,7 +134,7 @@ public class WorkspaceLayoutTests {
     Assert.True(_ws.Exists("Mods/Demo/Demo.dll"));
     Assert.False(_ws.Fs.Directory.Exists(_ws.Path("mods")));
     Assert.All(
-        Assert.Single((await _ws.Lock()).Packages).Files,
+        (await _ws.Lock()).Packages.Single(p => p.Id != BedrockServer.Repository).Files,
         f => Assert.StartsWith("Mods/Demo/", f));
   }
 

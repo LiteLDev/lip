@@ -31,6 +31,8 @@ lip
 
 在 Packages 标签页的安装对话框（`i`）里，包的写法与命令行相同（见 [`lip install`](./commands/install.md)），以空格分隔。
 
+当某次安装会设置游戏时，例如在新工作区中安装 `LeviLamina`（见 [`lip setup`](./commands/setup.md)），你选择 **Apply** 后，lip 会在对话框中给出 Minecraft EULA 和 Microsoft 隐私声明的链接，询问你是否接受；除非你接受，否则什么都不会改变。若这种安装的计划中列出了因无法与新游戏配合而将被卸载的 mod，选择 **Apply** 即会卸载它们。
+
 ## 浏览模组
 
 Browse 标签页在第一次打开时读取 levimc.org 的模组目录（`https://levimc.org/api/v4/mods/`）；目录内容不会写入磁盘，也不经过 `github_proxy`。lip 只管理服务端，所以列表里只有带服务端构建的模组。
@@ -95,7 +97,7 @@ Config 标签页左侧列出工作区的配置文件，右侧显示选中文件�
 
 ## 运行服务器
 
-在 Server 标签页按 `Enter`，会像 [`lip run`](./commands/run.md) 一样启动 `bedrock_server_mod.exe`。服务器的输出显示在窗口里，`PgUp` 和 `PgDn` 可以回看。服务器运行期间，你输入的内容是发给服务器的一行，按 `Enter` 发送；`↑` 和 `↓` 可以调出之前输入过的行。
+在 Server 标签页按 `Enter`，会像 [`lip run`](./commands/run.md) 一样启动工作区的服务器。服务器的输出显示在窗口里，`PgUp` 和 `PgDn` 可以回看。服务器运行期间，你输入的内容是发给服务器的一行，按 `Enter` 发送；`↑` 和 `↓` 可以调出之前输入过的行。
 
 `Ctrl+C` 会向服务器发送一行 `stop`，请它停止。在服务器运行时退出 lip 也是如此，lip 会等到服务器退出。
 
