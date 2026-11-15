@@ -888,7 +888,7 @@ def prune(args: argparse.Namespace) -> int:
         path = e["package"].split("#")[0]
         if f"v{e['version']}" not in listed[path][2]:
             return False
-        if not (e["tooth_json_at_tag"] and path.startswith("github.com/")):
+        if not (e["tooth_json_at_tag"] and path.split("/")[0] == "github.com"):
             return True
         status = http.request(tooth_url(e)).status
         if status not in (200, 404):
