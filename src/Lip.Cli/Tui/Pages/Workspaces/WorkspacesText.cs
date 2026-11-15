@@ -28,6 +28,11 @@ public static class WorkspacesText {
       L.T("This folder no longer exists.", "此文件夹已不存在。", "此資料夾已不存在。");
   public static string RunningDetail =>
       L.T("Its server is running.", "它的服务器正在运行。", "它的伺服器正在執行。");
+  public static string CurrentRunningDetail =>
+      L.T(
+          "The selected workspace, with its server running.",
+          "当前工作区，服务器正在运行。",
+          "目前的工作區，伺服器正在執行。");
   public static string ListUnreadable =>
       L.T("Cannot read the workspace list", "无法读取工作区列表", "無法讀取工作區清單");
 
@@ -45,7 +50,6 @@ public static class WorkspacesText {
 
   // Adding a folder.
   public static string AddTitle => L.T("Add folder", "添加文件夹", "加入資料夾");
-  public static string Folder => L.T("Folder", "文件夹", "資料夾");
 
   // The new server.
   public static string NewServerTitle => L.T("New server", "新建服务器", "建立伺服器");
@@ -70,6 +74,22 @@ public static class WorkspacesText {
   public static string Newest => L.T("newest", "最新", "最新");
   public static string Installed => L.T("installed", "已安装", "已安裝");
   public static string Prerelease => L.T("preview", "预览版", "預覽版");
+  public static string HasLoader => "LeviLamina ✓";
+  public static string HasNoLoader => L.T("No LeviLamina", "无 LeviLamina", "無 LeviLamina");
+  public static string HasLoaderDetail =>
+      L.T(
+          "Mods need LeviLamina, which supports this version.",
+          "模组需要 LeviLamina，它支持此版本。",
+          "模組需要 LeviLamina，它支援此版本。");
+  public static string HasNoLoaderDetail =>
+      L.T(
+          "Mods need LeviLamina, which this version lacks.",
+          "模组需要 LeviLamina，而此版本没有。",
+          "模組需要 LeviLamina，而此版本沒有。");
+
+  /// "windows only": the one build of a game version, where others have more.
+  public static string OnlyBuild(string build) =>
+      L.T($"{build} only", $"仅 {build}", $"僅 {build}");
   public static string Build => L.T("Build", "构建", "組建");
   public static string WindowsDetail =>
       OperatingSystem.IsWindows()
@@ -100,11 +120,4 @@ public static class WorkspacesText {
           "没有支持此游戏版本的 LeviLamina。",
           "沒有支援此遊戲版本的 LeviLamina。");
   public static string SetUpTitle => L.T("Set up server", "安装服务器", "安裝伺服器");
-
-  /// One example of a folder for a new server.
-  public const string NewFolderExample = "my-server";
-
-  /// One example of a folder that holds a server.
-  public static string FolderExample =>
-      OperatingSystem.IsWindows() ? @"D:\servers\survival" : "/srv/survival";
 }
