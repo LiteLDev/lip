@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="510" viewBox="0 0 944 510" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="490" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="489" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="202" y="168" width="702" height="20" fill="#4a5364"/>
+<rect x="31" y="248" width="99" height="20" fill="#4a5364"/>
+<rect x="148" y="268" width="81" height="20" fill="#2563c9"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M292 78H918.13M805 238H904M25.88 458H180.13M187.88 458H918.13M26.5 77.38V458.63M179.5 77.38V208M179.5 308V458.63M188.5 77.38V208M188.5 308V458.63M917.5 77.38V458.63"/>
+<path stroke="#56c8d8" d="M133.88 218H148M292 218H801.13M133.88 298H801.13M134.5 217.38V298.63M800.5 217.38V298.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="211" y="82.5" textLength="72" lengthAdjust="spacingAndGlyphs" font-weight="700">Settings</text>
+<text x="40" y="102.5" textLength="36" lengthAdjust="spacingAndGlyphs">Home</text>
+<text x="211" y="102.5" textLength="72" lengthAdjust="spacingAndGlyphs">Language</text>
+<text x="382" y="102.5" textLength="117" lengthAdjust="spacingAndGlyphs">Follow system</text>
+<text x="40" y="122.5" textLength="54" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="211" y="122.5" textLength="108" lengthAdjust="spacingAndGlyphs">GitHub proxy</text>
+<text x="382" y="122.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Not set</text>
+<text x="40" y="142.5" textLength="36" lengthAdjust="spacingAndGlyphs">Mods</text>
+<text x="211" y="142.5" textLength="108" lengthAdjust="spacingAndGlyphs">Auto restart</text>
+<text x="382" y="142.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">[ ]</text>
+<text x="418" y="142.5" textLength="27" lengthAdjust="spacingAndGlyphs">Off</text>
+<text x="40" y="162.5" textLength="72" lengthAdjust="spacingAndGlyphs">Get mods</text>
+<text x="211" y="162.5" textLength="99" lengthAdjust="spacingAndGlyphs">Clear cache</text>
+<text x="382" y="162.5" textLength="342" lengthAdjust="spacingAndGlyphs">C:\Users\Steve\AppData\Local\lip\Cache</text>
+<text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
+<text x="211" y="182.5" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Check for updates</text>
+<text x="382" y="182.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#ffffff">0.42.0</text>
+<text x="449.5" y="182.5" text-anchor="middle" fill="#ffffff">·</text>
+<text x="463" y="182.5" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Installer running</text>
+<text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="211" y="202.5" textLength="54" lengthAdjust="spacingAndGlyphs">Daemon</text>
+<text x="382" y="202.5" textLength="99" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Not running</text>
+<text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="157" y="222.5" textLength="126" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">Install update</text>
+<text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="148" y="242.5" textLength="639" lengthAdjust="spacingAndGlyphs">The installer of lip 0.42.0 is running. Quit lip so that it can finish.</text>
+<text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Settings</text>
+<text x="148" y="282.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ Close ]</text>
+<text x="31" y="482.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="85" y="482.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Select</text>
+<text x="157" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="193" y="482.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Close</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V494H16zM127 205H808V311H127z"/>
+</svg>

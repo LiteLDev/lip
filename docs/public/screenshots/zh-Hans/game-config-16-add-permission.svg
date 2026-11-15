@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="688" viewBox="0 0 944 688" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="610" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="609" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="274" y="88" width="630" height="20" fill="#4a5364"/>
+<rect x="175" y="128" width="72" height="20" fill="#4a5364"/>
+<rect x="31" y="168" width="117" height="20" fill="#4a5364"/>
+<rect x="310" y="328" width="9" height="20" fill="#d8dee9"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H153.13M160.88 78H175M265 78H918.13M814 358H904M175 538H904M25.88 578H153.13M160.88 578H918.13M26.5 77.38V578.63M152.5 77.38V288M152.5 368V578.63M161.5 77.38V288M161.5 368V578.63M260.5 88V288M260.5 368V538.63M917.5 77.38V578.63"/>
+<path stroke="#56c8d8" d="M133.88 298H148M238 298H810.13M133.88 358H810.13M134.5 297.38V358.63M809.5 297.38V358.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="193 211 229 247" y="82.5" text-anchor="middle" font-weight="700">游戏配置</text>
+<text x="49 67" y="102.5" text-anchor="middle">主页</text>
+<text x="184 202" y="102.5" text-anchor="middle">属性</text>
+<text x="274" y="102.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">+</text>
+<text x="301 319 337 355" y="102.5" text-anchor="middle" fill="#ffffff">添加玩家</text>
+<text x="368.5" y="102.5" text-anchor="middle" fill="#ffffff">…</text>
+<text x="49 67 85" y="122.5" text-anchor="middle">服务器</text>
+<text x="184 202 220" y="122.5" text-anchor="middle">白名单</text>
+<text x="238" y="122.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">*</text>
+<text x="292" y="122.5" textLength="225" lengthAdjust="spacingAndGlyphs">2535416409681153 operator</text>
+<text x="49 67" y="142.5" text-anchor="middle">模组</text>
+<text x="184 202" y="142.5" text-anchor="middle" fill="#ffffff">权限</text>
+<text x="292" y="142.5" textLength="207" lengthAdjust="spacingAndGlyphs">2535428104317920 member</text>
+<text x="49 67 85 103" y="162.5" text-anchor="middle">获取模组</text>
+<text x="49 67 85 103" y="182.5" text-anchor="middle" fill="#ffffff">游戏配置</text>
+<text x="49 67 85 103" y="202.5" text-anchor="middle">模组配置</text>
+<text x="49 67 85" y="222.5" text-anchor="middle">工作区</text>
+<text x="49 67" y="242.5" text-anchor="middle">工具</text>
+<text x="49 67" y="262.5" text-anchor="middle">设置</text>
+<text x="166 184 202 220" y="302.5" text-anchor="middle" fill="#56c8d8" font-weight="700">添加玩家</text>
+<text x="148" y="322.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">XUID</text>
+<text x="148" y="342.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">&gt;</text>
+<text x="166" y="342.5" textLength="144" lengthAdjust="spacingAndGlyphs">2535405219876543</text>
+<text x="283 301 319 337 355 373 391 409 427 445 463 481 499 517 535 553 571 589 607 625" y="382.5" text-anchor="middle" fill="#8b95a7">这些玩家使用各自的权限，而不是默认权限。</text>
+<text x="175" y="562.5" textLength="9" lengthAdjust="spacingAndGlyphs" font-weight="700">[</text>
+<text x="202 220" y="562.5" text-anchor="middle" font-weight="700">保存</text>
+<text x="238" y="562.5" textLength="9" lengthAdjust="spacingAndGlyphs" font-weight="700">]</text>
+<text x="256" y="562.5" textLength="9" lengthAdjust="spacingAndGlyphs">[</text>
+<text x="283 301" y="562.5" text-anchor="middle">放弃</text>
+<text x="319" y="562.5" textLength="9" lengthAdjust="spacingAndGlyphs">]</text>
+<text x="715 733 751 769 787 805 823 841 859 877 895" y="562.5" text-anchor="middle" fill="#8b95a7">下次启动服务器时生效。</text>
+<text x="31" y="602.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="94 112" y="602.5" text-anchor="middle" fill="#8b95a7">确认</text>
+<text x="139" y="602.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="184 202" y="602.5" text-anchor="middle" fill="#8b95a7">取消</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V614H16zM127 285H817V371H127z"/>
+<rect x="10.5" y="630.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<rect x="24.5" y="642.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="658.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>
