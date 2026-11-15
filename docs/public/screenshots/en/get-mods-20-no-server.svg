@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="568" viewBox="0 0 944 568" role="img" font-family="ui-monospace,'Cascadia Mono','Cascadia Code',Consolas,'SF Mono',Menlo,'DejaVu Sans Mono','Liberation Mono','Noto Sans Mono CJK SC','Sarasa Mono SC','Microsoft YaHei UI','PingFang SC','Noto Sans CJK SC',monospace" font-size="15">
+<title>lip</title>
+<rect x="10" y="10" width="924" height="490" rx="10" fill="#1a1d24"/>
+<path d="M10 40V20a10 10 0 0 1 10 -10H924a10 10 0 0 1 10 10V40z" fill="#272b35"/>
+<circle cx="28" cy="25" r="5.5" fill="#ff5f57"/>
+<circle cx="46" cy="25" r="5.5" fill="#febc2e"/>
+<circle cx="64" cy="25" r="5.5" fill="#28c840"/>
+<text x="472" y="29.5" text-anchor="middle" font-size="13" fill="#9aa3b5">lip</text>
+<rect x="10.5" y="10.5" width="923" height="489" rx="9.5" fill="none" stroke="#3d4454"/>
+<g shape-rendering="crispEdges">
+<rect x="31" y="148" width="144" height="20" fill="#4a5364"/>
+<rect x="202" y="168" width="702" height="20" fill="#4a5364"/>
+<rect x="256" y="268" width="135" height="20" fill="#2563c9"/>
+</g>
+<g fill="none" stroke-width="1.25" shape-rendering="crispEdges">
+<path stroke="#8b95a7" d="M25.88 78H180.13M187.88 78H202M292 78H918.13M202 158H211M409 158H904M202 318H211M391 318H904M25.88 458H180.13M187.88 458H918.13M26.5 77.38V458.63M179.5 77.38V458.63M188.5 77.38V458.63M917.5 77.38V458.63"/>
+<path stroke="#56c8d8" d="M241.88 218H256M436 218H702.13M241.88 298H702.13M242.5 217.38V298.63M701.5 217.38V298.63"/>
+</g>
+<g fill="#d8dee9">
+<text x="31" y="62.5" textLength="90" lengthAdjust="spacingAndGlyphs" font-weight="700">lip 0.41.0</text>
+<text x="134.5" y="62.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="148" y="62.5" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">D:\servers\survival</text>
+<text x="211" y="82.5" textLength="72" lengthAdjust="spacingAndGlyphs" font-weight="700">Get mods</text>
+<text x="40" y="102.5" textLength="36" lengthAdjust="spacingAndGlyphs">Home</text>
+<text x="220" y="102.5" textLength="54" lengthAdjust="spacingAndGlyphs">Search</text>
+<text x="301" y="102.5" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">economy</text>
+<text x="40" y="122.5" textLength="54" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="220" y="122.5" textLength="36" lengthAdjust="spacingAndGlyphs">Sort</text>
+<text x="305.5" y="122.5" text-anchor="middle">‹</text>
+<text x="319" y="122.5" textLength="81" lengthAdjust="spacingAndGlyphs">Relevance</text>
+<text x="413.5" y="122.5" text-anchor="middle">›</text>
+<text x="40" y="142.5" textLength="36" lengthAdjust="spacingAndGlyphs">Mods</text>
+<text x="220" y="142.5" textLength="63" lengthAdjust="spacingAndGlyphs">Filters</text>
+<text x="301" y="142.5" textLength="36" lengthAdjust="spacingAndGlyphs">None</text>
+<text x="40" y="162.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">Get mods</text>
+<text x="220" y="162.5" textLength="54" lengthAdjust="spacingAndGlyphs" font-weight="700">8 mods</text>
+<text x="287.5" y="162.5" text-anchor="middle" font-weight="700">·</text>
+<text x="305.5" y="162.5" text-anchor="middle" font-weight="700">✓</text>
+<text x="319" y="162.5" textLength="81" lengthAdjust="spacingAndGlyphs" font-weight="700">Installed</text>
+<text x="40" y="182.5" textLength="99" lengthAdjust="spacingAndGlyphs">Game config</text>
+<text x="220" y="182.5" textLength="162" lengthAdjust="spacingAndGlyphs" fill="#ffffff">LegacyScriptEngine</text>
+<text x="395.5" y="182.5" text-anchor="middle" fill="#ffffff">·</text>
+<text x="409" y="182.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#ffffff">LiteLDev</text>
+<text x="665.5" y="182.5" text-anchor="middle" fill="#ffffff">↓</text>
+<text x="679" y="182.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#ffffff">186k</text>
+<text x="746.5" y="182.5" text-anchor="middle" fill="#ffffff">★</text>
+<text x="760" y="182.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#ffffff">412</text>
+<text x="805" y="182.5" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#ffffff">2026-11-08</text>
+<text x="40" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">Mod config</text>
+<text x="220" y="202.5" textLength="108" lengthAdjust="spacingAndGlyphs">LeviOptimize</text>
+<text x="341.5" y="202.5" text-anchor="middle" fill="#8b95a7">·</text>
+<text x="355" y="202.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">LiteLDev</text>
+<text x="665.5" y="202.5" text-anchor="middle" fill="#56c8d8">↓</text>
+<text x="679" y="202.5" textLength="36" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">143k</text>
+<text x="746.5" y="202.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="202.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">286</text>
+<text x="805" y="202.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-02</text>
+<text x="40" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">Workspaces</text>
+<text x="220" y="222.5" textLength="18" lengthAdjust="spacingAndGlyphs">GM</text>
+<text x="265" y="222.5" textLength="162" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">LegacyScriptEngine</text>
+<text x="706" y="222.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">k</text>
+<text x="746.5" y="222.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="222.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">231</text>
+<text x="805" y="222.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-27</text>
+<text x="40" y="242.5" textLength="45" lengthAdjust="spacingAndGlyphs">Tools</text>
+<text x="220" y="242.5" textLength="18" lengthAdjust="spacingAndGlyphs">Le</text>
+<text x="256" y="242.5" textLength="432" lengthAdjust="spacingAndGlyphs">This folder has no server yet. Create one first.</text>
+<text x="706" y="242.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">k</text>
+<text x="746.5" y="242.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="242.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">164</text>
+<text x="805" y="242.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-19</text>
+<text x="40" y="262.5" textLength="72" lengthAdjust="spacingAndGlyphs">Settings</text>
+<text x="220" y="262.5" textLength="18" lengthAdjust="spacingAndGlyphs">PL</text>
+<text x="706" y="262.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">k</text>
+<text x="746.5" y="262.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="262.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">152</text>
+<text x="805" y="262.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-11-05</text>
+<text x="220" y="282.5" textLength="18" lengthAdjust="spacingAndGlyphs">Le</text>
+<text x="256" y="282.5" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#ffffff">[ New server</text>
+<text x="368.5" y="282.5" text-anchor="middle" fill="#ffffff">…</text>
+<text x="382" y="282.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#ffffff">]</text>
+<text x="400" y="282.5" textLength="90" lengthAdjust="spacingAndGlyphs">[ Cancel ]</text>
+<text x="706" y="282.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">k</text>
+<text x="746.5" y="282.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="760" y="282.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">118</text>
+<text x="805" y="282.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-09-30</text>
+<text x="220" y="302.5" textLength="18" lengthAdjust="spacingAndGlyphs">Mo</text>
+<text x="706" y="302.5" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#56c8d8">k</text>
+<text x="755.5" y="302.5" text-anchor="middle" fill="#e5c07b">★</text>
+<text x="769" y="302.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">97</text>
+<text x="805" y="302.5" textLength="90" lengthAdjust="spacingAndGlyphs">2026-10-11</text>
+<text x="899.5" y="302.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="220" y="322.5" textLength="162" lengthAdjust="spacingAndGlyphs" font-weight="700">LegacyScriptEngine</text>
+<text x="202" y="342.5" textLength="486" lengthAdjust="spacingAndGlyphs">A plugin engine for running LLSE plugins on LeviLamina</text>
+<text x="202" y="362.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Author</text>
+<text x="301" y="362.5" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#56c8d8" font-weight="700">LiteLDev</text>
+<text x="202" y="382.5" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Downloads</text>
+<text x="301" y="382.5" textLength="63" lengthAdjust="spacingAndGlyphs">186,240</text>
+<text x="202" y="402.5" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Stars</text>
+<text x="301" y="402.5" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">412</text>
+<text x="202" y="422.5" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">ID</text>
+<text x="301" y="422.5" textLength="342" lengthAdjust="spacingAndGlyphs">github.com/LiteLDev/LegacyScriptEngine</text>
+<text x="202" y="442.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Latest</text>
+<text x="301" y="442.5" textLength="99" lengthAdjust="spacingAndGlyphs">0.13.2 #lua</text>
+<text x="899.5" y="442.5" text-anchor="middle" fill="#8b95a7">▼</text>
+<text x="35.5" y="482.5" text-anchor="middle" font-weight="700">←</text>
+<text x="44.5" y="482.5" text-anchor="middle" font-weight="700">→</text>
+<text x="49" y="482.5" textLength="36" lengthAdjust="spacingAndGlyphs" font-weight="700">/Tab</text>
+<text x="94" y="482.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Switch</text>
+<text x="166" y="482.5" textLength="45" lengthAdjust="spacingAndGlyphs" font-weight="700">Enter</text>
+<text x="220" y="482.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Select</text>
+<text x="292" y="482.5" textLength="27" lengthAdjust="spacingAndGlyphs" font-weight="700">Esc</text>
+<text x="328" y="482.5" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#8b95a7">Cancel</text>
+</g>
+<path fill="#0b0d11" fill-opacity="0.62" fill-rule="evenodd" d="M16 42H928V494H16zM235 205H709V311H235z"/>
+<rect x="252" y="266" width="143" height="24" rx="6" fill="#ffa94d" fill-opacity="0.1" stroke="#ffa94d" stroke-width="2"/>
+<rect x="10.5" y="510.5" width="923" height="47" rx="9.5" fill="#272b35" stroke="#3d4454"/>
+<rect x="24.5" y="522.5" width="54" height="23" rx="5" fill="#1a1d24" stroke="#ffa94d"/>
+<text x="32" y="538.5" textLength="39" lengthAdjust="spacingAndGlyphs" font-size="13" font-weight="700" fill="#d8dee9">Enter</text>
+</svg>
