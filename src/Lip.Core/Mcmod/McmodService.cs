@@ -47,6 +47,10 @@ public record InstalledPackage(string Identity, string Version, bool Explicit);
 /// dependencies may change version; their installed versions are tried first. An update solves
 /// so from the start, so that the dependency packages give way to the newest versions of the
 /// requested packages. Packages that no explicitly installed package needs any more are removed.
+///
+/// Before an operation that runs hook commands starts to change the workspace, and before lip run
+/// starts the server, systemPreparer prepares the system for the platform
+/// (protocol/lip-workspace.md, "System dependencies"); without it, nothing is prepared.
 public class McmodService(
     IFileSystem fileSystem,
     IUserInteraction userInteraction,
@@ -54,7 +58,8 @@ public class McmodService(
     IArchiveProvider archiveProvider,
     IArchiveReader archiveReader,
     McmodInstaller installer,
-    Func<string>? workspaceRoot = null) {
+    Func<string>? workspaceRoot = null,
+    ISystemPreparer? systemPreparer = null) {
   private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
 
   /// The state file as the user sees it from the workspace root.
@@ -69,6 +74,7 @@ public class McmodService(
   private readonly Func<string> _workspaceRoot =
       workspaceRoot ?? fileSystem.Directory.GetCurrentDirectory;
   private readonly WorkspaceLayout _layout = new(fileSystem, userInteraction);
+  private readonly ISystemPreparer? _systemPreparer = systemPreparer;
 
   public async Task Install(IReadOnlyList<string> packages, OperationOptions options) {
     using WorkspaceMutex? mutex = await BeginOperation(options);
@@ -312,9 +318,13 @@ public class McmodService(
           server);
     }
 
+    if (_systemPreparer is not null) {
+      await _systemPreparer.Prepare(environment.Platform, root, CancellationToken.None);
+    }
+
     ProgramHost host = ProgramHost.Current(environment.Platform, root);
     bool throughWine = WorkspaceProgram.RunsThroughWine(host);
-    string program = throughWine ? "wine" : server;
+    string program = throughWine ? host.Wine ?? "Wine" : server;
     try {
       ProgramStartInfo start = WorkspaceProgram.Server(host);
       return await ServerSession.Run(starter, start, input, inputIsConsole, listen);
@@ -323,12 +333,22 @@ public class McmodService(
         or InvalidOperationException) {
       throw new InvalidOperationException(
           $"Could not start the server: lip could not run {program} in '{root}' for the"
-          + $" platform {environment.Platform}"
-          + (throughWine
-              ? ". Install Wine, so that 'wine' is found through PATH."
-              : "."),
+          + $" platform {environment.Platform}: {ex.Message}",
           ex);
     }
+  }
+
+  /// Prepares the system to run the programs of the workspace (protocol/lip-workspace.md, "System
+  /// dependencies"), for the platform of the environment of protocol/lip.md, "Environment",
+  /// ahead of the operation or lip run that would. Takes no workspace lock.
+  public async Task PrepareSystem(CancellationToken cancellationToken) {
+    if (_systemPreparer is null) {
+      return;
+    }
+
+    string root = _fs.Path.GetFullPath(_workspaceRoot());
+    LipEnvironment environment = DetermineEnvironment(await _lockStore.Load(root));
+    await _systemPreparer.Prepare(environment.Platform, root, cancellationToken);
   }
 
   /// The result of lip pkg view (protocol/lip-pkg.md, "lip pkg view"), as JSON: "manifest", the
@@ -986,6 +1006,13 @@ public class McmodService(
     if (plans.Count == 0) {
       await _lockStore.Save(workspace.Root, final);
       return;
+    }
+
+    // The system is prepared before anything changes, so that a failure is an early one
+    // (protocol/lip-workspace.md, "Carrying out an operation", step 5).
+    if (hooksRun && _systemPreparer is not null) {
+      await _systemPreparer.Prepare(
+          workspace.Environment.Platform, workspace.Root, options.CancellationToken);
     }
 
     using WorkspaceTransaction transaction = new(

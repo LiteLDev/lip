@@ -107,7 +107,8 @@ public sealed class LipClient {
         new LockStore(fileSystem),
         archiveProvider,
         new ArchiveReader(),
-        new McmodInstaller(fileSystem, commandRunner, userInteraction));
+        new McmodInstaller(fileSystem, commandRunner, userInteraction),
+        systemPreparer: SystemDependencies.Create(fileSystem, fileDownloader, userInteraction));
   }
 
   /// The service of a command; a dry run (protocol/lip.md, "Dry run") reads the configuration
@@ -315,6 +316,14 @@ public sealed class LipClient {
         githubProxy,
         string.IsNullOrEmpty(releasesUrl) ? null : Url.Parse(releasesUrl));
     return await updater.Run(running, checkOnly);
+  }
+
+  /// Installs what the programs of the workspace in the current directory need of the system,
+  /// when it is not installed: the Wine of lip off Windows, and the Visual C++ runtime
+  /// (protocol/lip-workspace.md, "System dependencies"). Operations and lip run do so by
+  /// themselves when they need it; this does it ahead of them, e.g. while setting up.
+  public async Task PrepareSystem(CancellationToken cancellationToken = default) {
+    await (await GetMcmodService()).PrepareSystem(cancellationToken);
   }
 
   public async Task Uninstall(

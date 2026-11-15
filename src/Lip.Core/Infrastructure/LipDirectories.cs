@@ -16,13 +16,22 @@ public static class LipDirectories {
       ? Path.Join(GetFolder(Environment.SpecialFolder.LocalApplicationData), AppName, "Cache")
       : Path.Join(GetXdgCacheHome(), AppName);
 
+  /// What lip installs to run programs, the Wine of lip among it (protocol/lip-userspace.md,
+  /// "Data directory"): %LOCALAPPDATA%\lip\Data on Windows, $XDG_DATA_HOME/lip (default
+  /// ~/.local/share/lip) elsewhere, macOS included.
+  public static string Data => OperatingSystem.IsWindows()
+      ? Path.Join(GetFolder(Environment.SpecialFolder.LocalApplicationData), AppName, "Data")
+      : Path.Join(GetXdgHome("XDG_DATA_HOME", Path.Join(".local", "share")), AppName);
+
   private static string GetFolder(Environment.SpecialFolder folder) =>
       Environment.GetFolderPath(folder, Environment.SpecialFolderOption.DoNotVerify);
 
+  private static string GetXdgCacheHome() => GetXdgHome("XDG_CACHE_HOME", ".cache");
+
   // The specification says to ignore an empty or relative value.
-  private static string GetXdgCacheHome() =>
-      Environment.GetEnvironmentVariable("XDG_CACHE_HOME") is { Length: > 0 } value
+  private static string GetXdgHome(string variable, string defaultBelowHome) =>
+      Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value
           && Path.IsPathRooted(value)
           ? value
-          : Path.Join(GetFolder(Environment.SpecialFolder.UserProfile), ".cache");
+          : Path.Join(GetFolder(Environment.SpecialFolder.UserProfile), defaultBelowHome);
 }

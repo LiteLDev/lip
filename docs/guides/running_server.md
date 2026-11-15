@@ -1,6 +1,6 @@
 # Running a Server
 
-This guide sets up a LeviLamina server with lip and runs it with [`lip run`](../cli/commands/run.md), on Windows, and on Linux through [Wine](https://www.winehq.org/).
+This guide sets up a LeviLamina server with lip and runs it with [`lip run`](../cli/commands/run.md), on Windows, and on Linux and macOS through [Wine](https://www.winehq.org/). Besides lip, there is nothing to download or install: lip installs what the server needs of the system itself.
 
 ## On Windows
 
@@ -15,42 +15,26 @@ lip run
 
 `lip install github.com/LiteLDev/LeviLamina` installs LeviLamina and the packages it depends on, including the Bedrock Dedicated Server, into the workspace, and sets up `bedrock_server_mod.exe`. `lip run` then runs `bedrock_server_mod.exe` in the workspace.
 
-The server may need runtime libraries of the system, such as the Microsoft Visual C++ Redistributable. lip does not install them: install them yourself if the server reports that they are missing.
+The server needs the Microsoft Visual C++ Redistributable (x64). When it is not installed, lip downloads its installer from Microsoft and runs it before it runs the first hook command or the server; Windows asks you to allow it to make changes, as an administrator. See [System Dependencies](internal_mechanism.md#system-dependencies).
 
-## On Linux, through Wine
+## On Linux and macOS, through Wine
 
-lip installs the packages of the platform `win-x64` by default, whatever system it runs on (see [Environment](../concepts/lip_toml.md#environment)). On Linux, it runs the hook commands of those packages and the server through Wine, so the same Windows server runs on Linux.
-
-### Prerequisites
-
-lip does not install Wine, or anything inside the Wine prefix. Before you install packages:
-
-1. Install Wine from your distribution or from [WineHQ](https://wiki.winehq.org/Download), so that the `wine` command is on `PATH`:
-
-   ```shell
-   wine --version
-   ```
-
-2. Install, into the Wine prefix of the workspace, the Windows runtime libraries the server needs, such as the Microsoft Visual C++ Redistributable, e.g. with [winetricks](https://github.com/Winetricks/winetricks):
-
-   ```shell
-   mkdir my-server
-   cd my-server
-   WINEPREFIX="$PWD/.lip/wine" winetricks -q vcrun2022
-   ```
-
-   `.lip/wine` is the prefix lip uses by default; see [Wine Prefix](#wine-prefix).
+lip installs the packages of the platform `win-x64` by default, whatever system it runs on (see [Environment](../concepts/lip_toml.md#environment)). On Linux and macOS, it runs the hook commands of those packages and the server through Wine, so the same Windows server runs there.
 
 ### Installing and Running
 
 The commands are the same as on Windows:
 
 ```shell
+mkdir my-server
+cd my-server
 lip install github.com/LiteLDev/LeviLamina
 lip run
 ```
 
-On a system other than Windows, when the platform of the workspace starts with `win`, lip runs every program through `wine` found on `PATH`: the hook commands, as `wine cmd /s /c <command>`, while it installs, updates or uninstalls packages, and the server, as `wine` with the absolute path of `bedrock_server_mod.exe`, while `lip run` runs. Wine passes each `"` of a hook command to `cmd` as `\"`, which `cmd` does not read as an escape, so a hook command that contains `"` does not run as written through Wine; packages meant for Wine should avoid `"` in their hooks. The paths of such a workspace are case-insensitive to lip, as they are to the programs Wine runs: a package that writes `Plugins/a.dll` writes into an existing `plugins/` directory, not beside it.
+The first time lip needs Wine, it downloads a build of Wine, checks it against the SHA-256 written into lip, and extracts it into its data directory (`~/.local/share/lip`, see [FAQ](../faq.md#where-does-lip-store-installed-packages)), where every workspace shares it. It then installs the Microsoft Visual C++ Redistributable into the Wine prefix of the workspace, once. Neither needs root, and neither needs a `wine` of your own: lip never runs a `wine` on `PATH`. See [System Dependencies](internal_mechanism.md#system-dependencies).
+
+On a system other than Windows, when the platform of the workspace starts with `win`, lip runs every program through its Wine: the hook commands, as `wine cmd /s /c <command>`, while it installs, updates or uninstalls packages, and the server, as `wine` with the absolute path of `bedrock_server_mod.exe`, while `lip run` runs. Wine passes each `"` of a hook command to `cmd` as `\"`, which `cmd` does not read as an escape, so a hook command that contains `"` does not run as written through Wine; packages meant for Wine should avoid `"` in their hooks. The paths of such a workspace are case-insensitive to lip, as they are to the programs Wine runs: a package that writes `Plugins/a.dll` writes into an existing `plugins/` directory, not beside it.
 
 ### Wine Prefix
 
@@ -77,11 +61,17 @@ The server is a Windows program for x64. lip is tested with a real LeviLamina se
 | --- | --- |
 | Windows on x64 | Windows. |
 | Windows on arm64 | Windows, which emulates x64. |
-| Linux on x64 | Wine. |
-| macOS on x64 | Wine. |
-| macOS on arm64 | Wine for x64, run by Rosetta 2 (`softwareupdate --install-rosetta`). |
+| Linux on x64 | The Wine of lip. |
+| macOS on x64 | The Wine of lip. |
+| macOS on arm64 | The same Wine for x64, run by Rosetta 2. |
 
-On macOS on x64, Wine 11.0 does not create its prefix; Wine 11.21 does. Builds of Wine for macOS are at [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds).
+On Linux on x64, the Wine of lip is a build of [Kron4ek/Wine-Builds](https://github.com/Kron4ek/Wine-Builds); on macOS, a build of [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds).
+
+On a Mac with Apple silicon, Wine needs Rosetta 2, and installing it needs an administrator, so lip does not install it: when it is missing, lip fails and asks you to run:
+
+```shell
+softwareupdate --install-rosetta --agree-to-license
+```
 
 lip is not released for Linux on arm64, where nothing that was tried runs a LeviLamina server reliably:
 

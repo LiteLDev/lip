@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Lip.Core.Infrastructure;
 
 namespace Lip.Core.Tests.Infrastructure;
@@ -15,7 +16,9 @@ public class WorkspaceProgramTests {
   private const string WindowsPath = @".;C:\none;""C:\Program Files\Git\bin""";
   private const string SystemDirectory = @"C:\Windows\system32";
   private static readonly string _sh = Path.Join("/usr/bin", "sh");
+  // A wine in PATH, which lip never runs, and the wine program of the Wine of lip.
   private static readonly string _wine = Path.Join("/usr/bin", "wine");
+  private static readonly string _managedWine = Path.Join("/data/lip/wine/build/bin", "wine");
   private static readonly string _windowsSh = Path.Join(@"C:\Program Files\Git\bin", "sh.exe");
 
   private static readonly HashSet<string> _executables = [
@@ -34,6 +37,7 @@ public class WorkspaceProgramTests {
     return new(isWindows, platform, Root, all.GetValueOrDefault) {
       IsExecutable = _executables.Contains,
       SystemDirectory = SystemDirectory,
+      Wine = isWindows ? null : _managedWine,
     };
   }
 
@@ -69,7 +73,7 @@ public class WorkspaceProgramTests {
     ProgramStartInfo start = WorkspaceProgram.HookCommand(Hook, Host(false, "win-x64"));
 
     // Assert
-    Assert.Equal(_wine, start.FileName);
+    Assert.Equal(_managedWine, start.FileName);
     Assert.False(start.VerbatimArguments);
     Assert.Equal(["cmd", "/s", "/c", Hook], start.Arguments);
     Assert.Equal(Root, start.WorkingDirectory);
@@ -108,11 +112,48 @@ public class WorkspaceProgramTests {
   }
 
   [Fact]
-  public void Server_WineNotInPath_Throws() {
+  public void Server_NoWineOfLip_ThrowsEvenWithWineInPath() {
+    // Arrange: the system has no Wine of lip; PATH has a wine.
+    ProgramHost host = Host(false, "win-x64") with { Wine = null };
+
     // Act & Assert
-    InvalidOperationException ex = Assert.Throws<InvalidOperationException>(
-        () => WorkspaceProgram.Server(Host(false, "win-x64", new() { ["PATH"] = "." })));
-    Assert.Contains("'wine'", ex.Message);
+    InvalidOperationException ex =
+        Assert.Throws<InvalidOperationException>(() => WorkspaceProgram.Server(host));
+    Assert.Contains("no Wine", ex.Message);
+  }
+
+  [Fact]
+  public void Start_WindowsPlatformElsewhere_RunsTheProgramThroughWine() {
+    // Act
+    ProgramStartInfo start = WorkspaceProgram.Start(
+        Host(false, "win-x64"), "/data/lip/vc_redist.x64.exe", ["/install", "/quiet"]);
+
+    // Assert
+    Assert.Equal(_managedWine, start.FileName);
+    Assert.Equal(["/data/lip/vc_redist.x64.exe", "/install", "/quiet"], start.Arguments);
+    Assert.Equal(WinePrefix, start.EnvironmentOverrides["WINEPREFIX"]);
+  }
+
+  [Theory]
+  [InlineData(HostOs.Linux, Architecture.X64, "wine-11.21-amd64-wow64/bin/wine")]
+  [InlineData(HostOs.MacOS, Architecture.X64, "Wine Devel.app/Contents/Resources/wine/bin/wine")]
+  [InlineData(HostOs.MacOS, Architecture.Arm64, "Wine Devel.app/Contents/Resources/wine/bin/wine")]
+  [InlineData(HostOs.Linux, Architecture.Arm64, null)]
+  [InlineData(HostOs.Windows, Architecture.X64, null)]
+  [InlineData(HostOs.Other, Architecture.X64, null)]
+  public void ManagedWine_Executable_IsBelowWineInTheDataDirectory(
+      HostOs os, Architecture architecture, string? executable) {
+    // Act
+    string? path = ManagedWine.Executable("/data/lip", new SystemInfo(os, architecture));
+
+    // Assert
+    if (executable is null) {
+      Assert.Null(path);
+    } else {
+      Assert.NotNull(path);
+      Assert.StartsWith(Path.Join("/data/lip", "wine") + Path.DirectorySeparatorChar, path);
+      Assert.EndsWith(executable, path.Replace('\\', '/'));
+    }
   }
 
   [Fact]
@@ -133,7 +174,7 @@ public class WorkspaceProgramTests {
     ProgramStartInfo start = WorkspaceProgram.Server(Host(false, "win-x64"));
 
     // Assert
-    Assert.Equal(_wine, start.FileName);
+    Assert.Equal(_managedWine, start.FileName);
     Assert.False(start.VerbatimArguments);
     Assert.Equal([Path.Join(Root, "bedrock_server_mod.exe")], start.Arguments);
     Assert.Equal(Root, start.WorkingDirectory);

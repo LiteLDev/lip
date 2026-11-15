@@ -1,6 +1,6 @@
 # 运行服务器
 
-本指南用 lip 搭建一个 LeviLamina 服务器，并用 [`lip run`](../cli/commands/run.md) 运行它：在 Windows 上，以及在 Linux 上通过 [Wine](https://www.winehq.org/)。
+本指南用 lip 搭建一个 LeviLamina 服务器，并用 [`lip run`](../cli/commands/run.md) 运行它：在 Windows 上，以及在 Linux 和 macOS 上通过 [Wine](https://www.winehq.org/)。除了 lip 本身，无需下载或安装任何东西：服务器需要的系统组件由 lip 自行安装。
 
 ## 在 Windows 上
 
@@ -15,42 +15,26 @@ lip run
 
 `lip install github.com/LiteLDev/LeviLamina` 把 LeviLamina 及其依赖的包（包括 Bedrock Dedicated Server）安装到工作区，并准备好 `bedrock_server_mod.exe`。`lip run` 随后在工作区中运行 `bedrock_server_mod.exe`。
 
-服务器可能需要系统的运行库，例如 Microsoft Visual C++ 可再发行组件包。lip 不会安装它们：若服务器提示缺少运行库，请自行安装。
+服务器需要 Microsoft Visual C++ 可再发行组件包（x64）。若尚未安装，lip 会在运行第一条钩子命令或服务器之前从 Microsoft 下载其安装程序并运行；Windows 会请你允许它以管理员身份进行更改。参见[系统依赖](internal_mechanism.md#系统依赖)。
 
-## 在 Linux 上通过 Wine 运行
+## 在 Linux 和 macOS 上通过 Wine 运行
 
-无论 lip 运行在什么系统上，它默认都安装平台 `win-x64` 的包（参见[环境](../concepts/lip_toml.md#环境)）。在 Linux 上，它通过 Wine 运行这些包的钩子命令和服务器，因此同一个 Windows 版服务器可以在 Linux 上运行。
-
-### 前置条件
-
-lip 不会安装 Wine，也不会向 Wine 前缀中安装任何东西。安装包之前：
-
-1. 从发行版或 [WineHQ](https://wiki.winehq.org/Download) 安装 Wine，使 `wine` 命令位于 `PATH` 中：
-
-   ```shell
-   wine --version
-   ```
-
-2. 向工作区的 Wine 前缀中安装服务器需要的 Windows 运行库，例如 Microsoft Visual C++ 可再发行组件包，可以用 [winetricks](https://github.com/Winetricks/winetricks)：
-
-   ```shell
-   mkdir my-server
-   cd my-server
-   WINEPREFIX="$PWD/.lip/wine" winetricks -q vcrun2022
-   ```
-
-   `.lip/wine` 是 lip 默认使用的前缀；参见 [Wine 前缀](#wine-前缀)。
+无论 lip 运行在什么系统上，它默认都安装平台 `win-x64` 的包（参见[环境](../concepts/lip_toml.md#环境)）。在 Linux 和 macOS 上，它通过 Wine 运行这些包的钩子命令和服务器，因此同一个 Windows 版服务器可以在那里运行。
 
 ### 安装与运行
 
 命令与 Windows 上相同：
 
 ```shell
+mkdir my-server
+cd my-server
 lip install github.com/LiteLDev/LeviLamina
 lip run
 ```
 
-在 Windows 以外的系统上，当工作区的平台以 `win` 开头时，lip 通过 `PATH` 中的 `wine` 运行所有程序：安装、更新或卸载包时的钩子命令（以 `wine cmd /s /c <命令>` 的形式），以及 `lip run` 运行的服务器（以 `wine` 加 `bedrock_server_mod.exe` 的绝对路径的形式）。Wine 把钩子命令中的每个 `"` 以 `\"` 的形式传给 `cmd`，而 `cmd` 不把它当作转义，因此含有 `"` 的钩子命令通过 Wine 运行时不会按原样运行；面向 Wine 的包应避免在钩子中使用 `"`。对 lip 而言，这样的工作区中的路径不区分大小写，与 Wine 运行的程序看到的一样：写入 `Plugins/a.dll` 的包会写入已有的 `plugins/` 目录，而不是在其旁边新建目录。
+lip 第一次需要 Wine 时，会下载一个 Wine 构建，用写在 lip 中的 SHA-256 校验它，并解压到其数据目录（`~/.local/share/lip`，参见[常见问题](../faq.md#lip-会把安装的包放在哪里)），由所有工作区共用。随后它向工作区的 Wine 前缀中安装一次 Microsoft Visual C++ 可再发行组件包。两者都不需要 root，也不需要你自己的 `wine`：lip 从不运行 `PATH` 中的 `wine`。参见[系统依赖](internal_mechanism.md#系统依赖)。
+
+在 Windows 以外的系统上，当工作区的平台以 `win` 开头时，lip 通过它的 Wine 运行所有程序：安装、更新或卸载包时的钩子命令（以 `wine cmd /s /c <命令>` 的形式），以及 `lip run` 运行的服务器（以 `wine` 加 `bedrock_server_mod.exe` 的绝对路径的形式）。Wine 把钩子命令中的每个 `"` 以 `\"` 的形式传给 `cmd`，而 `cmd` 不把它当作转义，因此含有 `"` 的钩子命令通过 Wine 运行时不会按原样运行；面向 Wine 的包应避免在钩子中使用 `"`。对 lip 而言，这样的工作区中的路径不区分大小写，与 Wine 运行的程序看到的一样：写入 `Plugins/a.dll` 的包会写入已有的 `plugins/` 目录，而不是在其旁边新建目录。
 
 ### Wine 前缀
 
@@ -77,11 +61,17 @@ lip run
 | --- | --- |
 | x64 上的 Windows | Windows。 |
 | arm64 上的 Windows | Windows，由它模拟 x64。 |
-| x64 上的 Linux | Wine。 |
-| x64 上的 macOS | Wine。 |
-| arm64 上的 macOS | x64 的 Wine，由 Rosetta 2 运行（`softwareupdate --install-rosetta`）。 |
+| x64 上的 Linux | lip 的 Wine。 |
+| x64 上的 macOS | lip 的 Wine。 |
+| arm64 上的 macOS | 同一个 x64 的 Wine，由 Rosetta 2 运行。 |
 
-在 x64 的 macOS 上，Wine 11.0 无法创建前缀，Wine 11.21 可以。macOS 的 Wine 构建见 [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds)。
+在 x64 的 Linux 上，lip 的 Wine 是 [Kron4ek/Wine-Builds](https://github.com/Kron4ek/Wine-Builds) 的构建；在 macOS 上，是 [Gcenx/macOS_Wine_builds](https://github.com/Gcenx/macOS_Wine_builds) 的构建。
+
+在 Apple 芯片的 Mac 上，Wine 需要 Rosetta 2，而安装它需要管理员权限，因此 lip 不会安装它：缺少它时，lip 会失败并请你运行：
+
+```shell
+softwareupdate --install-rosetta --agree-to-license
+```
 
 lip 不为 arm64 的 Linux 发布，因为试过的办法都无法在那里可靠地运行 LeviLamina 服务器：
 

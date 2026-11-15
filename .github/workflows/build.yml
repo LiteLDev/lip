@@ -64,7 +64,8 @@ jobs:
       - run: dotnet build -warnaserror -p:EnforceCodeStyleInBuild=true
 
   # Installs LeviLamina and runs the real server with the lip that was built, on every system
-  # lip is released for. Where the system is not Windows, Wine runs the server.
+  # lip is released for. Where the system is not Windows, the Wine that lip installs runs the
+  # server.
   #
   # Linux on arm64 is not among them. There, Hangover runs the server of Minecraft, but not the
   # one LeviLamina has modified; the Wine for x64 loses the exit codes of Windows programs under
@@ -100,25 +101,10 @@ jobs:
           name: lip-${{ github.sha }}-${{ matrix.runtime }}
           path: bin
 
-      - if: matrix.runtime == 'linux-x64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wine
-
-      # Wine for macOS is built for x64 only: Rosetta runs it.
+      # lip installs Wine and the Visual C++ runtime itself. Wine for macOS is built for x64 only:
+      # Rosetta runs it, which lip does not install, since that needs an administrator.
       - if: matrix.runtime == 'osx-arm64'
         run: softwareupdate --install-rosetta --agree-to-license
-
-      # Wine 11.0 does not make its prefix on macOS for x64.
-      - if: runner.os == 'macOS'
-        run: |
-          curl -fsSL -o wine.tar.xz https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.21/wine-devel-11.21-osx64.tar.xz
-          mkdir "$HOME/wine"
-          tar -xf wine.tar.xz -C "$HOME/wine"
-          dirname "$(find "$HOME/wine" -type f -name wine -path '*/bin/*' | head -n 1)" >> "$GITHUB_PATH"
-
-      - if: runner.os != 'Windows'
-        run: wine --version
 
       - shell: bash
         run: |

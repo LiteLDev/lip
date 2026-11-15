@@ -25,6 +25,7 @@ public class McmodServiceRunTests : IDisposable {
   private readonly Mock<IUserInteraction> _ui = new();
   private readonly ServerSessionTests.FakeServer _server = new();
   private readonly List<ProgramStartInfo> _started = [];
+  private readonly Mock<ISystemPreparer> _preparer = new();
   private Action? _onStart;
 
   public McmodServiceRunTests() {
@@ -39,7 +40,8 @@ public class McmodServiceRunTests : IDisposable {
         Mock.Of<IArchiveProvider>(),
         new ArchiveReader(),
         new McmodInstaller(_fs, Mock.Of<ICommandRunner>(), _ui.Object),
-        workspaceRoot: () => _root);
+        workspaceRoot: () => _root,
+        systemPreparer: _preparer.Object);
   }
 
   public void Dispose() {
@@ -96,10 +98,10 @@ public class McmodServiceRunTests : IDisposable {
       expected = WorkspaceProgram.Server(ProgramHost.Current("win-x64", _root));
     }
     catch (InvalidOperationException) {
-      // Wine runs the server here, and is not found through PATH.
+      // Wine runs the server here, and lip has no Wine for this system.
       InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(Run);
       Assert.Contains("for the platform win-x64", ex.Message);
-      Assert.Contains("Install Wine", ex.Message);
+      Assert.Contains("no Wine", ex.Message);
       Assert.Empty(_started);
       return;
     }
@@ -109,6 +111,38 @@ public class McmodServiceRunTests : IDisposable {
 
     // Assert
     Assert.Equal(expected, Assert.Single(_started), new StartComparer());
+  }
+
+  [Fact]
+  public async Task Run_Server_PreparesTheSystemFirst() {
+    // Arrange (protocol/lip-run.md, step 5).
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    _preparer.Setup(p => p.Prepare(_hostPlatform, _root, It.IsAny<CancellationToken>()))
+        .Callback(() => Assert.Empty(_started))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await Run();
+
+    // Assert
+    _preparer.Verify(
+        p => p.Prepare(_hostPlatform, _root, It.IsAny<CancellationToken>()), Times.Once);
+    Assert.Single(_started);
+  }
+
+  [Fact]
+  public async Task Run_PreparingFails_FailsWithoutStarting() {
+    // Arrange
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    _preparer.Setup(p => p.Prepare(It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()))
+        .ThrowsAsync(new SystemDependencyException("no Wine"));
+
+    // Act & Assert
+    await Assert.ThrowsAsync<SystemDependencyException>(Run);
+    Assert.Empty(_started);
   }
 
   [Fact]

@@ -15,14 +15,15 @@ Runs `bedrock_server_mod.exe` at the root of the workspace (the current director
 Before it starts the server, `lip run`:
 
 1. fails at once if another lip command, such as `lip install`, is changing the workspace;
-2. completes or undoes an operation that was interrupted, as `lip install` would (see [Internal Mechanism](../../guides/internal_mechanism.md#workspace-state)); and
-3. fails if `bedrock_server_mod.exe` is not a file.
+2. completes or undoes an operation that was interrupted, as `lip install` would (see [Internal Mechanism](../../guides/internal_mechanism.md#workspace-state));
+3. fails if `bedrock_server_mod.exe` is not a file; and
+4. for a platform that starts with `win`, installs what the server needs of the system when it is missing: Wine on Linux and macOS, and the Microsoft Visual C++ Redistributable (see [System Dependencies](../../guides/internal_mechanism.md#system-dependencies)).
 
 The workspace is not locked while the server runs: you can run `lip install`, `lip uninstall` and `lip update` in the same workspace from another terminal. Their changes take effect when the server is started again.
 
 ### Wine
 
-When lip does not run on Windows, as the platform of the workspace [environment](../../concepts/lip_toml.md#environment) is `win-x64`, the server is run through [Wine](https://www.winehq.org/): lip runs `wine`, found through `PATH`, with the absolute path of `bedrock_server_mod.exe` as its only argument and these environment variables:
+When lip does not run on Windows, as the platform of the workspace [environment](../../concepts/lip_toml.md#environment) is `win-x64`, the server is run through [Wine](https://www.winehq.org/): lip runs the `wine` of the Wine it installed in its data directory, never one found through `PATH`, with the absolute path of `bedrock_server_mod.exe` as its only argument and these environment variables:
 
 | Variable | Value |
 | --- | --- |

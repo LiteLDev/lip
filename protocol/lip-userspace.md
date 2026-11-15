@@ -2,7 +2,7 @@
 
 ## NAME
 
-lip-userspace - the per-user directories, and the cache
+lip-userspace - the per-user directories, the cache, and the data directory
 
 ## DESCRIPTION
 
@@ -12,10 +12,11 @@ lip-userspace - the per-user directories, and the cache
 |---|---|---|---|
 | **config directory** | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` | The user configuration ([config.toml(5)](config.toml.md)). |
 | **cache directory** | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` | The cache. |
+| **data directory** | `%LOCALAPPDATA%\lip\Data` | `$XDG_DATA_HOME/lip` | The system dependencies that `lip` installs ("Data directory"). |
 
 On systems other than Windows, an `XDG_*` variable that is unset, empty or not an absolute path takes its [XDG] default.
 
-Besides these directories, `lip` writes only to the workspace it operates on, to paths given as arguments, and to its installation directory as [lip-self-update(1)](lip-self-update.md) defines, never to the system temporary directory. The programs that `lip` runs ([lip-workspace(7), "Running programs"](lip-workspace.md#running-programs)), and Wine, are exempt.
+Besides these directories, `lip` writes only to the workspace it operates on, to paths given as arguments, and to its installation directory as [lip-self-update(1)](lip-self-update.md) defines, never to the system temporary directory. The programs that `lip` runs ([lip-workspace(7), "Running programs"](lip-workspace.md#running-programs)), the installers it runs ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)), and Wine, are exempt.
 
 ### Cache
 
@@ -35,6 +36,12 @@ Any other entry is not defined here; a process must not read meaning into it.
 - Reading: An existing entry is complete. A reader that knows what an `http-<H>` entry's content must be must check it, and may delete it on mismatch.
 - Repairing: When `lip` needs the ZIP archive of a URL, and the `http-<H>` entry of that URL exists and is not a ZIP archive, `lip` deletes the entry and downloads the URL again, once.
 - Deleting: An `http-<H>` entry may be deleted at any time; a `.tmp` file, when no process is writing it; `self-update`, when no `lip self-update` runs. `lip cache clean` ([lip-cache(1)](lip-cache.md)) is exempt: it may delete the whole cache directory, and a process writing to the cache then may fail.
+
+### Data directory
+
+The data directory holds the Wine of `lip` ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)), shared by every workspace, and what `lip` downloads to install the system dependencies. Only `lip` writes to it; its entries are not defined here, and another process must not read meaning into them.
+
+Deleting the data directory while no `lip` process runs loses nothing: `lip` installs the system dependencies again when it needs them.
 
 ## SEE ALSO
 

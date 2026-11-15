@@ -11,6 +11,7 @@
     <PackageReference Include="Flurl.Http" Version="4.0.2" />
     <PackageReference Include="Scriban" Version="7.5.0" />
     <PackageReference Include="Semver" Version="3.0.0" />
+    <PackageReference Include="SharpCompress" Version="0.50.9" />
     <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" Version="22.3.0" />
     <PackageReference Include="Tomlyn" Version="2.10.2" />
   </ItemGroup>

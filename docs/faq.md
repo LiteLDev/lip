@@ -13,7 +13,7 @@
 No. lip manages server workspaces only. Client workspaces are managed by launchers such as LeviLauncher, which read the same packages.
 
 ### Can I run a server on Linux?
-**Yes.** lip installs the packages of the platform `win-x64` on every system, and on Linux and macOS runs their hook commands and the server through Wine, which you install yourself. The Linux server alone is `github.com/LiteLDev/bds#linux`; `lip run` cannot start it, so you start that one yourself. See [Running a Server](guides/running_server.md#the-linux-server).
+**Yes.** lip installs the packages of the platform `win-x64` on every system, and on Linux and macOS runs their hook commands and the server through Wine, which lip downloads and sets up itself. The Linux server alone is `github.com/LiteLDev/bds#linux`; `lip run` cannot start it, so you start that one yourself. See [Running a Server](guides/running_server.md#the-linux-server).
 
 ### Why is a tag of my repository not a version?
 Only tags named exactly `v` followed by a [SemVer 2.0.0](https://semver.org/) version, such as `v1.2.3`, are versions. Tags such as `v1.2` or `1.2.3` are ignored. You can still install any tag, branch or commit with a git ref, e.g. `lip install github.com/user/repo@tag:1.2.3` or `@branch:main`; the package's version is then the `version` its `lip.toml` declares. See [Git refs](cli/commands/install.md#git-refs).
@@ -39,8 +39,9 @@ The [state file](concepts/lockfiles.md) of a workspace is `.lip/state.json` insi
 | --- | --- | --- |
 | Configuration (`config.toml`) | `%APPDATA%\lip` | `$XDG_CONFIG_HOME/lip` (by default `~/.config/lip`) |
 | Cache | `%LOCALAPPDATA%\lip\Cache` | `$XDG_CACHE_HOME/lip` (by default `~/.cache/lip`) |
+| Data (Wine, on Linux and macOS) | `%LOCALAPPDATA%\lip\Data` | `$XDG_DATA_HOME/lip` (by default `~/.local/share/lip`) |
 
-The cache is safe to delete at any time, e.g. with `lip cache clean`. Downloads in progress are written to `.tmp` files inside the cache and renamed into place when complete; lip writes nothing to the system temporary directory.
+The cache is safe to delete at any time, e.g. with `lip cache clean`. The data directory holds the Wine that lip runs the server with; delete it only while no lip command runs, and lip installs Wine again when it needs it. Downloads in progress are written to `.tmp` files inside the cache and renamed into place when complete; lip writes nothing to the system temporary directory.
 
 ### What happens if an install fails halfway?
 Nothing changes. `lip install`, `lip uninstall` and `lip update` are all or nothing, including the dependencies they install or remove: lip checks and downloads everything before it touches the workspace, and if a file cannot be written, a hook command fails, or you press Ctrl+C, it undoes every change it made and keeps the state file as it was. Only what the hook commands of packages did cannot be undone. If lip is killed in the middle, the next `lip install`, `uninstall`, `update` or `run` in the workspace first completes the interrupted operation, if it had already saved the state file, or undoes it otherwise, and tells you so. See [Internal Mechanism](guides/internal_mechanism.md#workspace-state).

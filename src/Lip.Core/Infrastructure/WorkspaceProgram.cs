@@ -17,9 +17,10 @@ public sealed record ProgramStartInfo(
 /// Where a program runs (protocol/lip-workspace.md, "Running programs"): whether lip runs on
 /// Windows, the platform of the environment, the absolute workspace root, and the environment
 /// variables of lip. When Wine runs the program, WINEPREFIX defaults to .lip/wine below the
-/// workspace root (protocol/lip-workspace.md, "The .lip directory"). IsExecutable tells whether a
-/// path is a file lip can run; SystemDirectory is the Windows system directory, which holds
-/// cmd.exe.
+/// workspace root (protocol/lip-workspace.md, "The .lip directory"). Wine is the wine program of
+/// the Wine of lip (protocol/lip-workspace.md, "System dependencies"), null when the system has
+/// none. IsExecutable tells whether a path is a file lip can run; SystemDirectory is the Windows
+/// system directory, which holds cmd.exe.
 public sealed record ProgramHost(
     bool IsWindows,
     string Platform,
@@ -29,9 +30,15 @@ public sealed record ProgramHost(
 
   public string SystemDirectory { get; init; } = Environment.SystemDirectory;
 
-  /// The host lip runs on.
+  public string? Wine { get; init; }
+
+  /// The host lip runs on, with the Wine of lip in the data directory.
   public static ProgramHost Current(string platform, string workspaceRoot) =>
-      new(OperatingSystem.IsWindows(), platform, workspaceRoot, Environment.GetEnvironmentVariable);
+      new(
+          OperatingSystem.IsWindows(), platform, workspaceRoot,
+          Environment.GetEnvironmentVariable) {
+        Wine = ManagedWine.Executable(LipDirectories.Data, SystemInfo.Current),
+      };
 
   /// A file that is, outside Windows, executable by someone.
   private static bool IsExecutableFile(string path) {
@@ -70,9 +77,10 @@ public static class WorkspaceProgram {
 
   /// A hook command: cmd with the arguments /s, /c and the string in double quotes for a Windows
   /// platform (through Wine: wine with cmd, /s, /c and the string as one argument), sh with -c
-  /// and the string for any other (protocol/lip-workspace.md, "Terms" and "Running programs"). sh is found through PATH, and
-  /// cmd.exe in the Windows system directory, not in the directory of lip or the workspace.
-  /// Throws InvalidOperationException when sh or wine is not found through PATH.
+  /// and the string for any other (protocol/lip-workspace.md, "Terms" and "Running programs").
+  /// sh is found through PATH, and cmd.exe in the Windows system directory, not in the directory
+  /// of lip or the workspace. Throws InvalidOperationException when sh is not found through PATH,
+  /// or when Wine is needed and the system has no Wine of lip.
   public static ProgramStartInfo HookCommand(string command, ProgramHost host) {
     if (!IsWindowsPlatform(host.Platform)) {
       return Start(host, FindInPath("sh", host), ["-c", command]);
@@ -94,14 +102,16 @@ public static class WorkspaceProgram {
   }
 
   /// The server, bedrock_server_mod.exe at the workspace root, without arguments
-  /// (protocol/lip-run.md). Throws InvalidOperationException when wine is needed and not found
-  /// through PATH.
+  /// (protocol/lip-run.md). Throws InvalidOperationException when Wine is needed and the system
+  /// has no Wine of lip.
   public static ProgramStartInfo Server(ProgramHost host) =>
       Start(host, Path.Join(host.WorkspaceRoot, ServerFileName), []);
 
-  /// The program, run by Wine when the platform is a Windows platform and lip does not run on
-  /// Windows, otherwise by lip itself.
-  private static ProgramStartInfo Start(
+  /// The Windows program fileName with the arguments, run by Wine when the platform is a Windows
+  /// platform and lip does not run on Windows, otherwise by lip itself, with the workspace as
+  /// working directory. Throws InvalidOperationException when Wine is needed and the system has
+  /// no Wine of lip.
+  public static ProgramStartInfo Start(
       ProgramHost host, string fileName, IReadOnlyList<string> arguments) {
     if (!RunsThroughWine(host)) {
       return new ProgramStartInfo(
@@ -118,9 +128,11 @@ public static class WorkspaceProgram {
       environment["WINEDEBUG"] = "-all";
     }
 
+    string wine = host.Wine ?? throw new InvalidOperationException(
+        $"lip has no Wine for this system, so it cannot run programs for the platform"
+        + $" {host.Platform} here: lip runs them on Windows, on Linux on x64 and on macOS.");
     return new ProgramStartInfo(
-        FindInPath("wine", host), [fileName, .. arguments], VerbatimArguments: false,
-        host.WorkspaceRoot, environment);
+        wine, [fileName, .. arguments], VerbatimArguments: false, host.WorkspaceRoot, environment);
   }
 
   /// The absolute path of the first executable file of the name in the directories of PATH, with

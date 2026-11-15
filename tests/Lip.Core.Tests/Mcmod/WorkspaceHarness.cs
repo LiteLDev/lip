@@ -54,8 +54,13 @@ internal sealed class WorkspaceHarness {
         ArchiveProvider,
         new ArchiveReader(),
         new McmodInstaller(Faults, CommandRunner.Object, Ui.Object),
-        workspaceRoot: () => Root);
+        workspaceRoot: () => Root,
+        systemPreparer: SystemPreparer.Object);
   }
+
+  /// Prepares the system for programs (protocol/lip-workspace.md, "System dependencies"); does
+  /// nothing unless set up.
+  public Mock<ISystemPreparer> SystemPreparer { get; } = new();
 
   /// Downloads: every URL added by AddDownload serves its bytes; any other fails.
   public Mock<IFileDownloader> Downloader { get; } = CreateDownloader();

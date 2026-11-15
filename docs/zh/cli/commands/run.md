@@ -16,13 +16,14 @@ lip run
 
 1. 若另一个 lip 命令（如 `lip install`）正在修改该工作区，立即失败；
 2. 像 `lip install` 一样，完成或撤销被中断的操作（参见[内部机制](../../guides/internal_mechanism.md#工作区状态)）；
-3. 若 `bedrock_server_mod.exe` 不是文件，则失败。
+3. 若 `bedrock_server_mod.exe` 不是文件，则失败；
+4. 对以 `win` 开头的平台，安装服务器需要而系统缺少的组件：Linux 和 macOS 上的 Wine，以及 Microsoft Visual C++ 可再发行组件包（参见[系统依赖](../../guides/internal_mechanism.md#系统依赖)）。
 
 服务器运行期间工作区不会被锁定：你可以在另一个终端中对同一工作区运行 `lip install`、`lip uninstall` 和 `lip update`。它们的改动在服务器下次启动时生效。
 
 ### Wine
 
-当 lip 不在 Windows 上运行时，由于工作区[环境](../../concepts/lip_toml.md#环境)的平台是 `win-x64`，服务器通过 [Wine](https://www.winehq.org/) 运行：lip 运行在 `PATH` 中找到的 `wine`，以 `bedrock_server_mod.exe` 的绝对路径为其唯一参数，并设置以下环境变量：
+当 lip 不在 Windows 上运行时，由于工作区[环境](../../concepts/lip_toml.md#环境)的平台是 `win-x64`，服务器通过 [Wine](https://www.winehq.org/) 运行：lip 运行它安装在数据目录中的 Wine 的 `wine`，从不运行在 `PATH` 中找到的，以 `bedrock_server_mod.exe` 的绝对路径为其唯一参数，并设置以下环境变量：
 
 | 变量 | 值 |
 | --- | --- |

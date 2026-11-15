@@ -244,7 +244,7 @@ public sealed class WorkspaceTransaction : IDisposable {
   }
 
   /// Creates the journal with its "Begin" record unless it exists: before the first change or
-  /// hook command of the operation (protocol/lip-workspace.md, "Carrying out an operation" step 5).
+  /// hook command of the operation (protocol/lip-workspace.md, "Carrying out an operation" step 6).
   public void Begin() {
     if (_committed) {
       throw new InvalidOperationException(

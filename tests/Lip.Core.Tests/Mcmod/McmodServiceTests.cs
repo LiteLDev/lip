@@ -862,9 +862,81 @@ public class McmodServiceTests {
   }
 
   [Fact]
+  public async Task Install_WithHooks_PreparesTheSystemBeforeTheJournal() {
+    // Arrange (protocol/lip-workspace.md, "Carrying out an operation" step 5).
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("a.txt", "a.txt")
+              + """, "hooks": { "pre_install": [ "check" ] }"""),
+      ["a.txt"] = "a",
+    });
+    List<string> events = [];
+    _ws.SystemPreparer
+        .Setup(p => p.Prepare(WorkspaceHarness.Platform, _ws.Root, It.IsAny<CancellationToken>()))
+        .Callback(() => events.Add(
+            "prepare" + (_ws.Fs.File.Exists(_ws.JournalPath) ? " with journal" : "")))
+        .Returns(Task.CompletedTask);
+    _ws.CommandRunner.Setup(r => r.Run("check", _ws.Root, It.IsAny<string>()))
+        .Callback(() => events.Add("check"))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    Assert.Equal(["prepare", "check"], events);
+  }
+
+  [Fact]
+  public async Task Install_WithoutHooks_DoesNotPrepareTheSystem() {
+    // Arrange
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          Lib, "1.0.0", WorkspaceHarness.SelfAsset("a.txt", "a.txt")),
+      ["a.txt"] = "a",
+    });
+
+    // Act
+    await _ws.Service.Install([Lib], _options);
+
+    // Assert
+    _ws.SystemPreparer.Verify(
+        p => p.Prepare(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+        Times.Never);
+  }
+
+  [Fact]
+  public async Task Install_PreparingFails_IsAnEarlyFailure() {
+    // Arrange (protocol/lip-workspace.md, "Atomicity", rule 1).
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("a.txt", "a.txt")
+              + """, "hooks": { "post_install": [ "check" ] }"""),
+      ["a.txt"] = "a",
+    });
+    _ws.SystemPreparer
+        .Setup(p => p.Prepare(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        .ThrowsAsync(new SystemDependencyException("no Wine"));
+
+    // Act
+    await Assert.ThrowsAsync<SystemDependencyException>(
+        () => _ws.Service.Install([Lib], _options));
+
+    // Assert
+    Assert.False(_ws.Fs.File.Exists(_ws.Path("a.txt")));
+    Assert.False(_ws.Fs.File.Exists(_ws.JournalPath));
+    Assert.False(_ws.Fs.File.Exists(_ws.Path(".lip/state.json")));
+    _ws.CommandRunner.Verify(
+        r => r.Run(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+  }
+
+  [Fact]
   public async Task Install_PreInstallBeforeAnyChange_RunsWithTheJournal() {
     // Arrange: mods exists, so pre_install is the first thing the operation does; the journal
-    // exists before it runs (protocol/lip-workspace.md, "Carrying out an operation" steps 5 and 6).
+    // exists before it runs (protocol/lip-workspace.md, "Carrying out an operation" steps 6 and 7).
     _ws.Fs.Directory.CreateDirectory(_ws.Path("mods"));
     _ws.AddTag(Lib, "1.0.0", new() {
       ["lip.toml"] = WorkspaceHarness.LipToml(

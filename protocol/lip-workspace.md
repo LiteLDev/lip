@@ -41,7 +41,7 @@ A **program** is a command line that `lip` runs in a workspace: a hook command, 
 
 A program runs with the workspace as working directory and with the environment variables of `lip`. A program that cannot be started is a failure.
 
-When the platform of the environment is a Windows platform and `lip` does not run on Windows, the program is run by [Wine]: `lip` runs `wine`, found through `PATH`, with these arguments: for a hook command, `cmd`, `/s`, `/c` and the string, as one argument; for the server, the absolute path of `bedrock_server_mod.exe`. Wine passes them to the Windows program as one command line, writing each `"` of an argument as `\"`, which `cmd` reads as it is; a hook command whose string contains `"` should therefore not be run by Wine. `lip` sets for `wine`:
+When the platform of the environment is a Windows platform and `lip` does not run on Windows, the program is run by [Wine]: `lip` runs the `wine` program of the Wine of `lip` ("System dependencies"), never another one, with these arguments: for a hook command, `cmd`, `/s`, `/c` and the string, as one argument; for the server, the absolute path of `bedrock_server_mod.exe`. Wine passes them to the Windows program as one command line, writing each `"` of an argument as `\"`, which `cmd` reads as it is; a hook command whose string contains `"` should therefore not be run by Wine. `lip` sets for `wine`:
 
 | Variable | Value |
 |---|---|
@@ -51,6 +51,25 @@ When the platform of the environment is a Windows platform and `lip` does not ru
 The **exit code** of a program is the status that the process `lip` started exits with, `wine` included, or 128 + n when signal n ([signal(7)]) ends it. Wine creates its prefix when it is missing; what the prefix holds is not defined here.
 
 In every other case `lip` runs the program itself, finding `sh` through `PATH`.
+
+### System dependencies
+
+The **system dependencies** are what the programs of a Windows platform need of the system that runs them, besides the workspace. The version of `lip` names, for each of them, the files it downloads to install it: for each file, an HTTPS URL and the SHA-256 of its content. Which files these are is not defined here.
+
+- **Wine of `lip`**: When `lip` does not run on Windows, a build of [Wine] for the system `lip` runs on, installed in the data directory ([lip-userspace(7), "Data directory"](lip-userspace.md#data-directory)) and shared by every workspace. It is installed when that build has been extracted there completely; a build that is partly extracted is never run. Linux on x64 and macOS have one; macOS on arm64 runs it through [Rosetta 2], which is installed when the file `/Library/Apple/usr/libexec/oah/libRosettaRuntime` exists. Any other system has none.
+- **Visual C++ runtime**: The Microsoft Visual C++ 2015–2022 Redistributable for x64. It is installed when the value `Installed` of the registry key `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64`, in its 64-bit or its 32-bit view ([Registry views]), is the `REG_DWORD` 1: in the registry of Windows when `lip` runs on Windows, otherwise in the registry of the Wine prefix that "Running programs" names.
+
+**Preparing** the system for a workspace whose environment has a Windows platform is, in order:
+
+1. When `lip` does not run on Windows: when the system has no Wine of `lip`, or it is macOS on arm64 and Rosetta 2 is not installed, it is a failure. When the Wine of `lip` is not installed, `lip` downloads its archive over HTTPS and extracts it into the data directory. When the SHA-256 of the archive differs from the one the version of `lip` names, it is a failure, and nothing is extracted.
+2. When the Visual C++ runtime is not installed, `lip` downloads its installer, `vc_redist.x64.exe`, over HTTPS, and runs it with the arguments `/install`, `/quiet` and `/norestart`: on Windows, as an administrator, which may ask the user to allow it ([User Account Control]); otherwise by the Wine of `lip`, as "Running programs" runs a program, `WINEPREFIX` and `WINEDEBUG` included. When the SHA-256 of the installer differs from the one the version of `lip` names, it is a failure, and the installer is not run. An exit code of the installer other than 0, 1638 and 3010 is a failure, and so is the user not allowing it to run.
+
+`lip` prepares the system:
+
+- in an operation that runs a hook command, before it starts to change the workspace ("Carrying out an operation"); and
+- before `lip run` starts the server ([lip-run(1)](lip-run.md)).
+
+The downloads and installations of preparing are not changes. Nothing that preparing installed is uninstalled, whether the operation succeeds or fails.
 
 ### Valid states
 
@@ -122,7 +141,7 @@ Installing a package again from the state file installs it with the package file
 
 An operation succeeds or fails as a whole.
 
-1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace ("Valid states", an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a `mods` that is a link), no hook command of it runs, no change is made, and the state file does not change. Each step is checked against the workspace as the steps before it leave it.
+1. **Early failures change nothing.** When an operation fails for a reason that does not depend on changing the workspace ("Valid states", an archive or asset that cannot be obtained, a missing `src`, a file owned by another package, a mod name that cannot be read, a `mods` that is a link, a system dependency that cannot be installed), no hook command of it runs, no change is made, and the state file does not change. Each step is checked against the workspace as the steps before it leave it.
 2. **Later failures are undone.** When a step fails while the workspace is being changed (a file cannot be written or deleted, a hook command fails, the operation is cancelled), every change the operation made is undone ([journal(5), "Recovery"](journal.md#recovery)). The state file does not change.
 3. **Hook commands are not undone.** Hook commands that already ran are neither run again nor reversed. They should be safe to run again, and should not assume that the files of the operation stay in place.
 4. The paths that uninstallation steps 2 and 3 delete are those that match when the step is carried out, including paths that hook commands of the operation created.
@@ -165,19 +184,20 @@ An operation does, in order:
 1. Take the workspace lock. When another process holds it, it is a failure.
 2. When `.lip/journal` exists, recover ([journal(5), "Recovery"](journal.md#recovery)).
 3. Read the state file, and decide what the operation does ("Valid states", "Installing and uninstalling", "Operations"). A failure here is an early failure ("Atomicity", rule 1).
-4. When the operation makes no change and runs no hook command, write the new state file to `.lip/state.json.tmp`, rename it to `.lip/state.json`, and go to step 10.
-5. Create `.lip/journal` with a `"Begin"` record. A journal that already exists is never overwritten.
-6. Make the changes and run the hook commands ("Environment and layout", "Installing and uninstalling"), each change after its record. When a step fails or the operation is cancelled, undo the operation ([journal(5), "Recovery"](journal.md#recovery)) and fail.
-7. Write the new state file to `.lip/state.json.tmp`.
-8. Append a `"Commit"` record to the journal, and flush it to the operating system.
-9. Rename `.lip/state.json.tmp` to `.lip/state.json`, then complete the operation ([journal(5), "Recovery"](journal.md#recovery)).
-10. Release the workspace lock.
+4. When the operation makes no change and runs no hook command, write the new state file to `.lip/state.json.tmp`, rename it to `.lip/state.json`, and go to step 11.
+5. When the operation runs a hook command and the platform of its environment is a Windows platform, prepare the system ("System dependencies"). A failure here is an early failure ("Atomicity", rule 1).
+6. Create `.lip/journal` with a `"Begin"` record. A journal that already exists is never overwritten.
+7. Make the changes and run the hook commands ("Environment and layout", "Installing and uninstalling"), each change after its record. When a step fails or the operation is cancelled, undo the operation ([journal(5), "Recovery"](journal.md#recovery)) and fail.
+8. Write the new state file to `.lip/state.json.tmp`.
+9. Append a `"Commit"` record to the journal, and flush it to the operating system.
+10. Rename `.lip/state.json.tmp` to `.lip/state.json`, then complete the operation ([journal(5), "Recovery"](journal.md#recovery)).
+11. Release the workspace lock.
 
-When step 9 fails to rename the file, the implementation replaces the journal by one without the `"Commit"` record before it undoes the operation.
+When step 10 fails to rename the file, the implementation replaces the journal by one without the `"Commit"` record before it undoes the operation.
 
 ## SEE ALSO
 
-[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-uninstall(1)](lip-uninstall.md), [lip-update(1)](lip-update.md), [lip-run(1)](lip-run.md), [state.json(5)], [journal(5)], [lip-package(7)](lip-package.md)
+[lip(1)](lip.md), [lip-install(1)](lip-install.md), [lip-uninstall(1)](lip-uninstall.md), [lip-update(1)](lip-update.md), [lip-run(1)](lip-run.md), [state.json(5)], [journal(5)], [lip-package(7)](lip-package.md), [lip-userspace(7)](lip-userspace.md)
 
 [lip.toml(5)]: lip.toml.md
 [config.toml(5)]: config.toml.md
@@ -187,3 +207,6 @@ When step 9 fails to rename the file, the implementation replaces the journal by
 [flock(2)]: https://man7.org/linux/man-pages/man2/flock.2.html
 [Wine]: https://www.winehq.org/
 [signal(7)]: https://man7.org/linux/man-pages/man7/signal.7.html
+[Rosetta 2]: https://support.apple.com/102527
+[Registry views]: https://learn.microsoft.com/windows/win32/winprog64/registry-redirector
+[User Account Control]: https://learn.microsoft.com/windows/security/application-security/application-control/user-account-control/

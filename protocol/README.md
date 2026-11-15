@@ -35,7 +35,7 @@ Concepts (section 7):
 |---|---|
 | [lip-package(7)](lip-package.md) | Archives, packages, sources and resolution. |
 | [lip-workspace(7)](lip-workspace.md) | Workspaces, operations on them, and the programs run in them. |
-| [lip-userspace(7)](lip-userspace.md) | The per-user directories, and the cache. |
+| [lip-userspace(7)](lip-userspace.md) | The per-user directories, the cache, and the data directory. |
 | [lip-compatibility(7)](lip-compatibility.md) | Reading and migrating the files of formats 1 to 3 and the workspaces of linux-x64, and the packages that `lip` must install. |
 
 ## Conventions

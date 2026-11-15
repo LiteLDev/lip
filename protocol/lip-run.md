@@ -20,7 +20,8 @@ The **server** is the file `bedrock_server_mod.exe` at the workspace root, run a
 2. When `.lip/journal` exists, recover ([journal(5), "Recovery"](journal.md#recovery)). When that fails, the command fails.
 3. Release the workspace lock.
 4. When `bedrock_server_mod.exe` is not a file, the command fails.
-5. Run the server, and wait until it exits.
+5. When the platform of the environment is a Windows platform, prepare the system ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)). When that fails, the command fails.
+6. Run the server, and wait until it exits.
 
 The workspace lock is not held while the server runs.
 
@@ -36,7 +37,7 @@ The first time `lip` is asked to stop while the server runs, the server reads ne
 
 ## EXIT STATUS
 
-When step 5 started the server, `lip run` exits with the exit code of the server, as [lip-workspace(7), "Running programs"](lip-workspace.md#running-programs) defines it, and need not write a message.
+When step 6 started the server, `lip run` exits with the exit code of the server, as [lip-workspace(7), "Running programs"](lip-workspace.md#running-programs) defines it, and need not write a message.
 
 ## SEE ALSO
 
