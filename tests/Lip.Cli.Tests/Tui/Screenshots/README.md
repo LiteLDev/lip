@@ -1,9 +1,11 @@
 # Screenshots of the interface
 
-This page is for whoever writes the documentation. It is not a page of the site
-(`docs.config.ts` excludes it).
+This page is for whoever writes the documentation. The documentation of lip is written in
+[LiteLDev/liteldev.github.io](https://github.com/LiteLDev/liteldev.github.io) (`docs/lip/`), and
+the pictures of the interface that it shows are committed there, in `docs/lip/public/screenshots/`;
+they are made here, by the tests of lip.
 
-The pictures of the interactive interface in `docs/public/screenshots/` are not taken of a
+The pictures of the interactive interface are not taken of a
 terminal. Each is drawn, as an SVG file, from a frame that the interface really rendered: a
 scenario starts the interface in the test process, presses keys as a user would, and at chosen
 moments captures what the screen shows, cell by cell with its colors. The same scenarios make
@@ -18,10 +20,14 @@ tests/Lip.Cli.Tests/Tui/Screenshots/
   Worlds.cs         the worlds most scenarios start from; Catalogue.cs: the mods of levimc.org
   Notes.cs          At (targets) and Note (annotations)
   Frame.cs          a captured frame; SvgRenderer.cs: the picture of a frame
-docs/public/screenshots/<language>/<name>.svg     the pictures: en, zh-Hans, zh-Hant
+<docs>/<language>/<name>.svg     the pictures: en, zh-Hans, zh-Hant
 ```
 
 ## Making and checking the pictures
+
+The pictures are written to `<docs>`: `docs/lip/public/screenshots` of a checkout of
+LiteLDev/liteldev.github.io named `liteldev.github.io` next to the checkout of lip, or the
+directory that `LIP_SCREENSHOTS_DIR` names. Without either, the scenarios fail and say so.
 
 From the root of the repository (PowerShell; in another shell, set the variable its way):
 
@@ -33,11 +39,11 @@ dotnet test tests/Lip.Cli.Tests --filter "Category=DocsScreenshots"
 | `LIP_SCREENSHOTS` | The scenarios |
 |---|---|
 | not set | are skipped: an ordinary `dotnet test` makes no picture. |
-| `write` | write `docs/public/screenshots/<language>/<name>.svg`. A file that would not change is not touched. When every scenario ran and passed, the pictures that no scenario made are deleted. |
+| `write` | write `<docs>/<language>/<name>.svg`. A file that would not change is not touched. When every scenario ran and passed, the pictures that no scenario made are deleted. |
 | `check` | fail where a file is missing or is not what the interface shows now, and, when every scenario ran and passed, where a picture is left that no scenario makes. Nothing is written. |
 
-- `LIP_SCREENSHOTS_DIR` names another directory than `docs/public/screenshots`, to look at
-  pictures without touching the committed ones.
+- `LIP_SCREENSHOTS_DIR` names another directory than that of the checkout next to lip: another
+  checkout, or a directory to look at pictures without touching the committed ones.
 - `LIP_TUI_DUMP=<directory>` also writes each captured frame as plain text
   (`<name>-<language>-<W>x<H>.txt`), which is the quickest way to see what a scenario reached.
 - Add `&FullyQualifiedName~HomeShots` to the filter to run one class, and
@@ -46,7 +52,7 @@ dotnet test tests/Lip.Cli.Tests --filter "Category=DocsScreenshots"
   `cmd.exe` as the server and is skipped elsewhere, and the paths that the interface shows are
   those of Windows there without any rewriting (see "Limits").
 
-After `write`, look at `git diff --stat docs/public/screenshots`: only the pictures of what you
+After `write`, look at `git diff --stat docs/lip/public/screenshots` in liteldev.github.io: only the pictures of what you
 changed should differ. Open the changed files in a browser before you commit them.
 
 ## Writing a scenario
@@ -183,32 +189,17 @@ its target; choose the side with nothing in between, or `Side.Top` and `Side.Bot
 
 ## Embedding a picture
 
-The files of `docs/public/` are served from the root of the site, so a page refers to a
-picture by its path below `public`, with a leading slash, whatever folder the page is in:
-
-```markdown
-![The Home page of lip in an empty folder: the first step, "Create a server", is selected.](/screenshots/en/home-01-empty.svg)
-```
-
-| Page | Picture |
-|---|---|
-| `docs/**/*.md` (English) | `/screenshots/en/<name>.svg` |
-| `docs/zh/**/*.md` (Simplified Chinese) | `/screenshots/zh-Hans/<name>.svg` |
-| `docs/zh-Hant/**/*.md` (Traditional Chinese, written by `scripts/zh-hant.mjs`) | `/screenshots/zh-Hant/<name>.svg` |
+How a page of the documentation embeds a picture, in each language, is written in
+LiteLDev/liteldev.github.io, with the pages (`docs/lip/`).
 
 The tutorials at [levimc.org/tutorials](https://levimc.org/tutorials/) (Your first server, Install mods on your
 server) show the `first-server-` pictures by their full URL, `https://levimc.org/lip/screenshots/<language>/<name>.svg`:
-no page of this site needs most of them, but do not rename or drop one without changing the tutorial too.
+no page of the documentation needs most of them, but do not rename or drop one without changing the tutorial too.
 
 - Always write the alternative text: one sentence in the language of the page that says what
   the picture shows and what matters in it, for whoever cannot see it.
-- Nobody writes the Traditional Chinese pages: `scripts/zh-hant.mjs` makes them from the
-  Simplified pages before every build, and writes `/screenshots/zh-Hant/` for
-  `/screenshots/zh-Hans/` in them, so a Traditional page shows the interface in Traditional
-  Chinese. See [CONTRIBUTING.md](CONTRIBUTING.md), "The three languages".
 - The picture is a dark terminal window with its own background, on the light and on the dark
   theme of the site alike.
-- `pnpm build` and `pnpm linkcheck` in `docs/` fail on a path that names no file.
 
 ## Limits
 

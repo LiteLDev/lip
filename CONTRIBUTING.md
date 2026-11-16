@@ -27,9 +27,11 @@ with the `lip` it built (`.github/scripts/real-server.sh`).
 
 ## The documentation
 
-The documentation at [levimc.org/lip](https://levimc.org/lip/) is built from `docs/`. How to build it, how the
-Traditional Chinese pages are made and how to write a page: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). How the
-pictures of the interface are made: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
+The documentation at [levimc.org/lip](https://levimc.org/lip/) is written in
+[LiteLDev/liteldev.github.io](https://github.com/LiteLDev/liteldev.github.io) (`docs/lip/`), with the documentation
+of the other LeviMC projects; that repository says how to build it and how to write a page. The pictures of the
+interface are still made here, by the tests, and committed there (`docs/lip/public/screenshots/`): see
+[tests/Lip.Cli.Tests/Tui/Screenshots/README.md](tests/Lip.Cli.Tests/Tui/Screenshots/README.md).
 
 The tutorials that use `lip` (your first server, a server from the command line, publishing a package) are at
 [levimc.org/tutorials](https://levimc.org/tutorials/), written in

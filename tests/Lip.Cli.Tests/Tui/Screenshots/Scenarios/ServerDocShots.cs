@@ -6,9 +6,9 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The Server page, for docs/interface/server.md: every state of it that ServerShots does not
-/// show. As there, a server that runs is cmd.exe in a folder of its own on the disk, and what
-/// it wrote is replaced by what the game writes.
+/// The Server page, for docs/lip/interface/server.md of liteldev.github.io: every state of it that
+/// ServerShots does not show. As there, a server that runs is cmd.exe in a folder of its own on the
+/// disk, and what it wrote is replaced by what the game writes.
 public sealed class ServerDocShots(ShotRun run) {
   private const string Starting = "\x1b[90m── starting the server ──\x1b[0m";
   private const string AskedToStop = "\x1b[90m── asking the server to stop ──\x1b[0m";
