@@ -7,18 +7,18 @@ After this page `lip` is installed on your computer, you have checked that it ru
 ## Windows: the installer <Badge platform="windows" />
 
 1. Open the [latest release](https://github.com/LiteLDev/lip/releases/latest) and download `lip-<version>-win-x64.msi`. On a computer with an ARM processor, take `lip-<version>-win-arm64.msi`.
-2. Run the file. Windows asks you to allow it to make changes: the installer puts `lip` in `C:\Program Files\lip` and adds that folder to the system `PATH`.
+2. Run the file. The installer asks for the folder to install `lip` in, `C:\Program Files\lip` unless you change it, and installs once you click **Install** and allow Windows to make changes. It adds that folder to the system `PATH`.
 3. Open a **new** terminal window (Windows Terminal or PowerShell). A terminal that was open before does not know the new `PATH` yet.
 4. [Check that it runs](#check-that-it-runs).
 
-To install without any window, for example with Group Policy, Intune or Ansible:
+To install without any window, to `C:\Program Files\lip`, for example with Group Policy, Intune or Ansible:
 
 ```shell
 msiexec /i lip-<version>-win-x64.msi /qn
 ```
 
 ::: details Upgrading from an older installer
-Running a newer installer upgrades `lip` in place. It also replaces an installation made by the `setup.exe` of lip 0.35.0 or earlier.
+Running a newer installer upgrades `lip` in place, in the folder you chose before. It also replaces an installation made by the `setup.exe` of lip 0.35.0 or earlier.
 
 The releases of lip 0.36.0 to 0.40.0 also had a `setup.exe`. The installer upgrades what that installed as well, but **Installed apps** then still lists that `setup.exe` as a second `lip`. You can uninstall that entry: it no longer removes `lip`.
 :::

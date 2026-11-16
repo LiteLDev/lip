@@ -7,18 +7,18 @@
 ## Windows：安装程序 <Badge platform="windows" />
 
 1. 打开[最新发行版](https://github.com/LiteLDev/lip/releases/latest)，下载 `lip-<version>-win-x64.msi`。电脑用的是 ARM 处理器的话，下载 `lip-<version>-win-arm64.msi`。
-2. 运行这个文件。Windows 会问你是否允许它进行更改：安装程序把 `lip` 放进 `C:\Program Files\lip`，并把这个文件夹加入系统 `PATH`。
+2. 运行这个文件。安装程序会询问把 `lip` 装到哪个文件夹（默认是 `C:\Program Files\lip`），点击 **Install** 并允许 Windows 进行更改后开始安装，并把这个文件夹加入系统 `PATH`。
 3. 打开一个**新的**终端窗口（Windows 终端或 PowerShell）。安装前就开着的终端还不知道新的 `PATH`。
 4. [确认它能运行](#确认它能运行)。
 
-想不弹出任何窗口地安装（例如通过组策略、Intune 或 Ansible）：
+想不弹出任何窗口地安装到 `C:\Program Files\lip`（例如通过组策略、Intune 或 Ansible）：
 
 ```shell
 msiexec /i lip-<version>-win-x64.msi /qn
 ```
 
 ::: details 从旧的安装程序升级
-运行更新版本的安装程序会原地升级 `lip`，也会替换由 lip 0.35.0 及更早版本的 `setup.exe` 所做的安装。
+运行更新版本的安装程序会在你之前选择的文件夹里原地升级 `lip`，也会替换由 lip 0.35.0 及更早版本的 `setup.exe` 所做的安装。
 
 lip 0.36.0 至 0.40.0 的发行版还提供过 `setup.exe`。安装程序同样会升级它装下的 `lip`，但之后**安装的应用**里仍会把那个 `setup.exe` 列为第二个 `lip`。可以把那一项卸载掉：它已经不会再移除 `lip`。
 :::
