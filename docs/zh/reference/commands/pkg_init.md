@@ -28,7 +28,7 @@ lip pkg init [-h | --help]
 
 标准输入或标准错误不是终端时，lip 无法询问，命令会失败。没有用来给出包 ID 的选项；在脚本中请自己写 `lip.toml`。
 
-这个包还不安装任何东西。要添加什么，参见[创建包](../../authors/creating_packages.md)。
+这个包还不安装任何东西。要添加什么，参见[用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)。
 
 `lip pkg init` 不是工作区操作：它不需要服务器，不取得任何锁，除 `lip.toml` 之外什么都不碰。
 
@@ -62,6 +62,6 @@ lip pkg init
 
 ## 另请参阅
 
-- [创建包](../../authors/creating_packages.md)
+- [用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)
 - [lip.toml](../../concepts/lip_toml.md)
 - [工具](../../interface/tools.md)：界面中的**创建 lip.toml**。

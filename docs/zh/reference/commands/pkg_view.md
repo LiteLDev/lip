@@ -116,6 +116,6 @@ lip pkg view .
 
 ## 另请参阅
 
-- [创建包](../../authors/creating_packages.md#本地测试)
+- [用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)
 - [工具](../../interface/tools.md)：界面中的**查看包信息…**。
 - [lip.toml](../../concepts/lip_toml.md)

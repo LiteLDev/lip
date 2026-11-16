@@ -116,6 +116,6 @@ lip pkg view .
 
 ## See also
 
-- [Creating packages](../../authors/creating_packages.md#testing-locally)
+- [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/)
 - [Tools](../../interface/tools.md): **View package…** in the interface.
 - [lip.toml](../../concepts/lip_toml.md)

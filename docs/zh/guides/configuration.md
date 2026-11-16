@@ -116,7 +116,7 @@ lip config set language zh-Hant
 lip config set restart on-failure --workspace
 ```
 
-设为 `on-failure` 后，lip 会等 5 秒再启动服务器，10 分钟内最多 5 次。见[崩溃后自动重启](server_from_commands.md#崩溃后自动重启)。
+设为 `on-failure` 后，lip 会等 5 秒再启动服务器，10 分钟内最多 5 次。见[重启](../reference/commands/run.md#重启)。
 
 ## GitHub 很慢或被屏蔽时
 

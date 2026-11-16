@@ -66,6 +66,6 @@ lip install ../MyTool.zip
 
 ## See also
 
-- [Creating packages](../../authors/creating_packages.md)
+- [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/)
 - [Tools](../../interface/tools.md): **Pack ZIP…** in the interface.
 - [`lip pkg view`](pkg_view.md), [`lip install`](install.md)

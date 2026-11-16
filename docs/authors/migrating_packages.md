@@ -53,7 +53,7 @@ Everything that is dropped, or converted with another meaning, is printed as a w
 -   A `preserve_files` pattern without `/` matched the file name in any directory; it becomes `**/<pattern>`. A `remove_files` pattern also removed matching directories; it is also written with a trailing `/`. Patterns that are not valid globs, such as ones starting with `/`, are dropped.
 -   Dependencies of format 1 and 2 whose range cannot be read in format 3 (e.g. `2.16.x`) were already ignored when installing the `tooth.json`; they are reported so that you can add them by hand.
 -   Scripts other than the install and uninstall hooks (such as `pre_pack` or custom scripts), and the `prerequisites` of format 2, have no equivalent and are dropped.
--   A migrated package is a file package that places files where the old `tooth.json` did. If your package is a LeviLamina mod, consider publishing it as an `mcmod` asset instead (see [A mod package](creating_packages.md#a-mod-package)), which is installed to `mods/<name>/`.
+-   A migrated package is a file package that places files where the old `tooth.json` did. If your package is a LeviLamina mod, consider publishing it as an `mcmod` asset instead (see [lip.toml: Mods](../concepts/lip_toml.md#mods)), which is installed to `mods/<name>/`.
 -   Dependencies on other packages that still have a `tooth.json` keep working, because lip still installs them.
 
 Tags are versions only when they are named exactly `v<SemVer>` (e.g. `v1.2.3`). Tags such as `v1.2` are not versions.
@@ -67,8 +67,8 @@ Tags are versions only when they are named exactly `v<SemVer>` (e.g. `v1.2.3`). 
    lip pkg view .
    ```
 
-3. Install it into a test server, as [Testing locally](creating_packages.md#testing-locally) describes.
-4. Commit, and publish a new version with a tag, as [Publishing a version](creating_packages.md#publishing-a-version) describes.
+3. Install it into a test server, as [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/) describes.
+4. Commit, and publish a new version with a tag, as [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/) describes.
 
 Versions that you published before keep their `tooth.json`, and lip keeps installing them.
 
@@ -76,5 +76,5 @@ Versions that you published before keep their `tooth.json`, and lip keeps instal
 
 - [`lip pkg migrate`](../reference/commands/pkg_migrate.md)
 - [lip.toml](../concepts/lip_toml.md#earlier-formats): how lip reads a `tooth.json`.
-- [Creating packages](creating_packages.md)
+- [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/)
 - [Tools](../interface/tools.md): the same action in the interface.

@@ -6,11 +6,11 @@ Short answers to what new users ask most, each with a link to the page that says
 
 ### What does lip do?
 
-lip sets up a Minecraft Bedrock server in a folder, installs and updates its mods, and runs it. You use it through an interface in the terminal, or through commands. See [What is lip](intro/what_is_lip.md).
+lip sets up a Minecraft Bedrock server in a folder, installs and updates its mods, and runs it. You use it through an interface in the terminal, or through commands. See [the home page](index.md).
 
 ### Is it only for LeviLamina?
 
-No, but that is what it is made for. The mods lip installs are LeviLamina mods, and LeviLamina is the only loader lip sets up. You can also run a plain server without a loader: the Windows one with `lip setup --game <version> --no-loader`, or the Linux one with `--build linux`. See [Choose the build and the loader](guides/server_from_commands.md#choose-the-build-and-the-loader).
+No, but that is what it is made for. The mods lip installs are LeviLamina mods, and LeviLamina is the only loader lip sets up. You can also run a plain server without a loader: the Windows one with `lip setup --game <version> --no-loader`, or the Linux one with `--build linux`. See [Game versions and builds](reference/commands/setup.md#game-versions-and-builds).
 
 ### Can lip install client mods?
 
@@ -32,11 +32,11 @@ Yes. The interface has English, Simplified Chinese and Traditional Chinese, and 
 
 ### Can I use it without the interface?
 
-Yes. Everything the interface does is a command: `lip setup`, `lip install`, `lip update`, `lip uninstall`, `lip run`, `lip config`. Start with [A server from the commands](guides/server_from_commands.md). The commands also work in scripts, where no one can answer questions: see `--accept-eula` there.
+Yes. Everything the interface does is a command: `lip setup`, `lip install`, `lip update`, `lip uninstall`, `lip run`, `lip config`. Start with [A server from the command line](https://levimc.org/tutorials/server/command-line/). The commands also work in scripts, where no one can answer questions: see `--accept-eula` of [`lip setup`](reference/commands/setup.md#options).
 
 ### And the other way round: do I have to learn the commands?
 
-No. Run `lip` without anything after it and use the interface. See [Your first server](intro/first_server.md).
+No. Run `lip` without anything after it and use the interface. See [Your first server](https://levimc.org/tutorials/server/first-server/).
 
 ### Does the server stop when I close the terminal?
 
@@ -46,7 +46,7 @@ It depends on how you started it.
 - **Started with `lip run --managed`:** no. Closing the terminal only detaches you.
 - **Started with a plain `lip run`:** yes. lip asks the server to stop, and waits for it.
 
-In the first two cases the server runs in the background process of lip. Come back to it with the interface, or with `lip run --managed`. See [Keep the server running](guides/server_from_commands.md#keep-the-server-running).
+In the first two cases the server runs in the background process of lip. Come back to it with the interface, or with `lip run --managed`. See [Managed servers](reference/commands/run.md#managed-servers).
 
 ### How do I stop a server that runs in the background?
 
@@ -58,11 +58,11 @@ No. lip does not start anything when the system starts. To have that, let the se
 
 ### Can lip restart a server that crashes?
 
-Yes. Turn on "Auto restart" on the Server page, or run `lip config set restart on-failure --workspace`. See [Restart the server when it crashes](guides/server_from_commands.md#restart-the-server-when-it-crashes).
+Yes. Turn on "Auto restart" on the Server page, or run `lip config set restart on-failure --workspace`. See [Restarting](reference/commands/run.md#restarting).
 
 ### Can I install or update mods while the server runs?
 
-In the interface, no: it asks you to stop the server first. With the commands, yes, and the server sees the change when it next starts. On Windows such a command can fail because the running server has a file open; lip then undoes what it did. See [Change packages while the server runs](guides/server_from_commands.md#change-packages-while-the-server-runs).
+In the interface, no: it asks you to stop the server first. With the commands, yes, and the server sees the change when it next starts. On Windows such a command can fail because the running server has a file open; lip then undoes what it did. See [The interface and the commands](concepts/how_lip_works.md#the-interface-and-the-commands).
 
 ### Can I run several servers?
 
@@ -78,11 +78,11 @@ lip has no network access of its own. To manage a server on another machine, sig
 
 ### How do I update lip?
 
-Run `lip self-update`, or use "Check for updates" on the Settings page. `lip self-update --check` only tells you whether there is a newer version. See [Installation](intro/installation.md).
+Run `lip self-update`, or use "Check for updates" on the Settings page. `lip self-update --check` only tells you whether there is a newer version. See [`lip self-update`](reference/commands/self_update.md).
 
 ### How do I change the Minecraft version of my server?
 
-Run `lip setup --game <version>` again in the server folder, or use the Workspaces page of the interface. Mods move to versions that work with the new game. See [Change the game later](guides/server_from_commands.md#change-the-game-later).
+Run `lip setup --game <version>` again in the server folder, or use the Workspaces page of the interface. Mods move to versions that work with the new game. See [`lip setup`](reference/commands/setup.md).
 
 ## Files
 
@@ -117,7 +117,7 @@ The cache can be deleted at any time, with `lip cache clean`. lip writes nothing
 
 ### Will changing the game version delete my world?
 
-No. `worlds/`, `server.properties`, `allowlist.json` and `permissions.json` are kept. Some folders of the game itself, such as `resource_packs/` and `behavior_packs/` at the root, are deleted and written again. See [What is kept and what is deleted](guides/server_from_commands.md#what-is-kept-and-what-is-deleted).
+No. `worlds/`, `server.properties`, `allowlist.json` and `permissions.json` are kept. Some folders of the game itself, such as `resource_packs/` and `behavior_packs/` at the root, are deleted and written again. See [What survives a game change](reference/files.md#what-survives-a-game-change).
 
 ### How do I move a server to another folder or machine?
 

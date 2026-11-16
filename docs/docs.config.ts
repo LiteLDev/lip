@@ -8,10 +8,6 @@ const repo = 'https://github.com/LiteLDev/lip';
 
 interface Labels {
   guide: string;
-  gettingStarted: string;
-  whatIsLip: string;
-  installation: string;
-  firstServer: string;
   usingInterface: string;
   tour: string;
   // The pages of the interface, named as the interface names them (src/Lip.Cli/Tui/Pages/*/*Text.cs, Title).
@@ -25,14 +21,13 @@ interface Labels {
   tools: string;
   settings: string;
   usingCommands: string;
-  serverFromCommands: string;
   managingPackages: string;
   configuration: string;
   linuxMacos: string;
   troubleshooting: string;
   faq: string;
+  help: string;
   authors: string;
-  creatingPackages: string;
   migratingPackages: string;
   concepts: string;
   howLipWorks: string;
@@ -50,10 +45,6 @@ type Locale = 'root' | 'zh' | 'zh-Hant';
 const LABELS: Record<Locale, Labels> = {
   root: {
     guide: 'Guide',
-    gettingStarted: 'Getting started',
-    whatIsLip: 'What is lip?',
-    installation: 'Installation',
-    firstServer: 'Your first server',
     usingInterface: 'Using the interface',
     tour: 'A tour of the interface',
     home: 'Home',
@@ -66,14 +57,13 @@ const LABELS: Record<Locale, Labels> = {
     tools: 'Tools',
     settings: 'Settings',
     usingCommands: 'Using the commands',
-    serverFromCommands: 'A server from the commands',
     managingPackages: 'Managing packages',
     configuration: 'Configuration',
     linuxMacos: 'Linux and macOS',
     troubleshooting: 'Troubleshooting',
     faq: 'FAQ',
+    help: 'Help',
     authors: 'For package authors',
-    creatingPackages: 'Creating packages',
     migratingPackages: 'Migrating packages',
     concepts: 'Concepts',
     howLipWorks: 'How lip works',
@@ -87,10 +77,6 @@ const LABELS: Record<Locale, Labels> = {
   },
   zh: {
     guide: '指南',
-    gettingStarted: '入门',
-    whatIsLip: 'lip 是什么？',
-    installation: '安装',
-    firstServer: '第一个服务器',
     usingInterface: '使用界面',
     tour: '界面导览',
     home: '主页',
@@ -103,14 +89,13 @@ const LABELS: Record<Locale, Labels> = {
     tools: '工具',
     settings: '设置',
     usingCommands: '使用命令',
-    serverFromCommands: '用命令开服',
     managingPackages: '管理包',
     configuration: '配置',
     linuxMacos: 'Linux 与 macOS',
     troubleshooting: '故障排查',
     faq: '常见问题',
+    help: '帮助',
     authors: '写给包作者',
-    creatingPackages: '创建包',
     migratingPackages: '迁移包',
     concepts: '概念',
     howLipWorks: 'lip 的工作方式',
@@ -126,10 +111,6 @@ const LABELS: Record<Locale, Labels> = {
   // characters only (服務器, 設置, 界面), and the pages are made by scripts/zh-hant.mjs (see CONTRIBUTING.md).
   'zh-Hant': {
     guide: '指南',
-    gettingStarted: '入門',
-    whatIsLip: 'lip 是什麼？',
-    installation: '安裝',
-    firstServer: '第一個伺服器',
     usingInterface: '使用介面',
     tour: '介面導覽',
     home: '首頁',
@@ -142,14 +123,13 @@ const LABELS: Record<Locale, Labels> = {
     tools: '工具',
     settings: '設定',
     usingCommands: '使用命令',
-    serverFromCommands: '用命令開服',
     managingPackages: '管理套件',
     configuration: '設定',
     linuxMacos: 'Linux 與 macOS',
     troubleshooting: '疑難排解',
     faq: '常見問題',
+    help: '說明',
     authors: '寫給套件作者',
-    creatingPackages: '建立套件',
     migratingPackages: '移轉套件',
     concepts: '概念',
     howLipWorks: 'lip 的運作方式',
@@ -165,19 +145,14 @@ const LABELS: Record<Locale, Labels> = {
 
 const COMMANDS = ['cache_clean', 'config', 'daemon', 'install', 'list', 'pkg_init', 'pkg_migrate', 'pkg_pack', 'pkg_view', 'run', 'self_update', 'setup', 'uninstall', 'update'];
 
-/** The tabs of one locale (`p`: its URL prefix, '/', '/zh/' or '/zh-Hant/'), each with the tree of its sidebar. */
+/**
+ * The tabs of one locale, each with the tree of its sidebar. `p` is the folder of its pages, '/', '/zh/' or '/zh-Hant/':
+ * a link of the nav names a page by its source, and the kit gives it the URL of its locale (zh/ is at zh-Hans/).
+ */
 const nav = (p: string, t: Labels): NavEntry[] => [
   {
     text: t.guide,
     items: [
-      {
-        text: t.gettingStarted,
-        items: [
-          { text: t.whatIsLip, link: `${p}intro/what_is_lip` },
-          { text: t.installation, link: `${p}intro/installation` },
-          { text: t.firstServer, link: `${p}intro/first_server` },
-        ],
-      },
       {
         text: t.usingInterface,
         items: [
@@ -196,19 +171,20 @@ const nav = (p: string, t: Labels): NavEntry[] => [
       {
         text: t.usingCommands,
         items: [
-          { text: t.serverFromCommands, link: `${p}guides/server_from_commands` },
           { text: t.managingPackages, link: `${p}guides/managing_packages` },
           { text: t.configuration, link: `${p}guides/configuration` },
           { text: t.linuxMacos, link: `${p}guides/linux_macos` },
-          { text: t.troubleshooting, link: `${p}guides/troubleshooting` },
-          { text: t.faq, link: `${p}faq` },
         ],
       },
       {
         text: t.authors,
+        items: [{ text: t.migratingPackages, link: `${p}authors/migrating_packages` }],
+      },
+      {
+        text: t.help,
         items: [
-          { text: t.creatingPackages, link: `${p}authors/creating_packages` },
-          { text: t.migratingPackages, link: `${p}authors/migrating_packages` },
+          { text: t.troubleshooting, link: `${p}guides/troubleshooting` },
+          { text: t.faq, link: `${p}faq` },
         ],
       },
     ],
@@ -235,14 +211,28 @@ const nav = (p: string, t: Labels): NavEntry[] => [
   },
 ];
 
-// Pages that moved or were removed: their old URLs, in every locale, open the page that took their place.
-const MOVED: Record<string, string> = {
+// The tutorials of lip are at levimc.org/tutorials/, with those of the other LeviMC projects: English at the root,
+// Simplified Chinese in zh-Hans/, Traditional Chinese in zh-Hant/.
+const TUTORIALS = 'https://levimc.org/tutorials/';
+/** A tutorial, as a target of MOVED. */
+const tutorial = (path: string) => ({ tutorial: path });
+type Target = string | { tutorial: string };
+
+// Pages that moved or were removed: their old URLs, in every locale, open the page that took their place (a page of
+// this site, '' for its home page, or a tutorial in the same language).
+const MOVED: Record<string, Target> = {
+  // The tutorials moved to levimc.org/tutorials/; "What is lip?" became the home page.
+  'intro/what_is_lip': '',
+  'intro/installation': tutorial('server/first-server/'),
+  'intro/first_server': tutorial('server/first-server/'),
+  'guides/server_from_commands': tutorial('server/command-line/'),
+  'authors/creating_packages': tutorial('develop/publish-a-package/'),
   // The documentation was rebuilt around the interface (lip 0.41).
-  'intro/quick_start': 'intro/first_server.html',
-  'guides/running_server': 'guides/server_from_commands.html',
+  'intro/quick_start': tutorial('server/first-server/'),
+  'guides/running_server': tutorial('server/command-line/'),
   'guides/installing_dependencies': 'guides/managing_packages.html',
   'guides/managing_configuration': 'guides/configuration.html',
-  'guides/creating_packages': 'authors/creating_packages.html',
+  'guides/creating_packages': tutorial('develop/publish-a-package/'),
   'guides/migrating_packages': 'authors/migrating_packages.html',
   'guides/internal_mechanism': 'concepts/internals.html',
   'concepts/architecture': 'concepts/how_lip_works.html',
@@ -265,18 +255,22 @@ const MOVED: Record<string, string> = {
 };
 // A page that is still where it was needs no redirect, and the kit refuses one: the old URL of a page redirects
 // from the build in which its file is gone. The Traditional Chinese pages are those of zh/ (scripts/zh-hant.mjs).
+// Simplified Chinese was published below zh/ before: its old URLs redirect too, to zh-Hans/ (the kit redirects
+// the old URL of each page that still exists, `formerPrefixes`; these are the pages that do not).
 const isPage = (folder: string, page: string) => existsSync(fileURLToPath(new URL(`./${folder}${page}.md`, import.meta.url)));
 const redirects = Object.fromEntries(
   (
     [
-      ['', ''],
-      ['zh/', 'zh/'],
-      ['zh-Hant/', 'zh/'],
+      // [URL prefix of the old page, source folder, URL prefix of the target, locale of the tutorials]
+      ['', '', '', ''],
+      ['zh-Hans/', 'zh/', 'zh-Hans/', 'zh-Hans/'],
+      ['zh/', 'zh/', 'zh-Hans/', 'zh-Hans/'],
+      ['zh-Hant/', 'zh/', 'zh-Hant/', 'zh-Hant/'],
     ] as const
-  ).flatMap(([p, folder]) =>
+  ).flatMap(([p, folder, to, tutorials]) =>
     Object.entries(MOVED)
       .filter(([from]) => !isPage(folder, from))
-      .map(([from, to]) => [p + from, p + to]),
+      .map(([from, target]) => [p + from, typeof target === 'string' ? to + target : TUTORIALS + tutorials + target.tutorial]),
   ),
 );
 
@@ -302,7 +296,8 @@ export default defineDocsConfig({
     defaultLocale: 'root',
     locales: [
       { code: 'root', label: 'English', lang: 'en', prefix: '' },
-      { code: 'zh', label: '简体中文', lang: 'zh-CN', prefix: 'zh/' },
+      // Simplified Chinese: the pages stay in zh/; the URLs moved from zh/ to zh-Hans/ (levimc.org's one scheme).
+      { code: 'zh', label: '简体中文', lang: 'zh-Hans', prefix: 'zh-Hans/', folder: 'zh', formerPrefixes: ['zh/'] },
       // Traditional Chinese: scripts/zh-hant.mjs writes zh-Hant/ from zh/ before every build, with the words of the
       // interface. A zh page that it did not write is still converted by the kit, character by character.
       { code: 'zh-Hant', label: '繁體中文', lang: 'zh-Hant', prefix: 'zh-Hant/', convertFrom: 'zh' },

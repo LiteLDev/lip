@@ -53,7 +53,7 @@ git commit -m "Migrate tooth.json to lip.toml"
 - 不含 `/` 的 `preserve_files` 模式过去会匹配任意目录中的文件名；它会变为 `**/<pattern>`。`remove_files` 模式过去也会删除匹配的目录；它还会以带结尾 `/` 的形式再写一遍。不是有效 glob 的模式（例如以 `/` 开头的）会被丢弃。
 - 格式 1 和 2 中版本范围无法在格式 3 中读取的依赖（例如 `2.16.x`）在安装 `tooth.json` 时本就会被忽略；lip 会报告它们，以便你手动添加。
 - 安装与卸载钩子以外的脚本（例如 `pre_pack` 或自定义脚本）以及格式 2 的 `prerequisites` 没有对应项，会被丢弃。
-- 迁移得到的包是一个文件包，把文件放到与旧 `tooth.json` 相同的位置。如果你的包是 LeviLamina 模组，可以考虑改为以 `mcmod` 资源发布（参见[模组包](creating_packages.md#模组包)），它会被安装到 `mods/<name>/`。
+- 迁移得到的包是一个文件包，把文件放到与旧 `tooth.json` 相同的位置。如果你的包是 LeviLamina 模组，可以考虑改为以 `mcmod` 资源发布（参见[lip.toml：模组](../concepts/lip_toml.md#模组)），它会被安装到 `mods/<name>/`。
 - 对其他仍带有 `tooth.json` 的包的依赖仍然有效，因为 lip 仍可安装它们。
 
 只有名称恰为 `v<SemVer>` 的标签（例如 `v1.2.3`）才是版本。`v1.2` 这样的标签不是版本。
@@ -67,8 +67,8 @@ git commit -m "Migrate tooth.json to lip.toml"
    lip pkg view .
    ```
 
-3. 按[本地测试](creating_packages.md#本地测试)所述，把它安装到测试用的服务器中。
-4. 提交，并按[发布版本](creating_packages.md#发布版本)所述用标签发布新版本。
+3. 按[用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)所述，把它安装到测试用的服务器中。
+4. 提交，并按[用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)所述用标签发布新版本。
 
 你以前发布的版本仍然带着它们的 `tooth.json`，lip 会继续安装它们。
 
@@ -76,5 +76,5 @@ git commit -m "Migrate tooth.json to lip.toml"
 
 - [`lip pkg migrate`](../reference/commands/pkg_migrate.md)
 - [lip.toml](../concepts/lip_toml.md#早期格式)：lip 怎样读取 `tooth.json`。
-- [创建包](creating_packages.md)
+- [用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)
 - [工具](../interface/tools.md)：界面中同样的操作。

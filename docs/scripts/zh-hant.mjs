@@ -17,8 +17,9 @@
 // 3. OpenCC (cn → tw) converts the characters of the rest, as levimc-kit does for a locale with `convertFrom`, and
 //    the quotation marks “ ” become 「 」.
 //
-// In link targets, /screenshots/zh-Hans/ becomes /screenshots/zh-Hant/ and a leading /zh/ becomes /zh-Hant/; a
-// #fragment is converted like the heading it points at.
+// In link targets, /screenshots/zh-Hans/ becomes /screenshots/zh-Hant/, a leading /zh-Hans/ (or /zh/) becomes
+// /zh-Hant/, and a link to a Simplified Chinese page of levimc.org (https://levimc.org/<site>/zh-Hans/…, such as a
+// tutorial) leads to its Traditional Chinese page; a #fragment is converted like the heading it points at.
 import {
   existsSync,
   mkdirSync,
@@ -117,14 +118,24 @@ function prose(text) {
 /** Prose as Taiwan punctuates it: the quotation marks “ ” are 「 」. */
 const punctuated = (text) => prose(text).replace(/“/g, '「').replace(/”/g, '」');
 
+/** A Simplified Chinese page of levimc.org: its locale is the first zh-Hans/ of its path. */
+const LEVIMC_HANS = /^(https:\/\/levimc\.org\/(?:[^/?#]+\/)?)zh-Hans\//;
+
 /** A link target: its path with the pictures and the pages of the locale, its fragment as the heading it names. */
 function target(link) {
+  // A Simplified Chinese page of levimc.org has a Traditional one at zh-Hant/ (one scheme across levimc.org), which
+  // its site converts by characters: so is the fragment.
+  if (LEVIMC_HANS.test(link)) {
+    const hash = link.indexOf('#');
+    const path = (hash < 0 ? link : link.slice(0, hash)).replace(LEVIMC_HANS, '$1zh-Hant/');
+    return hash < 0 ? path : path + '#' + characters(link.slice(hash + 1));
+  }
   // A link to another site is kept whole, its fragment too.
   if (/^[a-z][a-z0-9+.-]*:/i.test(link)) return link;
   const hash = link.indexOf('#');
   const path = (hash < 0 ? link : link.slice(0, hash))
     .replace('/screenshots/zh-Hans/', '/screenshots/zh-Hant/')
-    .replace(/^\/zh\//, '/zh-Hant/');
+    .replace(/^\/zh(?:-Hans)?\//, '/zh-Hant/');
   return hash < 0 ? path : path + '#' + words(link.slice(hash + 1));
 }
 
@@ -137,8 +148,8 @@ const KEEP =
 
 /** A page in Traditional Chinese. */
 export function convertPage(markdown) {
-  // The links of the front matter of a home page (`link: /zh/intro/…`) are no Markdown links.
-  const md = markdown.replace(/^(\s*link:\s*)\/zh\//gm, '$1/zh-Hant/');
+  // The links of the front matter of a home page (`link: /zh-Hans/interface/…`) are no Markdown links.
+  const md = markdown.replace(/^(\s*link:\s*)(\S+)/gm, (_, key, link) => key + target(link));
   // What is kept is taken out first, each span for a character that no page has, so that a text in bold is
   // found whole whatever code or link stands before it in its line; then the prose is converted, and the spans
   // are put back.

@@ -1,7 +1,7 @@
 # lip.toml
 
 This page describes every field of `lip.toml`, so that you can read the package file of any
-package and write your own. For a walk-through, see [Creating packages](../authors/creating_packages.md).
+package and write your own. For a walk-through, see [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/).
 
 A lip package is an archive with a **package file**, `lip.toml`, at its root. `lip.toml` names the
 package, gives its version, and describes, for each variant, side and platform, what lip
@@ -102,10 +102,37 @@ package, and lip does not install it.
 | --- | --- | --- |
 | `name` | `string` | Display name. |
 | `description` | `string` | Short description. |
-| `tags` | `string[]` | Tags. See [Recommended Tags](../authors/creating_packages.md#recommended-tags). |
+| `tags` | `string[]` | Tags. See [Recommended tags](#recommended-tags). |
 | `logo` | `string` | URL of the logo image. It must start with `https://`; the image is the response, directly or after redirects. |
 
 lip does not use `info`.
+
+#### Recommended tags
+
+`info.tags` helps people find your package in listings of mods, such as the Get mods page of the interface and [LeviMC Mods](https://levimc.org/mods/); lip itself ignores tags. The listings show the tags below first, with a translated name, and let users filter by them. Write the ids as they are here, in lower case, and add any other tags you like:
+
+```toml
+[info]
+tags = ["management", "economy"]
+```
+
+| Tag | Name | Use it for |
+| --- | --- | --- |
+| `library` | Library / API | A library or API that other mods depend on, e.g. events, forms or exported functions. |
+| `utility` | Utility | Everyday tools for players, e.g. inventory helpers, info displays, tooltips and recipe viewers. |
+| `management` | Server management | Running a server, e.g. backups, bans, whitelists, logins, commands and land claims. |
+| `game-mechanics` | Game mechanics | Changes to how the game plays, e.g. vanilla-plus features and achievements. |
+| `adventure` | Content & adventure | New content to explore, e.g. world generation, terrain and biomes. |
+| `visual` | Visual & HUD | What players see, e.g. HUDs, sidebars, shaders, replays and recording. |
+| `economy` | Economy | Money, shops and trading. |
+| `teleport` | Teleport | Teleport commands, homes, warps and waystones. |
+| `anticheat` | Anti-cheat | Detecting and stopping cheats, e.g. anti-xray. |
+| `optimization` | Optimization | Better performance, e.g. entity and item cleaners. |
+| `bugfix` | Bug fixes | Fixes for bugs of the game. |
+| `technology` | Technical & redstone | Redstone, pistons and automation. |
+| `protocol` | Protocol & multi-version | The network protocol, e.g. letting clients of several game versions join. |
+
+You need not tag the side or platform, or that the package is a LeviLamina mod: the entries and `deps` already say so.
 
 ### Variants
 
@@ -389,7 +416,7 @@ page:
 
 ## See also
 
-- [Creating packages](../authors/creating_packages.md) and [Migrating packages](../authors/migrating_packages.md)
+- [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/) and [Migrating packages](../authors/migrating_packages.md)
 - [`lip pkg init`](../reference/commands/pkg_init.md), [`lip pkg view`](../reference/commands/pkg_view.md)
 - [State file](state_file.md): where the package file of each installed package is recorded.
 - [Internals](internals.md): how lip resolves sources and versions.

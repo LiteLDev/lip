@@ -83,7 +83,7 @@ lip
 
 不可用的内容仍然显示在屏幕上，是灰色的，并注明原因：**请先停止服务器。**
 
-以上只针对界面。命令 `lip install`、`lip update`、`lip uninstall` 和 `lip setup` 在服务器运行期间不会被拒绝，见[用命令运行服务器](../guides/server_from_commands.md)。
+以上只针对界面。命令 `lip install`、`lip update`、`lip uninstall` 和 `lip setup` 在服务器运行期间不会被拒绝，见[界面与命令](../concepts/how_lip_works.md#界面与命令)。
 
 退出界面不会停止由守护进程运行的服务器。如果 lip 因为无法使用守护进程而自己执行界面，退出时会停止界面启动的服务器。
 
@@ -147,6 +147,6 @@ lip
 ## 另请参阅
 
 - [界面导览](../interface/tour.md)
-- [第一个服务器](../intro/first_server.md)
+- [开你的第一个服务器](https://levimc.org/tutorials/zh-Hans/server/first-server/)
 - [命令行](cli.md)
 - [配置](configuration.md)

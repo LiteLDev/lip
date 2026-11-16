@@ -43,7 +43,7 @@
 
 ![空文件夹的主页。没有步骤打勾，“创建服务器”处于高亮。](/screenshots/zh-Hans/home-01-empty.svg)
 
-按 `Enter` 创建服务器。之后的过程见[第一个服务器](../intro/first_server.md)。
+按 `Enter` 创建服务器。之后的过程见[开你的第一个服务器](https://levimc.org/tutorials/zh-Hans/server/first-server/)。
 
 ### 服务器已创建
 

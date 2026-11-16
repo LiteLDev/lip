@@ -216,7 +216,7 @@ lip 可以更新自己。
 
 在那之前，在**检查更新**上按 `Enter` 只会再次显示同一条消息，不会重新检查。
 
-对应的命令是 [`lip self-update --check`](../reference/commands/self_update.md) 和 `lip self-update`。更新的完整说明见[安装](../intro/installation.md)。
+对应的命令是 `lip self-update --check` 和 `lip self-update`。更新的完整说明见 [`lip self-update`](../reference/commands/self_update.md)。
 
 ## 守护进程
 

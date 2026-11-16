@@ -118,4 +118,4 @@ lip daemon status --json | jq -e '.running' > /dev/null && lip daemon stop
 - [`lip run`](run.md#托管服务器)：托管服务器。
 - [lip 的工作方式](../../concepts/how_lip_works.md)：守护进程和它的客户端。
 - [设置](../../interface/settings.md)：界面中的守护进程。
-- [用命令运行服务器](../../guides/server_from_commands.md)
+- [用命令行开服](https://levimc.org/tutorials/zh-Hans/server/command-line/)

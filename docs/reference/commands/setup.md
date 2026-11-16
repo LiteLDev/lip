@@ -152,7 +152,7 @@ lip setup --game 1.21.50 --dry-run
 
 ## See also
 
-- [Running a server from commands](../../guides/server_from_commands.md)
+- [A server from the command line](https://levimc.org/tutorials/server/command-line/)
 - [Workspaces](../../interface/workspaces.md): the new-server wizard and changing versions in the interface.
 - [What survives a game change](../files.md#what-survives-a-game-change)
 - [`lip install`](install.md#setting-up-with-install), which sets up a server when you install LeviLamina or the server itself.

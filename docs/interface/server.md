@@ -191,4 +191,4 @@ If you choose **Quit** then, lip asks each running server to stop, shows the Ser
 
 ## Managed servers
 
-A server that is started on this page is a managed server: the daemon of lip runs it, and no terminal owns it. That is why it keeps running when you quit, why several terminals can show the same server at once, and why each workspace can have its own server running at the same time. The command `lip run --managed` starts and shows the same servers. [Running a server from the commands](../guides/server_from_commands.md) explains them, and how to stop one without the interface.
+A server that is started on this page is a managed server: the daemon of lip runs it, and no terminal owns it. That is why it keeps running when you quit, why several terminals can show the same server at once, and why each workspace can have its own server running at the same time. The command `lip run --managed` starts and shows the same servers. [A server from the command line](https://levimc.org/tutorials/server/command-line/) explains them, and how to stop one without the interface.

@@ -114,7 +114,7 @@ lip 的大多数包都从 GitHub 下载。提示会告诉你遇到的是哪一�
 
 **`There is no server to run: this workspace has no game.`**
 
-这个文件夹还没有安装服务器，或者你进错了文件夹。进入服务器文件夹，或者安装一个：`lip setup --game <version>`。见[安装服务器](server_from_commands.md#安装服务器)。
+这个文件夹还没有安装服务器，或者你进错了文件夹。进入服务器文件夹，或者安装一个：`lip setup --game <version>`。见 [`lip setup`](../reference/commands/setup.md)。
 
 **`A server of the workspace '…' is already running`**
 
@@ -259,7 +259,7 @@ lip cache clean
 | `The disk is full.` | 腾出一些空间（例如用 `lip cache clean`），然后再试。 |
 | `A hook command of a package failed.` | 某个包在安装或移除过程中运行的程序失败了。它的输出在错误信息上方，也在报告的 `Trace` 部分。这是包的问题：请向包的作者反馈。 |
 | `Run lip in an interactive terminal.` | lip 需要问你一些事，但它的输入或输出不是终端，问不了。如果是 Minecraft EULA，请加上 `--accept-eula`。 |
-| `The game of this workspace is <version>, with LeviLamina <version>; lip install does not change them.` | 你要安装的包与你的游戏或加载器不兼容。错误信息会指出是哪些。请安装它们的其他版本，或者更改游戏：见[更改游戏版本](server_from_commands.md#更改游戏版本)。 |
+| `The game of this workspace is <version>, with LeviLamina <version>; lip install does not change them.` | 你要安装的包与你的游戏或加载器不兼容。错误信息会指出是哪些。请安装它们的其他版本，或者更改游戏：见 [`lip setup`](../reference/commands/setup.md)。 |
 | `Request other versions of the packages named above, or install fewer of them together.` | 你要安装的包彼此不兼容。错误信息会指出是哪些。请安装它们的其他版本，或者少装几个。 |
 
 ## 文件都在哪里

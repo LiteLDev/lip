@@ -66,6 +66,6 @@ lip install ../MyTool.zip
 
 ## 另请参阅
 
-- [创建包](../../authors/creating_packages.md)
+- [用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)
 - [工具](../../interface/tools.md)：界面中的**打包 ZIP…**。
 - [`lip pkg view`](pkg_view.md)、[`lip install`](install.md)

@@ -19,7 +19,7 @@ lip takes over the whole terminal window and shows its Home page. The folder you
 You use the keyboard only. The mouse does nothing.
 
 ::: tip
-`lip` followed by a word, such as `lip install`, is a command: it does one thing and ends. The commands are described in [Running a server from the commands](../guides/server_from_commands.md) and in the [reference](../reference/cli.md).
+`lip` followed by a word, such as `lip install`, is a command: it does one thing and ends. The commands are described in [A server from the command line](https://levimc.org/tutorials/server/command-line/) and in the [reference](../reference/cli.md).
 :::
 
 ## What is on the screen
@@ -326,6 +326,6 @@ The interface is in English, Simplified Chinese or Traditional Chinese. At first
 
 ## Where to go next
 
-- [Your first server](../intro/first_server.md) goes from an empty folder to a running server with mods, step by step.
+- [Your first server](https://levimc.org/tutorials/server/first-server/) goes from an empty folder to a running server with mods, step by step.
 - [Home](./home.md), [Server](./server.md), [Mods](./mods.md) and [Get mods](./get_mods.md) describe the pages you use most.
 - [The interface in brief](../reference/interface.md) is a short reference of every page and key.

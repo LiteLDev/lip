@@ -11,7 +11,7 @@ lip sorts the installed packages into two groups:
 - **Packages you asked for.** You named them in `lip setup` or `lip install`. lip keeps them until you uninstall them.
 - **Dependencies.** lip installed them because another package needs them. lip removes them by itself when nothing needs them any more.
 
-Mods need a server. Set one up first: see [A server from the commands](server_from_commands.md).
+Mods need a server. Set one up first: see [A server from the command line](https://levimc.org/tutorials/server/command-line/).
 
 ## Name a package
 
@@ -103,7 +103,7 @@ Things to know:
 - **Mods need a game.** In a workspace without a game, installing a mod fails and names `lip setup`.
 - **Installing what you already asked for fails.** lip tells you to use `lip update` instead, which is the command that changes a version.
 - **A dependency can become a package you asked for.** Install it by name. lip then notes that you want it, so it stays when nothing else needs it.
-- **The game and the loader stay as they are.** When a package needs another game or loader than the workspace has, the command fails and names `lip setup`. The exception: `lip install LeviLamina`, or an install that names the game `github.com/LiteLDev/bds`, is a setup. See [A server from the commands](server_from_commands.md#set-up-the-server).
+- **The game and the loader stay as they are.** When a package needs another game or loader than the workspace has, the command fails and names `lip setup`. The exception: `lip install LeviLamina`, or an install that names the game `github.com/LiteLDev/bds`, is a setup. See [`lip setup`](../reference/commands/setup.md).
 
 ## List
 
@@ -166,7 +166,7 @@ More things to know:
 - **Change or pin a version** by naming it: `lip update LegacyScriptEngine#lua@0.13.1`. This also goes back to an older version. The package then stays on that version.
 - **Unpin** by naming the package without a ref: `lip update LegacyScriptEngine#lua`. It follows the released versions again.
 - **Dependencies change only as far as needed.** lip does not move a dependency to a newer version unless a package you asked for needs that.
-- **The game and the loader are never updated** by `lip update`. Naming one of them fails. Change them with `lip setup`: see [Change the game later](server_from_commands.md#change-the-game-later).
+- **The game and the loader are never updated** by `lip update`. Naming one of them fails. Change them with [`lip setup`](../reference/commands/setup.md).
 - **A package from a path that is gone is kept.** `lip update` without names warns and leaves it as it is.
 - **The packages you name must be installed.** They become packages you asked for.
 
@@ -186,7 +186,7 @@ Things to know:
 
 - **Only packages you asked for can be uninstalled.** A dependency goes away when the packages that need it do.
 - **A package that others still need stays**, as a dependency. lip says so: `<name> is still required by other packages; keeping it as a dependency.`
-- **Files you may have edited are kept** when the package says so. For example, uninstalling the game keeps `server.properties`. See [What is kept and what is deleted](server_from_commands.md#what-is-kept-and-what-is-deleted).
+- **Files you may have edited are kept** when the package says so. For example, uninstalling the game keeps `server.properties`. See [What survives a game change](../reference/files.md#what-survives-a-game-change).
 - **The game and the loader can be uninstalled** like any package. A workspace without a game has no server to run.
 
 ## Dry run
@@ -235,4 +235,4 @@ After a failure, lip writes what went wrong and what you can do about it, and sa
 
 - [How lip works](../concepts/how_lip_works.md): what happens inside an operation.
 - [Internals](../concepts/internals.md): how lip finds versions and chooses between them.
-- [Creating packages](../authors/creating_packages.md): make a package of your own.
+- [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/): make a package of your own.

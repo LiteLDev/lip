@@ -216,7 +216,7 @@ The lip on your screen is still the old one. The row reminds you:
 
 Until then, `Enter` on **Check for updates** shows the same message again instead of checking.
 
-The commands are [`lip self-update --check`](../reference/commands/self_update.md) and `lip self-update`. [Installation](../intro/installation.md) describes updating in full.
+The commands are `lip self-update --check` and `lip self-update`. [`lip self-update`](../reference/commands/self_update.md) describes updating in full.
 
 ## Daemon
 

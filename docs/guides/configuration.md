@@ -116,7 +116,7 @@ Whether lip starts the server of this workspace again when it crashes, that is, 
 lip config set restart on-failure --workspace
 ```
 
-With `on-failure`, lip waits 5 seconds and starts the server again, at most 5 times within 10 minutes. See [Restart the server when it crashes](server_from_commands.md#restart-the-server-when-it-crashes).
+With `on-failure`, lip waits 5 seconds and starts the server again, at most 5 times within 10 minutes. See [Restarting](../reference/commands/run.md#restarting).
 
 ## When GitHub is slow or blocked
 

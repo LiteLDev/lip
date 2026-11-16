@@ -26,9 +26,20 @@ const CASES = [
     '參見[伺服器頁面](../interface/server.md)。',
   ],
   [
-    'a link below /zh/ leads to /zh-Hant/, and its fragment is converted as the heading',
-    '参见[设置](/zh/interface/settings.md#代理服务器)。',
+    'a link below /zh-Hans/ leads to /zh-Hant/, and its fragment is converted as the heading',
+    '参见[设置](/zh-Hans/interface/settings.md#代理服务器)。',
     '參見[設定](/zh-Hant/interface/settings.md#代理伺服器)。',
+  ],
+  ['a link below /zh/, the former prefix, leads to /zh-Hant/ too', '见[常见问题](/zh/faq.md)。', '見[常見問題](/zh-Hant/faq.md)。'],
+  [
+    'a Simplified Chinese page of levimc.org leads to its Traditional Chinese page, with its fragment converted by characters',
+    '见[教程](https://levimc.org/tutorials/zh-Hans/server/first-server/#安装)和[模组](https://levimc.org/mods/zh-Hans/)。',
+    '見[教學](https://levimc.org/tutorials/zh-Hant/server/first-server/#安裝)和[模組](https://levimc.org/mods/zh-Hant/)。',
+  ],
+  [
+    'an English page of levimc.org stays English',
+    '见[教程](https://levimc.org/tutorials/server/first-server/)。',
+    '見[教學](https://levimc.org/tutorials/server/first-server/)。',
   ],
   [
     'a link to another site is kept whole',
@@ -57,13 +68,13 @@ const CASES = [
   ],
   [
     'a bare URL as the text of a link ends before the bracket',
-    '[https://example.com/a](/zh/intro/a.md)，服务器',
-    '[https://example.com/a](/zh-Hant/intro/a.md)，伺服器',
+    '[https://example.com/a](/zh-Hans/interface/a.md)，服务器',
+    '[https://example.com/a](/zh-Hant/interface/a.md)，伺服器',
   ],
   ['an autolink is kept', '见 <https://example.com/服务器>。', '見 <https://example.com/服务器>。'],
   [
     'href and src are targets',
-    '<a href="/zh/faq.md">文件</a> <img src="/screenshots/zh-Hans/a.svg" alt="服务器">',
+    '<a href="/zh-Hans/faq.md">文件</a> <img src="/screenshots/zh-Hans/a.svg" alt="服务器">',
     '<a href="/zh-Hant/faq.md">檔案</a> <img src="/screenshots/zh-Hant/a.svg" alt="伺服器">',
   ],
   [
@@ -79,7 +90,12 @@ const CASES = [
     '运行 `lip`，见[说明](a.md)，再按 **应用**。',
     '執行 `lip`，見[說明](a.md)，再按 **套用**。',
   ],
-  ['the link of the front matter of a home page', '---\n  link: /zh/intro/\n---\n', '---\n  link: /zh-Hant/intro/\n---\n'],
+  ['the link of the front matter of a home page', '---\n  link: /zh-Hans/interface/tour\n---\n', '---\n  link: /zh-Hant/interface/tour\n---\n'],
+  [
+    'a link of the front matter to a Simplified Chinese page of levimc.org',
+    '---\n      link: https://levimc.org/tutorials/zh-Hans/server/first-server/\n---\n',
+    '---\n      link: https://levimc.org/tutorials/zh-Hant/server/first-server/\n---\n',
+  ],
 ];
 
 let failed = 0;

@@ -1,6 +1,6 @@
 # Linux and macOS
 
-After this page you know which servers lip runs on your system, what lip downloads to run them and where it puts it, and which limits to expect. The commands are the same on every system: see [A server from the commands](server_from_commands.md).
+After this page you know which servers lip runs on your system, what lip downloads to run them and where it puts it, and which limits to expect. The commands are the same on every system: see [A server from the command line](https://levimc.org/tutorials/server/command-line/).
 
 ## What works where
 
@@ -90,7 +90,7 @@ lip run
 - `lip run` starts `bedrock_server` in the workspace. It sets `LD_LIBRARY_PATH` to `.` when that variable is unset or empty, so that the server finds the libraries beside it.
 - On any system other than Linux on x64, `lip run` fails for a workspace set up this way, and tells you to run it there or to set up the Windows server.
 
-A workspace holds one game. Setting up the Linux server in a folder that has the Windows server replaces it, and the other way round. See [Change the game later](server_from_commands.md#change-the-game-later).
+A workspace holds one game. Setting up the Linux server in a folder that has the Windows server replaces it, and the other way round. See [`lip setup`](../reference/commands/setup.md).
 
 ## Environment variables
 
@@ -114,7 +114,7 @@ An `XDG_` variable that is unset, empty or not an absolute path takes its defaul
 Every other variable is passed on unchanged to the server and to the programs of packages.
 
 ::: info
-lip does its work in a background process, the daemon. That does not change which variables count: each command uses the variables of the terminal it was typed in. A [managed server](server_from_commands.md#keep-the-server-running) keeps those of the terminal that started it.
+lip does its work in a background process, the daemon. That does not change which variables count: each command uses the variables of the terminal it was typed in. A [managed server](../reference/commands/run.md#managed-servers) keeps those of the terminal that started it.
 :::
 
 ## Limits and rough edges

@@ -117,6 +117,6 @@ fi
 
 ## 另请参阅
 
-- [安装](../../intro/installation.md)：安装、更新和卸载 lip。
+- [开你的第一个服务器](https://levimc.org/tutorials/zh-Hans/server/first-server/)：安装 lip。
 - [设置](../../interface/settings.md)：界面中的**检查更新**。
 - [文件](../files.md#安装目录)：`install.json` 和 `.old` 文件。
