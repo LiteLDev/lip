@@ -5,8 +5,8 @@ using Lip.Core.Infrastructure;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The Home page, for docs/interface/home.md: the states of its steps that HomeShots does
-/// not show, and the question about GitHub with each of its answers.
+/// The Home page, for docs/lip/interface/home.md of liteldev.github.io: the states of its steps
+/// that HomeShots does not show, and the question about GitHub with each of its answers.
 public sealed class HomeDocShots(ShotRun run) {
   /// A check of GitHub that fails as a network that does not reach it fails.
   private static GithubProbe Unreachable => new((_, _) => Task.FromException<int>(

@@ -1,6 +1,6 @@
 # lip
 
-<img src="docs/logo.png" alt="" width="128" align="right">
+<img src=".github/logo.png" alt="" width="128" align="right">
 
 Run a LeviLamina server and manage its packages
 
@@ -31,11 +31,11 @@ lip install LeviOptimize    # a mod
 lip run                     # the server
 ```
 
-[The documentation](https://levimc.org/lip/) has the rest, in English, 简体中文 and 繁體中文.
+[The documentation](https://levimc.org/lip/) has the rest, in English, [简体中文](https://levimc.org/zh-Hans/lip/) and [繁體中文](https://levimc.org/zh-Hant/lip/).
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/LiteLDev/lip/issues/new/choose) or submit PRs. [CONTRIBUTING.md](CONTRIBUTING.md) says how to build and test `lip` and its documentation.
+Feel free to dive in! [Open an issue](https://github.com/LiteLDev/lip/issues/new/choose) or submit PRs. [CONTRIBUTING.md](CONTRIBUTING.md) says how to build and test `lip`, and where its documentation is written.
 
 `lip` follows the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) Code of Conduct.
 
