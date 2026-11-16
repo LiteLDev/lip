@@ -1,4 +1,6 @@
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
   <Package
     Name="lip"
@@ -15,11 +17,33 @@
 
     <Property Id="ARPURLINFOABOUT" Value="https://levimc.org/lip/" />
     <Property Id="ARPHELPLINK" Value="https://github.com/LiteLDev/lip/issues" />
-    <Property Id="ARPNOMODIFY" Value="1" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="lip" />
     </StandardDirectory>
+
+    <!--
+      Run interactively, the package asks before it installs: Welcome, installation folder,
+      Ready to install, progress and Finish, like the installers of GitHub CLI and PowerShell.
+      It shows no license, as GPL-3.0 is not an agreement to accept for using lip.
+      msiexec /qn installs silently, as before.
+    -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="NOT Installed" Order="99" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
+    </UI>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Open a new terminal to use lip." />
+
+    <!-- Upgrades install to the folder that the user chose before. -->
+    <Property Id="INSTALLFOLDER">
+      <RegistrySearch
+        Root="HKLM"
+        Key="SOFTWARE\LiteLDev\lip"
+        Name="InstallDir"
+        Type="raw"
+        Bitness="always64" />
+    </Property>
 
     <Component Directory="INSTALLFOLDER">
       <File Source="$(BinDir)\lip.exe" />
@@ -32,6 +56,16 @@
         System="yes" />
       <!-- Windows Installer keeps directories that already existed, e.g. from an Inno Setup installation. -->
       <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+    </Component>
+
+    <Component Id="InstallDirRegistry" Directory="INSTALLFOLDER" Guid="{3F0C2A55-8E7B-4C1D-9A26-5B4E1D7C8A90}">
+      <RegistryValue
+        Root="HKLM"
+        Key="SOFTWARE\LiteLDev\lip"
+        Name="InstallDir"
+        Type="string"
+        Value="[INSTALLFOLDER]"
+        KeyPath="yes" />
     </Component>
 
     <!-- install.json tells lip self-update to download the .msi (protocol/lip-self-update.md). -->
