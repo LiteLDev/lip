@@ -42,7 +42,7 @@ Two rules follow from this.
 
 **lip remembers what you asked for.** A package you named is yours: it stays until you uninstall it. A dependency is there only because something needs it, and lip removes it when nothing does.
 
-Each package owns the files it installed. No two packages may own the same file, and lip never deletes a file that no package owns, with one exception: a package may name leftovers of its own to clear away when it is removed. The game does this for some of its folders. See [What is kept and what is deleted](../guides/server_from_commands.md#what-is-kept-and-what-is-deleted).
+Each package owns the files it installed. No two packages may own the same file, and lip never deletes a file that no package owns, with one exception: a package may name leftovers of its own to clear away when it is removed. The game does this for some of its folders. See [What survives a game change](../reference/files.md#what-survives-a-game-change).
 
 ## Operations
 
@@ -133,7 +133,7 @@ Whichever way a server runs, the process that runs it holds the **server lock**,
 
 The server lock and the workspace lock are separate. Running a server does not lock the workspace against changes, and changing the workspace does not need the server lock.
 
-See [Keep the server running](../guides/server_from_commands.md#keep-the-server-running).
+See [Managed servers](../reference/commands/run.md#managed-servers).
 
 ## The interface and the commands
 

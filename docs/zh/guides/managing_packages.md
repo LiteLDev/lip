@@ -11,7 +11,7 @@ lip 把已安装的包分成两组：
 - **由你安装的包。** 你在 `lip setup` 或 `lip install` 里点名的包。在你卸载之前，lip 会一直保留它们。
 - **依赖。** 因为别的包需要而被 lip 装上的包。没有包再需要它们时，lip 会自动移除。
 
-模组需要服务器。请先安装一个：见[用命令管理服务器](server_from_commands.md)。
+模组需要服务器。请先安装一个：见[用命令行开服](https://levimc.org/tutorials/zh-Hans/server/command-line/)。
 
 ## 指定一个包
 
@@ -103,7 +103,7 @@ lip 会找出一组彼此兼容、也与你的游戏和加载器兼容的版本�
 - **模组需要游戏。** 在没有游戏的工作区里安装模组会失败，并提示 `lip setup`。
 - **重复安装已由你安装的包会失败。** lip 会提示改用 `lip update`，更换版本用的是那条命令。
 - **依赖可以变成由你安装的包。** 点名安装它即可。lip 会记下你想要它，这样即使没有别的包需要，它也会留下。
-- **游戏和加载器保持不变。** 如果某个包需要的游戏或加载器与工作区现有的不同，命令会失败，并提示 `lip setup`。例外：`lip install LeviLamina`，或者点名游戏 `github.com/LiteLDev/bds` 的安装，本身就是一次服务器安装。见[用命令管理服务器](server_from_commands.md#安装服务器)。
+- **游戏和加载器保持不变。** 如果某个包需要的游戏或加载器与工作区现有的不同，命令会失败，并提示 `lip setup`。例外：`lip install LeviLamina`，或者点名游戏 `github.com/LiteLDev/bds` 的安装，本身就是一次服务器安装。见 [`lip setup`](../reference/commands/setup.md)。
 
 ## 列出
 
@@ -166,7 +166,7 @@ lip update LegacyScriptEngine#lua
 - **更换或固定版本**：点名版本即可，例如 `lip update LegacyScriptEngine#lua@0.13.1`。这样也能回到旧版本。之后这个包就停在该版本上。
 - **取消固定**：点名这个包但不写引用，例如 `lip update LegacyScriptEngine#lua`。它会重新跟随正式版本。
 - **依赖只做必要的变动。** 除非由你安装的某个包需要，否则 lip 不会把依赖升到更新的版本。
-- **`lip update` 从不更新游戏和加载器。** 点名它们会失败。请用 `lip setup` 更改：见[更改游戏版本](server_from_commands.md#更改游戏版本)。
+- **`lip update` 从不更新游戏和加载器。** 点名它们会失败。请用 [`lip setup`](../reference/commands/setup.md) 更改。
 - **来自某个路径、而该路径已不存在的包会被保留。** 不带名字的 `lip update` 会给出警告，并让它保持原样。
 - **点名的包必须已经安装。** 它们会变成由你安装的包。
 
@@ -186,7 +186,7 @@ lip 会删除这个包安装的文件，然后删除所有不再被需要的依�
 
 - **只能卸载由你安装的包。** 依赖会在需要它的包都卸载后自行消失。
 - **仍被别的包需要的包会留下**，变成依赖。lip 会说明：`<name> is still required by other packages; keeping it as a dependency.`
-- **你可能改过的文件会被保留**，前提是包这样声明了。例如，卸载游戏会保留 `server.properties`。见[保留什么删除什么](server_from_commands.md#保留什么删除什么)。
+- **你可能改过的文件会被保留**，前提是包这样声明了。例如，卸载游戏会保留 `server.properties`。见[更换游戏后保留什么](../reference/files.md#更换游戏后保留什么)。
 - **游戏和加载器可以像其他包一样卸载。** 没有游戏的工作区就没有服务器可运行。
 
 ## 试运行
@@ -235,4 +235,4 @@ Dry run: nothing was changed.
 
 - [lip 的工作原理](../concepts/how_lip_works.md)：一次操作内部发生了什么。
 - [内部机制](../concepts/internals.md)：lip 如何查找版本、如何在版本之间做选择。
-- [创建包](../authors/creating_packages.md)：制作你自己的包。
+- [用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)：制作你自己的包。

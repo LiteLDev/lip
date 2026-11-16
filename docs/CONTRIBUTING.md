@@ -22,13 +22,20 @@ from the root of the repository.
 `docs.config.ts` holds what is not a page: the tabs and their sidebars, the labels in each language, and the
 redirects of the pages that moved. A new page needs an entry in `nav` there; a page that moves needs one in `MOVED`.
 
+The site has no tutorials: the introduction is the home page, and the rest are guides, concepts and reference. The
+tutorials (your first server, a server from the command line, publishing a package) are at
+[levimc.org/tutorials](https://levimc.org/tutorials/), written in
+[LiteLDev/liteldev.github.io](https://github.com/LiteLDev/liteldev.github.io) (`tutorials/content/`). Link to them
+with their full URL, in the language of the page: `https://levimc.org/tutorials/…` from an English page,
+`https://levimc.org/tutorials/zh-Hans/…` from a Simplified Chinese one.
+
 ## The three languages
 
-| Language | Pages | Pictures |
-|---|---|---|
-| English | `docs/**/*.md` | `/screenshots/en/` |
-| Simplified Chinese | `docs/zh/**/*.md` | `/screenshots/zh-Hans/` |
-| Traditional Chinese | `docs/zh-Hant/**/*.md`, **written by a script** | `/screenshots/zh-Hant/` |
+| Language | Pages | URLs | Pictures |
+|---|---|---|---|
+| English | `docs/**/*.md` | `/lip/…` | `/screenshots/en/` |
+| Simplified Chinese | `docs/zh/**/*.md` | `/lip/zh-Hans/…` (formerly `/lip/zh/…`, which redirects) | `/screenshots/zh-Hans/` |
+| Traditional Chinese | `docs/zh-Hant/**/*.md`, **written by a script** | `/lip/zh-Hant/…` | `/screenshots/zh-Hant/` |
 
 English and Simplified Chinese are written by hand, together: the same pages, the same headings in the same
 order, the same pictures in their language.
@@ -54,8 +61,9 @@ page, outside its code, its link targets and its URLs, the script does three thi
 2. **Terms.** The words of `scripts/zh-hant-terms.mjs` become their words of Taiwan, the longest match first.
 3. **Characters.** OpenCC (`cn` → `tw`) converts the rest, as the kit does for a page that has no file of its own.
 
-In link targets, `/screenshots/zh-Hans/` becomes `/screenshots/zh-Hant/` and a leading `/zh/` becomes `/zh-Hant/`;
-a `#fragment` is converted as the heading it names.
+In link targets, `/screenshots/zh-Hans/` becomes `/screenshots/zh-Hant/`, a leading `/zh-Hans/` (or `/zh/`) becomes
+`/zh-Hant/`, and a link to a Simplified Chinese page of levimc.org (`https://levimc.org/tutorials/zh-Hans/…`) leads to
+its Traditional Chinese page; a `#fragment` is converted as the heading it names.
 
 So, in a Simplified Chinese page:
 

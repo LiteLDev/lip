@@ -219,4 +219,4 @@ When lip cannot start or reach the daemon, it writes a message and carries out t
 
 - [Interface reference](interface.md): what each page of the interface maps to in commands.
 - [Configuration](configuration.md) and [Files](files.md).
-- [Running a server from commands](../guides/server_from_commands.md) and [Managing packages](../guides/managing_packages.md).
+- [A server from the command line](https://levimc.org/tutorials/server/command-line/) and [Managing packages](../guides/managing_packages.md).

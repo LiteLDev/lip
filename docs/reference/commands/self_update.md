@@ -117,6 +117,6 @@ fi
 
 ## See also
 
-- [Installation](../../intro/installation.md): installing, updating and uninstalling lip.
+- [Your first server](https://levimc.org/tutorials/server/first-server/): installing lip.
 - [Settings](../../interface/settings.md): **Check for updates** in the interface.
 - [Files](../files.md#the-installation-directory): `install.json` and the `.old` files.

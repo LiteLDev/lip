@@ -114,7 +114,7 @@ The interface checks GitHub when it starts. When it cannot reach it and you have
 
 **`There is no server to run: this workspace has no game.`**
 
-The folder has not been set up, or you are in the wrong folder. Go to the server folder, or set one up: `lip setup --game <version>`. See [Set up the server](server_from_commands.md#set-up-the-server).
+The folder has not been set up, or you are in the wrong folder. Go to the server folder, or set one up: `lip setup --game <version>`. See [`lip setup`](../reference/commands/setup.md).
 
 **`A server of the workspace '…' is already running`**
 
@@ -259,7 +259,7 @@ Your servers, your settings and the Wine of lip are not in the cache and are not
 | `The disk is full.` | Free some space, for example with `lip cache clean`, then try again. |
 | `A hook command of a package failed.` | A program that a package runs while it is installed or removed failed. Its output is above the error, and in the `Trace` part of the report. This is a problem of the package: report it to its author. |
 | `Run lip in an interactive terminal.` | lip had to ask you something and could not, because its input or output is not a terminal. For the Minecraft EULA, add `--accept-eula`. |
-| `The game of this workspace is <version>, with LeviLamina <version>; lip install does not change them.` | The packages you asked for do not fit your game or your loader. The error names which. Install other versions of them, or change the game: see [Change the game later](server_from_commands.md#change-the-game-later). |
+| `The game of this workspace is <version>, with LeviLamina <version>; lip install does not change them.` | The packages you asked for do not fit your game or your loader. The error names which. Install other versions of them, or change the game: see [`lip setup`](../reference/commands/setup.md). |
 | `Request other versions of the packages named above, or install fewer of them together.` | The packages you asked for do not fit together. The error names which. Install other versions of them, or fewer of them. |
 
 ## Where files are

@@ -219,4 +219,4 @@ Ctrl+C 的作用取决于 lip 正在做什么：
 
 - [界面参考](interface.md)：界面的每个页面对应哪些命令。
 - [配置](configuration.md)和[文件](files.md)。
-- [用命令运行服务器](../guides/server_from_commands.md)和[管理包](../guides/managing_packages.md)。
+- [用命令行开服](https://levimc.org/tutorials/zh-Hans/server/command-line/)和[管理包](../guides/managing_packages.md)。

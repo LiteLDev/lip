@@ -2,7 +2,7 @@
 
 读完本页，你就能使用界面里为制作包的人准备的四个工具：创建 `lip.toml`、迁移旧的 `tooth.json`、打包 ZIP，以及查看任意一个包的包文件。
 
-如果你只是运行服务器，用不到这个页面。想了解什么是包、怎样发布包，请阅读[创建包](../authors/creating_packages.md)。
+如果你只是运行服务器，用不到这个页面。想了解什么是包、怎样发布包，请阅读[用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)。
 
 ## 页面
 

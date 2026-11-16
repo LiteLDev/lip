@@ -2,7 +2,7 @@
 
 After this page you can use the four tools of the interface for people who make packages: create a `lip.toml`, migrate an old `tooth.json`, pack a ZIP, and look at the package file of any package.
 
-If you only run a server, you do not need this page. To learn what a package is and how to publish one, read [Creating packages](../authors/creating_packages.md).
+If you only run a server, you do not need this page. To learn what a package is and how to publish one, read [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/).
 
 ## The page
 

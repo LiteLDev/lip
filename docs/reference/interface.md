@@ -83,7 +83,7 @@ The server of a workspace runs while lip runs it, whoever started it: an interfa
 
 What is off stays on the screen, dimmed, with the reason **Stop the server first.**
 
-This holds for the interface only. The commands `lip install`, `lip update`, `lip uninstall` and `lip setup` are not refused while the server runs; see [Running a server from the commands](../guides/server_from_commands.md).
+This holds for the interface only. The commands `lip install`, `lip update`, `lip uninstall` and `lip setup` are not refused while the server runs; see [The interface and the commands](../concepts/how_lip_works.md#the-interface-and-the-commands).
 
 Quitting the interface does not stop a server that the daemon runs. When lip carries out the interface itself, because it cannot use its daemon, quitting stops the servers that the interface started.
 
@@ -147,6 +147,6 @@ The commands that the interface carries out read and write what their own pages 
 ## See also
 
 - [A tour of the interface](../interface/tour.md)
-- [Your first server](../intro/first_server.md)
+- [Your first server](https://levimc.org/tutorials/server/first-server/)
 - [Command line](cli.md)
 - [Configuration](configuration.md)

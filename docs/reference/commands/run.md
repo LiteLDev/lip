@@ -167,7 +167,7 @@ lip run --managed --detach
 
 ## See also
 
-- [Running a server from commands](../../guides/server_from_commands.md)
+- [A server from the command line](https://levimc.org/tutorials/server/command-line/)
 - [Server](../../interface/server.md): starting, stopping and watching the server in the interface.
 - [`lip setup`](setup.md), [`lip daemon`](daemon.md), [`lip config`](config.md)
 - [Linux and macOS](../../guides/linux_macos.md)

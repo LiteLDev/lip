@@ -16,8 +16,9 @@ using Semver;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The tutorial "Your first server" (docs/intro/first_server.md): from an empty folder to a
-/// running server with one mod, in the order the page tells it.
+/// The tutorial "Your first server" (levimc.org/tutorials/server/first-server/, which shows these
+/// pictures from levimc.org/lip/screenshots/): from an empty folder to a running server with one
+/// mod, in the order the tutorial tells it.
 public sealed class FirstServerShots(ShotRun run) {
   private const string ModVersion = "1.8.1";
   private const string ModName = "LeviOptimize";

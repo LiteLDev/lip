@@ -118,4 +118,4 @@ lip daemon status --json | jq -e '.running' > /dev/null && lip daemon stop
 - [`lip run`](run.md#managed-servers): managed servers.
 - [How lip works](../../concepts/how_lip_works.md): the daemon and its clients.
 - [Settings](../../interface/settings.md): the daemon in the interface.
-- [Running a server from commands](../../guides/server_from_commands.md)
+- [A server from the command line](https://levimc.org/tutorials/server/command-line/)

@@ -1,6 +1,6 @@
 # lip.toml
 
-本页说明 `lip.toml` 的每一个字段，读完后你能看懂任何包的包文件，也能写出自己的。分步讲解参见[创建包](../authors/creating_packages.md)。
+本页说明 `lip.toml` 的每一个字段，读完后你能看懂任何包的包文件，也能写出自己的。分步讲解参见[用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)。
 
 lip 包是根部带有**包文件** `lip.toml` 的归档。`lip.toml` 给出包的名称和版本，并针对每个变体、运行端和平台
 描述 lip 要安装的内容：依赖、要放置的文件、要安装的模组以及要运行的命令。
@@ -92,10 +92,37 @@ urls = ["https://github.com/example/MyMod/releases/download/v{{version}}/MyMod-c
 | --- | --- | --- |
 | `name` | `string` | 显示名称。 |
 | `description` | `string` | 简短描述。 |
-| `tags` | `string[]` | 标签。参见[推荐标签](../authors/creating_packages.md#推荐标签)。 |
+| `tags` | `string[]` | 标签。参见[推荐标签](#推荐标签)。 |
 | `logo` | `string` | 徽标图片的 URL，必须以 `https://` 开头；其响应（直接或经重定向后）即为该图片。 |
 
 lip 不使用 `info`。
+
+#### 推荐标签
+
+`info.tags` 帮助人们在模组列表（例如界面的「获取模组」页面和 [LeviMC 模组](https://levimc.org/mods/zh-Hans/)）中找到你的包；lip 自己忽略标签。列表会优先显示下面这些标签，配上翻译后的名称，并允许用户按它们筛选。请按这里的写法填写 ID，使用小写；还可以再加上你喜欢的其他标签：
+
+```toml
+[info]
+tags = ["management", "economy"]
+```
+
+| 标签 | 名称 | 适用于 |
+| --- | --- | --- |
+| `library` | 前置库 / API | 其他模组依赖的库或 API，例如事件、表单或导出函数。 |
+| `utility` | 实用工具 | 玩家日常使用的工具，例如背包辅助、信息显示、物品提示和配方查看。 |
+| `management` | 服务器管理 | 运营服务器，例如备份、封禁、白名单、登录、命令和领地。 |
+| `game-mechanics` | 游戏机制 | 改变游戏玩法，例如原版增强功能和成就。 |
+| `adventure` | 内容与冒险 | 可供探索的新内容，例如世界生成、地形和生物群系。 |
+| `visual` | 视觉与界面 | 玩家看到的内容，例如 HUD、侧边栏、光影、回放和录制。 |
+| `economy` | 经济 | 货币、商店和交易。 |
+| `teleport` | 传送 | 传送命令、家园、传送点和传送石碑。 |
+| `anticheat` | 反作弊 | 检测和阻止作弊，例如反矿透。 |
+| `optimization` | 性能优化 | 提升性能，例如实体和掉落物清理。 |
+| `bugfix` | 错误修复 | 修复游戏的错误。 |
+| `technology` | 技术与红石 | 红石、活塞和自动化。 |
+| `protocol` | 协议与多版本 | 网络协议，例如让多个游戏版本的客户端加入。 |
+
+不需要用标签标明运行端或平台，也不需要标明这个包是 LeviLamina 模组：条目和 `deps` 已经说明了这些。
 
 ### 变体
 
@@ -347,7 +374,7 @@ lip v0.37.0 在其[包清单](https://github.com/LiteLDev/lip/blob/v0.37.0/docs/
 
 ## 另请参阅
 
-- [创建包](../authors/creating_packages.md)和[迁移包](../authors/migrating_packages.md)
+- [用 lip 发布你的模组](https://levimc.org/tutorials/zh-Hans/develop/publish-a-package/)和[迁移包](../authors/migrating_packages.md)
 - [`lip pkg init`](../reference/commands/pkg_init.md)、[`lip pkg view`](../reference/commands/pkg_view.md)
 - [状态文件](state_file.md)：每个已安装包的包文件记录在哪里。
 - [内部机制](internals.md)：lip 怎样解析来源和版本。

@@ -19,7 +19,7 @@ lip 会占满整个终端窗口，并显示“主页”。启动 lip 时所在�
 界面只用键盘操作，鼠标不起作用。
 
 ::: tip
-`lip` 后面跟一个词（比如 `lip install`）是一条命令：做完一件事就结束。命令的用法见[用命令运行服务器](../guides/server_from_commands.md)和[参考](../reference/cli.md)。
+`lip` 后面跟一个词（比如 `lip install`）是一条命令：做完一件事就结束。命令的用法见[用命令行开服](https://levimc.org/tutorials/zh-Hans/server/command-line/)和[参考](../reference/cli.md)。
 :::
 
 ## 屏幕上有什么
@@ -326,6 +326,6 @@ lip 需要至少 60 列、16 行的终端。终端更小时只显示下面这一
 
 ## 接下来
 
-- [第一个服务器](../intro/first_server.md)一步一步带你从空文件夹做到装好模组、跑起来的服务器。
+- [开你的第一个服务器](https://levimc.org/tutorials/zh-Hans/server/first-server/)一步一步带你从空文件夹做到装好模组、跑起来的服务器。
 - [主页](./home.md)、[服务器](./server.md)、[模组](./mods.md)和[获取模组](./get_mods.md)介绍最常用的几个页面。
 - [界面速查](../reference/interface.md)是所有页面和按键的简明参考。

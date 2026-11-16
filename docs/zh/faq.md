@@ -6,11 +6,11 @@
 
 ### lip 是做什么的？
 
-lip 在一个文件夹里安装 Minecraft 基岩版服务器，安装和更新它的模组，并运行它。你可以通过终端里的界面使用它，也可以通过命令使用它。见 [lip 是什么](intro/what_is_lip.md)。
+lip 在一个文件夹里安装 Minecraft 基岩版服务器，安装和更新它的模组，并运行它。你可以通过终端里的界面使用它，也可以通过命令使用它。见[首页](index.md)。
 
 ### 它只能用于 LeviLamina 吗？
 
-不是，不过它是为此而做的。lip 安装的模组是 LeviLamina 模组，LeviLamina 也是 lip 唯一会安装的加载器。你也可以运行不带加载器的原版服务器：Windows 版用 `lip setup --game <version> --no-loader`，Linux 版用 `--build linux`。见[选择构建和加载器](guides/server_from_commands.md#选择构建和加载器)。
+不是，不过它是为此而做的。lip 安装的模组是 LeviLamina 模组，LeviLamina 也是 lip 唯一会安装的加载器。你也可以运行不带加载器的原版服务器：Windows 版用 `lip setup --game <version> --no-loader`，Linux 版用 `--build linux`。见[游戏版本与构建](reference/commands/setup.md#游戏版本与构建)。
 
 ### lip 能安装客户端模组吗？
 
@@ -32,11 +32,11 @@ Windows、x64 的 Linux，以及 macOS。在 Linux 和 macOS 上，lip 通过它
 
 ### 可以不用界面吗？
 
-可以。界面做的每一件事都是一条命令：`lip setup`、`lip install`、`lip update`、`lip uninstall`、`lip run`、`lip config`。从[用命令管理服务器](guides/server_from_commands.md)开始。这些命令也能在没人回答问题的脚本里使用：见那一页的 `--accept-eula`。
+可以。界面做的每一件事都是一条命令：`lip setup`、`lip install`、`lip update`、`lip uninstall`、`lip run`、`lip config`。从[用命令行开服](https://levimc.org/tutorials/zh-Hans/server/command-line/)开始。这些命令也能在没人回答问题的脚本里使用：见 [`lip setup`](reference/commands/setup.md#选项) 的 `--accept-eula`。
 
 ### 反过来呢：一定要学命令吗？
 
-不用。只输入 `lip`、后面什么都不加，然后使用界面即可。见[第一个服务器](intro/first_server.md)。
+不用。只输入 `lip`、后面什么都不加，然后使用界面即可。见[开你的第一个服务器](https://levimc.org/tutorials/zh-Hans/server/first-server/)。
 
 ### 关掉终端后服务器会停止吗？
 
@@ -46,7 +46,7 @@ Windows、x64 的 Linux，以及 macOS。在 Linux 和 macOS 上，lip 通过它
 - **用 `lip run --managed` 启动的：** 不会。关掉终端只是让你脱离它。
 - **用普通的 `lip run` 启动的：** 会。lip 会请服务器停止，并等它退出。
 
-前两种情况下，服务器运行在 lip 的后台进程里。用界面或 `lip run --managed` 就能回到它那里。见[让服务器持续运行](guides/server_from_commands.md#让服务器持续运行)。
+前两种情况下，服务器运行在 lip 的后台进程里。用界面或 `lip run --managed` 就能回到它那里。见[托管服务器](reference/commands/run.md#托管服务器)。
 
 ### 怎么停止在后台运行的服务器？
 
@@ -58,11 +58,11 @@ Windows、x64 的 Linux，以及 macOS。在 Linux 和 macOS 上，lip 通过它
 
 ### lip 能重启崩溃的服务器吗？
 
-能。在服务器页面打开“自动重启”，或者运行 `lip config set restart on-failure --workspace`。见[崩溃后自动重启](guides/server_from_commands.md#崩溃后自动重启)。
+能。在服务器页面打开“自动重启”，或者运行 `lip config set restart on-failure --workspace`。见[重启](reference/commands/run.md#重启)。
 
 ### 服务器运行时能安装或更新模组吗？
 
-在界面里不能：它会请你先停止服务器。用命令可以，服务器下次启动时才会用上更改。在 Windows 上，这样的命令可能因为运行中的服务器打开着某个文件而失败；这时 lip 会撤销它做过的更改。见[服务器运行时更改包](guides/server_from_commands.md#服务器运行时更改包)。
+在界面里不能：它会请你先停止服务器。用命令可以，服务器下次启动时才会用上更改。在 Windows 上，这样的命令可能因为运行中的服务器打开着某个文件而失败；这时 lip 会撤销它做过的更改。见[界面与命令](concepts/how_lip_works.md#界面与命令)。
 
 ### 能运行多个服务器吗？
 
@@ -78,11 +78,11 @@ lip 自己没有网络访问功能。要管理另一台机器上的服务器，�
 
 ### 怎么更新 lip？
 
-运行 `lip self-update`，或者使用设置页面的“检查更新”。`lip self-update --check` 只告诉你有没有新版本。见[安装](intro/installation.md)。
+运行 `lip self-update`，或者使用设置页面的“检查更新”。`lip self-update --check` 只告诉你有没有新版本。见 [`lip self-update`](reference/commands/self_update.md)。
 
 ### 怎么更改服务器的 Minecraft 版本？
 
-在服务器文件夹里再运行一次 `lip setup --game <version>`，或者使用界面的工作区页面。模组会换成能配合新游戏的版本。见[更改游戏版本](guides/server_from_commands.md#更改游戏版本)。
+在服务器文件夹里再运行一次 `lip setup --game <version>`，或者使用界面的工作区页面。模组会换成能配合新游戏的版本。见 [`lip setup`](reference/commands/setup.md)。
 
 ## 文件
 
@@ -117,7 +117,7 @@ lip 对这个服务器文件夹的记录：安装了哪些包、工作区设置�
 
 ### 更改游戏版本会删掉我的世界吗？
 
-不会。`worlds/`、`server.properties`、`allowlist.json` 和 `permissions.json` 都会保留。游戏自身的一些文件夹，例如根目录下的 `resource_packs/` 和 `behavior_packs/`，会被删除后重新写入。见[保留什么删除什么](guides/server_from_commands.md#保留什么删除什么)。
+不会。`worlds/`、`server.properties`、`allowlist.json` 和 `permissions.json` 都会保留。游戏自身的一些文件夹，例如根目录下的 `resource_packs/` 和 `behavior_packs/`，会被删除后重新写入。见[更换游戏后保留什么](reference/files.md#更换游戏后保留什么)。
 
 ### 怎么把服务器搬到另一个文件夹或另一台机器？
 

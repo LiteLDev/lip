@@ -43,7 +43,7 @@ In a folder without a server, no step is ticked and the first one is highlighted
 
 ![The Home page of an empty folder. No step is ticked, and "Create a server" is highlighted.](/screenshots/en/home-01-empty.svg)
 
-Press `Enter` to create the server. [Your first server](../intro/first_server.md) walks through what follows.
+Press `Enter` to create the server. [Your first server](https://levimc.org/tutorials/server/first-server/) walks through what follows.
 
 ### The server is created
 

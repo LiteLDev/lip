@@ -167,7 +167,7 @@ lip run --managed --detach
 
 ## 另请参阅
 
-- [用命令运行服务器](../../guides/server_from_commands.md)
+- [用命令行开服](https://levimc.org/tutorials/zh-Hans/server/command-line/)
 - [服务器](../../interface/server.md)：在界面中启动、停止和查看服务器。
 - [`lip setup`](setup.md)、[`lip daemon`](daemon.md)、[`lip config`](config.md)
 - [Linux 和 macOS](../../guides/linux_macos.md)

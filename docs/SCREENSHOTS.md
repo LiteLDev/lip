@@ -196,6 +196,10 @@ picture by its path below `public`, with a leading slash, whatever folder the pa
 | `docs/zh/**/*.md` (Simplified Chinese) | `/screenshots/zh-Hans/<name>.svg` |
 | `docs/zh-Hant/**/*.md` (Traditional Chinese, written by `scripts/zh-hant.mjs`) | `/screenshots/zh-Hant/<name>.svg` |
 
+The tutorials at [levimc.org/tutorials](https://levimc.org/tutorials/) (Your first server, Install mods on your
+server) show the `first-server-` pictures by their full URL, `https://levimc.org/lip/screenshots/<language>/<name>.svg`:
+no page of this site needs most of them, but do not rename or drop one without changing the tutorial too.
+
 - Always write the alternative text: one sentence in the language of the page that says what
   the picture shows and what matters in it, for whoever cannot see it.
 - Nobody writes the Traditional Chinese pages: `scripts/zh-hant.mjs` makes them from the

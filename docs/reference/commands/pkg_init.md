@@ -28,7 +28,7 @@ lip pkg init [-h | --help]
 
 When standard input or standard error is not a terminal, lip cannot ask, and the command fails instead. There is no option that gives the id; in a script, write `lip.toml` yourself.
 
-The package installs nothing yet. See [Creating packages](../../authors/creating_packages.md) for what to add.
+The package installs nothing yet. See [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/) for what to add.
 
 `lip pkg init` is not a workspace operation: it needs no server, takes no lock, and touches nothing but `lip.toml`.
 
@@ -62,6 +62,6 @@ lip pkg init
 
 ## See also
 
-- [Creating packages](../../authors/creating_packages.md)
+- [Publish your mod with lip](https://levimc.org/tutorials/develop/publish-a-package/)
 - [lip.toml](../../concepts/lip_toml.md)
 - [Tools](../../interface/tools.md): **Create lip.toml** in the interface.

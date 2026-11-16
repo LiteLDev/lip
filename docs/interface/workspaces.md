@@ -101,7 +101,7 @@ The selected workspace cannot be removed: its menu has no such row. Switch to an
 
 **New server…** is a wizard: it asks a few questions, one dialog after the other, and then installs the server. `Esc` goes back one step; in the first step it closes the wizard, and nothing has changed.
 
-The same wizard opens from the first step of the [Home](home.md) page. [Your first server](../intro/first_server.md) walks through it once from start to end; this section describes every choice.
+The same wizard opens from the first step of the [Home](home.md) page. [Your first server](https://levimc.org/tutorials/server/first-server/) walks through it once from start to end; this section describes every choice.
 
 ### Step 1: where the server goes
 
