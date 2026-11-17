@@ -54,14 +54,18 @@ public static class RunTrace {
 
   /// Traces every HTTP request made through Flurl: its method, URL, status and duration, or the
   /// error it failed with; and sends it through the proxy that the environment variables of the
-  /// invocation name (InvocationProxy).
+  /// invocation name (InvocationProxy). Before each, checks that .NET can load OpenSSL
+  /// (OpenSsl.EnsureLoadable).
   public static void TraceHttp() {
     FlurlHttp.Clients.WithDefaults(builder => builder
         .ConfigureInnerHandler(handler => {
           handler.Proxy = InvocationProxy.Instance;
           handler.UseProxy = true;
         })
-        .BeforeCall(call => Write("http", $"{call.Request.Verb} {call.Request.Url}"))
+        .BeforeCall(call => {
+          Write("http", $"{call.Request.Verb} {call.Request.Url}");
+          OpenSsl.EnsureLoadable();
+        })
         .OnError(call => Write("http", $"{call.Request.Verb} {call.Request.Url} failed:"
             + $" {call.Exception?.GetType().Name}: {call.Exception?.Message}"))
         .AfterCall(call => {

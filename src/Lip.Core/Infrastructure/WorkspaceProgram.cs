@@ -19,14 +19,16 @@ public sealed record ProgramStartInfo(
 /// variables of lip. When Wine runs the program, WINEPREFIX defaults to .lip/wine below the
 /// workspace root (protocol/lip-workspace.md, "The .lip directory"). Wine is the wine program of
 /// the Wine of lip (protocol/lip-workspace.md, "System dependencies"), null when the system has
-/// none. IsExecutable tells whether a path is a file lip can run; SystemDirectory is the Windows
-/// system directory, which holds cmd.exe.
+/// none. IsExecutable tells whether a path is a file lip can run, and IsFile whether a file
+/// exists; SystemDirectory is the Windows system directory, which holds cmd.exe.
 public sealed record ProgramHost(
     bool IsWindows,
     string Platform,
     string WorkspaceRoot,
     Func<string, string?> GetEnvironmentVariable) {
   public Func<string, bool> IsExecutable { get; init; } = IsExecutableFile;
+
+  public Func<string, bool> IsFile { get; init; } = File.Exists;
 
   public string SystemDirectory { get; init; } = Environment.SystemDirectory;
 
@@ -130,12 +132,32 @@ public static class WorkspaceProgram {
   public static ProgramStartInfo Server(ProgramHost host, string fileName) =>
       Start(host, Path.Join(host.WorkspaceRoot, fileName), []);
 
+  /// The files that hold the certificates of the certificate authorities that the system trusts,
+  /// as one PEM file, on the Linux distributions that have one, in the order lip looks for them
+  /// (protocol/lip-run.md).
+  public static readonly IReadOnlyList<string> CaCertificateFiles = [
+    "/etc/ssl/certs/ca-certificates.crt", // Debian, Ubuntu, Arch, Gentoo
+    "/etc/pki/tls/certs/ca-bundle.crt", // Fedora, RHEL and its rebuilds
+    "/etc/ssl/ca-bundle.pem", // openSUSE, SLES
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS, RHEL 7
+    "/etc/ssl/cert.pem", // Alpine
+  ];
+
   /// The Linux server, bedrock_server at the workspace root, run by lip itself without
-  /// arguments, with LD_LIBRARY_PATH "." when it is unset or empty (protocol/lip-run.md).
+  /// arguments, with LD_LIBRARY_PATH "." when it is unset or empty, and SSL_CERT_FILE the first
+  /// of CaCertificateFiles that exists when it is unset or empty (protocol/lip-run.md). The
+  /// server reads the certificate authorities only from /etc/ssl/cert.pem and /etc/ssl/certs/
+  /// otherwise, which RHEL 8 and its rebuilds do not fill, so that it could not sign in to the
+  /// services of Minecraft there.
   public static ProgramStartInfo LinuxServer(ProgramHost host) {
     Dictionary<string, string> environment = new(StringComparer.Ordinal);
     if (string.IsNullOrEmpty(host.GetEnvironmentVariable("LD_LIBRARY_PATH"))) {
       environment["LD_LIBRARY_PATH"] = ".";
+    }
+
+    if (string.IsNullOrEmpty(host.GetEnvironmentVariable("SSL_CERT_FILE"))
+        && CaCertificateFiles.FirstOrDefault(host.IsFile) is string certificates) {
+      environment["SSL_CERT_FILE"] = certificates;
     }
 
     return new ProgramStartInfo(

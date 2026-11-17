@@ -20,7 +20,7 @@ The **server** is a file at the workspace root, chosen by the game and the loade
 | no loader, and a game of the build `windows` | `bedrock_server.exe` | the same |
 | no loader, and a game of the build `linux` | `bedrock_server` | by `lip` itself, as a program of a platform that is not a Windows platform; only when `lip` runs on Linux on x64 |
 
-When `lip` runs the Linux server, `bedrock_server`, it sets the environment variable `LD_LIBRARY_PATH` to `.` when that is unset or empty for `lip`.
+When `lip` runs the Linux server, `bedrock_server`, it sets the environment variable `LD_LIBRARY_PATH` to `.` when that is unset or empty for `lip`, and the environment variable `SSL_CERT_FILE`, when that is unset or empty for `lip`, to the first of these files that exists, if one does: `/etc/ssl/certs/ca-certificates.crt`, `/etc/pki/tls/certs/ca-bundle.crt`, `/etc/ssl/ca-bundle.pem`, `/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem`, `/etc/ssl/cert.pem`.
 
 Without `--managed`, `lip run` does, in order:
 

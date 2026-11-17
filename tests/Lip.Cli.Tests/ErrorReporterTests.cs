@@ -61,6 +61,25 @@ public class ErrorReporterTests {
   }
 
   [Fact]
+  public void Hints_CertificateNotVerified_SaysSoInsteadOfTheNetwork() {
+    // Arrange: as without CA certificates, in a minimal Docker image.
+    HttpRequestException tls = new(
+        "The SSL connection could not be established, see inner exception.",
+        new System.Security.Authentication.AuthenticationException(
+            "The remote certificate is invalid because of errors in the certificate chain:"
+            + " PartialChain"));
+
+    // Act
+    IReadOnlyList<string> hints = ErrorReporter.Hints(
+        new ArchiveUnavailableException("Could not download.", tls));
+
+    // Assert
+    string hint = Assert.Single(hints);
+    Assert.StartsWith("lip could not verify the certificate of the server.", hint);
+    Assert.Equal(OperatingSystem.IsLinux(), hint.Contains("ca-certificates"));
+  }
+
+  [Fact]
   public void Hints_RepositoryNotFound_SuggestsCheckingTheName() {
     // Arrange
     HttpRequestException notFound = new("404", null, HttpStatusCode.NotFound);
