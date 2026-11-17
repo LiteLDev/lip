@@ -99,25 +99,29 @@ internal sealed class WorkspaceHarness {
 
   private void SetUpDownloader() {
     Downloader
-        .Setup(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<System.IO.Abstractions.IFileInfo>()))
-        .Returns((Url url, System.IO.Abstractions.IFileInfo destination) => {
+        .Setup(d => d.DownloadFile(
+            It.IsAny<Url>(),
+            It.IsAny<System.IO.Abstractions.IFileInfo>(),
+            It.IsAny<Action<Url>?>()))
+        .Returns((Url url, System.IO.Abstractions.IFileInfo destination, Action<Url>? validate) => {
           if (!_downloads.TryGetValue(url.ToString(), out byte[]? content)) {
             throw new HttpRequestException($"404 {url}");
           }
 
           Fs.Directory.CreateDirectory(destination.DirectoryName!);
           Fs.File.WriteAllBytes(destination.FullName, content);
+          validate?.Invoke(url);
           return Task.CompletedTask;
         });
     Downloader
-        .Setup(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()))
-        .Returns((Url url, Stream destination) => {
+        .Setup(d => d.Download(It.IsAny<Url>(), It.IsAny<Action<byte[], Url>?>(), It.IsAny<bool>()))
+        .Returns((Url url, Action<byte[], Url>? validate, bool _) => {
           if (!_downloads.TryGetValue(url.ToString(), out byte[]? content)) {
             throw new HttpRequestException($"404 {url}");
           }
 
-          destination.Write(content);
-          return Task.CompletedTask;
+          validate?.Invoke(content, url);
+          return Task.FromResult(content);
         });
   }
 

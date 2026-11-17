@@ -29,16 +29,19 @@ public class SelfUpdaterTests {
     _fs.AddDirectory(_install);
     _faults = new FaultyFileSystem(_fs);
     _downloader
-        .Setup(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()))
-        .Returns((Url url, IFileInfo destination) => {
+        .Setup(d => d.DownloadFile(
+            It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
+        .Returns((Url url, IFileInfo destination, Action<Url>? validate) => {
           _fs.File.WriteAllBytes(destination.FullName, Serve(url));
+          validate?.Invoke(url);
           return Task.CompletedTask;
         });
     _downloader
-        .Setup(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()))
-        .Returns((Url url, Stream destination) => {
-          destination.Write(Serve(url));
-          return Task.CompletedTask;
+        .Setup(d => d.Download(It.IsAny<Url>(), It.IsAny<Action<byte[], Url>?>(), It.IsAny<bool>()))
+        .Returns((Url url, Action<byte[], Url>? validate, bool _) => {
+          byte[] content = Serve(url);
+          validate?.Invoke(content, url);
+          return Task.FromResult(content);
         });
   }
 
@@ -50,13 +53,12 @@ public class SelfUpdaterTests {
   }
 
   private SelfUpdater CreateUpdater(
-      bool isWindows = true, string? githubProxy = null, IFileSystem? fileSystem = null) =>
+      bool isWindows = true, IFileSystem? fileSystem = null) =>
       new(
           fileSystem ?? _fs,
           _downloader.Object,
           _starter.Object,
           new SelfUpdateHost(_install, _cache, "win-x64", isWindows, LinuxArchives: false),
-          githubProxy is null ? null : Url.Parse(githubProxy),
           getReleases: _ => Task.FromResult(JsonSerializer.Serialize(_releases)));
 
   private static string AssetUrl(string tag, string name) =>
@@ -308,19 +310,42 @@ public class SelfUpdaterTests {
   }
 
   [Fact]
-  public async Task Run_GithubProxy_DownloadsTheUpdateThroughItThenDirectly() {
+  public async Task Run_DownloadsTheChecksumsDirectlyAndTheUpdateMaybeThroughTheProxy() {
     AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64.zip"] = Zip(new() { ["lip.exe"] = "new" }) });
 
-    await CreateUpdater(githubProxy: "https://proxy.example/").Run(
-        SemVersion.Parse("1.0.0"), false);
+    await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
 
-    Assert.Equal(
-        [
-          AssetUrl("v1.1.0", "SHA256SUMS"),
-          "https://proxy.example/LiteLDev/lip/releases/download/v1.1.0/lip-1.1.0-win-x64.zip",
-          AssetUrl("v1.1.0", "lip-1.1.0-win-x64.zip"),
-        ],
-        _downloaded);
+    // protocol/lip-self-update.md, "Terms": SHA256SUMS directly, other assets through
+    // github_proxy, which the downloader applies.
+    _downloader.Verify(d => d.Download(
+        It.Is<Url>(u => u.ToString() == AssetUrl("v1.1.0", "SHA256SUMS")),
+        It.IsAny<Action<byte[], Url>?>(), true), Times.Once);
+    _downloader.Verify(d => d.DownloadFile(
+        It.Is<Url>(u => u.ToString() == AssetUrl("v1.1.0", "lip-1.1.0-win-x64.zip")),
+        It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()), Times.Once);
+  }
+
+  [Fact]
+  public async Task Run_ProxyServesAnotherFile_ItIsRejectedSoThatGithubIsTried() {
+    AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64.zip"] = Zip(new() { ["lip.exe"] = "new" }) });
+    string asset = AssetUrl("v1.1.0", "lip-1.1.0-win-x64.zip");
+    _downloader
+        .Setup(d => d.DownloadFile(
+            It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
+        .Returns((Url url, IFileInfo destination, Action<Url>? validate) => {
+          // As the downloader does: through the proxy, then directly when validate rejects it.
+          _fs.File.WriteAllBytes(destination.FullName, [1, 2, 3]);
+          Assert.Throws<SelfUpdateException>(
+              () => validate!(Url.Parse("https://proxy.example/" + url.Path)));
+          _fs.File.WriteAllBytes(destination.FullName, Serve(url));
+          validate!(url);
+          return Task.CompletedTask;
+        });
+
+    SelfUpdateResult result = await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
+
+    Assert.Equal(SelfUpdateOutcome.Replaced, result.Outcome);
+    Assert.Contains(asset, _downloaded);
   }
 
   [Fact]

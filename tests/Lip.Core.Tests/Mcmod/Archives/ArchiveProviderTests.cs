@@ -47,28 +47,39 @@ public class ArchiveProviderTests {
               }
             });
 
-    _downloader.Setup(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()))
-        .Returns((Url url, IFileInfo destination) => {
+    _downloader.Setup(d => d.DownloadFile(
+            It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
+        .Returns((Url url, IFileInfo destination, Action<Url>? validate) => {
           if (!_downloads.TryGetValue(url.ToString(), out byte[]? content)) {
             throw new HttpRequestException($"HTTP 404: {url}");
           }
 
           _fileSystem.File.WriteAllBytes(destination.FullName, content);
+          validate?.Invoke(url);
           return Task.CompletedTask;
         });
-    _downloader.Setup(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()))
-        .Returns((Url url, Stream destination) => {
+    _downloader.Setup(d => d.Download(
+            It.IsAny<Url>(), It.IsAny<Action<byte[], Url>?>(), It.IsAny<bool>()))
+        .Returns((Url url, Action<byte[], Url>? validate, bool _) => {
           if (!_downloads.TryGetValue(url.ToString(), out byte[]? content)) {
             throw new HttpRequestException($"HTTP 404: {url}");
           }
 
-          destination.Write(content);
-          return Task.CompletedTask;
+          validate?.Invoke(content, url);
+          return Task.FromResult(content);
         });
   }
 
-  private ArchiveProvider CreateProvider(Url? githubProxy = null, ArchiveMemory? memory = null) =>
-      new(_git.Object, _cache, _fileSystem, _downloader.Object, githubProxy, memory);
+  private void VerifyDownloadsToFiles(Times times) => _downloader.Verify(
+      d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()),
+      times);
+
+  private void VerifyDownloadsIntoMemory(Times times) => _downloader.Verify(
+      d => d.Download(It.IsAny<Url>(), It.IsAny<Action<byte[], Url>?>(), It.IsAny<bool>()),
+      times);
+
+  private ArchiveProvider CreateProvider(ArchiveMemory? memory = null) =>
+      new(_git.Object, _cache, _fileSystem, _downloader.Object, memory);
 
   private string AddBlob(string content) => AddBlob(Encoding.UTF8.GetBytes(content));
 
@@ -474,7 +485,7 @@ public class ArchiveProviderTests {
     Assert.Null(first.Commit);
     Assert.Equal(_url, second.Key);
     Assert.Equal("{}", await Read(second, "lip.toml"));
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -518,8 +529,8 @@ public class ArchiveProviderTests {
     Assert.Equal("{}", await Read(first, "lip.toml"));
     Assert.Equal("{}", await Read(second, "lip.toml"));
     Assert.False(_fileSystem.Directory.Exists(LipDirectories.Cache));
-    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+    VerifyDownloadsIntoMemory(Times.Once());
+    VerifyDownloadsToFiles(Times.Never());
   }
 
   [Fact]
@@ -567,8 +578,8 @@ public class ArchiveProviderTests {
     Assert.Equal(
         content,
         _fileSystem.File.ReadAllBytes(Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
-    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+    VerifyDownloadsIntoMemory(Times.Once());
+    VerifyDownloadsToFiles(Times.Never());
   }
 
   [Fact]
@@ -592,8 +603,8 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal("new", await Read(archive, "lip.toml"));
     Assert.Equal(content, _fileSystem.File.ReadAllBytes(entry));
-    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+    VerifyDownloadsIntoMemory(Times.Once());
+    VerifyDownloadsToFiles(Times.Never());
   }
 
   [Fact]
@@ -617,7 +628,7 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal("new", await Read(archive, "lip.toml"));
     Assert.Equal(content, _fileSystem.File.ReadAllBytes(entry));
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -657,8 +668,8 @@ public class ArchiveProviderTests {
     // Assert
     Assert.All(archives, archive => Assert.NotNull(archive.Source));
     Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
-    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Once);
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Never);
+    VerifyDownloadsIntoMemory(Times.Once());
+    VerifyDownloadsToFiles(Times.Never());
   }
 
   [Fact]
@@ -692,7 +703,7 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal("cached", await Read(archive, "lip.toml"));
-    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Never);
+    VerifyDownloadsIntoMemory(Times.Never());
   }
 
   [Fact]
@@ -711,23 +722,6 @@ public class ArchiveProviderTests {
     Assert.Equal("{}", await Read(archive, "lip.toml"));
     Assert.Equal("corrupted", _fileSystem.File.ReadAllText(entry));
     Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
-  }
-
-  [Fact]
-  public async Task LeaveCacheUnchanged_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
-    // Arrange
-    const string url = "https://github.com/owner/repo/releases/download/v1/pkg.zip";
-    _downloads[url] = Zip(("lip.toml", "{}"));
-    ArchiveProvider provider = CreateProvider(Url.Parse("https://proxy.example.com"));
-    provider.LeaveCacheUnchanged();
-
-    // Act
-    ArchiveHandle archive = await provider.Open(Ref.Parse(url, allowFile: false));
-
-    // Assert
-    Assert.Equal("{}", await Read(archive, "lip.toml"));
-    _downloader.Verify(d => d.Download(It.IsAny<Url>(), It.IsAny<Stream>()), Times.Exactly(2));
-    Assert.False(_fileSystem.Directory.Exists(LipDirectories.Cache));
   }
 
   [Fact]
@@ -764,7 +758,7 @@ public class ArchiveProviderTests {
     Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
     Assert.Equal(zip, _fileSystem.File.ReadAllBytes(
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -778,7 +772,7 @@ public class ArchiveProviderTests {
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
         () => CreateProvider().Open(Ref.Parse(_url, allowFile: false)));
     Assert.Empty(CachedFiles());
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -824,42 +818,7 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal("{}", await Read(archive, "lip.toml"));
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
-  }
-
-  [Fact]
-  public async Task Open_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
-    // Arrange
-    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.zip";
-    _downloads[githubUrl] = Zip(("lip.toml", "{}"));
-
-    // Act
-    ArchiveHandle archive = await CreateProvider(new Url("https://proxy.example.com"))
-        .Open(Ref.Parse(githubUrl, allowFile: false));
-
-    // Assert
-    Assert.Equal(githubUrl, archive.Key);
-    _downloader.Verify(d => d.DownloadFile(
-        It.Is<Url>(u => u.ToString() ==
-            "https://proxy.example.com/owner/repo/releases/download/v1.0.0/pkg.zip"),
-        It.IsAny<IFileInfo>()), Times.Once);
-  }
-
-  [Fact]
-  public async Task Open_GitHubUrlProxyReturnsNonZip_FallsBackToOriginal() {
-    // Arrange
-    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/pkg.zip";
-    byte[] zip = Zip(("lip.toml", "{}"));
-    _downloads["https://proxy.example.com/owner/repo/releases/download/v1.0.0/pkg.zip"] =
-        Encoding.UTF8.GetBytes("<html>rate limited</html>");
-    _downloads[githubUrl] = zip;
-
-    // Act
-    ArchiveHandle archive = await CreateProvider(new Url("https://proxy.example.com"))
-        .Open(Ref.Parse(githubUrl, allowFile: false));
-
-    // Assert
-    Assert.Equal("{}", await Read(archive, "lip.toml"));
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -874,7 +833,7 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal(first.Key, second.Key);
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -962,7 +921,8 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal("a", await Read(asset, "a.txt"));
     _downloader.Verify(d => d.DownloadFile(
-        It.Is<Url>(u => u.ToString() == http), It.IsAny<IFileInfo>()), Times.Never);
+        It.Is<Url>(u => u.ToString() == http), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()),
+        Times.Never);
   }
 
   [Fact]
@@ -999,7 +959,8 @@ public class ArchiveProviderTests {
     Assert.Equal(["a.txt"], second.Keys);
     Assert.Equal([CacheKeys.Http(mirror)], CachedFiles());
     _downloader.Verify(d => d.DownloadFile(
-        It.Is<Url>(u => u.ToString() == mirror), It.IsAny<IFileInfo>()), Times.Once);
+        It.Is<Url>(u => u.ToString() == mirror), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()),
+        Times.Once);
   }
 
   [Fact]
@@ -1015,41 +976,8 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal(["a.txt"], asset.Keys);
     _downloader.Verify(d => d.DownloadFile(
-        It.Is<Url>(u => u.ToString() == mirror), It.IsAny<IFileInfo>()), Times.Never);
-  }
-
-  [Fact]
-  public async Task OpenAsset_GitHubUrlWithProxy_TriesProxyThenFallsBack() {
-    // Arrange
-    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/a.zip";
-    _downloads[githubUrl] = Zip(("a.txt", "a"));
-
-    // Act
-    ISource asset = await CreateProvider(new Url("https://proxy.example.com"))
-        .OpenAsset([githubUrl]);
-
-    // Assert
-    Assert.Equal(["a.txt"], asset.Keys);
-    _downloader.Verify(d => d.DownloadFile(
-        It.Is<Url>(u => u.ToString() ==
-            "https://proxy.example.com/owner/repo/releases/download/v1.0.0/a.zip"),
-        It.IsAny<IFileInfo>()), Times.Once);
-  }
-
-  [Fact]
-  public async Task OpenAsset_GitHubProxyReturnsNonArchive_FallsBackToOriginal() {
-    // Arrange
-    const string githubUrl = "https://github.com/owner/repo/releases/download/v1.0.0/a.zip";
-    _downloads["https://proxy.example.com/owner/repo/releases/download/v1.0.0/a.zip"] =
-        Encoding.UTF8.GetBytes("<html>error</html>");
-    _downloads[githubUrl] = Zip(("a.txt", "a"));
-
-    // Act
-    ISource asset = await CreateProvider(new Url("https://proxy.example.com"))
-        .OpenAsset([githubUrl]);
-
-    // Assert
-    Assert.Equal(["a.txt"], asset.Keys);
+        It.Is<Url>(u => u.ToString() == mirror), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()),
+        Times.Never);
   }
 
   [Fact]
@@ -1064,7 +992,7 @@ public class ArchiveProviderTests {
 
     // Assert
     Assert.Equal(["a.txt"], asset.Keys);
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -1084,7 +1012,7 @@ public class ArchiveProviderTests {
     Assert.Equal(["a.txt"], asset.Keys);
     Assert.Equal(zip, _fileSystem.File.ReadAllBytes(
         Path.Combine(LipDirectories.Cache, CacheKeys.Http(_url))));
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -1098,7 +1026,7 @@ public class ArchiveProviderTests {
     await Assert.ThrowsAsync<ArchiveUnavailableException>(
         () => CreateProvider().OpenAsset([_url]));
     Assert.Empty(CachedFiles());
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
+    VerifyDownloadsToFiles(Times.Once());
   }
 
   [Fact]
@@ -1112,20 +1040,6 @@ public class ArchiveProviderTests {
     // Assert
     Assert.Equal(["a.txt"], asset.Keys);
     Assert.Equal([CacheKeys.Http(_url)], CachedFiles());
-  }
-
-  [Fact]
-  public async Task OpenAsset_NonGitHubUrlWithProxy_DoesNotRewrite() {
-    // Arrange
-    _downloads[_url] = Zip(("a.txt", "a"));
-
-    // Act
-    await CreateProvider(new Url("https://proxy.example.com")).OpenAsset([_url]);
-
-    // Assert
-    _downloader.Verify(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()), Times.Once);
-    _downloader.Verify(d => d.DownloadFile(
-        It.Is<Url>(u => u.ToString() == _url), It.IsAny<IFileInfo>()), Times.Once);
   }
 
   [Fact]

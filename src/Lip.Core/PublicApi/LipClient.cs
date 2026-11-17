@@ -114,7 +114,6 @@ public sealed class LipClient {
       Func<Stream>? hookOutput,
       Func<string> workspaceRoot,
       OperationSession? session) {
-    FileDownloader fileDownloader = new(userInteraction);
     // An empty github_proxy, like an absent one, means GitHub is reached directly
     // (protocol/config.toml.md, "User configuration").
     string? githubProxyValue = await configService.GetGithubProxy(dryRun);
@@ -125,11 +124,14 @@ public sealed class LipClient {
         : $"GitHub is reached through github_proxy {described}");
     OperationSession.Network network = session?.NetworkFor(githubProxyValue, githubProxy)
         ?? new OperationSession.Network(githubProxyValue, githubProxy);
+    // Every download of the command, the system dependencies' included, goes through
+    // github_proxy as config.toml.md defines.
+    FileDownloader fileDownloader = new(userInteraction, githubProxy);
 
     CommandRunner commandRunner = new(hookOutput);
     // One provider per command: whether it leaves the cache unchanged is of the command.
     ArchiveProvider archiveProvider = new(
-        network.Git, cacheService, fileSystem, fileDownloader, githubProxy, network.Archives);
+        network.Git, cacheService, fileSystem, fileDownloader, network.Archives);
 
     return new(
         fileSystem,
@@ -396,10 +398,9 @@ public sealed class LipClient {
 #endif
     SelfUpdater updater = new(
         _fileSystem,
-        new FileDownloader(_userInteraction),
+        new FileDownloader(_userInteraction, githubProxy),
         new ShellElevatedStarter(),
         SelfUpdateHost.Current,
-        githubProxy,
         string.IsNullOrEmpty(releasesUrl) ? null : Url.Parse(releasesUrl));
     SelfUpdateResult result = await updater.Run(running, checkOnly);
     if (result.Outcome is SelfUpdateOutcome.Replaced or SelfUpdateOutcome.InstallerStarted) {

@@ -2,46 +2,122 @@ using System.IO.Abstractions;
 using System.Net;
 using Flurl;
 using Flurl.Http;
+using Lip.Core.Git;
 
 namespace Lip.Core.Infrastructure;
 
+/// Downloads the body of a successful response to an HTTPS GET of a URL, following redirects
+/// (protocol/lip-package.md, "URLs", protocol/lip-userspace.md, "Cache"). A request to GitHub is
+/// sent through github_proxy first when one is set, then directly when that fails
+/// (protocol/config.toml.md, "User configuration"), so that every download of lip honours it.
+///
+/// validate, when given, checks what an address gave, named by the URL it was downloaded from,
+/// and throws when it is not what was asked for (e.g. a proxy's error page, or a file whose
+/// SHA-256 differs): the next address is then tried, as when the request fails.
 public interface IFileDownloader {
-  Task DownloadFile(Url url, IFileInfo destination);
+  /// Downloads url to the file destination, which each address writes over.
+  Task DownloadFile(Url url, IFileInfo destination, Action<Url>? validate = null);
 
-  /// Writes the body to a stream instead of a file, e.g. to keep it in memory.
-  Task Download(Url url, Stream destination);
+  /// Downloads url into memory. direct: the request is sent to url only, never through
+  /// github_proxy.
+  Task<byte[]> Download(Url url, Action<byte[], Url>? validate = null, bool direct = false);
 }
 
-/// Writes the body of a successful response to one HTTPS GET of a URL, following redirects, to a
-/// file or a stream (protocol/lip-package.md, "URLs", protocol/lip-userspace.md, "Cache").
-///
 /// Failures of the network or of the server are HttpRequestExceptions naming the URL, with the
 /// HTTP status code when the server answered; failures of writing the file are IOExceptions or
-/// UnauthorizedAccessExceptions naming the file.
-public class FileDownloader(IUserInteraction userInteraction) : IFileDownloader {
+/// UnauthorizedAccessExceptions naming the file. With one address, its failure is thrown as it
+/// is; with the proxy and GitHub, an HttpRequestException naming both, with both failures.
+///
+/// githubProxy: the value of github_proxy as a URL; null when it is not set or empty.
+public class FileDownloader(IUserInteraction userInteraction, Url? githubProxy = null)
+    : IFileDownloader {
   private readonly IUserInteraction _userInteraction = userInteraction;
+  private readonly Url? _githubProxy = githubProxy;
 
-  public async Task DownloadFile(Url url, IFileInfo destination) {
-    RunTrace.Write("download", $"Downloading {url} to {destination.FullName}");
-    await Download(
-        url,
-        () => {
-          try {
-            return destination.Create();
-          }
-          catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
-            throw FileSystemExtensions.WrapFileError(
-                $"Could not create the file {destination.FullName} to save the download of {url}"
-                + " in.", ex);
-          }
-        },
-        disposeDestination: true,
-        destination.FullName);
+  public async Task DownloadFile(Url url, IFileInfo destination, Action<Url>? validate = null) {
+    await FromFirstAddress(url, direct: false, async address => {
+      RunTrace.Write("download", $"Downloading {address} to {destination.FullName}");
+      await Download(
+          address,
+          () => {
+            try {
+              return destination.Create();
+            }
+            catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
+              throw FileSystemExtensions.WrapFileError(
+                  $"Could not create the file {destination.FullName} to save the download of"
+                  + $" {address} in.", ex);
+            }
+          },
+          disposeDestination: true,
+          destination.FullName);
+      destination.Refresh();
+      validate?.Invoke(address);
+      return true;
+    });
   }
 
-  public async Task Download(Url url, Stream destination) {
-    RunTrace.Write("download", $"Downloading {url} into memory");
-    await Download(url, () => destination, disposeDestination: false, "memory");
+  public async Task<byte[]> Download(
+      Url url, Action<byte[], Url>? validate = null, bool direct = false) {
+    return await FromFirstAddress(url, direct, async address => {
+      RunTrace.Write("download", $"Downloading {address} into memory");
+      using MemoryStream stream = new();
+      await Download(address, () => stream, disposeDestination: false, "memory");
+      byte[] content = stream.ToArray();
+      validate?.Invoke(content, address);
+      return content;
+    });
+  }
+
+  /// The result of attempt for the first address of url for which it succeeds: through the
+  /// GitHub proxy, when it applies and direct is false, then url itself.
+  private async Task<T> FromFirstAddress<T>(Url url, bool direct, Func<Url, Task<T>> attempt) {
+    Url? proxied = direct ? null : GithubProxy.Rewrite(_githubProxy, url);
+    if (proxied is null) {
+      return await attempt(url);
+    }
+
+    Exception proxyFailure;
+    try {
+      RunTrace.Write("download", $"Downloading {url} through the GitHub proxy: {proxied}");
+      return await attempt(proxied);
+    }
+    catch (Exception ex) when (IsFailureOfAddress(ex)) {
+      RunTrace.Write("download", $"Downloading from {proxied} failed, trying {url}:"
+          + $" {ex.GetType().Name}: {ex.Message}");
+      // A github_proxy that is a URI but not a usable URL prefix fails only here.
+      proxyFailure = HasUriFormatCause(ex)
+          ? new HttpRequestException(
+              $"The GitHub proxy set in github_proxy does not give a valid URL ({proxied}). Set"
+              + " a valid URL with 'lip config set github_proxy <URL>', or remove it with"
+              + " 'lip config delete github_proxy'.", ex)
+          : ex;
+    }
+
+    try {
+      return await attempt(url);
+    }
+    catch (Exception ex) when (IsFailureOfAddress(ex)) {
+      throw new HttpRequestException(
+          $"Could not download {url}, neither through the GitHub proxy ({proxied}) nor"
+          + " directly.",
+          new AggregateException("Every download address failed.", proxyFailure, ex));
+    }
+  }
+
+  /// Whether ex is a failure of one address, after which the next one is tried: anything but
+  /// cancellation and bugs.
+  private static bool IsFailureOfAddress(Exception ex) =>
+      ex is not (OperationCanceledException or ArgumentNullException or InvalidCastException
+          or NullReferenceException);
+
+  private static bool HasUriFormatCause(Exception ex) {
+    for (Exception? current = ex; current is not null; current = current.InnerException) {
+      if (current is UriFormatException) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Downloads the body of url to the stream that open gives once the response has arrived,
