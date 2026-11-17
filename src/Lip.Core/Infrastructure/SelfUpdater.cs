@@ -129,7 +129,6 @@ public sealed class SelfUpdater {
   private readonly IFileDownloader _downloader;
   private readonly IElevatedStarter _elevatedStarter;
   private readonly SelfUpdateHost _host;
-  private readonly Url? _githubProxy;
   private readonly Url _releasesUrl;
   private readonly Func<Url, Task<string>> _getReleases;
   private readonly Func<string, string, Task> _extractTarXz;
@@ -139,7 +138,6 @@ public sealed class SelfUpdater {
       IFileDownloader downloader,
       IElevatedStarter elevatedStarter,
       SelfUpdateHost host,
-      Url? githubProxy,
       Url? releasesUrl = null,
       Func<Url, Task<string>>? getReleases = null,
       Func<string, string, Task>? extractTarXz = null) {
@@ -147,7 +145,6 @@ public sealed class SelfUpdater {
     _downloader = downloader;
     _elevatedStarter = elevatedStarter;
     _host = host;
-    _githubProxy = githubProxy;
     _releasesUrl = releasesUrl ?? DefaultReleasesUrl;
     _getReleases = getReleases ?? GetReleases;
     _extractTarXz = extractTarXz ?? ExtractTarXz;
@@ -200,15 +197,24 @@ public sealed class SelfUpdater {
 
     // Directly from GitHub, never through github_proxy: the checksums guard against a proxy that
     // serves something else.
-    using MemoryStream checksums = new();
-    await _downloader.Download(checksumsUrl, checksums);
-    string? expected = FindChecksum(
-        System.Text.Encoding.UTF8.GetString(checksums.ToArray()), assetName);
+    byte[] checksums = await _downloader.Download(checksumsUrl, direct: true);
+    string? expected = FindChecksum(System.Text.Encoding.UTF8.GetString(checksums), assetName);
 
     string assetPath = _fileSystem.Path.Join(staging, assetName);
     string temporary = assetPath + ".tmp";
-    await Download(
-        assetUrl, url => _downloader.DownloadFile(url, _fileSystem.FileInfo.New(temporary)));
+    // Through github_proxy, then directly when what the proxy serves is not the asset; what
+    // GitHub serves is verified below.
+    await _downloader.DownloadFile(
+        assetUrl,
+        _fileSystem.FileInfo.New(temporary),
+        downloadUrl => {
+          if (downloadUrl.ToString() != assetUrl.ToString() && expected is not null
+              && Sha256Of(temporary) != expected) {
+            throw new SelfUpdateException(
+                $"The download of {assetName} from {downloadUrl} is not the file that"
+                + $" {ChecksumsAssetName} of the release names.");
+          }
+        });
     _fileSystem.File.Move(temporary, assetPath, overwrite: true);
     VerifyChecksum(assetPath, assetName, expected);
 
@@ -344,10 +350,7 @@ public sealed class SelfUpdater {
 
   /// Fails, deleting the file, when its SHA-256 is not the expected one.
   private void VerifyChecksum(string path, string assetName, string? expected) {
-    string actual;
-    using (Stream stream = _fileSystem.File.OpenRead(path)) {
-      actual = Convert.ToHexStringLower(SHA256.HashData(stream));
-    }
+    string actual = Sha256Of(path);
     if (actual == expected) {
       return;
     }
@@ -359,6 +362,12 @@ public sealed class SelfUpdater {
         : $"The download of {assetName} is corrupt: its SHA-256 is {actual}, but"
           + $" {ChecksumsAssetName} of the release says {expected}. Try again; if a GitHub proxy"
           + " is set, try without it ('lip config delete github_proxy').");
+  }
+
+  /// The lowercase hexadecimal SHA-256 of the file.
+  private string Sha256Of(string path) {
+    using Stream stream = _fileSystem.File.OpenRead(path);
+    return Convert.ToHexStringLower(SHA256.HashData(stream));
   }
 
   /// Deletes what an earlier lip self-update left in the staging directory, as far as it can (an
@@ -376,22 +385,6 @@ public sealed class SelfUpdater {
       }
     }
     _fileSystem.Directory.CreateDirectory(staging);
-  }
-
-  /// Downloads a GitHub URL through github_proxy, then directly when that fails
-  /// (protocol/config.toml.md).
-  private async Task Download(Url url, Func<Url, Task> download) {
-    if (GithubProxy.Rewrite(_githubProxy, url) is Url proxied) {
-      try {
-        await download(proxied);
-        return;
-      }
-      catch (Exception ex) when (ex is HttpRequestException or FlurlHttpException
-          or UriFormatException) {
-        RunTrace.Write("self-update", $"{proxied} failed, trying {url}: {ex.Message}");
-      }
-    }
-    await download(url);
   }
 
   private async Task Extract(string archive, string destination) {

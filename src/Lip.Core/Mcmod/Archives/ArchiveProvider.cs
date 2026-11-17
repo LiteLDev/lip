@@ -31,7 +31,6 @@ public class ArchiveProvider(
     ICacheService cacheService,
     IFileSystem fileSystem,
     IFileDownloader fileDownloader,
-    Url? githubProxy = null,
     ArchiveMemory? memory = null) : IArchiveProvider {
   private const string _headsRefPrefix = "refs/heads/";
   private const string _tagsRefPrefix = "refs/tags/";
@@ -41,7 +40,6 @@ public class ArchiveProvider(
   private readonly ICacheService _cacheService = cacheService;
   private readonly IFileSystem _fileSystem = fileSystem;
   private readonly IFileDownloader _fileDownloader = fileDownloader;
-  private readonly Url? _githubProxy = githubProxy;
 
   private readonly ArchiveMemory _memory = memory ?? new ArchiveMemory();
   private bool _leaveCacheUnchanged;
@@ -474,25 +472,18 @@ public class ArchiveProvider(
         : null;
   }
 
-  /// Downloads a URL into the cache under CacheKeys.Http(url), via the GitHub proxy first if one
-  /// is configured, unless it is cached already. The download goes to a .tmp file in the
-  /// cache directory and is renamed into place once complete. A candidate whose response is not a
-  /// valid ZIP archive (e.g. a proxy error page) is skipped.
+  /// Downloads a URL into the cache under CacheKeys.Http(url), unless it is cached already; the
+  /// downloader sends it through the GitHub proxy first if one is set. The download goes to a
+  /// .tmp file in the cache directory and is renamed into place once complete. A response that
+  /// is not a valid ZIP archive (e.g. a proxy error page) is not taken.
   private async Task<IFileInfo> Download(string url) {
     try {
       return await _cacheService.GetOrCreateFile(CacheKeys.Http(url), destination =>
-          FromFirstCandidate(url, async downloadUrl => {
-            // Leftovers of a failed candidate must not be mistaken for this one's content.
-            destination.Refresh();
-            if (destination.Exists) {
-              destination.Delete();
-            }
-
-            await _fileDownloader.DownloadFile(downloadUrl, destination);
-            destination.Refresh();
-            ZipValidator.Validate(destination, $"The file downloaded from {downloadUrl}");
-            return true;
-          }));
+          Downloading(url, () => _fileDownloader.DownloadFile(
+              url,
+              destination,
+              downloadUrl => ZipValidator.Validate(
+                  destination, $"The file downloaded from {downloadUrl}"))));
     }
     catch (Exception ex) when (IsUnavailable(ex)) {
       throw new ArchiveUnavailableException(
@@ -504,13 +495,10 @@ public class ArchiveProvider(
   /// ArchiveMemory (LeaveCacheUnchanged).
   private async Task<byte[]> DownloadIntoMemory(string url) {
     Lazy<Task<byte[]>> lazy = _memory.Downloads.GetOrAdd(url, _ => new(() =>
-        FromFirstCandidate(url, async downloadUrl => {
-          using MemoryStream stream = new();
-          await _fileDownloader.Download(downloadUrl, stream);
-          byte[] content = stream.ToArray();
-          ValidateZip(content, $"The file downloaded from {downloadUrl}");
-          return content;
-        })));
+        Downloading(url, () => _fileDownloader.Download(
+            url,
+            (content, downloadUrl) =>
+                ValidateZip(content, $"The file downloaded from {downloadUrl}")))));
 
     try {
       return await lazy.Value;
@@ -522,57 +510,22 @@ public class ArchiveProvider(
     }
   }
 
-  /// The result of attempt for the first download URL of url (GetDownloadUrls) for which it
-  /// succeeds. Throws ArchiveUnavailableException when it succeeds for none.
-  private async Task<T> FromFirstCandidate<T>(string url, Func<Url, Task<T>> attempt) {
-    List<Url> downloadUrls = [.. GetDownloadUrls(url)];
-    List<Exception> exceptions = [];
-
-    for (int index = 0; index < downloadUrls.Count; index++) {
-      Url downloadUrl = downloadUrls[index];
-      // GetDownloadUrls puts the proxied URL, if any, first.
-      bool viaProxy = downloadUrls.Count > 1 && index == 0;
-      try {
-        RunTrace.Write("archive", viaProxy
-            ? $"Downloading {url} through the GitHub proxy: {downloadUrl}"
-            : $"Downloading {url}");
-        return await attempt(downloadUrl);
-      }
-      catch (Exception ex) when (IsUnavailable(ex) || ex is ArchiveUnavailableException) {
-        RunTrace.Write("archive", $"Downloading from {downloadUrl} failed:"
-            + $" {ex.GetType().Name}: {ex.Message}");
-        // A github_proxy that is a URI but not a usable URL prefix fails only here.
-        exceptions.Add(viaProxy && HasUriFormatCause(ex)
-            ? new ArchiveUnavailableException(
-                $"The GitHub proxy set in github_proxy does not give a valid URL"
-                + $" ({downloadUrl}). Set a valid URL with 'lip config set github_proxy <URL>',"
-                + " or remove it with 'lip config delete github_proxy'.",
-                ex)
-            : ex);
-      }
+  /// The result of download, the download of url. Throws ArchiveUnavailableException when it
+  /// fails.
+  private static async Task<T> Downloading<T>(string url, Func<Task<T>> download) {
+    try {
+      return await download();
     }
-
-    throw exceptions.Count == 1
-        ? new ArchiveUnavailableException($"Could not download {url}.", exceptions[0])
-        : new ArchiveUnavailableException(
-            $"Could not download {url}, neither through the GitHub proxy"
-            + $" ({string.Join(", ", downloadUrls.SkipLast(1))}) nor directly.",
-            new AggregateException("Every download address failed.", exceptions));
+    catch (Exception ex) when (ex is ArchiveUnavailableException || IsUnavailable(ex)) {
+      throw new ArchiveUnavailableException($"Could not download {url}.", ex);
+    }
   }
 
-  private IEnumerable<Url> GetDownloadUrls(string url) {
-    Url original = Url.Parse(url);
-    return GithubProxy.Rewrite(_githubProxy, original) is Url proxied ? [proxied, original] : [original];
-  }
-
-  private static bool HasUriFormatCause(Exception ex) {
-    for (Exception? current = ex; current is not null; current = current.InnerException) {
-      if (current is UriFormatException) {
+  private static Task Downloading(string url, Func<Task> download) =>
+      Downloading(url, async () => {
+        await download();
         return true;
-      }
-    }
-    return false;
-  }
+      });
 
   // Everything but cancellation and programming errors makes an archive unavailable.
   private static bool IsUnavailable(Exception ex) =>

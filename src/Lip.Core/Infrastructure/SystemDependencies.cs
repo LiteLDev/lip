@@ -589,32 +589,37 @@ public sealed class SystemDependencies(
           : Path.Join(host.WorkspaceRoot, ".lip", "wine");
 
   /// Downloads the file to path and checks its SHA-256, and returns it opened for reading with
-  /// only reading shared, so that it cannot change while the caller holds it. On a mismatch,
-  /// deletes it and throws SystemDependencyException.
+  /// only reading shared, so that it cannot change while the caller holds it. The downloader
+  /// sends a request to GitHub through github_proxy first, then directly when what the proxy
+  /// serves has another SHA-256. On a mismatch, deletes it and throws SystemDependencyException.
   private async Task<Stream> DownloadVerified(PinnedFile file, string path) {
     _fs.Directory.CreateDirectory(_fs.Path.GetDirectoryName(path)!);
-    await _downloader.DownloadFile(file.Url, _fs.FileInfo.New(path));
-    Stream stream = _fs.FileStream.New(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-    string actual;
-    try {
-      actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream));
-    }
-    catch {
-      stream.Dispose();
-      throw;
-    }
+    Stream? held = null;
+    await _downloader.DownloadFile(file.Url, _fs.FileInfo.New(path), downloadUrl => {
+      Stream stream = _fs.FileStream.New(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+      string actual;
+      try {
+        actual = Convert.ToHexStringLower(SHA256.HashData(stream));
+      }
+      catch {
+        stream.Dispose();
+        throw;
+      }
 
-    RunTrace.Write("system", $"SHA-256 of {file.Url}: {actual}");
-    if (!string.Equals(actual, file.Sha256, StringComparison.OrdinalIgnoreCase)) {
-      stream.Dispose();
-      DeleteFile(path);
-      throw new SystemDependencyException(
-          $"The download of {file.Url} is not the file lip expects: its SHA-256 is {actual}, not"
-          + $" {file.Sha256}. It may have been changed on its way, e.g. by a proxy. Try again"
-          + " later, or on another network.");
-    }
+      RunTrace.Write("system", $"SHA-256 of {downloadUrl}: {actual}");
+      if (!string.Equals(actual, file.Sha256, StringComparison.OrdinalIgnoreCase)) {
+        stream.Dispose();
+        DeleteFile(path);
+        throw new SystemDependencyException(
+            $"The download of {downloadUrl} is not the file lip expects: its SHA-256 is {actual},"
+            + $" not {file.Sha256}. It may have been changed on its way, e.g. by a proxy. Try"
+            + " again later, or on another network.");
+      }
 
-    return stream;
+      stream.Position = 0;
+      held = stream;
+    });
+    return held!;
   }
 
   /// Extracts the .tar.xz archive into the directory, keeping the permissions of its files

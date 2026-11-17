@@ -37,10 +37,12 @@ public class SystemDependenciesTests : IDisposable {
     _wineArchive = Tar(("w/bin/wine", "wine"), ("w/lib/wine.so", "lib"));
     _served[WineUrl] = _wineArchive;
     _served[VcRedistUrl] = _installerBytes;
-    _downloader.Setup(d => d.DownloadFile(It.IsAny<Url>(), It.IsAny<IFileInfo>()))
-        .Returns((Url url, IFileInfo file) => {
+    _downloader.Setup(d => d.DownloadFile(
+            It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
+        .Returns((Url url, IFileInfo file, Action<Url>? validate) => {
           _downloaded.Add(url.ToString());
           File.WriteAllBytes(file.FullName, _served[url.ToString()]);
+          validate?.Invoke(url);
           return Task.CompletedTask;
         });
     _ui.Setup(u => u.PrintInfo(It.IsAny<string>())).Returns(Task.CompletedTask);
@@ -264,6 +266,31 @@ public class SystemDependenciesTests : IDisposable {
     // Assert
     Assert.Empty(_downloaded);
     Assert.Equal(WineExecutable, _probe.Runs[0].FileName);
+  }
+
+  /// The downloader sends the download of Wine, a GitHub release asset, through github_proxy
+  /// (protocol/config.toml.md); what the proxy serves is checked, so that GitHub is tried when
+  /// it is not the archive.
+  [Fact]
+  public async Task Prepare_ProxyServesAnotherWine_RejectsItAndInstallsWhatGithubServes() {
+    // Arrange
+    _probe.RegOutput = RegInstalled;
+    _downloader.Setup(d => d.DownloadFile(
+            It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
+        .Returns((Url url, IFileInfo file, Action<Url>? validate) => {
+          File.WriteAllBytes(file.FullName, Tar(("w/bin/wine", "tampered")));
+          Assert.Throws<SystemDependencyException>(
+              () => validate!(Url.Parse("https://proxy.example/" + url.Path)));
+          File.WriteAllBytes(file.FullName, _served[url.ToString()]);
+          validate!(url);
+          return Task.CompletedTask;
+        });
+
+    // Act
+    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal("wine", File.ReadAllText(WineExecutable));
   }
 
   [Fact]

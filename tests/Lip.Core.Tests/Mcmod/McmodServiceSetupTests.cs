@@ -92,7 +92,8 @@ public class McmodServiceSetupTests {
       _ws.Downloader.Verify(
           d => d.DownloadFile(
               It.Is<Url>(u => u.ToString().Contains(url)),
-              It.IsAny<System.IO.Abstractions.IFileInfo>()),
+              It.IsAny<System.IO.Abstractions.IFileInfo>(),
+              It.IsAny<Action<Url>?>()),
           Times.Never);
 
   #region Sessions
@@ -165,7 +166,8 @@ public class McmodServiceSetupTests {
     _ws.Downloader.Verify(
         d => d.DownloadFile(
             It.Is<Url>(u => u.ToString().Contains("bedrockdedicatedserver")),
-            It.IsAny<System.IO.Abstractions.IFileInfo>()),
+            It.IsAny<System.IO.Abstractions.IFileInfo>(),
+            It.IsAny<Action<Url>?>()),
         Times.Once);
   }
 
