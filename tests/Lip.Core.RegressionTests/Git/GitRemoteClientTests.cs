@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Flurl;
 using Lip.Core.Git;
+using Lip.Core.Json;
 using Semver;
 
 namespace Lip.Core.RegressionTests.Git;
@@ -10,7 +11,7 @@ public class GitRemoteClientTests {
   [InlineData("https://github.com/LiteLDev/LeviLamina.git", 90)]
   [InlineData("https://github.com/LiteLDev/LegacyScriptEngine.git", 100)]
   [InlineData("https://github.com/LiteLDev/MoreDimensions", 20)]
-  public async Task ListRefsListTreeFetchBlobs_LatestTag_ReadsToothJson(string repo, int minTagCount) {
+  public async Task ListRefsListTreeFetchBlobs_LatestTag_ReadsPackageFile(string repo, int minTagCount) {
     // Arrange
     Url repoUrl = new(repo);
     GitRemoteClient client = new(githubProxy: null);
@@ -23,12 +24,19 @@ public class GitRemoteClientTests {
 
     // Pass the ref's own object id: for annotated tags this exercises tag peeling.
     IReadOnlyList<GitTreeEntry> tree = await client.ListTree(repoUrl, latest.ObjectId);
-    GitTreeEntry tooth = Assert.Single(tree, e => e.Path == "tooth.json");
+    // The package file: lip.toml, or tooth.json before a package moved to it.
+    GitTreeEntry package = Assert.Single(tree, e => e.Path is "lip.toml" or "tooth.json");
 
     JsonDocument? manifest = null;
-    await client.FetchBlobs(repoUrl, [tooth.ObjectId], async (objectId, stream) => {
-      Assert.Equal(tooth.ObjectId, objectId);
-      manifest = await JsonDocument.ParseAsync(stream);
+    await client.FetchBlobs(repoUrl, [package.ObjectId], async (objectId, stream) => {
+      Assert.Equal(package.ObjectId, objectId);
+      if (package.Path == "lip.toml") {
+        using MemoryStream bytes = new();
+        await stream.CopyToAsync(bytes);
+        manifest = TomlJson.Parse(bytes.ToArray());
+      } else {
+        manifest = await JsonDocument.ParseAsync(stream);
+      }
     });
 
     // Assert
@@ -36,9 +44,10 @@ public class GitRemoteClientTests {
         $"{repo}: {refs.Count} tags, latest {latest.Name}, {tree.Count} files");
     Assert.True(refs.Count >= minTagCount);
     Assert.All(refs, r => Assert.StartsWith("refs/tags/v", r.Name));
-    Assert.Equal(100644, tooth.Mode);
+    Assert.Equal(100644, package.Mode);
     Assert.NotNull(manifest);
-    Assert.True(manifest.RootElement.TryGetProperty("format_version", out _));
+    Assert.True(manifest.RootElement.TryGetProperty(
+        package.Path == "lip.toml" ? "format" : "format_version", out _));
   }
 
   [Fact]

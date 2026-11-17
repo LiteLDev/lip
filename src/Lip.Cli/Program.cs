@@ -14,6 +14,9 @@ if (args is [DaemonProcess.Argument]) {
   return await DaemonEntry.RunDaemon();
 }
 
+// The console shows what lip and the servers it runs write, in UTF-8.
+ConsoleEncoding.UseUtf8();
+
 // Without an argument, on a terminal, lip runs the interface (protocol/lip-tui.md), which the
 // daemon carries out like a command; otherwise it writes its help, as below.
 if (DaemonEntry.RunsInterface(args, Console.IsInputRedirected, Console.IsOutputRedirected)) {
