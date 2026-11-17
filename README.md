@@ -11,7 +11,7 @@ Run a LeviLamina server and manage its packages
 - **Windows**: download `lip-<version>-win-x64.msi` (or `-win-arm64.msi`) from the [latest release](https://github.com/LiteLDev/lip/releases/latest) and run it.
 - **Linux and macOS**: download the archive for your system from the [latest release](https://github.com/LiteLDev/lip/releases/latest), extract the file `lip` from it, and put it in a folder on your `PATH`.
 
-`lip` is one executable file and needs nothing else installed. `lip -v` prints its version, and `lip self-update` updates it. See [`lip self-update`](https://levimc.org/lip/reference/commands/self_update.html).
+`lip` is one executable file and needs nothing else installed. On Linux and macOS it runs the Windows server, the one LeviLamina loads into, through [Wine](https://www.winehq.org/), which it downloads and sets up itself, with the Visual C++ Redistributable the server needs; a Mac with Apple silicon also needs Rosetta 2. See [Linux and macOS](https://levimc.org/lip/guides/linux_macos.html). `lip -v` prints its version, and `lip self-update` updates it. See [`lip self-update`](https://levimc.org/lip/reference/commands/self_update.html).
 
 ## Use
 
