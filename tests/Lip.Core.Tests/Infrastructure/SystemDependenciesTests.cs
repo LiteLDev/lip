@@ -435,6 +435,93 @@ public class SystemDependenciesTests : IDisposable {
     Assert.Equal(expected, SystemDependencies.ReadsInstalled(output));
   }
 
+  [Theory]
+  [InlineData("ID=ubuntu\nID_LIKE=debian\n", "'apt-get install libgnutls30'")]
+  [InlineData("ID=\"opensuse-leap\"\nID_LIKE=\"suse opensuse\"\n", "'zypper install libgnutls30'")]
+  [InlineData("ID=\"almalinux\"\nID_LIKE=\"rhel centos fedora\"\n", "'dnf install gnutls'")]
+  [InlineData("ID=amzn\nID_LIKE=\"fedora\"\n", "'dnf install gnutls'")]
+  [InlineData("ID=arch\n", "'pacman -S gnutls'")]
+  [InlineData(null, "package manager of the system")]
+  public async Task Prepare_LinuxWithoutGnuTls_ThrowsBeforeDownloadingWine(
+      string? osRelease, string advice) {
+    // Arrange: protocol/lip-workspace.md, "System dependencies".
+    _probe.Libraries.Clear();
+    _probe.OsRelease = osRelease;
+
+    // Act & Assert
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+    Assert.Contains("libgnutls.so.30", ex.Message);
+    Assert.DoesNotContain("libfontconfig.so.1", ex.Message);
+    Assert.Contains(advice, ex.Message);
+    Assert.Empty(_downloaded);
+    Assert.Empty(_probe.Runs);
+  }
+
+  [Fact]
+  public async Task Prepare_LinuxWithFreeTypeWithoutFontconfig_Throws() {
+    // Arrange: Wine then starts its desktop process without end.
+    _probe.Libraries.Add("libfreetype.so.6");
+    _probe.OsRelease = "ID=debian\n";
+
+    // Act & Assert
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+    Assert.Contains("libfontconfig.so.1", ex.Message);
+    Assert.DoesNotContain("libgnutls.so.30", ex.Message);
+    Assert.Contains("'apt-get install libfontconfig1'", ex.Message);
+    Assert.Empty(_downloaded);
+  }
+
+  [Fact]
+  public async Task Prepare_LinuxWithoutEither_NamesBoth() {
+    // Arrange
+    _probe.Libraries.Clear();
+    _probe.Libraries.Add("libfreetype.so.6");
+    _probe.OsRelease = "ID=fedora\n";
+
+    // Act & Assert
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+    Assert.Contains("'dnf install gnutls fontconfig'", ex.Message);
+  }
+
+  [Theory]
+  [InlineData(false, false)]
+  [InlineData(true, true)]
+  public async Task Prepare_LinuxWithGnuTlsAndFontconfigOrNoFreeType_InstallsWine(
+      bool freeType, bool fontconfig) {
+    // Arrange
+    _probe.RegOutput = RegInstalled;
+    if (freeType) {
+      _probe.Libraries.Add("libfreetype.so.6");
+    }
+
+    if (fontconfig) {
+      _probe.Libraries.Add("libfontconfig.so.1");
+    }
+
+    // Act
+    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.True(File.Exists(WineExecutable));
+  }
+
+  [Fact]
+  public async Task Prepare_MacOsWithoutTheLibraries_InstallsWine() {
+    // Arrange: only Linux is checked.
+    _probe.Libraries.Clear();
+    _probe.RegOutput = RegInstalled;
+
+    // Act
+    await Create(new SystemInfo(HostOs.MacOS, Architecture.X64))
+        .Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.True(File.Exists(WineExecutable));
+  }
+
   /// A system whose answers the test sets, recording the programs run.
   private sealed class FakeProbe : ISystemProbe {
     public SystemInfo System { get; set; } = _linux;
@@ -458,6 +545,15 @@ public class SystemDependenciesTests : IDisposable {
     public bool IsRosettaInstalled() => RosettaInstalled;
 
     public bool IsVcRuntimeInstalled() => VcRuntimeInstalled;
+
+    /// The shared libraries the system loads: by default GnuTLS, without FreeType.
+    public HashSet<string> Libraries { get; } = ["libgnutls.so.30"];
+
+    public string? OsRelease { get; set; }
+
+    public bool CanLoadLibrary(string name) => Libraries.Contains(name);
+
+    public string? ReadOsRelease() => OsRelease;
 
     public Task<ProgramResult> Run(ProgramStartInfo start, CancellationToken cancellationToken) {
       Runs.Add(start);

@@ -133,6 +133,13 @@ public interface ISystemProbe {
   /// Whether the Visual C++ runtime is installed in the registry of Windows (Windows only).
   bool IsVcRuntimeInstalled();
 
+  /// Whether the dynamic linker of the system loads the shared library of the name, as Wine
+  /// loads it (Linux and macOS only).
+  bool CanLoadLibrary(string name);
+
+  /// The content of the os-release file of the system, or null when it has none (Linux only).
+  string? ReadOsRelease();
+
   /// Runs the program, with its standard input empty, and returns its exit code and standard
   /// output; its standard error goes to the trace. Throws when it cannot be started.
   Task<ProgramResult> Run(ProgramStartInfo start, CancellationToken cancellationToken);
@@ -186,6 +193,17 @@ public sealed class SystemProbe : ISystemProbe {
 
     return false;
   }
+
+  public bool CanLoadLibrary(string name) {
+    if (!NativeLibrary.TryLoad(name, out IntPtr handle)) {
+      return false;
+    }
+
+    NativeLibrary.Free(handle);
+    return true;
+  }
+
+  public string? ReadOsRelease() => LinuxPackages.ReadOsRelease();
 
   public async Task<ProgramResult> Run(
       ProgramStartInfo start, CancellationToken cancellationToken) {
@@ -335,6 +353,10 @@ public sealed class SystemDependencies(
           + " 'softwareupdate --install-rosetta --agree-to-license', then run lip again.");
     }
 
+    if (system.Os == HostOs.Linux) {
+      CheckLinuxLibraries();
+    }
+
     string directory = ManagedWine.BuildDirectory(_data, build);
     string executable = ManagedWine.Executable(_data, build);
     if (_fs.Directory.Exists(directory)) {
@@ -376,6 +398,49 @@ public sealed class SystemDependencies(
 
     RunTrace.Write("system", $"Installed Wine {build.Version} in {directory}");
     return executable;
+  }
+
+  /// A shared library of Linux that the Wine of lip needs: Name, the file the dynamic linker
+  /// loads; Of, what it is; Why, what fails without it; and Package, the package that has it.
+  private sealed record LinuxLibrary(string Name, string Of, string Why, LinuxPackage Package);
+
+  private static readonly LinuxLibrary _gnutls = new(
+      "libgnutls.so.30", "GnuTLS",
+      "Wine makes TLS connections with it, without which the server cannot connect to the"
+      + " services of Minecraft",
+      new("libgnutls30", "gnutls", "libgnutls30", "gnutls"));
+
+  private static readonly LinuxLibrary _fontconfig = new(
+      "libfontconfig.so.1", "Fontconfig",
+      "Wine, which finds FreeType on this system, needs it as well, and without it starts"
+      + " processes without end until the system runs out of memory",
+      new("libfontconfig1", "fontconfig", "fontconfig", "fontconfig"));
+
+  /// Checks that the system has the shared libraries the Wine of lip for Linux needs
+  /// (protocol/lip-workspace.md, "System dependencies"): GnuTLS, and Fontconfig when it has
+  /// FreeType. Throws SystemDependencyException naming those it has not, and how to install them.
+  private void CheckLinuxLibraries() {
+    List<LinuxLibrary> missing = [];
+    if (!_probe.CanLoadLibrary(_gnutls.Name)) {
+      missing.Add(_gnutls);
+    }
+
+    if (_probe.CanLoadLibrary("libfreetype.so.6") && !_probe.CanLoadLibrary(_fontconfig.Name)) {
+      missing.Add(_fontconfig);
+    }
+
+    if (missing.Count == 0) {
+      return;
+    }
+
+    RunTrace.Write(
+        "system", $"Missing libraries: {string.Join(", ", missing.Select(l => l.Name))}");
+    string libraries = string.Join("; ", missing.Select(l => $"{l.Of} ({l.Name}): {l.Why}"));
+    throw new SystemDependencyException(
+        $"lip runs the server with Wine, which needs libraries that this system does not have."
+        + $" {libraries}. "
+        + LinuxPackages.Advice(
+            _probe.ReadOsRelease(), [.. missing.Select(l => l.Package)], missing.Count > 1));
   }
 
   /// Installs the Visual C++ runtime when it is not installed: on Windows as an administrator,

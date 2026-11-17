@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Authentication;
 using System.Text;
 using System.Text.RegularExpressions;
 using Flurl.Http;
@@ -198,10 +199,13 @@ public static class ErrorReporter {
       missingFiles.UnionWith(Chain(asset).Where(IsMissingFile));
     }
 
+    // A certificate that could not be verified is not a problem of the network, which carried
+    // the answer.
+    bool certificate = chain.Any(e => e is AuthenticationException);
     return chain.SelectMany(e => HintsOf(e, e switch {
       AssetUnavailableException asset => Chain(asset).Any(IsMissingFile),
       _ => missingFiles.Contains(e),
-    }));
+    })).Where(hint => !(certificate && hint == NetworkHint));
   }
 
   private static bool IsMissingFile(Exception exception) => exception is HttpRequestException {
@@ -234,6 +238,9 @@ public static class ErrorReporter {
         break;
       case HttpRequestException { StatusCode: >= HttpStatusCode.InternalServerError }:
         yield return "The server had a problem. Try again later.";
+        break;
+      case AuthenticationException:
+        yield return CertificateHint;
         break;
       case HttpRequestException or FlurlHttpException or SocketException or TimeoutException:
         yield return NetworkHint;
@@ -277,6 +284,19 @@ public static class ErrorReporter {
   private const string NetworkHint = "lip could not reach the server. Check your network"
       + " connection. If GitHub is slow or blocked where you are, set a GitHub proxy with"
       + " 'lip config set github_proxy <URL>'.";
+
+  /// What to do when the certificate of a server could not be verified: on Linux, minimal
+  /// systems such as the images of Docker have no certificates of certificate authorities until
+  /// the package ca-certificates is installed.
+  private static string CertificateHint =>
+      "lip could not verify the certificate of the server."
+      + (OperatingSystem.IsLinux()
+          ? " When this system has no certificates of certificate authorities, install them: the"
+            + " package ca-certificates of the distribution, e.g. with 'apt-get install"
+            + " ca-certificates' or 'dnf install ca-certificates' as root."
+          : "")
+      + " When a proxy or a security program inspects HTTPS connections, make the system trust"
+      + " its certificate.";
 
   private static bool IsSharingViolation(IOException exception) =>
       OperatingSystem.IsWindows() && (exception.HResult & 0xFFFF) is 32 or 33;

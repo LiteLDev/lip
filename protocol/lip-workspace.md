@@ -61,7 +61,7 @@ The **system dependencies** are what the programs of a Windows platform need of 
 
 **Preparing** the system for a workspace whose environment has a Windows platform is, in order:
 
-1. When `lip` does not run on Windows: when the system has no Wine of `lip`, or it is macOS on arm64 and Rosetta 2 is not installed, it is a failure. When the Wine of `lip` is not installed, `lip` downloads its archive over HTTPS and extracts it into the data directory. When the SHA-256 of the archive differs from the one the version of `lip` names, it is a failure, and nothing is extracted.
+1. When `lip` does not run on Windows: when the system has no Wine of `lip`, or it is macOS on arm64 and Rosetta 2 is not installed, it is a failure. When `lip` runs on Linux, and the dynamic linker of the system ([ld.so(8)]) cannot load the shared library `libgnutls.so.30`, or can load `libfreetype.so.6` but not `libfontconfig.so.1`, it is a failure, and its message names the libraries it cannot load. When the Wine of `lip` is not installed, `lip` downloads its archive over HTTPS and extracts it into the data directory. When the SHA-256 of the archive differs from the one the version of `lip` names, it is a failure, and nothing is extracted.
 2. When the Visual C++ runtime is not installed, `lip` downloads its installer, `vc_redist.x64.exe`, over HTTPS, and runs it with the arguments `/install`, `/quiet` and `/norestart`: on Windows, as an administrator, which may ask the user to allow it ([User Account Control]); otherwise by the Wine of `lip`, as "Running programs" runs a program, `WINEPREFIX` and `WINEDEBUG` included. When the SHA-256 of the installer differs from the one the version of `lip` names, it is a failure, and the installer is not run. An exit code of the installer other than 0, 1638 and 3010 is a failure, and so is the user not allowing it to run.
 
 `lip` prepares the system:
@@ -216,4 +216,5 @@ When step 10 fails to rename the file, the implementation replaces the journal b
 [signal(7)]: https://man7.org/linux/man-pages/man7/signal.7.html
 [Rosetta 2]: https://support.apple.com/102527
 [Registry views]: https://learn.microsoft.com/windows/win32/winprog64/registry-redirector
+[ld.so(8)]: https://man7.org/linux/man-pages/man8/ld.so.8.html
 [User Account Control]: https://learn.microsoft.com/windows/security/application-security/application-control/user-account-control/

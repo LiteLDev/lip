@@ -40,6 +40,16 @@
     -->
   </PropertyGroup>
 
+  <!--
+    Without ICU, which minimal Linux systems (Docker images, cloud VMs) do not have, .NET stops
+    before lip starts. lip on Linux needs no culture data: it reads the language of its interface
+    from LC_ALL, LC_MESSAGES and LANG, and compares names ordinally. On Windows and macOS, where
+    the system always has ICU or NLS, it keeps reading the display language of the user.
+  -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
   <!-- Only a self-contained lip can be compressed: not the one built by PublishTrimmed=false. -->
   <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>

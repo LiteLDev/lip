@@ -38,6 +38,7 @@ public class WorkspaceProgramTests {
 
     return new(isWindows, platform, Root, all.GetValueOrDefault) {
       IsExecutable = _executables.Contains,
+      IsFile = _ => false,
       SystemDirectory = SystemDirectory,
       Wine = isWindows ? null : _managedWine,
     };
@@ -257,5 +258,39 @@ public class WorkspaceProgramTests {
 
     // Assert
     Assert.Empty(start.EnvironmentOverrides);
+  }
+
+  [Theory]
+  [InlineData(new[] { "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/cert.pem" },
+      "/etc/ssl/certs/ca-certificates.crt")]
+  [InlineData(new[] { "/etc/pki/tls/certs/ca-bundle.crt" }, "/etc/pki/tls/certs/ca-bundle.crt")]
+  [InlineData(new[] { "/etc/ssl/ca-bundle.pem", "/etc/ssl/cert.pem" }, "/etc/ssl/ca-bundle.pem")]
+  [InlineData(new[] { "/etc/ssl/cert.pem" }, "/etc/ssl/cert.pem")]
+  public void LinuxServer_SetsSslCertFileToTheFirstCaFileThatExists(
+      string[] existing, string expected) {
+    // Act: protocol/lip-run.md.
+    ProgramStartInfo start = WorkspaceProgram.LinuxServer(
+        Host(false, "win-x64") with { IsFile = existing.Contains });
+
+    // Assert
+    Assert.Equal(expected, start.EnvironmentOverrides["SSL_CERT_FILE"]);
+  }
+
+  [Theory]
+  [InlineData("/opt/ca.pem")]
+  [InlineData(null)]
+  public void LinuxServer_SslCertFileSetOrNoCaFile_SetsNone(string? variable) {
+    // Arrange: SSL_CERT_FILE set, with a CA file; or unset, without one.
+    ProgramHost host = variable is null
+        ? Host(false, "win-x64")
+        : Host(false, "win-x64", new() { ["SSL_CERT_FILE"] = variable }) with {
+          IsFile = _ => true,
+        };
+
+    // Act
+    ProgramStartInfo start = WorkspaceProgram.LinuxServer(host);
+
+    // Assert
+    Assert.False(start.EnvironmentOverrides.ContainsKey("SSL_CERT_FILE"));
   }
 }
