@@ -1,10 +1,8 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Flurl;
+using Lip.Core.Git;
 using Lip.Core.Infrastructure;
 using Lip.Core.Tests.Mcmod;
 using Moq;
@@ -23,11 +21,15 @@ public class SelfUpdaterTests {
   private readonly Mock<IElevatedStarter> _starter = new();
   private readonly Dictionary<string, byte[]> _downloads = [];
   private readonly List<string> _downloaded = [];
-  private object[] _releases = [];
+  private readonly Mock<IGitRemoteClient> _git = new();
+  private readonly List<GitRemoteRef> _tags = [];
 
   public SelfUpdaterTests() {
     _fs.AddDirectory(_install);
     _faults = new FaultyFileSystem(_fs);
+    _git
+        .Setup(g => g.ListRefs(It.IsAny<Url>(), It.IsAny<IEnumerable<string>>()))
+        .ReturnsAsync(() => _tags);
     _downloader
         .Setup(d => d.DownloadFile(
             It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
@@ -57,34 +59,19 @@ public class SelfUpdaterTests {
       new(
           fileSystem ?? _fs,
           _downloader.Object,
+          _git.Object,
           _starter.Object,
-          new SelfUpdateHost(_install, _cache, "win-x64", isWindows, LinuxArchives: false),
-          getReleases: _ => Task.FromResult(JsonSerializer.Serialize(_releases)));
+          new SelfUpdateHost(_install, _cache, "win-x64", isWindows, LinuxArchives: false));
 
   private static string AssetUrl(string tag, string name) =>
       $"https://github.com/LiteLDev/lip/releases/download/{tag}/{name}";
 
-  /// A release whose assets serve the given contents, with a SHA256SUMS of them unless
-  /// checksums gives its content.
-  private object AddRelease(
-      string tag, Dictionary<string, byte[]> assets, string? checksums = null, bool draft = false) {
-    Dictionary<string, byte[]> all = new(assets) {
-      ["SHA256SUMS"] = Encoding.UTF8.GetBytes(checksums ?? string.Concat(assets.Select(a =>
-          $"{Convert.ToHexStringLower(SHA256.HashData(a.Value))}  {a.Key}\n"))),
-    };
-    foreach ((string name, byte[] content) in all) {
+  /// A release: a version tag of the repository, whose assets serve the given contents.
+  private void AddRelease(string tag, Dictionary<string, byte[]> assets) {
+    foreach ((string name, byte[] content) in assets) {
       _downloads[AssetUrl(tag, name)] = content;
     }
-    object release = new {
-      tag_name = tag,
-      draft,
-      assets = all.Keys.Select(name => new {
-        name,
-        browser_download_url = AssetUrl(tag, name),
-      }).ToArray(),
-    };
-    _releases = [.. _releases, release];
-    return release;
+    _tags.Add(new GitRemoteRef($"refs/tags/{tag}", new string('a', 40), null));
   }
 
   private static byte[] Zip(Dictionary<string, string> files) {
@@ -98,8 +85,7 @@ public class SelfUpdaterTests {
     return stream.ToArray();
   }
 
-  private static LipRelease Release(string version) =>
-      new(SemVersion.Parse(version), new Dictionary<string, Url>());
+  private static LipRelease Release(string version) => new(SemVersion.Parse(version));
 
   [Fact]
   public void ReadKind_WithoutInstallJson_IsPortable() {
@@ -150,31 +136,27 @@ public class SelfUpdaterTests {
   }
 
   [Fact]
-  public void ParseReleases_IgnoresDraftsAndOtherTags() {
-    string json = JsonSerializer.Serialize(new object[] {
-      new { tag_name = "v1.0.0", draft = true, assets = Array.Empty<object>() },
-      new { tag_name = "1.1.0", draft = false, assets = Array.Empty<object>() },
-      new { tag_name = "v1.2", draft = false, assets = Array.Empty<object>() },
-      new { tag_name = 3, draft = false },
-      new { tag_name = "v0.9.0", draft = false, assets = Array.Empty<object>() },
-    });
+  public void ParseReleases_KeepsOnlyVersionTags() {
+    IReadOnlyList<LipRelease> releases = SelfUpdater.ParseReleases([
+      new("refs/tags/v0.9.0", new string('a', 40), null),
+      new("refs/tags/1.1.0", new string('b', 40), null),
+      new("refs/tags/v1.2", new string('c', 40), null),
+      new("refs/heads/v2.0.0", new string('d', 40), null),
+      new("refs/tags/v1.0.0-rc.1", new string('e', 40), new string('f', 40)),
+    ]);
 
-    IReadOnlyList<LipRelease> releases = SelfUpdater.ParseReleases(json);
-
-    Assert.Equal(["0.9.0"], releases.Select(r => r.Version.ToString()));
+    Assert.Equal(["0.9.0", "1.0.0-rc.1"], releases.Select(r => r.Version.ToString()));
   }
 
-  [Theory]
-  [InlineData("{0}  lip-1.0.0-win-x64.zip\n", true)]
-  [InlineData("{0} *lip-1.0.0-win-x64.zip\r\n", true)]
-  [InlineData("{0}  lip-1.0.0-win-x64.zip.extra\n", false)]
-  [InlineData("{0} lip-1.0.0-win-x64.zip\n", false)]
-  public void FindChecksum_ReadsSha256sumLines(string format, bool found) {
-    string hex = new('A', 64);
-    string? checksum = SelfUpdater.FindChecksum(
-        "0000  other\n" + string.Format(format, hex), "lip-1.0.0-win-x64.zip");
+  [Fact]
+  public async Task Run_ReadsTheVersionTagsOfTheRepositoryOfLip() {
+    AddRelease("v1.0.0", new() { ["lip-1.0.0-win-x64.zip"] = Zip(new() { ["lip.exe"] = "1" }) });
 
-    Assert.Equal(found ? new string('a', 64) : null, checksum);
+    await CreateUpdater().Run(SemVersion.Parse("1.0.0"), true);
+
+    _git.Verify(g => g.ListRefs(
+        It.Is<Url>(u => u.ToString() == "https://github.com/LiteLDev/lip.git"),
+        It.Is<IEnumerable<string>>(p => p.SequenceEqual(new[] { "refs/tags/v" }))));
   }
 
   [Fact]
@@ -252,32 +234,6 @@ public class SelfUpdaterTests {
   }
 
   [Fact]
-  public async Task Run_ChecksumMismatch_FailsWithoutChangingTheInstallation() {
-    _fs.AddFile(Path.Join(_install, "lip.exe"), "old");
-    AddRelease(
-        "v1.1.0",
-        new() { ["lip-1.1.0-win-x64.zip"] = Zip(new() { ["lip.exe"] = "new" }) },
-        checksums: $"{new string('0', 64)}  lip-1.1.0-win-x64.zip\n");
-
-    await Assert.ThrowsAsync<SelfUpdateException>(
-        () => CreateUpdater().Run(SemVersion.Parse("1.0.0"), false));
-
-    Assert.Equal("old", _fs.File.ReadAllText(Path.Join(_install, "lip.exe")));
-    Assert.False(_fs.File.Exists(Path.Join(_cache, "self-update", "lip-1.1.0-win-x64.zip")));
-  }
-
-  [Fact]
-  public async Task Run_ChecksumMissing_Fails() {
-    AddRelease(
-        "v1.1.0",
-        new() { ["lip-1.1.0-win-x64.zip"] = Zip(new() { ["lip.exe"] = "new" }) },
-        checksums: "");
-
-    await Assert.ThrowsAsync<SelfUpdateException>(
-        () => CreateUpdater().Run(SemVersion.Parse("1.0.0"), false));
-  }
-
-  [Fact]
   public async Task Run_Msi_StartsMsiexecElevated() {
     _fs.AddFile(Path.Join(_install, "install.json"), "{\"kind\":\"msi\"}");
     AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64.msi"] = [4] });
@@ -301,51 +257,30 @@ public class SelfUpdaterTests {
   }
 
   [Fact]
-  public async Task Run_NoUpdateAsset_FailsBeforeDownloading() {
+  public async Task Run_NoUpdateAsset_FailsWithoutChangingTheInstallation() {
+    _fs.AddFile(Path.Join(_install, "lip.exe"), "old");
     AddRelease("v1.1.0", new() { ["lip-1.1.0-linux-x64.tar.xz"] = [1] });
 
-    await Assert.ThrowsAsync<SelfUpdateException>(
+    await Assert.ThrowsAsync<HttpRequestException>(
         () => CreateUpdater().Run(SemVersion.Parse("1.0.0"), false));
-    Assert.Empty(_downloaded);
+
+    Assert.Equal("old", _fs.File.ReadAllText(Path.Join(_install, "lip.exe")));
+    Assert.Equal([AssetUrl("v1.1.0", "lip-1.1.0-win-x64.zip")], _downloaded);
   }
 
   [Fact]
-  public async Task Run_DownloadsTheChecksumsDirectlyAndTheUpdateMaybeThroughTheProxy() {
+  public async Task Run_DownloadsOnlyTheUpdateAssetFromItsReleaseUrl() {
     AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64.zip"] = Zip(new() { ["lip.exe"] = "new" }) });
 
     await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
 
-    // protocol/lip-self-update.md, "Terms": SHA256SUMS directly, other assets through
-    // github_proxy, which the downloader applies.
-    _downloader.Verify(d => d.Download(
-        It.Is<Url>(u => u.ToString() == AssetUrl("v1.1.0", "SHA256SUMS")),
-        It.IsAny<Action<byte[], Url>?>(), true), Times.Once);
+    // protocol/lip-self-update.md, "Terms": through github_proxy, which the downloader applies.
     _downloader.Verify(d => d.DownloadFile(
         It.Is<Url>(u => u.ToString() == AssetUrl("v1.1.0", "lip-1.1.0-win-x64.zip")),
         It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()), Times.Once);
-  }
-
-  [Fact]
-  public async Task Run_ProxyServesAnotherFile_ItIsRejectedSoThatGithubIsTried() {
-    AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64.zip"] = Zip(new() { ["lip.exe"] = "new" }) });
-    string asset = AssetUrl("v1.1.0", "lip-1.1.0-win-x64.zip");
-    _downloader
-        .Setup(d => d.DownloadFile(
-            It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
-        .Returns((Url url, IFileInfo destination, Action<Url>? validate) => {
-          // As the downloader does: through the proxy, then directly when validate rejects it.
-          _fs.File.WriteAllBytes(destination.FullName, [1, 2, 3]);
-          Assert.Throws<SelfUpdateException>(
-              () => validate!(Url.Parse("https://proxy.example/" + url.Path)));
-          _fs.File.WriteAllBytes(destination.FullName, Serve(url));
-          validate!(url);
-          return Task.CompletedTask;
-        });
-
-    SelfUpdateResult result = await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
-
-    Assert.Equal(SelfUpdateOutcome.Replaced, result.Outcome);
-    Assert.Contains(asset, _downloaded);
+    _downloader.Verify(
+        d => d.Download(It.IsAny<Url>(), It.IsAny<Action<byte[], Url>?>(), It.IsAny<bool>()),
+        Times.Never);
   }
 
   [Fact]

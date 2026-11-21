@@ -35,11 +35,11 @@ The **value** of a configuration key is the value the file gives it; when the fi
 
 The configuration keys of the user scope are `github_proxy` and `language`, both without a default.
 
-`github_proxy` says how `lip` sends network requests to GitHub (git repositories and downloads):
+`github_proxy` says how `lip` sends **GitHub requests**: its HTTPS requests whose URL has the host `github.com`, or a host ending with `.github.com` or `.githubusercontent.com` (git repositories, downloads and the other requests to GitHub that this protocol names):
 
-- A URI: a URI prefix through which `lip` sends them; a request that fails through it is sent to GitHub directly.
-- Empty: `lip` sends them to GitHub directly.
-- No value: `lip` sends them to GitHub directly. `github_proxy` is then **not configured**; with any value, it is configured.
+- A URI: a GitHub request for the URL U is sent to the URL that is the URI, followed by `/` unless it ends with `/`, followed by U; a request that fails through it is sent to U directly. A URI that ends with `/github.com` or `/https://github.com`, optionally followed by `/`, is read without that ending.
+- Empty: `lip` sends them directly.
+- No value: `lip` sends them directly. `github_proxy` is then **not configured**; with any value, it is configured.
 
 `language` is the language of the interface ([lip-tui(1), "Language"](lip-tui.md#language)): English with `en`, Simplified Chinese with `zh-Hans`, and Traditional Chinese with `zh-Hant`.
 

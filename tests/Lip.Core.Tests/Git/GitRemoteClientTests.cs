@@ -95,8 +95,10 @@ public class GitRemoteClientTests {
     await client.ListRefs(new Url("https://github.com/LiteLDev/LeviLamina.git"), []);
 
     httpTest.ShouldHaveCalled(
-        "https://proxy.example.com/gh/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack");
-    httpTest.ShouldHaveCalled("https://proxy.example.com/gh/LiteLDev/LeviLamina.git/git-upload-pack");
+        "https://proxy.example.com/gh/https://github.com/LiteLDev/LeviLamina.git/info/refs"
+            + "?service=git-upload-pack");
+    httpTest.ShouldHaveCalled(
+        "https://proxy.example.com/gh/https://github.com/LiteLDev/LeviLamina.git/git-upload-pack");
   }
 
   [Fact]

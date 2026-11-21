@@ -218,10 +218,7 @@ public class FileDownloader(IUserInteraction userInteraction, Url? githubProxy =
     };
   }
 
-  private static bool IsGitHub(Url url) {
-    string host = url.Host.ToLowerInvariant();
-    return host is "github.com" or "codeload.github.com"
-        || host.EndsWith(".githubusercontent.com", StringComparison.Ordinal)
-        || url.Path.Contains("github.com/", StringComparison.OrdinalIgnoreCase);
-  }
+  private static bool IsGitHub(Url url) =>
+      GithubProxy.IsGithub(url)
+      || url.Path.Contains("github.com/", StringComparison.OrdinalIgnoreCase);
 }

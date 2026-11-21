@@ -37,7 +37,10 @@ public class GithubProbeTests {
     // Assert
     Assert.Null(failure);
     Assert.Equal(
-        ["https://proxy.example/gh/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack"],
+        [
+          "https://proxy.example/gh/https://github.com/LiteLDev/lip.git/info/refs"
+              + "?service=git-upload-pack",
+        ],
         sent);
   }
 

@@ -61,11 +61,11 @@ When the user cancels before the last choice, or when a step fails, the steps af
 
 When the interface starts and `github_proxy` is not configured ([config.toml(5), "User configuration"](config.toml.md#user-configuration)), `lip` checks whether it reaches GitHub, while the interface goes on. Reading the configuration for this writes no file, as in a dry run ([lip(1), "Dry run"](lip.md#dry-run)).
 
-The **reachability check** is an HTTPS GET of `https://github.com/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack`, following redirects. It succeeds when the headers of a response whose status is 2xx arrive within 10 seconds of the start of the request; otherwise it fails. `lip` writes nothing that it reads from the response to a file. The check is made at most once per start of the interface, and only when `github_proxy` is not configured.
+The **reachability check** is an HTTPS GET of `https://github.com/LiteLDev/lip.git/info/refs?service=git-upload-pack`, sent directly, following redirects. It succeeds when the headers of a response whose status is 2xx arrive within 10 seconds of the start of the request; otherwise it fails. `lip` writes nothing that it reads from the response to a file. The check is made at most once per start of the interface, and only when `github_proxy` is not configured.
 
 When the check fails, the interface asks the user how `lip` reaches GitHub, offering:
 
-- **a proxy**: the user enters a URI. `lip` makes the check through it, as for a `github_proxy` of that value: the request is sent to the URL that the proxy makes of it, and is not sent to GitHub directly when it fails. When that check succeeds, or when it fails and the user then asks to keep the proxy, `lip` sets `github_proxy` to the URI, as `lip config set github_proxy <URI>` does ([lip-config(1)](lip-config.md)).
+- **a proxy**: the user enters a URI. `lip` makes the check through it, as for a `github_proxy` of that value: the request is sent to the URL that the proxy makes of it, and is not sent directly when it fails. When that check succeeds, or when it fails and the user then asks to keep the proxy, `lip` sets `github_proxy` to the URI, as `lip config set github_proxy <URI>` does ([lip-config(1)](lip-config.md)).
 - **direct**: `lip` sets `github_proxy` to the empty string, as `lip config set github_proxy ""` does; `github_proxy` is then configured, and the interface does not ask again.
 - **later**: `lip` changes nothing, and asks again the next time the interface starts and the check fails.
 
