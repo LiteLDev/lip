@@ -12,7 +12,7 @@ namespace Lip.Core.Tests.Infrastructure;
 public class FileDownloaderTests {
   private const string GithubUrl = "https://github.com/owner/repo/releases/download/v1/a.zip";
   private const string ProxiedUrl =
-      "https://proxy.example/gh/owner/repo/releases/download/v1/a.zip";
+      "https://proxy.example/gh/https://github.com/owner/repo/releases/download/v1/a.zip";
 
   private static readonly Url s_proxy = Url.Parse("https://proxy.example/gh");
 

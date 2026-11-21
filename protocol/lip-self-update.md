@@ -18,8 +18,8 @@ lip self-update [--check] [-h | --help]
 - **installation directory**: The directory that holds the executable file of the running `lip`.
 - **installation kind**: How `lip` was installed: `"msi"` (by the Windows Installer package `lip-<version>-<platform>.msi`), or `"portable"` (from a portable archive, or any other way). It is the member `kind` of `install.json` in the installation directory (FILES); without that file, it is `"portable"`.
 - **platform of lip**: The platform ([lip-package(7)](lip-package.md)) of the system `lip` runs on: `win-`, `linux-` or `osx-`, followed by `x64` or `arm64`, by the operating system and the processor architecture of the running process. On another system, `lip self-update` fails before it changes anything.
-- **release**: An element of the JSON array in the body of a successful response to an HTTPS GET of `https://api.github.com/repos/LiteLDev/lip/releases?per_page=100`, whose member `draft` is `false` and whose member `tag_name` is `v` followed by a version ([SemVer]); that version is the version of the release. Elements of any other form are ignored. The request is sent to GitHub directly, whatever `github_proxy` ([config.toml(5)]) is.
-- **asset**: An element of the member `assets` of a release, named by its member `name`. It is downloaded with an HTTPS GET of its member `browser_download_url`, following redirects: the asset `SHA256SUMS` directly, and any other asset through `github_proxy` as [config.toml(5)] defines.
+- **release**: A version tag of the remote repository `github.com/LiteLDev/lip` ([lip-package(7), "Remote repositories"](lip-package.md#remote-repositories)), whose refs `lip` reads as it reads those of any remote repository; the version of the tag is the version of the release. Tags of any other form are ignored.
+- **asset**: A file of a release of version V, named N. It is downloaded with an HTTPS GET of `https://github.com/LiteLDev/lip/releases/download/vV/N`, following redirects, through `github_proxy` as [config.toml(5)] defines.
 - **latest release**: Of the releases whose version is not a pre-release version, or of all releases when the running version is a pre-release version, the one with the highest version by SemVer precedence.
 
 ### Checking
@@ -39,11 +39,10 @@ Otherwise, without `--check`, `lip self-update` updates `lip` to the latest rele
    | `"portable"` on Linux | `lip-V-<platform>.tar.xz` |
    | `"portable"` on other systems | `lip-V-<platform>.zip` |
 
-   where `<platform>` is the platform of lip. When the latest release has no update asset or no asset named `SHA256SUMS`, it fails. When the installation kind is `"msi"` and `lip` does not run on Windows, it fails.
+   where `<platform>` is the platform of lip. When the installation kind is `"msi"` and `lip` does not run on Windows, it fails.
 3. It deletes the directory `self-update` of the cache directory ([lip-userspace(7)]) with every file of it that it can delete, and creates that directory.
-4. It downloads the asset `SHA256SUMS`, a text file of lines `<hex>  <name>` (two spaces, or a space and `*`): `<hex>` is the lowercase or uppercase hexadecimal SHA-256 of the asset `<name>`.
-5. It downloads the update asset to a file of its name in `self-update`, written atomically. When `SHA256SUMS` has no line for the update asset, or the SHA-256 of the file is not the one of its line, it deletes the file and fails.
-6. It installs the update asset, by the installation kind:
+4. It downloads the update asset to a file of its name in `self-update`, written atomically. When the download fails, among others because the latest release has no update asset, it fails.
+5. It installs the update asset, by the installation kind:
    - `"msi"`: it starts `msiexec` elevated, as administrator, with the arguments `/i`, the path of the file, `/qn` and `/norestart`.
    - `"portable"`: it extracts the archive to the directory `self-update/lip-V-<platform>`. Then, for each regular file F of the archive, at the path P relative to the root of the archive, it renames the file at P in the installation directory, when one exists, to `P.old`, replacing any file of that name; and writes F atomically to P in the installation directory, creating its parent directories. When a step fails, it renames each file it renamed to `P.old` back to P, deleting the file written in its place and any `P.tmp` file it wrote, and fails. Once every file is written, it deletes each `P.old` file that it can delete, and the directory `self-update`.
 
@@ -51,7 +50,7 @@ Otherwise, without `--check`, `lip self-update` updates `lip` to the latest rele
 
 Files of the installation directory that are not in the archive are kept.
 
-A failure in steps 1 to 5 changes no file of the installation directory.
+A failure in steps 1 to 4 changes no file of the installation directory.
 
 ### Starting
 

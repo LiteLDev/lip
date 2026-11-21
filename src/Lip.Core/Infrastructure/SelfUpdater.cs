@@ -3,11 +3,10 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text.Json;
 using Flurl;
-using Flurl.Http;
 using Lip.Core.Git;
+using Lip.Core.Mcmod;
 using Semver;
 
 namespace Lip.Core.Infrastructure;
@@ -18,8 +17,8 @@ public enum InstallationKind {
   Msi,
 }
 
-/// A release of lip: its version and its assets, by name, with their download URLs.
-public sealed record LipRelease(SemVersion Version, IReadOnlyDictionary<string, Url> Assets);
+/// A release of lip: a version tag of its repository (protocol/lip-self-update.md, "Terms").
+public sealed record LipRelease(SemVersion Version);
 
 /// Why lip self-update failed, other than the network or the file system.
 public sealed class SelfUpdateException(string message, Exception? innerException = null)
@@ -113,13 +112,14 @@ public sealed record SelfUpdateHost(
 /// installs it, by the installer that installed lip, or by replacing the files of a portable
 /// installation directory.
 public sealed class SelfUpdater {
-  /// The releases of lip (protocol/lip-self-update.md, "Terms").
-  public static readonly Url DefaultReleasesUrl =
-      "https://api.github.com/repos/LiteLDev/lip/releases?per_page=100";
+  /// The repository of lip, whose version tags are its releases (protocol/lip-self-update.md,
+  /// "Terms").
+  public static readonly Url DefaultRepository = "https://github.com/LiteLDev/lip";
+
+  /// The ref prefix of the version tags of the repository.
+  public const string VersionTagRefPrefix = "refs/tags/v";
 
   public const string InstallFileName = "install.json";
-
-  public const string ChecksumsAssetName = "SHA256SUMS";
 
   private const string _stagingDirectoryName = "self-update";
 
@@ -127,26 +127,26 @@ public sealed class SelfUpdater {
 
   private readonly IFileSystem _fileSystem;
   private readonly IFileDownloader _downloader;
+  private readonly IGitRemoteClient _git;
   private readonly IElevatedStarter _elevatedStarter;
   private readonly SelfUpdateHost _host;
-  private readonly Url _releasesUrl;
-  private readonly Func<Url, Task<string>> _getReleases;
+  private readonly Url _repository;
   private readonly Func<string, string, Task> _extractTarXz;
 
   public SelfUpdater(
       IFileSystem fileSystem,
       IFileDownloader downloader,
+      IGitRemoteClient git,
       IElevatedStarter elevatedStarter,
       SelfUpdateHost host,
-      Url? releasesUrl = null,
-      Func<Url, Task<string>>? getReleases = null,
+      Url? repository = null,
       Func<string, string, Task>? extractTarXz = null) {
     _fileSystem = fileSystem;
     _downloader = downloader;
+    _git = git;
     _elevatedStarter = elevatedStarter;
     _host = host;
-    _releasesUrl = releasesUrl ?? DefaultReleasesUrl;
-    _getReleases = getReleases ?? GetReleases;
+    _repository = repository ?? DefaultRepository;
     _extractTarXz = extractTarXz ?? ExtractTarXz;
   }
 
@@ -159,9 +159,10 @@ public sealed class SelfUpdater {
           + " Linux and macOS on x64 and ARM64.");
     }
 
-    RunTrace.Write("self-update", $"reading the releases at {_releasesUrl}");
-    string json = await _getReleases(_releasesUrl);
-    LipRelease? latest = FindLatest(ParseReleases(json), running);
+    Url gitUrl = Url.Parse(_repository.ToString().TrimEnd('/') + ".git");
+    RunTrace.Write("self-update", $"reading the releases of lip, the version tags of {gitUrl}");
+    IReadOnlyList<GitRemoteRef> refs = await _git.ListRefs(gitUrl, [VersionTagRefPrefix]);
+    LipRelease? latest = FindLatest(ParseReleases(refs), running);
     if (latest is null || SemVersion.ComparePrecedence(latest.Version, running) <= 0) {
       return new(SelfUpdateOutcome.UpToDate, latest?.Version);
     }
@@ -180,43 +181,16 @@ public sealed class SelfUpdater {
     }
 
     string assetName = GetAssetName(kind, latest.Version, _host.Platform, _host.LinuxArchives);
-    if (!latest.Assets.TryGetValue(assetName, out Url? assetUrl)) {
-      throw new SelfUpdateException(
-          $"The release {latest.Version} of lip has no file {assetName}. Try again later, or"
-          + " install it from https://github.com/LiteLDev/lip/releases yourself.");
-    }
-    if (!latest.Assets.TryGetValue(ChecksumsAssetName, out Url? checksumsUrl)) {
-      throw new SelfUpdateException(
-          $"The release {latest.Version} of lip has no file {ChecksumsAssetName} to verify the"
-          + " download with. Try again later, or install it from"
-          + " https://github.com/LiteLDev/lip/releases yourself.");
-    }
+    Url assetUrl = AssetUrl(latest.Version, assetName);
 
     string staging = _fileSystem.Path.Join(_host.CacheDirectory, _stagingDirectoryName);
     ResetStaging(staging);
 
-    // Directly from GitHub, never through github_proxy: the checksums guard against a proxy that
-    // serves something else.
-    byte[] checksums = await _downloader.Download(checksumsUrl, direct: true);
-    string? expected = FindChecksum(System.Text.Encoding.UTF8.GetString(checksums), assetName);
-
+    // Through github_proxy, then directly when the proxy fails, as the downloader does.
     string assetPath = _fileSystem.Path.Join(staging, assetName);
     string temporary = assetPath + ".tmp";
-    // Through github_proxy, then directly when what the proxy serves is not the asset; what
-    // GitHub serves is verified below.
-    await _downloader.DownloadFile(
-        assetUrl,
-        _fileSystem.FileInfo.New(temporary),
-        downloadUrl => {
-          if (downloadUrl.ToString() != assetUrl.ToString() && expected is not null
-              && Sha256Of(temporary) != expected) {
-            throw new SelfUpdateException(
-                $"The download of {assetName} from {downloadUrl} is not the file that"
-                + $" {ChecksumsAssetName} of the release names.");
-          }
-        });
+    await _downloader.DownloadFile(assetUrl, _fileSystem.FileInfo.New(temporary));
     _fileSystem.File.Move(temporary, assetPath, overwrite: true);
-    VerifyChecksum(assetPath, assetName, expected);
 
     switch (kind) {
       case InstallationKind.Msi:
@@ -232,57 +206,17 @@ public sealed class SelfUpdater {
     }
   }
 
-  /// The releases in the body of the response of the releases URL: the elements that are not
-  /// drafts and whose tag is "v" followed by a version; the others are ignored.
-  public static IReadOnlyList<LipRelease> ParseReleases(string json) {
-    List<LipRelease> releases = [];
-    JsonDocument document;
-    try {
-      document = JsonDocument.Parse(json);
-    }
-    catch (JsonException ex) {
-      throw new SelfUpdateException(
-          "GitHub answered the request for the releases of lip with something that is not"
-          + " JSON. Try again later.", ex);
-    }
+  /// The releases among the refs of the repository: its version tags; the other refs are
+  /// ignored.
+  public static IReadOnlyList<LipRelease> ParseReleases(IEnumerable<GitRemoteRef> refs) =>
+      [.. refs
+          .Select(gitRef => ArchiveProvider.ParseVersionTag(gitRef.Name))
+          .OfType<SemVersion>()
+          .Select(version => new LipRelease(version))];
 
-    using (document) {
-      if (document.RootElement.ValueKind != JsonValueKind.Array) {
-        throw new SelfUpdateException(
-            "GitHub answered the request for the releases of lip with something that is not a"
-            + " list of releases. Try again later.");
-      }
-
-      foreach (JsonElement element in document.RootElement.EnumerateArray()) {
-        if (element.ValueKind != JsonValueKind.Object
-            || !element.TryGetProperty("draft", out JsonElement draft)
-            || draft.ValueKind != JsonValueKind.False
-            || !element.TryGetProperty("tag_name", out JsonElement tag)
-            || tag.ValueKind != JsonValueKind.String
-            || tag.GetString() is not ['v', .. string versionText]
-            || !SemVersion.TryParse(versionText, SemVersionStyles.Strict, out SemVersion? version)) {
-          continue;
-        }
-
-        Dictionary<string, Url> assets = new(StringComparer.Ordinal);
-        if (element.TryGetProperty("assets", out JsonElement assetList)
-            && assetList.ValueKind == JsonValueKind.Array) {
-          foreach (JsonElement asset in assetList.EnumerateArray()) {
-            if (asset.ValueKind == JsonValueKind.Object
-                && asset.TryGetProperty("name", out JsonElement name)
-                && name.ValueKind == JsonValueKind.String
-                && asset.TryGetProperty("browser_download_url", out JsonElement url)
-                && url.ValueKind == JsonValueKind.String
-                && Uri.TryCreate(url.GetString(), UriKind.Absolute, out _)) {
-              assets[name.GetString()!] = Url.Parse(url.GetString());
-            }
-          }
-        }
-        releases.Add(new(version, assets));
-      }
-    }
-    return releases;
-  }
+  /// The URL of the asset of the release of version.
+  public Url AssetUrl(SemVersion version, string name) =>
+      Url.Parse($"{_repository.ToString().TrimEnd('/')}/releases/download/v{version}/{name}");
 
   /// The latest release (protocol/lip-self-update.md, "Terms"): the release of the highest
   /// precedence, skipping pre-release versions unless the running version is one.
@@ -331,44 +265,6 @@ public sealed class SelfUpdater {
         InstallationKind.Msi => $"lip-{version}-{platform}.msi",
         _ => $"lip-{version}-{platform}{(linuxArchives ? ".tar.xz" : ".zip")}",
       };
-
-  /// The lowercase hexadecimal SHA-256 of the asset in a SHA256SUMS file, or null when it has no
-  /// line for the asset. A line is "&lt;hex&gt;  &lt;name&gt;" or "&lt;hex&gt; *&lt;name&gt;".
-  public static string? FindChecksum(string checksums, string assetName) {
-    foreach (string rawLine in checksums.Split('\n')) {
-      string line = rawLine.TrimEnd('\r');
-      if (line.Length < 66 || line[64] != ' ' || line[65] is not (' ' or '*')) {
-        continue;
-      }
-      string hex = line[..64];
-      if (line[66..] == assetName && hex.All(Uri.IsHexDigit)) {
-        return hex.ToLowerInvariant();
-      }
-    }
-    return null;
-  }
-
-  /// Fails, deleting the file, when its SHA-256 is not the expected one.
-  private void VerifyChecksum(string path, string assetName, string? expected) {
-    string actual = Sha256Of(path);
-    if (actual == expected) {
-      return;
-    }
-
-    _fileSystem.File.Delete(path);
-    throw new SelfUpdateException(expected is null
-        ? $"{ChecksumsAssetName} of the release has no line for {assetName}, so the download"
-          + " cannot be verified. Try again later."
-        : $"The download of {assetName} is corrupt: its SHA-256 is {actual}, but"
-          + $" {ChecksumsAssetName} of the release says {expected}. Try again; if a GitHub proxy"
-          + " is set, try without it ('lip config delete github_proxy').");
-  }
-
-  /// The lowercase hexadecimal SHA-256 of the file.
-  private string Sha256Of(string path) {
-    using Stream stream = _fileSystem.File.OpenRead(path);
-    return Convert.ToHexStringLower(SHA256.HashData(stream));
-  }
 
   /// Deletes what an earlier lip self-update left in the staging directory, as far as it can (an
   /// installer that still runs cannot be deleted), and creates the directory.
@@ -546,29 +442,6 @@ public sealed class SelfUpdater {
     }
     catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
       RunTrace.Write("self-update", $"could not delete {path}: {ex.Message}");
-    }
-  }
-
-  /// The body of a GET of the GitHub API, which requires a User-Agent.
-  private static async Task<string> GetReleases(Url url) {
-    try {
-      return await url
-          .WithHeader("User-Agent", "lip")
-          .WithHeader("Accept", "application/vnd.github+json")
-          .GetStringAsync();
-    }
-    catch (FlurlHttpException ex) when (ex.StatusCode is int status) {
-      throw new HttpRequestException(
-          $"Could not read the releases of lip from {url}: GitHub answered HTTP {status}."
-          + (status is 403 or 429
-              ? " GitHub limits how many requests can be sent; wait an hour and try again."
-              : " Try again later."),
-          ex,
-          (System.Net.HttpStatusCode)status);
-    }
-    catch (FlurlHttpException ex) {
-      throw new HttpRequestException(
-          $"Could not read the releases of lip from {url}: the connection failed.", ex);
     }
   }
 }

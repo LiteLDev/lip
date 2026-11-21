@@ -5,8 +5,8 @@ using Lip.Core.Git;
 namespace Lip.Core.Infrastructure;
 
 /// The reachability check of GitHub (protocol/lip-tui.md, "GitHub reachability"): an HTTPS GET of
-/// the references of the loader source, directly or through a GitHub proxy, which succeeds when a
-/// response of status 2xx arrives in time.
+/// the references of the repository of lip, directly or through a GitHub proxy, which succeeds
+/// when a response of status 2xx arrives in time.
 ///
 /// send sends a GET of a URL, following redirects, and returns the status of the response once
 /// its headers arrive; it throws when no response arrives, and stops when the token is cancelled.
@@ -16,7 +16,7 @@ public sealed class GithubProbe(
     Func<Url, CancellationToken, Task<int>>? send = null, TimeSpan? timeout = null) {
   /// The URL of the request of the check.
   public const string ProbeUrl =
-      "https://github.com/LiteLDev/LeviLamina.git/info/refs?service=git-upload-pack";
+      "https://github.com/LiteLDev/lip.git/info/refs?service=git-upload-pack";
 
   /// How long the check waits for the response (protocol/lip-tui.md, "GitHub reachability").
   public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);

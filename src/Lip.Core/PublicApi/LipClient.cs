@@ -384,24 +384,25 @@ public sealed class LipClient {
   }
 
   /// Checks for, or installs, the latest release of lip newer than running
-  /// (protocol/lip-self-update.md). In a Debug build only, the releases are read from
-  /// LIP_SELF_UPDATE_RELEASES_URL when it is set, to test lip against a fake release; a Release
-  /// build, which is what lip is released as, has no such hook.
+  /// (protocol/lip-self-update.md). In a Debug build only, the releases are those of the
+  /// repository at LIP_SELF_UPDATE_REPOSITORY when it is set, to test lip against a fake
+  /// release; a Release build, which is what lip is released as, has no such hook.
   public async Task<SelfUpdateResult> SelfUpdate(Semver.SemVersion running, bool checkOnly) {
     string? githubProxyValue = await _configService.GetGithubProxy();
     Url? githubProxy = string.IsNullOrEmpty(githubProxyValue) ? null : Url.Parse(githubProxyValue);
 #if DEBUG
-    string? releasesUrl =
-        Invocation.Current.GetEnvironmentVariable("LIP_SELF_UPDATE_RELEASES_URL");
+    string? repository =
+        Invocation.Current.GetEnvironmentVariable("LIP_SELF_UPDATE_REPOSITORY");
 #else
-    string? releasesUrl = null;
+    string? repository = null;
 #endif
     SelfUpdater updater = new(
         _fileSystem,
         new FileDownloader(_userInteraction, githubProxy),
+        new GitRemoteClient(githubProxy),
         new ShellElevatedStarter(),
         SelfUpdateHost.Current,
-        string.IsNullOrEmpty(releasesUrl) ? null : Url.Parse(releasesUrl));
+        string.IsNullOrEmpty(repository) ? null : Url.Parse(repository));
     SelfUpdateResult result = await updater.Run(running, checkOnly);
     if (result.Outcome is SelfUpdateOutcome.Replaced or SelfUpdateOutcome.InstallerStarted) {
       Invocation.Current.LipReplaced = true;

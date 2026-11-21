@@ -85,7 +85,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # lip self-update verifies what it downloads against SHA256SUMS (protocol/lip-self-update.md).
+      # SHA256SUMS lets people verify what they download; lip self-update does not read it.
       - working-directory: dist
         run: |
           sha256sum -- * > ../SHA256SUMS
