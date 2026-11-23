@@ -416,8 +416,28 @@ public partial class McmodService(
             Variant = p.Variant,
             Source = p.Source,
             Commit = p.Commit,
+            Needs = Needs(p, lockFile!),
           }),
     ];
+  }
+
+  /// The sources of the dependencies of the entry of the installed package for the environment
+  /// of the state file; none when the side, the package file or the entry cannot be read.
+  private static IReadOnlyList<Ref> Needs(LockedPackage package, LockFile lockFile) {
+    if (!McmodSideExtensions.TryParse(lockFile.Side, out McmodSide side)) {
+      return [];
+    }
+
+    try {
+      return [
+        .. PackageFileParser.Parse(package.Manifest)
+            .SelectEntry(package.Variant, new LipEnvironment(side, lockFile.Platform))
+            ?.Dependencies.Select(d => d.Source) ?? [],
+      ];
+    }
+    catch (PackageFormatException) {
+      return [];
+    }
   }
 
   /// lip run (protocol/lip-run.md): takes the server lock and holds it until it returns; takes the

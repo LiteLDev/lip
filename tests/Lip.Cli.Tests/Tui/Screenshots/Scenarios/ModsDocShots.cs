@@ -75,15 +75,12 @@ public sealed class ModsDocShots(ShotRun run) {
 
     using (Shot shot = run.Start(Worlds.Server(language, height: 18))) {
       await shot.Tui.GoTo(PageId.Mods);
-      await shot.Tui.WaitFor(World.Loader);
+      await shot.Tui.WaitFor(CommonText.NoMods);
       shot.Tui.Press(ConsoleKey.DownArrow);
       await shot.Tui.WaitFor(ModsText.GetModsDetail);
       await shot.Capture(
           "mods-06-no-mods",
           Note.Box(At.Row(CommonText.GetMods)),
-          Note.Callout(
-            1, At.Row(World.Game).To(At.Row(World.Loader)),
-              shot.T("The game and its loader", "游戏和加载器", "遊戲和載入器"), Side.Right),
           Note.Keys("Enter"));
     }
   }
@@ -391,22 +388,6 @@ public sealed class ModsDocShots(ShotRun run) {
         Note.Box(At.Text(CommonText.OnlyRecordChanges)));
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone(CommonText.OnlyRecordChanges);
-
-    // The game and the loader lead to the setup of the Server page.
-    tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor(ModsText.GameDetail);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.ChangeVersions);
-    await shot.Capture(
-        "mods-32-game-menu",
-        Note.Focus(At.Panel(World.Game)),
-        Note.Focus(At.Row(ModsText.GameDetail)),
-        Note.Box(At.Row(ModsText.ChangeVersions)));
-
-    // The catalogue has no entry for the game.
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.NotInCatalogue);
-    await shot.Capture("mods-33-not-in-catalogue", Note.Focus(At.Panel(ModsText.Details)));
   }
 
   [ShotTheory]
@@ -435,7 +416,7 @@ public sealed class ModsDocShots(ShotRun run) {
         Note.Keys("Enter"));
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone("✓ " + CommonText.Done);
-    await tui.WaitFor(ModsText.Installed(6));
+    await tui.WaitFor(ModsText.Installed(4));
 
     // While the server runs, the page says so, and the action rows are disabled.
     // The highlight is on the mod that took the row of the one uninstalled, the second.

@@ -21,7 +21,10 @@ namespace Lip.Cli.Tests.Tui.Screenshots;
 /// of the screenshots have none, so lip cannot plan to uninstall or update such a package.
 public sealed record Installed(
     string Id, string Version, bool Explicit = true, string Variant = "", bool Mod = false,
-    params string[] Files);
+    params string[] Files) {
+  /// The packages that its package file names as dependencies.
+  public IReadOnlyList<string> Deps { get; init; } = [];
+}
 
 /// What the interface of a scenario finds: a server of a made-up user on a made-up machine,
 /// the same in every run and on every machine that makes the screenshots. Nothing of it is
@@ -224,13 +227,16 @@ public sealed class World {
         ? ""
         : $"\"commit\": \"{Commit}\", ";
     string files = string.Join(", ", package.Files.Select(file => $"\"{file}\""));
+    string deps = package.Deps.Count == 0
+        ? ""
+        : $", \"deps\": {{ {string.Join(", ", package.Deps.Select(d => $"\"{d}\": \"*\""))} }}";
     string assets = package.Mod
         ? """, "assets": [ { "type": "mcmod", "urls": ["https://example.com/mod.zip"] } ]"""
         : "";
     return $$"""
         { "manifest": { "format": 4, "id": "{{package.Id}}", "version": "{{package.Version}}",
             "variants": { "{{package.Variant}}": [
-              { "side": "server", "platform": "win-x64"{{assets}} } ] } },
+              { "side": "server", "platform": "win-x64"{{deps}}{{assets}} } ] } },
           "variant": "{{package.Variant}}",
           "explicit": {{(package.Explicit ? "true" : "false")}},
           "ref": "{{Source(package)}}", {{commit}}"files": [{{files}}] }

@@ -79,18 +79,23 @@ public sealed class ModsPageTests {
   /// The start of a sentence of the details area, which is wrapped where the page is narrow.
   private static string StartOf(string sentence) => sentence[..Math.Min(sentence.Length, 10)];
 
-  /// An installed package without files. All but the game are of a commit of a repository,
-  /// and of its version tags unless a source is given; a source that is no repository has no
-  /// commit.
+  /// An installed package without files, which needs the packages of deps. All but the game
+  /// are of a commit of a repository, and of its version tags unless a source is given; a
+  /// source that is no repository has no commit.
   private static string Package(
-      string id, string version, bool isExplicit, string? source = null) => $$"""
+      string id, string version, bool isExplicit, string? source = null,
+      params string[] deps) => $$"""
       { "manifest": { "format": 4, "id": "{{id}}", "version": "{{version}}",
-          "variants": { "": [ { "side": "server", "platform": "win-x64" } ] } },
+          "variants": { "": [ { "side": "server", "platform": "win-x64", "deps": { {{Deps(deps)}} } } ] } },
         "variant": "", "explicit": {{(isExplicit ? "true" : "false")}},
         "ref": "{{source ?? (id == Game ? $"{id}@{version}" : id)}}", {{(
             id == Game || source?.Contains("://", StringComparison.Ordinal) == true
                 ? "" : CommitField)}}"files": [] }
       """;
+
+  /// The members of "deps" that need any version of each package.
+  private static string Deps(string[] deps) =>
+      string.Join(", ", deps.Select(d => $"\"{d}\": \"*\""));
 
   /// A folder of the file system of the test, which a package was installed from.
   private static readonly string _local =
@@ -104,7 +109,7 @@ public sealed class ModsPageTests {
   /// game.
   private static readonly string _sourced = State(
       Package(Lib, "2.0.0", false), Package(Game, "1.21.0", true),
-      Package(Alpha, "1.2.0", true, $"{Alpha}@branch:main"),
+      Package(Alpha, "1.2.0", true, $"{Alpha}@branch:main", Lib),
       Package(Beta, "0.3.1", true, BetaUrl),
       Package(Gamma, "0.1.0", true, Ref.FromFile(_local).ToString()),
       Package(Delta, "3.0.0", true, $"{Delta}@3.0.0"));
@@ -114,10 +119,11 @@ public sealed class ModsPageTests {
         "packages": [ {{string.Join(", ", packages)}} ] }
       """;
 
-  /// A dependency, the game and two mods, in an order that is not that of the page.
+  /// A dependency, the game and two mods, one of which needs the dependency, in an order that
+  /// is not that of the page.
   private static readonly string Server = State(
       Package(Lib, "2.0.0", false), Package(Game, "1.21.0", true),
-      Package(Alpha, "1.2.0", true), Package(Beta, "0.3.1", true));
+      Package(Alpha, "1.2.0", true, null, Lib), Package(Beta, "0.3.1", true));
 
   private static string StatePath(string workspace) => Path.Join(workspace, ".lip", "state.json");
 
@@ -236,12 +242,13 @@ public sealed class ModsPageTests {
     using TuiHarness tui = Start(State(Package(Game, "1.21.0", true)));
 
     await tui.GoTo(PageId.Mods);
-    await tui.WaitFor(Game);
+    await tui.WaitFor(CommonText.NoMods);
 
+    // The game is not listed: the Server page sets it up.
+    Assert.DoesNotContain(Game, tui.Screen);
     Assert.DoesNotContain(CommonText.SetUpServer, tui.Screen);
     Assert.DoesNotContain(ModsText.UpdateAll, tui.Screen);
     Assert.Contains(ModsText.InstallFromSourceDetail, tui.Screen);
-    Assert.DoesNotContain(CommonText.NoMods, tui.Screen);
   }
 
   [Theory]
@@ -251,7 +258,7 @@ public sealed class ModsPageTests {
   [InlineData(Language.En, 60, 16)]
   [InlineData(Language.ZhHans, 60, 16)]
   [InlineData(Language.ZhHant, 60, 16)]
-  public async Task List_ShowsTheModsFirst_ThenDependencies_ThenTheGame_WithDetails(
+  public async Task List_ShowsTheModsFirst_ThenDependencies_WithoutTheGame_WithDetails(
       Language language, int width, int height) {
     using TuiHarness tui = Start(Server, language, width, height);
 
@@ -264,9 +271,9 @@ public sealed class ModsPageTests {
     int alpha = screen.IndexOf("[ ] " + Alpha, StringComparison.Ordinal);
     int beta = screen.IndexOf("[ ] " + Beta, StringComparison.Ordinal);
     int lib = screen.IndexOf("    " + Lib, StringComparison.Ordinal);
-    int game = screen.IndexOf("    " + Game, StringComparison.Ordinal);
-    Assert.True(alpha >= 0 && alpha < beta && beta < lib && lib < game, screen);
-    Assert.Contains(ModsText.Installed(4), screen);
+    Assert.True(alpha >= 0 && alpha < beta && beta < lib, screen);
+    Assert.DoesNotContain(Game, screen);
+    Assert.Contains(ModsText.Installed(3), screen);
     Assert.Contains(ModsText.UpdateAll, screen);
     Assert.Contains(ModsText.ExplicitDetail, screen);
     Assert.Contains(
@@ -277,12 +284,10 @@ public sealed class ModsPageTests {
             + $"{CommonText.HintBack.Key} {CommonText.HintBack.Text}",
         screen);
 
-    // The details follow the selection: a dependency, then the game.
+    // The details follow the selection: a dependency, which is the last row.
     tui.Press(ConsoleKey.DownArrow, 2);
     await tui.WaitFor(ModsText.DependencyDetail);
     tui.Snapshot("mods-list-dependency");
-    tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor(ModsText.GameDetail);
 
     // ↑ from the first row goes to the action rows, whose details are shown then.
     tui.Press(ConsoleKey.Home);
@@ -363,7 +368,6 @@ public sealed class ModsPageTests {
       screen.IndexOf("[ ] " + Alpha, StringComparison.Ordinal),
       screen.IndexOf("[ ] " + Beta, StringComparison.Ordinal),
       screen.IndexOf("[ ] " + Delta, StringComparison.Ordinal),
-      screen.IndexOf("    " + Game, StringComparison.Ordinal),
     ];
     Assert.DoesNotContain(-1, rows);
     Assert.Equal(rows.Order(), rows);
@@ -385,7 +389,7 @@ public sealed class ModsPageTests {
     await tui.WaitUntilGone($"[ {CommonText.Ok} ]");
 
     // Assert: Delta is the second row now, and still the highlighted one.
-    await tui.WaitFor(ModsText.Installed(3));
+    await tui.WaitFor(ModsText.Installed(2));
     Assert.DoesNotContain(Alpha, tui.Screen);
     Assert.Contains(Delta + "  3.0.0", tui.Screen);
     Assert.DoesNotContain(Beta + "  0.3.1", tui.Screen);
@@ -415,7 +419,7 @@ public sealed class ModsPageTests {
 
     await tui.WaitUntilGone($"[ {CommonText.Ok} ]");
     // The dependency, which nothing needs any more, left with it.
-    await tui.WaitFor(ModsText.Installed(2));
+    await tui.WaitFor(ModsText.Installed(1));
     Assert.DoesNotContain(Alpha, tui.Screen);
     Assert.Contains("[ ] " + Beta, tui.Screen);
     Assert.DoesNotContain(Alpha, Installed(tui));
@@ -440,23 +444,30 @@ public sealed class ModsPageTests {
     Assert.DoesNotContain(ModsText.UncheckAll, tui.Screen);
   }
 
+  /// The game, the loader and what only they need are not listed; what a mod needs is, even
+  /// when the loader needs it too.
   [Fact]
-  public async Task Game_OffersOnlyToChangeTheVersions_OnTheServerPage() {
-    using TuiHarness tui = Start(Server);
+  public async Task List_LeavesOutTheGame_TheLoader_AndWhatOnlyTheyNeed() {
+    const string loader = "github.com/LiteLDev/LeviLamina";
+    const string loaderOnly = "github.com/LiteLDev/CrashLogger";
+    using TuiHarness tui = Start(
+        State(
+            Package(Game, "1.21.0", true),
+            Package(loader, "1.0.0", true, null, Game, loaderOnly, Lib),
+            Package(loaderOnly, "1.0.0", false),
+            Package(Lib, "2.0.0", false),
+            Package(Alpha, "1.2.0", true, null, Lib, loader)));
     await tui.GoTo(PageId.Mods);
-    await tui.WaitFor(Alpha);
+    await tui.WaitFor("[ ] " + Alpha);
 
-    tui.Press(ConsoleKey.End);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.ChangeVersions);
-    Assert.Contains(ModsText.Details, tui.Screen);
-    Assert.DoesNotContain(ModsText.UpdateTo, tui.Screen);
-    Assert.DoesNotContain(ModsText.Uninstall, tui.Screen);
-    tui.Press(ConsoleKey.DownArrow);
-    tui.Press(ConsoleKey.Enter);
-
-    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Server, "the Server page");
-    await tui.WaitFor("─ Game version ─");
+    string screen = tui.Screen;
+    Assert.Contains("    " + Lib, screen);
+    Assert.DoesNotContain(Game, screen);
+    Assert.DoesNotContain(loader, screen);
+    Assert.DoesNotContain(loaderOnly, screen);
+    Assert.Contains(ModsText.Installed(2), screen);
+    // The workspace has a game: nothing asks to set up the server.
+    Assert.DoesNotContain(CommonText.SetUpServer, screen);
   }
 
   [Theory]
@@ -1230,15 +1241,6 @@ public sealed class ModsPageTests {
     Assert.Contains($"─ {ModsText.Details} ─", tui.Screen);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone(ModsText.NotInCatalogue);
-
-    // The game, whose menu has Details too.
-    tui.Press(ConsoleKey.End);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.ChangeVersions);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.NotInCatalogue);
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(ModsText.NotInCatalogue);
     Assert.Equal(PageId.Mods, tui.Context.CurrentPage);
   }
 
@@ -1498,11 +1500,11 @@ public sealed class ModsPageTests {
   [Fact]
   public async Task ChangedFromAnotherPage_IsReadAgainWhenShown() {
     using TuiHarness tui = Start(
-        State(Package(Game, "1.21.0", true), Package(Lib, "2.0.0", false)));
+        State(Package(Game, "1.21.0", true)));
     await tui.GoTo(PageId.Mods);
-    await tui.WaitFor(Lib);
+    await tui.WaitFor(CommonText.NoMods);
 
-    // Only what the user did not install: the action rows keep the focus, and lead to mods.
+    // No mods: the action rows keep the focus, and lead to mods.
     Assert.DoesNotContain(ModsText.UpdateAll, tui.Screen);
     Assert.Contains(ModsText.InstallFromSourceDetail, tui.Screen);
 
