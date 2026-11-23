@@ -210,6 +210,13 @@ public sealed class AppContext {
   /// Asks to quit, as Esc in the sidebar does.
   public void RequestQuit() => _app.RequestQuit();
 
+  /// Quits without asking, unless a server runs: then asks as RequestQuit does.
+  public void Quit() => _app.Quit();
+
+  /// Has message reach the terminal of the user once the interface has ended
+  /// (AppOptions.Farewell).
+  public void Farewell(string message) => _options.Farewell?.Invoke(message);
+
   #endregion
 
   #region Operations

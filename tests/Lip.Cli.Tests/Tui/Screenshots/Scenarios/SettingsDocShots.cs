@@ -260,12 +260,12 @@ public sealed class SettingsDocShots(ShotRun run) {
 
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(Head(SettingsText.Installed(Newer)));
-    await tui.WaitFor($"[ {CommonText.Close} ]");
+    await tui.WaitFor($"[ {CommonText.QuitTitle} ]");
     await shot.Capture(
         "settings-20-installed", Note.Focus(At.Panel(SettingsText.InstallUpdate)),
-        Note.Keys("Enter"));
+        Note.Keys("Esc"));
 
-    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.Escape);
     await tui.WaitFor($"{Newer} · {SettingsText.RestartLip}");
     await shot.Capture(
         "settings-21-restart-lip", Note.Box(At.Row(SettingsText.CheckUpdates)));
@@ -282,7 +282,7 @@ public sealed class SettingsDocShots(ShotRun run) {
     await tui.WaitFor(SettingsText.InstallQuestion(Newer));
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(Head(SettingsText.InstallerStarted(Newer)));
-    await tui.WaitFor($"[ {CommonText.Close} ]");
+    await tui.WaitFor($"[ {CommonText.QuitTitle} ]");
     await shot.Capture(
         "settings-22-installer", Note.Focus(At.Panel(SettingsText.InstallUpdate)));
   }

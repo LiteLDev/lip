@@ -150,6 +150,11 @@ public sealed class TuiHarness : IDisposable {
         }
       },
       Pages = options.Pages,
+      Farewell = message => {
+        lock (Farewells) {
+          Farewells.Add(message);
+        }
+      },
     });
     Run = Task.Run(App.Run);
   }
@@ -182,6 +187,9 @@ public sealed class TuiHarness : IDisposable {
 
   /// The URLs that the interface opened in the browser.
   public List<string> OpenedUrls { get; } = [];
+
+  /// What the interface had reach the terminal once it has ended (AppOptions.Farewell).
+  public List<string> Farewells { get; } = [];
 
   /// Completes with the exit code of lip once the interface has ended.
   public Task<int> Run { get; }
