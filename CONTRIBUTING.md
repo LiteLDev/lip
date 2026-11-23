@@ -26,6 +26,11 @@ dotnet publish src/Lip.Cli -o bin -r win-x64 --self-contained -p:DebugType=embed
 with the `lip` it built. Its job `ci-ok` succeeds only when every other job did, and is the check that pull requests
 and the merge queue require.
 
+Pull requests land through the merge queue, whose merge method is squash, so each one becomes a single commit on
+`main`. `gh pr merge` adds a pull request to the queue instead of merging it at once; the queue, not a flag, picks
+the merge method. The queue runs `ci.yml` on the exact commit that will land, so a push to `main` does not run it
+again; a push to a `release/**` branch still does.
+
 ## The documentation
 
 The documentation at [levimc.org/lip](https://levimc.org/lip/) is written in
