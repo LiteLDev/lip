@@ -104,31 +104,49 @@ public sealed class ToolsShots(ShotRun run) {
     tui.Press(ConsoleKey.UpArrow);
     await tui.WaitUntilGone(ToolsText.NoFile("tooth.json"));
 
-    // Create lip.toml asks for the package id.
+    // Create lip.toml opens the form, which marks the package id until it is typed.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(CommonText.Question);
+    await tui.WaitFor(ManifestEditorText.Problems(1));
     tui.Type(PackageId);
+    await tui.WaitFor(ManifestEditorText.AllValid);
     await shot.Capture(
-        "tools-07-init-question", Note.Focus(At.Panel(CommonText.Question)), Note.Keys("Enter"));
-
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Created("lip.toml"));
-    await shot.Capture(
-        "tools-08-init-result", Note.Box(At.Text(ToolsText.Created("lip.toml"))),
-        Note.Keys("Enter"));
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitUntilGone(ToolsText.Created("lip.toml"));
-
-    // The file is there now: the action that writes it is off.
-    await tui.WaitFor(ToolsText.Exists("lip.toml"));
-    await shot.Capture(
-        "tools-09-init-disabled",
-        Note.Box(At.Row(ToolsText.Init)),
+        "tools-07-init-form",
         Note.Callout(
-            1, At.Text(ToolsText.Exists("lip.toml")),
+            1, At.Text(PackageId),
             shot.T(
-                "lip does not replace a lip.toml.", "lip 不会替换已有的 lip.toml。",
-                "lip 不會取代已有的 lip.toml。")));
+                "Each value is checked as it is typed: ✓ valid, ✗ not, ⋯ being checked.",
+                "每个值在输入时就会检查：✓ 合法，✗ 不合法，⋯ 检查中。",
+                "每個值在輸入時就會檢查：✓ 合法，✗ 不合法，⋯ 檢查中。")),
+        Note.Callout(
+            2, At.Text(ManifestEditorText.AllValid),
+            shot.T(
+                "Whether the whole file is valid.", "整个文件是否合法。", "整個檔案是否合法。")),
+        Note.Keys("Ctrl+S"));
+
+    // Saving asks first, with what is expected on the BDS and the LeviLamina chosen.
+    tui.Press(ConsoleKey.S, modifiers: ConsoleModifiers.Control);
+    await tui.WaitFor(ManifestEditorText.Prediction);
+    await tui.WaitUntilGone(ManifestEditorText.LoadingVersions);
+    await shot.Capture(
+        "tools-08-init-save", Note.Focus(At.Panel(ManifestEditorText.SaveTitle)),
+        Note.Keys("←", "→", "Enter"));
+    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(ManifestEditorText.Saved("lip.toml"));
+
+    // The file is there now: the form stays open on it, and the action edits it.
+    await tui.WaitFor(ManifestEditorText.EditTitle + "  ");
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitFor(ToolsText.Found);
+    await shot.Capture(
+        "tools-09-edit",
+        Note.Box(At.Row(ManifestEditorText.Edit)),
+        Note.Callout(
+            1, Files(ToolsText.Found, ToolsText.Missing),
+            shot.T(
+                "The folder has a lip.toml now: the same form edits it.",
+                "文件夹里现在有 lip.toml 了：用同一个表单编辑它。",
+                "資料夾裡現在有 lip.toml 了：用同一個表單編輯它。")));
   }
 
   [ShotTheory]
