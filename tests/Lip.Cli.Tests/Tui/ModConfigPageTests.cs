@@ -70,7 +70,7 @@ public sealed class ModConfigPageTests {
   }
 
   [Theory]
-  [InlineData(Language.En, "Mod config")]
+  [InlineData(Language.En, "Mod Config")]
   [InlineData(Language.ZhHans, "模组配置")]
   [InlineData(Language.ZhHant, "模組設定")]
   public async Task Page_IsReachedFromTheSidebar_AndShowsItsTitle(Language language, string title) {
@@ -87,7 +87,7 @@ public sealed class ModConfigPageTests {
     using TuiHarness tui = TuiHarness.Start();
     await tui.GoTo(PageId.ModConfig);
     await tui.WaitFor("No configurable mods.");
-    Assert.Contains("[ Get mods ]", tui.Screen);
+    Assert.Contains("[ Marketplace ]", tui.Screen);
     Assert.Contains("Enter Select", tui.Screen);
 
     tui.Press(ConsoleKey.Enter);

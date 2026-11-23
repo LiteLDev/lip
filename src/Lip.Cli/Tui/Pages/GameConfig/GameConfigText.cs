@@ -4,7 +4,7 @@ namespace Lip.Cli.Tui.Pages.GameConfig;
 
 /// The text of the Game config page.
 public static class GameConfigText {
-  public static string Title => L.T("Game config", "游戏配置", "遊戲設定");
+  public static string Title => L.T("Game Config", "游戏配置", "遊戲設定");
 
   // The sections.
   public static string Properties => L.T("Properties", "属性", "屬性");

@@ -467,7 +467,7 @@ To write your own dialog, derive from `Dialog`: `Hints`, `Draw(screen)` (use
 
 ### The details of a mod
 
-`ModDetails` shows a mod of the catalogue as the Get mods page does: its description, then
+`ModDetails` shows a mod of the catalogue as the Marketplace page does: its description, then
 Author, Downloads, Stars, ID, Latest, Platform, Game, Tags, License, Depends, Updated. Use it
 wherever a mod is shown, so that it reads the same everywhere.
 
