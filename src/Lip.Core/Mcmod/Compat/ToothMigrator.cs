@@ -349,9 +349,7 @@ public static class ToothMigrator {
     List<UnbrokenSemVersionRange> raised = [];
     bool changed = false;
     foreach (UnbrokenSemVersionRange part in range) {
-      // Prereleases of the first version count as that version.
-      if (part.Start is SemVersion start
-          && start.WithoutPrereleaseOrMetadata().ComparePrecedenceTo(first) >= 0) {
+      if (part.Start is SemVersion start && start.ComparePrecedenceTo(first) >= 0) {
         raised.Add(part);
         continue;
       }

@@ -500,7 +500,7 @@ public class ToothMigratorTests {
   [Theory]
   [InlineData(">=26.60.9", ">=26.60.9")]
   [InlineData("*", ">=26.60.8")]
-  [InlineData(">=26.60.8-rc.1", ">=26.60.8-rc.1")]
+  [InlineData(">=26.60.8-rc.1", ">=26.60.8")]
   [InlineData("26.60.7 || >=26.70.0", ">=26.70.0")]
   [InlineData("^26.0.0", "^26.60.8")]
   public async Task Migrate_OnlyClientLabel_BecomesDefaultVariant(string range, string expected) {
