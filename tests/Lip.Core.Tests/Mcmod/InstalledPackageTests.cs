@@ -357,4 +357,39 @@ public class InstalledPackageTests {
     Assert.Equal(
         [(true, false), (false, true)], listed.TakeLast(2).Select(p => (p.IsGame, p.IsLoader)));
   }
+  [Fact]
+  public void Mods_LeavesOutTheGame_TheLoader_AndWhatOnlyTheyNeed() {
+    // Arrange: the loader needs the game, a crash logger and a library; a mod needs the
+    // library, through a source with a ref, and a helper, which needs another one.
+    static Ref Source(string text) =>
+        Ref.TryParse(text, allowFile: true, out Ref? source, out _) ? source! : throw new();
+    InstalledPackage[] packages = [
+      new("github.com/LiteLDev/bds", "1.21.0", true),
+      new("github.com/LiteLDev/LeviLamina", "1.0.0", true) {
+        Needs = [
+          Source("github.com/LiteLDev/bds"), Source("github.com/LiteLDev/CrashLogger"),
+          Source("example.com/lib"),
+        ],
+      },
+      new("github.com/LiteLDev/CrashLogger", "1.0.0", false),
+      new("example.com/lib", "1.0.0", false),
+      new("example.com/mod", "1.0.0", true) {
+        Needs = [
+          Source("example.com/Lib@1.0.0"), Source("example.com/helper"),
+          Source("github.com/LiteLDev/LeviLamina"),
+        ],
+      },
+      new("example.com/helper", "1.0.0", false) { Needs = [Source("example.com/deep")] },
+      new("example.com/deep", "1.0.0", false),
+      new("example.com/orphan", "1.0.0", false),
+    ];
+
+    // Act
+    IReadOnlyList<InstalledPackage> mods = InstalledPackage.Mods(packages);
+
+    // Assert: in the order given.
+    Assert.Equal(
+        ["example.com/lib", "example.com/mod", "example.com/helper", "example.com/deep"],
+        mods.Select(p => p.Identity));
+  }
 }

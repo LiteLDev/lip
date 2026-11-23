@@ -21,7 +21,7 @@ public static class Worlds {
   /// A server that has been played on: mods with their files, the files of the game, and
   /// two more workspaces in the workspace list, one of them without a server. The Mods page
   /// lists the mods by identity: GMLIB, LegacyMoney, LegacyScriptEngine#lua, LeviOptimize;
-  /// then the dependency LegacyRemoteCall, the game and LeviLamina. With
+  /// then the dependency LegacyRemoteCall, which LegacyMoney needs. With
   /// configurable set, the Mod config page lists the mods (Installed.Mod); without it, lip
   /// can plan to uninstall them.
   public static World Survival(
@@ -41,7 +41,9 @@ public static class Worlds {
             Files: ["mods/LeviOptimize/manifest.json"]),
         new Installed(
             Catalogue.Money, "0.16.1", Mod: configurable,
-            Files: ["mods/LegacyMoney/manifest.json"]));
+            Files: ["mods/LegacyMoney/manifest.json"]) {
+          Deps = [Catalogue.RemoteCall],
+        });
     world.File("server.properties", Properties)
         .File("allowlist.json", Allowlist)
         .File("permissions.json", Permissions)

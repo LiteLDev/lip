@@ -54,16 +54,6 @@ public static class ModsText {
           "Installed because another mod needs it.",
           "因其他模组需要而安装。",
           "因其他模組需要而安裝。");
-  public static string GameDetail =>
-      L.T(
-          "The game. Change its version in Workspaces.",
-          "游戏本体。请在“工作区”中更改版本。",
-          "遊戲本體。請在「工作區」中變更版本。");
-  public static string LoaderDetail =>
-      L.T(
-          "The mod loader. Change its version in Workspaces.",
-          "模组加载器。请在“工作区”中更改版本。",
-          "模組載入器。請在「工作區」中變更版本。");
 
   // The action menu of a row.
   public static string Details => ModDetailsText.Details;
@@ -86,7 +76,6 @@ public static class ModsText {
           count == 1 ? "Uninstall 1 mod" : $"Uninstall {count} mods",
           $"卸载 {count} 个模组", $"解除安裝 {count} 個模組");
   public static string UncheckAll => L.T("Uncheck all", "取消全部勾选", "取消全部勾選");
-  public static string ChangeVersions => L.T("Change versions…", "更改版本…", "變更版本…");
 
   // The details of a package, from the catalogue.
   public static string ReadingCatalogue =>

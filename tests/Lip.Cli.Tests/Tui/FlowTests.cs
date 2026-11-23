@@ -294,7 +294,7 @@ public sealed class FlowTests {
   public async Task Mods_GetMods_OpensTheCatalogue() {
     using TuiHarness tui = Start(out _, game: true);
     await tui.GoTo(PageId.Mods);
-    await tui.WaitFor(ModsText.Installed(1));
+    await tui.WaitFor(CommonText.NoMods);
     await tui.WaitFor(ModsText.InstallFromSourceDetail);
 
     // Act: the action row below "Install from source…" of a workspace without mods.

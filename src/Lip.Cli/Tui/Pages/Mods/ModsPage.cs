@@ -82,10 +82,11 @@ internal sealed class ServerMenu(Func<ServerMenu, bool, Menu> make) : Dialog {
   }
 }
 
-/// The Mods page: the installed packages of the selected workspace, with lip install, lip
-/// update and lip uninstall (protocol/lip-install.md, lip-update.md, lip-uninstall.md,
-/// lip-list.md). The list is in the order of InstalledPackage.Listed, which no operation
-/// changes. Action rows stand above the list; Enter on a package opens its action menu,
+/// The Mods page: the installed mods of the selected workspace and what they need
+/// (InstalledPackage.Mods), with lip install, lip update and lip uninstall
+/// (protocol/lip-install.md, lip-update.md, lip-uninstall.md, lip-list.md). The game, the
+/// loader and what only they need are not listed: the Server page sets them up. The list is in
+/// the order of InstalledPackage.Listed, which no operation changes. Action rows stand above the list; Enter on a package opens its action menu,
 /// which acts on the checked packages when there are any. While the server of the workspace
 /// runs, what changes the workspace is shown disabled, and a line says so; a menu that is open
 /// when the server starts or stops is made again.
@@ -100,6 +101,8 @@ public sealed class ModsPage : Page {
   // The workspace that the list was read of.
   private string? _workspace;
   private bool _loaded;
+  // Whether the workspace has a game, as last read.
+  private bool _hasGame;
   private string? _error;
   // How many times the list was read.
   private int _reads;
@@ -113,8 +116,8 @@ public sealed class ModsPage : Page {
   public ModsPage(AppContext context) : base(context) {
     _actions = new ListView<ModAction>(
         action => new StyledLine(Label(action), Disabled(action) ? Theme.Muted : default));
-    // Only what both lip update and lip uninstall take can be checked: neither a dependency,
-    // which cannot be uninstalled, nor the game or the loader, which cannot be updated.
+    // Only what both lip update and lip uninstall take can be checked: not a dependency, which
+    // cannot be uninstalled.
     _list = new ListView<InstalledPackage>(Row) {
       MultiSelect = true,
       CanCheck = CanCheck,
@@ -273,11 +276,11 @@ public sealed class ModsPage : Page {
           bool first = !_loaded;
           _loaded = true;
           _error = null;
-          // The mods that the user installed, then their dependencies, then the server, each
-          // by identity: a package stays where it is whatever was installed or uninstalled,
+          // The mods that the user installed, then their dependencies, each by identity: a package stays where it is whatever was installed or uninstalled,
           // and the highlight stays on the package it was on while that is still installed.
           string? highlighted = _list.HasCurrent ? _list.Current.Identity : null;
-          _list.Items = InstalledPackage.Listed(packages);
+          _hasGame = packages.Any(p => p.IsGame);
+          _list.Items = InstalledPackage.Listed(InstalledPackage.Mods(packages));
           if (highlighted is not null) {
             _list.Select(p => p.Identity == highlighted);
           }
@@ -299,6 +302,7 @@ public sealed class ModsPage : Page {
 
           _loaded = true;
           _error = exception.Message;
+          _hasGame = false;
           _list.Items = [];
           Refresh();
         });
@@ -310,7 +314,7 @@ public sealed class ModsPage : Page {
     // The mods that the user installed: what lip update without operands updates.
     bool mods = _list.Items.Any(CanCheck);
     List<ModAction> actions = [];
-    if (read && !_list.Items.Any(p => p.IsGame)) {
+    if (read && !_hasGame) {
       // A workspace without a game needs one before any mod.
       actions.Add(ModAction.SetUpServer);
     }
@@ -334,13 +338,8 @@ public sealed class ModsPage : Page {
     }
   }
 
-  /// Whether the package is the game or the loader (protocol/lip-setup.md, "Terms"), which lip
-  /// setup installs and lip update refuses.
-  private static bool IsSystem(InstalledPackage package) => package.IsGame || package.IsLoader;
-
   /// Whether the package is a mod that the user installed.
-  private static bool CanCheck(InstalledPackage package) =>
-      package.Explicit && !IsSystem(package);
+  private static bool CanCheck(InstalledPackage package) => package.Explicit;
 
   #endregion
 
@@ -368,10 +367,7 @@ public sealed class ModsPage : Page {
       };
 
   private static string Detail(InstalledPackage package) =>
-      package.IsGame ? ModsText.GameDetail
-          : package.IsLoader ? ModsText.LoaderDetail
-          : package.Explicit ? ModsText.ExplicitDetail
-          : ModsText.DependencyDetail;
+      package.Explicit ? ModsText.ExplicitDetail : ModsText.DependencyDetail;
 
   /// A row of the list: the identity and the version in columns, muted for a dependency. An
   /// identity that is too long is cut in its middle, so that its name stays.
@@ -548,32 +544,25 @@ public sealed class ModsPage : Page {
     } else {
       title = identity;
       items = [Item(ModsText.Details, () => ShowDetails(identity))];
-      if (IsSystem(package)) {
-        // lip update refuses the game and the loader: lip setup changes them.
-        items.Add(Item(
-            ModsText.ChangeVersions,
-            () => Context.Navigate(PageId.Server, PageRequest.SetUpServer)));
-      } else {
-        // By the source that the state file records, not by the identity, which would name the
-        // version tags of a repository: a package of a URL or of a local path has none, and a
-        // package of a branch, a tag or a commit would be moved back to them
-        // (protocol/lip-update.md). A package of the version tags, or of one version, moves
-        // to the highest version that fits. Updating a dependency makes it explicitly
-        // installed, which the plan says.
+      // By the source that the state file records, not by the identity, which would name the
+      // version tags of a repository: a package of a URL or of a local path has none, and a
+      // package of a branch, a tag or a commit would be moved back to them
+      // (protocol/lip-update.md). A package of the version tags, or of one version, moves
+      // to the highest version that fits. Updating a dependency makes it explicitly
+      // installed, which the plan says.
+      items.Add(Change(
+          ModsText.Update,
+          () => Update(
+              [package.UpdateArgument], ModsText.UpdateOperation(identity), newest: true)));
+      // Only a repository has other versions to name.
+      items.Add(Change(
+          ModsText.UpdateTo, () => PromptUpdateTo(package),
+          package.Repository is null ? ModsText.UpdateToNeedsRepository : null));
+      if (package.Explicit) {
+        // lip uninstall refuses a dependency: it leaves with what needs it.
         items.Add(Change(
-            ModsText.Update,
-            () => Update(
-                [package.UpdateArgument], ModsText.UpdateOperation(identity), newest: true)));
-        // Only a repository has other versions to name.
-        items.Add(Change(
-            ModsText.UpdateTo, () => PromptUpdateTo(package),
-            package.Repository is null ? ModsText.UpdateToNeedsRepository : null));
-        if (package.Explicit) {
-          // lip uninstall refuses a dependency: it leaves with what needs it.
-          items.Add(Change(
-              ModsText.Uninstall,
-              () => Uninstall([identity], ModsText.UninstallOperation(identity))));
-        }
+            ModsText.Uninstall,
+            () => Uninstall([identity], ModsText.UninstallOperation(identity))));
       }
     }
 

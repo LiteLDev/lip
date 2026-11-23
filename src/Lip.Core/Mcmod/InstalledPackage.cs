@@ -19,6 +19,10 @@ public record InstalledPackage(string Identity, string Version, bool Explicit) {
 
   public string? Commit { get; init; }
 
+  /// The sources of the dependencies of the entry of its package file for the environment of
+  /// the workspace (protocol/lip-package.md, "Resolution"); none when that cannot be read.
+  public IReadOnlyList<Ref> Needs { get; init; } = [];
+
   /// The recorded source, or null when what the state file records is no source.
   public Ref? Origin { get; private init; }
 
@@ -75,6 +79,37 @@ public record InstalledPackage(string Identity, string Version, bool Explicit) {
             .ThenBy(p => p.Identity, StringComparer.OrdinalIgnoreCase)
             .ThenBy(p => p.Identity, StringComparer.Ordinal),
       ];
+
+  /// The packages that are the user's mods or what those need: each explicitly installed
+  /// package other than the game and the loader, and each package that one of them needs,
+  /// directly or through others, other than the game and the loader. A package that only the
+  /// game or the loader needs is not one of them: lip setup manages it with them.
+  public static IReadOnlyList<InstalledPackage> Mods(IReadOnlyList<InstalledPackage> packages) {
+    HashSet<InstalledPackage> mods = [];
+    Stack<InstalledPackage> pending = new(
+        packages.Where(p => p.Explicit && !p.IsGame && !p.IsLoader));
+    while (pending.TryPop(out InstalledPackage? package)) {
+      if (package.IsGame || package.IsLoader || !mods.Add(package)) {
+        continue;
+      }
+
+      foreach (Ref need in package.Needs) {
+        foreach (InstalledPackage dependency in packages.Where(p => p.Satisfies(need))) {
+          pending.Push(dependency);
+        }
+      }
+    }
+
+    return [.. packages.Where(mods.Contains)];
+  }
+
+  /// Whether the package is the one installed for a dependency of the source: the identity
+  /// that the source names, or the package that was resolved for that source.
+  private bool Satisfies(Ref need) =>
+      PackageNames.AreEqual(Identity, Package.GetIdentity(need.Target, need.Variant))
+      || Origin is { } origin
+      && PackageNames.AreEqual(origin.Target, need.Target)
+      && PackageNames.AreEqual(origin.Variant, need.Variant);
 
   private string Location => Identity.Split('#')[0];
 
