@@ -589,8 +589,7 @@ public sealed class WorkspaceTransaction : IDisposable {
       // next attempt. (One holding other files, e.g. written by the server after lip was
       // killed, is left as it is.)
       if (entry.Op == JournalOp.CreateDirectory && left.Any(e => paths.StartsWith(
-          e.Path,
-          fs.Path.TrimEndingDirectorySeparator(entry.Path) + fs.Path.DirectorySeparatorChar))) {
+          e.Path, fs.Path.WithTrailingSeparator(entry.Path)))) {
         left.Insert(0, entry);
         continue;
       }

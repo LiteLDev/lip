@@ -4,7 +4,7 @@ namespace Lip.Cli.Tui.Pages.ModConfig;
 
 /// The text of the Mod config page.
 public static class ModConfigText {
-  public static string Title => L.T("Mod config", "模组配置", "模組設定");
+  public static string Title => L.T("Mod Config", "模组配置", "模組設定");
 
   // Nothing to list: no mod is installed, or none that has a directory of its own.
   public static string NoMods =>

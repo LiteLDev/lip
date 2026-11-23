@@ -87,7 +87,7 @@ public sealed class GameConfigPageTests {
   }
 
   [Theory]
-  [InlineData(Language.En, "Game config")]
+  [InlineData(Language.En, "Game Config")]
   [InlineData(Language.ZhHans, "游戏配置")]
   [InlineData(Language.ZhHant, "遊戲設定")]
   public async Task Page_IsReachedFromTheSidebar_AndShowsItsTitle(Language language, string title) {

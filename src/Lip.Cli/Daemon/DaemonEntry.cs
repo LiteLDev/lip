@@ -49,8 +49,15 @@ public static class DaemonEntry {
           ? Task.Factory.StartNew(
               () => {
                 try {
+                  // Written to standard error at once, which the client writes once its console
+                  // is back to its screen: also when a signal, such as one from an installer
+                  // that replaces lip, ends the client, or when the daemon ends first.
                   return LipApp.RunInterface(
-                      terminal, invocation.WorkingDirectory, Languages.Parse(start.Language));
+                      terminal, invocation.WorkingDirectory, Languages.Parse(start.Language),
+                      message => {
+                        invocation.Error.WriteLine(message);
+                        invocation.Error.Flush();
+                      });
                 }
                 catch (Exception ex) {
                   return ErrorReporter.Report(
@@ -108,15 +115,31 @@ public static class DaemonEntry {
     await Console.Error.WriteLineAsync(
         $"lip could not have its daemon run the interface ({outcome.Fallback}); it runs it"
         + " itself.");
-    // A failure is reported once the console is back to its screen.
+    // A failure, and what the interface has the user read once it has ended, are written once
+    // the console is back to its screen.
+    StringWriter farewell = new();
+    int exitCode;
     try {
-      using ConsoleTerminal own = new();
-      return LipApp.RunInterface(
-          own, Environment.CurrentDirectory, Languages.OfThisProcess());
+      using (ConsoleTerminal own = new()) {
+        exitCode = LipApp.RunInterface(
+            own, Environment.CurrentDirectory, Languages.OfThisProcess(),
+            message => {
+              lock (farewell) {
+                farewell.WriteLine(message);
+              }
+            });
+      }
     }
     catch (Exception ex) {
-      return ErrorReporter.Report(ex, [], cancelled: false);
+      exitCode = ErrorReporter.Report(ex, [], cancelled: false);
     }
+
+    lock (farewell) {
+      Console.Error.Write(farewell.ToString());
+    }
+
+    await Console.Error.FlushAsync();
+    return exitCode;
   }
 
   /// Has the daemon carry out the command of this process, and returns the exit code; when it

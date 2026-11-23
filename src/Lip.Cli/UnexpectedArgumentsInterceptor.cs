@@ -31,14 +31,14 @@ public sealed class UnexpectedArgumentsInterceptor : ICommandInterceptor {
   }
 
   /// Returns the usage error for an option of a command that takes a value and is given an empty
-  /// one as the next argument, such as 'lip pkg pack -o ""', or null (protocol/lip.md,
+  /// one as the next argument, such as 'lip setup --game ""', or null (protocol/lip.md,
   /// "Arguments": a value must not be empty, and such an option has none). Spectre.Console.Cli
   /// binds the empty argument as the value, and writes the help without validating the settings
   /// when -h or --help is given too, which this usage error does not allow; so lip checks for it
-  /// before parsing. "--output=" is already rejected by Spectre.Console.Cli.
+  /// before parsing. "--game=" is already rejected by Spectre.Console.Cli.
   public static UsageException? FindEmptyValue(string[] args) {
     string[] valueOptions = args switch {
-      ["pkg", "pack", ..] => ["-o", "--output"],
+      ["setup", ..] => ["--game", "--build", "--loader"],
       _ => [],
     };
     for (int i = 0; i + 1 < args.Length; i++) {

@@ -486,10 +486,21 @@ public sealed class SettingsPageTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(SettingsText.InstallQuestion("1.3.0"));
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("lip 1.3.0 is installed. Restart lip to use it.");
+    await tui.WaitFor("lip 1.3.0 is installed.");
     Assert.Equal([true, false], checks);
-    tui.Press(ConsoleKey.Enter);
+    // The dialog says to quit and run lip again, and offers to quit at once.
+    Assert.Contains("run lip again to use the new version.", tui.Screen);
+    Assert.Contains($"[ {CommonText.QuitTitle} ]", tui.Screen);
+    Assert.Contains($"[ {CommonText.Later} ]", tui.Screen);
+    // What the user reads once the interface has ended, however it ends.
+    lock (tui.Farewells) {
+      Assert.Equal(["lip was updated to 1.3.0. Run lip again to start it."], tui.Farewells);
+    }
+
+    // Later: lip goes on.
+    tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone("lip 1.3.0 is installed.");
+    Assert.False(tui.Run.IsCompleted);
 
     // The row is gone, and the one that checks says what to do.
     await tui.WaitFor($"1.3.0 · {SettingsText.RestartLip}");
@@ -498,8 +509,42 @@ public sealed class SettingsPageTests {
 
     // lip that runs is still the old one: Enter says so again instead of checking again.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("lip 1.3.0 is installed. Restart lip to use it.");
+    await tui.WaitFor("lip 1.3.0 is installed.");
     Assert.Equal([true, false], checks);
+
+    // Enter quits lip, without asking again.
+    tui.Press(ConsoleKey.Enter);
+    Assert.Equal(
+        0, await tui.Run.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
+    Assert.DoesNotContain(CommonText.QuitQuestion, tui.Screen);
+  }
+
+  [Fact]
+  public async Task Updates_Installed_ShowWhatToDo_AndQuitOnEnter() {
+    using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
+      SelfUpdate = (_, checkOnly) => Task.FromResult(new SelfUpdateResult(
+          checkOnly ? SelfUpdateOutcome.Available : SelfUpdateOutcome.Replaced,
+          SemVersion.Parse("1.3.0"))),
+    });
+    await tui.GoTo(PageId.Settings);
+    tui.Press(ConsoleKey.DownArrow, 4);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor(SettingsText.UpdateAvailable("1.3.0"));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("lip 1.3.0 is installed.");
+    tui.Snapshot("settings-update-installed");
+    StringWriter frame = new();
+    tui.Dump(frame, "installed");
+    TestContext.Current.TestOutputHelper?.WriteLine(frame.ToString());
+
+    // The interface stays until the user quits it.
+    await Task.Delay(200, TestContext.Current.CancellationToken);
+    Assert.False(tui.Run.IsCompleted);
+    Assert.Contains("lip 1.3.0 is installed.", tui.Screen);
+
+    tui.Press(ConsoleKey.Enter);
+    Assert.Equal(
+        0, await tui.Run.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
   }
 
   [Fact]
@@ -517,9 +562,25 @@ public sealed class SettingsPageTests {
     await tui.WaitFor(SettingsText.UpdateAvailable("1.3.0"));
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor("The installer of lip 1.3.0 is running. Quit lip so that it can finish.");
-    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("The installer of lip 1.3.0 is running.");
+    Assert.Contains("Quit lip so that it can finish", tui.Screen);
+    Assert.Contains($"[ {CommonText.QuitTitle} ]", tui.Screen);
+    lock (tui.Farewells) {
+      Assert.Equal(
+          ["The installer of lip 1.3.0 is running. Once it has finished, run lip again to start"
+              + " the new version."],
+          tui.Farewells);
+    }
+
+    tui.Press(ConsoleKey.Escape);
     await tui.WaitFor($"1.3.0 · {SettingsText.InstallerRunning}");
+
+    // Enter on the row says so again, and Enter then quits.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor("The installer of lip 1.3.0 is running.");
+    tui.Press(ConsoleKey.Enter);
+    Assert.Equal(
+        0, await tui.Run.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
   }
 
   [Fact]
@@ -705,9 +766,9 @@ public sealed class SettingsPageTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(SettingsText.InstallQuestion("1.3.0"));
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"[ {CommonText.Close} ]");
+    await tui.WaitFor($"[ {CommonText.QuitTitle} ]");
     tui.Snapshot("settings-13-installed");
-    tui.Press(ConsoleKey.Enter);
+    tui.Press(ConsoleKey.Escape);
     await tui.WaitFor(SettingsText.RestartLip);
     tui.Snapshot("settings-14-restart-lip");
 

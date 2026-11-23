@@ -339,8 +339,18 @@ public sealed class PathPickerTests {
     await tui.WaitFor(PathPickerText.InvalidName);
     Assert.Null(chosen);
 
-    // A drive alone is its root.
+    // A drive alone is its root, the drive of the folder shown too, though Windows takes "C:"
+    // for that folder.
     tui.Press(ConsoleKey.Backspace, P("ws", "packages").Length + @"\a*b".Length);
+    tui.Type("C:");
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntilGone(P("ws", "packages"));
+    Assert.Contains(Bar(tui, @"C:\"), tui.Screen);
+    Assert.Contains($"ws{_sep}", tui.Screen);
+    Assert.Null(chosen);
+
+    tui.Press(ConsoleKey.UpArrow);
+    tui.Press(ConsoleKey.Backspace, @"C:\".Length);
     tui.Type("D:");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"games{_sep}");

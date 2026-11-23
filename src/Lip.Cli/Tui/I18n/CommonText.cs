@@ -20,7 +20,7 @@ public static class CommonText {
 
   // What several pages name: the same words for the same thing.
   public static string NewServer => L.T("New server…", "新建服务器…", "建立伺服器…");
-  public static string GetMods => L.T("Get mods", "获取模组", "取得模組");
+  public static string GetMods => L.T("Marketplace", "市场", "市集");
   public static string AutoRestart => L.T("Auto restart", "自动重启", "自動重新啟動");
   public static string ConnectDirectly => L.T("Connect directly", "直接连接", "直接連線");
   public static string NoMods => L.T("No mods yet.", "还没有模组。", "還沒有模組。");

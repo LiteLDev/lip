@@ -458,7 +458,7 @@ Dialogs (`Context.Show(new …)`); each takes every key until it closes:
 | `PromptDialog(title, fields, submit, cancel?, validate?)` | One or more text fields. A long label, such as a question of a command, is wrapped. `validate` returns a localized error to keep the dialog open. |
 | `ChoiceDialog(title, items, chosen, cancel?, selected?, note?)` | Choose one of a list; `ChoiceItem.Detail` is the one-sentence explanation in the details area. `note` is one sentence above the list that the user must know before they choose. |
 | `Menu(title, items)` | The action menu of a row (`Context.ShowMenu`). An item with `Enabled: false` is shown muted and skipped; with a `Reason` too, ↑ and ↓ stop at it, the menu shows the reason below the actions, and Enter does nothing. |
-| `ViewerDialog(title, text or lines)` | A large scrolling text: a README, a JSON text. |
+| `ViewerDialog(title, text or lines)` | A large scrolling text, such as a README. |
 | `PathPicker.Folder` / `.OpenFile` / `.SaveFile` | A path, from a small file browser: see "Asking for a path". **Never ask for a path with a `PromptDialog`.** |
 | `ProgressDialog` | Shown by `RunOperation`; you do not create it. |
 
@@ -467,7 +467,7 @@ To write your own dialog, derive from `Dialog`: `Hints`, `Draw(screen)` (use
 
 ### The details of a mod
 
-`ModDetails` shows a mod of the catalogue as the Get mods page does: its description, then
+`ModDetails` shows a mod of the catalogue as the Marketplace page does: its description, then
 Author, Downloads, Stars, ID, Latest, Platform, Game, Tags, License, Depends, Updated. Use it
 wherever a mod is shown, so that it reads the same everywhere.
 
@@ -578,18 +578,13 @@ Context.Show(PathPicker.Folder(WorkspacesText.AddFolder, Context.Workspace, fold
   }
 }));
 
-// Tools, pack: the folder of the package, then the file to write.
-Context.Show(PathPicker.Folder(ToolsText.PackFolder, Context.Workspace, folder =>
-    Context.Show(PathPicker.SaveFile(
-        ToolsText.PackOutput, folder, "package.zip", ".zip", output => Pack(folder, output)))));
+// A file to write, in the workspace unless another folder is chosen.
+Context.Show(PathPicker.SaveFile(
+    title, Context.Workspace, "package.zip", ".zip", output => Write(output)));
 
 // Mods, install from a source: a local .zip, or the folder of a package.
 Context.Show(PathPicker.OpenFile(
     ModsText.InstallLocal, Context.Workspace, [".zip"], path => Install(path), orFolder: true));
-
-// Tools, view a package from a local path.
-Context.Show(PathPicker.OpenFile(
-    ToolsText.ViewLocal, Context.Workspace, [".zip"], path => View(path), orFolder: true));
 ```
 
 In a test, wait for the folder before pressing keys: the list takes none while it is read.

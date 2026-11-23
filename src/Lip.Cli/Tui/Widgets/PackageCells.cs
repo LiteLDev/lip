@@ -2,7 +2,7 @@ using System.Text;
 
 namespace Lip.Cli.Tui.Widgets;
 
-/// What the rows of installed packages are written with, on the Mods page and the Tools page.
+/// What the rows of installed packages are written with, on the Mods page.
 public static class PackageCells {
   /// The text in at most width columns, with an ellipsis in its middle when it is longer: the
   /// identity of a package and a path both tell the most at their start and at their end.
