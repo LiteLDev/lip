@@ -22,8 +22,9 @@ dotnet build -warnaserror -p:EnforceCodeStyleInBuild=true
 dotnet publish src/Lip.Cli -o bin -r win-x64 --self-contained -p:DebugType=embedded   # a release build
 ```
 
-`.github/workflows/build.yml` runs the same, on every system `lip` is released for, and also runs a real server
-with the `lip` it built (`.github/scripts/real-server.sh`).
+`.github/workflows/ci.yml` runs the same, on every system `lip` is released for, and also runs a real server
+with the `lip` it built. Its job `ci-ok` succeeds only when every other job did, and is the check that pull requests
+and the merge queue require.
 
 ## The documentation
 

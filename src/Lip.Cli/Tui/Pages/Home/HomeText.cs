@@ -24,9 +24,9 @@ public static class HomeText {
 
   public static string ChooseWorkspaceDetail =>
       L.T(
-          "Pick or add the folder of a server. ↑ from Home in the sidebar gets there too.",
-          "选择或添加服务器所在的文件夹。在侧栏的主页上按 ↑ 也能到达。",
-          "選擇或加入伺服器所在的資料夾。在側欄的首頁上按 ↑ 也能到達。");
+          "Pick or add a server folder; ↑ above Home opens it too.",
+          "选择或添加服务器文件夹；在主页上方按 ↑ 也能打开。",
+          "選擇或加入伺服器資料夾；在首頁上方按 ↑ 也能開啟。");
 
   public static string CreateServerDetail =>
       L.T(

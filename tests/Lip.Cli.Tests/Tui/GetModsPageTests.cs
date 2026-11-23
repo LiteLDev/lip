@@ -181,9 +181,9 @@ public sealed class GetModsPageTests {
       Array.FindIndex(tui.Screen.Split('\n'), row => row.Contains(text, StringComparison.Ordinal));
 
   [Theory]
-  [InlineData(Language.En, "Get mods")]
-  [InlineData(Language.ZhHans, "获取模组")]
-  [InlineData(Language.ZhHant, "取得模組")]
+  [InlineData(Language.En, "Marketplace")]
+  [InlineData(Language.ZhHans, "市场")]
+  [InlineData(Language.ZhHant, "市集")]
   public async Task Page_IsReachedFromTheSidebar_AndShowsItsTitle(Language language, string title) {
     using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { Language = language });
 

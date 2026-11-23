@@ -3,7 +3,6 @@ using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Server;
 using Lip.Cli.Tui.Pages.Tools;
 using Lip.Cli.Tui.Pages.Workspaces;
-using Lip.Cli.Tui.Widgets;
 using Lip.Core.Mcmod;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
@@ -76,37 +75,11 @@ public sealed class WorkspacesShots(ShotRun run) {
   public async Task Tools(Language language) {
     World world = Worlds.Survival(language, height: 22);
     world.File("lip.toml", "format = 4\nid = \"github.com/steve/survival-pack\"\n");
-    world.Fs.AddDirectory(Path.Join(world.Workspace, "dist"));
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
     await tui.GoTo(PageId.Tools);
     await tui.WaitFor(ToolsText.Found);
 
     await shot.Capture("tools-01-list");
-
-    // View package: an installed mod, a package typed, or one browsed to.
-    tui.Press(ConsoleKey.UpArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.ViewInstalledAbout);
-    await shot.Capture("tools-02-view-choice", Note.Focus(At.Panel(ToolsText.ViewTitle)));
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(ToolsText.ViewInstalledAbout);
-
-    // Pack: the folder of the package, then the file to write.
-    tui.Press(ConsoleKey.UpArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {ToolsText.PackFolder} ─");
-    await tui.WaitUntilGone(PathPickerText.Reading);
-    await shot.Capture(
-        "tools-03-pack-folder",
-        Note.Box(At.Button(PathPickerText.SelectFolder)), Note.Keys("Tab", "Enter"));
-
-    tui.Press(ConsoleKey.Tab);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {ToolsText.PackOutput} ─");
-    await tui.WaitUntilGone(PathPickerText.Reading);
-    await tui.WaitFor("package.zip");
-    await shot.Capture(
-        "tools-04-pack-output", Note.Box(At.Row("package.zip")), Note.Keys("Tab", "Enter"));
   }
 }

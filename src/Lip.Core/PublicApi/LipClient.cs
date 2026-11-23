@@ -15,8 +15,7 @@ using Lip.Core.Services;
 
 namespace Lip.Core.PublicApi;
 
-/// The commands of lip (protocol/lip.md), other than lip pkg pack, over the services that carry
-/// them out.
+/// The commands of lip (protocol/lip.md) over the services that carry them out.
 public sealed class LipClient {
   private readonly IFileSystem _fileSystem;
   private readonly IUserInteraction _userInteraction;
@@ -453,11 +452,5 @@ public sealed class LipClient {
       OperationSession? session = null) {
     return await (await GetMcmodService(dryRun, session)).UpdateMods(
         new OperationOptions(dryRun, cancellationToken));
-  }
-
-  /// The result of lip pkg view as JSON (protocol/lip-pkg.md, "lip pkg view"): the package file
-  /// of the first archive the package argument names, and the versions of its remote repository.
-  public async Task<string> View(string package) {
-    return await (await GetMcmodService()).View(package);
   }
 }

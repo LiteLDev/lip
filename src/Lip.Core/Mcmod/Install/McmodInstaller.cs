@@ -1090,9 +1090,8 @@ public partial class McmodInstaller(
 
   /// Whether path is strictly below directory.
   private bool IsInside(string directory, string path) {
-    string prefix = _fs.Path.TrimEndingDirectorySeparator(directory)
-        + _fs.Path.DirectorySeparatorChar;
-    return WorkspacePaths.Host.StartsWith(path, prefix);
+    string prefix = _fs.Path.WithTrailingSeparator(directory);
+    return path.Length > prefix.Length && WorkspacePaths.Host.StartsWith(path, prefix);
   }
 
   /// A recorded path, "a/./b" being "a/b" as when it was recorded.

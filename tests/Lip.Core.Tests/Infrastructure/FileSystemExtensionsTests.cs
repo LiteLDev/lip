@@ -40,4 +40,21 @@ public class FileSystemExtensionsTests {
     Assert.True(mockFileSystem.Directory.Exists(Path.Combine(root, "root", "newdir")));
     Assert.True(mockFileSystem.File.Exists(newFile));
   }
+
+  [Fact]
+  public void WithTrailingSeparator_AddsOneUnlessTheDirectoryEndsInOne() {
+    // Arrange
+    MockFileSystem fs = new();
+    string sep = fs.Path.DirectorySeparatorChar.ToString();
+    string root = OperatingSystem.IsWindows() ? @"C:\" : "/";
+
+    // Act & Assert: a root ends in a separator already, so the paths below it start with it.
+    Assert.Equal(root, fs.Path.WithTrailingSeparator(root));
+    Assert.Equal(root + "ws" + sep, fs.Path.WithTrailingSeparator(root + "ws"));
+    Assert.Equal(root + "ws" + sep, fs.Path.WithTrailingSeparator(root + "ws" + sep));
+    if (OperatingSystem.IsWindows()) {
+      Assert.Equal(@"D:\", fs.Path.WithTrailingSeparator(@"D:\"));
+      Assert.Equal(@"C:\ws\", fs.Path.WithTrailingSeparator(@"C:\ws/"));
+    }
+  }
 }

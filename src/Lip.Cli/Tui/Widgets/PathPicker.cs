@@ -779,6 +779,12 @@ public sealed class PathPicker : Dialog {
     public Outcome Jump(string text, string? current, string? folderName) {
       string full;
       try {
+        // A drive alone is its root, the drive of the folder shown included, though Windows
+        // takes "C:" for the current directory on C:.
+        if (fileSystem.Path.DirectorySeparatorChar == '\\' && text.Length == 2
+            && char.IsAsciiLetter(text[0]) && text[1] == ':') {
+          text += '\\';
+        }
         if (!fileSystem.Path.IsPathFullyQualified(text)) {
           if (current is null) {
             return new Outcome { Problem = Problem.NotFound };

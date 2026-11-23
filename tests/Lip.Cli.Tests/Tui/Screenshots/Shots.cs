@@ -123,7 +123,7 @@ public sealed class ShotRun : IDisposable {
 
       for (DirectoryInfo? directory = new(System.AppContext.BaseDirectory); directory is not null;
           directory = directory.Parent) {
-        if (File.Exists(Path.Join(directory.FullName, "lip.sln"))) {
+        if (File.Exists(Path.Join(directory.FullName, "lip.slnx"))) {
           string docs = Path.Join(directory.Parent?.FullName ?? directory.FullName,
               "liteldev.github.io", "docs", "lip");
           if (Directory.Exists(docs)) {

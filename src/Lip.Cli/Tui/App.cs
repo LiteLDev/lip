@@ -69,6 +69,12 @@ public sealed class AppOptions {
   /// for Version when not given.
   public Func<LipClient, bool, Task<SelfUpdateResult>>? SelfUpdate { get; init; }
 
+  /// Gets a message for the user to read once the interface has ended, such as that lip was
+  /// updated and is to be run again: it is to reach the terminal of the user after the interface
+  /// has left it, also when a signal or the end of the daemon ends the interface, where the
+  /// process that shows it can still write. Dropped when not given.
+  public Action<string>? Farewell { get; init; }
+
   /// What lip daemon status finds, null when no daemon listens: no daemon when not given.
   public Func<CancellationToken, Task<DaemonState?>>? DaemonStatus { get; init; }
 
@@ -565,6 +571,16 @@ public sealed partial class App {
       leave();
     } else {
       Current.ConfirmLeave(leave);
+    }
+  }
+
+  /// Quits without asking, as Quit in the dialog of RequestQuit does, unless a server runs:
+  /// then asks as RequestQuit does, as the dialog says what quitting does to it.
+  internal void Quit() {
+    if (_servers.Running().Count > 0) {
+      RequestQuit();
+    } else {
+      Leave(QuitOnceServersStopped);
     }
   }
 

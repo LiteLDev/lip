@@ -53,20 +53,6 @@ public record InstalledPackage(string Identity, string Version, bool Explicit) {
         _ => null,
       };
 
-  /// The package argument that names what is installed, for lip pkg view (protocol/lip-pkg.md).
-  /// A remote repository is named at the commit that was installed of a branch or of a tag,
-  /// which may have moved since, and otherwise at the installed version or at the commit of
-  /// its source. A URL and a local path are named as they are: what they hold now is shown.
-  public string ViewArgument =>
-      Origin switch {
-        { Kind: RefKind.Spec, GitRef.Kind: GitRefKind.Branch or GitRefKind.Tag } source
-            when Commit is not null && !BedrockServer.IsServer(source) =>
-            $"{WithVariant(source)}@rev:{Commit}",
-        { Kind: RefKind.Spec, GitRef: null } source => $"{WithVariant(source)}@{Version}",
-        { } source => PackageArguments.Of(source),
-        null => $"{Identity}@{Version}",
-      };
-
   /// What tells the source from the repository that the identity names: the local path, the
   /// URL, or the branch, tag or commit that the package is held at (branch:, tag: or rev: with
   /// a name). Null for a remote repository without a ref or at a version.

@@ -690,13 +690,92 @@ public sealed class DaemonTests : IAsyncDisposable {
         TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
   }
 
+  /// The interface updates lip: it stays until the user quits it, and the daemon exits only
+  /// then. However the interface ends, by the user quitting it or by a signal such as the one an
+  /// installer that replaces lip sends, the client has what to do for the user to read once its
+  /// console is back to its screen.
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Interface_ThatUpdatedLip_TellsTheClientToRunLipAgain(bool signalled) {
+    // Arrange
+    ConcurrentDictionary<string, App> apps = new();
+    Task host = Host(InterfaceHost(
+        new MockFileSystem(), null, apps, [],
+        (_, checkOnly) => {
+          if (!checkOnly) {
+            Invocation.Current.LipReplaced = true;
+          }
+
+          return Task.FromResult(new SelfUpdateResult(
+              checkOnly ? SelfUpdateOutcome.Available : SelfUpdateOutcome.Replaced,
+              Semver.SemVersion.Parse("1.3.0")));
+        }));
+    string directory = Path.Join(_directory, "updated");
+    Directory.CreateDirectory(directory);
+    DaemonClient client = Client();
+    Streams streams = new("");
+    TaskCompletionSource<FrameWriter> writer = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    Task<ClientOutcome> outcome = client.Run(InterfaceStart(directory), streams.Client, w => {
+      writer.TrySetResult(w);
+      return new MemoryStream();
+    });
+    Attached attached = new(streams, writer, outcome);
+    App app = await AppOf(apps, directory);
+    await WaitFor(app, s => s.Contains("lip 1.2.3", StringComparison.Ordinal));
+
+    // Act: Settings, Check for updates, Install.
+    app.Post(() => {
+      app.Context.Navigate(PageId.Settings);
+      app.Context.FocusContent();
+    });
+    await WaitFor(app, s => s.Contains("Check for updates", StringComparison.Ordinal));
+    for (int i = 0; i < 4; i++) {
+      attached.Press('\0', ConsoleKey.DownArrow);
+    }
+
+    attached.Press((char)13, ConsoleKey.Enter);
+    await WaitFor(app, s => s.Contains("lip 1.3.0 is available.", StringComparison.Ordinal));
+    attached.Press((char)13, ConsoleKey.Enter);
+    await WaitFor(app, s => s.Contains("lip 1.3.0 is installed.", StringComparison.Ordinal));
+
+    // The interface stays, and so does the daemon.
+    await Task.Delay(200, TestContext.Current.CancellationToken);
+    Assert.False(outcome.IsCompleted);
+    Assert.False(host.IsCompleted);
+
+    if (signalled) {
+      Assert.True(client.Signal(PosixSignal.SIGINT));
+    } else {
+      attached.Press((char)13, ConsoleKey.Enter);
+    }
+
+    ClientOutcome ended = await outcome.WaitAsync(
+        TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(
+        signalled
+            ? new ClientOutcome(null, PosixSignal.SIGINT, null)
+            : new ClientOutcome(0, null, null),
+        ended);
+    Assert.Equal(
+        "lip was updated to 1.3.0. Run lip again to start it.\n",
+        streams.ErrorText.ToString().ReplaceLineEndings("\n"));
+    // Once the interface has ended, the daemon of the old lip exits.
+    await host.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+  }
+
   /// Carries out the interface for each client, with the workspace list at list (in memory when
-  /// null) of fs, as DaemonEntry.CarryOut does with that of the state directory.
+  /// null) of fs, as DaemonEntry.CarryOut does with that of the state directory, and what the
+  /// interface has the user read once it has ended written to standard error at once.
   private static CarryOutCommand InterfaceHost(
       MockFileSystem fs,
       string? list,
       ConcurrentDictionary<string, App> apps,
-      ConcurrentDictionary<string, Task<int>> runs) {
+      ConcurrentDictionary<string, Task<int>> runs,
+      Func<LipClient, bool, Task<SelfUpdateResult>>? selfUpdate = null) {
     ServerSessions servers = new();
     return (_, start, invocation, terminal) => {
       Task<int> run = Task.Factory.StartNew(() => {
@@ -710,6 +789,11 @@ public sealed class DaemonTests : IAsyncDisposable {
           Workspaces = new WorkspaceList(fs, list),
           Servers = servers,
           ClientLanguage = Languages.Parse(start.Language),
+          SelfUpdate = selfUpdate,
+          Farewell = message => {
+            invocation.Error.WriteLine(message);
+            invocation.Error.Flush();
+          },
         });
         apps[invocation.WorkingDirectory] = app;
         return app.Run();

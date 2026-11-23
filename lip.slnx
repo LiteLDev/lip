@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Golang.Org.X.Mod/Golang.Org.X.Mod.csproj" />
+    <Project Path="src/Lip.Cli/Lip.Cli.csproj" />
+    <Project Path="src/Lip.Core/Lip.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Golang.Org.X.Mod.Tests/Golang.Org.X.Mod.Tests.csproj" />
+    <Project Path="tests/Lip.Cli.Tests/Lip.Cli.Tests.csproj" />
+    <Project Path="tests/Lip.Core.RegressionTests/Lip.Core.RegressionTests.csproj" />
+    <Project Path="tests/Lip.Core.Tests/Lip.Core.Tests.csproj" />
+  </Folder>
+</Solution>

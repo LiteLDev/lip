@@ -302,7 +302,7 @@ public sealed class SelfUpdater {
         continue;
       }
       string target = _fileSystem.Path.GetFullPath(_fileSystem.Path.Join(root, entry.FullName));
-      if (!target.StartsWith(root + _fileSystem.Path.DirectorySeparatorChar,
+      if (!target.StartsWith(_fileSystem.Path.WithTrailingSeparator(root),
           StringComparison.Ordinal)) {
         throw new SelfUpdateException(
             $"The archive {archive} holds a file outside its root ({entry.FullName}).");

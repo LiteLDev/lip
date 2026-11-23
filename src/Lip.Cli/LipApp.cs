@@ -39,9 +39,13 @@ public static class LipApp {
   /// Runs the interface (protocol/lip-tui.md) on terminal for the current invocation, with the
   /// workspace list of the state directory and the servers of this process, until the user quits
   /// it; returns the exit code of lip. clientLanguage is the client language, or null when there
-  /// is none. Throws when the interface fails.
+  /// is none. farewell gets what is to reach the terminal once the interface has ended
+  /// (AppOptions.Farewell). Throws when the interface fails.
   public static int RunInterface(
-      ITerminal terminal, string workingDirectory, Language? clientLanguage) {
+      ITerminal terminal,
+      string workingDirectory,
+      Language? clientLanguage,
+      Action<string> farewell) {
     System.IO.Abstractions.FileSystem fileSystem = new();
     return new App(new AppOptions {
       Terminal = terminal,
@@ -55,6 +59,7 @@ public static class LipApp {
       GithubProbe = new GithubProbe(),
       ClientLanguage = clientLanguage,
       DaemonStatus = DaemonStatus,
+      Farewell = farewell,
     }).Run();
   }
 
@@ -140,10 +145,6 @@ public static class LipApp {
         pkg.SetDefaultCommand<MissingSubcommandCommand>();
         pkg.AddCommand<PkgInitCommand>("init")
             .WithDescription("Creates a lip.toml for a new package");
-        pkg.AddCommand<PkgPackCommand>("pack")
-            .WithDescription("Packs a directory into a ZIP archive");
-        pkg.AddCommand<PkgViewCommand>("view")
-            .WithDescription("Shows the package file and the versions of a package, as JSON");
         pkg.AddCommand<PkgMigrateCommand>("migrate")
             .WithDescription("Migrates the tooth.json in the current directory to lip.toml");
       });
