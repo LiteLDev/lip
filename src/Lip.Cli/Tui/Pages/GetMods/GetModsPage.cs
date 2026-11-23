@@ -598,8 +598,8 @@ public sealed class GetModsPage : Page {
   private void ChooseVersion(CatalogMod mod, CatalogWorkspace workspace) {
     if (workspace.Game is null) {
       Context.Confirm(
-          mod.Name, GetModsText.NoServer, CommonText.NewServer,
-          () => Context.Navigate(PageId.Workspaces, PageRequest.NewServer));
+          mod.Name, GetModsText.NoServer, CommonText.SetUpServer,
+          () => Context.Navigate(PageId.Server, PageRequest.SetUpServer));
       return;
     }
 

@@ -58,8 +58,8 @@ public sealed class FirstServerShots(ShotRun run) {
     "Quit correctly",
   ];
 
-  /// The interface as it starts in an empty folder, the new server wizard, and a mod of the
-  /// Get mods page.
+  /// The interface as it starts in an empty folder, a folder for the server from the
+  /// workspace picker, the setup of the Server page, and a mod of the Get mods page.
   [ShotTheory]
   [ClassData(typeof(AllLanguages))]
   public async Task FromAnEmptyFolderToAMod(Language language) {
@@ -78,8 +78,8 @@ public sealed class FirstServerShots(ShotRun run) {
     Target sidebar = At.Row(HomeText.Title, 2).To(At.Row(SettingsText.Title));
     Target overview = At.Text(HomeText.Workspace).To(At.Text(HomeText.NotInstalled))
         .To(At.Text(CommonText.ServerStopped)).Pad(1);
-    Target steps = At.Text("1  " + HomeText.CreateServer)
-        .To(At.Text("3  " + HomeText.StartServer)).Pad(1);
+    Target steps = At.Text("1  " + HomeText.ChooseWorkspace)
+        .To(At.Text("4  " + HomeText.StartServer)).Pad(1);
     Target hints = At.Text("↑↓").To(At.Text("Esc " + CommonText.HintBack.Text)).Pad(1);
     await shot.Capture(
         "first-server-01-home",
@@ -87,9 +87,9 @@ public sealed class FirstServerShots(ShotRun run) {
         Note.Callout(
             1, sidebar,
             shot.T(
-                "The sidebar: the nine pages of lip. The one shown is marked.",
-                "侧边栏：lip 的九个页面，当前页面带有标记。",
-                "側邊欄：lip 的九個頁面，目前的頁面帶有標記。"),
+                "The sidebar: the pages of lip. The one shown is marked.",
+                "侧边栏：lip 的各个页面，当前页面带有标记。",
+                "側邊欄：lip 的各個頁面，目前的頁面帶有標記。"),
             Side.Bottom),
         Note.Box(overview),
         Note.Callout(
@@ -103,9 +103,9 @@ public sealed class FirstServerShots(ShotRun run) {
         Note.Callout(
             3, steps,
             shot.T(
-                "The three steps of this tutorial. The first one is selected.",
-                "本教程的三个步骤，第一步已被选中。",
-                "本教學的三個步驟，第一步已被選取。"),
+                "The steps of this tutorial. First, a folder for the server: step 1.",
+                "本教程的各个步骤。先为服务器准备一个文件夹：第 1 步。",
+                "本教學的各個步驟。先為伺服器準備一個資料夾：第 1 步。"),
             Side.Right),
         Note.Box(hints),
         Note.Callout(
@@ -115,25 +115,29 @@ public sealed class FirstServerShots(ShotRun run) {
                 "当前可用的按键，会随着你的操作而变化。",
                 "目前可用的按鍵，會隨著你的操作而變化。"),
             Side.Right),
-        Note.Keys("Enter"));
+        Note.Keys("↑", "Enter"));
 
-    // Step 1 of the Home page starts the wizard: here, or in another folder.
+    // Step 1 of the Home page opens the workspace picker, which adds a folder.
+    tui.Press(ConsoleKey.UpArrow);
+    await tui.WaitFor(HomeText.ChooseWorkspaceDetail);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.Elsewhere);
+    await tui.WaitFor($"─ {WorkspacesText.Title} ─");
+    await tui.WaitFor("● " + _servers);
+    tui.Press(ConsoleKey.Tab);
+    await tui.WaitFor(WorkspacesText.AddFolderDetail);
     await shot.Capture(
         "first-server-02-where",
-        Note.Focus(At.Panel(WorkspacesText.NewServerTitle)),
-        Note.Box(At.Row(WorkspacesText.Elsewhere)),
-        Note.Keys("↓", "Enter"));
+        Note.Focus(At.Panel(WorkspacesText.Title)),
+        Note.Box(At.Row(WorkspacesText.AddFolder)),
+        Note.Keys("Tab", "Enter"));
 
-    tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Cancel} ]");
     await tui.WaitUntilGone(PathPickerText.Reading);
     await shot.Capture(
         "first-server-03-folder",
         Note.Callout(
-            1, At.Text(PathPickerText.Folder).To(At.Text(_servers)),
+            1, At.Text($"{PathPickerText.Folder}  {_servers}"),
             shot.T(
                 "The folder that is open.", "当前打开的文件夹。", "目前開啟的資料夾。")),
         Note.Callout(
@@ -160,14 +164,42 @@ public sealed class FirstServerShots(ShotRun run) {
         "first-server-04-folder-name",
         Note.Focus(At.Panel(PathPickerText.NewFolderTitle)),
         Note.Box(At.Text("> survival")),
-        Note.Keys("s", "u", "r", "v", "i", "v", "a", "l", "Enter"));
+        Note.Keys("s", "u", "r", "v", "i", "v", "a", "l", "Enter", "←", "Enter"));
 
+    // The new folder is open: Select this folder adds it, and selects it.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    await tui.WaitFor($"{PathPickerText.Folder}  {_survival}");
+    await tui.WaitUntilGone(PathPickerText.Reading);
+    tui.Press(ConsoleKey.LeftArrow);
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitUntil(() => tui.Context.Workspace == _survival, "the new folder");
+    await tui.WaitUntilGone($"─ {WorkspacesText.Title} ─");
+    await tui.WaitFor(HomeText.CreateServerDetail);
+    await tui.WaitUntilGone(CommonText.WorkspaceSelected + ": ");
+    await shot.Capture(
+        "first-server-04-home-folder",
+        Note.Callout(
+            1, At.Text(" · " + _survival),
+            shot.T(
+                "The top bar names the folder that lip works in now.",
+                "顶栏显示 lip 现在所在的文件夹。", "頂端列顯示 lip 現在所在的資料夾。"),
+            Side.Right),
+        Note.Callout(
+            2, At.Row(HomeText.CreateServer),
+            shot.T(
+                "Step 2 is selected: Enter sets up the server.",
+                "第 2 步已被选中：按 Enter 安装服务器。",
+                "第 2 步已被選取：按 Enter 安裝伺服器。"),
+            Side.Right),
+        Note.Keys("Enter"));
+
+    // Step 2 opens the Server page, which asks for the versions.
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
     await tui.WaitFor("1.26.60");
     await shot.Capture(
         "first-server-05-game-version",
-        Note.Focus(At.Panel(WorkspacesText.GameVersion)),
+        Note.Focus(At.Panel(SetupText.GameVersion)),
         Note.Callout(
             1, At.Row("1.26.60"),
             shot.T(
@@ -183,10 +215,10 @@ public sealed class FirstServerShots(ShotRun run) {
         Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    await tui.WaitFor($"─ {SetupText.Loader} ─");
     await shot.Capture(
         "first-server-06-loader",
-        Note.Focus(At.Panel(WorkspacesText.Loader)),
+        Note.Focus(At.Panel(SetupText.Loader)),
         Note.Box(At.Row("LeviLamina 26.60.3")),
         Note.Keys("Enter"));
 
@@ -194,7 +226,7 @@ public sealed class FirstServerShots(ShotRun run) {
     await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
     await shot.Capture(
         "first-server-07-plan",
-        Note.Focus(At.Panel(WorkspacesText.SetUpTitle)),
+        Note.Focus(At.Panel(SetupText.SetUpTitle)),
         Note.Callout(
             1, At.Text("Dry run:").To(At.Text("(12 files)")),
             shot.T(
@@ -212,8 +244,6 @@ public sealed class FirstServerShots(ShotRun run) {
 
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(GameSetup.EulaUrl);
-    // The toast that named the new workspace is gone by the time a user has read the plan.
-    await tui.WaitUntilGone(CommonText.WorkspaceSelected + ": ");
     await shot.Capture(
         "first-server-08-eula",
         Note.Focus(At.Panel(CommonText.EulaTitle)),
@@ -226,7 +256,7 @@ public sealed class FirstServerShots(ShotRun run) {
     await tui.WaitFor(" 62%");
     await shot.Capture(
         "first-server-09-progress",
-        Note.Focus(At.Panel(WorkspacesText.SetUpTitle)),
+        Note.Focus(At.Panel(SetupText.SetUpTitle)),
         Note.Arrow(
             At.Text(" 62%"), shot.T("Still downloading", "仍在下载", "仍在下載"), Side.Right));
 
@@ -234,33 +264,33 @@ public sealed class FirstServerShots(ShotRun run) {
     await tui.WaitFor("✓ " + CommonText.Done);
     await shot.Capture(
         "first-server-10-result",
-        Note.Focus(At.Panel(WorkspacesText.SetUpTitle)),
+        Note.Focus(At.Panel(SetupText.SetUpTitle)),
         Note.Box(At.Text("✓ " + CommonText.Done)),
         Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone("✓ " + CommonText.Done);
-    await tui.WaitFor("● " + _survival);
+    await tui.WaitFor($"[ {ServerText.Start} ]");
     await shot.Capture(
         "first-server-11-workspace",
         Note.Callout(
-            1, At.Row("● " + _survival),
+            1, At.Text($"[ {ServerText.Start} ]"),
             shot.T(
-                "The new server. ● marks the folder that lip works in now.",
-                "新建的服务器。● 表示 lip 现在所在的文件夹。",
-                "剛建立的伺服器。● 表示 lip 現在所在的資料夾。")),
+                "The server is set up: the Server page starts it.",
+                "服务器已安装好：服务器页可以启动它。",
+                "伺服器已安裝好：伺服器頁可以啟動它。")),
         Note.Callout(
             2, At.Text(" · " + _survival),
             shot.T(
                 "The top bar always names that folder.",
                 "顶栏始终显示这个文件夹。", "頂端列始終顯示這個資料夾。"),
             Side.Right),
-        Note.Keys("Esc", "↑", "↑", "↑", "↑", "↑", "↑", "Enter"));
+        Note.Keys("Esc", "↑", "Enter"));
 
     // Back to the Home page, as a user goes: Esc to the sidebar, up to Home, Enter. The first
-    // step is done, and the second is selected.
+    // steps are done, and the third is selected.
     tui.Press(ConsoleKey.Escape);
-    tui.Press(ConsoleKey.UpArrow, 6);
+    tui.Press(ConsoleKey.UpArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("LeviLamina " + World.LoaderVersion);
     await tui.WaitFor(HomeText.InstallModsDetail);
@@ -276,8 +306,8 @@ public sealed class FirstServerShots(ShotRun run) {
         Note.Callout(
             2, At.Row(HomeText.InstallMods),
             shot.T(
-                "Step 1 is ticked, and step 2 is selected.",
-                "第 1 步已打勾，第 2 步已被选中。", "第 1 步已打勾，第 2 步已被選取。")),
+                "Steps 1 and 2 are ticked, and step 3 is selected.",
+                "第 1、2 步已打勾，第 3 步已被选中。", "第 1、2 步已打勾，第 3 步已被選取。")),
         Note.Keys("Enter"));
 
     // Step 2 opens the Get mods page.
@@ -373,7 +403,7 @@ public sealed class FirstServerShots(ShotRun run) {
                 "✓ marks a mod that is installed.", "✓ 表示模组已安装。", "✓ 表示模組已安裝。")),
         Note.Keys("Esc", "↑", "↑", "↑", "Enter"));
 
-    // Back to the Home page again: two steps are done, and the third is selected.
+    // Back to the Home page again: three steps are done, and the fourth is selected.
     tui.Press(ConsoleKey.Escape);
     tui.Press(ConsoleKey.UpArrow, 3);
     tui.Press(ConsoleKey.Enter);
@@ -381,15 +411,15 @@ public sealed class FirstServerShots(ShotRun run) {
     await shot.Capture(
         "first-server-20-home-mods",
         Note.Callout(
-            1, At.Text("✓ 1").To(At.Text("✓ 2  " + HomeText.InstallMods)),
+            1, At.Text("✓ 1").To(At.Text("✓ 3  " + HomeText.InstallMods)),
             shot.T(
-                "Steps 1 and 2 are done.", "第 1 步和第 2 步已完成。", "第 1 步和第 2 步已完成。")),
+                "Steps 1 to 3 are done.", "第 1 到 3 步已完成。", "第 1 到 3 步已完成。")),
         Note.Callout(
             2, At.Row(HomeText.StartServer),
             shot.T(
-                "Step 3 is selected: Enter starts the server.",
-                "第 3 步已被选中：按 Enter 启动服务器。",
-                "第 3 步已被選取：按 Enter 啟動伺服器。"),
+                "Step 4 is selected: Enter starts the server.",
+                "第 4 步已被选中：按 Enter 启动服务器。",
+                "第 4 步已被選取：按 Enter 啟動伺服器。"),
             Side.Right),
         Note.Keys("Enter"));
   }

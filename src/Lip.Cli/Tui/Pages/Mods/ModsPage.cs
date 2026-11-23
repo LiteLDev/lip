@@ -9,7 +9,7 @@ namespace Lip.Cli.Tui.Pages.Mods;
 
 /// An action row above the list of the Mods page.
 internal enum ModAction {
-  NewServer,
+  SetUpServer,
   InstallFromSource,
   UpdateAll,
   GetMods,
@@ -312,7 +312,7 @@ public sealed class ModsPage : Page {
     List<ModAction> actions = [];
     if (read && !_list.Items.Any(p => p.IsGame)) {
       // A workspace without a game needs one before any mod.
-      actions.Add(ModAction.NewServer);
+      actions.Add(ModAction.SetUpServer);
     }
 
     actions.Add(ModAction.InstallFromSource);
@@ -353,7 +353,7 @@ public sealed class ModsPage : Page {
 
   private static string Label(ModAction action) =>
       action switch {
-        ModAction.NewServer => CommonText.NewServer,
+        ModAction.SetUpServer => CommonText.SetUpServer,
         ModAction.InstallFromSource => ModsText.InstallFromSource,
         ModAction.UpdateAll => ModsText.UpdateAll,
         _ => CommonText.GetMods,
@@ -361,7 +361,7 @@ public sealed class ModsPage : Page {
 
   private static string Detail(ModAction action) =>
       action switch {
-        ModAction.NewServer => ModsText.NewServerDetail,
+        ModAction.SetUpServer => ModsText.SetUpServerDetail,
         ModAction.InstallFromSource => ModsText.InstallFromSourceDetail,
         ModAction.UpdateAll => ModsText.UpdateAllDetail,
         _ => ModsText.GetModsDetail,
@@ -484,8 +484,8 @@ public sealed class ModsPage : Page {
 
   private void Run(ModAction action) {
     switch (action) {
-      case ModAction.NewServer:
-        Context.Navigate(PageId.Workspaces, PageRequest.NewServer);
+      case ModAction.SetUpServer:
+        Context.Navigate(PageId.Server, PageRequest.SetUpServer);
         break;
       case ModAction.InstallFromSource:
         PromptInstall();
@@ -550,7 +550,9 @@ public sealed class ModsPage : Page {
       items = [Item(ModsText.Details, () => ShowDetails(identity))];
       if (IsSystem(package)) {
         // lip update refuses the game and the loader: lip setup changes them.
-        items.Add(Item(ModsText.GoToWorkspaces, () => Context.Navigate(PageId.Workspaces)));
+        items.Add(Item(
+            ModsText.ChangeVersions,
+            () => Context.Navigate(PageId.Server, PageRequest.SetUpServer)));
       } else {
         // By the source that the state file records, not by the identity, which would name the
         // version tags of a repository: a package of a URL or of a local path has none, and a

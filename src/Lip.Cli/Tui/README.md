@@ -38,6 +38,12 @@ interface: `lip run --managed` and the daemon use them too.
 The shell draws the top bar, the sidebar, the box of the content area with the title of the
 page, the bottom bar, and the dialogs. A page draws only inside `area`.
 
+The selected workspace in the top bar takes the focus too: ↑ from the first page of the
+sidebar (or ↓ from the last) goes to it, and Enter on it opens the workspace picker
+(`Pages/Workspaces/WorkspacePicker`, a dialog), from which the user selects, adds or removes a
+workspace; a page opens it with `Context.ChooseWorkspace()`. The picker installs nothing:
+the Server page sets a workspace up (`Pages/Server/ServerWizard`, as `lip setup` does).
+
 - The terminal is at least 60×16; below that the shell shows a message, no page is drawn, and
   the only key that works is Ctrl+C, which quits.
 - On a terminal narrower than 80 columns the sidebar shows icons while the page has the focus,
@@ -124,7 +130,7 @@ These hold on every page. Tests enforce some of them; reviewers check the rest.
 ## Writing a page
 
 A page is a class in `Pages/<Name>/` in the namespace `Lip.Cli.Tui.Pages.<Name>`, derived from
-`Page`. The registry in `Pages.cs` already lists all nine; do not edit it.
+`Page`. The registry in `Pages.cs` already lists all eight; do not edit it.
 
 ```csharp
 namespace Lip.Cli.Tui.Pages.Mods;
@@ -227,7 +233,7 @@ Rules that keep ten pages working together:
 
 | Request | To | The page then |
 |---|---|---|
-| `PageRequest.NewServer` | Workspaces | starts the new server wizard |
+| `PageRequest.SetUpServer` | Server | sets up the selected workspace: game version, build, loader |
 | `PageRequest.StartServer` | Server | starts the server of the selected workspace |
 | `PageRequest.InstallFromSource` | Mods | asks for a package to install from a source |
 | `PageRequest.GithubProxy` | Settings | asks for the GitHub proxy, tests it and saves it |
@@ -252,7 +258,8 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 | `SwitchWorkspace(path, switched?)` | Selects a workspace of the list (after `ConfirmLeave` when needed). |
 | `AddWorkspace(path, out error, switched?)` | Adds an existing directory to the list and selects it; false with a localized `error` otherwise. |
 | `NotifyWorkspaceChanged()` | Tells every page that the workspace changed, after you changed it by other means than `PlanAndRun`. |
-| `ClientFor(directory)` | A client for another directory (the new server wizard reads versions with it). |
+| `ClientFor(directory)` | A client for another directory. |
+| `ChooseWorkspace()` | Opens the workspace picker, as Enter on the workspace of the top bar does. |
 
 **Parts of lip** (each is a seam that tests replace)
 
@@ -343,7 +350,7 @@ Context.ShowMenu(
 | `Background(…, anyWorkspace: true)` | The same for work that is of no workspace (the workspace list, the catalogue, the user configuration, the daemon, the GitHub check): its callbacks are called whatever is selected by then. |
 | `RunOperation(title, action, succeeded?, cancellable?)` | Runs a command with a progress dialog; then `succeeded(operation)`, or the failure dialog. Returns false when another operation runs. `operation.Log` holds what the command said. |
 | `RunOperation<T>(title, action, succeeded, cancellable?)` | The same for a command with a result. |
-| `PlanAndRun(title, run => …, done?, session?, notApplied?)` | The standard flow of a workspace operation. `run` is an `OperationRun`: `DryRun`, `AcceptEula`, `Token`, `Session`; return what the command returns, an `OperationResult`. Pass `run.Session` on, and `confirmed: true` where `LipClient` has it. `notApplied` is called when the operation is not carried out: the plan cancelled, the license declined, or the dry run or the operation failed or cancelled, once the user closed the dialog that says so. Say then what a flow did before the operation, as the new server wizard does for the folder it created. |
+| `PlanAndRun(title, run => …, done?, session?, notApplied?)` | The standard flow of a workspace operation. `run` is an `OperationRun`: `DryRun`, `AcceptEula`, `Token`, `Session`; return what the command returns, an `OperationResult`. Pass `run.Session` on, and `confirmed: true` where `LipClient` has it. `notApplied` is called when the operation is not carried out: the plan cancelled, the license declined, or the dry run or the operation failed or cancelled, once the user closed the dialog that says so. Say then what a flow did before the operation. |
 | `ShowResult(title, operation, done?)` | The messages of a finished operation, ending with `✓ done`. |
 | `ShowFailure(title, exception, cancelled?, log?)` | The failure dialog; the report goes to `.lip/logs` of the selected workspace. |
 
@@ -398,7 +405,7 @@ The result of the operation does not show again the lines that its plan showed, 
 was resolved.
 
 A flow that reads something before its operation holds one session from its first read to
-the end, so that the operation reads nothing twice. The new server wizard does:
+the end, so that the operation reads nothing twice. The setup of the Server page does:
 
 ```csharp
 private OperationSession _session = new();          // a new one each time the wizard starts
@@ -412,7 +419,7 @@ Context.RunOperation(title, token => setup.LoaderVersions(client, game, token, s
 
 // The setup, in the same session: it reads the builds list and LeviLamina no more.
 Context.PlanAndRun(
-    WorkspacesText.SetUpTitle, run => setup.Setup(client, request, run), done, session);
+    SetupText.SetUpTitle, run => setup.Setup(client, request, run), done, session);
 ```
 
 `LipClient.GameVersions(session)`, `LoaderVersions(game, token, session)`, `Install`,
@@ -566,12 +573,10 @@ possible, in the bar, but is never the only way.
   and is left with `..`.
 
 ```csharp
-// New server: the folder may not exist yet, lip setup creates it.
-Context.Show(PathPicker.Folder(
-    WorkspacesText.NewServerTitle, Context.Workspace, folder => ReadGames(folder),
-    mayNotExist: true));
+// A folder that the caller creates later: it may not exist yet.
+Context.Show(PathPicker.Folder(title, Context.Workspace, folder => Use(folder), mayNotExist: true));
 
-// Add an existing folder to the workspace list.
+// Add a folder to the workspace list ([ New folder… ] creates one first).
 Context.Show(PathPicker.Folder(WorkspacesText.AddFolder, Context.Workspace, folder => {
   if (!Context.AddWorkspace(folder, out string? error)) {
     Context.Message(WorkspacesText.AddFolder, error!, Theme.Bad);
@@ -616,7 +621,7 @@ public static class ModsText {
   `XxxText` class, as properties or methods (never fields).
 - Reuse `CommonText` for buttons (`Ok`, `Cancel`, `Apply`, `Save`, `Discard`, …), hints and
   common words, so that they read the same everywhere. What two pages name is there too:
-  `NewServer`, `GetMods`, `AutoRestart`, `ConnectDirectly`, `NoMods`, `Saved`,
+  `SetUpServer`, `GetMods`, `AutoRestart`, `ConnectDirectly`, `NoMods`, `Saved`,
   `ChangedOnDisk`, `Overwrite`, `DiscardTitle`, `DiscardQuestion`, `StopServerFirst` (why
   something is disabled while the server runs). When your page needs a text that
   another page has, move it to `CommonText` instead of writing it again.

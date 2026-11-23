@@ -73,9 +73,9 @@ public static class GetModsText {
   public static string Install => L.T("Install…", "安装…", "安裝…");
 
   public static string NoServer => L.T(
-      "This folder has no server yet. Create one first.",
-      "此文件夹还没有服务器，请先创建。",
-      "此資料夾還沒有伺服器，請先建立。");
+      "This folder has no server yet. Set one up first.",
+      "此文件夹还没有服务器，请先安装。",
+      "此資料夾還沒有伺服器，請先安裝。");
 
   public static string InstallTitle(string package) =>
       L.T($"Install {package}", $"安装 {package}", $"安裝 {package}");

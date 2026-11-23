@@ -34,14 +34,16 @@ The **workspace list** is the JSON file ([README, "Files"](README.md#files)) `wo
 The interface has one **selected workspace** at a time. When it starts, `lip` adds its working directory to the end of the workspace list unless the list names it, and selects it. The user may then:
 
 - select a workspace of the list;
-- add a directory that exists to the end of the list, unless the list names it, and select it; and
+- add a directory to the end of the list, unless the list names it, and select it: a directory that exists, or one that `lip` first creates, with its missing parents, when the user asks for a new one; and
 - remove a workspace other than the selected one from the list, which changes no file in it.
+
+Selecting, adding and removing a workspace install nothing in it: a game is set up as "Server setup" defines.
 
 Adding and removing read the workspace list again before they write it. The interfaces that one process runs at the same time make their changes one at a time, and all of them are kept.
 
-### New server
+### Server setup
 
-The user may ask the interface for a **new server**. The user then names a directory, and chooses, in this order:
+The user may ask the interface to **set up** the server of the selected workspace, whether or not it has a game. The user then chooses, in this order:
 
 1. a game version G: a version that the builds list ([lip-package(7), "The server"](lip-package.md#the-server)) names and that step 2 offers a build for, offered with the versions that are not prereleases first, then the others, each from highest to lowest;
 2. a build B ([lip-setup(1), "Terms"](lip-setup.md#terms)): `windows` is offered when the builds list has a build of G for `win-x64`, and `linux` when it has one for `linux-x64` and `lip` runs on Linux on x64. When one build only is offered, it is B, and the user is not asked; and
@@ -49,13 +51,7 @@ The user may ask the interface for a **new server**. The user then names a direc
 
 The **versions that fit** G are those of the candidates of Resolve(`github.com/LiteLDev/LeviLamina`, any version, environment) ([lip-package(7), "Resolution"](lip-package.md#resolution)) that fit G, from the first; the search may stop as [lip-setup(1), "The loader"](lip-setup.md#the-loader) defines, and at a candidate that does not fit G after one that does. `lip` reads the builds list and resolves these candidates as a setup does.
 
-A directory named by a relative path is relative to the selected workspace. When the user has made these choices, `lip`, in order:
-
-1. creates the directory, and its missing parents, when it does not exist;
-2. adds the directory to the workspace list, unless the list names it, and selects it ("Workspaces"); and
-3. carries out `lip setup --game G --build B` with `--loader levilamina@V` or `--no-loader`, as "Commands" defines: it asks the user in the interface whether they accept the license ([lip-setup(1), "The license"](lip-setup.md#the-license)).
-
-When the user cancels before the last choice, or when a step fails, the steps after it are not carried out. The directory is not removed when the setup fails.
+When the user has made these choices, `lip` carries out `lip setup --game G --build B` with `--loader levilamina@V` or `--no-loader` in the selected workspace, as "Commands" defines: it asks the user in the interface whether they accept the license ([lip-setup(1), "The license"](lip-setup.md#the-license)). When the user cancels before the last choice, nothing is carried out.
 
 ### GitHub reachability
 

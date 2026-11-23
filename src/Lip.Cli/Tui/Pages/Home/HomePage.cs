@@ -8,13 +8,14 @@ using Lip.Core.Services;
 
 namespace Lip.Cli.Tui.Pages.Home;
 
-/// The Home page: an overview of the selected workspace, and the steps from an empty directory
-/// to a running server, each of which Enter starts. It also makes the reachability check of
+/// The Home page: an overview of the selected workspace, and the steps from choosing a
+/// workspace to a running server, each of which Enter starts. It also makes the reachability check of
 /// GitHub when the interface starts, and asks the user about it when it fails
 /// (protocol/lip-tui.md, "GitHub reachability").
 public sealed class HomePage : Page {
   /// The steps, in the order a new user takes them.
   private enum Step {
+    ChooseWorkspace,
     CreateServer,
     InstallMods,
     StartServer,
@@ -44,8 +45,10 @@ public sealed class HomePage : Page {
 
   public HomePage(AppContext context) : base(context) {
     _steps = new ListView<Step>(Row) {
-      Items = [Step.CreateServer, Step.InstallMods, Step.StartServer],
+      Items = [Step.ChooseWorkspace, Step.CreateServer, Step.InstallMods, Step.StartServer],
     };
+    // The first step is always done: until the workspace is read, the next one is selected.
+    _steps.Select(step => step == Step.CreateServer);
   }
 
   public override string Title => HomeText.Title;
@@ -101,7 +104,12 @@ public sealed class HomePage : Page {
       screen.Write(column, y, values[i], area.Right);
     }
 
-    y++;
+    // The row between the overview and the steps goes where there is no room for it and the
+    // sentence about the selected step.
+    if (area.Height > labels.Length + _steps.Items.Count + 3) {
+      y++;
+    }
+
     if (y < area.Bottom) {
       screen.WriteFit(area.X, y, area.Width, HomeText.NextSteps, Theme.Strong);
     }
@@ -182,6 +190,8 @@ public sealed class HomePage : Page {
 
   private bool Done(Step step) =>
       step switch {
+        // A workspace is always selected.
+        Step.ChooseWorkspace => true,
         Step.CreateServer => GamePackage is not null,
         Step.InstallMods => ModCount > 0,
         _ => Context.ServerRunning,
@@ -190,8 +200,11 @@ public sealed class HomePage : Page {
   /// Goes straight into what the step stands for.
   private void Open(Step step) {
     switch (step) {
+      case Step.ChooseWorkspace:
+        Context.ChooseWorkspace();
+        break;
       case Step.CreateServer:
-        Context.Navigate(PageId.Workspaces, PageRequest.NewServer);
+        Context.Navigate(PageId.Server, PageRequest.SetUpServer);
         break;
       case Step.InstallMods:
         Context.Navigate(PageId.GetMods);
@@ -218,6 +231,7 @@ public sealed class HomePage : Page {
           .Add(Done(step) ? "✓ " : "  ", Theme.Good)
           .Add($"{(int)step + 1}  ", Theme.Muted)
           .Add(step switch {
+            Step.ChooseWorkspace => HomeText.ChooseWorkspace,
             Step.CreateServer => HomeText.CreateServer,
             Step.InstallMods => HomeText.InstallMods,
             _ => HomeText.StartServer,
@@ -226,6 +240,7 @@ public sealed class HomePage : Page {
   /// One sentence about the selected step.
   private string Detail(Step step) =>
       step switch {
+        Step.ChooseWorkspace => HomeText.ChooseWorkspaceDetail,
         Step.CreateServer when Done(step) => HomeText.CreateServerDoneDetail,
         Step.CreateServer => HomeText.CreateServerDetail,
         Step.InstallMods => HomeText.InstallModsDetail,

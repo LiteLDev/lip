@@ -54,7 +54,7 @@ public sealed class HomeDocShots(ShotRun run) {
 
     await shot.Capture(
         "home-04-mods-installed",
-        Note.Box(At.Text("✓ 1").To(At.Text("✓ 2"))),
+        Note.Box(At.Text("✓ 1").To(At.Text("✓ 3"))),
         Note.Box(At.Row(HomeText.StartServer)),
         Note.Keys("Enter"));
 
@@ -75,8 +75,8 @@ public sealed class HomeDocShots(ShotRun run) {
     await shot.Tui.WaitFor(HomeText.NotInstalled);
     await shot.Tui.WaitFor(HomeText.CreateServerDetail);
 
-    // The third step, in a folder without a server: lip says what is missing, and goes back
-    // to the first step.
+    // The last step, in a folder without a server: lip says what is missing, and goes back
+    // to the step that sets the server up.
     shot.Tui.Press(ConsoleKey.DownArrow, 2);
     await shot.Tui.WaitFor(HomeText.NeedServer);
     shot.Tui.Press(ConsoleKey.Enter);
@@ -93,8 +93,8 @@ public sealed class HomeDocShots(ShotRun run) {
         Note.Callout(
             2, At.Row(HomeText.CreateServer),
             shot.T(
-                "The highlight is back on the first step.", "高亮回到了第一步。",
-                "反白回到了第一步。")),
+                "The highlight is back on the step that sets up the server.",
+                "高亮回到了安装服务器的那一步。", "反白回到了安裝伺服器的那一步。")),
         Note.KeysAfter(shot.T("After", "按下之后", "按下之後"), "↓", "↓", "Enter"));
   }
 
