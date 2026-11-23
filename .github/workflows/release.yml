@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  # Not for Linux on arm64, where a LeviLamina server does not run (see build.yml).
+  # Not for Linux on arm64, where a LeviLamina server does not run (see ci.yml).
   build:
     runs-on: ${{ matrix.runs-on }}
     strategy:

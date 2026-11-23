@@ -1,15 +1,13 @@
+# No paths filter: ci-ok is a required check, and a required check must report on every pull
+# request, docs-only ones included. A merge queue does not support paths filters either.
 on:
   pull_request:
-    paths: &paths
-      - .github/scripts/**
-      - .github/workflows/build.yml
-      - 'src/**'
-      - 'tests/**'
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - main
       - 'release/**'
-    paths: *paths
   workflow_dispatch:
 
 permissions:
@@ -110,9 +108,50 @@ jobs:
         run: softwareupdate --install-rosetta --agree-to-license
 
       - shell: bash
+        run: chmod +x bin/lip* || true
+
+      # Sets up the newest game that LeviLamina supports, with LeviLamina, in a new workspace
+      # (lip install LeviLamina is carried out as lip setup), runs the server with lip run until
+      # it has started, asks it to stop, and fails unless LeviLamina was loaded, the server
+      # started, and lip run exited with 0.
+      - shell: bash
         run: |
-          chmod +x bin/lip* || true
-          bash .github/scripts/real-server.sh "$PWD/bin/lip"
+          # Without -e: the checks below say how lip run failed.
+          set +e -uo pipefail
+
+          lip=$PWD/bin/lip
+          workspace=$(mktemp -d)
+          cd "$workspace" || exit 1
+
+          "$lip" install github.com/LiteLDev/LeviLamina --accept-eula || exit 1
+
+          : > server.log
+          # Writes the line stop once the server has started or exited, or after ten minutes.
+          feed() {
+            for ((i = 0; i < 600; i++)); do
+              if grep -q 'Server started' server.log || [ -e exited ]; then
+                break
+              fi
+              sleep 1
+            done
+            echo stop
+          }
+          "$lip" run < <(feed) 2>&1 | tee server.log
+          code=${PIPESTATUS[0]}
+          touch exited
+
+          if ! grep -q 'LeviLamina Loaded' server.log; then
+            echo "::error::LeviLamina was not loaded (lip run exited with $code)."
+            exit 1
+          fi
+          if ! grep -q 'Server started' server.log; then
+            echo "::error::The server did not start (lip run exited with $code)."
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "::error::The server started, but lip run exited with $code."
+            exit 1
+          fi
 
   test:
     runs-on: ${{ matrix.runs-on }}
@@ -138,3 +177,15 @@ jobs:
       # When no test ends within ten minutes, the tests that were running are named and the
       # job fails.
       - run: dotnet test --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type none
+
+  # The single check that the ruleset of main requires: it fails unless every job above
+  # succeeded, so the ruleset need not name each job of each matrix.
+  ci-ok:
+    needs: [build, lint, server, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: |
+          echo "::error::Not every job succeeded."
+          exit 1
