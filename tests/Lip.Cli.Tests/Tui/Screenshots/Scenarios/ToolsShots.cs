@@ -131,12 +131,9 @@ public sealed class ToolsShots(ShotRun run) {
         "tools-08-init-save", Note.Focus(At.Panel(ManifestEditorText.SaveTitle)),
         Note.Keys("←", "→", "Enter"));
     tui.Press(ConsoleKey.Enter);
-    tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ManifestEditorText.Saved("lip.toml"));
 
-    // The file is there now: the form stays open on it, and the action edits it.
-    await tui.WaitFor(ManifestEditorText.EditTitle + "  ");
-    tui.Press(ConsoleKey.Escape);
+    // Saving closes the form. The file is there now, and the action edits it.
     await tui.WaitFor(ToolsText.Found);
     await shot.Capture(
         "tools-09-edit",

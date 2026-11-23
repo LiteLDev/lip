@@ -35,9 +35,9 @@ public sealed class ModsShots(ShotRun run) {
         Note.Callout(
             3, At.Row(Catalogue.RemoteCall),
             shot.T(
-                "Without a box: installed because another mod needs it, or the game itself.",
-                "没有方框：因其他模组需要而安装，或者是游戏本身。",
-                "沒有方框：因其他模組需要而安裝，或者是遊戲本身。")),
+                "Without a box: installed because another mod needs it.",
+                "没有方框：因其他模组需要而安装。",
+                "沒有方框：因其他模組需要而安裝。")),
         Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
