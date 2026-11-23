@@ -5,8 +5,7 @@ using Semver;
 namespace Lip.Core.Mcmod;
 
 /// A package with its selected entry (protocol/lip-package.md, "Resolution"): what a candidate
-/// installs. Variant is the variant of the source it was resolved for (the variant it names, for a
-/// dependency of a tooth.json whose "client" names "" of a package that has a package file).
+/// installs. Variant is the variant the source it was resolved for names.
 public record Package(string Id, string Variant, SemVersion Version, PackageEntry Entry) {
   /// The package file of the package (for a package read from a tooth.json, the one
   /// protocol/lip-compatibility.md, "tooth.json" derives from it for the environment), which the

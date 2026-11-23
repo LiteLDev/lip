@@ -441,6 +441,183 @@ public class ToothMigratorTests {
     // Assert
     PackageEntry entry = Reparse(result).Variants[""][0];
     Assert.Equal("example.com/a#client", Assert.Single(entry.Dependencies).Source.ToString());
+    Assert.StartsWith("variants.\"\" (server, win-x64).deps[\"example.com/a#client\"]: was kept.",
+        Assert.Single(result.Notes));
+  }
+
+  [Fact]
+  public async Task Migrate_LeviLaminaClientLabel_MergesIntoDefaultVariantWithRaisedRange() {
+    // Arrange: since 26.60.8, LeviLamina has a package file whose variant "" has an entry for
+    // each side, and no variant "client".
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "github.com/engsr6982/FastMiner", "version": "0.21.1",
+          "variants": [
+            { "platform": "win-x64",
+              "dependencies": { "github.com/LiteLDev/LeviLamina": "26.60.*" },
+              "assets": [ { "type": "zip",
+                "urls": ["https://github.com/engsr6982/FastMiner/releases/download/v0.21.1/FastMiner-server-windows-x64.zip"],
+                "placements": [ { "type": "dir", "src": "FastMiner/", "dest": "mods/FastMiner/" } ] } ] },
+            { "label": "client", "platform": "win-x64",
+              "dependencies": { "github.com/LiteLDev/LeviLamina#client": "26.60.*" },
+              "assets": [ { "type": "zip",
+                "urls": ["https://github.com/engsr6982/FastMiner/releases/download/v0.21.1/FastMiner-client-windows-x64.zip"],
+                "placements": [ { "type": "dir", "src": "FastMiner/", "dest": "mods/FastMiner/" } ] } ] }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    PackageFile file = Reparse(result);
+    Assert.Equal([""], file.Variants.Keys);
+    Assert.Equal(
+        [
+          (McmodSide.Server, "win-x64", "github.com/LiteLDev/LeviLamina", "26.60.*",
+              "FastMiner-server-windows-x64.zip"),
+          (McmodSide.Client, "win-x64", "github.com/LiteLDev/LeviLamina", "~26.60.8",
+              "FastMiner-client-windows-x64.zip"),
+        ],
+        file.Variants[""].Select(e => (e.Side, e.Platform,
+            Assert.Single(e.Dependencies).Source.ToString(), e.Dependencies[0].Range.Text,
+            e.Assets[0].Urls[0].Split('/')[^1])));
+    PackageDependency client = file.Variants[""][1].Dependencies[0];
+    Assert.False(client.Range.Range.Contains(SemVersion.Parse("26.60.7")));
+    Assert.True(client.Range.Range.Contains(SemVersion.Parse("26.60.8")));
+    Assert.Equal(2, result.Notes.Count);
+    Assert.StartsWith(
+        "variants.client (client, win-x64).deps[\"github.com/LiteLDev/LeviLamina#client\"]: "
+            + "became \"github.com/LiteLDev/LeviLamina\" = \"~26.60.8\".",
+        result.Notes[0]);
+    Assert.Contains("The range '26.60.*' was raised to '~26.60.8'", result.Notes[0]);
+    Assert.StartsWith("variants.client (client, win-x64): became an entry of the variant \"\"",
+        result.Notes[1]);
+  }
+
+  [Theory]
+  [InlineData(">=26.60.9", ">=26.60.9")]
+  [InlineData("*", ">=26.60.8")]
+  [InlineData(">=26.60.8-rc.1", ">=26.60.8-rc.1")]
+  [InlineData("26.60.7 || >=26.70.0", ">=26.70.0")]
+  [InlineData("^26.0.0", "^26.60.8")]
+  public async Task Migrate_OnlyClientLabel_BecomesDefaultVariant(string range, string expected) {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/mod", "version": "1.0.0",
+          "variants": [ { "label": "client", "platform": "win-x64",
+            "dependencies": { "github.com/LiteLDev/LeviLamina#client": "{{range}}" } } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    PackageFile file = Reparse(result);
+    Assert.Equal([""], file.Variants.Keys);
+    PackageEntry entry = Assert.Single(file.Variants[""]);
+    Assert.Equal(McmodSide.Client, entry.Side);
+    PackageDependency dependency = Assert.Single(entry.Dependencies);
+    Assert.Equal("github.com/LiteLDev/LeviLamina", dependency.Source.ToString());
+    Assert.Equal(expected, dependency.Range.Text);
+    Assert.Equal(2, result.Notes.Count);
+    Assert.Equal(range != expected, result.Notes[0].Contains("was raised", StringComparison.Ordinal));
+  }
+
+  [Fact]
+  public async Task Migrate_ClientNamedLabel_MergesIntoNamedVariant() {
+    // Arrange
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/mod", "version": "1.0.0",
+          "variants": [
+            { "label": "lite", "platform": "win-x64",
+              "dependencies": { "github.com/LiteLDev/LeviLamina": ">=26.60.8" } },
+            { "label": "client_lite", "platform": "win-x64",
+              "dependencies": { "github.com/LiteLDev/LeviLamina#client_lite": ">=26.60.8" } }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    PackageFile file = Reparse(result);
+    Assert.Equal(["lite"], file.Variants.Keys);
+    Assert.Equal(
+        [
+          (McmodSide.Server, "github.com/LiteLDev/LeviLamina", ">=26.60.8"),
+          (McmodSide.Client, "github.com/LiteLDev/LeviLamina#lite", ">=26.60.8"),
+        ],
+        file.Variants["lite"].Select(e => (e.Side,
+            Assert.Single(e.Dependencies).Source.ToString(), e.Dependencies[0].Range.Text)));
+    Assert.Equal(2, result.Notes.Count);
+  }
+
+  [Fact]
+  public async Task Migrate_ClientLabelWithClientEntryInDefault_IsKeptWithNote() {
+    // Arrange: the variant "" has no dependency on LeviLamina, so it already has an entry for
+    // the client.
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/mod", "version": "1.0.0",
+          "variants": [
+            { "platform": "win-x64", "dependencies": { "example.com/lib": "1.*" } },
+            { "label": "client", "platform": "win-x64",
+              "dependencies": { "github.com/LiteLDev/LeviLamina#client": "26.60.*" } }
+          ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    PackageFile file = Reparse(result);
+    Assert.Equal(["", "client"], file.Variants.Keys);
+    Assert.Equal(
+        [McmodSide.Server, McmodSide.Client], file.Variants[""].Select(e => e.Side));
+    PackageEntry client = Assert.Single(file.Variants["client"]);
+    Assert.Equal(McmodSide.Client, client.Side);
+    Assert.Equal(
+        "github.com/LiteLDev/LeviLamina", Assert.Single(client.Dependencies).Source.ToString());
+    Assert.Equal("~26.60.8", client.Dependencies[0].Range.Text);
+    Assert.Equal(2, result.Notes.Count);
+    Assert.StartsWith(
+        "variants.client (client, win-x64): was kept, as the variant \"\" already has an entry "
+            + "for the client and win-x64.",
+        result.Notes[1]);
+  }
+
+  [Fact]
+  public async Task Migrate_LeviLaminaClientRangeOfToothJsonEra_IsKept() {
+    // Arrange: before 26.60.8, LeviLamina has a tooth.json with the label "client".
+    PackageManifest tooth = Parse($$"""
+        {
+          "format_version": 3, "format_uuid": "{{_uuid3}}",
+          "tooth": "example.com/mod", "version": "1.0.0",
+          "variants": [ { "label": "client", "platform": "win-x64",
+            "dependencies": { "github.com/LiteLDev/LeviLamina#client": "<=26.60.7" } } ]
+        }
+        """);
+
+    // Act
+    ToothMigrator.Result result = await ToothMigrator.Migrate(tooth, new FakeUi());
+
+    // Assert
+    PackageFile file = Reparse(result);
+    Assert.Equal(["client"], file.Variants.Keys);
+    Assert.Equal(
+        "github.com/LiteLDev/LeviLamina#client",
+        Assert.Single(Assert.Single(file.Variants["client"]).Dependencies).Source.ToString());
     Assert.Empty(result.Notes);
   }
 

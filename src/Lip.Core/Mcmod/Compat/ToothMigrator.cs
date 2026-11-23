@@ -26,8 +26,13 @@ namespace Lip.Core.Mcmod.Compat;
 ///   (ToothCompat.ConvertEntry); a RID whose merged variants have an asset of type tar, tgz
 ///   or uncompressed has no entry.
 /// - The side of an entry follows the dependency of its merged variants on
-///   github.com/LiteLDev/LeviLamina: the client for its variant "client", the server for any
-///   other variant, and both, as two entries, without such a dependency.
+///   github.com/LiteLDev/LeviLamina: the client for its variant "client" (or "client_y"), the
+///   server for any other variant, and both, as two entries, without such a dependency.
+/// - Then the client variants take the form LeviLamina has had since its first package file
+///   (MoveToLeviLaminaPackageFile), so the migrated file can be installed on a client together
+///   with current versions of LeviLamina. Where it does, the file does not agree with the
+///   tooth.json for the client: the tooth.json has the variant "client" (client_y), whose
+///   entries become ones of the variant "" (y).
 public static class ToothMigrator {
   public record Result(JsonObject Document, IReadOnlyList<string> Notes);
 
@@ -164,6 +169,7 @@ public static class ToothMigrator {
       }
     }
 
+    MoveToLeviLaminaPackageFile(variants, context.Notes);
     return variants;
 
     static JsonObject Entry(McmodSide side, string rid, JsonObject content) {
@@ -179,21 +185,197 @@ public static class ToothMigrator {
     }
   }
 
-  /// The sides of the entries for merged variants: the client when they depend on the
-  /// variant "client" of LeviLamina, the server when they depend on another variant of it, and
-  /// both when they do not depend on it.
+  /// The sides of the entries for merged variants: the client when they depend on a client
+  /// variant of LeviLamina ("client", or "client_" followed by a name), the server when they
+  /// depend on another variant of it, and both when they do not depend on it.
   private static McmodSide[] SidesOf(PackageManifestVariant merged) {
     List<PackageId> leviLamina = [
       .. merged.Dependencies.Keys.Where(id =>
           string.Equals(id.Path, LeviLaminaPath, StringComparison.OrdinalIgnoreCase)),
     ];
     return leviLamina.Count == 0 ? [McmodSide.Server, McmodSide.Client]
-        : leviLamina.Any(id => id.Variant == ClientVariant) ? [McmodSide.Client]
+        : leviLamina.Any(id => ServerVariantOf(id.Variant) is not null) ? [McmodSide.Client]
         : [McmodSide.Server];
   }
 
   private const string LeviLaminaPath = "github.com/LiteLDev/LeviLamina";
   private const string ClientVariant = "client";
+
+  /// The first version of LeviLamina with a package file. It has no variant "client": its
+  /// variant "" has an entry for each side. Older versions have a tooth.json, whose label
+  /// "client" holds the client build and whose label "" the server build.
+  private static readonly SemVersion _firstLeviLaminaPackageFile = new(26, 60, 8);
+
+  /// For a client variant of the tooth.json era ("client", or "client_" followed by y), the
+  /// variant of a package file that holds its client entries ("", or y); null for any other
+  /// variant.
+  private static string? ServerVariantOf(string variant) =>
+      variant == ClientVariant ? ""
+      : variant.StartsWith(ClientVariant + "_", StringComparison.Ordinal)
+          && variant.Length > ClientVariant.Length + 1
+          ? variant[(ClientVariant.Length + 1)..]
+      : null;
+
+  /// Moves the migrated variants from the client variants of the tooth.json era to the form
+  /// LeviLamina has had since its first package file, which has no variant "client" and whose
+  /// variant "" has an entry for each side:
+  ///
+  /// - A dependency on github.com/LiteLDev/LeviLamina#client (#client_y) whose range admits a
+  ///   version with a package file becomes one on github.com/LiteLDev/LeviLamina (#y), its range
+  ///   raised to such versions: on a client, the variant "" of an older version, read from its
+  ///   tooth.json, is the server build. A range that admits only older versions is kept, as
+  ///   those versions still have the variant "client".
+  /// - Then each client entry of the variant "client" (client_y) with such a dependency moves to
+  ///   the variant "" (y), unless that has an entry for the client and the same platform.
+  ///
+  /// Dependencies on client variants of other packages are kept, with a note: whether a package
+  /// still has such a variant cannot be known without fetching it.
+  private static void MoveToLeviLaminaPackageFile(JsonObject variants, List<string> notes) {
+    // The entries whose dependency on LeviLamina was moved, with the variant of LeviLamina it
+    // was moved to.
+    Dictionary<JsonObject, string> moved = new(ReferenceEqualityComparer.Instance);
+    HashSet<(string, string)> noted = [];
+    foreach ((string label, JsonNode? node) in variants) {
+      foreach (JsonObject entry in node!.AsArray().Cast<JsonObject>()) {
+        if (entry["deps"] is not JsonObject deps) {
+          continue;
+        }
+
+        string field = $"variants.{(label == "" ? "\"\"" : label)} ({entry["side"]}, "
+            + $"{entry["platform"]}).deps";
+        foreach ((string key, JsonNode? value) in deps.ToList()) {
+          int hash = key.LastIndexOf('#');
+          string path = hash < 0 ? key : key[..hash];
+          string variant = hash < 0 ? "" : key[(hash + 1)..];
+          if (ServerVariantOf(variant) is not string target) {
+            continue;
+          }
+
+          if (!string.Equals(path, LeviLaminaPath, StringComparison.OrdinalIgnoreCase)) {
+            if (noted.Add((label, key))) {
+              notes.Add($"{field}[\"{key}\"]: was kept. If {path} has moved to lip.toml "
+                  + $"without the variant \"{variant}\", depend on the variant of it that has a "
+                  + "client entry instead.");
+            }
+
+            continue;
+          }
+
+          string text = value!.GetValue<string>();
+          string? raised = RaiseToPackageFile(text);
+          if (raised is null) {
+            continue;
+          }
+
+          string newKey = target == "" ? path : $"{path}#{target}";
+          if (deps.Any(d => SameDependency(d.Key, newKey))) {
+            notes.Add($"{field}[\"{key}\"]: was kept, as the entry also depends on {newKey}.");
+            continue;
+          }
+
+          deps.Remove(key);
+          deps[newKey] = raised;
+          moved[entry] = target;
+          notes.Add($"{field}[\"{key}\"]: became \"{newKey}\" = \"{raised}\". Since "
+              + $"{_firstLeviLaminaPackageFile}, LeviLamina has no variant \"{variant}\"; its "
+              + $"variant \"{target}\" has the client build."
+              + (raised == text ? ""
+                  : $" The range '{text}' was raised to '{raised}', as on a client the variant "
+                      + $"\"{target}\" of earlier versions is the server build; this entry no "
+                      + "longer installs with those."));
+        }
+      }
+    }
+
+    foreach (string label in variants.Select(v => v.Key).ToList()) {
+      if (ServerVariantOf(label) is not string target) {
+        continue;
+      }
+
+      JsonArray from = variants[label]!.AsArray();
+      List<JsonObject> movable = [
+        .. from.Cast<JsonObject>().Where(e => moved.TryGetValue(e, out string? to) && to == target
+            && e["side"]!.GetValue<string>() == McmodSide.Client.ToSpecString()),
+      ];
+      if (movable.Count == 0) {
+        continue;
+      }
+
+      string targetName = target == "" ? "\"\"" : $"\"{target}\"";
+      if (variants[target] is not JsonArray to) {
+        to = [];
+        variants[target] = to;
+      }
+
+      foreach (JsonObject entry in movable) {
+        string platform = entry["platform"]!.GetValue<string>();
+        if (to.Cast<JsonObject>().Any(e =>
+            e["side"]!.GetValue<string>() == McmodSide.Client.ToSpecString()
+            && e["platform"]!.GetValue<string>() == platform)) {
+          notes.Add($"variants.{label} (client, {platform}): was kept, as the variant "
+              + $"{targetName} already has an entry for the client and {platform}. Since "
+              + $"{_firstLeviLaminaPackageFile}, a client installs the variant {targetName} of "
+              + $"LeviLamina, not \"{label}\".");
+          continue;
+        }
+
+        from.Remove(entry);
+        to.Add((JsonNode)entry);
+        notes.Add($"variants.{label} (client, {platform}): became an entry of the variant "
+            + $"{targetName}, as LeviLamina has the client build in its variant {targetName} "
+            + $"since {_firstLeviLaminaPackageFile}.");
+      }
+
+      if (to.Count == 0) {
+        variants.Remove(target);
+      }
+
+      if (from.Count == 0) {
+        variants.Remove(label);
+      }
+    }
+  }
+
+  /// Whether two dependency keys name the same package and variant: package ids and variants are
+  /// compared ignoring ASCII case (protocol/lip-package.md, "Terms").
+  private static bool SameDependency(string a, string b) => PackageNames.AreEqual(a, b);
+
+  /// The range of the versions of a range from the first one of LeviLamina with a package file
+  /// on, written as Semver writes it, or the range as written when it admits no earlier version;
+  /// null when it admits no version from that one on.
+  private static string? RaiseToPackageFile(string text) {
+    SemVersionRange range = SemVersionRange.Parse(text);
+    SemVersion first = _firstLeviLaminaPackageFile;
+    List<UnbrokenSemVersionRange> raised = [];
+    bool changed = false;
+    foreach (UnbrokenSemVersionRange part in range) {
+      // Prereleases of the first version count as that version.
+      if (part.Start is SemVersion start
+          && start.WithoutPrereleaseOrMetadata().ComparePrecedenceTo(first) >= 0) {
+        raised.Add(part);
+        continue;
+      }
+
+      if (part.End is SemVersion end) {
+        int c = end.ComparePrecedenceTo(first);
+        if (c < 0 || (c == 0 && !part.EndInclusive)) {
+          changed = true;
+          continue;
+        }
+      }
+
+      changed = true;
+      raised.Add(part.End is SemVersion e
+          ? part.EndInclusive
+              ? UnbrokenSemVersionRange.Inclusive(first, e, part.IncludeAllPrerelease)
+              : UnbrokenSemVersionRange.InclusiveOfStart(first, e, part.IncludeAllPrerelease)
+          : UnbrokenSemVersionRange.AtLeast(first, part.IncludeAllPrerelease));
+    }
+
+    return raised.Count == 0 ? null
+        : changed ? SemVersionRange.Create(raised).ToString()
+        : text;
+  }
 
   /// The variants of a label merged for a RID, as protocol/lip-compatibility.md, "tooth.json"
   /// merges them.
