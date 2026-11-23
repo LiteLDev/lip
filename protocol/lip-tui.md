@@ -76,7 +76,7 @@ The interface asks once no other question is open in it; the question changes no
 In the interface, the user asks for the commands of [lip(1)]. `lip` carries out each of them as the page of the command defines for the arguments the user gives, with the selected workspace as its working directory, with these differences:
 
 - A result, a message and help are shown in the interface, instead of being written to standard output or standard error as [lip(1), "Output"](lip.md#output) defines.
-- `lip pkg init` and `lip pkg migrate` ask the user in the interface, and do not fail because a standard stream is not a terminal.
+- `lip pkg migrate` asks the user in the interface, and does not fail because a standard stream is not a terminal. The interface creates and edits `lip.toml` as "Package file" defines, instead of carrying out `lip pkg init`.
 - A setup ([lip-setup(1)](lip-setup.md)), by `lip setup` or `lip install`, asks the user in the interface whether they accept the license, unless the user gave `--accept-eula`, and does not fail because a standard stream is not a terminal. When the user applies a setup whose dry run named left out packages, that is their answer to whether to uninstall them.
 - A command that fails does not end the interface.
 - `lip run` is carried out as "Server" defines.
@@ -86,6 +86,14 @@ Before a workspace operation, `lip` may carry out the same command as a dry run 
 While the server of the selected workspace runs ("Server"), the interface carries out no `lip setup`, `lip install`, `lip uninstall` or `lip update` for it.
 
 When the user cancels a workspace operation in the interface while it changes the workspace, the operation is cancelled and undone ([lip-workspace(7), "Atomicity"](lip-workspace.md#atomicity), rule 2).
+
+### Package file
+
+The user may ask the interface to create the package file `lip.toml` ([lip.toml(5)]) of the selected workspace when it has none, and to edit it when it has one. `lip` reads a `lip.toml` that exists as a TOML file ([README, "Files"](README.md#files)), and the interface does not let the user edit one that is not a TOML file, or in which a key that [lip.toml(5), "Keys"](lip.toml.md#keys) describes holds a value of another type than the one it states.
+
+While the user edits it, `lip` may read, for each dependency: the catalogue ("Catalogue"); for `github.com/LiteLDev/bds`, the builds list ([lip-package(7), "The server"](lip-package.md#the-server)); and, for a package id that the catalogue does not list, the version tags of its repository ([lip-package(7), "Remote repositories"](lip-package.md#remote-repositories)). Before it writes `lip.toml`, it may read the versions of the game and of the loader as "New server" reads them. It reads them as a dry run does ([lip(1), "Dry run"](lip.md#dry-run)), and writes nothing that it reads from them to a file.
+
+`lip` writes `lip.toml` only when the user saves it and then confirms, and writes it atomically ([README, "Files"](README.md#files)). What it writes is a TOML file whose value is that of the file it read, or an empty object when there was none, with `format` set to `4` and each key that lip.toml(5) describes set to the value the user gave it, or removed when the user removed it; every other key keeps its value. An optional string that the user leaves empty, and an empty string in `info.tags`, `urls`, `preserve`, `purge` or `hooks`, are not written. `lip` saves no `lip.toml` that is not a valid package file. When `lip.toml` changed after `lip` read it, `lip` writes it only when the user confirms once more. Which characters of the file read, such as its comments, the file written keeps is not defined here.
 
 ### Server
 
@@ -142,11 +150,12 @@ A file of the catalogue that cannot be read is not a failure of a command.
 
 ## SEE ALSO
 
-[lip(1)], [lip-config(1)](lip-config.md), [lip-daemon(1)], [lip-run(1)], [lip-setup(1)](lip-setup.md), [config.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)]
+[lip(1)], [lip-config(1)](lip-config.md), [lip-daemon(1)], [lip-run(1)], [lip-setup(1)](lip-setup.md), [config.toml(5)], [lip.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)]
 
 [lip(1)]: lip.md
 [lip-daemon(1)]: lip-daemon.md
 [lip-run(1)]: lip-run.md
 [lip-userspace(7)]: lip-userspace.md
+[lip.toml(5)]: lip.toml.md
 [config.toml(5)]: config.toml.md
 [JSON]: https://www.rfc-editor.org/info/rfc8259

@@ -576,6 +576,18 @@ public partial class McmodService(
     await _systemPreparer.Prepare(environment.Platform, root, cancellationToken);
   }
 
+  /// The versions of a package id, as Resolve reads them (protocol/lip-package.md,
+  /// "Resolution"): those of the version tags of its repository, or, for the server, those that
+  /// the builds list names. Reads nothing else, and writes no file.
+  public async Task<IReadOnlyList<SemVersion>> PackageVersions(string id) {
+    if (BedrockServer.IsRepository(id)) {
+      BedrockServer server = await CreateResolver().Server();
+      return server.Versions;
+    }
+
+    return [.. (await _archiveProvider.ListVersions(id)).Select(v => v.Version)];
+  }
+
   #region Planning
 
   private async Task<Workspace> OpenWorkspace(OperationOptions options) {
