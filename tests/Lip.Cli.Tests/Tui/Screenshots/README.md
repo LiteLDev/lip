@@ -118,7 +118,7 @@ capture fails when a frame holds the user name, the home or the temp directory o
 |---|---|
 | `Worlds.Empty(language)` | A folder without a server, `D:\servers\survival`. |
 | `Worlds.Server(language)` | The game 1.26.60 and LeviLamina 26.60.3, no mods. |
-| `Worlds.Survival(language)` | A server with five mods, `server.properties`, `allowlist.json`, `permissions.json`, mod configuration files, and two more workspaces in the list. `configurable: true` makes the Mod config page list the mods; without it lip can plan to uninstall them. |
+| `Worlds.Survival(language)` | A server with five mods, `server.properties`, `allowlist.json`, `permissions.json`, mod configuration files, and two more workspaces in the list. `configurable: true` makes the Mod Config page list the mods; without it lip can plan to uninstall them. |
 | `new World(language, width, height, workspace)` | Your own: `Install`, `InstallServer`, `File`, `List`, `Configure`, and the properties `Fs`, `Archives`, `CatalogFile`, `GithubProbe`, `ServerSetup`, `SelfUpdate`, `DaemonStatus`, `ManagedServers`, `CreateClient`, `DescribeFailure`. |
 
 - The size is 100×28 unless you give another. Take fewer rows for a page that shows little

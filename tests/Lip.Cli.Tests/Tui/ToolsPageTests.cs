@@ -92,9 +92,9 @@ public sealed class ToolsPageTests {
   }
 
   [Theory]
-  [InlineData(Language.En, "Tools")]
-  [InlineData(Language.ZhHans, "工具")]
-  [InlineData(Language.ZhHant, "工具")]
+  [InlineData(Language.En, "Develop Tools")]
+  [InlineData(Language.ZhHans, "开发工具")]
+  [InlineData(Language.ZhHant, "開發工具")]
   public async Task Page_IsReachedFromTheSidebar_AndShowsItsTitle(Language language, string title) {
     using TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions { Language = language });
 

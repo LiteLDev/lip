@@ -4,7 +4,7 @@ namespace Lip.Cli.Tui.Pages.Tools;
 
 /// The text of the Tools page.
 public static class ToolsText {
-  public static string Title => L.T("Tools", "工具", "工具");
+  public static string Title => L.T("Develop Tools", "开发工具", "開發工具");
 
   // The actions: what the list shows, with … when the action asks first.
   public static string Init => L.T("Create lip.toml", "创建 lip.toml", "建立 lip.toml");
