@@ -330,11 +330,8 @@ public sealed class SettingsPage : Page {
       case Row.CheckUpdates:
         // Once a release is installed, lip that runs is still the old one: a check would
         // offer the same release again.
-        string installed = _latest?.ToString() ?? "";
-        if (_update == UpdateState.Installed) {
-          Context.Message(SettingsText.InstallUpdate, SettingsText.Installed(installed));
-        } else if (_update == UpdateState.InstallerStarted) {
-          Context.Message(SettingsText.InstallUpdate, SettingsText.InstallerStarted(installed));
+        if (_update is UpdateState.Installed or UpdateState.InstallerStarted) {
+          ShowUpdated();
         } else {
           CheckForUpdates();
         }
@@ -577,8 +574,10 @@ public sealed class SettingsPage : Page {
         });
   }
 
-  /// lip self-update: afterwards the user is told to start lip again, or to quit it so that
-  /// the installer can replace it.
+  /// lip self-update: afterwards the user is told to quit lip and run it again, or to quit it
+  /// so that the installer can replace it, and is offered to quit at once. What to do is also
+  /// written for when the interface has ended, which it may do before the user reads the dialog:
+  /// an installer may end the lip that it replaces.
   private void InstallUpdate() {
     LipClient client = Context.Client;
     Context.RunOperation(
@@ -586,14 +585,24 @@ public sealed class SettingsPage : Page {
         _ => Context.SelfUpdate(client, checkOnly: false),
         result => {
           string version = (result.Latest ?? _latest)?.ToString() ?? "";
+          // Said once, however many times the release is installed.
+          bool first = _update is not (UpdateState.Installed or UpdateState.InstallerStarted);
           switch (result.Outcome) {
             case SelfUpdateOutcome.Replaced:
               SetUpdate(UpdateState.Installed, result.Latest ?? _latest);
-              Context.Message(SettingsText.InstallUpdate, SettingsText.Installed(version));
+              if (first) {
+                Context.Farewell(SettingsText.UpdatedFarewell(version));
+              }
+
+              ShowUpdated();
               break;
             case SelfUpdateOutcome.InstallerStarted:
               SetUpdate(UpdateState.InstallerStarted, result.Latest ?? _latest);
-              Context.Message(SettingsText.InstallUpdate, SettingsText.InstallerStarted(version));
+              if (first) {
+                Context.Farewell(SettingsText.InstallerFarewell(version));
+              }
+
+              ShowUpdated();
               break;
             default:
               SetUpdate(UpdateState.UpToDate, null);
@@ -601,6 +610,18 @@ public sealed class SettingsPage : Page {
               break;
           }
         });
+  }
+
+  /// Says that a release is installed, or that its installer runs, and offers to quit lip: the
+  /// lip that runs stays the old one until it is run again.
+  private void ShowUpdated() {
+    string version = _latest?.ToString() ?? "";
+    Context.Confirm(
+        SettingsText.InstallUpdate,
+        _update == UpdateState.InstallerStarted
+            ? SettingsText.InstallerStarted(version)
+            : SettingsText.Installed(version),
+        CommonText.QuitTitle, Context.Quit, CommonText.Later);
   }
 
   private void SetUpdate(UpdateState state, SemVersion? latest) {

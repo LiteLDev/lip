@@ -79,15 +79,31 @@ public static class SettingsText {
 
   public static string Installed(string version) =>
       L.T(
-          $"lip {version} is installed. Restart lip to use it.",
-          $"lip {version} 已安装。请重启 lip 以使用新版本。",
-          $"lip {version} 已安裝。請重新啟動 lip 以使用新版本。");
+          $"lip {version} is installed. Quit lip, then run lip again to use the new version.",
+          $"lip {version} 已安装。请退出 lip，然后再次运行 lip 以使用新版本。",
+          $"lip {version} 已安裝。請結束 lip，然後再次執行 lip 以使用新版本。");
 
   public static string InstallerStarted(string version) =>
       L.T(
-          $"The installer of lip {version} is running. Quit lip so that it can finish.",
-          $"lip {version} 的安装程序正在运行。请退出 lip 以完成安装。",
-          $"lip {version} 的安裝程式正在執行。請結束 lip 以完成安裝。");
+          $"The installer of lip {version} is running. Quit lip so that it can finish, then run"
+          + " lip again to use the new version.",
+          $"lip {version} 的安装程序正在运行。请退出 lip 以完成安装，然后再次运行 lip 以使用新版本。",
+          $"lip {version} 的安裝程式正在執行。請結束 lip 以完成安裝，然後再次執行 lip 以使用新版本。");
+
+  /// What lip writes once the interface has ended, after it updated itself.
+  public static string UpdatedFarewell(string version) =>
+      L.T(
+          $"lip was updated to {version}. Run lip again to start it.",
+          $"lip 已更新到 {version}。请再次运行 lip 以启动新版本。",
+          $"lip 已更新到 {version}。請再次執行 lip 以啟動新版本。");
+
+  /// What lip writes once the interface has ended, after it started the installer of a release.
+  public static string InstallerFarewell(string version) =>
+      L.T(
+          $"The installer of lip {version} is running. Once it has finished, run lip again to"
+          + " start the new version.",
+          $"lip {version} 的安装程序正在运行。安装完成后，请再次运行 lip 以启动新版本。",
+          $"lip {version} 的安裝程式正在執行。安裝完成後，請再次執行 lip 以啟動新版本。");
 
   // The daemon.
   public static string Daemon => L.T("Daemon", "守护进程", "常駐程式");
