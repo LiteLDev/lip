@@ -1,12 +1,13 @@
 # No paths filter: ci-ok is a required check, and a required check must report on every pull
 # request, docs-only ones included. A merge queue does not support paths filters either.
+# Pushes to main are not tested: merge_group already tests the exact commit that lands on main.
+# Pushes to release/** still are, since they do not go through the merge queue.
 on:
   pull_request:
   merge_group:
     types: [checks_requested]
   push:
     branches:
-      - main
       - 'release/**'
   workflow_dispatch:
 
