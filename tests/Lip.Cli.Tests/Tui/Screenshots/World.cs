@@ -119,7 +119,7 @@ public sealed class World {
   public ServerSessions? Servers { get; set; }
 
   /// The pages of the sidebar: those of lip, as on a system that is not Linux, unless set.
-  public IReadOnlyList<PageEntry> Pages { get; set; } = WorkspacesPageTests.Pages(linux: false);
+  public IReadOnlyList<PageEntry> Pages { get; set; } = ServerSetupTests.Pages(linux: false);
 
   /// Makes the client of a workspace: a real one over Archives unless set.
   public Func<IUserInteraction, Func<Stream>, string, LipClient>? CreateClient { get; set; }

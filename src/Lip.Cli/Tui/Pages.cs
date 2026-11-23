@@ -6,7 +6,6 @@ using Lip.Cli.Tui.Pages.Mods;
 using Lip.Cli.Tui.Pages.Server;
 using Lip.Cli.Tui.Pages.Settings;
 using Lip.Cli.Tui.Pages.Tools;
-using Lip.Cli.Tui.Pages.Workspaces;
 
 namespace Lip.Cli.Tui;
 
@@ -18,15 +17,14 @@ public enum PageId {
   GetMods,
   GameConfig,
   ModConfig,
-  Workspaces,
   Tools,
   Settings,
 }
 
 /// What a page asks another to start, through AppContext.Navigate.
 public static class PageRequest {
-  /// To the Workspaces page: start the new server wizard.
-  public const string NewServer = "new-server";
+  /// To the Server page: set up the selected workspace, as lip setup does.
+  public const string SetUpServer = "set-up-server";
 
   /// To the Server page: start the server of the selected workspace.
   public const string StartServer = "start-server";
@@ -51,7 +49,6 @@ public static class PageRegistry {
     new(PageId.GetMods, "▼", context => new GetModsPage(context)),
     new(PageId.GameConfig, "≡", context => new GameConfigPage(context)),
     new(PageId.ModConfig, "≈", context => new ModConfigPage(context)),
-    new(PageId.Workspaces, "□", context => new WorkspacesPage(context)),
     new(PageId.Tools, "†", context => new ToolsPage(context)),
     new(PageId.Settings, "*", context => new SettingsPage(context)),
   ];

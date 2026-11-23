@@ -19,7 +19,7 @@ public static class CommonText {
   public static string Later => L.T("Later", "以后再说", "稍後再說");
 
   // What several pages name: the same words for the same thing.
-  public static string NewServer => L.T("New server…", "新建服务器…", "建立伺服器…");
+  public static string SetUpServer => L.T("Set up server…", "安装服务器…", "安裝伺服器…");
   public static string GetMods => L.T("Marketplace", "市场", "市集");
   public static string AutoRestart => L.T("Auto restart", "自动重启", "自動重新啟動");
   public static string ConnectDirectly => L.T("Connect directly", "直接连接", "直接連線");

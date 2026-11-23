@@ -60,13 +60,13 @@ public sealed class ModsDocShots(ShotRun run) {
       await shot.Capture(
           "mods-05-no-server",
           Note.Callout(
-              1, At.Row(CommonText.NewServer),
+              1, At.Row(CommonText.SetUpServer),
               shot.T(
                   "Shown only while the folder has no server: mods need one.",
                   "只在文件夹里还没有服务器时出现：装模组之前要先有服务器。",
                   "只在資料夾裡還沒有伺服器時出現：裝模組之前要先有伺服器。")),
           Note.Callout(
-              2, At.Text(ModsText.NewServerDetail),
+              2, At.Text(ModsText.SetUpServerDetail),
               shot.T(
                   "One sentence about the highlighted row.", "关于高亮那一行的一句话说明。",
                   "關於反白那一列的一句話說明。")),
@@ -392,16 +392,16 @@ public sealed class ModsDocShots(ShotRun run) {
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone(CommonText.OnlyRecordChanges);
 
-    // The game and the loader lead to the Workspaces page.
+    // The game and the loader lead to the setup of the Server page.
     tui.Press(ConsoleKey.DownArrow);
     await tui.WaitFor(ModsText.GameDetail);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.GoToWorkspaces);
+    await tui.WaitFor(ModsText.ChangeVersions);
     await shot.Capture(
         "mods-32-game-menu",
         Note.Focus(At.Panel(World.Game)),
         Note.Focus(At.Row(ModsText.GameDetail)),
-        Note.Box(At.Row(ModsText.GoToWorkspaces)));
+        Note.Box(At.Row(ModsText.ChangeVersions)));
 
     // The catalogue has no entry for the game.
     tui.Press(ConsoleKey.Enter);

@@ -34,14 +34,16 @@ The **workspace list** is the JSON file ([README, "Files"](README.md#files)) `wo
 The interface has one **selected workspace** at a time. When it starts, `lip` adds its working directory to the end of the workspace list unless the list names it, and selects it. The user may then:
 
 - select a workspace of the list;
-- add a directory that exists to the end of the list, unless the list names it, and select it; and
+- add a directory to the end of the list, unless the list names it, and select it: a directory that exists, or one that `lip` first creates, with its missing parents, when the user asks for a new one; and
 - remove a workspace other than the selected one from the list, which changes no file in it.
+
+Selecting, adding and removing a workspace install nothing in it: a game is set up as "Server setup" defines.
 
 Adding and removing read the workspace list again before they write it. The interfaces that one process runs at the same time make their changes one at a time, and all of them are kept.
 
-### New server
+### Server setup
 
-The user may ask the interface for a **new server**. The user then names a directory, and chooses, in this order:
+The user may ask the interface to **set up** the server of the selected workspace, whether or not it has a game. The user then chooses, in this order:
 
 1. a game version G: a version that the builds list ([lip-package(7), "The server"](lip-package.md#the-server)) names and that step 2 offers a build for, offered with the versions that are not prereleases first, then the others, each from highest to lowest;
 2. a build B ([lip-setup(1), "Terms"](lip-setup.md#terms)): `windows` is offered when the builds list has a build of G for `win-x64`, and `linux` when it has one for `linux-x64` and `lip` runs on Linux on x64. When one build only is offered, it is B, and the user is not asked; and
@@ -49,13 +51,7 @@ The user may ask the interface for a **new server**. The user then names a direc
 
 The **versions that fit** G are those of the candidates of Resolve(`github.com/LiteLDev/LeviLamina`, any version, environment) ([lip-package(7), "Resolution"](lip-package.md#resolution)) that fit G, from the first; the search may stop as [lip-setup(1), "The loader"](lip-setup.md#the-loader) defines, and at a candidate that does not fit G after one that does. `lip` reads the builds list and resolves these candidates as a setup does.
 
-A directory named by a relative path is relative to the selected workspace. When the user has made these choices, `lip`, in order:
-
-1. creates the directory, and its missing parents, when it does not exist;
-2. adds the directory to the workspace list, unless the list names it, and selects it ("Workspaces"); and
-3. carries out `lip setup --game G --build B` with `--loader levilamina@V` or `--no-loader`, as "Commands" defines: it asks the user in the interface whether they accept the license ([lip-setup(1), "The license"](lip-setup.md#the-license)).
-
-When the user cancels before the last choice, or when a step fails, the steps after it are not carried out. The directory is not removed when the setup fails.
+When the user has made these choices, `lip` carries out `lip setup --game G --build B` with `--loader levilamina@V` or `--no-loader` in the selected workspace, as "Commands" defines: it asks the user in the interface whether they accept the license ([lip-setup(1), "The license"](lip-setup.md#the-license)). When the user cancels before the last choice, nothing is carried out.
 
 ### GitHub reachability
 
@@ -76,7 +72,7 @@ The interface asks once no other question is open in it; the question changes no
 In the interface, the user asks for the commands of [lip(1)]. `lip` carries out each of them as the page of the command defines for the arguments the user gives, with the selected workspace as its working directory, with these differences:
 
 - A result, a message and help are shown in the interface, instead of being written to standard output or standard error as [lip(1), "Output"](lip.md#output) defines.
-- `lip pkg init` and `lip pkg migrate` ask the user in the interface, and do not fail because a standard stream is not a terminal.
+- `lip pkg migrate` asks the user in the interface, and does not fail because a standard stream is not a terminal. The interface creates and edits `lip.toml` as "Package file" defines, instead of carrying out `lip pkg init`.
 - A setup ([lip-setup(1)](lip-setup.md)), by `lip setup` or `lip install`, asks the user in the interface whether they accept the license, unless the user gave `--accept-eula`, and does not fail because a standard stream is not a terminal. When the user applies a setup whose dry run named left out packages, that is their answer to whether to uninstall them.
 - A command that fails does not end the interface.
 - `lip run` is carried out as "Server" defines.
@@ -86,6 +82,14 @@ Before a workspace operation, `lip` may carry out the same command as a dry run 
 While the server of the selected workspace runs ("Server"), the interface carries out no `lip setup`, `lip install`, `lip uninstall` or `lip update` for it.
 
 When the user cancels a workspace operation in the interface while it changes the workspace, the operation is cancelled and undone ([lip-workspace(7), "Atomicity"](lip-workspace.md#atomicity), rule 2).
+
+### Package file
+
+The user may ask the interface to create the package file `lip.toml` ([lip.toml(5)]) of the selected workspace when it has none, and to edit it when it has one. `lip` reads a `lip.toml` that exists as a TOML file ([README, "Files"](README.md#files)), and the interface does not let the user edit one that is not a TOML file, or in which a key that [lip.toml(5), "Keys"](lip.toml.md#keys) describes holds a value of another type than the one it states.
+
+While the user edits it, `lip` may read, for each dependency: the catalogue ("Catalogue"); for `github.com/LiteLDev/bds`, the builds list ([lip-package(7), "The server"](lip-package.md#the-server)); and, for a package id that the catalogue does not list, the version tags of its repository ([lip-package(7), "Remote repositories"](lip-package.md#remote-repositories)). Before it writes `lip.toml`, it may read the versions of the game and of the loader as "New server" reads them. It reads them as a dry run does ([lip(1), "Dry run"](lip.md#dry-run)), and writes nothing that it reads from them to a file.
+
+`lip` writes `lip.toml` only when the user saves it and then confirms, and writes it atomically ([README, "Files"](README.md#files)). What it writes is a TOML file whose value is that of the file it read, or an empty object when there was none, with `format` set to `4` and each key that lip.toml(5) describes set to the value the user gave it, or removed when the user removed it; every other key keeps its value. An optional string that the user leaves empty, and an empty string in `info.tags`, `urls`, `preserve`, `purge` or `hooks`, are not written. `lip` saves no `lip.toml` that is not a valid package file. When `lip.toml` changed after `lip` read it, `lip` writes it only when the user confirms once more. Which characters of the file read, such as its comments, the file written keeps is not defined here.
 
 ### Server
 
@@ -142,11 +146,12 @@ A file of the catalogue that cannot be read is not a failure of a command.
 
 ## SEE ALSO
 
-[lip(1)], [lip-config(1)](lip-config.md), [lip-daemon(1)], [lip-run(1)], [lip-setup(1)](lip-setup.md), [config.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)]
+[lip(1)], [lip-config(1)](lip-config.md), [lip-daemon(1)], [lip-run(1)], [lip-setup(1)](lip-setup.md), [config.toml(5)], [lip.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)]
 
 [lip(1)]: lip.md
 [lip-daemon(1)]: lip-daemon.md
 [lip-run(1)]: lip-run.md
 [lip-userspace(7)]: lip-userspace.md
+[lip.toml(5)]: lip.toml.md
 [config.toml(5)]: config.toml.md
 [JSON]: https://www.rfc-editor.org/info/rfc8259

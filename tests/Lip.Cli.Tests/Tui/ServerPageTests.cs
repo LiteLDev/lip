@@ -23,13 +23,13 @@ public sealed class ServerPageTests {
   }
 
   [Theory]
-  [InlineData(Language.En, 120, 36, "No server here yet.", "[ New server… ]")]
-  [InlineData(Language.ZhHans, 120, 36, "这里还没有服务器。", "[ 新建服务器… ]")]
-  [InlineData(Language.ZhHant, 120, 36, "這裡還沒有伺服器。", "[ 建立伺服器… ]")]
-  [InlineData(Language.En, 60, 16, "No server here yet.", "[ New server… ]")]
-  [InlineData(Language.ZhHans, 60, 16, "这里还没有服务器。", "[ 新建服务器… ]")]
-  [InlineData(Language.ZhHant, 60, 16, "這裡還沒有伺服器。", "[ 建立伺服器… ]")]
-  public async Task WorkspaceWithoutAServer_LeadsToCreatingOne(
+  [InlineData(Language.En, 120, 36, "No server here yet.", "[ Set up server… ]")]
+  [InlineData(Language.ZhHans, 120, 36, "这里还没有服务器。", "[ 安装服务器… ]")]
+  [InlineData(Language.ZhHant, 120, 36, "這裡還沒有伺服器。", "[ 安裝伺服器… ]")]
+  [InlineData(Language.En, 60, 16, "No server here yet.", "[ Set up server… ]")]
+  [InlineData(Language.ZhHans, 60, 16, "这里还没有服务器。", "[ 安装服务器… ]")]
+  [InlineData(Language.ZhHant, 60, 16, "這裡還沒有伺服器。", "[ 安裝伺服器… ]")]
+  public async Task WorkspaceWithoutAServer_LeadsToItsSetup(
       Language language, int width, int height, string line, string row) {
     using TuiHarness tui = TuiHarness.Start(
         new TuiHarnessOptions { Language = language, Width = width, Height = height });
@@ -43,7 +43,8 @@ public sealed class ServerPageTests {
 
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
+    await tui.WaitFor($"─ {tui.Text(() => SetupText.GameVersion)} ─");
+    Assert.Equal(PageId.Server, await tui.Invoke(() => tui.Context.CurrentPage));
   }
 
   [Fact]

@@ -1,12 +1,13 @@
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
+using Lip.Cli.Tui.Pages.Server;
 using Lip.Cli.Tui.Pages.Tools;
 using Lip.Cli.Tui.Pages.Workspaces;
 using Lip.Core.Mcmod;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The Workspaces and the Tools pages.
+/// The workspace picker, and the Tools page.
 public sealed class WorkspacesShots(ShotRun run) {
   [ShotTheory]
   [ClassData(typeof(AllLanguages))]
@@ -15,16 +16,16 @@ public sealed class WorkspacesShots(ShotRun run) {
     world.Fs.Directory.Delete(Worlds.Skyblock);
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
+    await tui.OpenWorkspaces();
     await tui.WaitFor(Worlds.Skyblock);
 
     await shot.Capture(
         "workspaces-01-list",
         Note.Callout(
-            1, At.Row(CommonText.NewServer).To(At.Row(WorkspacesText.AddFolder)),
+            1, At.Row(WorkspacesText.AddFolder),
             shot.T(
-                "Create a server, or add a folder that has one.",
-                "新建服务器，或添加已有服务器的文件夹。", "建立伺服器，或加入已有伺服器的資料夾。")),
+                "Add a folder, or a new one, to the list.",
+                "把文件夹（或新建的文件夹）加入列表。", "把資料夾（或新建的資料夾）加入清單。")),
         Note.Callout(
             2, At.Text("● " + world.Workspace),
             shot.T(
@@ -37,7 +38,7 @@ public sealed class WorkspacesShots(ShotRun run) {
             Side.Right));
 
     // The row of another workspace, and its actions.
-    tui.Press(ConsoleKey.DownArrow, 3);
+    tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(WorkspacesText.Remove);
     await shot.Capture(
@@ -54,17 +55,15 @@ public sealed class WorkspacesShots(ShotRun run) {
         new SetupOfShots(harness, world) { Result = OperationResult.Unchanged };
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
-    await tui.WaitFor("● " + world.Workspace);
+    await tui.GoTo(PageId.Server);
+    await tui.WaitFor($"[ {SetupText.ChangeVersions} ]");
 
-    tui.Press(ConsoleKey.DownArrow, 2);
+    tui.Press(ConsoleKey.RightArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.ChangeVersions);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
     await tui.WaitFor(World.GameVersion);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    await tui.WaitFor($"─ {SetupText.Loader} ─");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Close} ]");
     await shot.Capture(

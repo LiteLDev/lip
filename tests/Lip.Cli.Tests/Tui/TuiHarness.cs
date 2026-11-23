@@ -54,7 +54,8 @@ public sealed class TuiHarnessOptions {
   public GithubProbe? GithubProbe { get; init; }
 
   /// The server setup, made for the harness so that it can reach the interaction of a client
-  /// (TuiHarness.InteractionOf): that of LipClient when not given. See FakeServerSetup.
+  /// (TuiHarness.InteractionOf): a FakeServerSetup when not given, so that no test reads the
+  /// builds list from the network.
   public Func<TuiHarness, IServerSetup>? ServerSetup { get; init; }
 
   /// Whether the servers are managed servers, as when the daemon carries out the interface.
@@ -138,7 +139,7 @@ public sealed class TuiHarness : IDisposable {
         }
       },
       GithubProbe = options.GithubProbe,
-      ServerSetup = options.ServerSetup?.Invoke(this),
+      ServerSetup = options.ServerSetup?.Invoke(this) ?? new FakeServerSetup(this),
       ManagedServers = options.ManagedServers,
       ClientLanguage = options.Language,
       SelfUpdate = options.SelfUpdate ?? ((_, _) => Task.FromException<SelfUpdateResult>(
@@ -360,6 +361,27 @@ public sealed class TuiHarness : IDisposable {
     await Poll(
         () => Context.CurrentPage == page && Context.ContentFocused,
         () => $"The page {page} was never shown:{NewLine}{Screen}");
+    await Settle();
+  }
+
+  /// Opens the workspace picker as the user does: back to the sidebar, ↑ to the workspace of
+  /// the top bar, which is above the first page, and Enter.
+  public async Task OpenWorkspaces() {
+    await Settle();
+    for (int level = 0; await Invoke(() => Context.ContentFocused); level++) {
+      if (level == 8) {
+        Assert.Fail($"Esc never left the page:{NewLine}{Screen}");
+      }
+
+      Press(ConsoleKey.Escape);
+      await Settle();
+    }
+
+    IReadOnlyList<PageEntry> entries = _options.Pages ?? PageRegistry.All;
+    int current = entries.ToList().FindIndex(e => e.Id == Context.CurrentPage);
+    Press(ConsoleKey.UpArrow, current + 1);
+    Press(ConsoleKey.Enter);
+    await WaitFor($"─ {Text(() => Lip.Cli.Tui.Pages.Workspaces.WorkspacesText.Title)} ─");
     await Settle();
   }
 

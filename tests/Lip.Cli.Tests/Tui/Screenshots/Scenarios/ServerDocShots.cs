@@ -34,7 +34,7 @@ public sealed class ServerDocShots(ShotRun run) {
     await shot.Tui.GoTo(PageId.Server);
     await shot.Tui.WaitFor(ServerText.NoServer);
     await shot.Capture(
-        "server-03-no-server", Note.Box(At.Button(CommonText.NewServer)), Note.Keys("Enter"));
+        "server-03-no-server", Note.Box(At.Button(CommonText.SetUpServer)), Note.Keys("Enter"));
   }
 
   [ShotTheory]

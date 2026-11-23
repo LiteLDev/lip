@@ -59,8 +59,8 @@ public sealed class AppContext {
   /// changed the workspace by other means than PlanAndRun.
   public void NotifyWorkspaceChanged() => _app.WorkspaceChanged();
 
-  /// A client for another directory than the selected workspace, such as that of a new server,
-  /// whose messages and questions are shown in the interface too.
+  /// A client for another directory than the selected workspace, whose messages and questions
+  /// are shown in the interface too.
   public LipClient ClientFor(string directory) => _app.ClientFor(directory);
 
   #endregion
@@ -175,6 +175,10 @@ public sealed class AppContext {
 
   /// Gives the sidebar the focus.
   public void FocusSidebar() => _app.Focus(content: false);
+
+  /// Opens the workspace picker, which the workspace of the top bar opens too: the workspace
+  /// list, from which the user selects, adds or removes a workspace.
+  public void ChooseWorkspace() => _app.ChooseWorkspace();
 
   /// Opens the dialog above everything else; it takes every key until it closes.
   public void Show(Dialog dialog) => _app.Show(dialog);

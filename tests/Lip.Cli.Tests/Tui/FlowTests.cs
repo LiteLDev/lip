@@ -61,7 +61,7 @@ public sealed class FlowTests {
     TuiHarness tui = TuiHarness.Start(new TuiHarnessOptions {
       Language = language,
       FileSystem = Workspace(game),
-      Pages = WorkspacesPageTests.Pages(linux: false),
+      Pages = ServerSetupTests.Pages(linux: false),
       Catalog = Catalog,
       GithubProbe = probe,
       ServerSetup = harness => fake = new FakeServerSetup(harness),
@@ -81,21 +81,18 @@ public sealed class FlowTests {
   private static string LastRow(TuiHarness tui) => tui.Screen.Split('\n')[^1];
 
   [Fact]
-  public async Task Home_CreateAServer_GoesThroughTheWizardOfTheWorkspacesPage_InTraditionalChinese() {
+  public async Task Home_SetUpTheServer_GoesThroughTheSetupOfTheServerPage_InTraditionalChinese() {
     using TuiHarness tui = Start(out Func<FakeServerSetup> setup, game: false, Language.ZhHant);
     await tui.WaitFor(HomeText.CreateServerDetail);
     await tui.WaitFor(HomeText.NotInstalled);
 
-    // Act: Enter on the first step. The workspace has no game, so the server may go here.
+    // Act: Enter on the step that the workspace, which has no game, needs first.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.Here);
-    Assert.Equal(PageId.Workspaces, await Page(tui));
-    Assert.Contains($"─ {WorkspacesText.NewServerTitle} ─", tui.Screen);
-    tui.Snapshot("flow-home-new-server");
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
+    Assert.Equal(PageId.Server, await Page(tui));
+    tui.Snapshot("flow-home-set-up");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    await tui.WaitFor($"─ {SetupText.Loader} ─");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
     tui.Press(ConsoleKey.Enter);
@@ -105,7 +102,7 @@ public sealed class FlowTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone("✓ " + CommonText.Done);
 
-    // Assert: the server was set up in the workspace, whose row has the focus.
+    // Assert: the server was set up in the workspace, and the Server page is shown.
     lock (setup().Calls) {
       Assert.Equal(
           [
@@ -118,11 +115,9 @@ public sealed class FlowTests {
       Assert.All(setup().Sessions, session => Assert.Same(setup().Sessions[0], session));
     }
 
-    await Shown(tui, PageId.Workspaces);
-    await tui.WaitFor(_ => LastRow(tui).Contains($"Enter {CommonText.HintActions.Text}"), "the row");
-    Assert.Contains("● " + tui.Root, tui.Screen);
+    await Shown(tui, PageId.Server);
     Assert.Equal([tui.Root], tui.Workspaces.Read());
-    tui.Snapshot("flow-home-new-server-done");
+    tui.Snapshot("flow-home-set-up-done");
 
     // Esc goes back to the sidebar, and from there the Home page is one key away.
     tui.Press(ConsoleKey.Escape);
@@ -132,25 +127,40 @@ public sealed class FlowTests {
   }
 
   [Fact]
-  public async Task Home_CreateAServer_EscInTheWizard_ChangesNothing_AndStaysOnWorkspaces() {
+  public async Task Home_SetUpTheServer_EscInTheSetup_ChangesNothing_AndStaysOnServer() {
     using TuiHarness tui = Start(out Func<FakeServerSetup> setup, game: true);
     await tui.WaitFor(HomeText.InstallModsDetail);
     tui.Press(ConsoleKey.UpArrow);
     await tui.WaitFor(HomeText.CreateServerDoneDetail);
 
-    // A workspace that has a game: the wizard asks for the folder of another server.
+    // A workspace that has a game: the setup changes its versions.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.NewServerTitle} ─");
-    await tui.WaitFor($"{PathPickerText.Folder}  {tui.Root}");
-    await tui.WaitUntilGone(PathPickerText.Reading);
-    Assert.Equal(PageId.Workspaces, await Page(tui));
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
+    Assert.Equal(PageId.Server, await Page(tui));
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone($"─ {WorkspacesText.NewServerTitle} ─");
+    await tui.WaitUntilGone($"─ {SetupText.GameVersion} ─");
 
-    await Shown(tui, PageId.Workspaces);
+    await Shown(tui, PageId.Server);
     Assert.True(await tui.Invoke(() => tui.Context.Idle));
     Assert.Empty(setup().Calls);
-    Assert.Equal([tui.Root], tui.Workspaces.Read());
+  }
+
+  [Fact]
+  public async Task Home_ChooseAWorkspace_OpensTheWorkspacePicker() {
+    using TuiHarness tui = Start(out Func<FakeServerSetup> setup, game: true);
+    await tui.WaitFor(HomeText.InstallModsDetail);
+    tui.Press(ConsoleKey.UpArrow, 2);
+    await tui.WaitFor(HomeText.ChooseWorkspaceDetail);
+    Assert.Contains("✓ 1  " + HomeText.ChooseWorkspace, tui.Screen);
+
+    tui.Press(ConsoleKey.Enter);
+
+    await tui.WaitFor($"─ {WorkspacesText.Title} ─");
+    await tui.WaitFor("● " + tui.Root);
+    Assert.Equal(PageId.Home, await Page(tui));
+    tui.Press(ConsoleKey.Escape);
+    await tui.WaitUntilGone($"─ {WorkspacesText.Title} ─");
+    Assert.Empty(setup().Calls);
   }
 
   [Fact]
@@ -212,7 +222,7 @@ public sealed class FlowTests {
       tui.Press(ConsoleKey.Escape);
       await tui.WaitUntil(() => !tui.Context.ContentFocused, "the sidebar");
       await tui.GoTo(PageId.Home);
-      await tui.WaitFor($"✓ 3  {HomeText.StartServer}");
+      await tui.WaitFor($"✓ 4  {HomeText.StartServer}");
       await tui.WaitFor(HomeText.InstallModsDetail);
       tui.Press(ConsoleKey.DownArrow);
       await tui.WaitFor(HomeText.OpenServerDetail);
@@ -264,21 +274,20 @@ public sealed class FlowTests {
   }
 
   [Fact]
-  public async Task Mods_NewServer_StartsTheWizardOfTheWorkspacesPage() {
+  public async Task Mods_SetUpServer_StartsTheSetupOfTheServerPage() {
     using TuiHarness tui = Start(out _, game: false);
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(CommonText.NoMods);
-    await tui.WaitFor(CommonText.NewServer);
+    await tui.WaitFor(CommonText.SetUpServer);
 
     // Act: the first action row of a workspace without a game.
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor(WorkspacesText.Here);
-    Assert.Equal(PageId.Workspaces, await Page(tui));
-    Assert.Contains($"─ {WorkspacesText.NewServerTitle} ─", tui.Screen);
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
+    Assert.Equal(PageId.Server, await Page(tui));
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(WorkspacesText.Here);
-    await Shown(tui, PageId.Workspaces);
+    await tui.WaitUntilGone($"─ {SetupText.GameVersion} ─");
+    await Shown(tui, PageId.Server);
   }
 
   [Fact]
@@ -299,28 +308,25 @@ public sealed class FlowTests {
   }
 
   [Fact]
-  public async Task Server_NewServer_StartsTheWizardOfTheWorkspacesPage() {
+  public async Task Server_SetUpServer_StartsTheSetup_AndEscGoesBackAStepAtATime() {
     using TuiHarness tui = Start(out _, game: false);
     await tui.GoTo(PageId.Server);
     await tui.WaitFor(ServerText.NoServer);
-    Assert.Contains($"[ {CommonText.NewServer} ]", tui.Screen);
+    Assert.Contains($"[ {CommonText.SetUpServer} ]", tui.Screen);
 
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor(WorkspacesText.Here);
-    Assert.Equal(PageId.Workspaces, await Page(tui));
-    tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor(WorkspacesText.ElsewhereDetail);
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"{PathPickerText.Folder}  {tui.Root}");
-    await tui.WaitUntilGone(PathPickerText.Reading);
+    await tui.WaitFor($"─ {SetupText.Loader} ─");
 
     // Esc goes back one step at a time, and out of the first one to the page.
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitFor(WorkspacesText.ElsewhereDetail);
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(WorkspacesText.Here);
-    await Shown(tui, PageId.Workspaces);
+    await tui.WaitUntilGone($"─ {SetupText.GameVersion} ─");
+    await Shown(tui, PageId.Server);
+    Assert.Contains($"[ {CommonText.SetUpServer} ]", tui.Screen);
   }
 
   [Fact]

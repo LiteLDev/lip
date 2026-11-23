@@ -608,7 +608,11 @@ public sealed class ModConfigPageTests {
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone(ModConfigText.Unsaved);
     Assert.DoesNotContain(buttons, tui.Screen);
-    Assert.Contains("\"enabled\": false", fs.File.ReadAllText(AlphaPath));
+    // The line can be hidden by the operation before the file is written, and the toast of
+    // the save before may still be shown, so the file itself is waited for.
+    await tui.WaitUntil(
+        () => fs.File.ReadAllText(AlphaPath).Contains("\"enabled\": false"),
+        "the file saved with the change");
   }
 
   [Fact]

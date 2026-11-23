@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using Lip.Cli.Servers;
 using Lip.Cli.Tui.I18n;
+using Lip.Cli.Tui.Pages.Workspaces;
 using Lip.Cli.Tui.Widgets;
 using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
@@ -85,7 +86,9 @@ public sealed class AppOptions {
 }
 
 /// The interface (protocol/lip-tui.md): the commands of lip, the catalogue and the server, in
-/// one full-screen program of a sidebar of pages, the page shown, and dialogs above it.
+/// one full-screen program of a top bar, a sidebar of pages, the page shown, and dialogs above
+/// it. The selected workspace in the top bar takes the focus too: ↑ from the first page of the
+/// sidebar goes to it, and Enter on it opens the workspace picker.
 /// Everything but the reading of keys and the work of the commands happens on the thread that
 /// calls Run, which other threads reach through Post.
 public sealed partial class App {
@@ -137,6 +140,8 @@ public sealed partial class App {
   private volatile string _screenText = "";
   private int _current;
   private bool _contentFocused;
+  // Whether the workspace of the top bar has the focus, instead of the sidebar or the page.
+  private bool _topBarFocused;
   private bool _quit;
   private bool _quitOnceStopped;
   private int _tickPending;
@@ -300,7 +305,13 @@ public sealed partial class App {
     }
   }
 
-  internal void Focus(bool content) => _contentFocused = content;
+  internal void Focus(bool content) {
+    _contentFocused = content;
+    _topBarFocused = false;
+  }
+
+  /// Opens the workspace picker (protocol/lip-tui.md, "Workspaces").
+  internal void ChooseWorkspace() => Show(new WorkspacePicker());
 
   internal PageId CurrentPage => _entries[_current].Id;
 
@@ -443,6 +454,11 @@ public sealed partial class App {
       return;
     }
 
+    if (_topBarFocused) {
+      TopBarKey(key);
+      return;
+    }
+
     if (_contentFocused) {
       if (Current.OnKey(key)) {
         return;
@@ -458,11 +474,16 @@ public sealed partial class App {
     }
 
     switch (key.Key) {
+      // The workspace of the top bar is above the first page, and below the last one, round.
+      case ConsoleKey.UpArrow when _current == 0:
+      case ConsoleKey.DownArrow when _current == _pages.Count - 1:
+        _topBarFocused = true;
+        break;
       case ConsoleKey.UpArrow:
-        ShowPage((_current + _pages.Count - 1) % _pages.Count, focus: false);
+        ShowPage(_current - 1, focus: false);
         break;
       case ConsoleKey.DownArrow:
-        ShowPage((_current + 1) % _pages.Count, focus: false);
+        ShowPage(_current + 1, focus: false);
         break;
       case ConsoleKey.Home or ConsoleKey.PageUp:
         ShowPage(0, focus: false);
@@ -491,11 +512,40 @@ public sealed partial class App {
     }
   }
 
+  /// The keys of the workspace of the top bar: Enter opens the workspace picker; ↓ goes to the
+  /// first page of the sidebar and ↑ to the last one; Esc and Tab go back to the page of the
+  /// sidebar that is shown.
+  private void TopBarKey(ConsoleKeyInfo key) {
+    switch (key.Key) {
+      case ConsoleKey.Enter or ConsoleKey.Spacebar:
+        ChooseWorkspace();
+        break;
+      case ConsoleKey.DownArrow:
+        _topBarFocused = false;
+        ShowPage(0, focus: false);
+        break;
+      case ConsoleKey.UpArrow:
+        _topBarFocused = false;
+        ShowPage(_pages.Count - 1, focus: false);
+        break;
+      case ConsoleKey.Escape or ConsoleKey.Tab:
+        _topBarFocused = false;
+        break;
+      default:
+        if (Ui.IsInterrupt(key)) {
+          RequestQuit();
+        }
+
+        break;
+    }
+  }
+
   /// Shows the page at index, once the page shown lets go; the content area takes the focus
   /// when focus is set, and the page gets the request when one is given.
   internal void ShowPage(int index, bool focus, string? request = null) {
     void Arrive() {
       _contentFocused = focus || _contentFocused;
+      _topBarFocused &= !focus;
       if (request is not null) {
         _pages[index].OnRequest(request);
       }
@@ -573,6 +623,7 @@ public sealed partial class App {
     }
 
     _contentFocused = true;
+    _topBarFocused = false;
     foreach (WorkspaceServer stopped in running) {
       stopped.Stop();
     }
@@ -895,11 +946,17 @@ public sealed partial class App {
     }
 
     x = _screen.Write(x, 0, " · ", Theme.Border);
-    _screen.Write(x, 0, TextWidth.FitEnd(_workspace, right - x), Theme.Muted);
+    // The workspace stands out while it has the focus, with a space before and after it.
+    if (_topBarFocused && _dialogs.Count == 0) {
+      _screen.Write(
+          x - 1, 0, $" {TextWidth.FitEnd(_workspace, right - x - 1)} ", Theme.Selected);
+    } else {
+      _screen.Write(x, 0, TextWidth.FitEnd(_workspace, right - x), Theme.Muted);
+    }
   }
 
   private void DrawSidebar(Rect rect) {
-    bool focused = !_contentFocused && _dialogs.Count == 0;
+    bool focused = !_contentFocused && !_topBarFocused && _dialogs.Count == 0;
     bool names = !Narrow || !_contentFocused;
     _screen.Fill(rect, default);
     _screen.Box(
@@ -919,7 +976,7 @@ public sealed partial class App {
       if (i == _current) {
         _screen.Restyle(
             inner.X - 1, y, inner.Width + 2,
-            !_contentFocused ? Theme.Selected : Theme.SelectedInactive);
+            !_contentFocused && !_topBarFocused ? Theme.Selected : Theme.SelectedInactive);
       }
     }
   }
@@ -945,6 +1002,10 @@ public sealed partial class App {
   private IReadOnlyList<Hint> CurrentHints() {
     if (_dialogs.Count > 0) {
       return _dialogs[^1].Hints;
+    }
+
+    if (_topBarFocused) {
+      return [CommonText.HintMove, CommonText.HintOpen, CommonText.HintBack];
     }
 
     if (!_contentFocused) {

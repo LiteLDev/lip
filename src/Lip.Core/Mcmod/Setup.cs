@@ -19,7 +19,7 @@ public sealed record SetupRequest(
     SemVersion Game, GameBuild Build, bool Loader, SemVersion? LoaderVersion = null);
 
 /// A version of the game that the builds list names, and whether it has a build for each build
-/// of the game (protocol/lip-tui.md, "New server").
+/// of the game (protocol/lip-tui.md, "Server setup").
 public sealed record GameVersion(SemVersion Version, bool Windows, bool Linux) {
   /// Whether the version has a build of the game of the build.
   public bool Has(GameBuild build) => build == GameBuild.Linux ? Linux : Windows;
@@ -105,7 +105,7 @@ public partial class McmodService {
   }
 
   /// The versions of the game that the builds list names, as the interface offers them for a new
-  /// server (protocol/lip-tui.md, "New server"): the versions that are not of one build only,
+  /// server (protocol/lip-tui.md, "Server setup"): the versions that are not of one build only,
   /// from highest to lowest, then the others, from highest to lowest. Throws
   /// ArchiveUnavailableException when the builds list cannot be obtained.
   public async Task<IReadOnlyList<GameVersion>> GameVersions() {
@@ -118,7 +118,7 @@ public partial class McmodService {
   }
 
   /// The versions of LeviLamina that fit a game version, from highest to lowest
-  /// (protocol/lip-tui.md, "New server"): the candidates of the loader source that fit it, searched
+  /// (protocol/lip-tui.md, "Server setup"): the candidates of the loader source that fit it, searched
   /// from the first, as a setup searches for its loader (protocol/lip-setup.md, "The loader"),
   /// stopping at a LeviLamina for older games only, and at the first one that does not fit after
   /// one that does.

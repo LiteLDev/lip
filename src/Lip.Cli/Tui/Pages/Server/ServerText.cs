@@ -33,6 +33,13 @@ public static class ServerText {
   public static string NoOutput => L.T("No output yet.", "还没有输出。", "還沒有輸出。");
   public static string NoServer =>
       L.T("No server here yet.", "这里还没有服务器。", "這裡還沒有伺服器。");
+  public static string SetUpDetail =>
+      L.T(
+          "Installs a game version and a loader in this workspace.",
+          "在此工作区中安装游戏版本和加载器。",
+          "在此工作區中安裝遊戲版本和載入器。");
+  public static string ChangeVersionsDetail =>
+      L.T("Another game or loader.", "更换游戏或加载器。", "更換遊戲或載入器。");
 
   /// The example that the empty input line shows: a command of the server.
   public static string InputExample => "list";

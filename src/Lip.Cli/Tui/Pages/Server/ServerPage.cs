@@ -2,6 +2,7 @@ using System.Globalization;
 using Lip.Cli.Servers;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Widgets;
+using Lip.Core.Infrastructure;
 using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
 using Lip.Core.Services;
@@ -9,11 +10,24 @@ using Lip.Core.Services;
 namespace Lip.Cli.Tui.Pages.Server;
 
 /// The Server page: the server of the selected workspace (protocol/lip-tui.md, "Server"). A
-/// line says whether it runs; below it a button starts or stops it and a toggle sets whether
-/// it is restarted after a failure; then what the server wrote, and a line that the server
-/// reads when the user enters it. A server that another lip runs is known to run and no more:
-/// the page says so, where it is stopped, and offers neither to start it nor its output.
-public sealed class ServerPage(AppContext context) : Page(context) {
+/// line says whether it runs; below it a button starts or stops it, a toggle sets whether it
+/// is restarted after a failure, and a button sets it up again with other versions, which is
+/// disabled while it runs; then what the server wrote, and a line that the server reads when
+/// the user enters it. A server that another lip runs is known to run and no more: the page
+/// says so, where it is stopped, and offers neither to start it nor its output.
+///
+/// A workspace without a game shows a button that sets it up instead (protocol/lip-tui.md,
+/// "Server setup"): the setup asks for the game version, the build and the loader, then
+/// carries out lip setup. runsLinuxServer tells whether lip runs the Linux server on this
+/// system, and so whether the build linux is offered: WorkspaceProgram.RunsLinuxServer when
+/// not given.
+public sealed class ServerPage(AppContext context, Func<bool>? runsLinuxServer = null)
+    : Page(context) {
+  /// The controls, from left to right.
+  private const int StartControl = 0;
+  private const int RestartControl = 1;
+  private const int VersionsControl = 2;
+
   /// The areas of the page that take the keys, from top to bottom.
   private enum Area {
     Controls,
@@ -21,6 +35,8 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     Input,
   }
 
+  private readonly ServerWizard _wizard = new ServerWizard(
+      context, runsLinuxServer ?? (() => WorkspaceProgram.RunsLinuxServer));
   private readonly TextField _input = new();
   private readonly List<string> _history = [];
   private Area _focus;
@@ -30,7 +46,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   private int _historyAt;
   private string _draft = "";
 
-  /// Which of the controls is chosen: 0 for the button, 1 for the toggle.
+  /// Which of the controls is chosen: StartControl, RestartControl or VersionsControl.
   private int _control;
 
   /// Scrolled back as far as it goes: Draw makes it the row count of the output.
@@ -84,10 +100,10 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       }
 
       if (Elsewhere) {
-        // The button is disabled, and the controls are the only area.
-        return _control == 0
-            ? [CommonText.HintSwitch]
-            : [CommonText.HintSwitch, CommonText.HintToggleEither];
+        // The buttons are disabled, and the controls are the only area.
+        return _control == RestartControl
+            ? [CommonText.HintSwitch, CommonText.HintToggleEither]
+            : [CommonText.HintSwitch];
       }
 
       // The keys of the area that has the focus; then Tab and Ctrl+C, which work in each;
@@ -97,10 +113,12 @@ public sealed class ServerPage(AppContext context) : Page(context) {
       switch (_focus) {
         case Area.Controls:
           hints.Add(CommonText.HintSwitch);
-          if (_control == 1) {
+          if (_control == RestartControl) {
             hints.Add(CommonText.HintToggleEither);
-          } else if (Context.Server is not { Running: true, Stopping: true }) {
-            // The button does nothing while lip is asked to stop for the server.
+          } else if (_control == VersionsControl ? !Running
+              : Context.Server is not { Running: true, Stopping: true }) {
+            // The button that starts or stops does nothing while lip is asked to stop for the
+            // server, and the one that sets it up nothing while it runs.
             hints.Add(CommonText.HintSelect);
           }
 
@@ -189,6 +207,8 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   public override void OnRequest(string request) {
     if (request == PageRequest.StartServer) {
       Start();
+    } else if (request == PageRequest.SetUpServer) {
+      _wizard.Start();
     }
   }
 
@@ -214,8 +234,8 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     WorkspaceServer? server = Context.Server;
     bool running = server?.Running == true;
     bool elsewhere = Elsewhere;
-    DrawState(screen, area, server, elsewhere);
-    DrawControls(screen, area, focused, server, elsewhere);
+    int state = DrawState(screen, area, server, elsewhere);
+    DrawControls(screen, area, focused, server, elsewhere, state);
     if (elsewhere) {
       // Why it cannot be started, and where it is stopped, in place of its output.
       int row = area.Y + 3;
@@ -247,7 +267,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     Follow();
     if (Missing) {
       if (_hasGame == false && key.Key is ConsoleKey.Enter or ConsoleKey.Spacebar) {
-        Context.Navigate(PageId.Workspaces, PageRequest.NewServer);
+        _wizard.Start();
         return true;
       }
 
@@ -412,18 +432,25 @@ public sealed class ServerPage(AppContext context) : Page(context) {
 
   private bool ControlsKey(ConsoleKeyInfo key) {
     switch (key.Key) {
-      case ConsoleKey.LeftArrow when _control > 0:
-        _control = 0;
+      case ConsoleKey.LeftArrow when _control > StartControl:
+        _control--;
         return true;
       case ConsoleKey.RightArrow:
-        _control = 1;
+        _control = Math.Min(VersionsControl, _control + 1);
         return true;
       case ConsoleKey.DownArrow:
         Focus(Area.Log);
         return true;
       case ConsoleKey.Enter or ConsoleKey.Spacebar:
-        if (_control == 1) {
+        if (_control == RestartControl) {
           ToggleRestart();
+        } else if (_control == VersionsControl) {
+          if (Running || Elsewhere) {
+            // Disabled: the line below the controls says why.
+            return false;
+          }
+
+          _wizard.Start();
         } else if (Running) {
           Context.Server?.Stop();
         } else if (Elsewhere) {
@@ -517,7 +544,7 @@ public sealed class ServerPage(AppContext context) : Page(context) {
   #region Drawing
 
   /// What is shown instead of a server: that the workspace is being read, or that it has no
-  /// server, with the row that leads to creating one.
+  /// server, with what a setup does, and the button that starts it.
   private static void DrawMissing(ScreenBuffer screen, Rect area, bool focused, bool loading) {
     if (loading) {
       screen.WriteFit(area.X, area.Y, area.Width, CommonText.Loading, Theme.Muted);
@@ -527,18 +554,29 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     screen.WriteFit(area.X, area.Y, area.Width, ServerText.NoServer, Theme.Muted);
     if (area.Height >= 3) {
       screen.Write(
-          area.X, area.Y + 2, $"[ {CommonText.NewServer} ]",
+          area.X, area.Y + 2, $"[ {CommonText.SetUpServer} ]",
           focused ? Theme.Selected : Theme.Strong, area.Right);
+    }
+
+    int y = area.Y + 4;
+    foreach (string line in TextWidth.Wrap(ServerText.SetUpDetail, area.Width)) {
+      if (y >= area.Bottom) {
+        break;
+      }
+
+      screen.Write(area.X, y++, line, Theme.Muted, area.Right);
     }
   }
 
   /// The line that says whether the server runs, and since when or how it ended.
-  private static void DrawState(
+  /// Returns the column after it.
+  private static int DrawState(
       ScreenBuffer screen, Rect area, WorkspaceServer? server, bool elsewhere) {
     (string text, Style style) = elsewhere
         ? ("● " + ServerText.RunningElsewhere, Theme.Good)
         : State(server);
     screen.WriteFit(area.X, area.Y, area.Width, text, style);
+    return Math.Min(area.Right, area.X + TextWidth.Of(text));
   }
 
   private static (string Text, Style Style) State(WorkspaceServer? server) {
@@ -574,31 +612,51 @@ public sealed class ServerPage(AppContext context) : Page(context) {
     return ($"● {CommonText.ServerRunning} · {time}", Theme.Good);
   }
 
-  /// The button that starts or stops the server, the toggle, and what the toggle does while
-  /// it is chosen.
+  /// The button that starts or stops the server, the toggle, the button that changes the
+  /// versions, and what the control that is chosen does, or why it is disabled: after them
+  /// where it fits, otherwise at the right of the line of the state, which ends at column
+  /// state, where it fits, otherwise cut after them.
   private void DrawControls(
-      ScreenBuffer screen, Rect area, bool focused, WorkspaceServer? server, bool elsewhere) {
+      ScreenBuffer screen, Rect area, bool focused, WorkspaceServer? server, bool elsewhere,
+      int state) {
     int y = area.Y + 1;
     bool chosen = focused && _focus == Area.Controls;
     bool running = server?.Running == true;
     // A button that does nothing now is muted, also while it has the focus: the underline
     // alone shows where the focus is, so that it never looks like one that can be pressed.
-    Style disabled = _control == 0 && chosen ? Theme.Muted with { Underline = true } : Theme.Muted;
-    Style button = elsewhere || (running && server!.Stopping) ? disabled
-        : _control != 0 ? default
+    Style Button(int control, bool enabled) =>
+        !enabled ? control == _control && chosen ? Theme.Muted with { Underline = true }
+            : Theme.Muted
+        : _control != control ? default
         : chosen ? Theme.Selected
         : Theme.Strong;
     int x = screen.Write(
-        area.X, y, $"[ {(running ? ServerText.Stop : ServerText.Start)} ]", button, area.Right);
-    Style toggle = _restart is null ? Theme.Muted
-        : _control != 1 ? default
-        : chosen ? Theme.Selected
-        : Theme.Strong;
+        area.X, y, $"[ {(running ? ServerText.Stop : ServerText.Start)} ]",
+        Button(StartControl, !elsewhere && !(running && server!.Stopping)), area.Right);
+    Style toggle = _restart is null ? Theme.Muted : Button(RestartControl, enabled: true);
     x = screen.Write(
         x + 2, y, $"[{(_restart == true ? "x" : " ")}] {CommonText.AutoRestart}", toggle,
         area.Right);
-    if (chosen && _control == 1 && area.Right - x > 2) {
-      screen.WriteFit(x + 2, y, area.Right - x - 2, ServerText.AutoRestartDetail, Theme.Muted);
+    x = screen.Write(
+        x + 2, y, $"[ {SetupText.ChangeVersions} ]",
+        Button(VersionsControl, !running && !elsewhere), area.Right);
+    string? detail = !chosen ? null
+        : _control == RestartControl ? ServerText.AutoRestartDetail
+        : _control == VersionsControl
+            ? running || elsewhere ? CommonText.StopServerFirst : ServerText.ChangeVersionsDetail
+        : null;
+    if (detail is null) {
+      return;
+    }
+
+    int columns = TextWidth.Of(detail);
+    if (area.Right - x - 2 >= columns) {
+      screen.Write(x + 2, y, detail, Theme.Muted, area.Right);
+    } else if (area.Right - state - 2 >= columns) {
+      screen.Write(area.Right - columns, area.Y, detail, Theme.Muted, area.Right);
+    } else if (area.Right - x > 2) {
+      // Cut, rather than left out.
+      screen.WriteFit(x + 2, y, area.Right - x - 2, detail, Theme.Muted);
     }
   }
 

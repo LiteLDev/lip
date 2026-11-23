@@ -26,7 +26,7 @@ public static class ModsText {
           "Browse the mods of levimc.org.",
           "浏览 levimc.org 上的模组。",
           "瀏覽 levimc.org 上的模組。");
-  public static string NewServerDetail =>
+  public static string SetUpServerDetail =>
       L.T(
           "This workspace has no server yet.",
           "这个工作区还没有服务器。",
@@ -86,7 +86,7 @@ public static class ModsText {
           count == 1 ? "Uninstall 1 mod" : $"Uninstall {count} mods",
           $"卸载 {count} 个模组", $"解除安裝 {count} 個模組");
   public static string UncheckAll => L.T("Uncheck all", "取消全部勾选", "取消全部勾選");
-  public static string GoToWorkspaces => L.T("Go to Workspaces", "前往工作区", "前往工作區");
+  public static string ChangeVersions => L.T("Change versions…", "更改版本…", "變更版本…");
 
   // The details of a package, from the catalogue.
   public static string ReadingCatalogue =>

@@ -198,13 +198,13 @@ public sealed class ModsPageTests {
     await tui.WaitFor(CommonText.NoMods);
     tui.Snapshot("mods-empty");
 
-    // Without a game, the first row leads to a new server; the list offers nothing to update.
+    // Without a game, the first row leads to the setup of the server; the list offers nothing to update.
     string screen = tui.Screen;
-    int newServer = screen.IndexOf(CommonText.NewServer, StringComparison.Ordinal);
+    int newServer = screen.IndexOf(CommonText.SetUpServer, StringComparison.Ordinal);
     int install = screen.IndexOf(ModsText.InstallFromSource, StringComparison.Ordinal);
     Assert.True(newServer >= 0 && newServer < install, screen);
     Assert.DoesNotContain(ModsText.UpdateAll, screen);
-    Assert.Contains(ModsText.NewServerDetail, screen);
+    Assert.Contains(ModsText.SetUpServerDetail, screen);
     Assert.Contains(
         $"{CommonText.HintMove.Key} {CommonText.HintMove.Text}  "
             + $"{CommonText.HintSelect.Key} {CommonText.HintSelect.Text}  "
@@ -214,7 +214,7 @@ public sealed class ModsPageTests {
   }
 
   [Fact]
-  public async Task Empty_NewServerAndGetMods_LeadToTheirPages() {
+  public async Task Empty_SetUpServerAndGetMods_LeadToTheirPages() {
     using TuiHarness tui = Start(state: null);
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(CommonText.NoMods);
@@ -227,17 +227,18 @@ public sealed class ModsPageTests {
     await tui.WaitFor(CommonText.NoMods);
     tui.Press(ConsoleKey.UpArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Server, "the Server page");
+    await tui.WaitFor("─ Game version ─");
   }
 
   [Fact]
-  public async Task WithAGameOnly_OffersGetMods_ButNoNewServer() {
+  public async Task WithAGameOnly_OffersGetMods_ButNoSetUp() {
     using TuiHarness tui = Start(State(Package(Game, "1.21.0", true)));
 
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(Game);
 
-    Assert.DoesNotContain(CommonText.NewServer, tui.Screen);
+    Assert.DoesNotContain(CommonText.SetUpServer, tui.Screen);
     Assert.DoesNotContain(ModsText.UpdateAll, tui.Screen);
     Assert.Contains(ModsText.InstallFromSourceDetail, tui.Screen);
     Assert.DoesNotContain(CommonText.NoMods, tui.Screen);
@@ -440,21 +441,22 @@ public sealed class ModsPageTests {
   }
 
   [Fact]
-  public async Task Game_OffersOnlyTheWayToWorkspaces() {
+  public async Task Game_OffersOnlyToChangeTheVersions_OnTheServerPage() {
     using TuiHarness tui = Start(Server);
     await tui.GoTo(PageId.Mods);
     await tui.WaitFor(Alpha);
 
     tui.Press(ConsoleKey.End);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.GoToWorkspaces);
+    await tui.WaitFor(ModsText.ChangeVersions);
     Assert.Contains(ModsText.Details, tui.Screen);
     Assert.DoesNotContain(ModsText.UpdateTo, tui.Screen);
     Assert.DoesNotContain(ModsText.Uninstall, tui.Screen);
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the Workspaces page");
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Server, "the Server page");
+    await tui.WaitFor("─ Game version ─");
   }
 
   [Theory]
@@ -1232,7 +1234,7 @@ public sealed class ModsPageTests {
     // The game, whose menu has Details too.
     tui.Press(ConsoleKey.End);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ModsText.GoToWorkspaces);
+    await tui.WaitFor(ModsText.ChangeVersions);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModsText.NotInCatalogue);
     tui.Press(ConsoleKey.Escape);
@@ -1490,7 +1492,7 @@ public sealed class ModsPageTests {
     Assert.DoesNotContain(Alpha, tui.Screen);
     Assert.DoesNotContain("[x]", tui.Screen);
     Assert.Contains(ModsText.Installed(1), tui.Screen);
-    Assert.Contains(CommonText.NewServer, tui.Screen);
+    Assert.Contains(CommonText.SetUpServer, tui.Screen);
   }
 
   [Fact]
@@ -1524,6 +1526,6 @@ public sealed class ModsPageTests {
 
     Assert.Contains(ModsText.InstallFromSource, tui.Screen);
     Assert.DoesNotContain(CommonText.NoMods, tui.Screen);
-    Assert.DoesNotContain(CommonText.NewServer, tui.Screen);
+    Assert.DoesNotContain(CommonText.SetUpServer, tui.Screen);
   }
 }
