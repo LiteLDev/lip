@@ -269,7 +269,7 @@ public sealed class EntryDraft {
     JsonArray? sourceAssets = source?["assets"] as JsonArray;
     JsonArray assets = [];
     foreach (AssetDraft asset in Assets) {
-      assets.Add(asset.ToJson(asset.Source));
+      assets.Add((JsonNode)asset.ToJson(asset.Source));
     }
 
     if (assets.Count > 0 || sourceAssets is { Count: 0 }) {
@@ -366,7 +366,7 @@ public sealed class AssetDraft {
       JsonObject value = member.Source?.DeepClone().AsObject() ?? [];
       value["src"] = member.Src;
       value["dest"] = member.Dest;
-      place.Add(value);
+      place.Add((JsonNode)value);
     }
 
     if (place.Count > 0 || result["place"] is JsonArray { Count: 0 } && Type != "mcmod") {
