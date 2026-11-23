@@ -645,7 +645,7 @@ public sealed class PathPickerTests {
       (string Name, Func<PathPicker> Picker)[] modes = [
         ("folder", () => PathPicker.Folder(PathPickerText.SelectFolder, tui.Root, _ => { })),
         ("new-folder", () => PathPicker.Folder(
-            CommonText.NewServer, deep, _ => { }, mayNotExist: true)),
+            CommonText.SetUpServer, deep, _ => { }, mayNotExist: true)),
         ("open-file", () => PathPicker.OpenFile(
             PathPickerText.FileName, P("ws", "packages"), [".zip"], _ => { })),
         ("file-or-folder", () => PathPicker.OpenFile(

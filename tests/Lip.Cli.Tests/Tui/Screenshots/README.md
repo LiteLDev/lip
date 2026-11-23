@@ -163,7 +163,7 @@ the capture fails when the frame does not show it.
 ```csharp
 await shot.Capture(
     "first-server-06-plan",
-    Note.Focus(At.Panel(WorkspacesText.SetUpTitle)),
+    Note.Focus(At.Panel(SetupText.SetUpTitle)),
     Note.Callout(
         1, At.Text("Dry run:"),
         shot.T("What lip would do.", "lip 将要做的事。", "lip 將要做的事。")),

@@ -17,21 +17,28 @@ public static class HomeText {
 
   // The next steps.
   public static string NextSteps => L.T("Next steps", "下一步", "後續步驟");
-  public static string CreateServer => L.T("Create a server", "创建服务器", "建立伺服器");
+  public static string ChooseWorkspace => L.T("Choose a workspace", "选择工作区", "選擇工作區");
+  public static string CreateServer => L.T("Set up the server", "安装服务器", "安裝伺服器");
   public static string InstallMods => L.T("Install mods", "安装模组", "安裝模組");
   public static string StartServer => L.T("Start the server", "启动服务器", "啟動伺服器");
 
+  public static string ChooseWorkspaceDetail =>
+      L.T(
+          "Pick or add the folder of a server. ↑ from Home in the sidebar gets there too.",
+          "选择或添加服务器所在的文件夹。在侧栏的主页上按 ↑ 也能到达。",
+          "選擇或加入伺服器所在的資料夾。在側欄的首頁上按 ↑ 也能到達。");
+
   public static string CreateServerDetail =>
       L.T(
-          "Pick a folder, a game and a loader.",
-          "选择文件夹、游戏版本和加载器。",
-          "選擇資料夾、遊戲版本和載入器。");
+          "Pick a game version and a loader for this workspace.",
+          "为此工作区选择游戏版本和加载器。",
+          "為此工作區選擇遊戲版本和載入器。");
 
   public static string CreateServerDoneDetail =>
       L.T(
-          "Done. Enter sets up another server.",
-          "已完成。按 Enter 再建一个。",
-          "已完成。按 Enter 再建一個。");
+          "Done. Enter changes the game or loader version.",
+          "已完成。按 Enter 更改游戏或加载器版本。",
+          "已完成。按 Enter 變更遊戲或載入器版本。");
 
   public static string InstallModsDetail =>
       L.T(
@@ -52,7 +59,7 @@ public static class HomeText {
           "執行中。按 Enter 開啟主控台。");
 
   public static string NeedServer =>
-      L.T("Create a server first.", "请先创建服务器。", "請先建立伺服器。");
+      L.T("Set up the server first.", "请先安装服务器。", "請先安裝伺服器。");
 
   // GitHub reachability (protocol/lip-tui.md, "GitHub reachability").
   public static string GithubTitle => L.T("GitHub unreachable", "无法连接 GitHub", "無法連線 GitHub");

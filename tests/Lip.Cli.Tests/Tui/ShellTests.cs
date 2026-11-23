@@ -110,10 +110,11 @@ public sealed class ShellTests {
     await tui.WaitFor("body of Beta [focused]");
     Assert.Contains("Enter Act  Esc Back", tui.Screen);
 
-    // Esc gives the focus back to the sidebar; ↑ twice goes round to the last page.
+    // Esc gives the focus back to the sidebar; ↑ from the first page goes to the workspace of
+    // the top bar, and on round to the last page.
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone("[focused]");
-    tui.Press(ConsoleKey.UpArrow, 2);
+    tui.Press(ConsoleKey.UpArrow, 3);
     await tui.WaitFor("body of Gamma");
 
     // → and Tab enter the page too; ← and Tab leave it when the page does not take them.

@@ -4,7 +4,7 @@ using Semver;
 
 namespace Lip.Cli.Tui;
 
-/// What the interface needs of lip to set up a server (protocol/lip-tui.md, "New server"): the
+/// What the interface needs of lip to set up a server (protocol/lip-tui.md, "Server setup"): the
 /// versions of the game, the versions of LeviLamina that fit one, and lip setup, each with the
 /// client of the directory of the server. Give the three the same session, and the setup
 /// reads of the network only what reading the versions did not.

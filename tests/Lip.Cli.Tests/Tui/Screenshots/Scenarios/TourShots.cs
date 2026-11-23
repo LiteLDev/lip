@@ -3,6 +3,7 @@ using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.GetMods;
 using Lip.Cli.Tui.Pages.Home;
 using Lip.Cli.Tui.Pages.Mods;
+using Lip.Cli.Tui.Pages.Server;
 using Lip.Cli.Tui.Pages.Settings;
 using Lip.Cli.Tui.Pages.Workspaces;
 using Lip.Cli.Tui.Widgets;
@@ -24,7 +25,7 @@ public sealed class TourShots(ShotRun run) {
     TuiHarness tui = shot.Tui;
     await tui.WaitFor("LeviLamina " + World.LoaderVersion);
     await tui.SetServerRunning(true);
-    await tui.WaitFor("✓ 3");
+    await tui.WaitFor("✓ 4");
 
     await shot.Capture(
         "tour-01-layout",
@@ -44,9 +45,9 @@ public sealed class TourShots(ShotRun run) {
         Note.Callout(
             3, At.Text(SettingsText.Title),
             shot.T(
-                "The sidebar: the nine pages. The ● marks the Server page while the server runs.",
-                "侧边栏：九个页面。服务器运行时，“服务器”一项后面有 ●。",
-                "側邊欄：九個頁面。伺服器執行時，「伺服器」一項後面有 ●。"),
+                "The sidebar: the pages. The ● marks the Server page while the server runs.",
+                "侧边栏：各个页面。服务器运行时，“服务器”一项后面有 ●。",
+                "側邊欄：各個頁面。伺服器執行時，「伺服器」一項後面有 ●。"),
             Side.Bottom),
         Note.Callout(
             4, At.Text($"─ {HomeText.Title} ─"),
@@ -122,14 +123,12 @@ public sealed class TourShots(ShotRun run) {
     TuiHarness tui = shot.Tui;
     await tui.WaitFor(HomeText.CreateServerDetail);
 
-    // A new server in this folder, up to the download of the game.
+    // The setup of a server in this folder, up to the download of the game.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.Elsewhere);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
     await tui.WaitFor("1.26.60");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    await tui.WaitFor($"─ {SetupText.Loader} ─");
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
     tui.Press(ConsoleKey.Enter);
@@ -143,7 +142,7 @@ public sealed class TourShots(ShotRun run) {
     await tui.WaitFor(CommonText.Cancelling);
     await shot.Capture(
         "tour-04-cancelling",
-        Note.Focus(At.Panel(WorkspacesText.SetUpTitle)),
+        Note.Focus(At.Panel(SetupText.SetUpTitle)),
         Note.Box(At.Text(CommonText.Cancelling)),
         Note.KeysAfter(shot.T("After", "按下之后", "按下之後"), "Esc"));
 
@@ -151,7 +150,7 @@ public sealed class TourShots(ShotRun run) {
     await tui.WaitFor(CommonText.Cancelled);
     await shot.Capture(
         "tour-05-cancelled",
-        Note.Focus(At.Panel($"{WorkspacesText.SetUpTitle} · {CommonText.CancelledWord}")),
+        Note.Focus(At.Panel($"{SetupText.SetUpTitle} · {CommonText.CancelledWord}")),
         Note.Box(At.Text(CommonText.Cancelled)),
         Note.Keys("Enter"));
   }
@@ -209,11 +208,11 @@ public sealed class TourShots(ShotRun run) {
     world.Fs.AddDirectory(World.PathOf(@"C:\Users\Steve\Documents"));
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
+    await tui.OpenWorkspaces();
     await tui.WaitFor(Worlds.Skyblock);
 
-    // Add existing folder…: the browser opens in the folder of the workspace.
-    tui.Press(ConsoleKey.DownArrow);
+    // Add folder…: the browser opens in the folder of the workspace.
+    tui.Press(ConsoleKey.Tab);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor($"─ {WorkspacesText.AddTitle} ─");
     await tui.WaitUntilGone(PathPickerText.Reading);

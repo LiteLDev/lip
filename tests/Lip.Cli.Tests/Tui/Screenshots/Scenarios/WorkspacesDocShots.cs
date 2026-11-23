@@ -1,5 +1,6 @@
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
+using Lip.Cli.Tui.Pages.Server;
 using Lip.Cli.Tui.Pages.Workspaces;
 using Lip.Cli.Tui.Widgets;
 using Lip.Core.Mcmod;
@@ -9,9 +10,9 @@ using static Lip.Cli.Tests.Tui.Screenshots.Scenarios.ConfigPagesText;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The Workspaces page as its page of the documentation walks through it: the list and its
-/// marks, the menus, adding and removing a folder, and the choices of the new server wizard
-/// and of a change of versions that NewServerShots does not show.
+/// The workspace picker as its page of the documentation walks through it: the list and its
+/// marks, the menus, adding and removing a folder; and the choices of the setup of the Server
+/// page and of a change of versions that NewServerShots does not show.
 public sealed class WorkspacesDocShots(ShotRun run) {
   private static string Lobby { get; } = World.PathOf(@"D:\servers\lobby");
 
@@ -24,11 +25,9 @@ public sealed class WorkspacesDocShots(ShotRun run) {
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
     await tui.SetServerRunning(true, Worlds.Creative);
-    await tui.GoTo(PageId.Workspaces);
+    await tui.OpenWorkspaces();
     await tui.WaitFor(WorkspacesText.Missing);
     await tui.WaitFor(WorkspacesText.ServerRunning);
-
-    tui.Press(ConsoleKey.DownArrow, 2);
     await tui.WaitFor(WorkspacesText.CurrentDetail);
     await shot.Capture(
         "workspaces-03-marks",
@@ -53,23 +52,12 @@ public sealed class WorkspacesDocShots(ShotRun run) {
                 "The whole path of the row with the focus, and what it is.",
                 "焦点所在行的完整路径和说明。", "焦點所在列的完整路徑和說明。")));
 
-    // The selected workspace is neither switched to nor removed.
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.ChangeVersions);
-    await shot.Capture("workspaces-04-menu-selected", Note.Focus(At.Panel("survival")));
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone(WorkspacesText.ChangeVersions);
-
-    // A workspace whose server runs is not set up again meanwhile.
+    // A workspace whose server runs may be selected; nothing is installed from here.
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(WorkspacesText.Switch);
-    tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor(CommonText.StopServerFirst);
     await shot.Capture(
-        "workspaces-05-menu-running",
-        Note.Focus(At.Panel("creative")),
-        Note.Box(At.Text(CommonText.StopServerFirst)));
+        "workspaces-05-menu-running", Note.Focus(At.Panel("creative")));
     tui.Press(ConsoleKey.Escape);
     await tui.WaitUntilGone(WorkspacesText.Switch);
 
@@ -99,15 +87,14 @@ public sealed class WorkspacesDocShots(ShotRun run) {
   public async Task Switch(Language language) {
     using Shot shot = run.Start(Worlds.Survival(language, height: 22));
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
+    await tui.OpenWorkspaces();
     await tui.WaitFor(Worlds.Skyblock);
 
-    tui.Press(ConsoleKey.DownArrow, 3);
+    tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(WorkspacesText.Switch);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("● " + Worlds.Creative);
-    await tui.WaitFor(WorkspacesText.CurrentDetail);
+    await tui.WaitUntilGone($"─ {WorkspacesText.Title} ─");
     await tui.WaitFor($"{CommonText.WorkspaceSelected}: {Worlds.Creative}");
     await shot.Capture(
         "workspaces-09-switched",
@@ -118,8 +105,10 @@ public sealed class WorkspacesDocShots(ShotRun run) {
                 "顶栏显示所有页面现在操作的工作区。", "頂端列顯示所有頁面現在操作的工作區。"),
             Side.Bottom),
         Note.Callout(
-            2, At.Text("● " + Worlds.Creative),
-            shot.T("The mark moved to it.", "标记移到了它上面。", "標記移到了它上面。")));
+            2, At.Text(CommonText.WorkspaceSelected),
+            shot.T("Said for a few seconds.", "提示几秒后消失。", "提示幾秒後消失。"),
+            Side.Top),
+        Note.Keys("Enter"));
   }
 
   [ShotTheory]
@@ -136,10 +125,10 @@ public sealed class WorkspacesDocShots(ShotRun run) {
         new Installed(World.Loader, World.LoaderVersion));
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
+    await tui.OpenWorkspaces();
     await tui.WaitFor(Worlds.Skyblock);
 
-    tui.Press(ConsoleKey.DownArrow);
+    tui.Press(ConsoleKey.Tab);
     await tui.WaitFor(WorkspacesText.AddFolderDetail);
     await shot.Capture(
         "workspaces-10-add-row", Note.Box(At.Row(WorkspacesText.AddFolder)), Note.Keys("Enter"));
@@ -174,9 +163,9 @@ public sealed class WorkspacesDocShots(ShotRun run) {
 
     tui.Press(ConsoleKey.Tab);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("● " + Lobby);
+    await tui.WaitUntilGone($"─ {WorkspacesText.Title} ─");
     await tui.WaitFor($"{CommonText.WorkspaceSelected}: {Lobby}");
-    await shot.Capture("workspaces-13-added", Note.Box(At.Row("● " + Lobby)));
+    await shot.Capture("workspaces-13-added", Note.Box(At.Text(Lobby, 1)));
   }
 
   [ShotTheory]
@@ -187,82 +176,78 @@ public sealed class WorkspacesDocShots(ShotRun run) {
     world.ServerSetup = harness => new SetupOfVersions(harness, new SetupOfShots(harness, world));
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
-    await tui.WaitFor(WorkspacesText.NewServerDetail);
-
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.Elsewhere);
+    await tui.GoTo(PageId.Server);
+    await tui.WaitFor(ServerText.NoServer);
     await shot.Capture(
         "new-server-11-this-folder",
-        Note.Focus(At.Panel(WorkspacesText.NewServerTitle)),
         Note.Callout(
-            1, At.Row(WorkspacesText.Here),
+            1, At.Button(CommonText.SetUpServer),
             shot.T(
-                "The selected workspace, which has no server yet.", "当前工作区，里面还没有服务器。",
-                "目前的工作區，裡面還沒有伺服器。")),
+                "The selected workspace has no server yet.", "当前工作区里还没有服务器。",
+                "目前的工作區裡還沒有伺服器。")),
         Note.Callout(
-            // The top bar, the row of the list behind the dialog, and the line of the dialog.
-            2, At.Text(world.Workspace, 3),
-            shot.T("Its path.", "它的路径。", "它的路徑。")),
+            2, At.Text(world.Workspace, 1),
+            shot.T("Its path.", "它的路径。", "它的路徑。"),
+            Side.Bottom),
         Note.Keys("Enter"));
 
     // The game versions: which have a LeviLamina, and which do not.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
-    await tui.WaitFor(WorkspacesText.HasNoLoader);
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
+    await tui.WaitFor(SetupText.HasNoLoader);
     tui.Press(ConsoleKey.DownArrow, 3);
-    await tui.WaitFor(WorkspacesText.HasNoLoaderDetail);
+    await tui.WaitFor(SetupText.HasNoLoaderDetail);
     await shot.Capture(
         "new-server-12-no-levilamina",
-        Note.Focus(At.Panel(WorkspacesText.GameVersion)),
+        Note.Focus(At.Panel(SetupText.GameVersion)),
         Note.Callout(
-            1, At.Text(WorkspacesText.HasLoader, 1),
+            1, At.Text(SetupText.HasLoader, 1),
             shot.T(
                 "A LeviLamina supports this version: mods work on it.",
                 "有支持此版本的 LeviLamina：可以装模组。", "有支援此版本的 LeviLamina：可以裝模組。"),
             Side.Right),
         Note.Callout(
-            2, At.Text(WorkspacesText.HasNoLoader, 1),
+            2, At.Text(SetupText.HasNoLoader, 1),
             shot.T(
                 "No LeviLamina supports this version: a plain server only.",
                 "没有支持此版本的 LeviLamina：只能是纯净服务器。",
                 "沒有支援此版本的 LeviLamina：只能是純淨伺服器。"),
             Side.Right),
         Note.Callout(
-            3, At.Text(WorkspacesText.HasNoLoaderDetail),
+            3, At.Text(SetupText.HasNoLoaderDetail),
             shot.T(
                 "The same, in words, for the selected version.", "对所选版本的文字说明。",
                 "對所選版本的文字說明。")));
 
     // The loader step finds none for it, and is no dead end.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    await tui.WaitFor($"─ {SetupText.Loader} ─");
     await shot.Capture(
         "new-server-13-no-loader-fits",
-        Note.Focus(At.Panel(WorkspacesText.Loader)),
+        Note.Focus(At.Panel(SetupText.Loader)),
         Note.Callout(
-            1, At.Row(WorkspacesText.NoLoader),
+            1, At.Row(SetupText.NoLoader),
             shot.T(
                 "Goes on with a server that cannot run mods.", "继续安装不能运行模组的服务器。",
                 "繼續安裝不能執行模組的伺服器。")),
         Note.Callout(
-            2, At.Row(WorkspacesText.Back),
+            2, At.Row(SetupText.Back),
             shot.T(
                 "Back to the game versions; Esc does the same.", "回到游戏版本列表；按 Esc 也一样。",
                 "回到遊戲版本清單；按 Esc 也一樣。")));
 
     // Back, and the newest game: its loaders, the newest first, then "No loader".
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
     tui.Press(ConsoleKey.UpArrow, 3);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("LeviLamina 26.60.3");
     tui.Press(ConsoleKey.DownArrow, 4);
-    await tui.WaitFor(WorkspacesText.NoLoaderDetail);
+    await tui.WaitFor(SetupText.NoLoaderDetail);
     await shot.Capture(
         "new-server-14-no-loader",
-        Note.Focus(At.Panel(WorkspacesText.Loader)),
-        Note.Box(At.Row(WorkspacesText.NoLoader)));
+        Note.Focus(At.Panel(SetupText.Loader)),
+        Note.Box(At.Row(SetupText.NoLoader)));
 
     // Declining the license installs nothing.
     tui.Press(ConsoleKey.Enter);
@@ -275,13 +260,12 @@ public sealed class WorkspacesDocShots(ShotRun run) {
         Note.Focus(At.Panel(CommonText.EulaTitle)),
         Note.Box(At.Button(CommonText.Decline)));
 
-    // lip then says what stays, and how to go on.
+    // Nothing is installed: the page offers the setup again.
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.NotSetUp);
+    await tui.WaitUntilGone(GameSetup.EulaUrl);
+    await tui.WaitFor(ServerText.SetUpDetail);
     await shot.Capture(
-        "new-server-18-not-set-up",
-        Note.Focus(At.Panel(WorkspacesText.NewServerTitle)),
-        Note.Keys("Enter"));
+        "new-server-18-not-set-up", Note.Box(At.Button(CommonText.SetUpServer)));
   }
 
   /// The steps that only Linux on x64 has. The picture is made on Windows, as all are: the
@@ -290,23 +274,20 @@ public sealed class WorkspacesDocShots(ShotRun run) {
   [ClassData(typeof(AllLanguages))]
   public async Task NewServerOnLinux(Language language) {
     World world = Worlds.Empty(language, height: 24);
-    world.Pages = WorkspacesPageTests.Pages(linux: true);
+    world.Pages = ServerSetupTests.Pages(linux: true);
     using Shot shot = run.Start(world);
     shot.Scrub(@"D:\\servers\\survival|/D/servers/survival", "/home/alex/survival");
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
-    await tui.WaitFor(WorkspacesText.NewServerDetail);
-
+    await tui.GoTo(PageId.Server);
+    await tui.WaitFor(ServerText.NoServer);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.Elsewhere);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
-    await tui.WaitFor(WorkspacesText.OnlyBuild("windows"));
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
+    await tui.WaitFor(SetupText.OnlyBuild("windows"));
     await shot.Capture(
         "new-server-16-linux-games",
-        Note.Focus(At.Panel(WorkspacesText.GameVersion)),
+        Note.Focus(At.Panel(SetupText.GameVersion)),
         Note.Callout(
-            1, At.Text(WorkspacesText.OnlyBuild("windows")),
+            1, At.Text(SetupText.OnlyBuild("windows")),
             shot.T(
                 "This version has no Linux server: the build is not asked for.",
                 "这个版本没有 Linux 服务器，不会询问构建。", "這個版本沒有 Linux 伺服器，不會詢問組建。"),
@@ -314,12 +295,12 @@ public sealed class WorkspacesDocShots(ShotRun run) {
         Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Build} ─");
+    await tui.WaitFor($"─ {SetupText.Build} ─");
     tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor(WorkspacesText.LinuxDetail);
+    await tui.WaitFor(SetupText.LinuxDetail);
     await shot.Capture(
         "new-server-17-build",
-        Note.Focus(At.Panel(WorkspacesText.Build)),
+        Note.Focus(At.Panel(SetupText.Build)),
         Note.Callout(
             1, At.Row("windows"),
             shot.T(
@@ -347,19 +328,20 @@ public sealed class WorkspacesDocShots(ShotRun run) {
     };
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
-    await tui.WaitFor("● " + world.Workspace);
-
-    tui.Press(ConsoleKey.DownArrow, 2);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.ChangeVersions);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
-    await tui.WaitFor(WorkspacesText.Installed);
+    await tui.GoTo(PageId.Server);
+    await tui.WaitFor($"[ {SetupText.ChangeVersions} ]");
+    tui.Press(ConsoleKey.RightArrow, 2);
+    await tui.WaitFor(ServerText.ChangeVersionsDetail);
     await shot.Capture(
-        "workspaces-14-change-game",
-        Note.Focus(At.Panel(WorkspacesText.GameVersion)),
-        Note.Box(At.Text(WorkspacesText.Installed)),
+        "workspaces-14-change-button", Note.Box(At.Button(SetupText.ChangeVersions)),
+        Note.Keys("→", "→", "Enter"));
+    tui.Press(ConsoleKey.Enter);
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
+    await tui.WaitFor(SetupText.Installed);
+    await shot.Capture(
+        "workspaces-14-change-game-version",
+        Note.Focus(At.Panel(SetupText.GameVersion)),
+        Note.Box(At.Text(SetupText.Installed)),
         Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
@@ -367,7 +349,7 @@ public sealed class WorkspacesDocShots(ShotRun run) {
     tui.Press(ConsoleKey.DownArrow);
     await shot.Capture(
         "workspaces-15-change-loader",
-        Note.Focus(At.Panel(WorkspacesText.Loader)),
+        Note.Focus(At.Panel(SetupText.Loader)),
         Note.Box(At.Row("LeviLamina 26.60.2")),
         Note.Keys("↓", "Enter"));
 
@@ -406,20 +388,17 @@ public sealed class WorkspacesDocShots(ShotRun run) {
     };
     using Shot shot = run.Start(world);
     TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Workspaces);
-    await tui.WaitFor("● " + world.Workspace);
-
-    tui.Press(ConsoleKey.DownArrow, 2);
+    await tui.GoTo(PageId.Server);
+    await tui.WaitFor($"[ {SetupText.ChangeVersions} ]");
+    tui.Press(ConsoleKey.RightArrow, 2);
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.ChangeVersions);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
-    await tui.WaitFor(Head(WorkspacesText.LinuxNotHere));
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
+    await tui.WaitFor(Head(SetupText.LinuxNotHere));
     await shot.Capture(
         "workspaces-17-linux-build",
-        Note.Focus(At.Panel(WorkspacesText.GameVersion)),
+        Note.Focus(At.Panel(SetupText.GameVersion)),
         Note.Callout(
-            1, At.Text(Head(WorkspacesText.LinuxNotHere)),
+            1, At.Text(Head(SetupText.LinuxNotHere)),
             shot.T(
                 "Said before you choose anything.", "在你做任何选择之前就会说明。",
                 "在你做任何選擇之前就會說明。")));
@@ -430,7 +409,7 @@ public sealed class WorkspacesDocShots(ShotRun run) {
     await tui.WaitFor($"[ {CommonText.Apply} ] [ {CommonText.Cancel} ]");
     await shot.Capture(
         "workspaces-18-switch-to-windows",
-        Note.Box(At.Text(WorkspacesText.SetUpBuildTitle("windows"))));
+        Note.Box(At.Text(SetupText.SetUpBuildTitle("windows"))));
   }
 
   /// The server setup of the scenarios that change versions: the LeviLamina versions that fit

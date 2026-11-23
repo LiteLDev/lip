@@ -1,68 +1,40 @@
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
-using Lip.Cli.Tui.Pages.Home;
-using Lip.Cli.Tui.Pages.Workspaces;
-using Lip.Cli.Tui.Widgets;
+using Lip.Cli.Tui.Pages.Server;
 using Lip.Core.Mcmod;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The new server wizard, from the folder to the result.
+/// The setup of a server on the Server page, from the button to the result.
 public sealed class NewServerShots(ShotRun run) {
   [ShotTheory]
   [ClassData(typeof(AllLanguages))]
   public async Task Wizard(Language language) {
     // lip was started in a folder that holds no server yet.
     TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    World world = new(language, workspace: World.PathOf(@"D:\servers"));
+    World world = new(language, workspace: World.PathOf(@"D:\servers\survival"));
     world.ServerSetup = harness => new SetupOfShots(harness, world) { Release = release.Task };
-    world.Fs.AddDirectory(Path.Join(world.Workspace, "creative"));
-    world.Fs.AddDirectory(Path.Join(world.Workspace, "backups"));
     using Shot shot = run.Start(world);
     // Whatever becomes of the scenario, the setup does not wait for ever.
     using IDisposable released = new Released(release);
     TuiHarness tui = shot.Tui;
-    await tui.WaitFor(HomeText.CreateServerDetail);
 
-    // The first step of the Home page starts the wizard: here, or in another folder.
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(WorkspacesText.Elsewhere);
+    // The Server page of a folder without a server offers to set one up.
+    await tui.GoTo(PageId.Server);
+    await tui.WaitFor(ServerText.NoServer);
     await shot.Capture(
-        "new-server-01-where", Note.Box(At.Row(WorkspacesText.Elsewhere)),
-        Note.Keys("↓", "Enter"));
-
-    tui.Press(ConsoleKey.DownArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"[ {CommonText.Cancel} ]");
-    await tui.WaitUntilGone(PathPickerText.Reading);
-    await shot.Capture(
-        "new-server-02-folder",
+        "new-server-01-where",
+        Note.Box(At.Button(CommonText.SetUpServer)),
         Note.Callout(
-            1, At.Text(PathPickerText.Folder),
+            1, At.Text(ServerText.SetUpDetail),
             shot.T(
-                "The folder shown: the server goes here unless you open another.",
-                "当前显示的文件夹：不打开别的文件夹，服务器就装在这里。",
-                "目前顯示的資料夾：不開啟別的資料夾，伺服器就裝在這裡。")),
-        Note.Callout(
-            2, At.Button(PathPickerText.NewFolder),
-            shot.T(
-                "Makes a folder for the server inside the one shown.",
-                "在当前文件夹里为服务器新建一个文件夹。",
-                "在目前資料夾裡為伺服器建立一個資料夾。"),
-            Side.Bottom),
-        Note.Keys("Tab", "→", "Enter"));
-
-    tui.Press(ConsoleKey.Tab);
-    tui.Press(ConsoleKey.RightArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {PathPickerText.NewFolderTitle} ─");
-    tui.Type("survival");
-    await shot.Capture(
-        "new-server-03-folder-name", Note.Focus(At.Panel(PathPickerText.NewFolderTitle)),
+                "The server goes into the selected workspace, which the top bar names.",
+                "服务器会装进顶栏显示的当前工作区。",
+                "伺服器會裝進頂端列顯示的目前工作區。")),
         Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.GameVersion} ─");
+    await tui.WaitFor($"─ {SetupText.GameVersion} ─");
     await tui.WaitFor("1.26.60");
     await shot.Capture(
         "new-server-04-game-version",
@@ -74,7 +46,7 @@ public sealed class NewServerShots(ShotRun run) {
         Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {WorkspacesText.Loader} ─");
+    await tui.WaitFor($"─ {SetupText.Loader} ─");
     await shot.Capture("new-server-05-loader", Note.Keys("Enter"));
 
     tui.Press(ConsoleKey.Enter);
@@ -99,12 +71,19 @@ public sealed class NewServerShots(ShotRun run) {
     await tui.WaitFor("✓ " + CommonText.Done);
     await shot.Capture("new-server-09-result", Note.Keys("Enter"));
 
+    // The Server page now shows the server, ready to start.
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone("✓ " + CommonText.Done);
-    await tui.WaitFor("● " + Path.Join(world.Workspace, "survival"));
+    await tui.WaitFor($"[ {ServerText.Start} ]");
     await shot.Capture(
         "new-server-10-workspace",
-        Note.Box(At.Row("● " + Path.Join(world.Workspace, "survival"))));
+        Note.Box(At.Button(ServerText.Start)),
+        Note.Callout(
+            1, At.Button(SetupText.ChangeVersions),
+            shot.T(
+                "Sets it up again with other versions.", "用其他版本重新安装。",
+                "用其他版本重新安裝。"),
+            Side.Bottom));
   }
 
   private sealed class Released(TaskCompletionSource release) : IDisposable {

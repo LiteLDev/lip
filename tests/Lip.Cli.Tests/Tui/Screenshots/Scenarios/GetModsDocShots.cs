@@ -364,7 +364,7 @@ public sealed class GetModsDocShots(ShotRun run) {
     await shot.Capture(
         "get-mods-20-no-server",
         Note.Focus(At.Panel("LegacyScriptEngine")),
-        Note.Box(At.Button(CommonText.NewServer)),
+        Note.Box(At.Button(CommonText.SetUpServer)),
         Note.Keys("Enter"));
   }
 

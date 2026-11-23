@@ -775,23 +775,24 @@ public sealed class GetModsPageTests {
     tui.Press(ConsoleKey.Enter);
 
     // No version is asked for: a short message, and a button that leads to a server.
-    await tui.WaitFor("This folder has no server yet. Create one first.");
-    Assert.Contains("[ New server… ]", tui.Screen);
+    await tui.WaitFor("This folder has no server yet. Set one up first.");
+    Assert.Contains("[ Set up server… ]", tui.Screen);
     Assert.DoesNotContain("Custom…", tui.Screen);
     tui.Snapshot("getmods-no-server");
 
     // Esc changes nothing.
     tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone("Create one first.");
+    await tui.WaitUntilGone("Set one up first.");
     Assert.Equal(PageId.GetMods, await tui.Invoke(() => tui.Context.CurrentPage));
 
-    // Enter on the button starts the new server wizard.
+    // Enter on the button starts the setup on the Server page.
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("Install…");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("[ New server… ]");
+    await tui.WaitFor("[ Set up server… ]");
     tui.Press(ConsoleKey.Enter);
-    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Workspaces, "the workspaces");
+    await tui.WaitUntil(() => tui.Context.CurrentPage == PageId.Server, "the Server page");
+    await tui.WaitFor("─ Game version ─");
   }
 
   [Fact]

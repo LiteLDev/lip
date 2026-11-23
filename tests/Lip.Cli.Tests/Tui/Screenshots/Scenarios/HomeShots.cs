@@ -40,11 +40,11 @@ public sealed class HomeShots(ShotRun run) {
     using Shot shot = run.Start(Worlds.Survival(language, height: 22));
     await shot.Tui.WaitFor("LeviLamina " + World.LoaderVersion);
     await shot.Tui.SetServerRunning(true);
-    await shot.Tui.WaitFor("✓ 3");
+    await shot.Tui.WaitFor("✓ 4");
 
     await shot.Capture(
         "home-02-all-done",
-        Note.Box(At.Text("✓ 1").To(At.Text("✓ 3"))),
+        Note.Box(At.Text("✓ 1").To(At.Text("✓ 4"))),
         Note.Arrow(
             At.Text("● " + CommonText.ServerRunning),
             shot.T("The server runs", "服务器正在运行", "伺服器正在執行"), Side.Top));

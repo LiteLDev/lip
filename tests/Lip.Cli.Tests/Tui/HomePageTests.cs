@@ -62,7 +62,7 @@ public sealed class HomePageTests {
   /// The Home page among pages that only show what they are asked.
   private static IReadOnlyList<PageEntry> Pages(Dictionary<PageId, OtherPage>? created = null) => [
     new(PageId.Home, "⌂", context => new HomePage(context)),
-    .. new[] { PageId.Server, PageId.GetMods, PageId.Workspaces, PageId.Settings }.Select(
+    .. new[] { PageId.Server, PageId.GetMods, PageId.Mods, PageId.Settings }.Select(
         id => new PageEntry(id, "•", context => {
           OtherPage page = new(context, id);
           created?.Add(id, page);
@@ -135,12 +135,12 @@ public sealed class HomePageTests {
     Assert.Contains(tui.Root, tui.Screen);
     Assert.Contains(HomeText.NotInstalled, tui.Screen);
     Assert.Contains(CommonText.ServerStopped, tui.Screen);
-    Assert.DoesNotContain("✓", tui.Screen);
+    Assert.DoesNotMatch("✓ [234]", tui.Screen);
     Assert.Contains($"↑↓ {CommonText.HintMove.Text}  Enter {CommonText.HintOpen.Text}", tui.Screen);
 
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor($"page Workspaces, request {PageRequest.NewServer}");
+    await tui.WaitFor($"page Server, request {PageRequest.SetUpServer}");
     Assert.True(await tui.Invoke(() => tui.Context.ContentFocused));
   }
 
@@ -149,8 +149,8 @@ public sealed class HomePageTests {
     using TuiHarness tui = Start(TuiHarness.StateWithGame);
     await tui.WaitFor(HomeText.InstallModsDetail);
 
-    Assert.Contains($"✓ 1  {HomeText.CreateServer}", tui.Screen);
-    Assert.DoesNotContain($"✓ 2  {HomeText.InstallMods}", tui.Screen);
+    Assert.Contains($"✓ 2  {HomeText.CreateServer}", tui.Screen);
+    Assert.DoesNotContain($"✓ 3  {HomeText.InstallMods}", tui.Screen);
     Assert.Contains("1.21.0", tui.Screen);
     Assert.Contains(HomeText.None, tui.Screen);
 
@@ -167,9 +167,9 @@ public sealed class HomePageTests {
     // The dependency is not counted as a mod of the user.
     Assert.Contains("LeviLamina 1.1.0", tui.Screen);
     Assert.Matches($@"{HomeText.Mods}\s+1\b", tui.Screen);
-    Assert.Contains($"✓ 1  {HomeText.CreateServer}", tui.Screen);
-    Assert.Contains($"✓ 2  {HomeText.InstallMods}", tui.Screen);
-    Assert.DoesNotContain("✓ 3", tui.Screen);
+    Assert.Contains($"✓ 2  {HomeText.CreateServer}", tui.Screen);
+    Assert.Contains($"✓ 3  {HomeText.InstallMods}", tui.Screen);
+    Assert.DoesNotContain("✓ 4", tui.Screen);
 
     tui.Press(ConsoleKey.Enter);
 
@@ -187,7 +187,7 @@ public sealed class HomePageTests {
 
     await tui.WaitFor(HomeText.InstallModsDetail);
 
-    Assert.Contains($"✓ 1  {HomeText.CreateServer}", tui.Screen);
+    Assert.Contains($"✓ 2  {HomeText.CreateServer}", tui.Screen);
     Assert.Matches($@"{HomeText.Game}\s+1\.21\.0", tui.Screen);
     Assert.Matches($@"{HomeText.Mods}\s+0\b", tui.Screen);
   }
@@ -201,7 +201,7 @@ public sealed class HomePageTests {
 
     // Nothing is said to be missing, and no step is ticked.
     Assert.DoesNotContain(HomeText.NotInstalled, tui.Screen);
-    Assert.DoesNotContain("✓", tui.Screen);
+    Assert.DoesNotMatch("✓ [234]", tui.Screen);
     tui.Press(ConsoleKey.DownArrow, 2);
     await tui.WaitFor(HomeText.StartServerDetail);
     tui.Press(ConsoleKey.Enter);
@@ -218,12 +218,9 @@ public sealed class HomePageTests {
     await tui.WaitFor(HomeText.InstallModsDetail);
     tui.Press(ConsoleKey.UpArrow);
     await tui.WaitFor(HomeText.CreateServerDoneDetail);
-    tui.Press(ConsoleKey.UpArrow);
-    await tui.Settle();
-    Assert.Contains(HomeText.CreateServerDoneDetail, tui.Screen);
     tui.Press(ConsoleKey.Enter);
 
-    await tui.WaitFor($"page Workspaces, request {PageRequest.NewServer}");
+    await tui.WaitFor($"page Server, request {PageRequest.SetUpServer}");
   }
 
   [Fact]
@@ -271,7 +268,7 @@ public sealed class HomePageTests {
       });
       await tui.WaitFor(HomeText.InstallModsDetail);
       await tui.Invoke(() => tui.Context.StartServer("Start server"));
-      await tui.WaitFor($"✓ 3  {HomeText.StartServer}");
+      await tui.WaitFor($"✓ 4  {HomeText.StartServer}");
       // It says Starting until lip run has started the server.
       await tui.WaitFor(
           screen => Regex.IsMatch(screen, $@"{HomeText.Server}\s+● {CommonText.ServerRunning}"),
@@ -409,8 +406,8 @@ public sealed class HomePageTests {
     TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
     Dictionary<PageId, OtherPage> pages = [];
     using TuiHarness tui = Start(probe: new Probe(503, release.Task), pages: pages);
-    await tui.GoTo(PageId.Workspaces);
-    await tui.Invoke(() => pages[PageId.Workspaces].Dirty = true);
+    await tui.GoTo(PageId.Mods);
+    await tui.Invoke(() => pages[PageId.Mods].Dirty = true);
     release.SetResult();
     await tui.WaitFor(HomeText.GithubTitle);
 
@@ -422,7 +419,7 @@ public sealed class HomePageTests {
 
     // The question is not lost: this time the user discards the changes.
     await tui.WaitFor(HomeText.GithubTitle);
-    Assert.Contains("page Workspaces", tui.Screen);
+    Assert.Contains("page Mods", tui.Screen);
     await tui.WaitFor(HomeText.GithubProxyDetail);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor("Discard the changes?");
@@ -496,9 +493,9 @@ public sealed class HomePageTests {
     Assert.Equal("", await tui.Config.Get(ConfigService.GithubProxyKey));
 
     // The steps: the first is done, the second is selected.
-    await tui.WaitFor($"✓ 1  {HomeText.CreateServer}");
+    await tui.WaitFor($"✓ 2  {HomeText.CreateServer}");
     await tui.WaitFor(HomeText.InstallModsDetail);
-    Assert.Contains($"2  {install}", tui.Screen);
+    Assert.Contains($"3  {install}", tui.Screen);
     tui.Snapshot("home-steps");
     AssertFits(tui);
     tui.Press(ConsoleKey.DownArrow);
