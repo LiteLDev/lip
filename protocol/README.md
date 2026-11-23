@@ -18,7 +18,7 @@ Commands (section 1):
 | [lip-cache(1)](lip-cache.md) | `lip cache clean` |
 | [lip-config(1)](lip-config.md) | `lip config get`, `set`, `list` and `delete` |
 | [lip-daemon(1)](lip-daemon.md) | The daemon that carries out the commands, and `lip daemon status` and `stop`. |
-| [lip-pkg(1)](lip-pkg.md) | `lip pkg init`, `pack`, `view` and `migrate` |
+| [lip-pkg(1)](lip-pkg.md) | `lip pkg init` and `migrate` |
 | [lip-self-update(1)](lip-self-update.md) | `lip self-update` |
 | [lip-tui(1)](lip-tui.md) | The interactive interface that `lip` runs without arguments. |
 

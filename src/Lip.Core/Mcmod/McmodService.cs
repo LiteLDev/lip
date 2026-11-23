@@ -1,9 +1,6 @@
 using System.Globalization;
 using System.IO.Abstractions;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Lip.Core.Infrastructure;
-using Lip.Core.Json;
 using Lip.Core.Mcmod.Compat;
 using Lip.Core.Mcmod.Install;
 using Lip.Core.Mcmod.Lock;
@@ -88,13 +85,6 @@ public partial class McmodService(
     ISystemPreparer? systemPreparer = null,
     Func<Task<string>>? downloadServerBuilds = null,
     ResolverCache? resolverCache = null) {
-  // What lip pkg view writes: only what JSON requires is escaped, so that ">=1.0.0", "<", "&",
-  // "+" and text in any language read as they were written.
-  private static readonly JsonSerializerOptions _indented = new() {
-    WriteIndented = true,
-    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-  };
-
   /// The state file as the user sees it from the workspace root.
   private const string WorkspaceFile = LockStore.LipDirectory + "/" + LockStore.FileName;
 
@@ -584,102 +574,6 @@ public partial class McmodService(
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LipEnvironment environment = DetermineEnvironment(await _lockStore.Load(root));
     await _systemPreparer.Prepare(environment.Platform, root, cancellationToken);
-  }
-
-  /// The result of lip pkg view (protocol/lip-pkg.md, "lip pkg view"), as JSON: "manifest", the
-  /// package file of the first archive a package argument names (for a remote repository, its
-  /// newest version tag, or the commit its ref selects; otherwise the archive of the URL or local
-  /// path), and "versions", the versions of the version tags of a remote repository, lowest first,
-  /// whatever its variant and ref. For an archive without a package file, the package file
-  /// protocol/lip-compatibility.md, "tooth.json" derives from its tooth.json for the side server
-  /// and the platform win-x64.
-  public async Task<string> View(string package) {
-    PackageRequest request = PackageArguments.Parse(
-        package, _fs.Path.GetFullPath(_workspaceRoot()), _fs);
-
-    if (BedrockServer.IsServer(request.Ref)) {
-      return await ViewServer(package, request.Ref);
-    }
-
-    ArchiveHandle archive;
-    // The tag version of the archive, the version of a package read from a tooth.json.
-    SemVersion? tagVersion = null;
-    IReadOnlyList<SpecVersion> versions = [];
-    if (request.Ref.Kind == RefKind.Spec) {
-      RunTrace.Write("resolve", $"Listing the versions of {request.Ref.Target}");
-      versions = await _archiveProvider.ListVersions(request.Ref.Target);
-    }
-
-    if (request.Ref is { Kind: RefKind.Spec, GitRef: GitRef gitRef }) {
-      archive = await _archiveProvider.OpenCommit(
-          request.Ref.Target, await _archiveProvider.ResolveGitRef(request.Ref.Target, gitRef));
-      tagVersion = gitRef.Kind switch {
-        GitRefKind.Version => SemVersion.Parse(gitRef.Name, SemVersionStyles.Strict),
-        GitRefKind.Tag => ArchiveProvider.ParseVersionTag($"refs/tags/{gitRef.Name}"),
-        _ => null,
-      };
-    } else if (request.Ref.Kind == RefKind.Spec) {
-      SpecVersion version = versions.FirstOrDefault()
-          ?? throw new InvalidOperationException(
-              $"Cannot show the package file of '{package}': the repository {request.Ref.Target}"
-              + " has no version tags (tags named like 'v1.2.3'). Name a branch, tag or commit"
-              + $" instead, e.g. '{request.Ref.Target}@branch:main'.");
-      archive = await _archiveProvider.OpenVersion(request.Ref.Target, version);
-      tagVersion = version.Version;
-    } else {
-      archive = await _archiveProvider.Open(request.Ref);
-    }
-
-    RunTrace.Write("resolve", $"Showing the package file of {archive.Key}");
-    JsonObject result = new() {
-      ["manifest"] = JsonSerializer.SerializeToNode(
-          await ManifestJson(archive, tagVersion), LipJsonContext.Default.JsonElement),
-      // ListVersions gives the newest first.
-      ["versions"] = new JsonArray([
-        .. versions.Reverse().Select(v => v.Version.ToString()).Distinct()
-            .Select(v => (JsonNode?)JsonValue.Create(v)),
-      ]),
-    };
-    return result.ToJsonString(_indented);
-  }
-
-  /// lip pkg view of the server, whose packages lip defines itself (protocol/lip-package.md,
-  /// "The server"): the package file of the version named, or of the highest one.
-  private async Task<string> ViewServer(string package, Ref source) {
-    BedrockServer server = await new Resolver(
-        _archiveProvider, _archiveReader, downloadServerBuilds: _downloadServerBuilds,
-        cache: _resolverCache).Server();
-    SemVersion? version = source.GitRef switch {
-      null => server.ReleaseVersions.FirstOrDefault(),
-      { Kind: GitRefKind.Version } gitRef => server.Versions.FirstOrDefault(
-          v => v.Equals(SemVersion.Parse(gitRef.Name, SemVersionStyles.Strict))),
-      _ => null,
-    };
-    if (version is null) {
-      throw new InvalidOperationException(
-          $"Cannot show the package file of '{package}': {BedrockServer.Repository} has no such"
-          + " version. lip installs it by version only, e.g."
-          + $" '{BedrockServer.Repository}@{server.ReleaseVersions.FirstOrDefault()}'.");
-    }
-
-    JsonObject result = new() {
-      ["manifest"] = JsonSerializer.SerializeToNode(
-          server.PackageFile(version), LipJsonContext.Default.JsonElement),
-      ["versions"] = new JsonArray([
-        .. server.ReleaseVersions.Reverse()
-            .Select(v => (JsonNode?)JsonValue.Create(v.ToString())),
-      ]),
-    };
-    return result.ToJsonString(_indented);
-  }
-
-  /// The package file of an archive, as lip pkg view shows it: read for the side server and the
-  /// platform win-x64, which only a package file derived from a tooth.json depends on.
-  private async Task<JsonElement> ManifestJson(ArchiveHandle archive, SemVersion? tagVersion) {
-    PackageDocument document = await _archiveReader.Read(archive);
-    return document.IsLegacy
-        ? document.ReadFor(new LipEnvironment(McmodSide.Server, Platform), tagVersion).Json
-        : document.Json;
   }
 
   #region Planning

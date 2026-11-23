@@ -29,7 +29,7 @@ lip <command> [<argument>...]
 | `cache clean` | [lip-cache(1)] |
 | `config get`, `config set`, `config list`, `config delete` | [lip-config(1)] |
 | `daemon status`, `daemon stop` | [lip-daemon(1)] |
-| `pkg init`, `pkg pack`, `pkg view`, `pkg migrate` | [lip-pkg(1)] |
+| `pkg init`, `pkg migrate` | [lip-pkg(1)] |
 | `self-update` | [lip-self-update(1)] |
 
 The commands of the command group `pkg` are for developing packages; `self-update` updates `lip` itself; the commands of the command group `daemon` manage the daemon; every other command is for running a server.
@@ -45,7 +45,7 @@ Every command other than those of the command group `daemon`, and the interface 
 - **flag**: An option that takes no value.
 - **operand**: An argument of a command that is not part of an option.
 - **usage error**: A list of arguments that "Arguments" or OPTIONS rejects.
-- **result**: The data a command is asked for; only `list`, `pkg view`, `config get`, `config list`, `daemon status` and `self-update --check` have one.
+- **result**: The data a command is asked for; only `list`, `config get`, `config list`, `daemon status` and `self-update --check` have one.
 - **message**: Any text other than a result or help (progress, information, warnings, errors, the final success line); its wording is not defined here.
 - **help**: Text describing how to invoke `lip` or a command; its wording is not defined here.
 - **workspace operation**: An operation ([lip-workspace(7)]) that `setup`, `install`, `uninstall` or `update` carries out without `-n` or `--dry-run`.
@@ -94,7 +94,6 @@ The workspace of every command is the current working directory. A relative path
 
 - A result is written to standard output; a message is written to standard error.
 - When a command that has a `--json` option is given it, standard output receives only the result, as [JSON] of the shape the command defines, followed by a line break. When it is not given, the layout of the result is not defined here.
-- The result of `pkg view` is always written as JSON, as [lip-pkg(1)] defines.
 
 ### Package arguments
 

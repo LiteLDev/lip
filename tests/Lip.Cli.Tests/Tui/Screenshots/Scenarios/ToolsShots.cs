@@ -1,12 +1,11 @@
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Cli.Tui.Pages.Tools;
-using Lip.Cli.Tui.Widgets;
 using static Lip.Cli.Tests.Tui.Screenshots.Scenarios.ConfigPagesText;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The Tools page as its page of the documentation walks through it: the four actions of
+/// The Tools page as its page of the documentation walks through it: the two actions of
 /// someone who makes a package, in the folder of a mod of theirs.
 public sealed class ToolsShots(ShotRun run) {
   private const string PackageId = "github.com/steve/WelcomeMod";
@@ -45,28 +44,6 @@ public sealed class ToolsShots(ShotRun run) {
       }
       """;
 
-  private const string LipToml = """
-      format = 4
-      id = "github.com/steve/WelcomeMod"
-      version = "1.2.0"
-
-      [info]
-      name = "WelcomeMod"
-      description = "Greets players when they join"
-      tags = ["utility"]
-
-      [[variants.""]]
-      side = "server"
-      platform = "win-x64"
-
-      [variants."".deps]
-      "github.com/LiteLDev/LeviLamina" = "26.60.*"
-
-      [[variants."".files]]
-      src = "WelcomeMod/"
-      dest = "mods/WelcomeMod/"
-      """;
-
   /// The folder of the mod: its files, and whatever else the scenario adds.
   private static World Mod(Language language, int height = 22) {
     World world = new(language, height: height, workspace: Project);
@@ -74,12 +51,6 @@ public sealed class ToolsShots(ShotRun run) {
         .File(Path.Join("WelcomeMod", "WelcomeMod.dll"), "MZ")
         .File("README.md", "# WelcomeMod\n");
     return world;
-  }
-
-  /// Waits for the path picker with the title, and until it has read its first folder.
-  private static async Task Picker(TuiHarness tui, string title) {
-    await tui.WaitFor($"─ {title} ─");
-    await tui.WaitUntilGone(PathPickerText.Reading);
   }
 
   /// The two rows of the status area that say whether the workspace has a lip.toml and a
@@ -210,161 +181,6 @@ public sealed class ToolsShots(ShotRun run) {
     await tui.WaitFor(ToolsText.Exists("lip.toml"));
     await shot.Capture(
         "tools-13-migrated", Note.Box(Files(ToolsText.Found, ToolsText.Missing)));
-  }
-
-  [ShotTheory]
-  [ClassData(typeof(AllLanguages))]
-  public async Task Pack(Language language) {
-    // The archive of the last release is still in the folder.
-    World world = Mod(language).File("lip.toml", LipToml).File("package.zip", "PK");
-    using Shot shot = run.Start(world);
-    TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Tools);
-    await tui.WaitFor(ToolsText.Found);
-
-    tui.Press(ConsoleKey.DownArrow, 2);
-    tui.Press(ConsoleKey.Enter);
-    await Picker(tui, ToolsText.PackFolder);
-    await shot.Capture(
-        "tools-14-pack-folder",
-        Note.Callout(
-            1, At.Text(PathPickerText.Folder + "  "),
-            shot.T(
-                "The folder that is packed: the one with lip.toml.", "要打包的文件夹：放着 lip.toml 的那个。",
-                "要封裝的資料夾：放著 lip.toml 的那個。")),
-        Note.Callout(
-            2, At.Button(PathPickerText.SelectFolder),
-            shot.T("Packs the folder shown.", "打包当前显示的文件夹。", "封裝目前顯示的資料夾。"),
-            Side.Bottom),
-        Note.Keys("Tab", "Enter"));
-    tui.Press(ConsoleKey.Tab);
-    tui.Press(ConsoleKey.Enter);
-    await Picker(tui, ToolsText.PackOutput);
-    await tui.WaitFor("package.zip");
-    await shot.Capture(
-        "tools-15-pack-name",
-        Note.Callout(
-            1, At.Text(PathPickerText.Folder + "  "),
-            shot.T(
-                "The folder that the ZIP is written to.", "ZIP 写入的文件夹。", "ZIP 寫入的資料夾。")),
-        Note.Callout(
-            2, At.Text(PathPickerText.FileName + "  "),
-            shot.T(
-                "The name of the ZIP: Tab goes here, and you can type another.",
-                "ZIP 的文件名：按 Tab 到这里，可以改成别的名字。",
-                "ZIP 的檔案名稱：按 Tab 到這裡，可以改成別的名稱。")),
-        Note.Keys("Tab", "Enter"));
-
-    tui.Press(ConsoleKey.Tab);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"[ {ToolsText.Replace} ]");
-    await shot.Capture(
-        "tools-16-pack-replace",
-        Note.Focus(At.Panel(ToolsText.PackTitle)),
-        Note.Box(At.Button(ToolsText.Replace)),
-        Note.Keys("←", "Enter"));
-
-    tui.Press(ConsoleKey.LeftArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"[ {CommonText.Ok} ]");
-    await shot.Capture("tools-17-pack-result", Note.Keys("Enter"));
-  }
-
-  [ShotTheory]
-  [ClassData(typeof(AllLanguages))]
-  public async Task View(Language language) {
-    World world = Worlds.Survival(language, height: 24).WithRepositories();
-    world.File("LeviAntiCheat-windows-x64.zip", "PK");
-    using Shot shot = run.Start(world);
-    TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Tools);
-    await tui.WaitFor(ToolsText.Missing);
-
-    // An installed mod.
-    tui.Press(ConsoleKey.UpArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.ViewInstalledAbout);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor($"─ {ToolsText.ViewInstalledTitle} ─");
-    await tui.WaitFor(World.Game);
-    await shot.Capture(
-        "tools-18-view-installed",
-        Note.Focus(At.Panel(ToolsText.ViewInstalledTitle)),
-        Note.Callout(
-            1, At.Text("0.13.1"),
-            shot.T("The installed version.", "已安装的版本。", "已安裝的版本。"),
-            Side.Right),
-        Note.Callout(
-            2, At.Text(Catalogue.RemoteCall),
-            shot.T(
-                "Dimmed: installed because another package needs it.", "灰色：因为别的包需要才安装的。",
-                "灰色：因為別的套件需要才安裝的。")),
-        Note.Keys("Enter"));
-
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor("\"manifest\"");
-    await shot.Capture(
-        "tools-19-view-result",
-        Note.Callout(
-            1, At.Text("\"manifest\""),
-            shot.T(
-                "The package file of that version, as JSON.", "该版本的包文件（JSON）。",
-                "該版本的套件檔（JSON）。")),
-        Note.KeysAfter(shot.T("Scroll, close", "滚动、关闭", "捲動、關閉"), "↑", "↓", "Esc"));
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitUntilGone("\"manifest\"");
-
-    // A package that is typed.
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.ViewInstalledAbout);
-    tui.Press(ConsoleKey.DownArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.Package);
-    tui.Type(Catalogue.Optimize + "@1.8.1");
-    await shot.Capture(
-        "tools-20-view-typed", Note.Focus(At.Panel(ToolsText.ViewTitle)), Note.Keys("Enter"));
-    tui.Press(ConsoleKey.Escape);
-    await tui.WaitFor(ToolsText.ViewTypedAbout);
-
-    // A ZIP file or a folder on the disk.
-    tui.Press(ConsoleKey.DownArrow);
-    tui.Press(ConsoleKey.Enter);
-    await Picker(tui, ToolsText.ViewLocal);
-    await tui.WaitFor("LeviAntiCheat-windows-x64.zip");
-    await shot.Capture(
-        "tools-21-view-browse",
-        Note.Callout(
-            1, At.Row("LeviAntiCheat-windows-x64.zip"),
-            shot.T(
-                "A ZIP file: Enter shows it.", "ZIP 文件：按 Enter 查看。", "ZIP 檔案：按 Enter 檢視。")),
-        Note.Callout(
-            2, At.Button(PathPickerText.SelectFolder),
-            shot.T(
-                "Shows the folder in the bar as a package.", "把地址栏里的文件夹当作包来查看。",
-                "把路徑列裡的資料夾當作套件來檢視。"),
-            Side.Bottom),
-        Note.Callout(
-            3, At.Text(PathPickerText.Files(".zip")),
-            shot.T(
-                "The files that the list shows.", "列表显示的文件类型。", "清單顯示的檔案類型。"),
-            Side.Right));
-  }
-
-  [ShotTheory]
-  [ClassData(typeof(AllLanguages))]
-  public async Task ViewWithoutPackages(Language language) {
-    using Shot shot = run.Start(Mod(language, height: 18));
-    TuiHarness tui = shot.Tui;
-    await tui.GoTo(PageId.Tools);
-    await tui.WaitFor(ToolsText.Missing);
-
-    tui.Press(ConsoleKey.UpArrow);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.ViewInstalledAbout);
-    tui.Press(ConsoleKey.Enter);
-    await tui.WaitFor(ToolsText.NothingInstalled);
-    await shot.Capture(
-        "tools-22-view-nothing", Note.Focus(At.Panel(ToolsText.ViewInstalledTitle)));
   }
 
   /// An action that the page lets through and the command refuses: the failure dialog.

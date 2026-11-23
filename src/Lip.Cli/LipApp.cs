@@ -140,10 +140,6 @@ public static class LipApp {
         pkg.SetDefaultCommand<MissingSubcommandCommand>();
         pkg.AddCommand<PkgInitCommand>("init")
             .WithDescription("Creates a lip.toml for a new package");
-        pkg.AddCommand<PkgPackCommand>("pack")
-            .WithDescription("Packs a directory into a ZIP archive");
-        pkg.AddCommand<PkgViewCommand>("view")
-            .WithDescription("Shows the package file and the versions of a package, as JSON");
         pkg.AddCommand<PkgMigrateCommand>("migrate")
             .WithDescription("Migrates the tooth.json in the current directory to lip.toml");
       });

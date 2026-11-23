@@ -19,12 +19,8 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
   [InlineData("--dryrun", "uninstall", "foo", "--dryrun")]
   [InlineData("--dryrun", "uninstall", "--dryrun", "foo")]
   [InlineData("--bogus", "install", "--bogus", "x")]
-  [InlineData("--bogus", "pkg", "view", "--bogus", "x")]
-  [InlineData("--bogus", "pkg", "pack", "-o", "out.zip", "--bogus")]
   [InlineData("--bogus", "pkg", "init", "--bogus")]
   [InlineData("--bogus", "pkg", "migrate", "--bogus")]
-  // lip pkg view always writes JSON (protocol/lip-pkg.md, "lip pkg view").
-  [InlineData("--json", "pkg", "view", "x", "--json")]
   [InlineData("--bogus", "config", "list", "--bogus")]
   [InlineData("--bogus", "run", "--bogus")]
   // lip has no --platform: the platform is always win-x64 (protocol/lip.md, "Environment").
@@ -53,16 +49,15 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
     Assert.Contains($"Unknown option '{option}'", stderr);
     Assert.DoesNotContain("missing", stderr, StringComparison.OrdinalIgnoreCase);
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
-    Assert.False(File.Exists(Path.Join(_workspace, "out.zip")));
   }
 
   [Theory]
-  [InlineData("pkg", "pack", "-o")]
-  [InlineData("pkg", "pack", "--output")]
-  [InlineData("pkg", "pack", "-o", "--help")]
+  [InlineData("setup", "--game")]
+  [InlineData("setup", "--game", "1.21.0", "--loader")]
+  [InlineData("setup", "--game", "--help")]
   // An empty value is no value (protocol/lip.md, "Arguments"), so -h does not make it help.
-  [InlineData("pkg", "pack", "-o", "")]
-  [InlineData("pkg", "pack", "--output", "", "--help")]
+  [InlineData("setup", "--game", "")]
+  [InlineData("setup", "--game", "1.21.0", "--build", "", "--help")]
   public async Task OptionWithoutValue_IsUsageError(params string[] args) {
     (int exitCode, _, string stderr) = await Run(args);
 
@@ -76,14 +71,14 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
   [InlineData("list", "--", "extra")]
   [InlineData("update", "-n", "--", "github.com/a/b")]
   [InlineData("install", "-n", "foo", "--", "bar")]
-  [InlineData("pkg", "pack", "-o", "out.zip", "--", "dir")]
+  [InlineData("setup", "--game", "1.21.0", "--", "dir")]
   [InlineData("config", "list", "--", "extra")]
   [InlineData("list", "--", "--bogus")]
   [InlineData("install", "--", "foo")]
   [InlineData("uninstall", "--", "foo")]
-  [InlineData("pkg", "view", "--", "foo")]
+  [InlineData("pkg", "init", "--", "foo")]
   [InlineData("pkg", "--")]
-  [InlineData("pkg", "--", "view")]
+  [InlineData("pkg", "--", "init")]
   [InlineData("config", "get", "--", "key")]
   [InlineData("list", "--")]
   [InlineData("update", "-n", "--")]
@@ -92,7 +87,7 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
   [InlineData("config", "--", "x")]
   [InlineData("cache", "--")]
   [InlineData("cache", "--", "clean")]
-  [InlineData("pkg", "pack", "-o", "--")]
+  [InlineData("setup", "--game", "--")]
   [InlineData("--")]
   [InlineData("--", "list")]
   [InlineData("list", "--help", "--")]
@@ -162,7 +157,7 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
   [InlineData("config", "--help")]
   [InlineData("pkg", "--help")]
   [InlineData("pkg", "-h")]
-  [InlineData("pkg", "view", "--help")]
+  [InlineData("pkg", "init", "--help")]
   [InlineData("run", "--help")]
   public async Task HelpAndVersion_ExitZero(params string[] args) {
     (int exitCode, string stdout, _) = await Run(args);
@@ -173,7 +168,7 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
   }
 
   /// The package development commands are only in the command group pkg (protocol/lip.md,
-  /// "Arguments"), and "versions" is part of lip pkg view.
+  /// "Arguments"), which has no pack, view or versions (protocol/lip-pkg.md).
   [Theory]
   [InlineData("init")]
   [InlineData("pack", "-o", "out.zip")]
@@ -181,6 +176,8 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
   [InlineData("versions", "x")]
   [InlineData("migrate")]
   [InlineData("pkg", "versions", "x")]
+  [InlineData("pkg", "pack", "-o", "out.zip")]
+  [InlineData("pkg", "view", "x")]
   [InlineData("pkg", "bogus")]
   public async Task UnknownCommand_IsUsageError(params string[] args) {
     (int exitCode, string stdout, string stderr) = await Run(args);
@@ -189,51 +186,6 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
     Assert.Equal("", stdout);
     Assert.NotEqual("", stderr.Trim());
     Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
-  }
-
-  [Fact]
-  public async Task PkgView_LocalDirectory_WritesManifestAndNoVersionsAsJson() {
-    // Arrange
-    string package = Path.Join(_workspace, "pkg");
-    Directory.CreateDirectory(package);
-    await File.WriteAllTextAsync(
-        Path.Join(package, "lip.toml"),
-        """
-        format = 4
-        id = "example.com/pkg"
-        version = "1.2.3"
-        variants = { "" = [ { side = "server", platform = "win-x64" } ] }
-        """,
-        TestContext.Current.CancellationToken);
-
-    // Act
-    (int exitCode, string stdout, _) = await Run("pkg", "view", "./pkg");
-
-    // Assert: one JSON object with exactly "manifest" and "versions", followed by a line break
-    // (protocol/lip-pkg.md, "lip pkg view").
-    Assert.Equal(0, exitCode);
-    Assert.EndsWith("\n", stdout);
-    using JsonDocument result = JsonDocument.Parse(stdout);
-    Assert.Equal(
-        ["manifest", "versions"], result.RootElement.EnumerateObject().Select(m => m.Name));
-    Assert.Equal(
-        "example.com/pkg",
-        result.RootElement.GetProperty("manifest").GetProperty("id").GetString());
-    Assert.Equal(0, result.RootElement.GetProperty("versions").GetArrayLength());
-    Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
-  }
-
-  [Fact]
-  public async Task PkgView_DirectoryWithoutPackageFile_Fails() {
-    // Arrange
-    Directory.CreateDirectory(Path.Join(_workspace, "pkg"));
-
-    // Act
-    (int exitCode, string stdout, _) = await Run("pkg", "view", "./pkg");
-
-    // Assert
-    Assert.NotEqual(0, exitCode);
-    Assert.Equal("", stdout);
   }
 
   /// protocol/lip-run.md, step 4.

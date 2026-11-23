@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Lip.Core.Mcmod;
 
 namespace Lip.Core.Tests.Mcmod;
@@ -6,8 +5,7 @@ namespace Lip.Core.Tests.Mcmod;
 /// What lip list tells of an installed package beyond its identity and version: the source
 /// that the state file records (protocol/state.json.md), and the package arguments made of it,
 /// with which lip update makes the request of the package again (protocol/lip-update.md,
-/// protocol/lip-workspace.md, "Operations") and lip pkg view shows what is installed
-/// (protocol/lip-pkg.md).
+/// protocol/lip-workspace.md, "Operations").
 public class InstalledPackageTests {
   private const string Lib = "example.com/lib";
   private const string Pkg = "example.com/pkg";
@@ -120,57 +118,6 @@ public class InstalledPackageTests {
     Assert.Equal(package.Source, (await Listed()).Source);
   }
 
-  [Fact]
-  public async Task ViewArgument_OfABranch_ShowsTheCommitThatIsInstalled() {
-    // Arrange: the branch has moved on since.
-    string commit = _ws.Git.AddBranch(Lib, "main", LibFiles("1.2.0", "head 1"));
-    await _ws.Service.Install([$"{Lib}@branch:main"], _options);
-    _ws.Git.AddBranch(Lib, "main", LibFiles("1.3.0", "head 2"));
-    _ws.Restart();
-    InstalledPackage package = await Listed();
-
-    // Act
-    JsonNode result = JsonNode.Parse(await _ws.Service.View(package.ViewArgument))!;
-
-    // Assert
-    Assert.Equal($"{Lib}@rev:{commit}", package.ViewArgument);
-    Assert.Equal("1.2.0", (string?)result["manifest"]!["version"]);
-  }
-
-  [Fact]
-  public async Task ViewArgument_OfALocalPath_ShowsThatPath() {
-    // Arrange
-    string path = _ws.AddZip("packages/pkg.zip", PkgFiles("1.0.0"));
-    await _ws.Service.Install([path], _options);
-    InstalledPackage package = await Listed();
-
-    // Act
-    JsonNode result = JsonNode.Parse(await _ws.Service.View(package.ViewArgument))!;
-
-    // Assert
-    Assert.Equal(path, package.ViewArgument);
-    Assert.Equal((Pkg, "1.0.0"), (
-        (string?)result["manifest"]!["id"], (string?)result["manifest"]!["version"]));
-  }
-
-  [Fact]
-  public async Task ViewArgument_OfTheVersionTags_ShowsTheInstalledVersion_NotTheNewest() {
-    // Arrange
-    _ws.AddTag(Lib, "1.0.0", LibFiles("1.0.0", "1"));
-    await _ws.Service.Install([Lib], _options);
-    _ws.AddTag(Lib, "2.0.0", LibFiles("2.0.0", "2"));
-    _ws.Restart();
-    InstalledPackage package = await Listed();
-
-    // Act
-    JsonNode result = JsonNode.Parse(await _ws.Service.View(package.ViewArgument))!;
-
-    // Assert
-    Assert.Equal($"{Lib}@1.0.0", package.ViewArgument);
-    Assert.Equal(Lib, package.UpdateArgument);
-    Assert.Equal("1.0.0", (string?)result["manifest"]!["version"]);
-  }
-
   /// A mod that was installed at one version is updated to the highest version tag, by its
   /// own update and by the update of all, which lip update without operands does not do.
   [Theory]
@@ -272,32 +219,6 @@ public class InstalledPackageTests {
         });
   }
 
-  /// lip pkg view writes JSON that reads as the package file does: only what JSON requires
-  /// is escaped.
-  [Fact]
-  public async Task View_WritesRangesAndOtherTextAsTheyAre() {
-    // Arrange
-    _ws.AddTag(Lib, "1.0.0", new() {
-      ["lip.toml"] = WorkspaceHarness.LipToml(
-          Lib, "1.0.0",
-          """
-          "deps": { "example.com/dep": ">=1.0.0 <2.0.0" },
-          "assets": [ { "type": "self",
-            "place": [ { "src": "a&b+c 中文.dll", "dest": "x/a.dll" } ] } ]
-          """),
-    });
-
-    // Act
-    string json = await _ws.Service.View(Lib);
-
-    // Assert
-    Assert.Contains("\">=1.0.0 <2.0.0\"", json);
-    Assert.Contains("a&b+c 中文.dll", json);
-    Assert.DoesNotContain("\\u", json);
-    JsonNode result = JsonNode.Parse(json)!;
-    Assert.Equal(["manifest", "versions"], result.AsObject().Select(m => m.Key));
-  }
-
   [Fact]
   public async Task UpdateMods_KeepsAModWhoseLocalPathIsGone_AndUpdatesTheOthers() {
     // Arrange: a mod of a local path, one of a branch and one of a URL.
@@ -352,42 +273,33 @@ public class InstalledPackageTests {
   /// What is made of a recorded source, whatever the system: a local path is tested above.
   [Theory]
   // The version tags of a repository, with a variant.
-  [InlineData(
-      "example.com/lib#cuda", Commit, "example.com/lib#cuda", "example.com/lib#cuda@1.2.0",
-      "example.com/lib#cuda", null)]
+  [InlineData("example.com/lib#cuda", Commit, "example.com/lib#cuda", "example.com/lib#cuda", null)]
   // A version: the update leaves it for the version tags, and nothing tells it from the
   // repository.
-  [InlineData(
-      "example.com/lib@1.2.0", Commit, "example.com/lib", "example.com/lib@1.2.0",
-      "example.com/lib", null)]
+  [InlineData("example.com/lib@1.2.0", Commit, "example.com/lib", "example.com/lib", null)]
   [InlineData(
       "example.com/lib#cuda@branch:main", Commit, "example.com/lib#cuda@branch:main",
-      "example.com/lib#cuda@rev:" + Commit, "example.com/lib#cuda", "branch:main")]
-  // A branch whose commit is not known is shown as the branch is now.
+      "example.com/lib#cuda", "branch:main")]
   [InlineData(
-      "example.com/lib@branch:main", null, "example.com/lib@branch:main",
-      "example.com/lib@branch:main", "example.com/lib", "branch:main")]
-  // A tag may have moved too.
+      "example.com/lib@branch:main", null, "example.com/lib@branch:main", "example.com/lib",
+      "branch:main")]
   [InlineData(
-      "example.com/lib@tag:nightly", Commit, "example.com/lib@tag:nightly",
-      "example.com/lib@rev:" + Commit, "example.com/lib", "tag:nightly")]
+      "example.com/lib@tag:nightly", Commit, "example.com/lib@tag:nightly", "example.com/lib",
+      "tag:nightly")]
   [InlineData(
       "example.com/lib@rev:" + Commit, Commit, "example.com/lib@rev:" + Commit,
-      "example.com/lib@rev:" + Commit, "example.com/lib", "rev:" + Commit)]
+      "example.com/lib", "rev:" + Commit)]
   [InlineData(
-      "https://example.com/a.zip#cuda", null, "https://example.com/a.zip#cuda",
-      "https://example.com/a.zip#cuda", null, "https://example.com/a.zip")]
-  // The game, which is of no commit, at its version.
+      "https://example.com/a.zip#cuda", null, "https://example.com/a.zip#cuda", null,
+      "https://example.com/a.zip")]
+  // The game, which is of no commit.
   [InlineData(
       "github.com/LiteLDev/bds#linux", null, "github.com/LiteLDev/bds#linux",
-      "github.com/LiteLDev/bds#linux@1.2.0", "github.com/LiteLDev/bds#linux", null)]
+      "github.com/LiteLDev/bds#linux", null)]
   // What is no source: the identity stands in for it.
-  [InlineData(
-      "not a source", null, "example.com/lib#cuda", "example.com/lib#cuda@1.2.0",
-      "example.com/lib#cuda", null)]
+  [InlineData("not a source", null, "example.com/lib#cuda", "example.com/lib#cuda", null)]
   public void Arguments_AreMadeOfTheRecordedSource(
-      string source, string? commit, string update, string view, string? repository,
-      string? note) {
+      string source, string? commit, string update, string? repository, string? note) {
     // Arrange
     InstalledPackage package = new("example.com/lib#cuda", "1.2.0", true) {
       Variant = "cuda",
@@ -397,8 +309,8 @@ public class InstalledPackageTests {
 
     // Act & Assert
     Assert.Equal(
-        (update, view, repository, note),
-        (package.UpdateArgument, package.ViewArgument, package.Repository, package.SourceNote));
+        (update, repository, note),
+        (package.UpdateArgument, package.Repository, package.SourceNote));
   }
 
   [Fact]
@@ -412,8 +324,8 @@ public class InstalledPackageTests {
 
     // Act & Assert
     Assert.Equal(
-        ($"{path}#cuda", $"{path}#cuda", null, path),
-        (package.UpdateArgument, package.ViewArgument, package.Repository, package.SourceNote));
+        ($"{path}#cuda", null, path),
+        (package.UpdateArgument, package.Repository, package.SourceNote));
   }
 
   [Fact]
