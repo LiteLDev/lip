@@ -103,8 +103,8 @@ public static class ManifestEditorText {
   public static string DependenciesHelp =>
       L.T(
           "Enter: find a package in the Marketplace, or type its id.",
-          "Enter：从 Marketplace 查找包，或手动输入包 ID。",
-          "Enter：從 Marketplace 尋找套件，或手動輸入套件 ID。");
+          "Enter：从市场查找包，或手动输入包 ID。",
+          "Enter：從市集尋找套件，或手動輸入套件 ID。");
   public static string RangeHelp =>
       L.T(
           "The versions it may be: >=1.2.0 <1.3.0, ^1.2.0, 1.2.0 or *. Enter: more.",
@@ -160,7 +160,7 @@ public static class ManifestEditorText {
 
   // The menus.
   public static string FromMarketplace =>
-      L.T("Find in Marketplace…", "在 Marketplace 中查找…", "在 Marketplace 中尋找…");
+      L.T("Find in Marketplace…", "在市场中查找…", "在市集中尋找…");
   public static string TypeId => L.T("Type a package id…", "输入包 ID…", "輸入套件 ID…");
   public static string ChooseVersion => L.T("Choose version…", "选择版本…", "選擇版本…");
   public static string ChooseRange => L.T("Version range…", "版本范围…", "版本範圍…");
@@ -176,7 +176,7 @@ public static class ManifestEditorText {
 
   // The dependency dialogs.
   public static string MarketplaceTitle =>
-      L.T("Add from Marketplace", "从 Marketplace 添加", "從 Marketplace 新增");
+      L.T("Add from Marketplace", "从市场添加", "從市集新增");
   public static string Search => L.T("Search", "搜索", "搜尋");
   public static string SearchPlaceholder => L.T("name, id or tag", "名称、ID 或标签", "名稱、ID 或標籤");
   public static string NoMatch => L.T("No mod matches.", "没有匹配的模组。", "沒有符合的模組。");
@@ -255,8 +255,8 @@ public static class ManifestEditorText {
   public static string PredictionAbout =>
       L.T(
           "As the Marketplace tells, for a server with these versions. lip install decides.",
-          "依据 Marketplace 的信息，针对使用以下版本的服务器。以 lip install 的实际结果为准。",
-          "依據 Marketplace 的資訊，針對使用以下版本的伺服器。以 lip install 的實際結果為準。");
+          "依据市场的信息，针对使用以下版本的服务器。以 lip install 的实际结果为准。",
+          "依據市集的資訊，針對使用以下版本的伺服器。以 lip install 的實際結果為準。");
   public static string Bds => L.T("BDS", "BDS", "BDS");
   public static string LeviLamina => L.T("LeviLamina", "LeviLamina", "LeviLamina");
   public static string NoLoader => L.T("None", "不安装", "不安裝");
@@ -418,8 +418,8 @@ public static class ManifestEditorText {
         $"範圍內沒有適配這些版本的版本（最新 {prediction.Detail}）。"),
     PredictionReason.CompatibilityUnknown => L.T(
         $"Would install {prediction.Detail}; not in the Marketplace, so whether it fits is unknown.",
-        $"将安装 {prediction.Detail}；它不在 Marketplace 中，无法判断是否适配。",
-        $"將安裝 {prediction.Detail}；它不在 Marketplace 中，無法判斷是否適配。"),
+        $"将安装 {prediction.Detail}；它不在市场中，无法判断是否适配。",
+        $"將安裝 {prediction.Detail}；它不在市集中，無法判斷是否適配。"),
     _ => L.T(
         $"Could not check: {prediction.Detail}", $"无法检查：{prediction.Detail}", $"無法檢查：{prediction.Detail}"),
   };
