@@ -1,6 +1,6 @@
 # lip
 
-<img src=".github/logo.png" alt="" width="128" align="right">
+<img src=".github/logo.svg" alt="" width="128" align="right">
 
 Run a LeviLamina server and manage its packages
 
