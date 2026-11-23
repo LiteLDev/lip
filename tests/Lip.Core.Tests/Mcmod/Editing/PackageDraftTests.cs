@@ -77,12 +77,8 @@ public class PackageDraftTests {
   }
 
   [Theory]
-  [InlineData("format = 5
-id = \"a.b/c\"
-version = \"1.0.0\"")]
-  [InlineData("format = \"4\"
-id = \"a.b/c\"
-version = \"1.0.0\"")]
+  [InlineData("format = 5\nid = \"a.b/c\"\nversion = \"1.0.0\"")]
+  [InlineData("format = \"4\"\nid = \"a.b/c\"\nversion = \"1.0.0\"")]
   public void Read_OtherFormat_Throws(string toml) {
     Assert.Throws<PackageDraftException>(() => PackageDraft.Read(Written(toml)));
   }
