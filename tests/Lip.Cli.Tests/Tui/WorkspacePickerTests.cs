@@ -469,7 +469,7 @@ public sealed class WorkspacePickerTests {
     Assert.Contains("─ Add folder ─", tui.Screen);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitUntilGone(CommonText.WorkspaceListUnwritable);
-    Assert.Contains(Bar(Alpha), tui.Screen);
+    await tui.WaitFor(Bar(Alpha));
     Assert.Equal(Root, await tui.Invoke(() => tui.Context.Workspace));
   }
 
