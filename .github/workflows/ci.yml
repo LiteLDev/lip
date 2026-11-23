@@ -1,5 +1,6 @@
 # No paths filter: ci-ok is a required check, and a required check must report on every pull
-# request, docs-only ones included. A merge queue does not support paths filters either.
+# request, docs-only ones included. A merge queue does not support paths filters either. Instead,
+# the job changes decides which jobs the change needs, and the others are skipped.
 # Pushes to main are not tested: merge_group already tests the exact commit that lands on main.
 # Pushes to release/** still are, since they do not go through the merge queue.
 on:
@@ -15,9 +16,66 @@ permissions:
   contents: read
 
 jobs:
+  # Decides which jobs to run from the files the pull request or merge group changes. A change to
+  # this workflow, to src, or to what every project builds with runs every job; a change to tests
+  # runs lint and test; a change to .editorconfig runs lint; any other change, like one to the
+  # docs, protocol or packaging, runs none. Pushes and manual runs run every job.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.changes.outputs.build }}
+      lint: ${{ steps.changes.outputs.lint }}
+      test: ${{ steps.changes.outputs.test }}
+    steps:
+      # The commit of a pull request merges it into main; its first parent is main.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - id: changes
+        shell: bash
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base=HEAD^1 ;;
+            merge_group)
+              base=$MERGE_GROUP_BASE_SHA
+              git fetch --no-tags --depth=1 origin "$base"
+              ;;
+            *) base= ;;
+          esac
+
+          build=false lint=false test=false
+          if [ -z "$base" ]; then
+            build=true lint=true test=true
+          else
+            # Without renames, a file moved out of src is listed under its old path too.
+            while IFS= read -r file; do
+              echo "$file"
+              case "$file" in
+                .github/workflows/ci.yml | src/* | lip.slnx | global.json | [Nn]u[Gg]et.config | Directory.*)
+                  build=true lint=true test=true ;;
+                tests/*) lint=true test=true ;;
+                .editorconfig) lint=true ;;
+              esac
+            done < <(git diff --name-only --no-renames "$base" HEAD)
+          fi
+
+          echo "build=$build lint=$lint test=$test"
+          {
+            echo "build=$build"
+            echo "lint=$lint"
+            echo "test=$test"
+          } >> "$GITHUB_OUTPUT"
+
   # lip is not built for Linux on arm64: no Wine there runs a LeviLamina server (see the
   # job server).
   build:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -56,6 +114,8 @@ jobs:
           path: bin/
 
   lint:
+    needs: changes
+    if: needs.changes.outputs.lint == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -78,7 +138,8 @@ jobs:
   # box64, and under FEX ran a LeviLamina server in two of six attempts: PeEditor.exe was killed
   # in two, and the server failed as it stopped in two.
   server:
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.build == 'true'
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 30
     strategy:
@@ -155,6 +216,8 @@ jobs:
           fi
 
   test:
+    needs: changes
+    if: needs.changes.outputs.test == 'true'
     runs-on: ${{ matrix.runs-on }}
     # The tests take minutes. A test that never ends must not hold a runner for hours.
     timeout-minutes: 30
@@ -180,13 +243,15 @@ jobs:
       - run: dotnet test --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type none
 
   # The single check that the ruleset of main requires: it fails unless every job above
-  # succeeded, so the ruleset need not name each job of each matrix.
+  # succeeded or was skipped as the change does not need it, so the ruleset need not name each
+  # job of each matrix. A job is skipped otherwise only when a job it needs failed, which fails
+  # this check too.
   ci-ok:
-    needs: [build, lint, server, test]
+    needs: [changes, build, lint, server, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
           echo "::error::Not every job succeeded."
           exit 1

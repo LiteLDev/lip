@@ -23,8 +23,10 @@ dotnet publish src/Lip.Cli -o bin -r win-x64 --self-contained -p:DebugType=embed
 ```
 
 `.github/workflows/ci.yml` runs the same, on every system `lip` is released for, and also runs a real server
-with the `lip` it built. Its job `ci-ok` succeeds only when every other job did, and is the check that pull requests
-and the merge queue require.
+with the `lip` it built. It runs only the jobs a change needs: a change to `ci.yml`, `src` or what every project
+builds with runs them all, a change to `tests` runs only the lint and the tests, and a change to nothing of these,
+like one to the docs, runs none. Its job `ci-ok` succeeds only when every job that ran succeeded, and is the check
+that pull requests and the merge queue require.
 
 Pull requests land through the merge queue, whose merge method is squash, so each one becomes a single commit on
 `main`. `gh pr merge` adds a pull request to the queue instead of merging it at once; the queue, not a flag, picks
