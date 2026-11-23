@@ -18,6 +18,15 @@ public static class FileSystemExtensions {
     }
   }
 
+  /// The directory with a separator at its end, so that exactly the paths below it start with
+  /// the result: a root such as C:\ or / already ends in one and is kept as it is.
+  public static string WithTrailingSeparator(this IPath path, string directory) {
+    string trimmed = path.TrimEndingDirectorySeparator(directory);
+    return path.EndsInDirectorySeparator(trimmed)
+        ? trimmed
+        : trimmed + path.DirectorySeparatorChar;
+  }
+
   /// Sets or clears the hidden attribute of a file on Windows. Elsewhere a file is hidden by its
   /// name starting with ".", so this does nothing.
   public static void SetHidden(this IFileSystem fs, string path, bool hidden) {

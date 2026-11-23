@@ -629,9 +629,7 @@ public sealed class SystemDependencies(
   private void Extract(
       string archive, string directory, IProgress<double> progress, CancellationToken token) {
     string root = _fs.Path.GetFullPath(directory);
-    string rootWithSeparator = root.EndsWith(Path.DirectorySeparatorChar)
-        ? root
-        : root + Path.DirectorySeparatorChar;
+    string rootWithSeparator = _fs.Path.WithTrailingSeparator(root);
     _fs.Directory.CreateDirectory(root);
 
     using Stream file = _fs.File.OpenRead(archive);
