@@ -276,6 +276,11 @@ public sealed class LipClient {
       await (await GetMcmodService(dryRun: true, session)).LoaderVersions(
           game, cancellationToken);
 
+  /// The versions of a package id: of the version tags of its repository, or of the server
+  /// (protocol/lip-package.md, "Resolution"), read as a dry run reads them.
+  public async Task<IReadOnlyList<Semver.SemVersion>> PackageVersions(string id) =>
+      await (await GetMcmodService(dryRun: true)).PackageVersions(id);
+
   /// The value of github_proxy: a URI, "" (GitHub is reached directly), or null when it is not
   /// configured (protocol/config.toml.md, "User configuration"), read without writing a file.
   public async Task<string?> GithubProxy() => await _configService.GetGithubProxy(dryRun: true);

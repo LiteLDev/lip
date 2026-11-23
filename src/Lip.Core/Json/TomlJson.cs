@@ -167,6 +167,46 @@ public static partial class TomlJson {
     return Serialize(document.RootElement);
   }
 
+  /// A value written inline, as after "key = ". Throws ArgumentException for null.
+  public static string Inline(JsonNode value) {
+    using JsonDocument document = JsonDocument.Parse(value.ToJsonString());
+    StringBuilder builder = new();
+    WriteInline(builder, document.RootElement);
+    return builder.ToString();
+  }
+
+  /// A key as written in a TOML file: bare when it can be, quoted otherwise.
+  public static string QuoteKey(string key) => Key(key);
+
+  /// Whether a value is written under a header of its own by Serialize: a non-empty object, or
+  /// an array of objects that Serialize writes as an array of tables.
+  public static bool IsHeaded(JsonNode value) {
+    using JsonDocument document = JsonDocument.Parse(value.ToJsonString());
+    return IsHeaded(document.RootElement);
+  }
+
+  /// The value at the keys path written under its own header, as Serialize writes a member of
+  /// that path: an object as a [table] and the tables below it, an array of objects as an
+  /// [[array of tables]]. The text ends with a line break.
+  public static string SerializeAt(IReadOnlyList<string> path, JsonNode value) {
+    using JsonDocument document = JsonDocument.Parse(value.ToJsonString());
+    JsonElement element = document.RootElement;
+    StringBuilder builder = new();
+    string header = string.Join('.', path.Select(Key));
+    if (element.ValueKind == JsonValueKind.Array) {
+      foreach (JsonElement item in element.EnumerateArray()) {
+        Separate(builder);
+        builder.Append("[[").Append(header).Append("]]\n");
+        WriteTable(builder, item, [.. path]);
+      }
+    } else {
+      builder.Append('[').Append(header).Append("]\n");
+      WriteTable(builder, element, [.. path]);
+    }
+
+    return builder.ToString();
+  }
+
   /// Writes the members of a table whose header, if any, was written already.
   private static void WriteTable(StringBuilder builder, JsonElement table, List<string> path) {
     List<JsonProperty> tables = [];
