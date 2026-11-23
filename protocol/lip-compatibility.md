@@ -81,7 +81,14 @@ When the config directory has no `config.toml` and has a `liprc.json` that is a 
 
 `lip pkg migrate` ([lip-pkg(1)](lip-pkg.md)) writes atomically, as `lip.toml` in the current directory, a package file migrated from the `tooth.json` there, then deletes `tooth.json`. When `lip.toml` exists, or `tooth.json` is missing or is not one that "tooth.json" reads, the command fails and changes nothing.
 
-The mapping is not defined here; it should agree with "tooth.json" for every environment. A string of the result that is derived from a string of `tooth.json` holding a template (as [tooth.json v3] renders it) should be written as a template ([lip.toml(5), "Templates"](lip.toml.md#templates)) that keeps it, with the variable `tooth`, or `path` in formats 1 and 2, renamed to `id`, when that template renders to the same string; any other string is written so that it renders to itself. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
+The mapping is not defined here; it should agree with "tooth.json" for every environment, except for what `github.com/LiteLDev/LeviLamina` changed at version 26.60.8, the first with a package file, which has no variant `"client"` and has an entry for each side in its variant `""`:
+
+- A dependency on `github.com/LiteLDev/LeviLamina#client`, or `#client_<y>`, the package id compared ASCII case-insensitively, whose range admits a version of at least 26.60.8 becomes one on `github.com/LiteLDev/LeviLamina`, or `#<y>`, whose range admits exactly the versions of at least 26.60.8 that the original admits, unless the entry also depends on that. A dependency whose range admits no such version is kept.
+- Then an entry for the client side of the variant `client`, or `client_<y>`, with a dependency that became one on `github.com/LiteLDev/LeviLamina`, or `#<y>` with the same `<y>`, belongs to the variant `""`, or `<y>`, instead, unless that variant already has an entry for the client side and the same platform.
+
+`lip` tells the user about each such change.
+
+A string of the result that is derived from a string of `tooth.json` holding a template (as [tooth.json v3] renders it) should be written as a template ([lip.toml(5), "Templates"](lip.toml.md#templates)) that keeps it, with the variable `tooth`, or `path` in formats 1 and 2, renamed to `id`, when that template renders to the same string; any other string is written so that it renders to itself. When a value the output needs is missing or invalid, `lip` asks the user for it on the terminal until the answer is valid. When standard input or standard error is not a terminal, the command fails instead, naming the value it would ask for, and changes nothing.
 
 ## SEE ALSO
 
