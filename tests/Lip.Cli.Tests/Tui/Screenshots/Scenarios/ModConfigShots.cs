@@ -11,6 +11,11 @@ public sealed class ModConfigShots(ShotRun run) {
   /// The start of the row of the file of LeviOptimize, whose end the list may cut.
   private const string OptimizeRow = "LeviOptimize · ";
   private const string GmlibFile = "GMLIB · config/config.json";
+
+  /// The start of the row of the file of GMLIB, and of the row of ignoredDimensions, whose
+  /// ends the page cuts at the default width.
+  private const string GmlibRow = "GMLIB · ";
+  private const string IgnoredRow = "ignoredDimensio";
   private const string MoneyFile = "LegacyMoney · money.json";
   private const string RankingFile = "LegacyMoney · ranking.yml";
 
@@ -47,7 +52,7 @@ public sealed class ModConfigShots(ShotRun run) {
     await tui.GoTo(PageId.ModConfig);
     await tui.WaitFor(OptimizeRow);
     tui.Press(ConsoleKey.DownArrow);
-    await tui.WaitFor("ignoredDimensions");
+    await tui.WaitFor(IgnoredRow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModConfigText.VersionDetail);
     tui.Press(ConsoleKey.DownArrow);
@@ -70,7 +75,7 @@ public sealed class ModConfigShots(ShotRun run) {
     await shot.Capture(
         "mod-config-03-files",
         Note.Callout(
-            1, At.Row(GmlibFile),
+            1, At.Row(GmlibRow),
             shot.T(
                 "A file: the mod, then the path of the file in the folder of the mod.",
                 "一个文件：模组名，后面是文件在模组文件夹里的路径。",
@@ -99,7 +104,7 @@ public sealed class ModConfigShots(ShotRun run) {
 
     // The tree of LeviOptimize: the version that the mod keeps to itself.
     tui.Press(ConsoleKey.DownArrow, 2);
-    await tui.WaitFor("ignoredDimensions");
+    await tui.WaitFor(IgnoredRow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModConfigText.VersionDetail);
     await shot.Capture(
@@ -138,7 +143,7 @@ public sealed class ModConfigShots(ShotRun run) {
 
     // An array: its values, and the row that adds one.
     tui.Press(ConsoleKey.Escape, 2);
-    await tui.WaitFor("ignoredDimensions");
+    await tui.WaitFor(IgnoredRow);
     tui.Press(ConsoleKey.DownArrow, 2);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ModConfigText.AddValue);
@@ -215,7 +220,7 @@ public sealed class ModConfigShots(ShotRun run) {
                 "檔案有尚未寫入的變更。"),
             Side.Right),
         Note.Callout(
-            2, At.Text(MoneyFile + " ●"),
+            2, At.Text("●"),
             shot.T("The same, in the list.", "列表里也有同样的标记。", "清單裡也有同樣的標記。")),
         Note.Callout(
             3, At.Button(CommonText.Save).To(At.Button(CommonText.Discard)),
