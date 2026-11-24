@@ -8,10 +8,35 @@ Run a LeviLamina server and manage its packages
 
 ## Install
 
-- **Windows**: download `lip-<version>-win-x64.msi` (or `-win-arm64.msi`) from the [latest release](https://github.com/LiteLDev/lip/releases/latest) and run it.
-- **Linux and macOS**: download the archive for your system from the [latest release](https://github.com/LiteLDev/lip/releases/latest), extract the file `lip` from it, and put it in a folder on your `PATH`.
+### Windows
 
-`lip` is one executable file and needs nothing else installed. On Linux and macOS it runs the Windows server, the one LeviLamina loads into, through [Wine](https://www.winehq.org/), which it downloads and sets up itself, with the Visual C++ Redistributable the server needs; a Mac with Apple silicon also needs Rosetta 2, which `lip` installs once you accept its license. On Linux, `lip` needs glibc 2.27 or later (so not Alpine), and Wine needs the GnuTLS library, and Fontconfig where FreeType is installed: `lip` names any that is missing and the command that installs it. See [Linux and macOS](https://levimc.org/lip/guides/linux_macos.html). `lip -v` prints its version, and `lip self-update` updates it. See [`lip self-update`](https://levimc.org/lip/reference/commands/self_update.html).
+Download `lip-<version>-win-x64.msi` (or `-win-arm64.msi`) from the [latest release](https://github.com/LiteLDev/lip/releases/latest) and run it.
+
+### macOS
+
+In Terminal:
+
+```shell
+curl -fsSL https://levimc.org/lip/install.sh | sh
+```
+
+The script installs `lip` to `~/.local/bin`, without administrator rights, and offers to add that folder to your `PATH`. Or download `lip-<version>-osx-arm64.zip` (Apple silicon) or `-osx-x64.zip` (Intel) from the [latest release](https://github.com/LiteLDev/lip/releases/latest) with `curl`, extract the file `lip` from it, and put it in a folder on your `PATH`; a file that a browser downloads is quarantined by macOS, and does not run as it is.
+
+### Linux
+
+In a terminal:
+
+```shell
+curl -fsSL https://levimc.org/lip/install.sh | sh
+```
+
+The script installs `lip` to `~/.local/bin`, without root, and offers to add that folder to your `PATH`. Or download `lip-<version>-linux-x64.tar.xz` from the [latest release](https://github.com/LiteLDev/lip/releases/latest), extract the file `lip` from it, and put it in a folder on your `PATH`. `lip` is released for x64 only.
+
+### What it needs
+
+`lip` is one executable file and needs nothing else installed. On Linux and macOS it runs the Windows server, the one LeviLamina loads into, through [Wine](https://www.winehq.org/), which it downloads and sets up itself, with the Visual C++ Redistributable the server needs. On a Mac with Apple silicon, Wine needs Rosetta 2, which `lip` installs once you accept its license. On Linux, `lip` needs glibc 2.27 or later (so not Alpine), and Wine needs the GnuTLS library, and Fontconfig where FreeType is installed: `lip` names any that is missing and the command that installs it. See [Linux and macOS](https://levimc.org/lip/guides/linux_macos.html). `lip -v` prints its version, and `lip self-update` updates it. See [`lip self-update`](https://levimc.org/lip/reference/commands/self_update.html).
+
+The script's settings, such as `LIP_VERSION`, `LIP_INSTALL_DIR` and `LIP_GITHUB_PROXY`, are at the top of [`install.sh`](install.sh).
 
 ## Use
 
