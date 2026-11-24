@@ -22,11 +22,15 @@ dotnet build -warnaserror -p:EnforceCodeStyleInBuild=true
 dotnet publish src/Lip.Cli -o bin -r win-x64 --self-contained -p:DebugType=embedded   # a release build
 ```
 
-`.github/workflows/ci.yml` runs the same, on every system `lip` is released for, and also runs a real server
-with the `lip` it built. It runs only the jobs a change needs: a change to `ci.yml` runs them all; a change to
-`src` or what every project builds with runs all but the installation with `install.sh`; a change to `tests` runs
-only the lint and the tests; a change to `install.sh` runs only the lint (with ShellCheck) and an installation with
-it on Linux and macOS; and a change to nothing of these, like one to the docs, runs none. Its job `ci-ok` succeeds
+`.github/workflows/ci.yml` runs the same, on every system `lip` is released for, and also tests the `lip` it
+built end to end: it installs it as a user does (with `install.sh` on Linux and macOS, in new `ubuntu:latest` and
+`debian:stable-slim` containers on Linux, and with the Windows Installer package on Windows), as a user without
+administrator rights where it can, and runs a real server with it. It runs only the jobs a change needs: a change
+to `ci.yml` runs them all; a change to `src` or what every project builds with runs all but the installation of
+the latest release with `install.sh`; a change to `tests` runs only the lint and the tests; a change to
+`install.sh` runs the lint (with ShellCheck), the end-to-end test and an installation of the latest release with
+it on Linux and macOS; a change to `packaging` or `.github/scripts` runs the end-to-end test (and, for
+`.github/scripts`, the lint); and a change to nothing of these, like one to the docs, runs none. Its job `ci-ok` succeeds
 only when every job that ran succeeded, and is the check that pull requests and the merge queue require.
 
 Pull requests land through the merge queue, whose merge method is squash, so each one becomes a single commit on
