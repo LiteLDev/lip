@@ -23,7 +23,12 @@ public sealed record ConsoleProfile(
   public static IAnsiConsole CreateStandardError() =>
       AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(Console.Error) });
 
-  /// The profile of a console of this process.
+  /// The size that Spectre.Console takes for a console whose size it cannot find.
+  private const int DefaultWidth = 80;
+  private const int DefaultHeight = 24;
+
+  /// The profile of a console of this process. A size that is not positive, as .NET finds for
+  /// no terminal with TERM=dumb, is the default size, which a console of the daemon can take.
   public static ConsoleProfile Of(IAnsiConsole console) {
     Profile profile = console.Profile;
     return new ConsoleProfile(
@@ -33,8 +38,8 @@ public sealed record ConsoleProfile(
         profile.Capabilities.Unicode,
         profile.Capabilities.Links,
         profile.Capabilities.Interactive,
-        profile.Width,
-        profile.Height);
+        profile.Width > 0 ? profile.Width : DefaultWidth,
+        profile.Height > 0 ? profile.Height : DefaultHeight);
   }
 
   /// A console that writes to writer as a console of this profile would.
