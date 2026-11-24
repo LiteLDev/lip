@@ -153,9 +153,9 @@ jobs:
   #   it. Only what install.sh needs is installed first, curl and xz
   #   (.github/scripts/e2e-linux-container.sh).
   # - macOS: install.sh installs lip, and a new standard user, not an administrator, runs it.
-  # - Windows: the Windows Installer package of lip installs it. It installs for every user, so it
-  #   needs an administrator, as the user of the runner is; lip then runs from the PATH that the
-  #   package set.
+  # - Windows: a new standard user, not an administrator, installs lip with its Windows Installer
+  #   package, which installs it for that user, and runs it from the PATH that the package set
+  #   (.github/scripts/e2e-windows-user.ps1). lip installs the Visual C++ runtime for the user.
   #
   # install.sh downloads the lip that was built, as the archive of a release v0.0.0-ci, from a
   # local server that LIP_GITHUB_PROXY points it to.
@@ -246,22 +246,33 @@ jobs:
         with:
           dotnet-version: 10
 
+      # The runner has the Visual C++ runtime installed for the system. Its registry value says
+      # it is not, so that lip installs it for the user, as on a Windows without it.
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $arch = '${{ matrix.runtime }}' -replace '^win-'
           ./packaging/wix/build.ps1 -Version $env:LIP_VERSION -Arch $arch -BinDir bin -OutDir dist
-          $msi = Resolve-Path "dist/lip-$env:LIP_VERSION-win-$arch.msi"
-          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', "`"$msi`"", '/qn', '/l*v', 'msi.log'
-          if ($p.ExitCode -ne 0) { Get-Content msi.log -Tail 50; throw "msiexec exited with $($p.ExitCode)" }
-          # A new shell would find lip on the PATH that the package set.
-          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
-          $lip = (Get-Command lip -CommandType Application).Source
-          "LIP=$lip" >> $env:GITHUB_ENV
 
-      - if: runner.os == 'Windows'
-        shell: bash
-        run: bash .github/scripts/e2e-server.sh "$(cygpath -u "$LIP")"
+          $dir = 'C:\e2e'
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item "dist/lip-$env:LIP_VERSION-win-$arch.msi", .github/scripts/e2e-server.sh, .github/scripts/e2e-windows-user.ps1 $dir
+          icacls $dir /grant 'Users:(OI)(CI)F' | Out-Null
+
+          foreach ($view in 'Registry64', 'Registry32') {
+            $key = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', $view).OpenSubKey(
+                'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', $true)
+            if ($key) { $key.SetValue('Installed', 0, 'DWord'); $key.Close() }
+          }
+
+          $password = ConvertTo-SecureString ('Pw-' + [guid]::NewGuid().ToString('N') + '!a1') -AsPlainText -Force
+          New-LocalUser -Name player -Password $password | Out-Null
+          $credential = New-Object PSCredential('player', $password)
+          $p = Start-Process powershell -Credential $credential -LoadUserProfile -Wait -PassThru `
+              -WorkingDirectory $dir -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', `
+              '-File', "$dir\e2e-windows-user.ps1", "$dir\lip-$env:LIP_VERSION-win-$arch.msi", $dir
+          Get-Content "$dir\out.txt"
+          if ($p.ExitCode -ne 0) { throw "The test as a standard user exited with $($p.ExitCode)." }
 
   test:
     needs: changes
