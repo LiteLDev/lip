@@ -61,20 +61,20 @@
 
     <SetProperty Id="MSIINSTALLPERUSER" Value="{}" After="AppSearch" Sequence="both"
       Condition="MACHINEINSTALLDIR OR INNOUNINSTALLSTRING" />
-    <SetProperty Id="ALLUSERS" Value="1" After="AppSearch" Sequence="both"
+    <SetProperty Id="ALLUSERS" Value="1" After="SetMSIINSTALLPERUSER" Sequence="both"
       Condition="MACHINEINSTALLDIR OR INNOUNINSTALLSTRING" />
     <!-- Upgrades install to the folder that they installed to before. -->
-    <SetProperty Id="INSTALLFOLDER" Value="[MACHINEINSTALLDIR]" After="AppSearch" Sequence="both"
+    <SetProperty Id="INSTALLFOLDER" Action="SetInstallFolderOfMachine" Value="[MACHINEINSTALLDIR]" After="AppSearch" Sequence="both"
       Condition="MACHINEINSTALLDIR AND NOT Installed" />
-    <SetProperty Id="INSTALLFOLDER" Value="[USERINSTALLDIR]" After="AppSearch" Sequence="both"
+    <SetProperty Id="INSTALLFOLDER" Action="SetInstallFolderOfUser" Value="[USERINSTALLDIR]" After="AppSearch" Sequence="both"
       Condition="USERINSTALLDIR AND NOT MACHINEINSTALLDIR AND NOT INNOUNINSTALLSTRING AND NOT Installed" />
 
     <!-- The earlier installation is found once the package knows for whom it installs. -->
     <InstallUISequence>
-      <FindRelatedProducts After="SetMSIINSTALLPERUSER" />
+      <FindRelatedProducts After="SetALLUSERS" />
     </InstallUISequence>
     <InstallExecuteSequence>
-      <FindRelatedProducts After="SetMSIINSTALLPERUSER" />
+      <FindRelatedProducts After="SetALLUSERS" />
     </InstallExecuteSequence>
 
     <Component Directory="INSTALLFOLDER">
