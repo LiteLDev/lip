@@ -14,6 +14,11 @@ public class UninstallCommand(LipClient lipClient, IUserInteraction userInteract
     [Description("The packages to uninstall: a package name, or the path[[#variant]] it was installed from")]
     public required string[] Packages { get; init; }
 
+    [CommandOption("--accept-rosetta-license")]
+    [Description("Accept the license of Rosetta 2 without being asked, when lip installs it"
+        + " on a Mac with Apple silicon to run the server")]
+    public bool AcceptRosettaLicense { get; init; }
+
     [CommandOption("-n|--dry-run")]
     [Description("Run without making any changes")]
     public bool DryRun { get; init; }
@@ -23,7 +28,8 @@ public class UninstallCommand(LipClient lipClient, IUserInteraction userInteract
     await _lipClient.Uninstall(
         settings.Packages,
         settings.DryRun,
-        cancellationToken);
+        cancellationToken,
+        acceptRosettaLicense: settings.AcceptRosettaLicense);
     if (settings.DryRun) {
       await _userInteraction.PrintInfo("Dry run: nothing was changed.");
     } else {

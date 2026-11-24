@@ -25,6 +25,11 @@ public class RunCommand(LipClient lipClient) : AsyncCommand<RunCommand.Settings>
     [Description("With --managed: start the server, or find it running, without attaching")]
     public bool Detach { get; init; }
 
+    [CommandOption("--accept-rosetta-license")]
+    [Description("Accept the license of Rosetta 2 without being asked, when lip installs it"
+        + " on a Mac with Apple silicon to run the server")]
+    public bool AcceptRosettaLicense { get; init; }
+
     public override ValidationResult Validate() =>
         Detach && !Managed
             ? ValidationResult.Error("--detach is an option of 'lip run --managed' only.")
@@ -35,21 +40,26 @@ public class RunCommand(LipClient lipClient) : AsyncCommand<RunCommand.Settings>
       CommandContext context, Settings settings, CancellationToken cancellationToken) {
     Invocation invocation = Invocation.Current;
     if (settings.Managed) {
-      return await RunManaged(invocation, settings.Detach, ServerSessions.Shared);
+      return await RunManaged(
+          invocation, settings.Detach, ServerSessions.Shared,
+          acceptRosettaLicense: settings.AcceptRosettaLicense);
     }
 
     using Stream input = invocation.OpenStandardInput();
-    return await _lipClient.Run(input, invocation.InputIsConsole);
+    return await _lipClient.Run(
+        input, invocation.InputIsConsole, settings.AcceptRosettaLicense);
   }
 
   /// lip run --managed (protocol/lip-run.md, "Managed servers" and "Attaching") for the
   /// invocation, with the servers of the daemon. createClient makes the client of a managed
   /// server, from its user interaction and its workspace: LipClient.Create when not given.
+  /// acceptRosettaLicense: --accept-rosetta-license, for the managed server that it starts.
   public static async Task<int> RunManaged(
       Invocation invocation,
       bool detach,
       ServerSessions servers,
-      Func<IUserInteraction, string, LipClient>? createClient = null) {
+      Func<IUserInteraction, string, LipClient>? createClient = null,
+      bool acceptRosettaLicense = false) {
     if (invocation == Invocation.Process) {
       throw new InvalidOperationException(
           "lip run --managed needs the daemon of lip, which runs the managed server, but lip"
@@ -75,7 +85,8 @@ public class RunCommand(LipClient lipClient) : AsyncCommand<RunCommand.Settings>
             ? createClient(interaction, workspace)
             : LipClient.Create(fileSystem, interaction, null, workspace),
         invocation,
-        attachment);
+        attachment,
+        acceptRosettaLicense: acceptRosettaLicense);
     if (starting is not null) {
       await starting;
     } else if (attachment is not null && !server.Attach(attachment, replay: true)) {

@@ -874,7 +874,8 @@ public class McmodServiceTests {
     });
     List<string> events = [];
     _ws.SystemPreparer
-        .Setup(p => p.Prepare(WorkspaceHarness.Platform, _ws.Root, It.IsAny<CancellationToken>()))
+        .Setup(p => p.Prepare(
+            WorkspaceHarness.Platform, _ws.Root, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
         .Callback(() => events.Add(
             "prepare" + (_ws.Fs.File.Exists(_ws.JournalPath) ? " with journal" : "")))
         .Returns(Task.CompletedTask);
@@ -887,6 +888,34 @@ public class McmodServiceTests {
 
     // Assert
     Assert.Equal(["prepare", "check"], events);
+  }
+
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Install_PreparesTheSystemWithAcceptRosettaLicense(bool accept) {
+    // Arrange (--accept-rosetta-license, protocol/lip-workspace.md, "System dependencies").
+    _ws.AddTag(Lib, "1.0.0", new() {
+      ["lip.toml"] = WorkspaceHarness.LipToml(
+          Lib, "1.0.0",
+          WorkspaceHarness.SelfAsset("a.txt", "a.txt")
+              + """, "hooks": { "pre_install": [ "check" ] }"""),
+      ["a.txt"] = "a",
+    });
+    _ws.SystemPreparer
+        .Setup(p => p.Prepare(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await _ws.Service.Install([Lib], _options with { AcceptRosettaLicense = accept });
+
+    // Assert
+    _ws.SystemPreparer.Verify(
+        p => p.Prepare(
+            WorkspaceHarness.Platform, _ws.Root, accept, It.IsAny<CancellationToken>()),
+        Times.Once);
   }
 
   [Fact]
@@ -903,7 +932,9 @@ public class McmodServiceTests {
 
     // Assert
     _ws.SystemPreparer.Verify(
-        p => p.Prepare(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+        p => p.Prepare(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()),
         Times.Never);
   }
 
@@ -919,7 +950,8 @@ public class McmodServiceTests {
     });
     _ws.SystemPreparer
         .Setup(p => p.Prepare(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()))
         .ThrowsAsync(new SystemDependencyException("no Wine"));
 
     // Act

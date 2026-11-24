@@ -7,7 +7,7 @@ lip-run - run the server of the workspace
 ## SYNOPSIS
 
 ```
-lip run [--managed [--detach]] [-h | --help]
+lip run [--managed [--detach]] [--accept-rosetta-license] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -59,6 +59,7 @@ A **managed server** is a server that the daemon ([lip-daemon(1)](lip-daemon.md)
 - Its standard input is the bytes that the clients attached to it ("Attaching") and the interfaces ([lip-tui(1), "Server"](lip-tui.md#server)) give it, those of each in their order. What it writes to its standard output and its standard error, and the messages of `lip` about it, go to them. Its standard input does not end before it exits.
 - `lip` is asked to stop for it only by a client attached to it ("Attaching"), or by an interface.
 - It keeps running whatever the client that started it, or any other, does.
+- It asks the user no question: preparing the system (step 6) installs Rosetta 2 only when the `lip run --managed` that started it was given `--accept-rosetta-license`, and is otherwise a failure, as when standard input is not a terminal ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)).
 
 The daemon runs at most one managed server per workspace; two workspaces are the same when the canonical forms of their paths are equal ([lip-tui(1), "Workspaces"](lip-tui.md#workspaces)). A managed server **runs** from when the daemon starts it until its `lip run` ends.
 
@@ -83,6 +84,7 @@ When the managed server stops running while the client is attached, the command 
 
 - `--managed`: Run the server of the workspace as a managed server, or attach to the one that runs ("Managed servers").
 - `--detach`: With `--managed`, do not attach to the managed server. Without `--managed`, it is a usage error ([lip(1), "Terms"](lip.md#terms)).
+- `--accept-rosetta-license`: The user accepts the license of Rosetta 2, so that preparing the system (step 6) installs Rosetta 2 without asking ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)).
 
 ## EXIT STATUS
 

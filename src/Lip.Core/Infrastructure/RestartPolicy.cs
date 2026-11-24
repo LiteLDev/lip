@@ -20,4 +20,8 @@ public sealed record ServerRunOptions {
 
   /// Called with the exit code of the server when lip waits to restart it.
   public Action<int>? Restarting { get; init; }
+
+  /// The user accepts the license of Rosetta 2 (--accept-rosetta-license), so that preparing the
+  /// system installs it without asking (protocol/lip-workspace.md, "System dependencies").
+  public bool AcceptRosettaLicense { get; init; }
 }

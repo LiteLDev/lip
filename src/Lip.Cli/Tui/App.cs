@@ -260,6 +260,7 @@ public sealed partial class App {
     }
     finally {
       _servers.Changed -= Changed;
+      EndQuestions();
       L.Bind(null);
     }
 
@@ -856,7 +857,8 @@ public sealed partial class App {
   internal void StartServer(string title) {
     string workspace = _workspace;
     Task? started = _servers.For(workspace).Start(
-        interaction => _createClient(interaction, () => Stream.Null, workspace),
+        interaction => _createClient(
+            new ServerQuestions(this, interaction), () => Stream.Null, workspace),
         _invocation,
         listenForStop: _managed ? null : ServerSession.ListenForSignals);
     started?.ContinueWith(

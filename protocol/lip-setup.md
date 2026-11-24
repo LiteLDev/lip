@@ -7,7 +7,7 @@ lip-setup - choose the game and the loader of the workspace
 ## SYNOPSIS
 
 ```
-lip setup --game <VERSION> [--build <BUILD>] [--loader <LOADER> | --no-loader] [--accept-eula] [-n | --dry-run] [-h | --help]
+lip setup --game <VERSION> [--build <BUILD>] [--loader <LOADER> | --no-loader] [--accept-eula] [--accept-rosetta-license] [-n | --dry-run] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -69,6 +69,7 @@ When the build is `windows`, the setup prepares the system ([lip-workspace(7), "
 - `--loader <LOADER>`: The loader, as "The loader" defines. A value that is not `levilamina`, or `levilamina@` followed by a version, is a usage error.
 - `--no-loader`: The setup has no loader. Giving both `--loader` and `--no-loader` is a usage error.
 - `--accept-eula`: The user accepts the license ("The license").
+- `--accept-rosetta-license`: The user accepts the license of Rosetta 2, so that preparing the system installs Rosetta 2 without asking ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)).
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). It asks no question. The messages name the packages that the operation would install, uninstall or mark explicitly installed, the left out packages, and whether `lip` would ask the user to accept the license.
 
 ## SEE ALSO

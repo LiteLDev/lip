@@ -20,6 +20,7 @@ public class SystemDependenciesTests : IDisposable {
 
   private static readonly SystemInfo _linux = new(HostOs.Linux, Architecture.X64);
   private static readonly SystemInfo _windows = new(HostOs.Windows, Architecture.X64);
+  private static readonly SystemInfo _armMac = new(HostOs.MacOS, Architecture.Arm64);
   private static readonly byte[] _installerBytes = "MZ installer"u8.ToArray();
 
   private readonly string _temp =
@@ -59,6 +60,8 @@ public class SystemDependenciesTests : IDisposable {
 
     GC.SuppressFinalize(this);
   }
+
+  private static CancellationToken Token => TestContext.Current.CancellationToken;
 
   private string Data => Path.Join(_temp, "data");
 
@@ -100,7 +103,7 @@ public class SystemDependenciesTests : IDisposable {
   [Fact]
   public async Task Prepare_NotAWindowsPlatform_DoesNothing() {
     // Act
-    await Create(_linux).Prepare("linux-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("linux-x64", Root, false, Token);
 
     // Assert
     Assert.Empty(_downloaded);
@@ -114,7 +117,7 @@ public class SystemDependenciesTests : IDisposable {
     _probe.VcRuntimeInstalled = true;
 
     // Act
-    await Create(_windows).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_windows).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.Empty(_downloaded);
@@ -130,7 +133,7 @@ public class SystemDependenciesTests : IDisposable {
     _probe.AdministratorExitCode = exitCode;
 
     // Act
-    await Create(_windows).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_windows).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.Equal([VcRedistUrl], _downloaded);
@@ -149,7 +152,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_windows).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_windows).Prepare("win-x64", Root, false, Token));
     Assert.Contains("1603", ex.Message);
   }
 
@@ -160,7 +163,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_windows).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_windows).Prepare("win-x64", Root, false, Token));
     Assert.Contains("administrator", ex.Message);
   }
 
@@ -169,7 +172,7 @@ public class SystemDependenciesTests : IDisposable {
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
         () => Create(_windows, vcRedistSha: new string('0', 64))
-            .Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+            .Prepare("win-x64", Root, false, Token));
     Assert.Contains("SHA-256", ex.Message);
     Assert.Empty(_probe.AdministratorRuns);
     Assert.Empty(Directory.GetFiles(Data, "*.exe"));
@@ -181,7 +184,7 @@ public class SystemDependenciesTests : IDisposable {
     _probe.RegOutput = RegInstalled;
 
     // Act
-    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("win-x64", Root, false, Token);
 
     // Assert: the build is extracted, and nothing is left beside it.
     Assert.Equal([WineUrl], _downloaded);
@@ -212,7 +215,7 @@ public class SystemDependenciesTests : IDisposable {
     _probe.RegExitCode = 1;
 
     // Act
-    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.Equal(["/reg:64", "/reg:32"], _probe.Runs.Take(2).Select(r => r.Arguments[^1]));
@@ -231,7 +234,7 @@ public class SystemDependenciesTests : IDisposable {
     _probe.RegOutput = RegInstalled;
 
     // Act
-    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.DoesNotContain("WINEPREFIX", _probe.Runs[0].EnvironmentOverrides.Keys);
@@ -242,11 +245,11 @@ public class SystemDependenciesTests : IDisposable {
     // Arrange
     _probe.RegOutput = RegInstalled;
     SystemDependencies dependencies = Create(_linux);
-    await dependencies.Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await dependencies.Prepare("win-x64", Root, false, Token);
     int runs = _probe.Runs.Count;
 
     // Act
-    await dependencies.Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await dependencies.Prepare("win-x64", Root, false, Token);
 
     // Assert: neither downloaded nor looked up again.
     Assert.Equal([WineUrl], _downloaded);
@@ -261,7 +264,7 @@ public class SystemDependenciesTests : IDisposable {
     File.WriteAllText(WineExecutable, "wine");
 
     // Act
-    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.Empty(_downloaded);
@@ -287,7 +290,7 @@ public class SystemDependenciesTests : IDisposable {
         });
 
     // Act
-    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.Equal("wine", File.ReadAllText(WineExecutable));
@@ -300,7 +303,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_linux).Prepare("win-x64", Root, false, Token));
     Assert.Contains("SHA-256", ex.Message);
     Assert.False(Directory.Exists(Path.Join(Data, "wine")));
     Assert.Empty(Directory.GetFiles(Data, "*.tmp"));
@@ -315,7 +318,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_linux).Prepare("win-x64", Root, false, Token));
     Assert.Empty(Directory.GetFileSystemEntries(Path.Join(Data, "wine")));
     Assert.False(File.Exists(Path.Join(_temp, "evil")));
   }
@@ -340,7 +343,7 @@ public class SystemDependenciesTests : IDisposable {
     _probe.RegOutput = RegInstalled;
 
     // Act
-    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.Equal(
@@ -366,7 +369,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_linux).Prepare("win-x64", Root, false, Token));
     Assert.Contains("symbolic link", ex.Message);
     Assert.Empty(Directory.GetFileSystemEntries(Path.Join(Data, "wine")));
   }
@@ -386,7 +389,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_linux).Prepare("win-x64", Root, false, Token));
     Assert.Empty(Directory.GetFileSystemEntries(Path.Join(Data, "wine")));
   }
 
@@ -409,7 +412,7 @@ public class SystemDependenciesTests : IDisposable {
     _probe.System = _linux;
 
     // Act
-    await dependencies.Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await dependencies.Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.Equal("wine", File.ReadAllText(WineExecutable));
@@ -420,35 +423,186 @@ public class SystemDependenciesTests : IDisposable {
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
         () => Create(new SystemInfo(HostOs.Linux, Architecture.Arm64))
-            .Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+            .Prepare("win-x64", Root, false, Token));
     Assert.Contains("no Wine", ex.Message);
     Assert.Empty(_downloaded);
   }
 
   [Theory]
-  [InlineData(Architecture.Arm64, false, true)]
   [InlineData(Architecture.Arm64, true, false)]
+  [InlineData(Architecture.Arm64, true, true)]
   [InlineData(Architecture.X64, false, false)]
-  public async Task Prepare_MacOS_NeedsRosettaOnArm64(
-      Architecture architecture, bool rosetta, bool fails) {
+  [InlineData(Architecture.X64, false, true)]
+  public async Task Prepare_MacOSWithRosettaOrOnX64_NeitherAsksNorInstallsRosetta(
+      Architecture architecture, bool rosetta, bool accept) {
     // Arrange
     _probe.RosettaInstalled = rosetta;
     _probe.RegOutput = RegInstalled;
-    SystemDependencies dependencies = Create(new SystemInfo(HostOs.MacOS, architecture));
 
     // Act
-    Exception? ex = await Record.ExceptionAsync(
-        () => dependencies.Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+    await Create(new SystemInfo(HostOs.MacOS, architecture))
+        .Prepare("win-x64", Root, accept, Token);
 
     // Assert
-    if (fails) {
-      Assert.IsType<SystemDependencyException>(ex);
-      Assert.Contains("Rosetta 2", ex.Message);
-      Assert.Empty(_downloaded);
-    } else {
-      Assert.Null(ex);
-      Assert.True(File.Exists(WineExecutable));
-    }
+    Assert.True(File.Exists(WineExecutable));
+    _ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
+    Assert.DoesNotContain(_probe.Runs, IsRosettaInstaller);
+  }
+
+  [Fact]
+  public async Task Prepare_ArmMacWithoutRosetta_AcceptingTheLicense_InstallsItWithoutAsking() {
+    // Arrange (protocol/lip-workspace.md, "Installing Rosetta 2").
+    _probe.RegOutput = RegInstalled;
+
+    // Act
+    await Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: true, Token);
+
+    // Assert
+    _ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
+    ProgramStartInfo installer = Assert.Single(_probe.Runs, IsRosettaInstaller);
+    Assert.Equal(new[] { "--install-rosetta", "--agree-to-license" }, installer.Arguments);
+    Assert.True(_probe.RosettaInstalled);
+    Assert.True(File.Exists(WineExecutable));
+  }
+
+  [Theory]
+  [InlineData("yes")]
+  [InlineData(" Y ")]
+  public async Task Prepare_ArmMacWithoutRosetta_UserAnswersYes_InstallsIt(string answer) {
+    // Arrange
+    _probe.RegOutput = RegInstalled;
+    _ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync(answer);
+
+    // Act
+    await Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: false, Token);
+
+    // Assert: the user heard of the license before the question.
+    _ui.Verify(u => u.PrintInfo(It.Is<string>(m => m.Contains("license"))), Times.AtLeastOnce);
+    _ui.Verify(u => u.Ask(It.Is<string>(q => q.Contains("Rosetta 2"))), Times.Once);
+    Assert.Single(_probe.Runs, IsRosettaInstaller);
+    Assert.True(File.Exists(WineExecutable));
+  }
+
+  [Theory]
+  [InlineData("no")]
+  [InlineData("")]
+  public async Task Prepare_ArmMacWithoutRosetta_UserDeclines_FailsWithoutInstalling(
+      string answer) {
+    // Arrange
+    _ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync(answer);
+
+    // Act
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: false, Token));
+
+    // Assert
+    AssertNamesTheManualInstall(ex);
+    Assert.DoesNotContain(_probe.Runs, IsRosettaInstaller);
+    Assert.Empty(_downloaded);
+  }
+
+  [Fact]
+  public async Task Prepare_ArmMacWithoutRosetta_CannotAsk_FailsWithoutInstalling() {
+    // Arrange: standard input or standard error is not a terminal.
+    _ui.Setup(u => u.Ask(It.IsAny<string>()))
+        .ThrowsAsync(new CannotAskException("not a terminal"));
+
+    // Act
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: false, Token));
+
+    // Assert
+    AssertNamesTheManualInstall(ex);
+    Assert.Contains("--accept-rosetta-license", ex.Message);
+    Assert.IsType<CannotAskException>(ex.InnerException);
+    Assert.DoesNotContain(_probe.Runs, IsRosettaInstaller);
+    Assert.Empty(_downloaded);
+  }
+
+  [Fact]
+  public async Task Prepare_ArmMacWithoutRosetta_InstallerFails_Fails() {
+    // Arrange
+    _probe.RosettaInstallerExitCode = 1;
+    _probe.RosettaInstallerOutput = "Installing Rosetta 2 on this system is not supported.";
+
+    // Act
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: true, Token));
+
+    // Assert
+    AssertNamesTheManualInstall(ex);
+    Assert.Contains("exit code 1", ex.Message);
+    Assert.Contains("not supported", ex.Message);
+    Assert.Empty(_downloaded);
+  }
+
+  [Fact]
+  public async Task Prepare_ArmMacWithoutRosetta_InstallerFails_SaysWhatItWroteToStandardError() {
+    // Arrange
+    _probe.RosettaInstallerExitCode = 1;
+    _probe.RosettaInstallerOutput = "Software Update Tool\n";
+    _probe.RosettaInstallerError = "softwareupdate: must be run as root";
+
+    // Act
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: true, Token));
+
+    // Assert
+    AssertNamesTheManualInstall(ex);
+    Assert.Contains("must be run as root", ex.Message);
+  }
+
+  [Fact]
+  public async Task Prepare_ArmMacWithoutRosetta_QuestionClosedUnanswered_FailsWithoutInstalling() {
+    // Arrange: an interface lets the user close the question.
+    _ui.Setup(u => u.Ask(It.IsAny<string>()))
+        .ThrowsAsync(new OperationCanceledException("The question was not answered."));
+
+    // Act
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: false, Token));
+
+    // Assert
+    AssertNamesTheManualInstall(ex);
+    Assert.DoesNotContain(_probe.Runs, IsRosettaInstaller);
+  }
+
+  [Fact]
+  public async Task Prepare_ArmMacWithoutRosetta_StillNotInstalledAfterTheInstaller_Fails() {
+    // Arrange
+    _probe.RosettaInstallerInstalls = false;
+
+    // Act
+    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
+        () => Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: true, Token));
+
+    // Assert
+    AssertNamesTheManualInstall(ex);
+    Assert.Single(_probe.Runs, IsRosettaInstaller);
+    Assert.Empty(_downloaded);
+  }
+
+  [Fact]
+  public async Task Prepare_Linux_NeverInstallsRosetta() {
+    // Arrange
+    _probe.RegOutput = RegInstalled;
+
+    // Act
+    await Create(_linux).Prepare("win-x64", Root, acceptRosettaLicense: true, Token);
+
+    // Assert
+    Assert.DoesNotContain(_probe.Runs, IsRosettaInstaller);
+    _ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
+  }
+
+  private static bool IsRosettaInstaller(ProgramStartInfo start) =>
+      start.FileName == "/usr/sbin/softwareupdate";
+
+  /// The message of a failure to install Rosetta 2 names the command that installs it, and that
+  /// it may need an administrator (protocol/lip-workspace.md, "Installing Rosetta 2").
+  private static void AssertNamesTheManualInstall(SystemDependencyException ex) {
+    Assert.Contains("'softwareupdate --install-rosetta --agree-to-license'", ex.Message);
+    Assert.Contains("administrator", ex.Message);
   }
 
   [Theory]
@@ -477,7 +631,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_linux).Prepare("win-x64", Root, false, Token));
     Assert.Contains("libgnutls.so.30", ex.Message);
     Assert.DoesNotContain("libfontconfig.so.1", ex.Message);
     Assert.Contains(advice, ex.Message);
@@ -493,7 +647,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_linux).Prepare("win-x64", Root, false, Token));
     Assert.Contains("libfontconfig.so.1", ex.Message);
     Assert.DoesNotContain("libgnutls.so.30", ex.Message);
     Assert.Contains("'apt-get install libfontconfig1'", ex.Message);
@@ -509,7 +663,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken));
+        () => Create(_linux).Prepare("win-x64", Root, false, Token));
     Assert.Contains("'dnf install gnutls fontconfig'", ex.Message);
   }
 
@@ -529,7 +683,7 @@ public class SystemDependenciesTests : IDisposable {
     }
 
     // Act
-    await Create(_linux).Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+    await Create(_linux).Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.True(File.Exists(WineExecutable));
@@ -543,7 +697,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Act
     await Create(new SystemInfo(HostOs.MacOS, Architecture.X64))
-        .Prepare("win-x64", Root, TestContext.Current.CancellationToken);
+        .Prepare("win-x64", Root, false, Token);
 
     // Assert
     Assert.True(File.Exists(WineExecutable));
@@ -582,8 +736,29 @@ public class SystemDependenciesTests : IDisposable {
 
     public string? ReadOsRelease() => OsRelease;
 
+    /// The exit code and the output of softwareupdate, and whether it installs Rosetta 2 when it
+    /// exits with 0.
+    public int RosettaInstallerExitCode { get; set; }
+
+    public string RosettaInstallerOutput { get; set; } = "";
+
+    public string RosettaInstallerError { get; set; } = "";
+
+    public bool RosettaInstallerInstalls { get; set; } = true;
+
     public Task<ProgramResult> Run(ProgramStartInfo start, CancellationToken cancellationToken) {
       Runs.Add(start);
+      if (IsRosettaInstaller(start)) {
+        if (RosettaInstallerExitCode == 0 && RosettaInstallerInstalls) {
+          RosettaInstalled = true;
+        }
+
+        return Task.FromResult(
+            new ProgramResult(RosettaInstallerExitCode, RosettaInstallerOutput) {
+              Error = RosettaInstallerError,
+            });
+      }
+
       return Task.FromResult(start.Arguments[0] == "reg"
           ? new ProgramResult(RegExitCode, RegOutput)
           : new ProgramResult(0, ""));
