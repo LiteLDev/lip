@@ -17,6 +17,15 @@ $ErrorActionPreference = 'Stop'
 Start-Transcript -Path (Join-Path $Dir 'out.txt') | Out-Null
 try {
     whoami
+    # Start-Process -Credential passes on the environment of the runner's user; a terminal of this
+    # user would have these.
+    $env:USERPROFILE = [Environment]::GetFolderPath('UserProfile')
+    $env:HOME = $env:USERPROFILE
+    $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
+    $env:LOCALAPPDATA = [Environment]::GetFolderPath('LocalApplicationData')
+    $env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
+    $env:TMP = $env:TEMP
+    "LOCALAPPDATA: $env:LOCALAPPDATA"
     $log = Join-Path $Dir 'msi.log'
     $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', "`"$Msi`"", '/qn', '/l*v', "`"$log`""
     if ($p.ExitCode -ne 0) {

@@ -259,6 +259,12 @@ jobs:
           Copy-Item "dist/lip-$env:LIP_VERSION-win-$arch.msi", .github/scripts/e2e-server.sh, .github/scripts/e2e-windows-user.ps1 $dir
           icacls $dir /grant 'Users:(OI)(CI)F' | Out-Null
 
+          # Windows Server, unlike Windows 10 and 11, lets only administrators run a Windows
+          # Installer package by default (the policy DisableMSI).
+          $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
+          New-Item -Force $policy | Out-Null
+          Set-ItemProperty $policy DisableMSI 0 -Type DWord
+
           foreach ($view in 'Registry64', 'Registry32') {
             $key = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', $view).OpenSubKey(
                 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', $true)
