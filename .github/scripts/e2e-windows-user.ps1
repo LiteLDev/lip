@@ -19,12 +19,18 @@ try {
     whoami
     # Start-Process -Credential passes on the environment of the runner's user; a terminal of this
     # user would have these.
-    $env:USERPROFILE = [Environment]::GetFolderPath('UserProfile')
+    # The folders of a new profile may not exist yet, for which GetFolderPath returns "" unless
+    # told not to look.
+    $folder = { param($name) [Environment]::GetFolderPath($name, 'DoNotVerify') }
+    $env:USERPROFILE = & $folder 'UserProfile'
     $env:HOME = $env:USERPROFILE
-    $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
-    $env:LOCALAPPDATA = [Environment]::GetFolderPath('LocalApplicationData')
+    $env:APPDATA = & $folder 'ApplicationData'
+    $env:LOCALAPPDATA = & $folder 'LocalApplicationData'
     $env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
     $env:TMP = $env:TEMP
+    foreach ($directory in $env:APPDATA, $env:LOCALAPPDATA, $env:TEMP) {
+        New-Item -ItemType Directory -Force $directory | Out-Null
+    }
     "LOCALAPPDATA: $env:LOCALAPPDATA"
     $log = Join-Path $Dir 'msi.log'
     $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', "`"$Msi`"", '/qn', '/l*v', "`"$log`""
