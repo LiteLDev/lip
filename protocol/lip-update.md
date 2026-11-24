@@ -7,7 +7,7 @@ lip-update - update installed packages
 ## SYNOPSIS
 
 ```
-lip update [<PACKAGES>...] [-n | --dry-run] [-h | --help]
+lip update [<PACKAGES>...] [--accept-rosetta-license] [-n | --dry-run] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -24,6 +24,7 @@ A package is replaced only as lip-workspace(7), "Operations" defines. Dependency
 
 ## OPTIONS
 
+- `--accept-rosetta-license`: The user accepts the license of Rosetta 2, so that preparing the system installs Rosetta 2 without asking ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)).
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would install, uninstall or mark explicitly installed.
 
 ## SEE ALSO

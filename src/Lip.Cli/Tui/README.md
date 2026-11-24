@@ -284,7 +284,7 @@ The Home page offers "a proxy" of its GitHub question by navigating to Settings 
 | `IsServerRunning(workspace)` | The same as `ServerRunning` for any workspace of the workspace list. |
 | `RefuseWhileServerRuns(title)` | When the server of the selected workspace runs: shows "Stop the server first." in a dialog with the title, and returns true. |
 | `ServerRunsNow(workspace)` | As `IsServerRunning`, but it looks at the lock itself. **Not for the thread of the interface**: for the work of `Background` or `RunOperation`, right before it writes. |
-| `StartServer(title)` | Starts it as the protocol defines; a failure before it starts is shown in a dialog titled `title`. |
+| `StartServer(title)` | Starts it as the protocol defines; a failure before it starts is shown in a dialog titled `title`. A question that `lip run` asks before the server starts, such as whether to install Rosetta 2, opens a prompt. |
 | `ManagedServers` | Whether servers keep running when the interface quits. |
 
 The shell draws the screen again whenever a server changes or writes; a page just reads the

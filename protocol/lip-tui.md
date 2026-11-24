@@ -74,6 +74,7 @@ In the interface, the user asks for the commands of [lip(1)]. `lip` carries out 
 - A result, a message and help are shown in the interface, instead of being written to standard output or standard error as [lip(1), "Output"](lip.md#output) defines.
 - `lip pkg migrate` asks the user in the interface, and does not fail because a standard stream is not a terminal. The interface creates and edits `lip.toml` as "Package file" defines, instead of carrying out `lip pkg init`.
 - A setup ([lip-setup(1)](lip-setup.md)), by `lip setup` or `lip install`, asks the user in the interface whether they accept the license, unless the user gave `--accept-eula`, and does not fail because a standard stream is not a terminal. When the user applies a setup whose dry run named left out packages, that is their answer to whether to uninstall them.
+- Preparing the system ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)) asks the user in the interface whether to install Rosetta 2, unless the user gave `--accept-rosetta-license`, and does not fail because a standard stream is not a terminal.
 - A command that fails does not end the interface.
 - `lip run` is carried out as "Server" defines.
 
@@ -93,7 +94,7 @@ While the user edits it, `lip` may read, for each dependency: the catalogue ("Ca
 
 ### Server
 
-The server that the user starts in the interface is the managed server of the selected workspace ([lip-run(1), "Managed servers"](lip-run.md#managed-servers)): `lip` starts it as `lip run --managed --detach` would, with the selected workspace as its working directory and the environment variables of the client of the interface, unless it runs already. When it fails before its server starts, the failure is shown in the interface.
+The server that the user starts in the interface is the managed server of the selected workspace ([lip-run(1), "Managed servers"](lip-run.md#managed-servers)): `lip` starts it as `lip run --managed --detach` would, with the selected workspace as its working directory and the environment variables of the client of the interface, unless it runs already, except that preparing the system asks the user in the interface whether to install Rosetta 2 ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)), as "Commands" defines. When it fails before its server starts, the failure is shown in the interface.
 
 The interface shows the managed server of the selected workspace, whichever client or interface started it, and whether it runs, waits to be restarted ([lip-run(1), "Restarting"](lip-run.md#restarting)), or ran and with which exit code. It shows what that server writes to its standard output and its standard error, and the messages of `lip` about it, as an attached client gets them ([lip-run(1), "Attaching"](lip-run.md#attaching)). It gives that server the lines that the user enters for it, each ended by LF (U+000A), and asks `lip` to stop for it ([lip-run(1), "Stopping"](lip-run.md#stopping)) when the user asks the interface to stop the server. The interface shows, for each workspace of the workspace list, whether its managed server runs.
 

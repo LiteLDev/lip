@@ -19,6 +19,11 @@ public class InstallCommand(LipClient lipClient, IUserInteraction userInteractio
         + " packages include LeviLamina or the server and so set up the game")]
     public bool AcceptEula { get; init; }
 
+    [CommandOption("--accept-rosetta-license")]
+    [Description("Accept the license of Rosetta 2 without being asked, when lip installs it"
+        + " on a Mac with Apple silicon to run the server")]
+    public bool AcceptRosettaLicense { get; init; }
+
     [CommandOption("-n|--dry-run")]
     [Description("Run without making any changes")]
     public bool DryRun { get; init; }
@@ -29,7 +34,8 @@ public class InstallCommand(LipClient lipClient, IUserInteraction userInteractio
         settings.Packages,
         settings.DryRun,
         cancellationToken,
-        settings.AcceptEula);
+        settings.AcceptEula,
+        acceptRosettaLicense: settings.AcceptRosettaLicense);
     if (settings.DryRun) {
       await _userInteraction.PrintInfo("Dry run: nothing was changed.");
     } else {

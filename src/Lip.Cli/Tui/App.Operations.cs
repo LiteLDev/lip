@@ -16,6 +16,11 @@ public sealed partial class App {
 
   private Operation? _operation;
 
+  // The questions of the commands that the interface asks and the user has not answered, and
+  // whether the interface has ended, after which it asks none (AskInDialog).
+  private readonly HashSet<TaskCompletionSource<string>> _openQuestions = [];
+  private bool _questionsEnded;
+
   /// Runs a command in the background, showing its progress; then calls succeeded, or shows
   /// why it failed, unless failed, when given, says that it took care of the failure. One
   /// command runs at a time: false, and nothing runs, while another does. failureClosed is
@@ -305,6 +310,83 @@ public sealed partial class App {
     operation.TransientLine = transient ? line : null;
   }
 
+  /// Asks a question of a command in a dialog, and returns the answer; when the user closes the
+  /// dialog without answering, calls dismissed and fails with OperationCanceledException.
+  /// Once the interface has ended, fails with CannotAskException, and so does a question still
+  /// open then (EndQuestions).
+  private Task<string> AskInDialog(string question, Action? dismissed) {
+    RunTrace.Write("ask", question);
+    TaskCompletionSource<string> answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    lock (_openQuestions) {
+      if (_questionsEnded) {
+        throw new CannotAskException(
+            $"lip needs {question}, but cannot ask for it: the interface was quit.");
+      }
+
+      _openQuestions.Add(answer);
+    }
+
+    Post(() => Show(new PromptDialog(
+        CommonText.Question, [new PromptField(question)],
+        values => answer.TrySetResult(values[0]),
+        () => {
+          dismissed?.Invoke();
+          answer.TrySetException(
+              new OperationCanceledException("The question was not answered."));
+        })));
+    _ = answer.Task.ContinueWith(
+        _ => {
+          lock (_openQuestions) {
+            _openQuestions.Remove(answer);
+          }
+        },
+        CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously,
+        TaskScheduler.Default);
+    return answer.Task;
+  }
+
+  /// The interface has ended: the questions still open, such as one of a managed server that it
+  /// started, fail, and so does every question asked from now on.
+  private void EndQuestions() {
+    List<TaskCompletionSource<string>> open;
+    lock (_openQuestions) {
+      _questionsEnded = true;
+      open = [.. _openQuestions];
+      _openQuestions.Clear();
+    }
+
+    foreach (TaskCompletionSource<string> answer in open) {
+      answer.TrySetException(new CannotAskException(
+          "lip cannot get the answer to its question: the interface was quit."));
+    }
+  }
+
+  /// The messages of lip run for a server that the interface starts, which go where server
+  /// sends them; its questions, such as whether to install Rosetta 2 (protocol/lip-tui.md,
+  /// "Server"), are asked in the interface, after the message that came last before each, such
+  /// as the license that the question is about, which the user may not be looking at.
+  private sealed class ServerQuestions(App app, IUserInteraction server) : IUserInteraction {
+    private string? _lastMessage;
+
+    public Task PrintInfo(string message) {
+      _lastMessage = message;
+      return server.PrintInfo(message);
+    }
+
+    public Task PrintSuccess(string message) => server.PrintSuccess(message);
+
+    public Task PrintWarning(string message) => server.PrintWarning(message);
+
+    public Task PrintError(string message) => server.PrintError(message);
+
+    public Task RunWithProgress(string message, Func<IProgress<double>, Task> action) =>
+        server.RunWithProgress(message, action);
+
+    public Task<string> Ask(string question) => app.AskInDialog(
+        _lastMessage is { } message ? $"{message} Enter {question}:" : question,
+        dismissed: null);
+  }
+
   /// The messages and questions of the commands, shown in the interface.
   private sealed class Interaction(App app) : IUserInteraction {
     public Task PrintInfo(string message) => Print("info", message, "", default, ToastKind.Info);
@@ -326,18 +408,8 @@ public sealed partial class App {
       app.Post(() => item.Done = true);
     }
 
-    public Task<string> Ask(string question) {
-      RunTrace.Write("ask", question);
-      TaskCompletionSource<string> answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
-      app.Post(() => app.Show(new PromptDialog(
-          CommonText.Question, [new PromptField(question)],
-          values => answer.SetResult(values[0]),
-          () => {
-            app._operation?.Cancel.Cancel();
-            answer.SetException(new OperationCanceledException("The question was not answered."));
-          })));
-      return answer.Task;
-    }
+    public Task<string> Ask(string question) =>
+        app.AskInDialog(question, () => app._operation?.Cancel.Cancel());
 
     private Task Print(string category, string message, string mark, Style style, ToastKind kind) {
       RunTrace.Write(category, message);

@@ -233,32 +233,39 @@ public sealed class LipClient {
 
   /// lip install (protocol/lip-install.md). acceptEula: --accept-eula, for an install carried out
   /// as a setup; confirmed: the user confirmed the plan that its dry run showed (the interface).
-  /// session: the session of the command (OperationSession), if it has one. Returns what the
-  /// install changed, or, as a dry run, would change.
+  /// session: the session of the command (OperationSession), if it has one.
+  /// acceptRosettaLicense: --accept-rosetta-license. Returns what the install changed, or, as a
+  /// dry run, would change.
   public async Task<OperationResult> Install(
       IEnumerable<string> packages,
       bool dryRun,
       CancellationToken cancellationToken = default,
       bool acceptEula = false,
       bool confirmed = false,
-      OperationSession? session = null) {
+      OperationSession? session = null,
+      bool acceptRosettaLicense = false) {
     return await (await GetMcmodService(dryRun, session)).Install(
         [.. packages],
-        new OperationOptions(dryRun, cancellationToken, acceptEula, confirmed));
+        new OperationOptions(
+            dryRun, cancellationToken, acceptEula, confirmed, acceptRosettaLicense));
   }
 
   /// lip setup (protocol/lip-setup.md). acceptEula: --accept-eula; confirmed: the user confirmed
   /// the plan that its dry run showed (the interface). session: the session of the command, if
-  /// it has one. Returns what the setup changed, or, as a dry run, would change.
+  /// it has one. acceptRosettaLicense: --accept-rosetta-license. Returns what the setup changed,
+  /// or, as a dry run, would change.
   public async Task<OperationResult> Setup(
       SetupRequest request,
       bool dryRun,
       CancellationToken cancellationToken = default,
       bool acceptEula = false,
       bool confirmed = false,
-      OperationSession? session = null) {
+      OperationSession? session = null,
+      bool acceptRosettaLicense = false) {
     return await (await GetMcmodService(dryRun, session)).Setup(
-        request, new OperationOptions(dryRun, cancellationToken, acceptEula, confirmed));
+        request,
+        new OperationOptions(
+            dryRun, cancellationToken, acceptEula, confirmed, acceptRosettaLicense));
   }
 
   /// The versions of the game that the interface offers for a server setup (protocol/lip-tui.md,
@@ -369,11 +376,16 @@ public sealed class LipClient {
   /// (Invocation) and returns its exit code. The server reads what lip reads from input; it is
   /// asked to stop when the invocation receives SIGINT, SIGTERM or SIGHUP, or on Windows a console
   /// control signal, none of which then ends lip, or when it is abandoned. inputIsConsole: input is
-  /// an interactive Windows console.
-  public async Task<int> Run(Stream input, bool inputIsConsole) {
+  /// an interactive Windows console. acceptRosettaLicense: --accept-rosetta-license.
+  public async Task<int> Run(
+      Stream input, bool inputIsConsole, bool acceptRosettaLicense = false) {
     Invocation invocation = Invocation.Current;
     return await (await GetMcmodService()).Run(
-        input, inputIsConsole, invocation.ListenForStop, PipedProgramStarter.ForCurrent());
+        input,
+        inputIsConsole,
+        invocation.ListenForStop,
+        PipedProgramStarter.ForCurrent(),
+        new ServerRunOptions { AcceptRosettaLicense = acceptRosettaLicense });
   }
 
   /// Runs the server as Run does, started by starter and asked to stop through listen: for the
@@ -419,33 +431,41 @@ public sealed class LipClient {
   /// when it is not installed: the Wine of lip off Windows, and the Visual C++ runtime
   /// (protocol/lip-workspace.md, "System dependencies"). Operations and lip run do so by
   /// themselves when they need it; this does it ahead of them, e.g. while setting up.
-  public async Task PrepareSystem(CancellationToken cancellationToken = default) {
-    await (await GetMcmodService()).PrepareSystem(cancellationToken);
+  /// acceptRosettaLicense: --accept-rosetta-license.
+  public async Task PrepareSystem(
+      CancellationToken cancellationToken = default, bool acceptRosettaLicense = false) {
+    await (await GetMcmodService()).PrepareSystem(acceptRosettaLicense, cancellationToken);
   }
 
   /// lip uninstall (protocol/lip-uninstall.md). session: the session of the command, if it
-  /// has one. Returns what the uninstall changed, or, as a dry run, would change.
+  /// has one. acceptRosettaLicense: --accept-rosetta-license. Returns what the uninstall
+  /// changed, or, as a dry run, would change.
   public async Task<OperationResult> Uninstall(
       IEnumerable<string> packages,
       bool dryRun,
       CancellationToken cancellationToken = default,
-      OperationSession? session = null) {
+      OperationSession? session = null,
+      bool acceptRosettaLicense = false) {
     return await (await GetMcmodService(dryRun, session)).Uninstall(
         [.. packages],
-        new OperationOptions(dryRun, cancellationToken));
+        new OperationOptions(
+            dryRun, cancellationToken, AcceptRosettaLicense: acceptRosettaLicense));
   }
 
   /// Updates the given packages to the requested (or newest) version; without packages, every
-  /// explicitly installed package. session: the session of the command, if it has one. Returns
-  /// what the update changed, or, as a dry run, would change.
+  /// explicitly installed package. session: the session of the command, if it has one.
+  /// acceptRosettaLicense: --accept-rosetta-license. Returns what the update changed, or, as a
+  /// dry run, would change.
   public async Task<OperationResult> Update(
       IEnumerable<string> packages,
       bool dryRun,
       CancellationToken cancellationToken = default,
-      OperationSession? session = null) {
+      OperationSession? session = null,
+      bool acceptRosettaLicense = false) {
     return await (await GetMcmodService(dryRun, session)).Update(
         [.. packages],
-        new OperationOptions(dryRun, cancellationToken));
+        new OperationOptions(
+            dryRun, cancellationToken, AcceptRosettaLicense: acceptRosettaLicense));
   }
 
   /// Updates every mod that the user installed, each to the highest version that fits, or as

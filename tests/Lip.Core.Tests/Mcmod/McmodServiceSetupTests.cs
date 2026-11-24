@@ -299,7 +299,8 @@ public class McmodServiceSetupTests {
         "LeviLamina 2.0.0", _ws.Fs.File.ReadAllText(_ws.Path("bedrock_server_mod.exe")));
     // The system is prepared even though no hook command runs (protocol/lip-setup.md, "Order").
     _ws.SystemPreparer.Verify(
-        p => p.Prepare("win-x64", _ws.Root, It.IsAny<CancellationToken>()), Times.Once);
+        p => p.Prepare("win-x64", _ws.Root, It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+        Times.Once);
     _ws.Ui.Verify(u => u.Ask(It.IsAny<string>()), Times.Never);
   }
 

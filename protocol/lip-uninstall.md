@@ -7,7 +7,7 @@ lip-uninstall - uninstall packages from the workspace
 ## SYNOPSIS
 
 ```
-lip uninstall <PACKAGES>... [-n | --dry-run] [-h | --help]
+lip uninstall <PACKAGES>... [--accept-rosetta-license] [-n | --dry-run] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -25,6 +25,7 @@ The game and the loader ([lip-setup(1), "Terms"](lip-setup.md#terms)) are uninst
 
 ## OPTIONS
 
+- `--accept-rosetta-license`: The user accepts the license of Rosetta 2, so that preparing the system installs Rosetta 2 without asking ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)).
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would uninstall or mark no longer explicitly installed.
 
 ## SEE ALSO
