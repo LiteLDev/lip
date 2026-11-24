@@ -14,12 +14,14 @@ namespace Lip.Core.Mcmod;
 /// license of the game (protocol/lip-setup.md, "The license"), so a setup does not ask for it.
 /// Confirmed: the user confirmed the plan of the operation, as its dry run showed it (the
 /// interface, protocol/lip-tui.md), so a setup does not ask whether to uninstall the packages it
-/// leaves out.
+/// leaves out. AcceptRosettaLicense: the user accepts the license of Rosetta 2, so that preparing
+/// the system installs it without asking (protocol/lip-workspace.md, "System dependencies").
 public record OperationOptions(
     bool DryRun = false,
     CancellationToken CancellationToken = default,
     bool AcceptEula = false,
-    bool Confirmed = false);
+    bool Confirmed = false,
+    bool AcceptRosettaLicense = false);
 
 /// What a workspace operation changed, or, as a dry run, would change. Changes: whether it is
 /// anything at all: a package installed or uninstalled, with the directories and the files
@@ -464,7 +466,7 @@ public partial class McmodService(
     // When the server was restarted within the window.
     List<DateTimeOffset> restarts = [];
     while (true) {
-      int exitCode = await RunServer(root, session, options.Started);
+      int exitCode = await RunServer(root, session, options);
       if (exitCode == 0 || session.StopRequested) {
         return exitCode;
       }
@@ -513,7 +515,8 @@ public partial class McmodService(
   }
 
   /// Steps 2 to 7 of lip run (protocol/lip-run.md): runs the server once in session.
-  private async Task<int> RunServer(string root, ServerSession session, Action? started) {
+  private async Task<int> RunServer(
+      string root, ServerSession session, ServerRunOptions options) {
     LockFile? lockFile;
     using (await BeginOperation(new OperationOptions())) {
       // Read once a recovered operation is complete, as that operation leaves it.
@@ -562,7 +565,8 @@ public partial class McmodService(
     }
 
     if (!linuxServer && _systemPreparer is not null) {
-      await _systemPreparer.Prepare(environment.Platform, root, CancellationToken.None);
+      await _systemPreparer.Prepare(
+          environment.Platform, root, options.AcceptRosettaLicense, CancellationToken.None);
     }
 
     ProgramHost host = ProgramHost.Current(environment.Platform, root);
@@ -572,7 +576,7 @@ public partial class McmodService(
       ProgramStartInfo start = linuxServer
           ? WorkspaceProgram.LinuxServer(host)
           : WorkspaceProgram.Server(host, fileName);
-      return await session.RunServer(start, started);
+      return await session.RunServer(start, options.Started);
     }
     catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
         or InvalidOperationException) {
@@ -586,14 +590,16 @@ public partial class McmodService(
   /// Prepares the system to run the programs of the workspace (protocol/lip-workspace.md, "System
   /// dependencies"), for the platform of the environment of protocol/lip.md, "Environment",
   /// ahead of the operation or lip run that would. Takes no workspace lock.
-  public async Task PrepareSystem(CancellationToken cancellationToken) {
+  public async Task PrepareSystem(
+      bool acceptRosettaLicense, CancellationToken cancellationToken) {
     if (_systemPreparer is null) {
       return;
     }
 
     string root = _fs.Path.GetFullPath(_workspaceRoot());
     LipEnvironment environment = DetermineEnvironment(await _lockStore.Load(root));
-    await _systemPreparer.Prepare(environment.Platform, root, cancellationToken);
+    await _systemPreparer.Prepare(
+        environment.Platform, root, acceptRosettaLicense, cancellationToken);
   }
 
   /// The versions of a package id, as Resolve reads them (protocol/lip-package.md,
@@ -1227,7 +1233,8 @@ public partial class McmodService(
     // (protocol/lip-workspace.md, "Carrying out an operation", step 5).
     if ((hooksRun || prepareSystem) && _systemPreparer is not null) {
       await _systemPreparer.Prepare(
-          workspace.Environment.Platform, workspace.Root, options.CancellationToken);
+          workspace.Environment.Platform, workspace.Root, options.AcceptRosettaLicense,
+          options.CancellationToken);
     }
 
     using WorkspaceTransaction transaction = new(

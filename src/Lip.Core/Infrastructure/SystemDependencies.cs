@@ -121,7 +121,10 @@ public static class ManagedWine {
 }
 
 /// The result of running a program: its exit code and its standard output.
-public sealed record ProgramResult(int ExitCode, string Output);
+public sealed record ProgramResult(int ExitCode, string Output) {
+  /// The last lines that the program wrote to its standard error, for messages.
+  public string Error { get; init; } = "";
+}
 
 /// What preparing the system asks of the system lip runs on, so that tests can stand in for it.
 public interface ISystemProbe {
@@ -141,7 +144,8 @@ public interface ISystemProbe {
   string? ReadOsRelease();
 
   /// Runs the program, with its standard input empty, and returns its exit code and standard
-  /// output; its standard error goes to the trace. Throws when it cannot be started.
+  /// output; its standard error goes to the trace, and its last lines to Error. Throws when it
+  /// cannot be started.
   Task<ProgramResult> Run(ProgramStartInfo start, CancellationToken cancellationToken);
 
   /// Runs the program as an administrator (Windows only), which may ask the user to allow it,
@@ -155,9 +159,14 @@ public interface ISystemProbe {
 /// dependencies").
 public interface ISystemPreparer {
   /// Prepares the system for the workspace whose root is workspaceRoot and whose environment has
-  /// the platform; does nothing for a platform that is not a Windows platform. Throws when a
-  /// system dependency cannot be installed.
-  Task Prepare(string platform, string workspaceRoot, CancellationToken cancellationToken);
+  /// the platform; does nothing for a platform that is not a Windows platform.
+  /// acceptRosettaLicense: the user accepts the license of Rosetta 2 (--accept-rosetta-license),
+  /// so that it is installed without asking. Throws when a system dependency cannot be installed.
+  Task Prepare(
+      string platform,
+      string workspaceRoot,
+      bool acceptRosettaLicense,
+      CancellationToken cancellationToken);
 }
 
 /// The system lip runs on.
@@ -166,6 +175,9 @@ public sealed class SystemProbe : ISystemProbe {
 
   // ERROR_CANCELLED: the user did not allow the program to run as an administrator.
   private const int ErrorCancelled = 1223;
+
+  // How many of the last lines of the standard error of a program Run returns.
+  private const int ErrorLines = 5;
 
   public SystemInfo System => SystemInfo.Current;
 
@@ -226,16 +238,27 @@ public sealed class SystemProbe : ISystemProbe {
     using Process process = Process.Start(info)
         ?? throw new InvalidOperationException($"Could not start {start.FileName}.");
     process.StandardInput.Close();
+    Queue<string> error = new();
     process.ErrorDataReceived += (_, e) => {
       if (e.Data is string line) {
         RunTrace.Write("system", $"| {line}");
+        lock (error) {
+          error.Enqueue(line);
+          if (error.Count > ErrorLines) {
+            error.Dequeue();
+          }
+        }
       }
     };
     process.BeginErrorReadLine();
     try {
       string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
       await process.WaitForExitAsync(cancellationToken);
-      return new ProgramResult(process.ExitCode, output);
+      lock (error) {
+        return new ProgramResult(process.ExitCode, output) {
+          Error = string.Join('\n', error),
+        };
+      }
     }
     catch (OperationCanceledException) {
       process.Kill(entireProcessTree: true);
@@ -320,7 +343,10 @@ public sealed class SystemDependencies(
           Invocation.Current.GetEnvironmentVariable);
 
   public async Task Prepare(
-      string platform, string workspaceRoot, CancellationToken cancellationToken) {
+      string platform,
+      string workspaceRoot,
+      bool acceptRosettaLicense,
+      CancellationToken cancellationToken) {
     if (!WorkspaceProgram.IsWindowsPlatform(platform)) {
       return;
     }
@@ -328,7 +354,7 @@ public sealed class SystemDependencies(
     SystemInfo system = _probe.System;
     string? wine = null;
     if (!system.IsWindows) {
-      wine = await EnsureWine(system, cancellationToken);
+      wine = await EnsureWine(system, acceptRosettaLicense, cancellationToken);
     }
 
     ProgramHost host = new(system.IsWindows, platform, workspaceRoot, _getEnvironmentVariable) {
@@ -338,19 +364,17 @@ public sealed class SystemDependencies(
   }
 
   /// Installs the Wine of lip for the system when it is not installed, and returns the path of
-  /// its wine program. Throws SystemDependencyException when the system has none, or when it is
-  /// macOS on arm64 without Rosetta 2.
-  public async Task<string> EnsureWine(SystemInfo system, CancellationToken cancellationToken) {
+  /// its wine program; on macOS on arm64, installs Rosetta 2 first when it is not installed
+  /// (EnsureRosetta). Throws SystemDependencyException when the system has none, or when Rosetta 2
+  /// is not installed.
+  public async Task<string> EnsureWine(
+      SystemInfo system, bool acceptRosettaLicense, CancellationToken cancellationToken) {
     WineBuild build = _files.WineFor(system)
         ?? throw new SystemDependencyException(
             $"lip runs the server with Wine on systems other than Windows, but has no Wine for"
             + $" {system.Describe()}. Run the server on Windows, on Linux on x64 or on macOS.");
-    if (system is { Os: HostOs.MacOS, Architecture: Architecture.Arm64 }
-        && !_probe.IsRosettaInstalled()) {
-      throw new SystemDependencyException(
-          "lip runs the server with Wine, which runs on this Mac only through Rosetta 2, and"
-          + " Rosetta 2 is not installed. Installing it needs an administrator: run"
-          + " 'softwareupdate --install-rosetta --agree-to-license', then run lip again.");
+    if (system is { Os: HostOs.MacOS, Architecture: Architecture.Arm64 }) {
+      await EnsureRosetta(acceptRosettaLicense, cancellationToken);
     }
 
     if (system.Os == HostOs.Linux) {
@@ -399,6 +423,106 @@ public sealed class SystemDependencies(
     RunTrace.Write("system", $"Installed Wine {build.Version} in {directory}");
     return executable;
   }
+
+  /// The program that installs Rosetta 2, and its arguments.
+  private const string RosettaInstaller = "/usr/sbin/softwareupdate";
+
+  private static readonly string[] _rosettaInstallerArguments =
+      ["--install-rosetta", "--agree-to-license"];
+
+  /// Why lip needs Rosetta 2, which is not installed.
+  private const string RosettaMissing = "lip runs the server with Wine, which runs on this Mac"
+      + " only through Rosetta 2, and Rosetta 2 is not installed.";
+
+  /// Installs Rosetta 2 with softwareupdate when it is not installed (protocol/lip-workspace.md,
+  /// "System dependencies", "Installing Rosetta 2"), asking the user first unless
+  /// acceptRosettaLicense. Throws SystemDependencyException, naming the command that installs it,
+  /// when the user does not accept, cannot be asked, or softwareupdate does not install it.
+  /// Processes of lip ask and install one at a time, under the file lock of the data directory,
+  /// and look again once they hold it.
+  private async Task EnsureRosetta(bool acceptRosettaLicense, CancellationToken cancellationToken) {
+    if (_probe.IsRosettaInstalled()) {
+      return;
+    }
+
+    using DataLock dataLock = await DataLock.Take(_fs, _data, _ui, cancellationToken);
+    if (_probe.IsRosettaInstalled()) {
+      RunTrace.Write("system", "Another lip process installed Rosetta 2");
+      return;
+    }
+
+    await _ui.PrintInfo(
+        RosettaMissing + " lip installs it with softwareupdate, which accepts the license of"
+        + " Rosetta 2: the software license agreement of Apple that"
+        + " 'softwareupdate --install-rosetta' shows"
+        + (acceptRosettaLicense
+            ? ", and which you accepted with --accept-rosetta-license."
+            : ". Read it before you go on."));
+    if (!acceptRosettaLicense) {
+      string? answer;
+      try {
+        answer = await _ui.Ask("yes to install Rosetta 2 and accept its license");
+      }
+      catch (CannotAskException ex) {
+        throw RosettaNotInstalled(
+            "Installing it needs you to accept its license, but lip cannot ask you here. If you"
+            + " accept it, run the command again with --accept-rosetta-license.",
+            ex);
+      }
+      catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested) {
+        // The question was closed without an answer, as an interface allows.
+        throw RosettaNotInstalled("You did not accept the license of Rosetta 2.", ex);
+      }
+
+      if (answer?.Trim().ToLowerInvariant() is not ("y" or "yes")) {
+        throw RosettaNotInstalled("You did not accept the license of Rosetta 2.");
+      }
+    }
+
+    await _ui.PrintInfo("Installing Rosetta 2, which may take a few minutes.");
+    RunTrace.Write(
+        "system", $"Running {RosettaInstaller} {string.Join(' ', _rosettaInstallerArguments)}");
+    ProgramResult result;
+    try {
+      result = await _probe.Run(
+          new ProgramStartInfo(
+              RosettaInstaller,
+              _rosettaInstallerArguments,
+              VerbatimArguments: false,
+              WorkingDirectory: "/",
+              EnvironmentOverrides: new Dictionary<string, string>()),
+          cancellationToken);
+    }
+    catch (Exception ex) when (ex is Win32Exception or InvalidOperationException) {
+      throw RosettaNotInstalled($"lip could not run {RosettaInstaller}: {ex.Message}", ex);
+    }
+
+    RunTrace.Write("system", $"{RosettaInstaller} exited with {result.ExitCode}");
+    if (result.ExitCode != 0) {
+      // What it said of the failure: its standard error, or else the last line of its output.
+      string said = result.Error.Trim() is { Length: > 0 } error
+          ? error
+          : result.Output.Trim().Split('\n')[^1].Trim();
+      throw RosettaNotInstalled(
+          $"{RosettaInstaller} failed with the exit code {result.ExitCode}"
+          + (said.Length == 0 ? "." : $": {said.TrimEnd('.')}."));
+    }
+
+    if (!_probe.IsRosettaInstalled()) {
+      throw RosettaNotInstalled(
+          $"{RosettaInstaller} succeeded, but Rosetta 2 is still not installed.");
+    }
+
+    await _ui.PrintInfo("Rosetta 2 is installed.");
+  }
+
+  /// Rosetta 2 could not be installed: why, and how the user installs it.
+  private static SystemDependencyException RosettaNotInstalled(
+      string reason, Exception? inner = null) =>
+      new(RosettaMissing + $" {reason} To install it yourself, run"
+          + " 'softwareupdate --install-rosetta --agree-to-license', then run lip again; on some"
+          + " versions of macOS, that needs an administrator.",
+          inner);
 
   /// A shared library of Linux that the Wine of lip needs: Name, the file the dynamic linker
   /// loads; Of, what it is; Why, what fails without it; and Package, the package that has it.

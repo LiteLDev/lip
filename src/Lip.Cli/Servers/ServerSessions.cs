@@ -128,11 +128,13 @@ public sealed class WorkspaceServer {
   /// otherwise a task that completes once the server started, or fails with the failure of lip
   /// run before it did. listenForStop listens for what else asks lip to stop: for the servers of
   /// an interface that lip itself carries out, the signals of this process.
+  /// acceptRosettaLicense: --accept-rosetta-license (protocol/lip-run.md, "Managed servers").
   public Task? Start(
       Func<IUserInteraction, LipClient> createClient,
       Invocation starter,
       ServerAttachment? attachment = null,
-      StopListener? listenForStop = null) {
+      StopListener? listenForStop = null,
+      bool acceptRosettaLicense = false) {
     QueueInputStream input = new();
     TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     lock (Gate) {
@@ -162,6 +164,7 @@ public sealed class WorkspaceServer {
         bytes => Output(bytes, error: true));
     ServerRunOptions options = new() {
       Restart = _restart,
+      AcceptRosettaLicense = acceptRosettaLicense,
       Started = () => {
         lock (Gate) {
           _starting = false;

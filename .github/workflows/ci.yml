@@ -164,11 +164,9 @@ jobs:
           name: lip-${{ github.sha }}-${{ matrix.runtime }}
           path: bin
 
-      # lip installs Wine and the Visual C++ runtime itself. Wine for macOS is built for x64 only:
-      # Rosetta runs it, which lip does not install, since that needs an administrator.
-      - if: matrix.runtime == 'osx-arm64'
-        run: softwareupdate --install-rosetta --agree-to-license
-
+      # lip installs Wine and the Visual C++ runtime itself, and on macOS on arm64 Rosetta 2, which
+      # runs the Wine for macOS, built for x64 only. --accept-rosetta-license accepts the license
+      # of Rosetta 2, as nothing here can answer the question.
       - shell: bash
         run: chmod +x bin/lip* || true
 
@@ -185,7 +183,8 @@ jobs:
           workspace=$(mktemp -d)
           cd "$workspace" || exit 1
 
-          "$lip" install github.com/LiteLDev/LeviLamina --accept-eula || exit 1
+          "$lip" install github.com/LiteLDev/LeviLamina --accept-eula --accept-rosetta-license \
+              || exit 1
 
           : > server.log
           # Writes the line stop once the server has started or exited, or after ten minutes.
@@ -198,7 +197,7 @@ jobs:
             done
             echo stop
           }
-          "$lip" run < <(feed) 2>&1 | tee server.log
+          "$lip" run --accept-rosetta-license < <(feed) 2>&1 | tee server.log
           code=${PIPESTATUS[0]}
           touch exited
 

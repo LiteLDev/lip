@@ -72,7 +72,7 @@ public class McmodServiceRunTests : IDisposable {
   private static void SkipWhereTheServerCannotStart() => Assert.SkipUnless(
       _serverStarts, "This system has no Wine of lip, which runs the Windows server here.");
 
-  private async Task<int> Run() {
+  private async Task<int> Run(ServerRunOptions? options = null) {
     Mock<IProgramStarter> starter = new();
     starter.Setup(s => s.Start(It.IsAny<ProgramStartInfo>()))
         .Callback((ProgramStartInfo start) => {
@@ -82,7 +82,7 @@ public class McmodServiceRunTests : IDisposable {
         })
         .Returns(_server);
     return await _service.Run(
-        Stream.Null, inputIsConsole: false, _ => new MemoryStream(), starter.Object);
+        Stream.Null, inputIsConsole: false, _ => new MemoryStream(), starter.Object, options);
   }
 
   /// Saves a state file with a game (of the build of the test, unless linux says otherwise) and,
@@ -221,7 +221,8 @@ public class McmodServiceRunTests : IDisposable {
     // Arrange (protocol/lip-run.md, step 5).
     await SaveState();
     File.WriteAllText(ServerPath, "");
-    _preparer.Setup(p => p.Prepare(Platform, _root, It.IsAny<CancellationToken>()))
+    _preparer.Setup(p => p.Prepare(
+            Platform, _root, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
         .Callback(() => Assert.Empty(_started))
         .Returns(Task.CompletedTask);
 
@@ -230,8 +231,31 @@ public class McmodServiceRunTests : IDisposable {
 
     // Assert
     _preparer.Verify(
-        p => p.Prepare(Platform, _root, It.IsAny<CancellationToken>()), Times.Once);
+        p => p.Prepare(Platform, _root, It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+        Times.Once);
     Assert.Single(_started);
+  }
+
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Run_PreparesTheSystemWithAcceptRosettaLicense(bool accept) {
+    SkipWhereTheServerCannotStart();
+    Assert.SkipWhen(_linux, "The server of the test is the Linux server here.");
+    // Arrange (--accept-rosetta-license, protocol/lip-run.md).
+    await SaveState();
+    File.WriteAllText(ServerPath, "");
+    _preparer.Setup(p => p.Prepare(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()))
+        .Returns(Task.CompletedTask);
+
+    // Act
+    await Run(new ServerRunOptions { AcceptRosettaLicense = accept });
+
+    // Assert
+    _preparer.Verify(
+        p => p.Prepare(Platform, _root, accept, It.IsAny<CancellationToken>()), Times.Once);
   }
 
   [Fact]
@@ -241,7 +265,7 @@ public class McmodServiceRunTests : IDisposable {
     await SaveState();
     File.WriteAllText(ServerPath, "");
     _preparer.Setup(p => p.Prepare(It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<CancellationToken>()))
+            It.IsAny<bool>(), It.IsAny<CancellationToken>()))
         .ThrowsAsync(new SystemDependencyException("no Wine"));
 
     // Act & Assert

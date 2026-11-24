@@ -472,7 +472,10 @@ public sealed class ServerPageTests {
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public async Task Prepare(
-        string platform, string workspaceRoot, CancellationToken cancellationToken) {
+        string platform,
+        string workspaceRoot,
+        bool acceptRosettaLicense,
+        CancellationToken cancellationToken) {
       Asked.TrySetResult();
       await Release.Task;
     }

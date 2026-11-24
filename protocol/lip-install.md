@@ -7,7 +7,7 @@ lip-install - install packages into the workspace
 ## SYNOPSIS
 
 ```
-lip install <PACKAGES>... [--accept-eula] [-n | --dry-run] [-h | --help]
+lip install <PACKAGES>... [--accept-eula] [--accept-rosetta-license] [-n | --dry-run] [-h | --help]
 ```
 
 ## DESCRIPTION
@@ -43,6 +43,7 @@ When a package argument names the server or the loader, `lip install` is carried
 ## OPTIONS
 
 - `--accept-eula`: The user accepts the license of the game ([lip-setup(1), "The license"](lip-setup.md#the-license)), for a `lip install` carried out as a setup; otherwise it has no effect.
+- `--accept-rosetta-license`: The user accepts the license of Rosetta 2, so that preparing the system installs Rosetta 2 without asking ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)).
 - `-n`, `--dry-run`: A dry run ([lip(1), "Dry run"](lip.md#dry-run)). The messages name the packages that the operation would install, uninstall or mark explicitly installed.
 
 ## SEE ALSO
