@@ -1,5 +1,6 @@
 using System.Formats.Tar;
 using System.IO.Abstractions;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Flurl;
@@ -14,6 +15,9 @@ namespace Lip.Core.Tests.Infrastructure;
 public class SystemDependenciesTests : IDisposable {
   private const string WineUrl = "https://example.com/wine.tar.xz";
   private const string VcRedistUrl = "https://example.com/vc_redist.x64.exe";
+  private const string VcRuntimeUrl = "https://example.com/crt.vsix";
+  private const string Redist = "Contents/VC/Redist/MSVC/14.44.35112/";
+  private const string CrtDirectory = Redist + "x64/Microsoft.VC143.CRT/";
   private const string RegInstalled =
       "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64\r\n"
       + "    Installed    REG_DWORD    0x1\r\n";
@@ -32,12 +36,21 @@ public class SystemDependenciesTests : IDisposable {
   private readonly FakeProbe _probe = new();
   private readonly Dictionary<string, string> _environment = new(StringComparer.Ordinal);
   private byte[] _wineArchive;
+  private byte[] _runtimeArchive = Zip(
+      CrtDirectory + "msvcp140.dll",
+      CrtDirectory + "vcruntime140.dll",
+      CrtDirectory + "vcruntime140_1.dll",
+      CrtDirectory + "concrt140.dll",
+      Redist + "debug_nonredist/x64/Microsoft.VC143.DebugCRT/msvcp140d.dll",
+      Redist + "x64/Microsoft.VC143.OpenMP/vcomp140.dll",
+      "manifest.json");
 
   public SystemDependenciesTests() {
     Directory.CreateDirectory(_temp);
     _wineArchive = Tar(("w/bin/wine", "wine"), ("w/lib/wine.so", "lib"));
     _served[WineUrl] = _wineArchive;
     _served[VcRedistUrl] = _installerBytes;
+    _served[VcRuntimeUrl] = _runtimeArchive;
     _downloader.Setup(d => d.DownloadFile(
             It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
         .Returns((Url url, IFileInfo file, Action<Url>? validate) => {
@@ -72,11 +85,18 @@ public class SystemDependenciesTests : IDisposable {
 
   private string WineExecutable => Path.Join(Data, "wine", "wine-test", "w/bin/wine");
 
+  private string RuntimeDirectory => Path.Join(Data, "vc-runtime", "runtime-test");
+
   private SystemDependencies Create(
-      SystemInfo system, Func<Stream, Stream>? decompress = null, string? vcRedistSha = null) {
+      SystemInfo system,
+      Func<Stream, Stream>? decompress = null,
+      string? vcRedistSha = null,
+      string? vcRuntimeSha = null) {
     _probe.System = system;
     SystemDependencyFiles files = new(
-        Build, Build, new PinnedFile(VcRedistUrl, vcRedistSha ?? Sha256(_installerBytes)));
+        Build, Build, new PinnedFile(VcRedistUrl, vcRedistSha ?? Sha256(_installerBytes)),
+        new VcRuntimeFiles(
+            "runtime-test", new PinnedFile(VcRuntimeUrl, vcRuntimeSha ?? Sha256(_runtimeArchive))));
     return new SystemDependencies(
         new FileSystem(), _downloader.Object, _ui.Object, _probe, Data,
         _environment.GetValueOrDefault, files, decompress ?? (s => s));
@@ -100,6 +120,19 @@ public class SystemDependenciesTests : IDisposable {
     return stream.ToArray();
   }
 
+  /// A zip archive of the entries, each holding its name.
+  private static byte[] Zip(params string[] entries) {
+    using MemoryStream stream = new();
+    using (ZipArchive zip = new(stream, ZipArchiveMode.Create, leaveOpen: true)) {
+      foreach (string name in entries) {
+        using StreamWriter writer = new(zip.CreateEntry(name).Open());
+        writer.Write(name);
+      }
+    }
+
+    return stream.ToArray();
+  }
+
   [Fact]
   public async Task Prepare_NotAWindowsPlatform_DoesNothing() {
     // Act
@@ -112,7 +145,7 @@ public class SystemDependenciesTests : IDisposable {
   }
 
   [Fact]
-  public async Task Prepare_WindowsWithTheRuntime_InstallsNothing() {
+  public async Task Prepare_WindowsWithTheRuntimeForTheSystem_InstallsNothing() {
     // Arrange
     _probe.VcRuntimeInstalled = true;
 
@@ -121,61 +154,76 @@ public class SystemDependenciesTests : IDisposable {
 
     // Assert
     Assert.Empty(_downloaded);
-    Assert.Empty(_probe.AdministratorRuns);
+    Assert.Empty(_probe.Runs);
+    Assert.False(Directory.Exists(RuntimeDirectory));
   }
 
-  [Theory]
-  [InlineData(0)]
-  [InlineData(1638)]
-  [InlineData(3010)]
-  public async Task Prepare_WindowsWithoutTheRuntime_RunsItsInstallerAsAdministrator(int exitCode) {
+  [Fact]
+  public async Task Prepare_WindowsWithTheRuntimeForTheUser_InstallsNothing() {
     // Arrange
-    _probe.AdministratorExitCode = exitCode;
+    Directory.CreateDirectory(RuntimeDirectory);
 
     // Act
     await Create(_windows).Prepare("win-x64", Root, false, Token);
 
     // Assert
-    Assert.Equal([VcRedistUrl], _downloaded);
-    (string fileName, IReadOnlyList<string> arguments, byte[] content) =
-        Assert.Single(_probe.AdministratorRuns);
-    Assert.Equal(_installerBytes, content);
-    Assert.StartsWith(Data, fileName);
-    Assert.Equal(["/install", "/quiet", "/norestart"], arguments);
-    Assert.False(File.Exists(fileName));
+    Assert.Empty(_downloaded);
+    Assert.Empty(_probe.Runs);
   }
 
   [Fact]
-  public async Task Prepare_InstallerFails_Throws() {
+  public async Task Prepare_WindowsWithoutTheRuntime_ExtractsItsDllsForTheUserAndRunsNothing() {
+    // Act
+    await Create(_windows).Prepare("win-x64", Root, false, Token);
+
+    // Assert
+    Assert.Equal([VcRuntimeUrl], _downloaded);
+    Assert.Empty(_probe.Runs);
+    Assert.Equal(
+        ["concrt140.dll", "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"],
+        Directory.GetFiles(RuntimeDirectory)
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal));
+    Assert.Equal(
+        CrtDirectory + "msvcp140.dll",
+        File.ReadAllText(Path.Join(RuntimeDirectory, "msvcp140.dll")));
+    Assert.Equal([RuntimeDirectory], Directory.GetFileSystemEntries(Path.Join(Data, "vc-runtime")));
+  }
+
+  [Fact]
+  public async Task Prepare_RuntimeArchiveWithoutItsDlls_ThrowsAndInstallsNothing() {
     // Arrange
-    _probe.AdministratorExitCode = 1603;
+    _runtimeArchive = Zip(CrtDirectory + "msvcp140.dll", CrtDirectory + "vcruntime140.dll");
+    _served[VcRuntimeUrl] = _runtimeArchive;
 
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
         () => Create(_windows).Prepare("win-x64", Root, false, Token));
-    Assert.Contains("1603", ex.Message);
+    Assert.Contains("vcruntime140_1.dll", ex.Message);
+    Assert.Empty(Directory.GetFileSystemEntries(Path.Join(Data, "vc-runtime")));
   }
 
   [Fact]
-  public async Task Prepare_UserDoesNotAllowTheInstaller_Throws() {
-    // Arrange
-    _probe.AdministratorDenied = true;
-
+  public async Task Prepare_RuntimeArchiveShaMismatch_ThrowsAndExtractsNothing() {
     // Act & Assert
     SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_windows).Prepare("win-x64", Root, false, Token));
-    Assert.Contains("administrator", ex.Message);
-  }
-
-  [Fact]
-  public async Task Prepare_InstallerShaMismatch_ThrowsWithoutRunningIt() {
-    // Act & Assert
-    SystemDependencyException ex = await Assert.ThrowsAsync<SystemDependencyException>(
-        () => Create(_windows, vcRedistSha: new string('0', 64))
+        () => Create(_windows, vcRuntimeSha: new string('0', 64))
             .Prepare("win-x64", Root, false, Token));
     Assert.Contains("SHA-256", ex.Message);
-    Assert.Empty(_probe.AdministratorRuns);
-    Assert.Empty(Directory.GetFiles(Data, "*.exe"));
+    Assert.False(Directory.Exists(RuntimeDirectory));
+  }
+
+  [Theory]
+  [InlineData("Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll", true)]
+  [InlineData("Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.OpenMP/vcomp140.dll", false)]
+  [InlineData("Contents/VC/Redist/MSVC/14.44.35112/x86/Microsoft.VC143.CRT/msvcp140.dll", false)]
+  [InlineData(
+      "Contents/VC/Redist/MSVC/14.44.35112/debug_nonredist/x64/Microsoft.VC143.CRT/msvcp140d.dll",
+      false)]
+  [InlineData("Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/readme.txt", false)]
+  [InlineData("x64/Microsoft.VC143.CRT/msvcp140.dll", false)]
+  public void IsVcRuntimeFile_TakesTheX64RedistributableDlls(string entry, bool expected) {
+    Assert.Equal(expected, SystemDependencies.IsVcRuntimeFile(entry));
   }
 
   [Fact]
@@ -225,7 +273,7 @@ public class SystemDependenciesTests : IDisposable {
     Assert.Equal(["/install", "/quiet", "/norestart"], install.Arguments.Skip(1));
     Assert.EndsWith("vc_redist.x64.exe", install.Arguments[0]);
     Assert.Equal(Path.Join(Root, ".lip", "wine"), install.EnvironmentOverrides["WINEPREFIX"]);
-    Assert.Empty(_probe.AdministratorRuns);
+    Assert.Equal([VcRedistUrl], _downloaded.Where(url => url != WineUrl));
   }
 
   [Fact]
@@ -409,7 +457,9 @@ public class SystemDependenciesTests : IDisposable {
     SystemDependencies dependencies = new(
         new FileSystem(), _downloader.Object, _ui.Object, _probe, Data,
         _environment.GetValueOrDefault,
-        new SystemDependencyFiles(Build, Build, new PinnedFile(VcRedistUrl, "")));
+        new SystemDependencyFiles(
+            Build, Build, new PinnedFile(VcRedistUrl, ""),
+            new VcRuntimeFiles("runtime-test", new PinnedFile(VcRuntimeUrl, ""))));
     _probe.System = _linux;
 
     // Act
@@ -716,13 +766,7 @@ public class SystemDependenciesTests : IDisposable {
 
     public string RegOutput { get; set; } = "";
 
-    public int AdministratorExitCode { get; set; }
-
-    public bool AdministratorDenied { get; set; }
-
     public List<ProgramStartInfo> Runs { get; } = [];
-
-    public List<(string, IReadOnlyList<string>, byte[])> AdministratorRuns { get; } = [];
 
     public bool IsRosettaInstalled() => RosettaInstalled;
 
@@ -763,16 +807,6 @@ public class SystemDependenciesTests : IDisposable {
       return Task.FromResult(start.Arguments[0] == "reg"
           ? new ProgramResult(RegExitCode, RegOutput)
           : new ProgramResult(0, ""));
-    }
-
-    public Task<int> RunAsAdministrator(
-        string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken) {
-      if (AdministratorDenied) {
-        throw new OperationCanceledException("denied");
-      }
-
-      AdministratorRuns.Add((fileName, arguments, File.ReadAllBytes(fileName)));
-      return Task.FromResult(AdministratorExitCode);
     }
   }
 }

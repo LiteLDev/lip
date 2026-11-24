@@ -54,7 +54,14 @@ public class CommandRunner(Func<Stream>? openOutput = null) : ICommandRunner {
       cli = start.VerbatimArguments
           ? cli.WithArguments(start.JoinedArguments)
           : cli.WithArguments(start.Arguments);
-      Dictionary<string, string?> environment = new(_invocation.EnvironmentChanges());
+      // Windows compares the names of environment variables ignoring case, so that an override of
+      // PATH replaces the Path of lip rather than standing beside it.
+      Dictionary<string, string?> environment = new(
+          OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+      foreach ((string name, string? value) in _invocation.EnvironmentChanges()) {
+        environment[name] = value;
+      }
+
       foreach ((string name, string value) in start.EnvironmentOverrides) {
         environment[name] = value;
       }

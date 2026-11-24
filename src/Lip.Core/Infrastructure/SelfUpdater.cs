@@ -11,10 +11,13 @@ using Semver;
 
 namespace Lip.Core.Infrastructure;
 
-/// How lip was installed (protocol/lip-self-update.md, "Terms").
+/// How lip was installed (protocol/lip-self-update.md, "Terms"): from a portable archive or any
+/// other way; or by the Windows Installer package, for every user (installation scope "machine")
+/// or for the user that installed it ("user").
 public enum InstallationKind {
   Portable,
   Msi,
+  MsiForUser,
 }
 
 /// A release of lip: a version tag of its repository (protocol/lip-self-update.md, "Terms").
@@ -41,21 +44,23 @@ public enum SelfUpdateOutcome {
 
 public sealed record SelfUpdateResult(SelfUpdateOutcome Outcome, SemVersion? Latest);
 
-/// Starts a program elevated, as administrator, without waiting for it.
-public interface IElevatedStarter {
+/// Starts an installer without waiting for it: elevated, as administrator, or as the user that
+/// runs lip.
+public interface IInstallerStarter {
   /// Throws when the program does not start, or the user declines the elevation.
-  void Start(string fileName, IReadOnlyList<string> arguments);
+  void Start(string fileName, IReadOnlyList<string> arguments, bool elevated);
 }
 
-/// Starts a program through the shell with the verb "runas", which asks the user for consent.
-public sealed class ShellElevatedStarter : IElevatedStarter {
+/// Starts a program through the shell, elevated with the verb "runas", which asks the user for
+/// consent.
+public sealed class ShellInstallerStarter : IInstallerStarter {
   // ERROR_CANCELLED: the user declined the elevation.
   private const int _errorCancelled = 1223;
 
-  public void Start(string fileName, IReadOnlyList<string> arguments) {
+  public void Start(string fileName, IReadOnlyList<string> arguments, bool elevated) {
     ProcessStartInfo info = new(fileName) {
       UseShellExecute = true,
-      Verb = "runas",
+      Verb = elevated ? "runas" : "",
     };
     foreach (string argument in arguments) {
       info.ArgumentList.Add(argument);
@@ -128,7 +133,7 @@ public sealed class SelfUpdater {
   private readonly IFileSystem _fileSystem;
   private readonly IFileDownloader _downloader;
   private readonly IGitRemoteClient _git;
-  private readonly IElevatedStarter _elevatedStarter;
+  private readonly IInstallerStarter _installerStarter;
   private readonly SelfUpdateHost _host;
   private readonly Url _repository;
   private readonly Func<string, string, Task> _extractTarXz;
@@ -137,14 +142,14 @@ public sealed class SelfUpdater {
       IFileSystem fileSystem,
       IFileDownloader downloader,
       IGitRemoteClient git,
-      IElevatedStarter elevatedStarter,
+      IInstallerStarter installerStarter,
       SelfUpdateHost host,
       Url? repository = null,
       Func<string, string, Task>? extractTarXz = null) {
     _fileSystem = fileSystem;
     _downloader = downloader;
     _git = git;
-    _elevatedStarter = elevatedStarter;
+    _installerStarter = installerStarter;
     _host = host;
     _repository = repository ?? DefaultRepository;
     _extractTarXz = extractTarXz ?? ExtractTarXz;
@@ -193,8 +198,10 @@ public sealed class SelfUpdater {
     _fileSystem.File.Move(temporary, assetPath, overwrite: true);
 
     switch (kind) {
-      case InstallationKind.Msi:
-        _elevatedStarter.Start("msiexec.exe", ["/i", assetPath, "/qn", "/norestart"]);
+      case InstallationKind.Msi or InstallationKind.MsiForUser:
+        _installerStarter.Start(
+            "msiexec.exe", ["/i", assetPath, "/qn", "/norestart"],
+            elevated: kind == InstallationKind.Msi);
         return new(SelfUpdateOutcome.InstallerStarted, latest.Version);
       default:
         string extracted = _fileSystem.Path.Join(
@@ -234,21 +241,36 @@ public sealed class SelfUpdater {
   }
 
   /// The installation kind, from install.json in the installation directory: portable without
-  /// it; a failure when it is not a JSON object whose member kind is "msi".
+  /// it; the Windows Installer package when it is a JSON object whose member kind is "msi", for
+  /// every user unless its member scope is "user"; a failure otherwise, and when scope is there
+  /// and neither "user" nor "machine".
   public static InstallationKind ReadKind(IFileSystem fileSystem, string installDirectory) {
     string path = fileSystem.Path.Join(installDirectory, InstallFileName);
     if (!fileSystem.File.Exists(path)) {
       return InstallationKind.Portable;
     }
 
-    string invalid = $"{path} is not valid: it must be {{\"kind\": \"msi\"}}. Reinstall lip with its Windows installer, or delete that file"
-        + " if lip was not installed by one.";
+    string invalid = $"{path} is not valid: it must be {{\"kind\": \"msi\", \"scope\": \"user\"}}"
+        + " or {\"kind\": \"msi\", \"scope\": \"machine\"}. Reinstall lip with its Windows"
+        + " installer, or delete that file if lip was not installed by one.";
     try {
       using JsonDocument document = JsonDocument.Parse(fileSystem.File.ReadAllBytes(path));
-      if (document.RootElement.ValueKind == JsonValueKind.Object
-          && document.RootElement.TryGetProperty("kind", out JsonElement kind)) {
-        if (kind.ValueKind == JsonValueKind.String && kind.GetString() == "msi") {
+      JsonElement root = document.RootElement;
+      if (root.ValueKind == JsonValueKind.Object
+          && root.TryGetProperty("kind", out JsonElement kind)
+          && kind.ValueKind == JsonValueKind.String
+          && kind.GetString() == "msi") {
+        if (!root.TryGetProperty("scope", out JsonElement scope)) {
           return InstallationKind.Msi;
+        }
+
+        if (scope.ValueKind == JsonValueKind.String) {
+          switch (scope.GetString()) {
+            case "machine":
+              return InstallationKind.Msi;
+            case "user":
+              return InstallationKind.MsiForUser;
+          }
         }
       }
     }
@@ -262,7 +284,7 @@ public sealed class SelfUpdater {
   public static string GetAssetName(
       InstallationKind kind, SemVersion version, string platform, bool linuxArchives) =>
       kind switch {
-        InstallationKind.Msi => $"lip-{version}-{platform}.msi",
+        InstallationKind.Msi or InstallationKind.MsiForUser => $"lip-{version}-{platform}.msi",
         _ => $"lip-{version}-{platform}{(linuxArchives ? ".tar.xz" : ".zip")}",
       };
 

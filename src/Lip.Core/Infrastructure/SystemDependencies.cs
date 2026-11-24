@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO.Abstractions;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Microsoft.Win32;
@@ -46,15 +47,26 @@ public sealed record PinnedFile(string Url, string Sha256);
 /// program in the archive, '/'-separated.
 public sealed record WineBuild(string Name, string Version, PinnedFile Archive, string Executable);
 
+/// The files of the Visual C++ runtime that lip extracts on Windows: Name, the directory below
+/// vc-runtime/ in the data directory they are extracted into; Archive, a zip file (a .vsix of
+/// Visual Studio) whose entries below a directory Microsoft.VC143.CRT of its x64 redistributable
+/// files are the DLLs of the runtime.
+public sealed record VcRuntimeFiles(string Name, PinnedFile Archive);
+
 /// The files lip downloads to install the system dependencies (protocol/lip-workspace.md, "System
-/// dependencies"): the Wine of lip for Linux on x64 and for macOS, and the installer of the Visual
-/// C++ runtime. Pinned holds those of this version of lip.
+/// dependencies"): the Wine of lip for Linux on x64 and for macOS, the installer of the Visual C++
+/// runtime that Wine runs, and the files of the runtime that lip extracts on Windows. Pinned holds
+/// those of this version of lip.
 public sealed record SystemDependencyFiles(
-    WineBuild LinuxX64Wine, WineBuild MacOsWine, PinnedFile VcRedistX64) {
+    WineBuild LinuxX64Wine,
+    WineBuild MacOsWine,
+    PinnedFile VcRedistX64,
+    VcRuntimeFiles VcRuntimeX64) {
   public static SystemDependencyFiles Pinned { get; } = new(
       PinnedSystemDependencies.LinuxX64Wine,
       PinnedSystemDependencies.MacOsWine,
-      PinnedSystemDependencies.VcRedistX64);
+      PinnedSystemDependencies.VcRedistX64,
+      PinnedSystemDependencies.VcRuntimeX64);
 
   /// The Wine of lip for the system, or null when the system has none: Linux on x64, and macOS
   /// on x64 and on arm64, through Rosetta 2.
@@ -96,6 +108,40 @@ public static class PinnedSystemDependencies {
           + "e9604e21-4b79-4096-a4b3-1b63d4b55b4d/"
           + "CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
       "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b");
+
+  /// The redistributable files of the Visual C++ runtime 14.44.35211 for x64, the version of
+  /// VcRedistX64, as Visual Studio 17.14 installs them: the package
+  /// Microsoft.VC.14.44.17.14.CRT.Redist.X64.base of its channel
+  /// https://aka.ms/vs/17/release/channel.
+  public static readonly VcRuntimeFiles VcRuntimeX64 = new(
+      "14.44.35211",
+      new PinnedFile(
+          "https://download.visualstudio.microsoft.com/download/pr/"
+              + "45d3b8dd-bced-4b37-9974-142f748d710c/"
+              + "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/"
+              + "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+          "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5"));
+}
+
+/// Where the Visual C++ runtime that lip installs on Windows is in the data directory: the runtime
+/// directory vc-runtime/&lt;name&gt;/, which appears only once its files are extracted completely
+/// (protocol/lip-workspace.md, "System dependencies").
+public static class ManagedVcRuntime {
+  /// The runtime directory of the files.
+  public static string Directory(string dataDirectory, VcRuntimeFiles files) =>
+      Path.Join(dataDirectory, "vc-runtime", files.Name);
+
+  /// The runtime directory that the programs of lip get first in PATH: on Windows, when the
+  /// runtime is installed for the user and not for the system; otherwise null
+  /// (protocol/lip-workspace.md, "Running programs").
+  public static string? ForPrograms(string dataDirectory, ISystemProbe probe) {
+    if (!probe.System.IsWindows || probe.IsVcRuntimeInstalled()) {
+      return null;
+    }
+
+    string directory = Directory(dataDirectory, SystemDependencyFiles.Pinned.VcRuntimeX64);
+    return System.IO.Directory.Exists(directory) ? directory : null;
+  }
 }
 
 /// Where the Wine of lip is in the data directory: wine/&lt;name&gt;/, which appears only once the
@@ -133,7 +179,8 @@ public interface ISystemProbe {
   /// Whether Rosetta 2 is installed (macOS only).
   bool IsRosettaInstalled();
 
-  /// Whether the Visual C++ runtime is installed in the registry of Windows (Windows only).
+  /// Whether the Visual C++ runtime is installed for the system, in the registry of Windows
+  /// (Windows only).
   bool IsVcRuntimeInstalled();
 
   /// Whether the dynamic linker of the system loads the shared library of the name, as Wine
@@ -147,12 +194,6 @@ public interface ISystemProbe {
   /// output; its standard error goes to the trace, and its last lines to Error. Throws when it
   /// cannot be started.
   Task<ProgramResult> Run(ProgramStartInfo start, CancellationToken cancellationToken);
-
-  /// Runs the program as an administrator (Windows only), which may ask the user to allow it,
-  /// and returns its exit code. Throws OperationCanceledException when the user does not allow
-  /// it, and other exceptions when it cannot be started.
-  Task<int> RunAsAdministrator(
-      string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken);
 }
 
 /// Prepares the system to run the programs of a workspace (protocol/lip-workspace.md, "System
@@ -172,9 +213,6 @@ public interface ISystemPreparer {
 /// The system lip runs on.
 public sealed class SystemProbe : ISystemProbe {
   private const string VcRuntimeKey = @"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64";
-
-  // ERROR_CANCELLED: the user did not allow the program to run as an administrator.
-  private const int ErrorCancelled = 1223;
 
   // How many of the last lines of the standard error of a program Run returns.
   private const int ErrorLines = 5;
@@ -265,35 +303,6 @@ public sealed class SystemProbe : ISystemProbe {
       throw;
     }
   }
-
-  public async Task<int> RunAsAdministrator(
-      string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken) {
-    ProcessStartInfo info = new(fileName) {
-      UseShellExecute = true,
-      Verb = "runas",
-    };
-    foreach (string argument in arguments) {
-      info.ArgumentList.Add(argument);
-    }
-
-    Process? process;
-    try {
-      process = Process.Start(info);
-    }
-    catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled) {
-      throw new OperationCanceledException(
-          $"{fileName} was not allowed to run as an administrator.", ex);
-    }
-
-    using (process) {
-      if (process is null) {
-        throw new InvalidOperationException($"Could not start {fileName}.");
-      }
-
-      await process.WaitForExitAsync(cancellationToken);
-      return process.ExitCode;
-    }
-  }
 }
 
 /// Thrown when a system dependency cannot be installed.
@@ -322,6 +331,10 @@ public sealed class SystemDependencies(
   /// Exit codes of vc_redist.x64.exe that are a success: done, a newer version is installed
   /// (ERROR_PRODUCT_VERSION), and done but a restart is needed (ERROR_SUCCESS_REBOOT_REQUIRED).
   private static readonly int[] _installerSuccess = [0, 1638, 3010];
+
+  /// The DLLs that the files of the Visual C++ runtime must have; its archive holds more.
+  private static readonly string[] _vcRuntimeRequired =
+      ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"];
 
   private readonly IFileSystem _fs = fileSystem;
   private readonly IFileDownloader _downloader = downloader;
@@ -567,8 +580,8 @@ public sealed class SystemDependencies(
             _probe.ReadOsRelease(), [.. missing.Select(l => l.Package)], missing.Count > 1));
   }
 
-  /// Installs the Visual C++ runtime when it is not installed: on Windows as an administrator,
-  /// otherwise in the Wine prefix of the host.
+  /// Installs the Visual C++ runtime when it is not installed: on Windows for the user, by
+  /// extracting its files into the runtime directory; otherwise in the Wine prefix of the host.
   private async Task EnsureVcRuntime(ProgramHost host, CancellationToken cancellationToken) {
     string where = host.IsWindows ? "" : WinePrefix(host);
     if (_prepared.Contains(where)) {
@@ -586,11 +599,89 @@ public sealed class SystemDependencies(
       return;
     }
 
-    await _ui.PrintInfo(host.IsWindows
-        ? "The server needs the Microsoft Visual C++ Redistributable, which is not installed:"
-          + " lip installs it now. Windows may ask you to allow it."
-        : $"The server needs the Microsoft Visual C++ Redistributable, which is not installed in"
-          + $" the Wine prefix {where}: lip installs it there now.");
+    if (host.IsWindows) {
+      await ExtractVcRuntime(cancellationToken);
+    } else {
+      await InstallVcRuntimeInWine(host, where, cancellationToken);
+    }
+
+    _prepared.Add(where);
+  }
+
+  /// Extracts the files of the runtime into the runtime directory, through a directory of its
+  /// own that is renamed into place, so that partly extracted files are never used.
+  private async Task ExtractVcRuntime(CancellationToken cancellationToken) {
+    VcRuntimeFiles files = _files.VcRuntimeX64;
+    string directory = ManagedVcRuntime.Directory(_data, files);
+    await _ui.PrintInfo(
+        "The server needs the Microsoft Visual C++ runtime, which is not installed: lip installs"
+        + $" it for you, into {directory}.");
+    string archive = directory + ".vsix.tmp";
+    string extracting = directory + ".tmp";
+    Stream? held = null;
+    try {
+      held = await DownloadVerified(files.Archive, archive);
+      DeleteDirectory(extracting);
+      Stream stream = held;
+      await _ui.RunWithProgress(
+          "Installing the Microsoft Visual C++ runtime",
+          _ => Task.Run(() => ExtractVcRuntimeFiles(stream, extracting), cancellationToken));
+      _fs.Directory.Move(extracting, directory);
+    }
+    catch (Exception ex)
+        when (ex is InvalidDataException || FileSystemExtensions.IsFileError(ex)) {
+      throw new SystemDependencyException(
+          $"lip could not install the Microsoft Visual C++ runtime into {directory}: {ex.Message}"
+          + " Or install it yourself from https://aka.ms/vc14/vc_redist.x64.exe.", ex);
+    }
+    finally {
+      held?.Dispose();
+      DeleteFile(archive);
+      DeleteDirectory(extracting);
+    }
+  }
+
+  /// Writes the DLLs of the archive below a directory Microsoft.VC143.CRT of its x64
+  /// redistributable files, such as Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/,
+  /// to the directory, by their names. Throws InvalidDataException when the archive has not
+  /// every DLL of _vcRuntimeRequired.
+  private void ExtractVcRuntimeFiles(Stream archive, string directory) {
+    _fs.Directory.CreateDirectory(directory);
+    HashSet<string> written = new(StringComparer.OrdinalIgnoreCase);
+    using ZipArchive zip = new(archive, ZipArchiveMode.Read, leaveOpen: true);
+    foreach (ZipArchiveEntry entry in zip.Entries) {
+      if (IsVcRuntimeFile(entry.FullName) && written.Add(entry.Name)) {
+        using Stream input = entry.Open();
+        using Stream output = _fs.File.Create(_fs.Path.Join(directory, entry.Name));
+        input.CopyTo(output);
+      }
+    }
+
+    if (_vcRuntimeRequired.FirstOrDefault(name => !written.Contains(name)) is string missing) {
+      throw new InvalidDataException($"The archive of the runtime has no {missing}.");
+    }
+  }
+
+  /// Whether the entry of the archive is a DLL of the x64 runtime: its directory is
+  /// Microsoft.VC143.CRT, its parent x64, and it is not below debug_nonredist.
+  public static bool IsVcRuntimeFile(string entryName) {
+    string[] parts = entryName.Split('/');
+    return parts.Length >= 4
+        && parts[0] == "Contents"
+        && parts[^1].EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+        && parts[^2] == "Microsoft.VC143.CRT"
+        && parts[^3] == "x64"
+        && !parts.Contains("debug_nonredist")
+        && !parts[^1].Contains('\\')
+        && parts[^1] is not ("" or "." or "..");
+  }
+
+  /// Runs vc_redist.x64.exe by the Wine of lip in the Wine prefix of the host.
+  private async Task InstallVcRuntimeInWine(
+      ProgramHost host, string where, CancellationToken cancellationToken) {
+    await _ui.PrintInfo(
+        $"The server needs the Microsoft Visual C++ Redistributable, which is not installed in"
+        + $" the Wine prefix {where}: lip installs it there now.");
     string installer = Path.Join(_data, "vc_redist.x64.exe");
     Stream? held = null;
     try {
@@ -600,20 +691,14 @@ public sealed class SystemDependencies(
       int exitCode = 0;
       await _ui.RunWithProgress(
           "Installing the Microsoft Visual C++ Redistributable",
-          async _ => exitCode = host.IsWindows
-              ? await RunAsAdministrator(installer, arguments, cancellationToken)
-              : (await RunThroughWine(
-                  WorkspaceProgram.Start(host, installer, arguments), cancellationToken)).ExitCode);
+          async _ => exitCode = (await RunThroughWine(
+              WorkspaceProgram.Start(host, installer, arguments), cancellationToken)).ExitCode);
       RunTrace.Write("system", $"vc_redist.x64.exe exited with code {exitCode}");
       if (!_installerSuccess.Contains(exitCode)) {
         throw new SystemDependencyException(
             $"The installer of the Microsoft Visual C++ Redistributable failed with exit code"
-            + $" {exitCode}"
-            + (host.IsWindows
-                ? ". Install it yourself from https://aka.ms/vc14/vc_redist.x64.exe, then run lip"
-                  + " again."
-                : $" in the Wine prefix {where}. Delete that directory to let Wine make it again,"
-                  + " then run lip again."));
+            + $" {exitCode} in the Wine prefix {where}. Delete that directory to let Wine make it"
+            + " again, then run lip again.");
       }
     }
     catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
@@ -624,34 +709,25 @@ public sealed class SystemDependencies(
       held?.Dispose();
       DeleteFile(installer);
     }
-
-    _prepared.Add(where);
   }
 
-  private async Task<int> RunAsAdministrator(
-      string installer, string[] arguments, CancellationToken cancellationToken) {
-    try {
-      return await _probe.RunAsAdministrator(installer, arguments, cancellationToken);
-    }
-    catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested) {
-      throw new SystemDependencyException(
-          "The Microsoft Visual C++ Redistributable was not installed: Windows did not allow its"
-          + " installer to run as an administrator. Run lip again and allow it, or install it"
-          + " yourself from https://aka.ms/vc14/vc_redist.x64.exe.", ex);
-    }
-    catch (Win32Exception ex) {
-      throw new SystemDependencyException(
-          $"lip could not start the installer of the Microsoft Visual C++ Redistributable:"
-          + $" {ex.Message}", ex);
-    }
-  }
-
-  /// Whether the runtime is installed: in the registry of Windows, or in that of the Wine prefix,
-  /// which wine reg reads in the 64-bit and the 32-bit view.
+  /// Whether the runtime is installed: on Windows, for the system in the registry of Windows or
+  /// for the user in the runtime directory; otherwise in the registry of the Wine prefix, which
+  /// wine reg reads in the 64-bit and the 32-bit view.
   private async Task<bool> IsVcRuntimeInstalled(
       ProgramHost host, CancellationToken cancellationToken) {
     if (host.IsWindows) {
-      return _probe.IsVcRuntimeInstalled();
+      if (_probe.IsVcRuntimeInstalled()) {
+        return true;
+      }
+
+      string directory = ManagedVcRuntime.Directory(_data, _files.VcRuntimeX64);
+      if (_fs.Directory.Exists(directory)) {
+        RunTrace.Write("system", $"The Visual C++ runtime is installed in {directory}");
+        return true;
+      }
+
+      return false;
     }
 
     foreach (string view in new[] { "/reg:64", "/reg:32" }) {

@@ -7,7 +7,7 @@
     Manufacturer="LiteLDev"
     Version="$(ProductVersion)"
     UpgradeCode="{6DE6BECA-CCBD-4B31-A335-3EE37063C932}"
-    Scope="perMachine">
+    Scope="perUserOrMachine">
 
     <MajorUpgrade
       AllowSameVersionUpgrades="yes"
@@ -35,8 +35,15 @@
     </UI>
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Open a new terminal to use lip." />
 
-    <!-- Upgrades install to the folder that the user chose before. -->
-    <Property Id="INSTALLFOLDER">
+    <!--
+      The package installs lip for the user that runs it, into %LOCALAPPDATA%\Programs\lip, with
+      lip on the PATH of that user, without administrator rights. Where lip is installed for every
+      user already, by an earlier version of this package (which installed only so) or by the Inno
+      Setup installer, the package installs for every user again, into the same folder, which needs
+      an administrator; it upgrades that installation in place, so that no second lip, earlier on
+      PATH, stays behind.
+    -->
+    <Property Id="MACHINEINSTALLDIR">
       <RegistrySearch
         Root="HKLM"
         Key="SOFTWARE\LiteLDev\lip"
@@ -44,23 +51,42 @@
         Type="raw"
         Bitness="always64" />
     </Property>
+    <Property Id="USERINSTALLDIR">
+      <RegistrySearch
+        Root="HKCU"
+        Key="SOFTWARE\LiteLDev\lip"
+        Name="InstallDir"
+        Type="raw" />
+    </Property>
+
+    <SetProperty Id="MSIINSTALLPERUSER" Value="{}" After="AppSearch" Sequence="both"
+      Condition="MACHINEINSTALLDIR OR INNOUNINSTALLSTRING" />
+    <SetProperty Id="ALLUSERS" Value="1" After="AppSearch" Sequence="both"
+      Condition="MACHINEINSTALLDIR OR INNOUNINSTALLSTRING" />
+    <!-- Upgrades install to the folder that they installed to before. -->
+    <SetProperty Id="INSTALLFOLDER" Value="[MACHINEINSTALLDIR]" After="AppSearch" Sequence="both"
+      Condition="MACHINEINSTALLDIR AND NOT Installed" />
+    <SetProperty Id="INSTALLFOLDER" Value="[USERINSTALLDIR]" After="AppSearch" Sequence="both"
+      Condition="USERINSTALLDIR AND NOT MACHINEINSTALLDIR AND NOT INNOUNINSTALLSTRING AND NOT Installed" />
+
+    <!-- The earlier installation is found once the package knows for whom it installs. -->
+    <InstallUISequence>
+      <FindRelatedProducts After="SetMSIINSTALLPERUSER" />
+    </InstallUISequence>
+    <InstallExecuteSequence>
+      <FindRelatedProducts After="SetMSIINSTALLPERUSER" />
+    </InstallExecuteSequence>
 
     <Component Directory="INSTALLFOLDER">
       <File Source="$(BinDir)\lip.exe" />
-      <Environment
-        Id="PATH"
-        Name="PATH"
-        Value="[INSTALLFOLDER]"
-        Action="set"
-        Part="last"
-        System="yes" />
       <!-- Windows Installer keeps directories that already existed, e.g. from an Inno Setup installation. -->
       <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
     </Component>
 
+    <!-- HKMU is HKLM when the package installs for every user, and HKCU otherwise. -->
     <Component Id="InstallDirRegistry" Directory="INSTALLFOLDER" Guid="{3F0C2A55-8E7B-4C1D-9A26-5B4E1D7C8A90}">
       <RegistryValue
-        Root="HKLM"
+        Root="HKMU"
         Key="SOFTWARE\LiteLDev\lip"
         Name="InstallDir"
         Type="string"
@@ -68,12 +94,35 @@
         KeyPath="yes" />
     </Component>
 
-    <!-- install.json tells lip self-update to download the .msi (protocol/lip-self-update.md). -->
+    <!-- lip on the PATH of every user, or of the user that installs it. -->
+    <Component Id="PathMachine" Directory="INSTALLFOLDER" Guid="{8C1F5B2E-3D47-4A96-9E0B-6F2A7C4D1E83}"
+      Condition="ALLUSERS">
+      <Environment Id="PathMachine" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="yes" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\LiteLDev\lip" Name="PathMachine" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="PathUser" Directory="INSTALLFOLDER" Guid="{2B7D9E41-6A03-4F58-8C1E-9D4F3A6B7C20}"
+      Condition="NOT ALLUSERS">
+      <Environment Id="PathUser" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="no" />
+      <RegistryValue Root="HKCU" Key="SOFTWARE\LiteLDev\lip" Name="PathUser" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!--
+      install.json tells lip self-update to download the .msi, and whether to run it as an
+      administrator (protocol/lip-self-update.md).
+    -->
     <Component
       Id="InstallJsonMsi"
       Directory="INSTALLFOLDER"
-      Guid="{DA9FCC7B-D254-4CCC-953C-EED026C86919}">
-      <File Id="InstallJsonMsi" Source="$(sys.SOURCEFILEDIR)install-msi.json" Name="install.json" ShortName="install.jsn" />
+      Guid="{DA9FCC7B-D254-4CCC-953C-EED026C86919}"
+      Condition="ALLUSERS">
+      <File Id="InstallJsonMsi" Source="$(sys.SOURCEFILEDIR)install-msi-machine.json" Name="install.json" ShortName="install.jsn" />
+    </Component>
+    <Component
+      Id="InstallJsonMsiUser"
+      Directory="INSTALLFOLDER"
+      Guid="{5E2A8C6F-1B94-4D37-A0E5-7C3B9F2D4A61}"
+      Condition="NOT ALLUSERS">
+      <File Id="InstallJsonMsiUser" Source="$(sys.SOURCEFILEDIR)install-msi-user.json" Name="install.json" ShortName="install.jsn" />
     </Component>
 
     <!--

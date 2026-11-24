@@ -17,6 +17,8 @@ public class WorkspaceProgramTests {
   private const string UnixPath = ":.:relative/bin:/opt/none:/usr/bin";
   private const string WindowsPath = @".;C:\none;""C:\Program Files\Git\bin""";
   private const string SystemDirectory = @"C:\Windows\system32";
+  // The runtime directory of the Visual C++ runtime, when it is installed for the user.
+  private const string UserRuntime = @"C:\Users\u\AppData\Local\lip\Data\vc-runtime\14.44.35211";
   private static readonly string _sh = Path.Join("/usr/bin", "sh");
   // A wine in PATH, which lip never runs, and the wine program of the Wine of lip.
   private static readonly string _wine = Path.Join("/usr/bin", "wine");
@@ -68,6 +70,53 @@ public class WorkspaceProgramTests {
     Assert.Equal($"/s /c \"{Hook}\"", start.JoinedArguments);
     Assert.Equal(Root, start.WorkingDirectory);
     Assert.Empty(start.EnvironmentOverrides);
+  }
+
+  [Fact]
+  public void HookCommand_WindowsWithTheRuntimeForTheUser_PutsItsDirectoryFirstInPath() {
+    // Act
+    ProgramStartInfo start = WorkspaceProgram.HookCommand(
+        Hook, Host(true, "win-x64") with { UserVcRuntime = () => UserRuntime });
+
+    // Assert
+    Assert.Equal($"{UserRuntime};{WindowsPath}", start.EnvironmentOverrides["PATH"]);
+  }
+
+  [Fact]
+  public void Server_WindowsWithTheRuntimeForTheUser_PutsItsDirectoryFirstInPath() {
+    // Act
+    ProgramStartInfo start = WorkspaceProgram.Server(
+        Host(true, "win-x64") with { UserVcRuntime = () => UserRuntime }, ModServer);
+
+    // Assert
+    Assert.Equal($"{UserRuntime};{WindowsPath}", start.EnvironmentOverrides["PATH"]);
+  }
+
+  [Fact]
+  public void Server_WindowsWithTheRuntimeForTheUserAndNoPath_HasOnlyItsDirectoryInPath() {
+    // Arrange
+    ProgramHost host = new(true, "win-x64", Root, _ => null) {
+      UserVcRuntime = () => UserRuntime,
+    };
+
+    // Act
+    ProgramStartInfo start = WorkspaceProgram.Server(host, ModServer);
+
+    // Assert
+    Assert.Equal(UserRuntime, start.EnvironmentOverrides["PATH"]);
+  }
+
+  [Fact]
+  public void Server_ThroughWine_NeverAsksForTheRuntimeOfTheUser() {
+    // Act
+    ProgramStartInfo start = WorkspaceProgram.Server(
+        Host(false, "win-x64") with {
+          UserVcRuntime = () => throw new InvalidOperationException("asked"),
+        },
+        ModServer);
+
+    // Assert
+    Assert.False(start.EnvironmentOverrides.ContainsKey("PATH"));
   }
 
   [Fact]
