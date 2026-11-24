@@ -72,7 +72,9 @@ public class McmodServiceRunTests : IDisposable {
   private static void SkipWhereTheServerCannotStart() => Assert.SkipUnless(
       _serverStarts, "This system has no Wine of lip, which runs the Windows server here.");
 
-  private async Task<int> Run(ServerRunOptions? options = null) {
+  private Task<int> Run() => Run(null);
+
+  private async Task<int> Run(ServerRunOptions? options) {
     Mock<IProgramStarter> starter = new();
     starter.Setup(s => s.Start(It.IsAny<ProgramStartInfo>()))
         .Callback((ProgramStartInfo start) => {
