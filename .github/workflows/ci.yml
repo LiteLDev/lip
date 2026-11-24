@@ -17,13 +17,15 @@ permissions:
 
 jobs:
   # Decides which jobs to run from the files the pull request or merge group changes. A change to
-  # this workflow, to src, or to what every project builds with runs every job; a change to tests
-  # runs lint and test; a change to .editorconfig runs lint; any other change, like one to the
-  # docs, protocol or packaging, runs none. Pushes and manual runs run every job.
+  # this workflow runs every job; a change to src, or to what every project builds with, every job
+  # but install, which installs a released lip; a change to tests runs lint and test; a change to
+  # install.sh runs lint and install; a change to .editorconfig runs lint; any other change, like
+  # one to the docs, protocol or packaging, runs none. Pushes and manual runs run every job.
   changes:
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.changes.outputs.build }}
+      install: ${{ steps.changes.outputs.install }}
       lint: ${{ steps.changes.outputs.lint }}
       test: ${{ steps.changes.outputs.test }}
     steps:
@@ -48,25 +50,28 @@ jobs:
             *) base= ;;
           esac
 
-          build=false lint=false test=false
+          build=false install=false lint=false test=false
           if [ -z "$base" ]; then
-            build=true lint=true test=true
+            build=true install=true lint=true test=true
           else
             # Without renames, a file moved out of src is listed under its old path too.
             while IFS= read -r file; do
               echo "$file"
               case "$file" in
-                .github/workflows/ci.yml | src/* | lip.slnx | global.json | [Nn]u[Gg]et.config | Directory.*)
+                .github/workflows/ci.yml) build=true install=true lint=true test=true ;;
+                src/* | lip.slnx | global.json | [Nn]u[Gg]et.config | Directory.*)
                   build=true lint=true test=true ;;
                 tests/*) lint=true test=true ;;
+                install.sh) install=true lint=true ;;
                 .editorconfig) lint=true ;;
               esac
             done < <(git diff --name-only --no-renames "$base" HEAD)
           fi
 
-          echo "build=$build lint=$lint test=$test"
+          echo "build=$build install=$install lint=$lint test=$test"
           {
             echo "build=$build"
+            echo "install=$install"
             echo "lint=$lint"
             echo "test=$test"
           } >> "$GITHUB_OUTPUT"
@@ -125,6 +130,9 @@ jobs:
           dotnet-version: 10
 
       - run: dotnet format --verify-no-changes
+
+      # install.sh runs in any POSIX shell (#!/bin/sh), so ShellCheck checks it as sh.
+      - run: shellcheck install.sh
 
       # Code style and the .NET analyzers at build time, with every warning failing the build.
       - run: dotnet build -warnaserror -p:EnforceCodeStyleInBuild=true
@@ -242,12 +250,32 @@ jobs:
       # job fails.
       - run: dotnet test --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type none
 
+  # Installs the latest release of lip with install.sh, as curl -fsSL .../install.sh | sh does,
+  # without changing PATH, and runs it.
+  install:
+    needs: changes
+    if: needs.changes.outputs.install == 'true'
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: |
+          dir=$(mktemp -d)
+          LIP_INSTALL_DIR="$dir" LIP_NO_MODIFY_PATH=1 sh install.sh < /dev/null
+          "$dir/lip" -v
+
   # The single check that the ruleset of main requires: it fails unless every job above
   # succeeded or was skipped as the change does not need it, so the ruleset need not name each
   # job of each matrix. A job is skipped otherwise only when a job it needs failed, which fails
   # this check too.
   ci-ok:
-    needs: [changes, build, lint, server, test]
+    needs: [changes, build, install, lint, server, test]
     if: always()
     runs-on: ubuntu-latest
     steps:

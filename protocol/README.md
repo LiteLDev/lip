@@ -21,6 +21,7 @@ Commands (section 1):
 | [lip-pkg(1)](lip-pkg.md) | `lip pkg init` and `migrate` |
 | [lip-self-update(1)](lip-self-update.md) | `lip self-update` |
 | [lip-tui(1)](lip-tui.md) | The interactive interface that `lip` runs without arguments. |
+| [install.sh(1)](install.sh.md) | The script that installs `lip` on Linux and macOS. |
 
 File formats (section 5):
 

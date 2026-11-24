@@ -23,10 +23,11 @@ dotnet publish src/Lip.Cli -o bin -r win-x64 --self-contained -p:DebugType=embed
 ```
 
 `.github/workflows/ci.yml` runs the same, on every system `lip` is released for, and also runs a real server
-with the `lip` it built. It runs only the jobs a change needs: a change to `ci.yml`, `src` or what every project
-builds with runs them all, a change to `tests` runs only the lint and the tests, and a change to nothing of these,
-like one to the docs, runs none. Its job `ci-ok` succeeds only when every job that ran succeeded, and is the check
-that pull requests and the merge queue require.
+with the `lip` it built. It runs only the jobs a change needs: a change to `ci.yml` runs them all; a change to
+`src` or what every project builds with runs all but the installation with `install.sh`; a change to `tests` runs
+only the lint and the tests; a change to `install.sh` runs only the lint (with ShellCheck) and an installation with
+it on Linux and macOS; and a change to nothing of these, like one to the docs, runs none. Its job `ci-ok` succeeds
+only when every job that ran succeeded, and is the check that pull requests and the merge queue require.
 
 Pull requests land through the merge queue, whose merge method is squash, so each one becomes a single commit on
 `main`. `gh pr merge` adds a pull request to the queue instead of merging it at once; the queue, not a flag, picks
@@ -40,6 +41,10 @@ The documentation at [levimc.org/lip](https://levimc.org/lip/) is written in
 of the other LeviMC projects; that repository says how to build it and how to write a page. The pictures of the
 interface are still made here, by the tests, and committed there (`docs/lip/public/screenshots/`): see
 [tests/Lip.Cli.Tests/Tui/Screenshots/README.md](tests/Lip.Cli.Tests/Tui/Screenshots/README.md).
+
+`install.sh`, the script that installs `lip` on Linux and macOS ([install.sh(1)](protocol/install.sh.md)), is
+written here and served from the website as `https://levimc.org/lip/install.sh`. When you change it, copy it to
+`docs/lip/public/install.sh` there too, so that the website serves the same script.
 
 The tutorials that use `lip` (your first server, a server from the command line, publishing a package) are at
 [levimc.org/tutorials](https://levimc.org/tutorials/), written in
