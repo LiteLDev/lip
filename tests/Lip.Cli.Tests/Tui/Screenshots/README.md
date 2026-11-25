@@ -1,8 +1,8 @@
 # Screenshots of the interface
 
 This page is for whoever writes the documentation. The documentation of lip is written in
-[LiteLDev/liteldev.github.io](https://github.com/LiteLDev/liteldev.github.io) (`docs/lip/`), and
-the pictures of the interface that it shows are committed there, in `docs/lip/public/screenshots/`;
+[LiteLDev/liteldev.github.io](https://github.com/LiteLDev/liteldev.github.io) (`content/lip/`), and
+the pictures of the interface that it shows are committed there, in `content/lip/public/screenshots/`;
 they are made here, by the tests of lip.
 
 The pictures of the interactive interface are not taken of a
@@ -25,7 +25,7 @@ tests/Lip.Cli.Tests/Tui/Screenshots/
 
 ## Making and checking the pictures
 
-The pictures are written to `<docs>`: `docs/lip/public/screenshots` of a checkout of
+The pictures are written to `<docs>`: `content/lip/public/screenshots` of a checkout of
 LiteLDev/liteldev.github.io named `liteldev.github.io` next to the checkout of lip, or the
 directory that `LIP_SCREENSHOTS_DIR` names. Without either, the scenarios fail and say so.
 
@@ -52,7 +52,7 @@ dotnet test tests/Lip.Cli.Tests --filter "Category=DocsScreenshots"
   `cmd.exe` as the server and is skipped elsewhere, and the paths that the interface shows are
   those of Windows there without any rewriting (see "Limits").
 
-After `write`, look at `git diff --stat docs/lip/public/screenshots` in liteldev.github.io: only the pictures of what you
+After `write`, look at `git diff --stat content/lip/public/screenshots` in liteldev.github.io: only the pictures of what you
 changed should differ. Open the changed files in a browser before you commit them.
 
 ## Writing a scenario
@@ -190,7 +190,7 @@ its target; choose the side with nothing in between, or `Side.Top` and `Side.Bot
 ## Embedding a picture
 
 How a page of the documentation embeds a picture, in each language, is written in
-LiteLDev/liteldev.github.io, with the pages (`docs/lip/`).
+LiteLDev/liteldev.github.io, with the pages (`content/lip/`).
 
 The tutorials at [levimc.org/tutorials](https://levimc.org/tutorials/) (Your first server, Install mods on your
 server) show the `first-server-` pictures by their full URL, `https://levimc.org/lip/screenshots/<language>/<name>.svg`:

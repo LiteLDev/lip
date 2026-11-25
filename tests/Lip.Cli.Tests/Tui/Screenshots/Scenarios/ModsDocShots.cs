@@ -6,8 +6,8 @@ using Lip.Core.Mcmod;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The Mods page, for docs/lip/interface/mods.md of liteldev.github.io: every state of it that
-/// ModsShots does not show.
+/// The Mods page, for content/lip/pages/interface/mods.md of liteldev.github.io: every state of it
+/// that ModsShots does not show.
 public sealed class ModsDocShots(ShotRun run) {
   private const string ScriptEngine = Catalogue.ScriptEngine + "#lua";
   private const string WelcomeKit = "github.com/steve-builds/WelcomeKit";

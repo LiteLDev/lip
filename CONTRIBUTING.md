@@ -41,14 +41,14 @@ again; a push to a `release/**` branch still does.
 ## The documentation
 
 The documentation at [levimc.org/lip](https://levimc.org/lip/) is written in
-[LiteLDev/liteldev.github.io](https://github.com/LiteLDev/liteldev.github.io) (`docs/lip/`), with the documentation
+[LiteLDev/liteldev.github.io](https://github.com/LiteLDev/liteldev.github.io) (`content/lip/`), with the documentation
 of the other LeviMC projects; that repository says how to build it and how to write a page. The pictures of the
-interface are still made here, by the tests, and committed there (`docs/lip/public/screenshots/`): see
+interface are still made here, by the tests, and committed there (`content/lip/public/screenshots/`): see
 [tests/Lip.Cli.Tests/Tui/Screenshots/README.md](tests/Lip.Cli.Tests/Tui/Screenshots/README.md).
 
 `install.sh`, the script that installs `lip` on Linux and macOS ([install.sh(1)](protocol/install.sh.md)), is
 written here and served from the website as `https://levimc.org/lip/install.sh`. When you change it, copy it to
-`docs/lip/public/install.sh` there too, so that the website serves the same script.
+`content/lip/public/install.sh` there too, so that the website serves the same script.
 
 The tutorials that use `lip` (your first server, a server from the command line, publishing a package) are at
 [levimc.org/tutorials](https://levimc.org/tutorials/), written in

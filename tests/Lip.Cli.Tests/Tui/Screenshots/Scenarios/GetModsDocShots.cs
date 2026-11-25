@@ -7,8 +7,8 @@ using Lip.Core.Catalog;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The Get mods page, for docs/lip/interface/get_mods.md of liteldev.github.io: every state of it
-/// that GetModsShots does not show.
+/// The Get mods page, for content/lip/pages/interface/get_mods.md of liteldev.github.io: every
+/// state of it that GetModsShots does not show.
 public sealed class GetModsDocShots(ShotRun run) {
   private const string ChatBridge = "github.com/steve-builds/ChatBridge";
 
