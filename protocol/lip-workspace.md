@@ -47,6 +47,7 @@ When the platform of the environment is a Windows platform and `lip` does not ru
 |---|---|
 | `WINEPREFIX` | When it is unset or empty for `lip`: the absolute path of `.lip/wine`. |
 | `WINEDEBUG` | When it is unset for `lip`: `-all`. |
+| `WINEDLLOVERRIDES` | When it is unset for `lip`: `mscoree,mshtml=;winemac.drv,winex11.drv=d`. This turns off Wine Mono, Wine Gecko and the graphics drivers of Wine for macOS and X11, so that no program waits for a window or for the window server: a user who is not logged in to the desktop, such as one through SSH, runs them too. |
 
 The **exit code** of a program is the status that the process `lip` started exits with, `wine` included, or 128 + n when signal n ([signal(7)]) ends it. Wine creates its prefix when it is missing; what the prefix holds is not defined here.
 
