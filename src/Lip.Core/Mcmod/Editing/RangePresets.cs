@@ -6,7 +6,7 @@ namespace Lip.Core.Mcmod.Editing;
 /// range (protocol/lip-package.md, "Terms").
 public enum RangePreset {
   /// Every version from the one chosen up to the next minor version: its patch versions that
-  /// are not lower than it, such as >=1.4.2 <1.5.0. What the editor recommends.
+  /// are not lower than it, as ~ means: ~1.4.2. What the editor recommends.
   Patch,
 
   /// Every version from the one chosen up to the next major version, as ^ means: ^1.4.2.
@@ -30,7 +30,7 @@ public static class RangePresets {
   public static string Of(RangePreset preset, SemVersion version) {
     string text = version.WithoutMetadata().ToString();
     return preset switch {
-      RangePreset.Patch => $">={text} <{version.Major}.{version.Minor + 1}.0",
+      RangePreset.Patch => $"~{text}",
       RangePreset.Minor => $"^{text}",
       RangePreset.AtLeast => $">={text}",
       RangePreset.Exact => text,
@@ -40,13 +40,17 @@ public static class RangePresets {
 
   /// The preset that gives a range for a version, or null when none does.
   public static RangePreset? Match(string range, SemVersion version) {
+    string text = range.Trim();
     foreach (RangePreset preset in All) {
-      if (Of(preset, version) == range.Trim()) {
+      if (Of(preset, version) == text) {
         return preset;
       }
     }
 
-    return null;
+    // How the editor used to write Patch, which matches the same versions as ~.
+    return text == $">={version.WithoutMetadata()} <{version.Major}.{version.Minor + 1}.0"
+        ? RangePreset.Patch
+        : null;
   }
 
   /// The version that a range starts at, when it is one that a preset gives: what the editor

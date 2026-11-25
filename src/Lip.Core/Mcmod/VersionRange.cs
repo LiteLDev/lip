@@ -30,8 +30,8 @@ public class VersionRange : IVersionConstraint {
   }
 
   /// How a range is written, for messages.
-  public const string Syntax = "A version range is written like 1.2.3, >=1.2.0 <2.0.0,"
-      + " ^1.2.0, ~1.2.0, 1.* or *, with SemVer versions without a leading 'v', and"
+  public const string Syntax = "A version range is written like 1.2.3, ~1.2.0,"
+      + " ^1.2.0, >=1.2.0 <2.0.0, 1.* or *, with SemVer versions without a leading 'v', and"
       + " alternatives separated by ||.";
 
   public static bool TryParse(string s, out VersionRange? range) {
