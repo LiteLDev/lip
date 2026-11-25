@@ -48,6 +48,18 @@ try {
         throw "The package installed lip to $lip, not for the user."
     }
 
+    # The URL scheme lip of the user, which opens a lip:// link with lip --uri
+    # (protocol/lip-uri.md).
+    $scheme = Get-ItemProperty 'HKCU:\Software\Classes\lip'
+    if ($scheme.'URL Protocol' -ne '') {
+        throw 'The package did not register the URL scheme lip for the user.'
+    }
+    $open = (Get-ItemProperty 'HKCU:\Software\Classes\lip\shell\open\command').'(default)'
+    "lip:// opens with: $open"
+    if ($open -ine "`"$lip`" --uri `"%1`"") {
+        throw "The URL scheme lip opens links with $open, not with $lip --uri."
+    }
+
     $bash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe'
     $lipPath = & $bash -c 'cygpath -u "$1"' _ $lip
     # Windows PowerShell makes each line a native program writes to standard error an error
