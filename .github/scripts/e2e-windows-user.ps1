@@ -18,17 +18,18 @@ Start-Transcript -Path (Join-Path $Dir 'out.txt') | Out-Null
 try {
     whoami
     # Start-Process -Credential passes on the environment of the runner's user; a terminal of this
-    # user would have these.
-    # The folders of a new profile may not exist yet, for which GetFolderPath returns "" unless
-    # told not to look.
-    $folder = { param($name) [Environment]::GetFolderPath($name, 'DoNotVerify') }
-    $env:USERPROFILE = & $folder 'UserProfile'
+    # user would have these. They come from the profile Windows made for this user, not from
+    # GetFolderPath, which expands the USERPROFILE it is passed on into the runner's folders. The
+    # folders of a new profile may not exist yet.
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $env:USERPROFILE = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid").ProfileImagePath
     $env:HOME = $env:USERPROFILE
-    $env:APPDATA = & $folder 'ApplicationData'
-    $env:LOCALAPPDATA = & $folder 'LocalApplicationData'
+    $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
+    $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
     $env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
     $env:TMP = $env:TEMP
     foreach ($directory in $env:APPDATA, $env:LOCALAPPDATA, $env:TEMP) {
+        "Folder: $directory"
         New-Item -ItemType Directory -Force $directory | Out-Null
     }
     "LOCALAPPDATA: $env:LOCALAPPDATA"
