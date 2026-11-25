@@ -50,9 +50,14 @@ try {
 
     $bash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe'
     $lipPath = & $bash -c 'cygpath -u "$1"' _ $lip
+    # Windows PowerShell makes each line a native program writes to standard error an error
+    # record when 2>&1 takes it, which stops the script under Stop; lip writes its progress there.
+    $ErrorActionPreference = 'Continue'
     & $bash (Join-Path $Dir 'e2e-server.sh') $lipPath 2>&1 | ForEach-Object { "$_" }
-    if ($LASTEXITCODE -ne 0) {
-        throw "e2e-server.sh exited with $LASTEXITCODE"
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($code -ne 0) {
+        throw "e2e-server.sh exited with $code"
     }
 
     $runtime = Join-Path $env:LOCALAPPDATA 'lip\Data\vc-runtime'
