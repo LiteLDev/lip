@@ -10,7 +10,7 @@ Run a LeviLamina server and manage its packages
 
 ### Windows
 
-Download `lip-<version>-win-x64.msi` (or `-win-arm64.msi`) from the [latest release](https://github.com/LiteLDev/lip/releases/latest) and run it.
+Download `lip-<version>-win-x64.msi` (or `-win-arm64.msi`) from the [latest release](https://github.com/LiteLDev/lip/releases/latest) and run it. It installs `lip` for you, into `%LOCALAPPDATA%\Programs\lip`, and adds that folder to your `PATH`, without administrator rights. Where an earlier version installed `lip` for every user, it updates that installation instead, which needs an administrator.
 
 ### macOS
 
@@ -34,7 +34,7 @@ The script installs `lip` to `~/.local/bin`, without root, and offers to add tha
 
 ### What it needs
 
-`lip` is one executable file and needs nothing else installed. On Linux and macOS it runs the Windows server, the one LeviLamina loads into, through [Wine](https://www.winehq.org/), which it downloads and sets up itself, with the Visual C++ Redistributable the server needs. On a Mac with Apple silicon, Wine needs Rosetta 2, which `lip` installs once you accept its license. On Linux, `lip` needs glibc 2.27 or later (so not Alpine), and Wine needs the GnuTLS library, and Fontconfig where FreeType is installed: `lip` names any that is missing and the command that installs it. See [Linux and macOS](https://levimc.org/lip/guides/linux_macos.html). `lip -v` prints its version, and `lip self-update` updates it. See [`lip self-update`](https://levimc.org/lip/reference/commands/self_update.html).
+`lip` is one executable file and needs nothing else installed. The server needs the Visual C++ runtime: on Windows, when it is not installed, `lip` downloads it and sets it up for you, without administrator rights. On Linux and macOS it runs the Windows server, the one LeviLamina loads into, through [Wine](https://www.winehq.org/), which it downloads and sets up itself, with the Visual C++ Redistributable. On a Mac with Apple silicon, Wine needs Rosetta 2, which `lip` installs once you accept its license. On Linux, `lip` needs glibc 2.27 or later (so not Alpine), and Wine needs the GnuTLS library, and Fontconfig where FreeType is installed: `lip` names any that is missing and the command that installs it. See [Linux and macOS](https://levimc.org/lip/guides/linux_macos.html). `lip -v` prints its version, and `lip self-update` updates it. See [`lip self-update`](https://levimc.org/lip/reference/commands/self_update.html).
 
 The script's settings, such as `LIP_VERSION`, `LIP_INSTALL_DIR` and `LIP_GITHUB_PROXY`, are at the top of [`install.sh`](install.sh).
 

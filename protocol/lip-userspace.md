@@ -40,7 +40,7 @@ Any other entry is not defined here; a process must not read meaning into it.
 
 ### Data directory
 
-The data directory holds the Wine of `lip` ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)), shared by every workspace, and what `lip` downloads to install the system dependencies. Only `lip` writes to it; its entries are not defined here, and another process must not read meaning into them.
+The data directory holds the Wine of `lip` and, on Windows, the runtime directory of the Visual C++ runtime ([lip-workspace(7), "System dependencies"](lip-workspace.md#system-dependencies)), shared by every workspace, and what `lip` downloads to install the system dependencies. Only `lip` writes to it; its entries are not defined here, and another process must not read meaning into them.
 
 Deleting the data directory while no `lip` process runs loses nothing: `lip` installs the system dependencies again when it needs them.
 

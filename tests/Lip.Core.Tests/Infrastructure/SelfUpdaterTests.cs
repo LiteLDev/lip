@@ -18,7 +18,7 @@ public class SelfUpdaterTests {
   private readonly MockFileSystem _fs = new();
   private readonly FaultyFileSystem _faults;
   private readonly Mock<IFileDownloader> _downloader = new();
-  private readonly Mock<IElevatedStarter> _starter = new();
+  private readonly Mock<IInstallerStarter> _starter = new();
   private readonly Dictionary<string, byte[]> _downloads = [];
   private readonly List<string> _downloaded = [];
   private readonly Mock<IGitRemoteClient> _git = new();
@@ -100,6 +100,18 @@ public class SelfUpdaterTests {
   }
 
   [Theory]
+  [InlineData("{\"kind\": \"msi\", \"scope\": \"machine\"}", InstallationKind.Msi)]
+  [InlineData("{\"kind\": \"msi\", \"scope\": \"user\"}", InstallationKind.MsiForUser)]
+  public void ReadKind_InstallJsonOfMsiWithScope_IsMsiOfThatScope(
+      string json, InstallationKind expected) {
+    _fs.AddFile(Path.Join(_install, "install.json"), json);
+
+    Assert.Equal(expected, SelfUpdater.ReadKind(_fs, _install));
+  }
+
+  [Theory]
+  [InlineData("{\"kind\": \"msi\", \"scope\": \"everyone\"}")]
+  [InlineData("{\"kind\": \"msi\", \"scope\": 1}")]
   [InlineData("{\"kind\": \"portable\"}")]
   [InlineData("{\"kind\": \"setup\"}")]
   [InlineData("{\"kind\": 1}")]
@@ -243,7 +255,21 @@ public class SelfUpdaterTests {
     string msi = Path.Join(_cache, "self-update", "lip-1.1.0-win-x64.msi");
     Assert.Equal(SelfUpdateOutcome.InstallerStarted, result.Outcome);
     Assert.Equal([4], _fs.File.ReadAllBytes(msi));
-    _starter.Verify(s => s.Start("msiexec.exe", new[] { "/i", msi, "/qn", "/norestart" }));
+    _starter.Verify(s => s.Start(
+        "msiexec.exe", new[] { "/i", msi, "/qn", "/norestart" }, true));
+  }
+
+  [Fact]
+  public async Task Run_MsiForTheUser_StartsMsiexecAsTheUser() {
+    _fs.AddFile(Path.Join(_install, "install.json"), "{\"kind\":\"msi\",\"scope\":\"user\"}");
+    AddRelease("v1.1.0", new() { ["lip-1.1.0-win-x64.msi"] = [4] });
+
+    SelfUpdateResult result = await CreateUpdater().Run(SemVersion.Parse("1.0.0"), false);
+
+    string msi = Path.Join(_cache, "self-update", "lip-1.1.0-win-x64.msi");
+    Assert.Equal(SelfUpdateOutcome.InstallerStarted, result.Outcome);
+    _starter.Verify(s => s.Start(
+        "msiexec.exe", new[] { "/i", msi, "/qn", "/norestart" }, false));
   }
 
   [Fact]

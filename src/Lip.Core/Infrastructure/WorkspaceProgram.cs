@@ -20,7 +20,9 @@ public sealed record ProgramStartInfo(
 /// workspace root (protocol/lip-workspace.md, "The .lip directory"). Wine is the wine program of
 /// the Wine of lip (protocol/lip-workspace.md, "System dependencies"), null when the system has
 /// none. IsExecutable tells whether a path is a file lip can run, and IsFile whether a file
-/// exists; SystemDirectory is the Windows system directory, which holds cmd.exe.
+/// exists; SystemDirectory is the Windows system directory, which holds cmd.exe. UserVcRuntime
+/// returns, as a program starts, the runtime directory of the Visual C++ runtime when that is
+/// installed for the user and not for the system on Windows, otherwise null.
 public sealed record ProgramHost(
     bool IsWindows,
     string Platform,
@@ -34,6 +36,8 @@ public sealed record ProgramHost(
 
   public string? Wine { get; init; }
 
+  public Func<string?> UserVcRuntime { get; init; } = () => null;
+
   /// The host lip runs on for the current invocation, with the Wine of lip in the data directory.
   public static ProgramHost Current(string platform, string workspaceRoot) =>
       For(Invocation.Current, platform, workspaceRoot);
@@ -44,6 +48,7 @@ public sealed record ProgramHost(
           OperatingSystem.IsWindows(), platform, workspaceRoot,
           invocation.GetEnvironmentVariable) {
         Wine = ManagedWine.Executable(LipDirectories.Data, SystemInfo.Current),
+        UserVcRuntime = () => ManagedVcRuntime.ForPrograms(LipDirectories.Data, new SystemProbe()),
       };
 
   /// A file that is, outside Windows, executable by someone.
@@ -116,7 +121,7 @@ public static class WorkspaceProgram {
       // so the string goes verbatim; /s makes cmd strip only the outer quotes added here.
       return new ProgramStartInfo(
           Path.Join(host.SystemDirectory, "cmd.exe"), ["/s", "/c", $"\"{command}\""],
-          VerbatimArguments: true, host.WorkspaceRoot, new Dictionary<string, string>());
+          VerbatimArguments: true, host.WorkspaceRoot, WindowsEnvironment(host));
     }
 
     // Wine makes its Windows command line from its arguments, quoting an argument with a space
@@ -180,7 +185,9 @@ public static class WorkspaceProgram {
     if (!RunsThroughWine(host)) {
       return new ProgramStartInfo(
           fileName, arguments, VerbatimArguments: false, host.WorkspaceRoot,
-          new Dictionary<string, string>());
+          host.IsWindows && IsWindowsPlatform(host.Platform)
+              ? WindowsEnvironment(host)
+              : new Dictionary<string, string>());
     }
 
     Dictionary<string, string> environment = new(StringComparer.Ordinal);
@@ -201,6 +208,20 @@ public static class WorkspaceProgram {
         + $" {host.Platform} here: lip runs them on Windows, on Linux on x64 and on macOS.");
     return new ProgramStartInfo(
         wine, [fileName, .. arguments], VerbatimArguments: false, host.WorkspaceRoot, environment);
+  }
+
+  /// The environment variables lip sets for a program of a Windows platform on Windows: PATH,
+  /// with the runtime directory first, when the Visual C++ runtime is installed for the user and
+  /// not for the system (protocol/lip-workspace.md, "Running programs").
+  private static Dictionary<string, string> WindowsEnvironment(ProgramHost host) {
+    Dictionary<string, string> environment = new(StringComparer.OrdinalIgnoreCase);
+    if (host.UserVcRuntime() is string runtime) {
+      environment["PATH"] = host.GetEnvironmentVariable("PATH") is { Length: > 0 } path
+          ? $"{runtime};{path}"
+          : runtime;
+    }
+
+    return environment;
   }
 
   /// The absolute path of the first executable file of the name in the directories of PATH, with

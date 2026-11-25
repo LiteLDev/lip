@@ -416,7 +416,7 @@ public sealed class LipClient {
         _fileSystem,
         new FileDownloader(_userInteraction, githubProxy),
         new GitRemoteClient(githubProxy),
-        new ShellElevatedStarter(),
+        new ShellInstallerStarter(),
         SelfUpdateHost.Current,
         string.IsNullOrEmpty(repository) ? null : Url.Parse(repository));
     SelfUpdateResult result = await updater.Run(running, checkOnly);
