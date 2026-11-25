@@ -113,8 +113,8 @@ public sealed class ShotRun : IDisposable {
           : null;
 
   /// The directory of the screenshots: that of LIP_SCREENSHOTS_DIR, or
-  /// docs/lip/public/screenshots of a checkout of LiteLDev/liteldev.github.io (the documentation)
-  /// named liteldev.github.io next to the repository that the tests were built from.
+  /// content/lip/public/screenshots of a checkout of LiteLDev/liteldev.github.io (the
+  /// documentation) named liteldev.github.io next to the repository that the tests were built from.
   public static string OutputDirectory {
     get {
       if (Environment.GetEnvironmentVariable(DirectoryVariable) is { Length: > 0 } given) {
@@ -125,14 +125,15 @@ public sealed class ShotRun : IDisposable {
           directory = directory.Parent) {
         if (File.Exists(Path.Join(directory.FullName, "lip.slnx"))) {
           string docs = Path.Join(directory.Parent?.FullName ?? directory.FullName,
-              "liteldev.github.io", "docs", "lip");
+              "liteldev.github.io", "content", "lip");
           if (Directory.Exists(docs)) {
             return Path.Join(docs, "public", "screenshots");
           }
 
           throw new InvalidOperationException(
               $"The documentation was not found at {docs}: set {DirectoryVariable} to"
-                  + " docs/lip/public/screenshots of a checkout of LiteLDev/liteldev.github.io.");
+                  + " content/lip/public/screenshots of a checkout of"
+                  + " LiteLDev/liteldev.github.io.");
         }
       }
 

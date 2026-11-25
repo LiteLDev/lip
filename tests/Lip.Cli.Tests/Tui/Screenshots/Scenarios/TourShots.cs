@@ -13,9 +13,9 @@ using Semver;
 
 namespace Lip.Cli.Tests.Tui.Screenshots.Scenarios;
 
-/// The interface as a whole, for docs/lip/interface/tour.md of liteldev.github.io: its layout,
-/// where the focus is, an operation that is cancelled, a failure with hints, the folder browser,
-/// and a terminal that is too small.
+/// The interface as a whole, for content/lip/pages/interface/tour.md of liteldev.github.io: its
+/// layout, where the focus is, an operation that is cancelled, a failure with hints, the folder
+/// browser, and a terminal that is too small.
 public sealed class TourShots(ShotRun run) {
   [ShotTheory]
   [ClassData(typeof(AllLanguages))]
