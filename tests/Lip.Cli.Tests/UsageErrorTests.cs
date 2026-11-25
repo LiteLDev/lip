@@ -167,6 +167,22 @@ public sealed class UsageErrorTests(LipProcess lip) : IDisposable, IClassFixture
     Assert.False(Directory.Exists(Path.Join(_workspace, ".lip")));
   }
 
+  /// lip --uri with a link that is not valid fails before it does anything, and so does one
+  /// with a valid link whose standard streams are not terminals (protocol/lip-uri.md).
+  [Theory]
+  [InlineData("lip://install/https://evil.example/x.zip", "cannot open the link")]
+  [InlineData("lip://install/github.com/a/b?version=branch:main", "cannot open the link")]
+  [InlineData("lip://uninstall/github.com/a/b", "cannot open the link")]
+  [InlineData("lip://install/github.com/a/b?version=1.0.0", "terminals")]
+  public async Task Link_ThatCannotBeOpened_Fails(string link, string expected) {
+    (int exitCode, string stdout, string stderr) = await Run("--uri", link);
+
+    Assert.NotEqual(0, exitCode);
+    Assert.Equal("", stdout);
+    Assert.Contains(expected, stderr);
+    Assert.Empty(Directory.EnumerateFileSystemEntries(_workspace));
+  }
+
   /// The package development commands are only in the command group pkg (protocol/lip.md,
   /// "Arguments"), which has no pack, view or versions (protocol/lip-pkg.md).
   [Theory]
