@@ -81,7 +81,11 @@ public class WorkspaceProgramTests {
     Assert.Equal(["cmd", "/s", "/c", Hook], start.Arguments);
     Assert.Equal(Root, start.WorkingDirectory);
     Assert.Equal(
-        new Dictionary<string, string> { ["WINEPREFIX"] = WinePrefix, ["WINEDEBUG"] = "-all" },
+        new Dictionary<string, string> {
+          ["WINEPREFIX"] = WinePrefix,
+          ["WINEDEBUG"] = "-all",
+          ["WINEDLLOVERRIDES"] = WorkspaceProgram.WineDllOverrides,
+        },
         start.EnvironmentOverrides);
   }
 
@@ -182,7 +186,11 @@ public class WorkspaceProgramTests {
     Assert.Equal([Path.Join(Root, "bedrock_server_mod.exe")], start.Arguments);
     Assert.Equal(Root, start.WorkingDirectory);
     Assert.Equal(
-        new Dictionary<string, string> { ["WINEPREFIX"] = WinePrefix, ["WINEDEBUG"] = "-all" },
+        new Dictionary<string, string> {
+          ["WINEPREFIX"] = WinePrefix,
+          ["WINEDEBUG"] = "-all",
+          ["WINEDLLOVERRIDES"] = WorkspaceProgram.WineDllOverrides,
+        },
         start.EnvironmentOverrides);
   }
 
@@ -205,9 +213,10 @@ public class WorkspaceProgramTests {
     ProgramStartInfo start = WorkspaceProgram.Server(Host(false, "win-x64", new() {
       ["WINEPREFIX"] = "/home/u/.wine",
       ["WINEDEBUG"] = "",
+      ["WINEDLLOVERRIDES"] = "",
     }), ModServer);
 
-    // Assert: an empty WINEDEBUG is set, so it is kept.
+    // Assert: an empty WINEDEBUG or WINEDLLOVERRIDES is set, so it is kept.
     Assert.Empty(start.EnvironmentOverrides);
   }
 
@@ -217,6 +226,7 @@ public class WorkspaceProgramTests {
     ProgramStartInfo start = WorkspaceProgram.Server(Host(false, "win-x64", new() {
       ["WINEPREFIX"] = "",
       ["WINEDEBUG"] = "warn+all",
+      ["WINEDLLOVERRIDES"] = "winemac.drv=b",
     }), ModServer);
 
     // Assert

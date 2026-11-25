@@ -205,7 +205,8 @@ public class SystemDependenciesTests : IDisposable {
         @"HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64", query.Arguments);
     Assert.Equal(Path.Join(Root, ".lip", "wine"), query.EnvironmentOverrides["WINEPREFIX"]);
     Assert.Equal("-all", query.EnvironmentOverrides["WINEDEBUG"]);
-    Assert.Equal("mscoree,mshtml=", query.EnvironmentOverrides["WINEDLLOVERRIDES"]);
+    Assert.Equal(
+        WorkspaceProgram.WineDllOverrides, query.EnvironmentOverrides["WINEDLLOVERRIDES"]);
     Assert.DoesNotContain(_probe.Runs, r => r.Arguments.Contains("/install"));
   }
 
