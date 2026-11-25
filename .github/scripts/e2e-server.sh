@@ -13,8 +13,30 @@ lip=$1
 workspace=$(mktemp -d)
 cd "$workspace" || exit 1
 
+# Runs the command; once it has run for $1 seconds, shows every process and stops it, so that a
+# hang fails the job with what was running instead of letting it run out of time.
+with_deadline() {
+  local seconds=$1
+  shift
+  "$@" &
+  local pid=$!
+  (
+    sleep "$seconds"
+    if kill -0 "$pid" 2> /dev/null; then
+      echo "::error::$* has run for $seconds seconds; these are the processes."
+      ps -A -o pid,ppid,etime,state,command 2> /dev/null || ps -ef
+      kill "$pid"
+    fi
+  ) &
+  local watchdog=$!
+  wait "$pid"
+  local code=$?
+  kill "$watchdog" 2> /dev/null
+  return "$code"
+}
+
 # --accept-rosetta-license: nothing here can answer the question of lip on a Mac with Apple silicon.
-"$lip" install LeviLamina --accept-eula --accept-rosetta-license || exit 1
+with_deadline 720 "$lip" install LeviLamina --accept-eula --accept-rosetta-license || exit 1
 
 : > server.log
 # Waits up to ten minutes until server.log has the line $1; fails once lip run has exited.
