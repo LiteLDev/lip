@@ -370,6 +370,12 @@ public sealed class SystemDependencies(
       wine = await EnsureWine(system, acceptRosettaLicense, cancellationToken);
     }
 
+    // Experiment: off Windows, rely on the builtin Visual C++ runtime DLLs of Wine instead of
+    // installing vc_redist.x64.exe in the Wine prefix.
+    if (!system.IsWindows) {
+      return;
+    }
+
     ProgramHost host = new(system.IsWindows, platform, workspaceRoot, _getEnvironmentVariable) {
       Wine = wine,
     };
