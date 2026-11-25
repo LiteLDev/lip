@@ -199,8 +199,8 @@ public class PackageDraftTests {
   }
 
   [Theory]
-  [InlineData(RangePreset.Patch, "1.4.2", ">=1.4.2 <1.5.0")]
-  [InlineData(RangePreset.Patch, "0.4.2-beta.1", ">=0.4.2-beta.1 <0.5.0")]
+  [InlineData(RangePreset.Patch, "1.4.2", "~1.4.2")]
+  [InlineData(RangePreset.Patch, "0.4.2-beta.1", "~0.4.2-beta.1")]
   [InlineData(RangePreset.Minor, "1.4.2", "^1.4.2")]
   [InlineData(RangePreset.AtLeast, "1.4.2", ">=1.4.2")]
   [InlineData(RangePreset.Exact, "1.4.2", "1.4.2")]
@@ -222,7 +222,16 @@ public class PackageDraftTests {
     Assert.True(range.IsSatisfiedBy(SemVersion.Parse("1.4.9")));
     Assert.False(range.IsSatisfiedBy(SemVersion.Parse("1.4.1")));
     Assert.False(range.IsSatisfiedBy(SemVersion.Parse("1.5.0")));
-    Assert.Equal(SemVersion.Parse("1.4.2"), RangePresets.Start(">=1.4.2 <1.5.0"));
+    Assert.False(range.IsSatisfiedBy(SemVersion.Parse("1.5.0-rc.1")));
+    Assert.Equal(SemVersion.Parse("1.4.2"), RangePresets.Start("~1.4.2"));
+  }
+
+  [Fact]
+  public void RangePresets_Patch_MatchesTheFormerSpelling() {
+    SemVersion version = SemVersion.Parse("1.4.2");
+
+    Assert.Equal(RangePreset.Patch, RangePresets.Match(">=1.4.2 <1.5.0", version));
+    Assert.Equal(version, RangePresets.Start(">=1.4.2 <1.5.0"));
   }
 
   [Theory]

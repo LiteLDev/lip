@@ -107,9 +107,9 @@ public static class ManifestEditorText {
           "Enter：從市集尋找套件，或手動輸入套件 ID。");
   public static string RangeHelp =>
       L.T(
-          "The versions it may be: >=1.2.0 <1.3.0, ^1.2.0, 1.2.0 or *. Enter: more.",
-          "允许的版本范围：>=1.2.0 <1.3.0、^1.2.0、1.2.0 或 *。Enter：更多操作。",
-          "允許的版本範圍：>=1.2.0 <1.3.0、^1.2.0、1.2.0 或 *。Enter：更多操作。");
+          "The versions it may be: ~1.2.0, ^1.2.0, 1.2.0 or *. Enter: more.",
+          "允许的版本范围：~1.2.0、^1.2.0、1.2.0 或 *。Enter：更多操作。",
+          "允許的版本範圍：~1.2.0、^1.2.0、1.2.0 或 *。Enter：更多操作。");
   public static string Assets => L.T("Assets", "资源", "資源");
   public static string AddAsset => L.T("+ Add asset…", "+ 添加资源…", "+ 新增資源…");
   public static string AssetsHelp =>
@@ -215,9 +215,9 @@ public static class ManifestEditorText {
   public static string Custom => L.T("Custom", "自定义", "自訂");
   public static string CustomAbout =>
       L.T(
-          "Type a range: >=1.2.0 <2.0.0, ^1.2.0, ~1.2.0, 1.* or alternatives with ||.",
-          "输入范围：>=1.2.0 <2.0.0、^1.2.0、~1.2.0、1.* 或用 || 连接多个范围。",
-          "輸入範圍：>=1.2.0 <2.0.0、^1.2.0、~1.2.0、1.* 或以 || 連接多個範圍。");
+          "Type a range: ~1.2.0, ^1.2.0, >=1.2.0 <2.0.0, 1.* or alternatives with ||.",
+          "输入范围：~1.2.0、^1.2.0、>=1.2.0 <2.0.0、1.* 或用 || 连接多个范围。",
+          "輸入範圍：~1.2.0、^1.2.0、>=1.2.0 <2.0.0、1.* 或以 || 連接多個範圍。");
   public static string Matches(int count, string? newest) =>
       newest is null
           ? L.T("No known version is in this range.", "没有已知版本在此范围内。", "沒有已知版本在此範圍內。")

@@ -56,7 +56,7 @@ public sealed partial class ManifestEditorTests {
 
       # What it needs.
       [variants."".deps]
-      "github.com/LiteLDev/LeviLamina" = ">=1.0.0 <1.1.0"
+      "github.com/LiteLDev/LeviLamina" = "~1.0.0"
 
       """;
 
@@ -161,7 +161,7 @@ public sealed partial class ManifestEditorTests {
     tui.Press(ConsoleKey.DownArrow);
     tui.Press(ConsoleKey.Enter);
     await tui.WaitFor(ManifestEditorText.RangeTitle("github.com/acme/Alpha"));
-    Assert.Contains(">=1.4.2 <1.5.0", tui.Screen);
+    Assert.Contains("~1.4.2", tui.Screen);
     Assert.Contains(ManifestEditorText.Matches(2, "1.4.3"), tui.Screen);
     await Frames(tui, "manifest-range");
     tui.Press(ConsoleKey.Enter);
@@ -170,7 +170,7 @@ public sealed partial class ManifestEditorTests {
     await tui.WaitFor(ManifestEditorText.Remote(new Core.Mcmod.Editing.RemoteCheck(
         Core.Mcmod.Editing.RemoteStatus.Valid, Core.Mcmod.Editing.RemoteReason.NewestInRange,
         "1.4.3")));
-    Assert.Matches(@"github\.com/acme/Alpha\s+>=1\.4\.2 <1\.5\.0\s+✓", tui.Screen);
+    Assert.Matches(@"github\.com/acme/Alpha\s+~1\.4\.2\s+✓", tui.Screen);
     await tui.WaitFor(ManifestEditorText.AllValid);
     await Frames(tui, "manifest-dependency");
 
@@ -200,7 +200,7 @@ public sealed partial class ManifestEditorTests {
     JsonElement entry = written.GetProperty("variants").GetProperty("")[0];
     Assert.Equal("server", entry.GetProperty("side").GetString());
     Assert.Equal(
-        ">=1.4.2 <1.5.0",
+        "~1.4.2",
         entry.GetProperty("deps").GetProperty("github.com/acme/Alpha").GetString());
   }
 
@@ -217,7 +217,7 @@ public sealed partial class ManifestEditorTests {
     await tui.WaitFor(ManifestEditorText.EditTitle + "  " + InRoot("lip.toml"));
     // The dependency that the file has is checked online too.
     await tui.WaitFor(ManifestEditorText.AllValid);
-    Assert.Matches(@"github\.com/LiteLDev/LeviLamina\s+>=1\.0\.0 <1\.1\.0\s+✓", tui.Screen);
+    Assert.Matches(@"github\.com/LiteLDev/LeviLamina\s+~1\.0\.0\s+✓", tui.Screen);
     await Frames(tui, "manifest-edit");
 
     tui.Press(ConsoleKey.DownArrow);
@@ -234,11 +234,11 @@ public sealed partial class ManifestEditorTests {
     await Frames(tui, "manifest-edit-save");
     tui.Press(ConsoleKey.UpArrow);
     tui.Press(ConsoleKey.LeftArrow);
-    await tui.WaitFor("Needs LeviLamina >=1.0.0 <1.1.0.");
+    await tui.WaitFor("Needs LeviLamina ~1.0.0.");
     tui.Press(ConsoleKey.UpArrow);
     tui.Press(ConsoleKey.RightArrow);
     await tui.WaitFor("‹ 1.21.40 ›");
-    await tui.WaitFor("This LeviLamina is in >=1.0.0 <1.1.0.");
+    await tui.WaitFor("This LeviLamina is in ~1.0.0.");
     Assert.Contains("‹ 1.0.0 ›", tui.Screen);
     await Frames(tui, "manifest-edit-save-fits");
     tui.Press(ConsoleKey.Tab);
