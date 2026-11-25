@@ -31,7 +31,7 @@ the latest release with `install.sh`; a change to `tests` runs only the lint and
 `install.sh` runs the lint (with ShellCheck), the end-to-end test and an installation of the latest release with
 it on Linux and macOS; a change to `packaging` or `.github/scripts` runs the end-to-end test (and, for
 `.github/scripts`, the lint); and a change to nothing of these, like one to the docs, runs none. Its job `ci-ok` succeeds
-only when every job that ran succeeded, and is the check that pull requests and the merge queue require.
+only when every job the change needs ran and succeeded, and is the check that pull requests and the merge queue require.
 
 Pull requests land through the merge queue, whose merge method is squash, so each one becomes a single commit on
 `main`. `gh pr merge` adds a pull request to the queue instead of merging it at once; the queue, not a flag, picks

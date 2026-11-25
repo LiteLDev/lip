@@ -310,16 +310,35 @@ jobs:
           LIP_INSTALL_DIR="$dir" LIP_NO_MODIFY_PATH=1 sh install.sh < /dev/null
           "$dir/lip" -v
 
-  # The single check that the ruleset of main requires: it fails unless every job above
-  # succeeded or was skipped as the change does not need it, so the ruleset need not name each
-  # job of each matrix. A job is skipped otherwise only when a job it needs failed, which fails
-  # this check too.
+  # The single check that the ruleset of main requires: it fails unless every job the change
+  # needs succeeded, so the ruleset need not name each job of each matrix. It checks each job
+  # against what the change needs, not only for a failure: a job skipped as a job it needs did not
+  # succeed, or whose runner never came, does not report a failure.
   ci-ok:
     needs: [changes, build, e2e, install, lint, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+      - env:
+          # job=result:needed, one per line.
+          RESULTS: |
+            changes=${{ needs.changes.result }}:true
+            build=${{ needs.build.result }}:${{ needs.changes.outputs.build }}
+            e2e=${{ needs.e2e.result }}:${{ needs.changes.outputs.build }}
+            install=${{ needs.install.result }}:${{ needs.changes.outputs.install }}
+            lint=${{ needs.lint.result }}:${{ needs.changes.outputs.lint }}
+            test=${{ needs.test.result }}:${{ needs.changes.outputs.test }}
         run: |
-          echo "::error::Not every job succeeded."
-          exit 1
+          status=0
+          for entry in $RESULTS; do
+            job=${entry%%=*}
+            result=${entry#*=}
+            needed=${result#*:}
+            result=${result%%:*}
+            echo "$job: $result"
+            if [ "$needed" = true ] && [ "$result" != success ]; then
+              echo "::error::The change needs $job, which did not succeed: $result."
+              status=1
+            fi
+          done
+          exit $status
