@@ -165,6 +165,12 @@ public static class WorkspaceProgram {
         host.WorkspaceRoot, environment);
   }
 
+  /// WINEDLLOVERRIDES unless lip has it: no Wine Mono and Wine Gecko, which Wine would offer to
+  /// download in a window that waits for the user when it creates the prefix, and no graphics
+  /// driver, which waits forever for a window server that a user not logged in to the desktop of
+  /// macOS cannot reach (protocol/lip-workspace.md, "Running programs").
+  public const string WineDllOverrides = "mscoree,mshtml=;winemac.drv,winex11.drv=d";
+
   /// The Windows program fileName with the arguments, run by Wine when the platform is a Windows
   /// platform and lip does not run on Windows, otherwise by lip itself, with the workspace as
   /// working directory. Throws InvalidOperationException when Wine is needed and the system has
@@ -184,6 +190,10 @@ public static class WorkspaceProgram {
 
     if (host.GetEnvironmentVariable("WINEDEBUG") is null) {
       environment["WINEDEBUG"] = "-all";
+    }
+
+    if (host.GetEnvironmentVariable("WINEDLLOVERRIDES") is null) {
+      environment["WINEDLLOVERRIDES"] = WineDllOverrides;
     }
 
     string wine = host.Wine ?? throw new InvalidOperationException(

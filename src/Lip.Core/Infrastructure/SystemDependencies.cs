@@ -659,16 +659,6 @@ public sealed class SystemDependencies(
         "query", @"HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64", "/v",
         "Installed", view,
       ]);
-      // The query may create the prefix; Wine then would offer to download Wine Mono and Gecko,
-      // which no program of the server needs, in a window that waits for the user.
-      if (_getEnvironmentVariable("WINEDLLOVERRIDES") is null) {
-        query = query with {
-          EnvironmentOverrides = new Dictionary<string, string>(query.EnvironmentOverrides) {
-            ["WINEDLLOVERRIDES"] = "mscoree,mshtml=",
-          },
-        };
-      }
-
       ProgramResult result = await RunThroughWine(query, cancellationToken);
       if (result.ExitCode == 0 && ReadsInstalled(result.Output)) {
         RunTrace.Write("system", $"The Visual C++ runtime is installed in {WinePrefix(host)}");

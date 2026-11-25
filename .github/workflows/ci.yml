@@ -19,8 +19,10 @@ jobs:
   # Decides which jobs to run from the files the pull request or merge group changes. A change to
   # this workflow runs every job; a change to src, or to what every project builds with, every job
   # but install, which installs a released lip; a change to tests runs lint and test; a change to
-  # install.sh runs lint and install; a change to .editorconfig runs lint; any other change, like
-  # one to the docs, protocol or packaging, runs none. Pushes and manual runs run every job.
+  # install.sh runs build, e2e, lint and install; a change to packaging runs build and e2e, and one to
+  # .github/scripts, which e2e runs, build, e2e and lint; a change to .editorconfig runs lint; any
+  # other change, like one to the docs or protocol, runs none. Pushes and manual runs run every
+  # job. e2e runs whenever build does.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -62,7 +64,9 @@ jobs:
                 src/* | lip.slnx | global.json | [Nn]u[Gg]et.config | Directory.*)
                   build=true lint=true test=true ;;
                 tests/*) lint=true test=true ;;
-                install.sh) install=true lint=true ;;
+                install.sh) build=true install=true lint=true ;;
+                packaging/*) build=true ;;
+                .github/scripts/*) build=true lint=true ;;
                 .editorconfig) lint=true ;;
               esac
             done < <(git diff --name-only --no-renames "$base" HEAD)
@@ -77,7 +81,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   # lip is not built for Linux on arm64: no Wine there runs a LeviLamina server (see the
-  # job server).
+  # job e2e).
   build:
     needs: changes
     if: needs.changes.outputs.build == 'true'
@@ -131,39 +135,68 @@ jobs:
 
       - run: dotnet format --verify-no-changes
 
-      # install.sh runs in any POSIX shell (#!/bin/sh), so ShellCheck checks it as sh.
-      - run: shellcheck install.sh
+      # install.sh runs in any POSIX shell (#!/bin/sh), so ShellCheck checks it as sh. The scripts
+      # of .github/scripts are checked as their first lines say.
+      - run: shellcheck install.sh .github/scripts/*.sh
 
       # Code style and the .NET analyzers at build time, with every warning failing the build.
       - run: dotnet build -warnaserror -p:EnforceCodeStyleInBuild=true
 
-  # Installs LeviLamina and runs the real server with the lip that was built, on every system
-  # lip is released for. Where the system is not Windows, the Wine that lip installs runs the
-  # server.
+  # The end-to-end test, on every system lip is released for: installs the lip that was built the
+  # way a user does, sets up the newest game that LeviLamina supports with LeviLamina, runs the
+  # server, has it answer list and stop, and checks that lip run exits with 0
+  # (.github/scripts/e2e-server.sh). Where the system is not Windows, the Wine that lip installs
+  # runs the server.
+  #
+  # - Linux: in a new container of each distribution below, where install.sh, run as in
+  #   curl -fsSL https://levimc.org/lip/install.sh | sh, installs lip, and a user without root runs
+  #   it. Only what install.sh needs is installed first, curl and xz
+  #   (.github/scripts/e2e-linux-container.sh).
+  # - macOS: install.sh installs lip, and a new standard user, not an administrator, runs it.
+  # - Windows: the Windows Installer package of lip installs it. It installs for every user, so it
+  #   needs an administrator, as the user of the runner is; lip then runs from the PATH that the
+  #   package set.
+  #
+  # install.sh downloads the lip that was built, as the archive of a release v0.0.0-ci, from a
+  # local server that LIP_GITHUB_PROXY points it to.
   #
   # Linux on arm64 is not among them. There, Hangover runs the server of Minecraft, but not the
   # one LeviLamina has modified; the Wine for x64 loses the exit codes of Windows programs under
   # box64, and under FEX ran a LeviLamina server in two of six attempts: PeEditor.exe was killed
   # in two, and the server failed as it stopped in two.
-  server:
+  e2e:
     needs: [changes, build]
     if: needs.changes.outputs.build == 'true'
+    name: e2e (${{ matrix.name }})
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runtime: linux-x64
+          - name: linux-x64, ubuntu:latest
+            runtime: linux-x64
             runs-on: ubuntu-latest
-          - runtime: osx-arm64
+            image: ubuntu:latest
+          - name: linux-x64, debian:stable-slim
+            runtime: linux-x64
+            runs-on: ubuntu-latest
+            image: debian:stable-slim
+          - name: osx-arm64
+            runtime: osx-arm64
             runs-on: macos-latest
-          - runtime: osx-x64
+          - name: osx-x64
+            runtime: osx-x64
             runs-on: macos-15-intel
-          - runtime: win-arm64
+          - name: win-arm64
+            runtime: win-arm64
             runs-on: windows-11-arm
-          - runtime: win-x64
+          - name: win-x64
+            runtime: win-x64
             runs-on: windows-latest
+    env:
+      LIP_VERSION: 0.0.0-ci
+      LIP_GITHUB_PROXY: http://127.0.0.1:8765/
     steps:
       - uses: actions/checkout@v7
 
@@ -172,55 +205,63 @@ jobs:
           name: lip-${{ github.sha }}-${{ matrix.runtime }}
           path: bin
 
-      # lip installs Wine and the Visual C++ runtime itself, and on macOS on arm64 Rosetta 2, which
-      # runs the Wine for macOS, built for x64 only. --accept-rosetta-license accepts the license
-      # of Rosetta 2, as nothing here can answer the question.
-      - shell: bash
-        run: chmod +x bin/lip* || true
-
-      # Sets up the newest game that LeviLamina supports, with LeviLamina, in a new workspace
-      # (lip install LeviLamina is carried out as lip setup), runs the server with lip run until
-      # it has started, asks it to stop, and fails unless LeviLamina was loaded, the server
-      # started, and lip run exited with 0.
-      - shell: bash
+      # The archive and SHA256SUMS of the release v0.0.0-ci, at the paths that install.sh requests
+      # through LIP_GITHUB_PROXY, served by a local server.
+      - if: runner.os != 'Windows'
         run: |
-          # Without -e: the checks below say how lip run failed.
-          set +e -uo pipefail
-
-          lip=$PWD/bin/lip
-          workspace=$(mktemp -d)
-          cd "$workspace" || exit 1
-
-          "$lip" install github.com/LiteLDev/LeviLamina --accept-eula --accept-rosetta-license \
-              || exit 1
-
-          : > server.log
-          # Writes the line stop once the server has started or exited, or after ten minutes.
-          feed() {
-            for ((i = 0; i < 600; i++)); do
-              if grep -q 'Server started' server.log || [ -e exited ]; then
-                break
-              fi
-              sleep 1
-            done
-            echo stop
-          }
-          "$lip" run --accept-rosetta-license < <(feed) 2>&1 | tee server.log
-          code=${PIPESTATUS[0]}
-          touch exited
-
-          if ! grep -q 'LeviLamina Loaded' server.log; then
-            echo "::error::LeviLamina was not loaded (lip run exited with $code)."
-            exit 1
+          chmod +x bin/lip
+          release="$RUNNER_TEMP/proxy/https:/github.com/LiteLDev/lip/releases/download/v$LIP_VERSION"
+          mkdir -p "$release"
+          name=lip-$LIP_VERSION-${{ matrix.runtime }}
+          if [ "$RUNNER_OS" = Linux ]; then
+            tar -cJf "$release/$name.tar.xz" -C bin .
+          else
+            (cd bin && zip -qr9 "$release/$name.zip" .)
           fi
-          if ! grep -q 'Server started' server.log; then
-            echo "::error::The server did not start (lip run exited with $code)."
-            exit 1
-          fi
-          if [ "$code" -ne 0 ]; then
-            echo "::error::The server started, but lip run exited with $code."
-            exit 1
-          fi
+          (cd "$release" && shasum -a 256 lip-* > SHA256SUMS)
+          nohup python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/proxy" \
+            > "$RUNNER_TEMP/proxy.log" 2>&1 &
+
+      - if: runner.os == 'Linux'
+        run: |
+          docker run --rm --network host -v "$PWD:/repo:ro" \
+            -e LIP_VERSION -e LIP_GITHUB_PROXY \
+            ${{ matrix.image }} sh /repo/.github/scripts/e2e-linux-container.sh
+
+      # sysadminctl makes a standard user unless given -admin.
+      - if: runner.os == 'macOS'
+        run: |
+          sudo sysadminctl -addUser player -password "$(openssl rand -hex 16)"
+          sudo createhomedir -c -u player > /dev/null
+          # The checkout is in the home of the runner's user, which player cannot read.
+          repo=$(mktemp -d /tmp/repo.XXXXXX)
+          cp install.sh .github/scripts/e2e-server.sh "$repo"
+          chmod -R a+rX "$repo"
+          sudo -u player -H env LIP_VERSION="$LIP_VERSION" LIP_GITHUB_PROXY="$LIP_GITHUB_PROXY" \
+            bash -c 'cd && sh < "$1/install.sh" && bash "$1/e2e-server.sh" "$HOME/.local/bin/lip"' \
+            _ "$repo"
+
+      - if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10
+
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $arch = '${{ matrix.runtime }}' -replace '^win-'
+          ./packaging/wix/build.ps1 -Version $env:LIP_VERSION -Arch $arch -BinDir bin -OutDir dist
+          $msi = Resolve-Path "dist/lip-$env:LIP_VERSION-win-$arch.msi"
+          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', "`"$msi`"", '/qn', '/l*v', 'msi.log'
+          if ($p.ExitCode -ne 0) { Get-Content msi.log -Tail 50; throw "msiexec exited with $($p.ExitCode)" }
+          # A new shell would find lip on the PATH that the package set.
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          $lip = (Get-Command lip -CommandType Application).Source
+          "LIP=$lip" >> $env:GITHUB_ENV
+
+      - if: runner.os == 'Windows'
+        shell: bash
+        run: bash .github/scripts/e2e-server.sh "$(cygpath -u "$LIP")"
 
   test:
     needs: changes
@@ -269,16 +310,35 @@ jobs:
           LIP_INSTALL_DIR="$dir" LIP_NO_MODIFY_PATH=1 sh install.sh < /dev/null
           "$dir/lip" -v
 
-  # The single check that the ruleset of main requires: it fails unless every job above
-  # succeeded or was skipped as the change does not need it, so the ruleset need not name each
-  # job of each matrix. A job is skipped otherwise only when a job it needs failed, which fails
-  # this check too.
+  # The single check that the ruleset of main requires: it fails unless every job the change
+  # needs succeeded, so the ruleset need not name each job of each matrix. It checks each job
+  # against what the change needs, not only for a failure: a job skipped as a job it needs did not
+  # succeed, or whose runner never came, does not report a failure.
   ci-ok:
-    needs: [changes, build, install, lint, server, test]
+    needs: [changes, build, e2e, install, lint, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+      - env:
+          # job=result:needed, one per line.
+          RESULTS: |
+            changes=${{ needs.changes.result }}:true
+            build=${{ needs.build.result }}:${{ needs.changes.outputs.build }}
+            e2e=${{ needs.e2e.result }}:${{ needs.changes.outputs.build }}
+            install=${{ needs.install.result }}:${{ needs.changes.outputs.install }}
+            lint=${{ needs.lint.result }}:${{ needs.changes.outputs.lint }}
+            test=${{ needs.test.result }}:${{ needs.changes.outputs.test }}
         run: |
-          echo "::error::Not every job succeeded."
-          exit 1
+          status=0
+          for entry in $RESULTS; do
+            job=${entry%%=*}
+            result=${entry#*=}
+            needed=${result#*:}
+            result=${result%%:*}
+            echo "$job: $result"
+            if [ "$needed" = true ] && [ "$result" != success ]; then
+              echo "::error::The change needs $job, which did not succeed: $result."
+              status=1
+            fi
+          done
+          exit $status
