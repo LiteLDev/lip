@@ -94,6 +94,20 @@
         KeyPath="yes" />
     </Component>
 
+    <!--
+      The URL scheme lip (protocol/lip-uri.md): opening a lip:// link, such as one of a web
+      page, starts lip with its option uri and the link, in a console of its own. Under HKMU, it
+      is the scheme of every user, or of the user that installs lip. Uninstalling removes it.
+    -->
+    <Component Id="UriScheme" Directory="INSTALLFOLDER" Guid="{9A4E7C21-5D3B-4F86-B0A2-1E6C8D9F3B47}">
+      <RegistryKey Root="HKMU" Key="Software\Classes\lip">
+        <RegistryValue Type="string" Value="URL:lip" KeyPath="yes" />
+        <RegistryValue Name="URL Protocol" Type="string" Value="" />
+        <RegistryValue Key="DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]lip.exe&quot;,0" />
+        <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]lip.exe&quot; --uri &quot;%1&quot;" />
+      </RegistryKey>
+    </Component>
+
     <!-- lip on the PATH of every user, or of the user that installs it. -->
     <Component Id="PathMachine" Directory="INSTALLFOLDER" Guid="{8C1F5B2E-3D47-4A96-9E0B-6F2A7C4D1E83}"
       Condition="ALLUSERS">

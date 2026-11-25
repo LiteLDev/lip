@@ -7,6 +7,7 @@ using Lip.Cli.Tui.I18n;
 using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod;
 using Lip.Core.PublicApi;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -40,12 +41,14 @@ public static class LipApp {
   /// workspace list of the state directory and the servers of this process, until the user quits
   /// it; returns the exit code of lip. clientLanguage is the client language, or null when there
   /// is none. farewell gets what is to reach the terminal once the interface has ended
-  /// (AppOptions.Farewell). Throws when the interface fails.
+  /// (AppOptions.Farewell). link is the lip: link that the interface is started for, or null
+  /// (AppOptions.Link). Throws when the interface fails.
   public static int RunInterface(
       ITerminal terminal,
       string workingDirectory,
       Language? clientLanguage,
-      Action<string> farewell) {
+      Action<string> farewell,
+      LipUri? link = null) {
     System.IO.Abstractions.FileSystem fileSystem = new();
     return new App(new AppOptions {
       Terminal = terminal,
@@ -54,6 +57,7 @@ public static class LipApp {
       Catalog = new ModCatalogClient(),
       Version = DaemonProcess.Version,
       WorkingDirectory = workingDirectory,
+      Link = link,
       Workspaces = WorkspaceList.InStateDirectory(fileSystem),
       Servers = ServerSessions.Shared,
       GithubProbe = new GithubProbe(),

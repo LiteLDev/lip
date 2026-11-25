@@ -4,6 +4,7 @@ using Lip.Cli.Servers;
 using Lip.Cli.Tui;
 using Lip.Cli.Tui.I18n;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod;
 using Spectre.Console;
 
 namespace Lip.Cli.Daemon;
@@ -57,7 +58,8 @@ public static class DaemonEntry {
                       message => {
                         invocation.Error.WriteLine(message);
                         invocation.Error.Flush();
-                      });
+                      },
+                      LinkOf(arguments));
                 }
                 catch (Exception ex) {
                   return ErrorReporter.Report(
@@ -70,16 +72,70 @@ public static class DaemonEntry {
               start.Output.CreateConsole(invocation.Out),
               start.Error.CreateConsole(invocation.Error));
 
-  /// Whether lip runs the interface: without an argument, when its standard input and its
-  /// standard output are both terminals (protocol/lip.md, OPTIONS).
+  /// Whether lip runs the interface: without an argument, or with --uri and a link, when its
+  /// standard input and its standard output are both terminals (protocol/lip.md, OPTIONS).
   public static bool RunsInterface(
       string[] arguments, bool inputRedirected, bool outputRedirected) =>
-      arguments.Length == 0 && !inputRedirected && !outputRedirected;
+      (arguments.Length == 0 || IsLink(arguments)) && !inputRedirected && !outputRedirected;
+
+  /// Whether the arguments are --uri and a link (protocol/lip-uri.md), with which the shell
+  /// starts lip when the user opens a lip: link.
+  public static bool IsLink(string[] arguments) => arguments is [LinkOption, _];
+
+  /// The option that gives the link.
+  public const string LinkOption = "--uri";
+
+  /// The link of the arguments, or null when they are not --uri and a link. Throws
+  /// FormatException when the link is not valid.
+  private static LipUri? LinkOf(string[] arguments) =>
+      IsLink(arguments) ? LipUri.Parse(arguments[1]) : null;
+
+  /// lip --uri with a link: runs the interface for it, as lip without arguments runs it. A link
+  /// that is not valid, or standard streams that are not terminals, are a failure, which a
+  /// console that only this process has, such as the one that Windows opens for lip when the
+  /// browser starts it, keeps on the screen until the user presses a key.
+  public static async Task<int> RunLink(string[] args) {
+    string? failure = null;
+    if (!LipUri.TryParse(args[1], out _, out string? error)) {
+      failure = $"lip cannot open the link '{args[1]}': {error}.";
+    } else if (Console.IsInputRedirected || Console.IsOutputRedirected) {
+      failure = "lip opens a link only when its standard input and its standard output are"
+          + " terminals.";
+    }
+
+    if (failure is null) {
+      return await RunInterfaceClient(args);
+    }
+
+    await Console.Error.WriteLineAsync(failure);
+    if (!Console.IsInputRedirected && ConsoleOfThisProcessOnly()) {
+      await Console.Error.WriteLineAsync("Press any key to close this window.");
+      Console.ReadKey(intercept: true);
+    }
+
+    return 1;
+  }
+
+  /// Whether this process is the only one attached to its console: Windows made the console
+  /// for it, and closes it when it exits.
+  private static bool ConsoleOfThisProcessOnly() {
+    if (!OperatingSystem.IsWindows()) {
+      return false;
+    }
+
+    uint[] processes = new uint[2];
+    return GetConsoleProcessList(processes, (uint)processes.Length) == 1;
+  }
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern uint GetConsoleProcessList(uint[] processList, uint processCount);
 
   /// Has the daemon carry out the interface on the console of this process, and returns the exit
   /// code; when it cannot, runs the interface in this process (protocol/lip-daemon.md,
   /// "Fallback").
-  public static async Task<int> RunInterfaceClient() {
+  /// args are none, or --uri and a valid link.
+  public static async Task<int> RunInterfaceClient(string[]? args = null) {
+    args ??= [];
     DaemonClient client = new(
         DaemonEndpoint.ForCurrentUser(), DaemonProcess.Version, DaemonProcess.Executable,
         DaemonProcess.Start);
@@ -93,7 +149,7 @@ public static class DaemonEntry {
     using (ConsoleTerminal terminal = new()) {
       ClientStreams streams = StreamsOf() with { Error = error, ErrorText = errorText };
       using (Signals.Listen(client.Signal)) {
-        outcome = await client.Run(StartOf([]), streams, TerminalInput.Start);
+        outcome = await client.Run(StartOf(args), streams, TerminalInput.Start);
       }
     }
 
@@ -127,7 +183,8 @@ public static class DaemonEntry {
               lock (farewell) {
                 farewell.WriteLine(message);
               }
-            });
+            },
+            LinkOf(args));
       }
     }
     catch (Exception ex) {

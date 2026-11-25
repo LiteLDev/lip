@@ -3,11 +3,13 @@ using System.Diagnostics;
 using System.Text;
 using Lip.Cli.Servers;
 using Lip.Cli.Tui.I18n;
+using Lip.Cli.Tui.Pages.GetMods;
 using Lip.Cli.Tui.Pages.Workspaces;
 using Lip.Cli.Tui.Widgets;
 using Lip.Cli.Workspaces;
 using Lip.Core.Catalog;
 using Lip.Core.Infrastructure;
+using Lip.Core.Mcmod;
 using Lip.Core.Mcmod.Lock;
 using Lip.Core.PublicApi;
 using Lip.Core.Services;
@@ -31,8 +33,15 @@ public sealed class AppOptions {
   /// The version of lip.
   public required string Version { get; init; }
 
-  /// The working directory of lip, which is added to the workspace list and selected.
+  /// The working directory of lip, which is added to the workspace list and selected, unless
+  /// the interface is started for a link (Link).
   public required string WorkingDirectory { get; init; }
+
+  /// The lip: link that the interface is started for (protocol/lip-uri.md), or null. The
+  /// interface then opens the Marketplace with LinkDialog for it, and does not add its working
+  /// directory, which the program that opened the link chose, to the workspace list: it
+  /// selects the workspace of the list added last, and the user chooses another in the dialog.
+  public LipUri? Link { get; init; }
 
   /// Works out why a command failed and writes the failure report below the workspace given
   /// last: ErrorReporter.Describe when not given.
@@ -148,6 +157,7 @@ public sealed partial class App {
   private int _serversPending;
   private (string Text, ToastKind Kind, long At)? _toast;
   private readonly string? _workspaceListFailure;
+  private readonly LipUri? _link;
   private readonly HashSet<Page> _tickFailed = [];
   private long _keysHandled;
   private long _frames;
@@ -176,10 +186,16 @@ public sealed partial class App {
     _hookOutput = () => new LineSinkStream((line, transient) =>
         Post(() => AddHookLine(new StyledLine("│ " + line, Theme.Muted), transient)));
 
-    // The working directory of lip is added to the list and selected.
+    // The working directory of lip is added to the list and selected; for a link, the
+    // workspace added last is selected instead, and nothing is added.
+    _link = options.Link;
     _workspace = _workspaces.Normalize(options.WorkingDirectory);
     try {
-      _workspace = _workspaces.Add(_workspace);
+      if (_link is null) {
+        _workspace = _workspaces.Add(_workspace);
+      } else if (_workspaces.Read() is [.., string last]) {
+        _workspace = last;
+      }
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
       // Said once the interface runs, in its language.
@@ -244,6 +260,13 @@ public sealed partial class App {
       ReadServerLocks();
       if (_workspaceListFailure is { } failure) {
         Toast($"{CommonText.WorkspaceListUnwritable}: {failure}", ToastKind.Bad);
+      }
+
+      if (_link is { } link) {
+        Guard(() => {
+          Navigate(PageId.GetMods, null);
+          Show(new LinkDialog(link));
+        });
       }
 
       Render();

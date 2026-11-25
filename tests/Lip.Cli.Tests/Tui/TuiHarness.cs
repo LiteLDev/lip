@@ -38,6 +38,9 @@ public sealed class TuiHarnessOptions {
   /// The working directory of lip: TuiHarness.DefaultRoot when not given.
   public string? WorkingDirectory { get; init; }
 
+  /// The lip: link that the interface is started for (AppOptions.Link): none when not given.
+  public LipUri? Link { get; init; }
+
   /// Makes the client of a workspace: LipClient.Create on the file system when not given. Wrap
   /// it to fake or record the commands.
   public Func<IUserInteraction, Func<Stream>, string, LipClient>? CreateClient { get; init; }
@@ -128,6 +131,7 @@ public sealed class TuiHarness : IDisposable {
           options.Catalog?.Invoke(url) ?? "{\"mods\": []}"))),
       Version = options.Version,
       WorkingDirectory = Root,
+      Link = options.Link,
       DescribeFailure = options.DescribeFailure ?? ((exception, _, cancelled, _) => new Failure(
           exception.Message, ["a hint"], Path.Join(".lip", "logs", "report.log"), null, "",
           cancelled)),

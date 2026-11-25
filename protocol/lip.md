@@ -10,6 +10,7 @@ lip - run a LeviLamina server and manage its packages
 lip
 lip (-h | --help)
 lip (-v | --version)
+lip --uri <link>
 lip (cache | config | daemon | pkg) (-h | --help)
 lip <command> [<argument>...]
 ```
@@ -139,11 +140,12 @@ With `-n` or `--dry-run`, the command carries out every step that changes nothin
 - No argument: when the standard input and the standard output of `lip` are both terminals, `lip` runs the interface ([lip-tui(1)]); otherwise `lip` writes the help for `lip` to standard output.
 - `-h`, `--help` as the first argument: `lip` writes the help for `lip` to standard output, whatever arguments follow.
 - `-v`, `--version` as the first argument: `lip` writes its version ([SemVer]) followed by a line break to standard output, whatever arguments follow.
+- `--uri` followed by one argument, and nothing else: `lip` opens the link that the argument is, as [lip-uri(7)](lip-uri.md) defines.
 - `--daemon` as the only argument: `lip` runs as the daemon ([lip-daemon(1)]) until it exits; it writes nothing to its standard streams.
 - Any other first argument starting with `-`: the list is a usage error.
 - `lip cache`, `lip config`, `lip daemon` or `lip pkg`, followed by `-h` or `--help`: `lip` writes the help for the command group to standard output.
 
-Each of these exits with code 0, except the usage error, the daemon, whose exit code is not defined here, and the interface, which exits as [lip-tui(1), EXIT STATUS](lip-tui.md#exit-status) defines.
+Each of these exits with code 0, except the usage error, the daemon, whose exit code is not defined here, the interface, which exits as [lip-tui(1), EXIT STATUS](lip-tui.md#exit-status) defines, and `--uri`, which exits as [lip-uri(7), EXIT STATUS](lip-uri.md#exit-status) defines.
 
 ## EXIT STATUS
 
@@ -161,7 +163,7 @@ A command that fails other than on a usage error may write a **failure report**:
 
 ## SEE ALSO
 
-[lip-tui(1)], [lip-daemon(1)], [lip-package(7)], [lip-workspace(7)], [lip-userspace(7)], [lip-compatibility(7)]
+[lip-tui(1)], [lip-daemon(1)], [lip-package(7)], [lip-workspace(7)], [lip-userspace(7)], [lip-compatibility(7)], [lip-uri(7)](lip-uri.md)
 
 [lip-setup(1)]: lip-setup.md
 [lip-install(1)]: lip-install.md

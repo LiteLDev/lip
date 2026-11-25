@@ -17,6 +17,12 @@ if (args is [DaemonProcess.Argument]) {
 // The console shows what lip and the servers it runs write, in UTF-8.
 ConsoleEncoding.UseUtf8();
 
+// With --uri and a link, which the shell gives when the user opens a lip: link, lip runs the
+// interface for the link (protocol/lip-uri.md).
+if (DaemonEntry.IsLink(args)) {
+  return await DaemonEntry.RunLink(args);
+}
+
 // Without an argument, on a terminal, lip runs the interface (protocol/lip-tui.md), which the
 // daemon carries out like a command; otherwise it writes its help, as below.
 if (DaemonEntry.RunsInterface(args, Console.IsInputRedirected, Console.IsOutputRedirected)) {
