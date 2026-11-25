@@ -31,7 +31,7 @@ When the user changes `language` in the interface, the interface language follow
 
 The **workspace list** is the JSON file ([README, "Files"](README.md#files)) `workspaces.json` in the state directory ([lip-userspace(7)]): an array of the absolute paths of directories, as strings, in the order they were added. A list that does not exist, or that is not a JSON array, is read as empty; an element that is not a string holding an absolute path, or that names the same directory as an element before it, is left out. The **canonical form** of an absolute path is the path with its `.` and `..` components resolved, on Windows with `/` written as `\`, and without a separator at its end unless it is a root. Two paths name the same directory when their canonical forms are equal, ignoring case on Windows. `lip` writes the canonical forms of the paths, and writes the list atomically ([README, "Files"](README.md#files)).
 
-The interface has one **selected workspace** at a time. When it starts, `lip` adds its working directory to the end of the workspace list unless the list names it, and selects it. The user may then:
+The interface has one **selected workspace** at a time. When it starts, `lip` adds its working directory to the end of the workspace list unless the list names it, and selects it; when it opens a link, it does as [lip-uri(7), "Opening a link"](lip-uri.md#opening-a-link) defines instead. The user may then:
 
 - select a workspace of the list;
 - add a directory to the end of the list, unless the list names it, and select it: a directory that exists, or one that `lip` first creates, with its missing parents, when the user asks for a new one; and
@@ -147,7 +147,7 @@ A file of the catalogue that cannot be read is not a failure of a command.
 
 ## SEE ALSO
 
-[lip(1)], [lip-config(1)](lip-config.md), [lip-daemon(1)], [lip-run(1)], [lip-setup(1)](lip-setup.md), [config.toml(5)], [lip.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)]
+[lip(1)], [lip-config(1)](lip-config.md), [lip-daemon(1)], [lip-run(1)], [lip-setup(1)](lip-setup.md), [config.toml(5)], [lip.toml(5)], [lip-workspace(7)](lip-workspace.md), [lip-userspace(7)], [lip-uri(7)](lip-uri.md)
 
 [lip(1)]: lip.md
 [lip-daemon(1)]: lip-daemon.md
