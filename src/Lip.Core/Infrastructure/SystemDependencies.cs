@@ -54,18 +54,15 @@ public sealed record WineBuild(string Name, string Version, PinnedFile Archive, 
 public sealed record VcRuntimeFiles(string Name, PinnedFile Archive);
 
 /// The files lip downloads to install the system dependencies (protocol/lip-workspace.md, "System
-/// dependencies"): the Wine of lip for Linux on x64 and for macOS, the installer of the Visual C++
-/// runtime that Wine runs, and the files of the runtime that lip extracts on Windows. Pinned holds
-/// those of this version of lip.
+/// dependencies"): the Wine of lip for Linux on x64 and for macOS, and the files of the Visual C++
+/// runtime that lip extracts on Windows. Pinned holds those of this version of lip.
 public sealed record SystemDependencyFiles(
     WineBuild LinuxX64Wine,
     WineBuild MacOsWine,
-    PinnedFile VcRedistX64,
     VcRuntimeFiles VcRuntimeX64) {
   public static SystemDependencyFiles Pinned { get; } = new(
       PinnedSystemDependencies.LinuxX64Wine,
       PinnedSystemDependencies.MacOsWine,
-      PinnedSystemDependencies.VcRedistX64,
       PinnedSystemDependencies.VcRuntimeX64);
 
   /// The Wine of lip for the system, or null when the system has none: Linux on x64, and macOS
@@ -101,16 +98,8 @@ public static class PinnedSystemDependencies {
           "9909b486657e10ab66c7279371ae1f990345b596b3b1b3a0cf21f28af24fa0ce"),
       "Wine Devel.app/Contents/Resources/wine/bin/wine");
 
-  /// vc_redist.x64.exe of the Microsoft Visual C++ 2015–2022 Redistributable 14.44, the file that
-  /// https://aka.ms/vs/17/release/vc_redist.x64.exe led to; Microsoft keeps it at this URL.
-  public static readonly PinnedFile VcRedistX64 = new(
-      "https://download.visualstudio.microsoft.com/download/pr/"
-          + "e9604e21-4b79-4096-a4b3-1b63d4b55b4d/"
-          + "CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
-      "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b");
-
-  /// The redistributable files of the Visual C++ runtime 14.44.35211 for x64, the version of
-  /// VcRedistX64, as Visual Studio 17.14 installs them: the package
+  /// The redistributable files of the Visual C++ runtime 14.44.35211 for x64, of the Microsoft
+  /// Visual C++ 2015–2022 Redistributable 14.44, as Visual Studio 17.14 installs them: the package
   /// Microsoft.VC.14.44.17.14.CRT.Redist.X64.base of its channel
   /// https://aka.ms/vs/17/release/channel.
   public static readonly VcRuntimeFiles VcRuntimeX64 = new(
@@ -309,9 +298,9 @@ public sealed class SystemProbe : ISystemProbe {
 public class SystemDependencyException(string message, Exception? inner = null)
     : InvalidOperationException(message, inner);
 
-/// Installs the system dependencies (protocol/lip-workspace.md, "System dependencies"): the Wine
-/// of lip, extracted below the data directory, and the Visual C++ runtime, on Windows or in the
-/// Wine prefix of the workspace.
+/// Installs the system dependencies (protocol/lip-workspace.md, "System dependencies"): off
+/// Windows, the Wine of lip, extracted below the data directory, which has a Visual C++ runtime of
+/// its own; on Windows, the Visual C++ runtime, for the user.
 ///
 /// Downloads go to files below the data directory, are checked against their SHA-256, and are
 /// deleted afterwards. A Wine build is extracted into a directory of its own and renamed into
@@ -325,13 +314,8 @@ public sealed class SystemDependencies(
     IUserInteraction userInteraction,
     ISystemProbe probe,
     string dataDirectory,
-    Func<string, string?> getEnvironmentVariable,
     SystemDependencyFiles? files = null,
     Func<Stream, Stream>? decompress = null) : ISystemPreparer {
-  /// Exit codes of vc_redist.x64.exe that are a success: done, a newer version is installed
-  /// (ERROR_PRODUCT_VERSION), and done but a restart is needed (ERROR_SUCCESS_REBOOT_REQUIRED).
-  private static readonly int[] _installerSuccess = [0, 1638, 3010];
-
   /// The DLLs that the files of the Visual C++ runtime must have; its archive holds more.
   private static readonly string[] _vcRuntimeRequired =
       ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"];
@@ -341,19 +325,17 @@ public sealed class SystemDependencies(
   private readonly IUserInteraction _ui = userInteraction;
   private readonly ISystemProbe _probe = probe;
   private readonly string _data = dataDirectory;
-  private readonly Func<string, string?> _getEnvironmentVariable = getEnvironmentVariable;
   private readonly SystemDependencyFiles _files = files ?? SystemDependencyFiles.Pinned;
   private readonly Func<Stream, Stream> _decompress =
       decompress ?? (stream => new XZStream(stream));
 
-  // The Wine prefixes (or "" for Windows) in which this process found the runtime installed.
-  private readonly HashSet<string> _prepared = new(StringComparer.Ordinal);
+  // Whether this process found the Visual C++ runtime installed on Windows.
+  private bool _vcRuntimePrepared;
 
   /// The system dependencies of the system lip runs on, below the data directory of lip.
   public static SystemDependencies Create(
       IFileSystem fileSystem, IFileDownloader downloader, IUserInteraction userInteraction) =>
-      new(fileSystem, downloader, userInteraction, new SystemProbe(), LipDirectories.Data,
-          Invocation.Current.GetEnvironmentVariable);
+      new(fileSystem, downloader, userInteraction, new SystemProbe(), LipDirectories.Data);
 
   public async Task Prepare(
       string platform,
@@ -365,22 +347,17 @@ public sealed class SystemDependencies(
     }
 
     SystemInfo system = _probe.System;
-    string? wine = null;
-    if (!system.IsWindows) {
-      wine = await EnsureWine(system, acceptRosettaLicense, cancellationToken);
+    if (system.IsWindows) {
+      await EnsureVcRuntime(cancellationToken);
+    } else {
+      await EnsureWine(system, acceptRosettaLicense, cancellationToken);
     }
-
-    ProgramHost host = new(system.IsWindows, platform, workspaceRoot, _getEnvironmentVariable) {
-      Wine = wine,
-    };
-    await EnsureVcRuntime(host, cancellationToken);
   }
 
-  /// Installs the Wine of lip for the system when it is not installed, and returns the path of
-  /// its wine program; on macOS on arm64, installs Rosetta 2 first when it is not installed
-  /// (EnsureRosetta). Throws SystemDependencyException when the system has none, or when Rosetta 2
-  /// is not installed.
-  public async Task<string> EnsureWine(
+  /// Installs the Wine of lip for the system when it is not installed; on macOS on arm64, installs
+  /// Rosetta 2 first when it is not installed (EnsureRosetta). Throws SystemDependencyException
+  /// when the system has none, or when Rosetta 2 is not installed.
+  private async Task EnsureWine(
       SystemInfo system, bool acceptRosettaLicense, CancellationToken cancellationToken) {
     WineBuild build = _files.WineFor(system)
         ?? throw new SystemDependencyException(
@@ -395,15 +372,14 @@ public sealed class SystemDependencies(
     }
 
     string directory = ManagedWine.BuildDirectory(_data, build);
-    string executable = ManagedWine.Executable(_data, build);
     if (_fs.Directory.Exists(directory)) {
-      return executable;
+      return;
     }
 
     using DataLock dataLock = await DataLock.Take(_fs, _data, _ui, cancellationToken);
     if (_fs.Directory.Exists(directory)) {
       RunTrace.Write("system", $"Another lip process installed Wine in {directory}");
-      return executable;
+      return;
     }
 
     await _ui.PrintInfo(
@@ -434,7 +410,6 @@ public sealed class SystemDependencies(
     }
 
     RunTrace.Write("system", $"Installed Wine {build.Version} in {directory}");
-    return executable;
   }
 
   /// The program that installs Rosetta 2, and its arguments.
@@ -580,32 +555,21 @@ public sealed class SystemDependencies(
             _probe.ReadOsRelease(), [.. missing.Select(l => l.Package)], missing.Count > 1));
   }
 
-  /// Installs the Visual C++ runtime when it is not installed: on Windows for the user, by
-  /// extracting its files into the runtime directory; otherwise in the Wine prefix of the host.
-  private async Task EnsureVcRuntime(ProgramHost host, CancellationToken cancellationToken) {
-    string where = host.IsWindows ? "" : WinePrefix(host);
-    if (_prepared.Contains(where)) {
+  /// Installs the Visual C++ runtime on Windows when it is not installed, for the user, by
+  /// extracting its files into the runtime directory.
+  private async Task EnsureVcRuntime(CancellationToken cancellationToken) {
+    if (_vcRuntimePrepared) {
       return;
     }
 
-    if (await IsVcRuntimeInstalled(host, cancellationToken)) {
-      _prepared.Add(where);
-      return;
+    if (!IsVcRuntimeInstalled()) {
+      using DataLock dataLock = await DataLock.Take(_fs, _data, _ui, cancellationToken);
+      if (!IsVcRuntimeInstalled()) {
+        await ExtractVcRuntime(cancellationToken);
+      }
     }
 
-    using DataLock dataLock = await DataLock.Take(_fs, _data, _ui, cancellationToken);
-    if (await IsVcRuntimeInstalled(host, cancellationToken)) {
-      _prepared.Add(where);
-      return;
-    }
-
-    if (host.IsWindows) {
-      await ExtractVcRuntime(cancellationToken);
-    } else {
-      await InstallVcRuntimeInWine(host, where, cancellationToken);
-    }
-
-    _prepared.Add(where);
+    _vcRuntimePrepared = true;
   }
 
   /// Extracts the files of the runtime into the runtime directory, through a directory of its
@@ -676,107 +640,21 @@ public sealed class SystemDependencies(
         && parts[^1] is not ("" or "." or "..");
   }
 
-  /// Runs vc_redist.x64.exe by the Wine of lip in the Wine prefix of the host.
-  private async Task InstallVcRuntimeInWine(
-      ProgramHost host, string where, CancellationToken cancellationToken) {
-    await _ui.PrintInfo(
-        $"The server needs the Microsoft Visual C++ Redistributable, which is not installed in"
-        + $" the Wine prefix {where}: lip installs it there now.");
-    string installer = Path.Join(_data, "vc_redist.x64.exe");
-    Stream? held = null;
-    try {
-      // Held open, so that nothing replaces the installer between its check and its run.
-      held = await DownloadVerified(_files.VcRedistX64, installer);
-      string[] arguments = ["/install", "/quiet", "/norestart"];
-      int exitCode = 0;
-      await _ui.RunWithProgress(
-          "Installing the Microsoft Visual C++ Redistributable",
-          async _ => exitCode = (await RunThroughWine(
-              WorkspaceProgram.Start(host, installer, arguments), cancellationToken)).ExitCode);
-      RunTrace.Write("system", $"vc_redist.x64.exe exited with code {exitCode}");
-      if (!_installerSuccess.Contains(exitCode)) {
-        throw new SystemDependencyException(
-            $"The installer of the Microsoft Visual C++ Redistributable failed with exit code"
-            + $" {exitCode} in the Wine prefix {where}. Delete that directory to let Wine make it"
-            + " again, then run lip again.");
-      }
-    }
-    catch (Exception ex) when (FileSystemExtensions.IsFileError(ex)) {
-      throw new SystemDependencyException(
-          $"lip could not install the Microsoft Visual C++ Redistributable: {ex.Message}", ex);
-    }
-    finally {
-      held?.Dispose();
-      DeleteFile(installer);
-    }
-  }
-
-  /// Whether the runtime is installed: on Windows, for the system in the registry of Windows or
-  /// for the user in the runtime directory; otherwise in the registry of the Wine prefix, which
-  /// wine reg reads in the 64-bit and the 32-bit view.
-  private async Task<bool> IsVcRuntimeInstalled(
-      ProgramHost host, CancellationToken cancellationToken) {
-    if (host.IsWindows) {
-      if (_probe.IsVcRuntimeInstalled()) {
-        return true;
-      }
-
-      string directory = ManagedVcRuntime.Directory(_data, _files.VcRuntimeX64);
-      if (_fs.Directory.Exists(directory)) {
-        RunTrace.Write("system", $"The Visual C++ runtime is installed in {directory}");
-        return true;
-      }
-
-      return false;
+  /// Whether the runtime is installed on Windows: for the system in the registry of Windows, or
+  /// for the user in the runtime directory.
+  private bool IsVcRuntimeInstalled() {
+    if (_probe.IsVcRuntimeInstalled()) {
+      return true;
     }
 
-    foreach (string view in new[] { "/reg:64", "/reg:32" }) {
-      ProgramStartInfo query = WorkspaceProgram.Start(host, "reg", [
-        "query", @"HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64", "/v",
-        "Installed", view,
-      ]);
-      ProgramResult result = await RunThroughWine(query, cancellationToken);
-      if (result.ExitCode == 0 && ReadsInstalled(result.Output)) {
-        RunTrace.Write("system", $"The Visual C++ runtime is installed in {WinePrefix(host)}");
-        return true;
-      }
+    string directory = ManagedVcRuntime.Directory(_data, _files.VcRuntimeX64);
+    if (_fs.Directory.Exists(directory)) {
+      RunTrace.Write("system", $"The Visual C++ runtime is installed in {directory}");
+      return true;
     }
 
     return false;
   }
-
-  /// Whether the output of reg query has the value Installed as the REG_DWORD 1, which it writes
-  /// in hexadecimal, such as 0x1.
-  public static bool ReadsInstalled(string output) =>
-      output.Split('\n').Any(line =>
-          line.Split([' ', '\t', '\r'], StringSplitOptions.RemoveEmptyEntries)
-              is ["Installed", "REG_DWORD", string value]
-          && value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-          && uint.TryParse(
-              value.AsSpan(2), System.Globalization.NumberStyles.AllowHexSpecifier, null,
-              out uint number)
-          && number == 1);
-
-  private async Task<ProgramResult> RunThroughWine(
-      ProgramStartInfo start, CancellationToken cancellationToken) {
-    RunTrace.Write("system", $"Running {start.FileName} {string.Join(' ', start.Arguments)}"
-        + string.Concat(start.EnvironmentOverrides.Select(v => $", {v.Key}={v.Value}")));
-    try {
-      return await _probe.Run(start, cancellationToken);
-    }
-    catch (Exception ex) when (ex is Win32Exception
-        or InvalidOperationException) {
-      throw new SystemDependencyException(
-          $"lip could not run {start.FileName}: {ex.Message} Delete {ManagedWine.Directory(_data)}"
-          + " to let lip install Wine again.", ex);
-    }
-  }
-
-  /// The Wine prefix programs of the host run in.
-  private string WinePrefix(ProgramHost host) =>
-      _getEnvironmentVariable("WINEPREFIX") is { Length: > 0 } prefix
-          ? prefix
-          : Path.Join(host.WorkspaceRoot, ".lip", "wine");
 
   /// Downloads the file to path and checks its SHA-256, and returns it opened for reading with
   /// only reading shared, so that it cannot change while the caller holds it. The downloader

@@ -14,18 +14,13 @@ namespace Lip.Core.Tests.Infrastructure;
 /// system.
 public class SystemDependenciesTests : IDisposable {
   private const string WineUrl = "https://example.com/wine.tar.xz";
-  private const string VcRedistUrl = "https://example.com/vc_redist.x64.exe";
   private const string VcRuntimeUrl = "https://example.com/crt.vsix";
   private const string Redist = "Contents/VC/Redist/MSVC/14.44.35112/";
   private const string CrtDirectory = Redist + "x64/Microsoft.VC143.CRT/";
-  private const string RegInstalled =
-      "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64\r\n"
-      + "    Installed    REG_DWORD    0x1\r\n";
 
   private static readonly SystemInfo _linux = new(HostOs.Linux, Architecture.X64);
   private static readonly SystemInfo _windows = new(HostOs.Windows, Architecture.X64);
   private static readonly SystemInfo _armMac = new(HostOs.MacOS, Architecture.Arm64);
-  private static readonly byte[] _installerBytes = "MZ installer"u8.ToArray();
 
   private readonly string _temp =
       Path.Combine(Path.GetTempPath(), "lip-sysdeps-test-" + Guid.NewGuid().ToString("N"));
@@ -34,7 +29,6 @@ public class SystemDependenciesTests : IDisposable {
   private readonly Mock<IFileDownloader> _downloader = new();
   private readonly Mock<IUserInteraction> _ui = new();
   private readonly FakeProbe _probe = new();
-  private readonly Dictionary<string, string> _environment = new(StringComparer.Ordinal);
   private byte[] _wineArchive;
   private byte[] _runtimeArchive = Zip(
       CrtDirectory + "msvcp140.dll",
@@ -49,7 +43,6 @@ public class SystemDependenciesTests : IDisposable {
     Directory.CreateDirectory(_temp);
     _wineArchive = Tar(("w/bin/wine", "wine"), ("w/lib/wine.so", "lib"));
     _served[WineUrl] = _wineArchive;
-    _served[VcRedistUrl] = _installerBytes;
     _served[VcRuntimeUrl] = _runtimeArchive;
     _downloader.Setup(d => d.DownloadFile(
             It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
@@ -90,16 +83,15 @@ public class SystemDependenciesTests : IDisposable {
   private SystemDependencies Create(
       SystemInfo system,
       Func<Stream, Stream>? decompress = null,
-      string? vcRedistSha = null,
       string? vcRuntimeSha = null) {
     _probe.System = system;
     SystemDependencyFiles files = new(
-        Build, Build, new PinnedFile(VcRedistUrl, vcRedistSha ?? Sha256(_installerBytes)),
+        Build, Build,
         new VcRuntimeFiles(
             "runtime-test", new PinnedFile(VcRuntimeUrl, vcRuntimeSha ?? Sha256(_runtimeArchive))));
     return new SystemDependencies(
-        new FileSystem(), _downloader.Object, _ui.Object, _probe, Data,
-        _environment.GetValueOrDefault, files, decompress ?? (s => s));
+        new FileSystem(), _downloader.Object, _ui.Object, _probe, Data, files,
+        decompress ?? (s => s));
   }
 
   private static string Sha256(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
@@ -227,10 +219,7 @@ public class SystemDependenciesTests : IDisposable {
   }
 
   [Fact]
-  public async Task Prepare_LinuxWithoutWine_InstallsItAndQueriesThePrefix() {
-    // Arrange
-    _probe.RegOutput = RegInstalled;
-
+  public async Task Prepare_LinuxWithoutWine_InstallsItAndNoVisualCppRuntime() {
     // Act
     await Create(_linux).Prepare("win-x64", Root, false, Token);
 
@@ -245,70 +234,29 @@ public class SystemDependenciesTests : IDisposable {
       Assert.True(File.GetUnixFileMode(WineExecutable).HasFlag(UnixFileMode.UserExecute));
     }
 
-    // The runtime is looked up in the registry of the prefix, through the Wine of lip.
-    ProgramStartInfo query = _probe.Runs[0];
-    Assert.Equal(WineExecutable, query.FileName);
-    Assert.Equal("reg", query.Arguments[0]);
-    Assert.Contains(
-        @"HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64", query.Arguments);
-    Assert.Equal(Path.Join(Root, ".lip", "wine"), query.EnvironmentOverrides["WINEPREFIX"]);
-    Assert.Equal("-all", query.EnvironmentOverrides["WINEDEBUG"]);
-    Assert.Equal(
-        WorkspaceProgram.WineDllOverrides, query.EnvironmentOverrides["WINEDLLOVERRIDES"]);
-    Assert.DoesNotContain(_probe.Runs, r => r.Arguments.Contains("/install"));
+    // The Wine of lip has a Visual C++ runtime of its own: nothing is run in the prefix.
+    Assert.Empty(_probe.Runs);
+    Assert.False(Directory.Exists(Path.Join(Root, ".lip", "wine")));
   }
 
   [Fact]
-  public async Task Prepare_LinuxWithoutTheRuntime_RunsItsInstallerInThePrefix() {
-    // Arrange: the key is missing in both views until the installer has run.
-    _probe.RegExitCode = 1;
-
-    // Act
-    await Create(_linux).Prepare("win-x64", Root, false, Token);
-
-    // Assert
-    Assert.Equal(["/reg:64", "/reg:32"], _probe.Runs.Take(2).Select(r => r.Arguments[^1]));
-    ProgramStartInfo install = _probe.Runs[^1];
-    Assert.Equal(WineExecutable, install.FileName);
-    Assert.Equal(["/install", "/quiet", "/norestart"], install.Arguments.Skip(1));
-    Assert.EndsWith("vc_redist.x64.exe", install.Arguments[0]);
-    Assert.Equal(Path.Join(Root, ".lip", "wine"), install.EnvironmentOverrides["WINEPREFIX"]);
-    Assert.Equal([VcRedistUrl], _downloaded.Where(url => url != WineUrl));
-  }
-
-  [Fact]
-  public async Task Prepare_WinePrefixSet_QueriesThatPrefix() {
+  public async Task Prepare_WindowsAlreadyPrepared_ShortCircuits() {
     // Arrange
-    _environment["WINEPREFIX"] = "/home/u/.wine";
-    _probe.RegOutput = RegInstalled;
-
-    // Act
-    await Create(_linux).Prepare("win-x64", Root, false, Token);
-
-    // Assert
-    Assert.DoesNotContain("WINEPREFIX", _probe.Runs[0].EnvironmentOverrides.Keys);
-  }
-
-  [Fact]
-  public async Task Prepare_AlreadyPrepared_ShortCircuits() {
-    // Arrange
-    _probe.RegOutput = RegInstalled;
-    SystemDependencies dependencies = Create(_linux);
+    SystemDependencies dependencies = Create(_windows);
     await dependencies.Prepare("win-x64", Root, false, Token);
-    int runs = _probe.Runs.Count;
+    Directory.Delete(RuntimeDirectory, recursive: true);
 
     // Act
     await dependencies.Prepare("win-x64", Root, false, Token);
 
     // Assert: neither downloaded nor looked up again.
-    Assert.Equal([WineUrl], _downloaded);
-    Assert.Equal(runs, _probe.Runs.Count);
+    Assert.Equal([VcRuntimeUrl], _downloaded);
+    Assert.False(Directory.Exists(RuntimeDirectory));
   }
 
   [Fact]
   public async Task Prepare_WineInstalledByAnotherProcess_DoesNotDownloadIt() {
     // Arrange
-    _probe.RegOutput = RegInstalled;
     Directory.CreateDirectory(Path.GetDirectoryName(WineExecutable)!);
     File.WriteAllText(WineExecutable, "wine");
 
@@ -317,7 +265,7 @@ public class SystemDependenciesTests : IDisposable {
 
     // Assert
     Assert.Empty(_downloaded);
-    Assert.Equal(WineExecutable, _probe.Runs[0].FileName);
+    Assert.Empty(_probe.Runs);
   }
 
   /// The downloader sends the download of Wine, a GitHub release asset, through github_proxy
@@ -326,7 +274,6 @@ public class SystemDependenciesTests : IDisposable {
   [Fact]
   public async Task Prepare_ProxyServesAnotherWine_RejectsItAndInstallsWhatGithubServes() {
     // Arrange
-    _probe.RegOutput = RegInstalled;
     _downloader.Setup(d => d.DownloadFile(
             It.IsAny<Url>(), It.IsAny<IFileInfo>(), It.IsAny<Action<Url>?>()))
         .Returns((Url url, IFileInfo file, Action<Url>? validate) => {
@@ -389,7 +336,6 @@ public class SystemDependenciesTests : IDisposable {
 
     _wineArchive = stream.ToArray();
     _served[WineUrl] = _wineArchive;
-    _probe.RegOutput = RegInstalled;
 
     // Act
     await Create(_linux).Prepare("win-x64", Root, false, Token);
@@ -453,13 +399,10 @@ public class SystemDependenciesTests : IDisposable {
         + "FpheF7xB2FuAMcf2uxOnmx7+Que6G/xloOi3VVHxoOp3Mqhx5/iTtwyQTfstJMpHxnEEXAAAAANRl5nL4vU"
         + "qtAAGqAoBQAAC+LfeAscRn+wIAAAAABFla");
     _served[WineUrl] = _wineArchive;
-    _probe.RegOutput = RegInstalled;
     SystemDependencies dependencies = new(
         new FileSystem(), _downloader.Object, _ui.Object, _probe, Data,
-        _environment.GetValueOrDefault,
         new SystemDependencyFiles(
-            Build, Build, new PinnedFile(VcRedistUrl, ""),
-            new VcRuntimeFiles("runtime-test", new PinnedFile(VcRuntimeUrl, ""))));
+            Build, Build, new VcRuntimeFiles("runtime-test", new PinnedFile(VcRuntimeUrl, ""))));
     _probe.System = _linux;
 
     // Act
@@ -488,7 +431,6 @@ public class SystemDependenciesTests : IDisposable {
       Architecture architecture, bool rosetta, bool accept) {
     // Arrange
     _probe.RosettaInstalled = rosetta;
-    _probe.RegOutput = RegInstalled;
 
     // Act
     await Create(new SystemInfo(HostOs.MacOS, architecture))
@@ -502,10 +444,7 @@ public class SystemDependenciesTests : IDisposable {
 
   [Fact]
   public async Task Prepare_ArmMacWithoutRosetta_AcceptingTheLicense_InstallsItWithoutAsking() {
-    // Arrange (protocol/lip-workspace.md, "Installing Rosetta 2").
-    _probe.RegOutput = RegInstalled;
-
-    // Act
+    // Act (protocol/lip-workspace.md, "Installing Rosetta 2").
     await Create(_armMac).Prepare("win-x64", Root, acceptRosettaLicense: true, Token);
 
     // Assert
@@ -521,7 +460,6 @@ public class SystemDependenciesTests : IDisposable {
   [InlineData(" Y ")]
   public async Task Prepare_ArmMacWithoutRosetta_UserAnswersYes_InstallsIt(string answer) {
     // Arrange
-    _probe.RegOutput = RegInstalled;
     _ui.Setup(u => u.Ask(It.IsAny<string>())).ReturnsAsync(answer);
 
     // Act
@@ -635,9 +573,6 @@ public class SystemDependenciesTests : IDisposable {
 
   [Fact]
   public async Task Prepare_Linux_NeverInstallsRosetta() {
-    // Arrange
-    _probe.RegOutput = RegInstalled;
-
     // Act
     await Create(_linux).Prepare("win-x64", Root, acceptRosettaLicense: true, Token);
 
@@ -654,17 +589,6 @@ public class SystemDependenciesTests : IDisposable {
   private static void AssertNamesTheManualInstall(SystemDependencyException ex) {
     Assert.Contains("'softwareupdate --install-rosetta --agree-to-license'", ex.Message);
     Assert.Contains("administrator", ex.Message);
-  }
-
-  [Theory]
-  [InlineData("    Installed    REG_DWORD    0x1\r\n", true)]
-  [InlineData("HKEY_LOCAL_MACHINE\\x\n\tInstalled\tREG_DWORD\t0x00000001\n", true)]
-  [InlineData("    Installed    REG_DWORD    0x0\r\n", false)]
-  [InlineData("    Installed    REG_SZ    0x1\r\n", false)]
-  [InlineData("    Installed    REG_DWORD    0x10\r\n", false)]
-  [InlineData("", false)]
-  public void ReadsInstalled_ReadsTheDword(string output, bool expected) {
-    Assert.Equal(expected, SystemDependencies.ReadsInstalled(output));
   }
 
   [Theory]
@@ -724,7 +648,6 @@ public class SystemDependenciesTests : IDisposable {
   public async Task Prepare_LinuxWithGnuTlsAndFontconfigOrNoFreeType_InstallsWine(
       bool freeType, bool fontconfig) {
     // Arrange
-    _probe.RegOutput = RegInstalled;
     if (freeType) {
       _probe.Libraries.Add("libfreetype.so.6");
     }
@@ -744,7 +667,6 @@ public class SystemDependenciesTests : IDisposable {
   public async Task Prepare_MacOsWithoutTheLibraries_InstallsWine() {
     // Arrange: only Linux is checked.
     _probe.Libraries.Clear();
-    _probe.RegOutput = RegInstalled;
 
     // Act
     await Create(new SystemInfo(HostOs.MacOS, Architecture.X64))
@@ -761,10 +683,6 @@ public class SystemDependenciesTests : IDisposable {
     public bool RosettaInstalled { get; set; }
 
     public bool VcRuntimeInstalled { get; set; }
-
-    public int RegExitCode { get; set; }
-
-    public string RegOutput { get; set; } = "";
 
     public List<ProgramStartInfo> Runs { get; } = [];
 
@@ -804,9 +722,7 @@ public class SystemDependenciesTests : IDisposable {
             });
       }
 
-      return Task.FromResult(start.Arguments[0] == "reg"
-          ? new ProgramResult(RegExitCode, RegOutput)
-          : new ProgramResult(0, ""));
+      return Task.FromResult(new ProgramResult(0, ""));
     }
   }
 }
